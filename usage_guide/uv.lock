@@ -1,0 +1,4 @@
+# This lock file reserves a place for the usage-guide environment.
+# Generate a full lock (with pinned transitive deps) by running:
+#   uv pip compile pyproject.toml -o uv.lock
+# inside the `usage_guide/` directory once you have network access.

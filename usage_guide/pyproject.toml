@@ -1,0 +1,23 @@
+# TODO: On-premise - Configure pip to use local artifactory by creating pip.conf or using --index-url
+# Example pip.conf:
+#   [global]
+#   index-url = https://artifactory.your-company.com/api/pypi/pypi-remote/simple
+#   trusted-host = artifactory.your-company.com
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dspy-usage-guide"
+version = "0.1.0"
+description = "Dependencies for the DSPy-as-a-Service usage notebooks"
+authors = [{ name = "DSPy Service Maintainers" }]
+requires-python = ">=3.10"
+dependencies = [
+    "dspy>=3.1",
+    "pandas>=2.1",
+    "openpyxl>=3.1",
+    "requests>=2.31",
+    "jupyter>=1.0",
+]
