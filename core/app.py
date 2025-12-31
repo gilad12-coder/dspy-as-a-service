@@ -39,7 +39,14 @@ logger = logging.getLogger(__name__)
 
 
 def _status_to_job_status(status: str) -> JobStatus:
-    """Map status string to JobStatus enum."""
+    """Map status string to JobStatus enum.
+
+    Args:
+        status: Status string from job store.
+
+    Returns:
+        JobStatus: Corresponding enum value.
+    """
     status_map = {
         "pending": JobStatus.pending,
         "validating": JobStatus.validating,
@@ -153,13 +160,9 @@ def create_app(
     def healthcheck() -> HealthResponse:
         """Expose a snapshot of registered assets.
 
-        Args:
-            None.
-
         Returns:
             HealthResponse: Status payload used for readiness checks.
         """
-
         snapshot = registry.snapshot()
         logger.debug("Health check requested; registered assets: %s", snapshot)
         return HealthResponse(status=HEALTH_STATUS_OK, registered_assets=snapshot)
@@ -184,10 +187,8 @@ def create_app(
             logger.warning("Payload validation failed: %s", exc)
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        # Generate job ID
         job_id = str(uuid4())
 
-        # Create job in store
         job_store.create_job(job_id)
         job_store.set_payload_overview(
             job_id,
@@ -203,7 +204,6 @@ def create_app(
             },
         )
 
-        # Submit to background worker
         current_worker = get_worker(job_store)
         current_worker.submit_job(job_id, payload)
 
@@ -244,6 +244,7 @@ def create_app(
         status = _status_to_job_status(status_str)
 
         def parse_timestamp(val: Any) -> Optional[datetime]:
+            """Convert value to datetime, handling None and ISO strings."""
             if val is None or val == "":
                 return None
             if isinstance(val, datetime):
@@ -294,6 +295,7 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Unknown job '{job_id}'.")
 
         def parse_timestamp(val: Any) -> Optional[datetime]:
+            """Convert value to datetime, handling None and ISO strings."""
             if val is None or val == "":
                 return None
             if isinstance(val, datetime):

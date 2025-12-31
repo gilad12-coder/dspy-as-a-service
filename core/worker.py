@@ -47,13 +47,16 @@ class BackgroundWorker:
         self._registry: Optional[ServiceRegistry] = None
         self._lock = threading.Lock()
 
-        # Job queue for pending jobs
         self._pending_jobs: list[str] = []
         self._processing_jobs: set[str] = set()
         self._queue_lock = threading.Lock()
 
     def _get_service(self) -> DspyService:
-        """Get or create the DspyService instance."""
+        """Get or create the DspyService instance.
+
+        Returns:
+            DspyService: Shared service instance for this worker.
+        """
         if self._service is None:
             self._registry = ServiceRegistry()
             self._service = DspyService(self._registry)
@@ -66,7 +69,6 @@ class BackgroundWorker:
             job_id: Unique job identifier.
             payload: The optimization request payload.
         """
-        # Store payload in job store for the worker to pick up
         self._job_store.update_job(
             job_id,
             payload=payload.model_dump(mode="json"),
@@ -78,7 +80,11 @@ class BackgroundWorker:
                 logger.info("Job %s added to queue", job_id)
 
     def _get_next_job(self) -> Optional[str]:
-        """Get the next pending job from the queue."""
+        """Get the next pending job from the queue.
+
+        Returns:
+            Optional[str]: Job ID if available, None otherwise.
+        """
         with self._queue_lock:
             if self._pending_jobs:
                 job_id = self._pending_jobs.pop(0)
@@ -87,7 +93,11 @@ class BackgroundWorker:
         return None
 
     def _mark_job_done(self, job_id: str) -> None:
-        """Mark a job as no longer processing."""
+        """Mark a job as no longer processing.
+
+        Args:
+            job_id: The job identifier to mark as done.
+        """
         with self._queue_lock:
             self._processing_jobs.discard(job_id)
 
@@ -120,11 +130,13 @@ class BackgroundWorker:
 
         Args:
             job_id: The job identifier to process.
+
+        Raises:
+            ValueError: If job has no payload.
         """
         logger.info("Processing job %s", job_id)
 
         try:
-            # Get job data from store
             job_data = self._job_store.get_job(job_id)
             payload_dict = job_data.get("payload")
 
@@ -133,18 +145,15 @@ class BackgroundWorker:
 
             payload = RunRequest.model_validate(payload_dict)
 
-            # Mark as validating
             self._job_store.update_job(
                 job_id,
                 status="validating",
                 message="Validating payload",
             )
 
-            # Validate
             service = self._get_service()
             service.validate_payload(payload)
 
-            # Mark as running
             self._job_store.update_job(
                 job_id,
                 status="running",
@@ -152,12 +161,10 @@ class BackgroundWorker:
                 started_at=datetime.now(timezone.utc).isoformat(),
             )
 
-            # Set up progress callback
             def progress_callback(message: str, metrics: Dict[str, Any]) -> None:
                 logger.debug("Job %s progress: %s %s", job_id, message, metrics)
                 self._job_store.record_progress(job_id, message, metrics)
 
-            # Set up log handler
             log_handler = JobLogHandler(job_id, self._job_store)
             log_handler.setLevel(logging.INFO)
             log_handler.setFormatter(logging.Formatter("%(message)s"))
@@ -171,14 +178,12 @@ class BackgroundWorker:
                 tracked.addHandler(log_handler)
 
             try:
-                # Run optimization
                 result = service.run(
                     payload,
                     artifact_id=job_id,
                     progress_callback=progress_callback,
                 )
 
-                # Mark success
                 result_dict = result.model_dump(mode="json")
                 self._job_store.update_job(
                     job_id,
@@ -239,16 +244,28 @@ class BackgroundWorker:
         logger.info("Stopped background workers")
 
     def is_running(self) -> bool:
-        """Check if the worker is running."""
+        """Check if the worker is running.
+
+        Returns:
+            bool: True if worker threads are active.
+        """
         return self._running
 
     def queue_size(self) -> int:
-        """Get the number of pending jobs."""
+        """Get the number of pending jobs.
+
+        Returns:
+            int: Count of jobs waiting to be processed.
+        """
         with self._queue_lock:
             return len(self._pending_jobs)
 
     def active_jobs(self) -> int:
-        """Get the number of jobs currently being processed."""
+        """Get the number of jobs currently being processed.
+
+        Returns:
+            int: Count of jobs actively running.
+        """
         with self._queue_lock:
             return len(self._processing_jobs)
 

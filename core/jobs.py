@@ -472,7 +472,6 @@ class RemoteDBJobStore:
         # TODO: Insert into 'jobs' table
         # self.db.insert(table="jobs", data=job_data)
 
-        # Cache locally for fast access
         with self._lock:
             self._cache[job_id] = job_data
             self._progress_cache[job_id] = []
@@ -490,7 +489,6 @@ class RemoteDBJobStore:
         # TODO: Update 'jobs' table where job_id=job_id
         # self.db.update(table="jobs", filter={"job_id": job_id}, data=kwargs)
 
-        # Update local cache
         with self._lock:
             if job_id in self._cache:
                 self._cache[job_id].update(kwargs)
@@ -507,7 +505,6 @@ class RemoteDBJobStore:
         Raises:
             KeyError: If job does not exist.
         """
-        # Try cache first
         with self._lock:
             if job_id in self._cache:
                 return dict(self._cache[job_id])
@@ -551,16 +548,13 @@ class RemoteDBJobStore:
         # })
 
         with self._lock:
-            # Update local cache
             if job_id not in self._progress_cache:
                 self._progress_cache[job_id] = []
             self._progress_cache[job_id].append(event)
 
-            # Limit cached events
             if len(self._progress_cache[job_id]) > MAX_PROGRESS_EVENTS:
                 self._progress_cache[job_id].pop(0)
 
-            # Update job metrics
             if metrics and job_id in self._cache:
                 if "latest_metrics" not in self._cache[job_id]:
                     self._cache[job_id]["latest_metrics"] = {}
@@ -613,12 +607,10 @@ class RemoteDBJobStore:
         # self.db.insert(table="job_logs", data={"job_id": job_id, **entry})
 
         with self._lock:
-            # Update local cache
             if job_id not in self._logs_cache:
                 self._logs_cache[job_id] = []
             self._logs_cache[job_id].append(entry)
 
-            # Limit cached logs
             if len(self._logs_cache[job_id]) > MAX_LOG_ENTRIES:
                 self._logs_cache[job_id].pop(0)
 
@@ -658,9 +650,8 @@ class RemoteDBJobStore:
             job_id: Job identifier.
 
         Returns:
-            True if job exists.
+            bool: True if job exists.
         """
-        # Check cache first
         with self._lock:
             if job_id in self._cache:
                 return True
@@ -684,7 +675,6 @@ class RemoteDBJobStore:
         # self.db.delete(table="jobs", filter={"job_id": job_id})
 
         with self._lock:
-            # Clear from cache
             self._cache.pop(job_id, None)
             self._progress_cache.pop(job_id, None)
             self._logs_cache.pop(job_id, None)
