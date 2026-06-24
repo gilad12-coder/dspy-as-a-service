@@ -270,7 +270,7 @@ export function LMActivityTab({ lmActivity }: { lmActivity: LMActivity | null | 
             </p>
           ) : (
             <div className="overflow-x-auto -mx-2 px-2">
-              <table className="guide-table w-full text-sm" dir="rtl">
+              <table className="guide-table w-full text-sm">
                 <thead>
                   <tr className="bg-muted/20">
                     <th

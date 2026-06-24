@@ -208,7 +208,7 @@ export function DatasetUploadCard({
       };
 
   return (
-    <div className="w-full" dir="rtl">
+    <div className="w-full">
       <motion.div
         layout={!reduceMotion}
         className={cn(
@@ -471,7 +471,6 @@ function ColumnRoleRow({
       </div>
       <div
         className="relative inline-grid grid-cols-3 shrink-0 rounded-lg bg-muted p-0.5 gap-0.5"
-        dir="rtl"
       >
         <div
           className="absolute top-0.5 bottom-0.5 rounded-md bg-stone-500/15 shadow-sm transition-[inset-inline-start] duration-100 ease-out"

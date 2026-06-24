@@ -72,6 +72,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { msg } from "@/shared/lib/messages";
 import { formatStorageSize } from "@/shared/lib/formatters";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import {
   deleteStorageQuotaOverride,
@@ -495,6 +496,7 @@ function UsageMeter({ used, budget }: { used: number; budget: number }) {
 
 function AdminTab() {
   const { data: session } = useSession();
+  const isRtl = getActiveDir() === "rtl";
   const [overrides, setOverrides] = React.useState<StorageQuotaOverride[]>([]);
   const [defaultBytes, setDefaultBytes] = React.useState<number | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -681,7 +683,7 @@ function AdminTab() {
           </Button>
         </SheetTrigger>
         <SheetContent
-          side="left"
+          side={isRtl ? "left" : "right"}
           aria-describedby={undefined}
           className="w-full gap-0 p-0 sm:max-w-2xl"
         >
@@ -944,16 +946,22 @@ function ApiTab() {
   const [busy, setBusy] = React.useState(false);
   const [revealed, setRevealed] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
 
+  // A failed passive load (most often the backend being unreachable) surfaces as
+  // a calm inline banner rather than an error toast — the token panel is not
+  // critical enough to interrupt, and a toast on tab-open reads as a bug. Toasts
+  // stay reserved for the user-initiated generate/revoke actions below.
   const load = React.useCallback(async () => {
     if (!hasAuth) {
       setLoaded(true);
       return;
     }
+    setLoadError(null);
     try {
       setInfo(await getApiToken());
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoaded(true);
     }
@@ -1015,6 +1023,12 @@ function ApiTab() {
 
   return (
     <div className="space-y-4">
+      {loadError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          {loadError}
+        </div>
+      )}
+
       <SettingsRow icon={KeyRound} label={msg("settings.api.title")}>
         {loaded &&
           !revealed &&
@@ -1117,7 +1131,7 @@ function ApiTab() {
         </div>
       )}
 
-      {loaded && !revealed && !info && (
+      {loaded && !revealed && !info && !loadError && (
         <p className="text-xs text-muted-foreground">{msg("settings.api.none")}</p>
       )}
 
@@ -1228,7 +1242,6 @@ export function SettingsModal() {
         <Tabs
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as SettingsTab)}
-          dir="rtl"
           className="px-6 pb-6 pt-2"
         >
           <TabsList

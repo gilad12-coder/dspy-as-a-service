@@ -167,7 +167,7 @@ export function DatasetDetailDialog({
         className="w-[min(56rem,94vw)] max-w-[min(56rem,94vw)] overflow-hidden p-0"
         aria-describedby={undefined}
       >
-        <div className="flex max-h-[85vh] flex-col" dir="rtl">
+        <div className="flex max-h-[85vh] flex-col">
           <DialogHeader className="shrink-0 px-6 pt-6 pb-4 text-start">
             <DialogTitle className="truncate">{dataset?.name}</DialogTitle>
             {dataset && (

@@ -28,7 +28,7 @@ export function ResultsToolbar({ total, sort, onSortChange, hasQuery }: ResultsT
       ? msg("explore.results.count.one")
       : formatMsg("explore.results.count.many", { n: total });
   return (
-    <div dir="rtl" className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-1 pb-2">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-1 pb-2">
       <span className="min-w-0 text-[12.5px] text-foreground/55 tabular-nums">{countLabel}</span>
       <SortControl sort={sort} onChange={onSortChange} hasQuery={hasQuery} />
     </div>
@@ -76,7 +76,7 @@ function SortControl({
       {options.map((o) => {
         const active = o.value === sort;
         return (
-          <TooltipButton key={o.value} tooltip={o.tip()} side="bottom" dir="rtl">
+          <TooltipButton key={o.value} tooltip={o.tip()} side="bottom">
             <button
               type="button"
               aria-pressed={active}

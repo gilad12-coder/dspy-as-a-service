@@ -88,7 +88,7 @@ function ProbeChartTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border bg-background p-3 shadow-md text-sm" dir="rtl">
+    <div className="rounded-lg border bg-background p-3 shadow-md text-sm">
       <p className="font-medium mb-1.5">
         {msg("auto.features.submit.components.modelprobedialog.20")}{" "}
         <span dir="ltr" className="font-mono">
@@ -433,7 +433,7 @@ export function TrajectoryCompareChart({ rows }: { rows: ModelRow[] }) {
                 <div className="truncate font-mono font-semibold" dir="ltr">
                   {hovered.label}
                 </div>
-                <div className="text-muted-foreground tabular-nums" dir="rtl">
+                <div className="text-muted-foreground tabular-nums">
                   {msg("auto.features.submit.components.modelprobedialog.23")}
                   <span dir="ltr">{hovered.step}</span> ·{" "}
                   <span className="font-semibold text-foreground" dir="ltr">
@@ -446,7 +446,6 @@ export function TrajectoryCompareChart({ rows }: { rows: ModelRow[] }) {
       </div>
 
       <div
-        dir="rtl"
         className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[0.6875rem]"
       >
         {allSeries.map((s) => {

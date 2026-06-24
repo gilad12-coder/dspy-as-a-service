@@ -419,10 +419,7 @@ function GridOverviewImpl({
                   </ResponsiveContainer>
                 </div>
                 )}
-                <div
-                  className="mt-2 flex items-center justify-center gap-4 text-[0.6875rem]"
-                  dir="rtl"
-                >
+                <div className="mt-2 flex items-center justify-center gap-4 text-[0.6875rem]">
                   {[
                     {
                       key: "pareto",
@@ -903,10 +900,7 @@ function GridOverviewImpl({
                             content={({ active, payload, label }) => {
                               if (!active || !payload?.length) return null;
                               return (
-                                <div
-                                  className="rounded-xl border border-border/60 bg-background/95 backdrop-blur-sm p-3 shadow-lg"
-                                  dir="rtl"
-                                >
+                                <div className="rounded-xl border border-border/60 bg-background/95 backdrop-blur-sm p-3 shadow-lg">
                                   {label && (
                                     <p className="font-semibold mb-1.5 text-foreground text-xs">
                                       {label}
@@ -1007,10 +1001,7 @@ function GridOverviewImpl({
                 </div>
 
                 {!pr.error ? (
-                  <div
-                    className="flex items-center gap-4 shrink-0 tabular-nums font-mono text-xs"
-                    dir="rtl"
-                  >
+                  <div className="flex items-center gap-4 shrink-0 tabular-nums font-mono text-xs">
                     <div className="text-center min-w-[44px]">
                       <div className="text-[9px] text-foreground/50 mb-0.5 flex items-center justify-center gap-1">
                         <Trophy className="size-2.5" />

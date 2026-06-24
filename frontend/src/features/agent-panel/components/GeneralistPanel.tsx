@@ -29,6 +29,7 @@ import { TRUST_MODE_HUE, useTrustMode } from "../hooks/use-trust-mode";
 import { extractWizardPatch, useWizardStateOptional } from "../hooks/use-wizard-state";
 import type { ToolEndPayload, ToolStartPayload, WizardState } from "../lib/types";
 import { stageDatasetForAgent } from "@/shared/lib/api";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { registerTutorialHook } from "@/features/tutorial";
 
 import { MAX_WIDTH, MIN_WIDTH, NARROW_VIEWPORT_QUERY } from "../constants";
@@ -89,8 +90,9 @@ interface GeneralistPanelProps {
 }
 
 /**
- * Docked generalist agent panel. Renders as a left-anchored aside that
- * the user can resize, minimize to a pill, and toggle with Ctrl+J.
+ * Docked generalist agent panel. Renders as an aside anchored to the document's
+ * inline-end edge — left in Hebrew/RTL, right in English/LTR — that the user can
+ * resize, minimize to a pill, and toggle with Ctrl+J.
  * Mounted once in the app shell so the thread survives route changes.
  */
 export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
@@ -100,6 +102,8 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   const shortcutLabel = formatShortcut(prefs.agentShortcut);
   const reduceMotion = useReducedMotion();
   const hue = TRUST_MODE_HUE[trustMode];
+  const dir = getActiveDir();
+  const isRtl = dir === "rtl";
 
   const openPanel = React.useCallback(() => {
     setOpen(true);
@@ -502,7 +506,9 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       resizingRef.current = true;
       const onMove = (ev: MouseEvent) => {
         if (!resizingRef.current) return;
-        setWidth(clampWidth(ev.clientX));
+        // Width is the gap from the panel's docked edge to the cursor: from the
+        // left when docked left (RTL), from the right when docked right (LTR).
+        setWidth(clampWidth(isRtl ? ev.clientX : window.innerWidth - ev.clientX));
       };
       const onUp = () => {
         resizingRef.current = false;
@@ -512,7 +518,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [setWidth],
+    [setWidth, isRtl],
   );
 
   const renderToolCall = React.useCallback(
@@ -577,20 +583,24 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         {open && (
           <motion.aside
             key="generalist-panel"
-            dir="ltr"
-            initial={reduceMotion ? false : { x: -24, opacity: 0 }}
+            dir={dir}
+            initial={reduceMotion ? false : { x: isRtl ? -24 : 24, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
-            exit={reduceMotion ? { opacity: 0 } : { x: -24, opacity: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { x: isRtl ? -24 : 24, opacity: 0 }}
             transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
             style={{ width: isNarrow ? "100vw" : `min(${width}px, 92vw)` }}
             className={cn(
-              "fixed start-0 inset-y-0 z-40 flex h-dvh shrink-0",
-              "bg-background/95 backdrop-blur-xl border-e border-border/60",
-              "shadow-[8px_0_32px_rgba(61,46,34,0.06)]",
+              "fixed end-0 inset-y-0 z-40 flex h-dvh shrink-0",
+              "bg-background/95 backdrop-blur-xl border-s border-border/60",
+              // Shadow falls from the panel toward the page content — rightward
+              // when docked left (RTL), leftward when docked right (LTR).
+              isRtl
+                ? "shadow-[8px_0_32px_rgba(61,46,34,0.06)]"
+                : "shadow-[-8px_0_32px_rgba(61,46,34,0.06)]",
             )}
             aria-label={msg("auto.features.agent.panel.components.generalistpanel.literal.1")}
           >
-            <div dir="rtl" className="relative flex min-w-0 flex-1 flex-col" data-tutorial="agent-panel">
+            <div dir={dir} className="relative flex min-w-0 flex-1 flex-col" data-tutorial="agent-panel">
               <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2.5 shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <span
@@ -619,7 +629,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                               </button>
                             </PopoverTrigger>
                           </TooltipTrigger>
-                          <TooltipContent side="bottom" dir="rtl">
+                          <TooltipContent side="bottom">
                             {msg("auto.features.agent.panel.components.generalistpanel.4")}
                           </TooltipContent>
                         </Tooltip>
@@ -650,7 +660,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                         <History className="size-3.5" />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom" dir="rtl">
+                    <TooltipContent side="bottom">
                       {msg("auto.features.agent.panel.components.generalistpanel.history_button")}
                     </TooltipContent>
                   </Tooltip>
@@ -668,7 +678,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                           <Plus className="size-3.5" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom" dir="rtl">
+                      <TooltipContent side="bottom">
                         {msg("auto.features.agent.panel.components.generalistpanel.new_conversation")}
                       </TooltipContent>
                     </Tooltip>
@@ -686,7 +696,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                         <PanelLeftClose className="size-3.5" />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom" dir="rtl">
+                    <TooltipContent side="bottom">
                       {msg("auto.features.agent.panel.components.generalistpanel.6")}{" "}
                       <span className="opacity-70 font-mono">({shortcutLabel})</span>
                     </TooltipContent>
@@ -766,14 +776,15 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
               <PresenceStrip active={streaming} hue={hue} />
             </div>
 
-            {/* Resize handle — physical right edge (inline-end in LTR outer) */}
+            {/* Resize handle on the inline-start edge — the side that faces the
+                page content, so dragging it grows/shrinks the panel. */}
             <button
               type="button"
               onMouseDown={startResize}
               aria-label={msg("auto.features.agent.panel.components.generalistpanel.literal.8")}
               tabIndex={-1}
               className={cn(
-                "absolute top-0 end-0 h-full w-1 cursor-col-resize",
+                "absolute top-0 start-0 h-full w-1 cursor-col-resize",
                 "hover:bg-[#C8A882]/40 active:bg-[#C8A882]/60 transition-colors",
                 "max-lg:hidden",
               )}

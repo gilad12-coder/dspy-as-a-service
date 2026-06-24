@@ -1286,7 +1286,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
             !(activePair.program_artifact || activePair.optimized_test_metric != null)
           : isActive;
         return (
-          <Tabs value={detailTab} onValueChange={setDetailTab} dir="rtl">
+          <Tabs value={detailTab} onValueChange={setDetailTab}>
             <TabsList
               variant="line"
               className="border-b border-border/50 pb-0 gap-0 overflow-x-auto no-scrollbar"

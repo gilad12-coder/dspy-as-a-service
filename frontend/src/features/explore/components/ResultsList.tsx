@@ -37,7 +37,7 @@ export function ResultsList({
 }: ResultsListProps) {
   const tokens = React.useMemo(() => tokenize(highlight), [highlight]);
   return (
-    <ul id="explore-results" dir="rtl" className="divide-y divide-border/55">
+    <ul id="explore-results" className="divide-y divide-border/55">
       {results.map((row, index) => (
         <li key={row.optimization_id}>
           <ResultRow

@@ -52,7 +52,6 @@ export function TutorialMenu() {
       {state.isMenuOpen && (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-          dir="rtl"
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}

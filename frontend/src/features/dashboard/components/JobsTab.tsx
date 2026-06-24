@@ -84,7 +84,7 @@ function RoleBadge({ role }: { role?: ShareRole | null }) {
           ? msg("dashboard.role.owner")
           : msg("dashboard.role.owned");
   return (
-    <TooltipButton tooltip={tip} dir="rtl">
+    <TooltipButton tooltip={tip}>
       <span
         tabIndex={0}
         aria-label={tip}

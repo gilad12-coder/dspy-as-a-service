@@ -52,6 +52,7 @@ import { groupJobsByRecency } from "@/features/sidebar";
 import { SettingsTrigger, useUserPrefs } from "@/features/settings";
 import { StorageMeter } from "@/features/storage";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TERMS } from "@/shared/lib/terms";
 import { EmptyState } from "@/shared/ui/empty-state";
 
@@ -88,6 +89,7 @@ export function Sidebar() {
   const { data: session } = useSession();
   const sessionUser = session?.user?.name ?? "";
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
+  const isRtl = getActiveDir() === "rtl";
 
   const [tab, setTab] = React.useState<"mine" | "shared">("mine");
   // ``tab`` is the *requested* tab; ``renderedTab`` trails it and only flips
@@ -125,8 +127,9 @@ export function Sidebar() {
     }
   }, []);
 
-  // Drag-resize. The sidebar is pinned to the viewport's right edge, so
-  // the dragged left edge corresponds to ``window.innerWidth - clientX``.
+  // Drag-resize. The sidebar is pinned to the inline-start edge — the viewport's
+  // right in RTL, left in LTR — so the width grows from the opposite edge: from
+  // ``window.innerWidth - clientX`` in RTL, and from ``clientX`` directly in LTR.
   const resizingRef = React.useRef(false);
   const startResize = React.useCallback(
     (e: React.MouseEvent) => {
@@ -138,7 +141,7 @@ export function Sidebar() {
       document.body.style.cursor = "col-resize";
       const onMove = (ev: MouseEvent) => {
         if (!resizingRef.current) return;
-        persistWidth(window.innerWidth - ev.clientX);
+        persistWidth(isRtl ? window.innerWidth - ev.clientX : ev.clientX);
       };
       const onUp = () => {
         resizingRef.current = false;
@@ -150,7 +153,7 @@ export function Sidebar() {
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [persistWidth],
+    [persistWidth, isRtl],
   );
   // Sidebar infinite scroll: fetchData (polling + external invalidation)
   // re-requests ``max(PAGE_SIZE, loadedItemsRef.current)`` rows so a
@@ -328,9 +331,8 @@ export function Sidebar() {
 
   return (
     <aside
-      className="relative flex h-full shrink-0 flex-col border-l border-sidebar-border/60 bg-sidebar/80 backdrop-blur-xl overflow-hidden"
+      className="relative flex h-full shrink-0 flex-col border-e border-sidebar-border/60 bg-sidebar/80 backdrop-blur-xl overflow-hidden"
       style={{ width: `min(${width}px, 40vw, 92vw)` }}
-      dir="rtl"
       data-tutorial="sidebar-full"
     >
       <button
@@ -366,7 +368,7 @@ export function Sidebar() {
                   <motion.div
                     layoutId="sidebar-active"
                     className="absolute inset-0 rounded-lg bg-primary/[0.08] ring-1 ring-primary/10"
-                    style={{ borderRight: "3px solid var(--primary)" }}
+                    style={{ borderInlineStart: "3px solid var(--primary)" }}
                     transition={{ type: "spring", stiffness: 350, damping: 28 }}
                   />
                 )}
@@ -555,6 +557,7 @@ function JobRow({
 }) {
   const router = useRouter();
   const { prefs } = useUserPrefs();
+  const isRtl = getActiveDir() === "rtl";
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [renaming, setRenaming] = React.useState(false);
   const [renameValue, setRenameValue] = React.useState("");
@@ -920,7 +923,7 @@ function JobRow({
                   onClick={handleResume}
                   className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
                 >
-                  <Play className="size-3.5 -scale-x-100 text-muted-foreground" />
+                  <Play className={cn("size-3.5 text-muted-foreground", isRtl && "-scale-x-100")} />
                   {msg("sidebar.resume")}
                 </button>
               ) : (

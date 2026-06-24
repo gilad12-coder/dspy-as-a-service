@@ -39,7 +39,6 @@ export function BulkActionBar({
             mass: 0.8,
           }}
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
-          dir="rtl"
           data-tutorial="bulk-action-bar"
         >
           <div className="flex max-w-[92vw] flex-wrap items-center justify-center gap-1 rounded-full border border-border/60 bg-background/95 backdrop-blur-xl px-3 py-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.18)]">

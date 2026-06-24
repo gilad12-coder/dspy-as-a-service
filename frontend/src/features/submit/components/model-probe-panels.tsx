@@ -156,7 +156,7 @@ export function ModelDetailPanel({
   }, [row.logs.length]);
 
   return (
-    <Tabs defaultValue="overview" className="gap-3" dir="rtl">
+    <Tabs defaultValue="overview" className="gap-3">
       <TabsList variant="line" className="w-full border-b border-border/50 pb-0 gap-0">
         <TabsTrigger value="overview" className={cn(tabCls, "flex-1")}>
           {msg("submit.probe.details.title")}

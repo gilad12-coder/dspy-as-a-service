@@ -90,10 +90,7 @@ function LiveTip({
     }),
   };
   return (
-    <div
-      className="rounded-xl border border-border/60 bg-background/95 backdrop-blur-sm p-3 shadow-lg"
-      dir="rtl"
-    >
+    <div className="rounded-xl border border-border/60 bg-background/95 backdrop-blur-sm p-3 shadow-lg">
       {label && <p className="font-semibold mb-1.5 text-foreground text-xs">{label}</p>}
       {payload.map((p, i) => (
         <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -205,7 +205,7 @@ export function DatasetCard({
       </div>
 
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="w-[min(28rem,92vw)] max-w-[min(28rem,92vw)] sm:max-w-md" dir="rtl">
+        <DialogContent className="w-[min(28rem,92vw)] max-w-[min(28rem,92vw)] sm:max-w-md">
           <DialogHeader className="text-start">
             <DialogTitle>{msg("datasets.rename.title")}</DialogTitle>
           </DialogHeader>
@@ -242,7 +242,7 @@ export function DatasetCard({
       </Dialog>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="w-[min(28rem,92vw)] max-w-[min(28rem,92vw)] sm:max-w-md" dir="rtl">
+        <DialogContent className="w-[min(28rem,92vw)] max-w-[min(28rem,92vw)] sm:max-w-md">
           <DialogHeader className="text-start">
             <DialogTitle>{msg("datasets.delete.title")}</DialogTitle>
           </DialogHeader>

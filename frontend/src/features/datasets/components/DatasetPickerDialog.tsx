@@ -61,7 +61,7 @@ export function DatasetPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(34rem,94vw)] max-w-[min(34rem,94vw)] sm:max-w-lg" dir="rtl">
+      <DialogContent className="w-[min(34rem,94vw)] max-w-[min(34rem,94vw)] sm:max-w-lg">
         <DialogHeader className="text-start">
           <DialogTitle>{msg("submit.dataset.library_picker_title")}</DialogTitle>
           <DialogDescription>{msg("submit.dataset.library_picker_subtitle")}</DialogDescription>
@@ -70,7 +70,6 @@ export function DatasetPickerDialog({
         <div className="relative">
           <Search className="pointer-events-none absolute end-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            dir="rtl"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={msg("submit.dataset.library_search")}

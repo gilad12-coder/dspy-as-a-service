@@ -10,6 +10,9 @@ import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { useTutorialContext, ConceptsGuide, registerTutorialHook } from "@/features/tutorial";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
+import { LanguageSwitcher } from "@/shared/ui/language-switcher";
+import { useLocale } from "@/shared/providers";
+import { dirForLocale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
 import { JobsStreamProvider } from "@/shared/hooks/use-jobs-stream";
 import { useUserPrefs, LiteModeHint } from "@/features/settings";
@@ -28,13 +31,15 @@ const DESKTOP_BP = "(min-width: 768px)";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { locale } = useLocale();
+  const dir = dirForLocale(locale);
 
   // Shared-optimization pages render bare — no sidebar, agent panel, or other
   // app chrome — to keep the focus on the shared item. The recipient is still
   // authenticated (the route is login-gated like the rest of the app).
   if (pathname.startsWith("/share/")) {
     return (
-      <main className="min-h-screen" dir="rtl">
+      <main className="min-h-screen" dir={dir}>
         {children}
       </main>
     );
@@ -42,7 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (pathname === "/login") {
     return (
-      <main className="min-h-screen" dir="rtl">
+      <main className="min-h-screen" dir={dir}>
         {children}
       </main>
     );
@@ -57,6 +62,9 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const [isDesktop, setIsDesktop] = React.useState(false);
   const { data: session } = useSession();
   const pathname = usePathname();
+  const { locale } = useLocale();
+  const dir = dirForLocale(locale);
+  const isRtl = dir === "rtl";
   const { prefs, setPref } = useUserPrefs();
   const { startDeepDive } = useTutorialContext();
   const generalistEnabled = isGeneralistAgentEnabled();
@@ -151,7 +159,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
                   {msg("app.shell.lite.badge")}
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" dir="rtl">
+              <TooltipContent side="bottom" dir={dir}>
                 {msg("app.shell.lite.tooltip")}
               </TooltipContent>
             </Tooltip>
@@ -169,7 +177,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
                   {msg("app.shell.advanced.badge")}
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" dir="rtl">
+              <TooltipContent side="bottom" dir={dir}>
                 {msg("app.shell.advanced.tooltip")}
               </TooltipContent>
             </Tooltip>
@@ -185,7 +193,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
                 <GraduationCap className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" dir="rtl">
+            <TooltipContent side="bottom" dir={dir}>
               {msg("app.shell.tour_tooltip")}
             </TooltipContent>
           </Tooltip>
@@ -200,13 +208,14 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
                 <Lightbulb className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" dir="rtl">
+            <TooltipContent side="bottom" dir={dir}>
               {msg("app.shell.concepts_tooltip")}
             </TooltipContent>
           </Tooltip>
         </div>
 
         <div className="flex items-center gap-1.5">
+          <LanguageSwitcher />
           {session?.user && (
             <>
               <span className="hidden sm:inline text-xs font-semibold text-foreground">
@@ -237,7 +246,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         </div>
       </motion.header>
 
-      <div className="flex flex-1" dir="ltr">
+      <div className="flex flex-1" dir={dir}>
         <button
           type="button"
           aria-label={msg("app.shell.menu_close")}
@@ -247,7 +256,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
           aria-hidden={!sidebarOpen}
         />
 
-        <main className="flex-1 overflow-auto min-w-0 page-gradient grid-pattern" dir="rtl">
+        <main className="flex-1 overflow-auto min-w-0 page-gradient grid-pattern">
           <div
             className="relative z-[1] mx-auto max-w-7xl py-6 md:py-8"
             style={{ paddingInline: "clamp(1rem, 5vw - 0.5rem, 2rem)" }}
@@ -256,9 +265,13 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
           </div>
         </main>
 
+        {/* The sidebar lives after <main> in source order (content-first for
+            assistive tech) but renders at the inline-start edge via md:order-first
+            — right in Hebrew/RTL, left in English/LTR. Below md it's an off-canvas
+            drawer pinned to that same inline-start edge. */}
         <div
           id={SIDEBAR_ID}
-          className={`fixed inset-y-0 right-0 z-50 transform transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] md:sticky md:inset-auto md:top-[var(--header-height)] md:self-start md:h-[calc(100dvh-var(--header-height))] md:z-10 md:translate-x-0 md:shadow-none ${sidebarOpen ? "translate-x-0" : "translate-x-full"}`}
+          className={`fixed inset-y-0 ${isRtl ? "right-0" : "left-0"} z-50 transform transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] md:sticky md:inset-auto md:top-[var(--header-height)] md:order-first md:self-start md:h-[calc(100dvh-var(--header-height))] md:z-10 md:translate-x-0 md:shadow-none ${sidebarOpen ? "translate-x-0" : isRtl ? "translate-x-full" : "-translate-x-full"}`}
           aria-hidden={sidebarHidden ? true : undefined}
         >
           <Sidebar />

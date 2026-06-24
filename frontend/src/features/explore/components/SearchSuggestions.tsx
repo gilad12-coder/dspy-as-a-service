@@ -33,7 +33,6 @@ export function SearchSuggestions({
 
   return (
     <div
-      dir="rtl"
       onMouseDown={(e) => e.preventDefault()}
       className="absolute inset-x-0 top-[calc(100%+0.4rem)] z-20 max-h-[min(70vh,420px)] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-background p-2 shadow-[0_8px_40px_-12px_oklch(0.25_0.04_45/.22)]"
     >

@@ -530,13 +530,13 @@ export function ModelProbeDialog({
                   >
                     <div className="sticky top-0 z-10 border-b border-border/40 bg-popover p-2">
                       <div className="relative">
-                        <Search className="pointer-events-none absolute top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground left-2.5" />
+                        <Search className="pointer-events-none absolute top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground start-2.5" />
                         <input
                           value={reflectionSearch}
                           onChange={(e) => setReflectionSearch(e.target.value)}
                           placeholder="Search models..."
                           dir="auto"
-                          className="w-full rounded-md border border-border/60 bg-background py-1.5 pl-8 pr-3 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/40"
+                          className="w-full rounded-md border border-border/60 bg-background py-1.5 ps-8 pe-3 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/40"
                           autoFocus
                           onMouseDown={(e) => e.stopPropagation()}
                         />
@@ -710,7 +710,7 @@ export function ModelProbeDialog({
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center gap-3" dir="rtl">
+                  <div className="flex items-center gap-3">
                     <span className="flex shrink-0 items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
                       {phase === "running" ? (
                         <Loader2 className="size-3 animate-spin text-primary" />

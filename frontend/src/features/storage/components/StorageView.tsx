@@ -66,7 +66,7 @@ export function StorageView() {
 
   if (error || !usage) {
     return (
-      <div dir="rtl" className="pb-16">
+      <div className="pb-16">
         <div className="mt-8">
           <EmptyState icon={HardDrive} title={msg("storage.page.error")} />
         </div>
@@ -80,7 +80,7 @@ export function StorageView() {
   const free = Math.max(0, quota - used);
 
   return (
-    <div dir="rtl" className="pb-16">
+    <div className="pb-16">
       <section className="mt-8">
         <div className="flex items-baseline justify-between gap-3">
           <p className="text-foreground">

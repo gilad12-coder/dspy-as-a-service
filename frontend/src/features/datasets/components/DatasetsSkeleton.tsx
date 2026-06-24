@@ -6,7 +6,7 @@ import { AppSkeletonTheme, Skeleton } from "@/shared/ui/skeleton";
 export function DatasetsSkeleton() {
   return (
     <AppSkeletonTheme>
-      <div dir="rtl" className="pb-16">
+      <div className="pb-16">
         <div className="flex items-end justify-between">
           <div className="w-1/2">
             <Skeleton height={26} width="60%" />

@@ -16,7 +16,6 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
     if (profileLoading) {
       return (
         <div
-          dir="rtl"
           className="flex items-center gap-2 rounded-xl border border-[#DDD6CC]/60 bg-[#FAF8F5]/70 px-3.5 py-2.5 text-xs text-[#8C7A6B]"
         >
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#C8A882] motion-safe:animate-pulse" />
@@ -35,7 +34,6 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
 
   return (
     <div
-      dir="rtl"
       className="rounded-xl border border-[#C8B9A8]/50 bg-[#FAF8F5] shadow-[0_1px_2px_rgba(61,46,34,0.04)] overflow-hidden"
     >
       <div className="px-3.5 pt-3 pb-2.5">
@@ -61,7 +59,6 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
                 <TooltipContent
                   side="bottom"
                   sideOffset={8}
-                  dir="rtl"
                   className="max-w-[min(320px,92vw)] rounded-xl border border-[#C8B9A8]/60 bg-[#FAF8F5] px-4 py-3 text-end text-[#3D2E22] shadow-[0_8px_24px_-8px_rgba(61,46,34,0.2)] [&>span]:hidden"
                 >
                   {hasRationale && (

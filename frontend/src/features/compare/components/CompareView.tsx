@@ -654,7 +654,7 @@ function PromptsSection({ runs, winnerIdx }: { runs: RunInfo[]; winnerIdx: numbe
   return (
     <Card>
       <CardContent className="p-5 sm:p-6">
-        <Tabs value={activeValue} onValueChange={setActiveValue} dir="rtl">
+        <Tabs value={activeValue} onValueChange={setActiveValue}>
           <TabsList className="relative inline-flex w-full rounded-lg bg-muted p-1 gap-1 border-none shadow-none h-auto">
             {n >= 2 && (
               <div
@@ -1060,7 +1060,7 @@ function PerExampleSection({ runs }: { runs: RunInfo[] }) {
                 <GitCompareArrows className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top" dir="rtl">
+            <TooltipContent side="top">
               {disagreementSet.size === 0
                 ? msg("auto.app.compare.page.literal.22")
                 : onlyDisagreements
@@ -1327,7 +1327,7 @@ export function CompareView() {
       <VerdictBlock runs={runs} winnerIdx={winnerIdx} />
 
       <FadeIn delay={0.15}>
-        <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList variant="line" className="w-full border-b border-border/50 pb-0 gap-0">
             <TabsTrigger value="overview" className={tabCls}>
               <BarChart3 className="size-3.5" />

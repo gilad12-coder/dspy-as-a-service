@@ -527,7 +527,6 @@ export function TrajectoryTree({
       <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center">
         <div
           className="pointer-events-auto inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border border-[#DDD4C8]/70 bg-background/85 px-4 py-1.5 text-[11px] font-medium text-muted-foreground/90 backdrop-blur-sm"
-          dir="rtl"
         >
           <LegendItem
             swatch={
@@ -880,7 +879,6 @@ function WinnerBadge({ x, y }: { x: number; y: number }) {
         fontWeight={700}
         letterSpacing="0.4"
         fill={WINNER_BADGE_INK}
-        direction="rtl"
       >
         {label}
       </text>

@@ -54,7 +54,7 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
   );
 
   return (
-    <div dir="rtl" className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
+    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
       {hasConversation && !disabled && (
         <div className="border-b border-[#3D2E22]/10 px-3 py-2 shrink-0">
           <button

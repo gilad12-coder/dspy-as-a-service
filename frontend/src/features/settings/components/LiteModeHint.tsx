@@ -62,7 +62,6 @@ export function LiteModeHint() {
 
   return (
     <div
-      dir="rtl"
       role="status"
       className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-max max-w-[calc(100vw-2rem)] items-center gap-3 rounded-full border border-border bg-card px-4 py-2 shadow-md"
     >

@@ -81,6 +81,7 @@ export const sharedMessages = {
   "app.shell.advanced.tooltip": "מצב מתקדם פעיל — לחצו ליציאה",
   "app.shell.advanced.exit_aria": "יציאה ממצב מתקדם",
   "app.shell.menu_close": "סגור/סגרי את התפריט",
+  "shared.language.switch_aria": "בחירת שפת הממשק",
   "not_found.title": "הדף לא נמצא",
   "not_found.description": "הכתובת שחיפשת לא קיימת או שהועברה למיקום אחר",
   "not_found.back_dashboard": "חזור/חזרי ללוח הבקרה",

@@ -2370,7 +2370,6 @@ function ParetoGridSection({
       </div>
       <div
         className="flex flex-wrap gap-1"
-        dir="rtl"
         role="grid"
         aria-label={msg("trajectory.detail.pareto_title")}
       >

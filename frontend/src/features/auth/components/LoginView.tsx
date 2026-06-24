@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/shared/ui/primitives/card";
 import { Input } from "@/shared/ui/primitives/input";
 import { Label } from "@/shared/ui/primitives/label";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
+import { LanguageSwitcher } from "@/shared/ui/language-switcher";
 import { msg } from "@/shared/lib/messages";
 import { tI18n } from "@/shared/lib/i18n";
 import { cn } from "@/shared/lib/utils";
@@ -179,6 +180,7 @@ export function LoginView() {
 
   return (
     <div className="relative flex min-h-dvh w-full items-center justify-center px-4 py-10">
+      <LanguageSwitcher className="absolute end-4 top-4 z-20 bg-background/70 backdrop-blur-sm" />
       <LoginHalo />
       <div
         aria-hidden
@@ -207,7 +209,7 @@ export function LoginView() {
           <div className="flex flex-col items-center">
             <LoginHeader />
             <Card className="mt-9 w-full">
-              <CardContent className="px-6" dir="rtl">
+              <CardContent className="px-6">
                 <div
                   role="tablist"
                   aria-label={msg("auth.login.form_aria")}

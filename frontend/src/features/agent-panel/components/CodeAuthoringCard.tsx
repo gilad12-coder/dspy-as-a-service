@@ -10,6 +10,7 @@ import { TERMS } from "@/shared/lib/terms";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { ActivityBreadcrumb } from "@/shared/ui/agent/activity-breadcrumb";
 import { ThinkingSection } from "@/shared/ui/agent/thinking-section";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import type { ValidateCodeResponse } from "@/shared/types/api";
 
 import type { CodeAuthoringAgentState } from "../hooks/use-code-authoring-agent";
@@ -93,7 +94,6 @@ export function CodeAuthoringCard({ agent }: CodeAuthoringCardProps) {
 
       {agent.error && (
         <div
-          dir="rtl"
           className="flex items-start gap-1.5 border-t border-[#9B2C1F]/20 bg-[#FCEFEB]/60 px-4 py-2 text-xs text-[#7A1E13]"
         >
           <XCircle className="mt-0.5 size-3 shrink-0 text-[#9B2C1F]" aria-hidden="true" />
@@ -126,7 +126,7 @@ function ArtifactBlock({
           "text-xs font-semibold uppercase tracking-wide text-muted-foreground",
           streaming && "text-[#3D2E22]",
         )}
-        dir="rtl"
+        dir={getActiveDir()}
       >
         {label}
       </span>

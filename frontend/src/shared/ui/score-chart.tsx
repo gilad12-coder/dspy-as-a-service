@@ -12,6 +12,7 @@ import {
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { useLiteMode } from "@/features/settings";
 import { ChartTable } from "@/shared/charts/chart-table";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 function formatScore(value: unknown): string {
   return typeof value === "number" ? value.toFixed(1) : "—";
@@ -28,7 +29,7 @@ function ScoreChartTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border bg-background p-3 shadow-md text-sm" dir="rtl">
+    <div className="rounded-lg border bg-background p-3 shadow-md text-sm" dir={getActiveDir()}>
       <p className="font-medium mb-1.5">
         {formatMsg("shared.score_chart.prompt_version", { label: label ?? "" })}
       </p>

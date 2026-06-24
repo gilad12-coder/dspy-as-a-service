@@ -195,7 +195,7 @@ export function ModelConfigModal({
                             e.stopPropagation();
                             onRemoveRecent(rc.name);
                           }}
-                          className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                          className="ms-0.5 inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
                         >
                           <X className="h-3 w-3" />
                         </button>

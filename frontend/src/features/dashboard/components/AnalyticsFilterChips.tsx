@@ -70,7 +70,7 @@ export function AnalyticsFilterChips({
       )}
       {owner && (
         <FilterChip
-          dir={ownerIsMe ? "rtl" : "ltr"}
+          dir={ownerIsMe ? undefined : "ltr"}
           label={ownerIsMe ? msg("dashboard.owner.me") : owner}
           title={owner}
           truncate={!ownerIsMe}

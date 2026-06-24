@@ -123,14 +123,13 @@ export function PipelineStages({
       className={
         isVertical ? "relative flex flex-col gap-3" : "relative flex items-start justify-between"
       }
-      dir="rtl"
       data-tutorial={dataTutorial}
     >
       {!isVertical && (
         <>
-          <div className="absolute top-[14px] right-[14px] left-[14px] h-[2px] bg-border/50 rounded-full" />
+          <div className="absolute top-[14px] start-[14px] end-[14px] h-[2px] bg-border/50 rounded-full" />
           <div
-            className={`absolute top-[14px] right-[14px] h-[2px] rounded-full transition-all duration-700 ease-out ${isFailed ? "bg-destructive/60" : "bg-[#3D2E22]"}`}
+            className={`absolute top-[14px] start-[14px] h-[2px] rounded-full transition-all duration-700 ease-out ${isFailed ? "bg-destructive/60" : "bg-[#3D2E22]"}`}
             style={{
               width: `calc(${(Math.min(completedStageIdx, PIPELINE_STAGES.length - 1) / (PIPELINE_STAGES.length - 1)) * 100}% - 28px)`,
             }}

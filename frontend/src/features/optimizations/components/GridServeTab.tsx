@@ -234,7 +234,7 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
   return (
     <div className="space-y-4">
       <FadeIn>
-        <p className="text-sm text-muted-foreground" dir="rtl">
+        <p className="text-sm text-muted-foreground">
           {msg("auto.features.optimizations.components.gridservetab.3")}
         </p>
       </FadeIn>
@@ -279,10 +279,7 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
                       {pairLabel(p)}
                     </span>
                   </div>
-                  <div
-                    className="flex items-center gap-2 text-[10px] tabular-nums text-muted-foreground"
-                    dir="rtl"
-                  >
+                  <div className="flex items-center gap-2 text-[10px] tabular-nums text-muted-foreground">
                     <span className={cn("flex items-center gap-1", isQuality && "text-[#3D2E22]")}>
                       <Trophy className="size-2.5" />
                       {s ? `${Math.round(s.quality * 100)}%` : "—"}

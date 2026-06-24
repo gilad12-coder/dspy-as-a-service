@@ -55,7 +55,6 @@ export function TutorialPopover({
         left: spring,
       }}
       className="fixed z-[9999] pointer-events-auto"
-      dir="rtl"
     >
       <div className="relative w-[min(90vw,360px)] rounded-2xl border border-[#E5DDD4] bg-gradient-to-b from-[#FAF8F5] to-[#F5F1EC] shadow-[0_8px_32px_rgba(28,22,18,0.14)] overflow-hidden">
         <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-2">

@@ -1,9 +1,13 @@
 import {
   I18N_MESSAGES,
+  I18N_MESSAGES_EN,
   TERMS,
+  TERMS_EN,
   type I18nMessageKey,
   type TermKey,
 } from "@/shared/lib/generated/i18n-catalog";
+import { dirForLocale, type Locale } from "@/shared/lib/locale";
+import { getActiveLocale } from "@/shared/lib/runtime-locale";
 
 export {
   I18N_MESSAGES,
@@ -24,18 +28,20 @@ function reportMissingKey(key: string): void {
   }
 }
 
-function isolate(value: unknown): string {
+function isolate(value: unknown, locale: Locale): string {
   const str = String(value);
-  // Wrap Latin-script / numeric values in FSI/PDI so the BiDi algorithm
-  // doesn't flip surrounding Hebrew punctuation. Pure-Hebrew payloads are
-  // left alone to keep snapshot diffs noise-free.
+  // BiDi isolation only matters in RTL: wrapping Latin-script / numeric runs in
+  // FSI/PDI stops them flipping surrounding Hebrew punctuation. In an LTR locale
+  // the base direction already matches, so the wrappers are pure noise.
+  if (dirForLocale(locale) === "ltr") return str;
   if (LATIN_LIKE.test(str)) return `${FSI}${str}${PDI}`;
   return str;
 }
 
-function resolveTerms(template: string): string {
+function resolveTerms(template: string, locale: Locale): string {
   return template.replace(TERM_PATTERN, (match, key: string) => {
-    const value = (TERMS as Record<string, string>)[key as TermKey];
+    const en = locale === "en" ? (TERMS_EN as Record<string, string>)[key] : undefined;
+    const value = en ?? (TERMS as Record<string, string>)[key as TermKey];
     return value ?? match;
   });
 }
@@ -71,9 +77,9 @@ function parseBranches(body: string): Record<string, string> {
   return branches;
 }
 
-function pickPluralCategory(count: number): Intl.LDMLPluralRule {
+function pickPluralCategory(count: number, locale: Locale): Intl.LDMLPluralRule {
   try {
-    return new Intl.PluralRules("he").select(count);
+    return new Intl.PluralRules(locale).select(count);
   } catch {
     return count === 1 ? "one" : "other";
   }
@@ -82,6 +88,7 @@ function pickPluralCategory(count: number): Intl.LDMLPluralRule {
 function resolveSubstitutions(
   template: string,
   params: Record<string, unknown>,
+  locale: Locale,
 ): string {
   let out = "";
   let i = 0;
@@ -110,21 +117,22 @@ function resolveSubstitutions(
       } else {
         const branches = parseBranches(branchesStr);
         const exact = `=${count}`;
-        const category = pickPluralCategory(count);
+        const category = pickPluralCategory(count, locale);
         const body =
           branches[exact] ??
           branches[category] ??
           branches.other ??
           "";
         out += resolveSubstitutions(
-          body.replace(/#/g, isolate(count)),
+          body.replace(/#/g, isolate(count, locale)),
           params,
+          locale,
         );
       }
     } else if (/^[A-Za-z0-9_]+$/.test(inner)) {
       if (inner in params) {
         const value = params[inner];
-        out += value == null ? template.slice(i, close + 1) : isolate(value);
+        out += value == null ? template.slice(i, close + 1) : isolate(value, locale);
       } else {
         out += template.slice(i, close + 1);
       }
@@ -139,30 +147,39 @@ function resolveSubstitutions(
 /**
  * Render a template string with ICU plurals and BiDi-isolated interpolation.
  * Used by both ``tI18n`` and ``formatMsg`` so backend codes and frontend
- * UI strings share identical formatting semantics.
+ * UI strings share identical formatting semantics. Plural categories, term
+ * lookups, and BiDi isolation all follow ``locale`` (defaults to the active
+ * request/render locale).
  */
 export function formatTemplate(
   template: string,
   params: Record<string, unknown> | undefined,
+  locale: Locale = getActiveLocale(),
 ): string {
-  const resolved = resolveTerms(template);
+  const resolved = resolveTerms(template, locale);
   if (!params) return resolved;
-  return resolveSubstitutions(resolved, params);
+  return resolveSubstitutions(resolved, params, locale);
 }
 
 /**
- * Resolve a backend i18n code into Hebrew, with `{term.x}` term lookups,
- * ICU plural support (`{count, plural, one {} two {} other {}}`), and
- * BiDi isolation around every interpolated value so embedded Latin/numeric
- * values don't flip surrounding Hebrew punctuation.
+ * Resolve a backend i18n code into the active locale, with `{term.x}` term
+ * lookups, ICU plural support (`{count, plural, one {} two {} other {}}`), and
+ * locale-aware BiDi isolation around every interpolated value.
  *
- * Returns the key unchanged so drift is dev-visible.
+ * English uses the generated `I18N_MESSAGES_EN` overlay and falls back to the
+ * Hebrew template when a code has no English translation yet. Returns the key
+ * unchanged when no template exists at all, so drift is dev-visible.
  */
-export function tI18n(code: string, params?: Record<string, unknown>): string {
-  const template = (I18N_MESSAGES as Record<string, string>)[code as I18nMessageKey];
+export function tI18n(
+  code: string,
+  params?: Record<string, unknown>,
+  locale: Locale = getActiveLocale(),
+): string {
+  const en = locale === "en" ? (I18N_MESSAGES_EN as Record<string, string>)[code] : undefined;
+  const template = en ?? (I18N_MESSAGES as Record<string, string>)[code as I18nMessageKey];
   if (!template) {
     reportMissingKey(code);
     return code;
   }
-  return formatTemplate(template, params);
+  return formatTemplate(template, params, locale);
 }

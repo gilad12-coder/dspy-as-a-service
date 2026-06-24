@@ -128,7 +128,7 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
         : [];
 
   return (
-    <div className="w-full" dir="rtl">
+    <div className="w-full">
       <div className="rounded-2xl border border-[#C8A882]/40 bg-gradient-to-br from-[#FAF8F5] to-[#F5EFE6] shadow-[0_4px_16px_rgba(61,46,34,0.06)] overflow-hidden">
         <div className="px-4 pt-3.5 pb-2.5 border-b border-[#C8A882]/25 bg-white/40">
           <div className="flex items-start gap-2.5">

@@ -6,6 +6,7 @@ import { ArrowUp, ArrowDown, ArrowUpDown, Filter, Search, RotateCcw } from "luci
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 export type SortDir = "asc" | "desc";
 export type Filters = Record<string, Set<string>>;
@@ -324,7 +325,7 @@ function FilterDropdown({
           onChange={(e) => setSearch(e.target.value)}
           className="h-7 text-[0.6875rem] py-1.5 pe-7 ps-2 text-right"
           placeholder={msg("shared.excel_filter.search_placeholder")}
-          dir="rtl"
+          dir={getActiveDir()}
         />
       </div>
 

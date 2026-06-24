@@ -8,6 +8,7 @@ import {
   PopoverContent,
 } from "@/shared/ui/primitives/popover";
 import { msg, formatMsg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 // Hebrew single-letter weekday labels, indexed by JS getDay() (0=Sun..6=Sat).
 const WEEKDAY_LABELS = [
@@ -280,7 +281,7 @@ export function SkynetDatePicker({
         sideOffset={8}
         className="w-[min(296px,92vw)] p-0"
       >
-        <div dir="rtl" className="flex flex-col">
+        <div dir={getActiveDir()} className="flex flex-col">
           <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
             <button
               type="button"

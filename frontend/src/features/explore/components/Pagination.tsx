@@ -27,7 +27,7 @@ export function Pagination({
   if (totalPages <= 1) return null;
 
   return (
-    <div dir="rtl" className="flex flex-wrap items-center justify-center gap-4 pt-2">
+    <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
       <nav
         aria-label={msg("explore.page.indicator")}
         className="flex flex-wrap items-center justify-center gap-1"

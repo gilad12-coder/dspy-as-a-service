@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TERMS } from "@/shared/lib/terms";
 import { cn } from "@/shared/lib/utils";
 import { useLiteMode } from "@/features/settings";
@@ -275,6 +276,7 @@ function GenerationTimeline({
 }) {
   const current = value ?? maxGeneration;
   const isAtLive = value === null;
+  const isRtl = getActiveDir() === "rtl";
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -283,13 +285,13 @@ function GenerationTimeline({
       const el = trackRef.current;
       if (el === null) return current;
       const rect = el.getBoundingClientRect();
-      // The track is rendered inside dir="rtl", so x=rect.right corresponds to
-      // generation 0 and x=rect.left to generation max. Read from the right edge.
-      const xFromRight = rect.right - clientX;
-      const pct = Math.max(0, Math.min(1, xFromRight / rect.width));
+      // Generation 0 sits at the inline-start edge — the track's right in RTL,
+      // its left in LTR — so measure the drag from that edge in either direction.
+      const offset = isRtl ? rect.right - clientX : clientX - rect.left;
+      const pct = Math.max(0, Math.min(1, offset / rect.width));
       return Math.round(pct * maxGeneration);
     },
-    [current, maxGeneration],
+    [current, maxGeneration, isRtl],
   );
 
   const applyValue = useCallback(
@@ -324,12 +326,14 @@ function GenerationTimeline({
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      // Under RTL, ArrowLeft moves toward later generations (visually leftward
-      // is forward in time), ArrowRight moves earlier.
-      if (e.key === "ArrowLeft") {
+      // Later generations sit toward the inline-end edge — visually left in RTL,
+      // right in LTR — so the arrow pointing that way means "forward in time".
+      const forwardKey = isRtl ? "ArrowLeft" : "ArrowRight";
+      const backKey = isRtl ? "ArrowRight" : "ArrowLeft";
+      if (e.key === forwardKey) {
         e.preventDefault();
         applyValue(Math.min(maxGeneration, current + 1));
-      } else if (e.key === "ArrowRight") {
+      } else if (e.key === backKey) {
         e.preventDefault();
         applyValue(Math.max(0, current - 1));
       } else if (e.key === "Home") {
@@ -340,7 +344,7 @@ function GenerationTimeline({
         applyValue(maxGeneration);
       }
     },
-    [applyValue, current, maxGeneration],
+    [applyValue, current, maxGeneration, isRtl],
   );
 
   const filledPct = maxGeneration === 0 ? 100 : (current / maxGeneration) * 100;
@@ -352,7 +356,7 @@ function GenerationTimeline({
   return (
     <div
       className="rounded-xl border border-border/40 bg-background/70 px-4 pt-3 pb-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]"
-      dir="rtl"
+      dir={isRtl ? "rtl" : "ltr"}
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -386,7 +390,7 @@ function GenerationTimeline({
         />
         <div
           className="absolute top-1/2 h-[2px] -translate-y-1/2 rounded-full bg-[#7C6350]"
-          style={{ right: 0, width: `${filledPct}%` }}
+          style={{ ...(isRtl ? { right: 0 } : { left: 0 }), width: `${filledPct}%` }}
         />
 
         {steps.map((gen) => {
@@ -399,8 +403,8 @@ function GenerationTimeline({
               key={`tick-${gen}`}
               className="pointer-events-none absolute top-1/2 inline-flex items-center justify-center rounded-sm bg-background/95 px-1 text-[10px] tabular-nums font-semibold leading-none"
               style={{
-                right: `${pct}%`,
-                transform: "translate(50%, -50%)",
+                ...(isRtl ? { right: `${pct}%` } : { left: `${pct}%` }),
+                transform: isRtl ? "translate(50%, -50%)" : "translate(-50%, -50%)",
                 color: isPast ? "#7C6350" : "rgba(28, 22, 18, 0.42)",
               }}
               aria-hidden="true"
@@ -412,7 +416,10 @@ function GenerationTimeline({
 
         <div
           className="pointer-events-none absolute top-1/2 z-10"
-          style={{ right: `${filledPct}%`, transform: "translate(50%, -50%)" }}
+          style={{
+            ...(isRtl ? { right: `${filledPct}%` } : { left: `${filledPct}%` }),
+            transform: isRtl ? "translate(50%, -50%)" : "translate(-50%, -50%)",
+          }}
         >
           {isAtLive && isLive ? (
             <motion.span

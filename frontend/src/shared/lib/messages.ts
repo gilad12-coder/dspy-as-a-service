@@ -15,6 +15,7 @@
  */
 
 import { formatTemplate } from "@/shared/lib/i18n";
+import { getActiveLocale } from "@/shared/lib/runtime-locale";
 import { submitMessages } from "@/features/submit/messages";
 import { dashboardMessages } from "@/features/dashboard/messages";
 import { sidebarMessages } from "@/features/sidebar/messages";
@@ -30,6 +31,21 @@ import { optimizationsMessages } from "@/features/optimizations/messages";
 import { trajectoryMessages } from "@/features/trajectory/messages";
 import { agentPanelMessages } from "@/features/agent-panel/messages";
 import { sharedMessages } from "@/shared/messages/messages";
+import { submitMessagesEn } from "@/features/submit/messages.en";
+import { dashboardMessagesEn } from "@/features/dashboard/messages.en";
+import { sidebarMessagesEn } from "@/features/sidebar/messages.en";
+import { exploreMessagesEn } from "@/features/explore/messages.en";
+import { datasetsMessagesEn } from "@/features/datasets/messages.en";
+import { storageMessagesEn } from "@/features/storage/messages.en";
+import { compareMessagesEn } from "@/features/compare/messages.en";
+import { taggerMessagesEn } from "@/features/tagger/messages.en";
+import { tutorialMessagesEn } from "@/features/tutorial/messages.en";
+import { settingsMessagesEn } from "@/features/settings/messages.en";
+import { authMessagesEn } from "@/features/auth/messages.en";
+import { optimizationsMessagesEn } from "@/features/optimizations/messages.en";
+import { trajectoryMessagesEn } from "@/features/trajectory/messages.en";
+import { agentPanelMessagesEn } from "@/features/agent-panel/messages.en";
+import { sharedMessagesEn } from "@/shared/messages/messages.en";
 
 export const MESSAGES = {
   ...submitMessages,
@@ -52,12 +68,37 @@ export const MESSAGES = {
 export type MessageKey = keyof typeof MESSAGES;
 type MessageParams = Record<string, string | number>;
 
+// English overlay. Each slice is Partial, so any key absent here resolves to
+// its Hebrew template in msg() — partial translations render without holes.
+const MESSAGES_EN: Partial<Record<MessageKey, string>> = {
+  ...submitMessagesEn,
+  ...dashboardMessagesEn,
+  ...sidebarMessagesEn,
+  ...exploreMessagesEn,
+  ...datasetsMessagesEn,
+  ...storageMessagesEn,
+  ...compareMessagesEn,
+  ...taggerMessagesEn,
+  ...tutorialMessagesEn,
+  ...settingsMessagesEn,
+  ...authMessagesEn,
+  ...optimizationsMessagesEn,
+  ...trajectoryMessagesEn,
+  ...agentPanelMessagesEn,
+  ...sharedMessagesEn,
+};
+
 /**
  * Look up a user-facing string by key and optionally interpolate placeholders.
+ *
+ * Resolves against the active locale (`runtime-locale`): English uses the
+ * overlay when the key is translated and falls back to Hebrew otherwise, so a
+ * missing English string degrades to Hebrew rather than to the raw key.
  */
 export function msg(key: MessageKey, params?: MessageParams): string {
-  const template = MESSAGES[key];
-  return params ? formatTemplate(template, params) : template;
+  const locale = getActiveLocale();
+  const template = (locale === "en" ? MESSAGES_EN[key] : undefined) ?? MESSAGES[key];
+  return params ? formatTemplate(template, params, locale) : template;
 }
 
 export function formatMsg(key: MessageKey, params: MessageParams): string {

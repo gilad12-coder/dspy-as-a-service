@@ -125,7 +125,7 @@ export function CodeTab({
               </pre>
               <CopyButton
                 text={optimizedPrompt.formatted_prompt}
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100"
+                className="absolute top-2 end-2 opacity-0 group-hover:opacity-100"
               />
             </div>
             {optimizedPrompt.demos && optimizedPrompt.demos.length > 0 && (

@@ -2,13 +2,25 @@
 
 import { memo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { getActiveLocale } from "@/shared/lib/runtime-locale";
 import { HALO_CARDS, type HaloCard } from "../login-samples";
+import { HALO_CARDS_EN } from "../login-samples.en";
 
 const EASE_OUT_EXPO = [0.16, 1, 0.3, 1] as const;
 
-// The subset that also frames the login on small portrait screens. Derived once
-// at module load so the component body stays a plain render.
-const MOBILE_HALO_CARDS = HALO_CARDS.filter((card) => card.mobilePos);
+interface LocalizedHaloCard extends HaloCard {
+  titleEn: string;
+}
+
+// Zip the Hebrew source with its English overlay by index, once at module load,
+// so the render path just reads the active locale's title.
+const LOCALIZED_CARDS: LocalizedHaloCard[] = HALO_CARDS.map((card, i) => ({
+  ...card,
+  titleEn: HALO_CARDS_EN[i] ?? card.title,
+}));
+
+// The subset that also frames the login on small portrait screens.
+const MOBILE_HALO_CARDS = LOCALIZED_CARDS.filter((card) => card.mobilePos);
 
 /**
  * One floating "finished-run" chip: settles in once, then drifts gently and
@@ -22,12 +34,16 @@ function HaloChip({
   card,
   i,
   pos,
+  title,
+  dir,
   wrapperClassName,
   reduce,
 }: {
   card: HaloCard;
   i: number;
   pos: HaloCard["pos"];
+  title: string;
+  dir: "rtl" | "ltr";
   wrapperClassName: string;
   reduce: boolean | null;
 }) {
@@ -50,7 +66,7 @@ function HaloChip({
         }
       >
         <motion.div
-          dir="rtl"
+          dir={dir}
           className="flex w-max max-w-[14rem] items-center rounded-xl border border-border/50 bg-card px-3 py-2 shadow-[0_8px_24px_-14px_rgba(28,22,18,0.28)]"
           animate={
             reduce
@@ -75,7 +91,7 @@ function HaloChip({
           }
         >
           <span className="truncate text-[0.72rem] font-medium text-foreground/85">
-            {card.title}
+            {title}
           </span>
         </motion.div>
       </motion.div>
@@ -101,15 +117,20 @@ function HaloChip({
  */
 function LoginHaloImpl() {
   const reduce = useReducedMotion();
+  const locale = getActiveLocale();
+  const dir = locale === "en" ? "ltr" : "rtl";
+  const titleOf = (card: LocalizedHaloCard) => (locale === "en" ? card.titleEn : card.title);
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-      {HALO_CARDS.map((card, i) => (
+      {LOCALIZED_CARDS.map((card, i) => (
         <HaloChip
           key={`d${i}`}
           card={card}
           i={i}
           pos={card.pos}
+          title={titleOf(card)}
+          dir={dir}
           wrapperClassName="absolute hidden md:[@media(min-height:640px)]:block"
           reduce={reduce}
         />
@@ -120,6 +141,8 @@ function LoginHaloImpl() {
           card={card}
           i={i}
           pos={card.mobilePos!}
+          title={titleOf(card)}
+          dir={dir}
           wrapperClassName="absolute md:hidden landscape:hidden"
           reduce={reduce}
         />

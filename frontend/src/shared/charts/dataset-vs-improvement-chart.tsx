@@ -14,6 +14,7 @@ import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { useLiteMode } from "@/features/settings";
 import { ChartTable } from "@/shared/charts/chart-table";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 interface DatasetVsImprovementChartProps {
   data: Array<{ rows: number; improvement: number; name: string }>;
@@ -108,7 +109,7 @@ export function DatasetVsImprovementChart({
               return (
                 <div
                   className="rounded-xl border border-border/60 bg-background/95 backdrop-blur-sm p-3 shadow-lg text-sm"
-                  dir="rtl"
+                  dir={getActiveDir()}
                 >
                   {d?.name && (
                     <p className="font-semibold mb-1 text-foreground font-mono" dir="ltr">

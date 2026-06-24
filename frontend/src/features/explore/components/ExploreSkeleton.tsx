@@ -5,7 +5,7 @@ import { ResultsSkeleton } from "./ResultsSkeleton";
 
 export function ExploreSkeleton() {
   return (
-    <div dir="rtl" className="pb-16" aria-hidden="true">
+    <div className="pb-16" aria-hidden="true">
       <div className="flex flex-col gap-1.5">
         <div className="flex flex-col gap-3">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-2.5">

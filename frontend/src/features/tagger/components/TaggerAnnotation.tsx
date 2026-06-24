@@ -479,7 +479,7 @@ export function TaggerAnnotation({
       </div>
 
       <Dialog open={showShortcuts} onOpenChange={setShowShortcuts}>
-        <DialogContent className="sm:max-w-md" dir="rtl">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{msg("auto.features.tagger.components.taggerannotation.14")}</DialogTitle>
           </DialogHeader>
@@ -571,7 +571,7 @@ export function TaggerAnnotation({
           if (!savingToLibrary) setNameDialogOpen(open);
         }}
       >
-        <DialogContent className="max-w-md sm:max-w-md" dir="rtl">
+        <DialogContent className="max-w-md sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{msg("tagger.library.name_title")}</DialogTitle>
           </DialogHeader>

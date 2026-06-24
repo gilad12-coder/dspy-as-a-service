@@ -53,7 +53,7 @@ export function TrustToggle({ mode, onCycle, className }: TrustToggleProps) {
           <span className="font-medium leading-none">{label}</span>
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" dir="rtl" className="max-w-[240px] px-3 py-2">
+      <TooltipContent side="bottom" className="max-w-[240px] px-3 py-2">
         <div className="font-medium">
           {msg("auto.features.agent.panel.components.trusttoggle.1")}
         </div>

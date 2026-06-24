@@ -117,7 +117,6 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="left"
-        dir="rtl"
         className="w-[min(420px,90vw)] sm:max-w-none p-0 flex flex-col"
       >
         <SheetHeader className="border-b border-border/40 p-3">
@@ -324,7 +323,7 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
                 </button>
               </PopoverTrigger>
             </TooltipTrigger>
-            <TooltipContent side="bottom" dir="rtl">
+            <TooltipContent side="bottom">
               {msg("auto.features.agent.panel.components.conversationdrawer.row_menu")}
             </TooltipContent>
           </Tooltip>

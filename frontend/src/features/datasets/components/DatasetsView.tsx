@@ -88,7 +88,7 @@ export function DatasetsView() {
   if (loading) return <DatasetsSkeleton />;
 
   return (
-    <div dir="rtl" className="pb-16">
+    <div className="pb-16">
       <input
         ref={fileInputRef}
         type="file"
@@ -104,7 +104,6 @@ export function DatasetsView() {
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute end-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            dir="rtl"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={msg("datasets.search.placeholder")}

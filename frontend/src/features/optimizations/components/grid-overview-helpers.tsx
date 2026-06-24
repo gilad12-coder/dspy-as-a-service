@@ -72,10 +72,7 @@ export function ScoreTip({
     }),
   };
   return (
-    <div
-      className="rounded-xl border border-border/60 bg-background/95 backdrop-blur-sm p-3 shadow-lg"
-      dir="rtl"
-    >
+    <div className="rounded-xl border border-border/60 bg-background/95 backdrop-blur-sm p-3 shadow-lg">
       {label && <p className="font-semibold mb-1.5 text-foreground text-xs">{label}</p>}
       {payload.map((p, i) => (
         <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -101,10 +98,7 @@ export function CombinedTip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div
-      className="rounded-xl border border-border/60 bg-background/95 backdrop-blur-sm p-3 shadow-lg"
-      dir="rtl"
-    >
+    <div className="rounded-xl border border-border/60 bg-background/95 backdrop-blur-sm p-3 shadow-lg">
       {label && <p className="font-semibold mb-1.5 text-foreground text-xs">{label}</p>}
       {payload.map((p, i) => (
         <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -135,7 +129,7 @@ export function ScatterTip({
       <p className="font-mono font-semibold text-xs text-foreground mb-1" dir="ltr">
         {p.name}
       </p>
-      <div className="text-[0.6875rem] text-muted-foreground space-y-0.5" dir="rtl">
+      <div className="text-[0.6875rem] text-muted-foreground space-y-0.5">
         <div className="flex gap-4 justify-between">
           <span>{msg("auto.features.optimizations.components.gridoverview.3")}</span>
           <span className="font-mono text-foreground tabular-nums">{p.quality}%</span>

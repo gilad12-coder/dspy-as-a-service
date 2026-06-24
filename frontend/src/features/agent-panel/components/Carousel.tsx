@@ -4,6 +4,7 @@ import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 import { cn } from "@/shared/lib/utils";
 
@@ -73,6 +74,7 @@ export function Carousel<T>({
   className,
 }: CarouselProps<T>) {
   const count = items.length;
+  const isRtl = getActiveDir() === "rtl";
   // Open on the first flagged slide so compare mode lands on a change, not slide 1.
   const [idx, setIdx] = React.useState(() => jumpIndices?.[0] ?? 0);
   const [dir, setDir] = React.useState<1 | -1>(-1);
@@ -88,24 +90,30 @@ export function Carousel<T>({
   const go = React.useCallback(
     (next: number) => {
       const clamped = Math.max(0, Math.min(count - 1, next));
-      setDir(clamped > clampedIdx ? -1 : 1);
+      // Forward slides enter from the inline-end edge — leftward in RTL, rightward
+      // in LTR — so the animation's x-sign tracks the active direction.
+      const forward = clamped > clampedIdx;
+      setDir(forward === isRtl ? -1 : 1);
       setIdx(clamped);
     },
-    [clampedIdx, count],
+    [clampedIdx, count, isRtl],
   );
 
   const onKey = React.useCallback(
     (e: React.KeyboardEvent) => {
-      // In RTL context, ArrowLeft = forward (next), ArrowRight = backward (prev).
-      if (e.key === "ArrowLeft") {
+      // The arrow pointing toward the inline-end edge advances: ArrowLeft in RTL,
+      // ArrowRight in LTR.
+      const forwardKey = isRtl ? "ArrowLeft" : "ArrowRight";
+      const backKey = isRtl ? "ArrowRight" : "ArrowLeft";
+      if (e.key === forwardKey) {
         e.preventDefault();
         go(clampedIdx + 1);
-      } else if (e.key === "ArrowRight") {
+      } else if (e.key === backKey) {
         e.preventDefault();
         go(clampedIdx - 1);
       }
     },
-    [go, clampedIdx],
+    [go, clampedIdx, isRtl],
   );
 
   const active = items[clampedIdx];
@@ -119,7 +127,7 @@ export function Carousel<T>({
         framed && "overflow-hidden border border-[#DDD4C8]/40 bg-background/80",
         className,
       )}
-      dir="rtl"
+      dir={isRtl ? "rtl" : "ltr"}
       role="region"
       aria-label={ariaLabel}
       tabIndex={0}
@@ -215,7 +223,7 @@ export function Carousel<T>({
           framed && "px-2.5 pb-2.5",
         )}
       >
-        {/* Prev: visually on the RIGHT in RTL (rightmost = flex start). */}
+        {/* Prev sits at the inline-start edge — right in RTL, left in LTR. */}
         <CarouselNav
           direction="prev"
           disabled={clampedIdx === 0}
@@ -240,9 +248,17 @@ function CarouselNav({
   disabled: boolean;
   onClick: () => void;
 }) {
-  // In RTL reading flow: "prev" = step backwards = rightward chevron;
-  // "next" = step forwards = leftward chevron.
-  const Icon = direction === "prev" ? ChevronRight : ChevronLeft;
+  // "prev" points back toward the inline-start edge, "next" toward inline-end:
+  // rightward/leftward chevrons in RTL, mirrored in LTR.
+  const isRtl = getActiveDir() === "rtl";
+  const Icon =
+    direction === "prev"
+      ? isRtl
+        ? ChevronRight
+        : ChevronLeft
+      : isRtl
+        ? ChevronLeft
+        : ChevronRight;
   const label =
     direction === "prev"
       ? msg("auto.features.agent.panel.components.toolscarousel.literal.14")

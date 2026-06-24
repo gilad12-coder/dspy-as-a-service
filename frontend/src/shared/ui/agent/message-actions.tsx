@@ -7,6 +7,7 @@ import { Badge } from "@/shared/ui/primitives/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 interface MessageActionsProps {
   text: string;
@@ -39,7 +40,7 @@ function ActionButton({ label, onClick, children }: ActionButtonProps) {
           {children}
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" dir="rtl">
+      <TooltipContent side="bottom" dir={getActiveDir()}>
         {label}
       </TooltipContent>
     </Tooltip>

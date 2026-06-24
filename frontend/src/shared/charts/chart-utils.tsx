@@ -4,6 +4,7 @@ import { BarChart3 } from "lucide-react";
 
 import { msg } from "@/shared/lib/messages";
 import { EmptyState } from "@/shared/ui/empty-state";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 export function ChartTooltip({
   active,
@@ -18,7 +19,7 @@ export function ChartTooltip({
   return (
     <div
       className="rounded-xl border border-border/60 bg-background/95 backdrop-blur-sm p-3 shadow-lg text-sm"
-      dir="rtl"
+      dir={getActiveDir()}
     >
       {label && <p className="font-semibold mb-2 text-foreground">{label}</p>}
       <div className="space-y-1">

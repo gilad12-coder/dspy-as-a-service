@@ -155,7 +155,7 @@ export function PerformanceChart({ runs }: { runs: RunInfo[] }) {
           </ResponsiveContainer>
           )}
         </div>
-        <div className="flex flex-wrap justify-center gap-4 mt-3" dir="rtl">
+        <div className="flex flex-wrap justify-center gap-4 mt-3">
           {runs.map((run, i) => {
             const isHidden = hiddenRuns.has(run.job.optimization_id);
             const color = colorFor(i);

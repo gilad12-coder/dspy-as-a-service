@@ -73,7 +73,6 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
             placeholder={msg("auto.features.submit.components.steps.basicsstep.literal.1")}
             value={jobName}
             onChange={(e) => setJobName(e.target.value)}
-            dir="rtl"
           />
         </div>
         <div className="space-y-2">
@@ -187,7 +186,6 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
                     <TooltipContent
                       side="bottom"
                       className="max-w-64 text-center leading-relaxed"
-                      dir="rtl"
                     >
                       {tip(tipKey)}
                     </TooltipContent>

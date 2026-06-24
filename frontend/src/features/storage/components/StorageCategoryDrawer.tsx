@@ -242,7 +242,7 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
   return (
     <>
       <Sheet open={category !== null} onOpenChange={(open) => !open && !busy && onClose()}>
-        <SheetContent side="left" aria-describedby={undefined} className="w-full gap-0 p-0 sm:max-w-lg" dir="rtl">
+        <SheetContent side="left" aria-describedby={undefined} className="w-full gap-0 p-0 sm:max-w-lg">
           <SheetHeader className="shrink-0 border-b border-border/40 px-6 py-4">
             <div className="flex items-center gap-2">
               <HardDrive className="size-4 text-muted-foreground" aria-hidden="true" />
@@ -328,7 +328,7 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
       </Sheet>
 
       <Dialog open={pending !== null} onOpenChange={(next) => !next && !deleting && setPending(null)}>
-        <DialogContent dir="rtl">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{msg("storage.delete.title")}</DialogTitle>
             <DialogDescription>
@@ -357,7 +357,7 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
       </Dialog>
 
       <Dialog open={bulkConfirm} onOpenChange={(next) => !next && !running && setBulkConfirm(false)}>
-        <DialogContent dir="rtl">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{formatMsg("storage.bulk.confirm.title", { n: selected.size })}</DialogTitle>
             <DialogDescription>
@@ -381,7 +381,6 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
 
       <Dialog open={running && (progress?.total ?? 0) > CHUNK}>
         <DialogContent
-          dir="rtl"
           aria-describedby={undefined}
           showCloseButton={false}
           className="sm:max-w-sm"

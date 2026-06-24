@@ -150,7 +150,7 @@ export function SearchBar({
   }, []);
 
   return (
-    <div dir="rtl" data-tutorial="explore-search" className="mx-auto flex w-full max-w-3xl flex-col gap-2.5">
+    <div data-tutorial="explore-search" className="mx-auto flex w-full max-w-3xl flex-col gap-2.5">
       <div className="flex items-center justify-center">
         <CorpusToggle
           value={corpus}
