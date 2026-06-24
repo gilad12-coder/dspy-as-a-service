@@ -976,6 +976,36 @@ def create_app(
             media_type="application/problem+json",
         )
 
+    def _cors_headers_for(request: Request) -> dict[str, str]:
+        """Return the CORS headers ``CORSMiddleware`` would add for this request.
+
+        Mirrors the middleware config above (specific-origin echo with
+        credentials, or a literal ``*`` when the allowlist is open) so the
+        generic 500 handler — which runs outside CORSMiddleware — can re-attach
+        them. Returns an empty dict for same-origin / non-CORS requests (no
+        ``Origin`` header) and for disallowed origins, matching the middleware's
+        "stay silent" behavior so error responses never widen access.
+
+        Args:
+            request: The incoming HTTP request.
+
+        Returns:
+            The CORS response headers to merge onto the error response.
+        """
+        origin = request.headers.get("origin")
+        if not origin:
+            return {}
+        allowed = settings.cors_origins_list
+        if "*" in allowed:
+            return {"Access-Control-Allow-Origin": "*"}
+        if origin in allowed:
+            return {
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Credentials": "true",
+                "Vary": "Origin",
+            }
+        return {}
+
     @app.exception_handler(AppError)
     async def _app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         """Serialize ``AppError`` instances to the RFC 9457 problem envelope.
@@ -1068,6 +1098,15 @@ def create_app(
             error_type="internal_error",
             detail="An internal server error occurred. Please contact support.",
             title="Internal server error",
+            # Starlette runs the generic-Exception handler in its outermost
+            # ServerErrorMiddleware, above CORSMiddleware, so this 500 never
+            # passes back through CORS. Without the allow-origin header a browser
+            # reports the error as a CORS/network failure ("Failed to fetch") —
+            # i.e. a real backend 500 masquerades as "can't reach the server".
+            # Re-attach the headers CORSMiddleware would have added so the actual
+            # error surfaces to cross-origin callers. Other handlers (AppError,
+            # HTTPException, validation) run inside CORSMiddleware and don't need this.
+            headers=_cors_headers_for(request),
         )
 
     worker_stale_threshold = float(os.getenv("WORKER_STALE_THRESHOLD", "600"))

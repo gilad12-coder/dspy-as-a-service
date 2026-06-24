@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import weakref
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -73,8 +74,85 @@ _SHARED_GRANT_SCOPE_SQL = (
     "AND j.username IS DISTINCT FROM :shared_with_username"
 )
 
+# Columns the explore/corpus SQL reads off a job's embedding row. When the
+# job_embeddings table is absent — embeddings disabled or pgvector unavailable,
+# in which case RemoteJobStore deliberately skips the Vector tables so a plain
+# Postgres still boots — every success job is unembedded. Joining this empty,
+# typed relation in the table's place makes each LEFT JOIN behave exactly like
+# "table exists, holds no rows": the queries fall back to payload_overview via
+# the COALESCEs they already apply, instead of raising UndefinedTable (which the
+# browser then sees as a CORS / "can't connect" failure on /dashboard/*).
+_EMPTY_JOB_EMBEDDINGS_REL = (
+    "(SELECT "
+    "NULL::text AS optimization_id, "
+    "NULL::text AS optimization_type, "
+    "NULL::text AS winning_model, "
+    "NULL::text AS optimizer_name, "
+    "NULL::text AS module_name, "
+    "NULL::text AS task_name, "
+    "NULL::text AS summary_text, "
+    "NULL::double precision AS baseline_metric, "
+    "NULL::double precision AS optimized_metric, "
+    "NULL::boolean AS is_private, "
+    "NULL::timestamptz AS created_at, "
+    "NULL::text AS embedding_summary "
+    "WHERE FALSE)"
+)
 
-def _fetch_fingerprint(session: Session) -> str:
+_EMBEDDINGS_TABLE_PRESENT: "weakref.WeakKeyDictionary[Any, bool]" = weakref.WeakKeyDictionary()
+
+
+def _job_embeddings_table_present(job_store: Any) -> bool:
+    """Return whether the ``job_embeddings`` table exists, cached per engine.
+
+    The schema is fixed for a process's lifetime, so the catalog lookup runs
+    once per engine. ``to_regclass`` yields NULL (not an error) when the
+    relation is absent, so the probe never raises on a healthy connection; any
+    probe failure is treated as "absent" so the caller degrades safely.
+
+    Args:
+        job_store: A store exposing a SQLAlchemy ``engine`` attribute.
+
+    Returns:
+        True when the table is present, False otherwise.
+    """
+    engine = job_store.engine
+    cached = _EMBEDDINGS_TABLE_PRESENT.get(engine)
+    if cached is not None:
+        return cached
+    try:
+        with Session(engine) as session:
+            present = bool(
+                session.execute(text("SELECT to_regclass('job_embeddings')")).scalar()
+            )
+    except Exception as exc:
+        logger.warning("job_embeddings presence probe failed, assuming absent: %s", exc)
+        present = False
+    _EMBEDDINGS_TABLE_PRESENT[engine] = present
+    return present
+
+
+def _job_embeddings_relation(job_store: Any) -> str:
+    """Return the SQL relation to stand in for ``job_embeddings`` in explore joins.
+
+    The real table when it exists, else an empty typed relation (see
+    :data:`_EMPTY_JOB_EMBEDDINGS_REL`) so the corpus / facets / lexical-search
+    queries degrade to a jobs-only read on a database where the Vector tables
+    were never created, rather than raising ``UndefinedTable``.
+
+    Args:
+        job_store: A store exposing a SQLAlchemy ``engine`` attribute.
+
+    Returns:
+        ``"job_embeddings"`` when the table is present, otherwise the empty
+        stand-in relation.
+    """
+    if _job_embeddings_table_present(job_store):
+        return "job_embeddings"
+    return _EMPTY_JOB_EMBEDDINGS_REL
+
+
+def _fetch_fingerprint(session: Session, je_rel: str) -> str:
     """Cheap content fingerprint over the searchable corpus.
 
     Used as the cache key. Includes both embedded and unembedded public
@@ -83,6 +161,8 @@ def _fetch_fingerprint(session: Session) -> str:
 
     Args:
         session: Active SQLAlchemy session.
+        je_rel: SQL relation to use for the ``job_embeddings`` join (the real
+            table, or the empty stand-in when it does not exist).
 
     Returns:
         ``"<embedded>|<embedded_max_ts>|<unembedded>|<unembedded_max_ts>"``
@@ -92,7 +172,7 @@ def _fetch_fingerprint(session: Session) -> str:
         session.execute(
             text(
                 "SELECT COUNT(*) AS n, MAX(je.created_at) AS max_ts "
-                "FROM job_embeddings je "
+                f"FROM {je_rel} je "
                 "INNER JOIN jobs j ON j.optimization_id = je.optimization_id "
                 "WHERE j.status = 'success' "
                 "AND je.embedding_summary IS NOT NULL AND je.is_private = FALSE"
@@ -106,7 +186,7 @@ def _fetch_fingerprint(session: Session) -> str:
             text(
                 "SELECT COUNT(*) AS n, MAX(j.created_at) AS max_ts "
                 "FROM jobs j "
-                "LEFT JOIN job_embeddings je ON je.optimization_id = j.optimization_id "
+                f"LEFT JOIN {je_rel} je ON je.optimization_id = j.optimization_id "
                 "WHERE j.status = 'success' "
                 "AND (je.optimization_id IS NULL OR je.embedding_summary IS NULL) "
                 "AND NOT COALESCE((j.payload_overview->>'is_private')::boolean, FALSE)"
@@ -142,7 +222,7 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-def _fetch_corpus_points(session: Session) -> list[dict[str, Any]]:
+def _fetch_corpus_points(session: Session, je_rel: str) -> list[dict[str, Any]]:
     """Return every public success-state job as a corpus point.
 
     Drives the /explore list view's corpus count, filters, and
@@ -152,6 +232,8 @@ def _fetch_corpus_points(session: Session) -> list[dict[str, Any]]:
 
     Args:
         session: An open SQLAlchemy session bound to the job-store engine.
+        je_rel: SQL relation to use for the ``job_embeddings`` join (the real
+            table, or the empty stand-in when it does not exist).
 
     Returns:
         A list of point dicts carrying the metadata the /explore payload
@@ -175,7 +257,7 @@ def _fetch_corpus_points(session: Session) -> list[dict[str, Any]]:
                 "j.created_at, "
                 f"j.payload_overview->>'{PAYLOAD_OVERVIEW_DESCRIPTION}' AS task_description "
                 "FROM jobs j "
-                "LEFT JOIN job_embeddings je ON je.optimization_id = j.optimization_id "
+                f"LEFT JOIN {je_rel} je ON je.optimization_id = j.optimization_id "
                 "WHERE j.status = 'success' "
                 "AND NOT COALESCE(je.is_private, "
                 "(j.payload_overview->>'is_private')::boolean, FALSE) "
@@ -225,8 +307,9 @@ def fetch_public_dashboard(*, job_store: Any) -> dict[str, Any]:
         ``{"points": [...]}`` — one entry per public success-state job.
     """
     engine = job_store.engine
+    je_rel = _job_embeddings_relation(job_store)
     with Session(engine) as session:
-        fingerprint = _fetch_fingerprint(session)
+        fingerprint = _fetch_fingerprint(session, je_rel)
         now = time.time()
         with _LOCK:
             cached = _CACHE
@@ -237,7 +320,7 @@ def fetch_public_dashboard(*, job_store: Any) -> dict[str, Any]:
             ):
                 return cached["payload"]
 
-        payload = {"points": _fetch_corpus_points(session)}
+        payload = {"points": _fetch_corpus_points(session, je_rel)}
         with _LOCK:
             _CACHE["fingerprint"] = fingerprint
             _CACHE["at"] = now
@@ -292,6 +375,7 @@ def fetch_corpus_facets(
             "NOT COALESCE(je.is_private, "
             "(j.payload_overview->>'is_private')::boolean, FALSE)"
         )
+    je_rel = _job_embeddings_relation(job_store)
     with Session(job_store.engine) as session:
         row = (
             session.execute(
@@ -310,7 +394,7 @@ def fetch_corpus_facets(
                     "COALESCE(je.module_name, "
                     f"j.payload_overview->>'{PAYLOAD_OVERVIEW_MODULE_NAME}') AS module "
                     "FROM jobs j "
-                    "LEFT JOIN job_embeddings je "
+                    f"LEFT JOIN {je_rel} je "
                     "ON je.optimization_id = j.optimization_id "
                     f"WHERE j.status = 'success' AND {scope_sql}"
                     ") sub"
@@ -514,6 +598,7 @@ def search_optimizations(
     page = max(1, page)
     size = max(1, min(SEARCH_PAGE_SIZE_MAX, size))
 
+    je_rel = _job_embeddings_relation(job_store)
     query_clean = (query or "").strip()
 
     use_lexical = not settings.embeddings_enabled
@@ -545,6 +630,7 @@ def search_optimizations(
             try:
                 return _search_bm25(
                     job_store=job_store,
+                    je_rel=je_rel,
                     query=query_clean,
                     models=models,
                     optimizers=optimizers,
@@ -564,6 +650,7 @@ def search_optimizations(
                 )
         return _search_lexical(
             job_store=job_store,
+            je_rel=je_rel,
             query=query_clean,
             models=models,
             optimizers=optimizers,
@@ -632,12 +719,13 @@ def _has_unembedded_success_jobs(
         params["shared_with_username"] = shared_with_username
     else:
         scope_sql = "NOT COALESCE((j.payload_overview->>'is_private')::boolean, FALSE)"
+    je_rel = _job_embeddings_relation(job_store)
     try:
         with Session(job_store.engine) as session:
             row = session.execute(
                 text(
                     "SELECT 1 FROM jobs j "
-                    "LEFT JOIN job_embeddings je ON je.optimization_id = j.optimization_id "
+                    f"LEFT JOIN {je_rel} je ON je.optimization_id = j.optimization_id "
                     "WHERE j.status = 'success' "
                     "AND (je.optimization_id IS NULL OR je.embedding_summary IS NULL) "
                     f"AND {scope_sql} "
@@ -889,6 +977,7 @@ def _lexical_tokens(query: str) -> list[str]:
 def _search_lexical(
     *,
     job_store: Any,
+    je_rel: str,
     query: str,
     models: list[str] | None,
     optimizers: list[str] | None,
@@ -916,6 +1005,8 @@ def _search_lexical(
 
     Args:
         job_store: Job store exposing the SQLAlchemy ``engine`` attribute.
+        je_rel: SQL relation to use for the ``job_embeddings`` join (the real
+            table, or the empty stand-in when it does not exist).
         query: Pre-trimmed query string (empty string allowed).
         models: Optional model whitelist.
         optimizers: Optional optimizer whitelist.
@@ -1034,7 +1125,7 @@ def _search_lexical(
                     "SELECT j.optimization_id, j.payload_overview, "
                     "NULL::float AS relevance "
                     "FROM jobs j "
-                    "LEFT JOIN job_embeddings je ON je.optimization_id = j.optimization_id "
+                    f"LEFT JOIN {je_rel} je ON je.optimization_id = j.optimization_id "
                     f"WHERE {where_sql} "
                     f"ORDER BY {order_sql} "
                     "LIMIT :ids_cap"
@@ -1056,7 +1147,7 @@ def _search_lexical(
                 session.execute(
                     text(
                         f"SELECT {select_cols} FROM jobs j "
-                        "LEFT JOIN job_embeddings je ON je.optimization_id = j.optimization_id "
+                        f"LEFT JOIN {je_rel} je ON je.optimization_id = j.optimization_id "
                         "WHERE j.optimization_id = ANY(:page_ids)"
                     ),
                     {"page_ids": page_ids},
@@ -1103,6 +1194,7 @@ def _search_lexical(
 def _search_bm25(
     *,
     job_store: Any,
+    je_rel: str,
     query: str,
     models: list[str] | None,
     optimizers: list[str] | None,
@@ -1127,6 +1219,8 @@ def _search_bm25(
 
     Args:
         job_store: Job store exposing the SQLAlchemy ``engine`` attribute.
+        je_rel: SQL relation to use for the ``job_embeddings`` join (the real
+            table, or the empty stand-in when it does not exist).
         query: Pre-trimmed, non-empty query string (the BM25 match text).
         models: Optional model whitelist.
         optimizers: Optional optimizer whitelist.
@@ -1225,7 +1319,7 @@ def _search_bm25(
                     "SELECT j.optimization_id, "
                     "paradedb.score(j.optimization_id) AS relevance "
                     "FROM jobs j "
-                    "LEFT JOIN job_embeddings je ON je.optimization_id = j.optimization_id "
+                    f"LEFT JOIN {je_rel} je ON je.optimization_id = j.optimization_id "
                     f"WHERE {where_sql} "
                     "ORDER BY relevance DESC, j.created_at DESC, j.optimization_id DESC "
                     "LIMIT :ids_cap"
@@ -1250,7 +1344,7 @@ def _search_bm25(
                 session.execute(
                     text(
                         f"SELECT {select_cols} FROM jobs j "
-                        "LEFT JOIN job_embeddings je ON je.optimization_id = j.optimization_id "
+                        f"LEFT JOIN {je_rel} je ON je.optimization_id = j.optimization_id "
                         "WHERE j.optimization_id = ANY(:page_ids)"
                     ),
                     {"page_ids": page_ids},

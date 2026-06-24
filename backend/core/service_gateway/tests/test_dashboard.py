@@ -44,3 +44,28 @@ def test_log_and_fetch_popular_queries_ranks_by_count() -> None:
     popular = dashboard.fetch_popular_queries(store, limit=5, window_days=30)
     assert popular[0] == {"query": "gpt-4o", "count": 2}
     assert {"query": "dspy mipro", "count": 1} in popular
+
+
+def test_job_embeddings_relation_degrades_when_table_absent() -> None:
+    """The explore join falls back to an empty stand-in when job_embeddings is gone.
+
+    Mirrors a plain Postgres where RemoteJobStore skipped the Vector tables: the
+    presence probe finds nothing, so the corpus / facets / search SQL reads
+    ``jobs`` alone instead of raising ``UndefinedTable`` (which the browser would
+    surface as a "can't connect to the server" failure). The jobs-only query
+    itself is Postgres-specific (``::`` casts, ``WHERE FALSE``) and is validated
+    against a real table-less Postgres out-of-band, not here on SQLite.
+    """
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    store = SimpleNamespace(engine=engine)
+    dashboard._EMBEDDINGS_TABLE_PRESENT.pop(engine, None)
+    assert dashboard._job_embeddings_table_present(store) is False
+    assert dashboard._job_embeddings_relation(store) == dashboard._EMPTY_JOB_EMBEDDINGS_REL
+
+
+def test_job_embeddings_relation_uses_real_table_when_present(monkeypatch) -> None:
+    """When the table exists, the join targets ``job_embeddings`` unchanged."""
+    monkeypatch.setattr(dashboard, "_job_embeddings_table_present", lambda _store: True)
+    assert dashboard._job_embeddings_relation(SimpleNamespace(engine=object())) == "job_embeddings"
