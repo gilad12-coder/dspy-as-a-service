@@ -23,6 +23,14 @@ import "@fontsource-variable/jetbrains-mono/index.css";
 import "react-toastify/dist/ReactToastify.css";
 import "./globals.css";
 
+// The layout injects window.__SKYNET_ENV__ from getServerRuntimeEnv() so one
+// built image can target any backend via the pod's runtime API_URL. That shim
+// only works when the layout renders per-request: statically prerendered, it
+// freezes the build-time default (localhost:8000, since API_URL isn't set in the
+// Docker build) into every page and the browser then can't reach the backend.
+// Force dynamic rendering so the injected env reflects the live pod env.
+export const dynamic = "force-dynamic";
+
 const siteUrl = getSiteUrl();
 const siteName = "Skynet";
 const siteDescription = msg("app.meta.description");
