@@ -80,6 +80,7 @@ from .observability import (
     start_staged_dataset_sweeper,
     start_stale_conversation_sweeper,
 )
+from .routers.accounts import create_accounts_router
 from .routers.admin import create_admin_router
 from .routers.agent_history import create_agent_history_router
 from .routers.analytics import create_analytics_router
@@ -1163,6 +1164,7 @@ def create_app(
     app.include_router(create_generalist_agent_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_agent_history_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_api_tokens_router(job_store=job_store), tags=["Settings"])
+    app.include_router(create_accounts_router(job_store=job_store), tags=["Auth"])
     app.include_router(create_datasets_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_dataset_library_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_dataset_share_router(job_store=job_store), tags=["Datasets"])

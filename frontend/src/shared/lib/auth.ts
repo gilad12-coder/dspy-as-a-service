@@ -1,25 +1,35 @@
 import NextAuth from "next-auth";
 import type { Provider } from "next-auth/providers";
 import Credentials from "next-auth/providers/credentials";
+import Google from "next-auth/providers/google";
+import GitHub from "next-auth/providers/github";
 import { createHmac, randomUUID } from "crypto";
-import { msg } from "@/shared/lib/messages";
 
 /**
  * Authentication configuration.
  *
- * Production (ADFS / any OIDC):
- *   Set AUTH_SSO_ISSUER, AUTH_SSO_CLIENT_ID, AUTH_SSO_CLIENT_SECRET.
- *   Users are auto-redirected to ADFS — no local form.
+ * On-prem SSO (ADFS / any OIDC):
+ *   Set AUTH_SSO_ISSUER, AUTH_SSO_CLIENT_ID, AUTH_SSO_CLIENT_SECRET. When set,
+ *   users auto-redirect to the IdP and the social/local providers below are not
+ *   offered — an on-prem deployment keeps its single auth path.
  *
- * Development (default when ADFS is not configured):
- *   Simple username login — no password.
+ * Hosted (default when ADFS is not configured):
+ *   Social sign-in — Google (AUTH_GOOGLE_ID/SECRET) and GitHub
+ *   (AUTH_GITHUB_ID/SECRET), each shown only when its credentials are present —
+ *   plus email/password accounts ("create an account in Skynet"), verified by
+ *   the backend /auth endpoints over the shared BACKEND_AUTH_SECRET.
+ *
+ * Identity is the email across every provider, so one person maps to one backend
+ * identity however they sign in (see signBackendToken).
  *
  * Optional env vars:
  *   AUTH_SSO_SCOPE        — OIDC scopes (default: "openid profile email groups")
  *   AUTH_ADMIN_GROUPS     — comma-separated IdP groups that grant admin access
- *   AUTH_ADMINS           — break-glass comma-separated admin usernames
+ *   AUTH_ADMINS           — comma-separated admin emails/usernames
  *   AUTH_GROUP_CLAIM      — profile claim containing groups (default: "groups")
- *   BACKEND_AUTH_SECRET   — shared secret for backend API bearer tokens
+ *   BACKEND_AUTH_SECRET   — shared secret for backend bearer tokens and the
+ *                           internal /auth/register|login calls
+ *   API_URL               — backend base URL the credentials provider calls
  *   NODE_EXTRA_CA_CERTS   — path to CA bundle .pem for self-signed certs
  */
 
@@ -53,6 +63,40 @@ const scope = process.env.AUTH_SSO_SCOPE ?? "openid profile email groups";
 const groupClaim = process.env.AUTH_GROUP_CLAIM ?? "groups";
 const backendAuthSecret = process.env.BACKEND_AUTH_SECRET ?? process.env.AUTH_SECRET;
 const backendTokenTtlSeconds = Number.parseInt(process.env.BACKEND_AUTH_TOKEN_TTL_SECONDS ?? "900", 10);
+
+// The credentials provider reaches the backend over this base URL; API_URL is
+// the runtime-overridable server-side value, with the build-time
+// NEXT_PUBLIC_API_URL as the fallback (mirrors shared/lib/api.ts).
+const backendBaseUrl =
+  process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const googleConfigured = !!process.env.AUTH_GOOGLE_ID && !!process.env.AUTH_GOOGLE_SECRET;
+const githubConfigured = !!process.env.AUTH_GITHUB_ID && !!process.env.AUTH_GITHUB_SECRET;
+
+type BackendAccount = { email: string; name: string; role: string };
+
+/**
+ * Verify email/password credentials against the backend's internal /auth/login.
+ * Returns the resolved account on success, or null on bad credentials, a missing
+ * shared secret, or any network error — the caller collapses null into a generic
+ * "login failed" so the form never leaks which case occurred.
+ */
+async function verifyBackendCredentials(
+  email: string,
+  password: string,
+): Promise<BackendAccount | null> {
+  if (!backendAuthSecret) return null;
+  try {
+    const res = await fetch(`${backendBaseUrl}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Internal-Auth": backendAuthSecret },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as BackendAccount;
+  } catch {
+    return null;
+  }
+}
 
 const providers: Provider[] = [];
 
@@ -89,9 +133,13 @@ function base64url(value: Buffer | string) {
 
 function signBackendToken(token: { name?: unknown; email?: unknown; role?: unknown; groups?: unknown }) {
   if (!backendAuthSecret) return undefined;
-  const name = typeof token.name === "string" ? token.name : undefined;
+  const displayName = typeof token.name === "string" ? token.name : undefined;
   const email = typeof token.email === "string" ? token.email : undefined;
-  const subject = name || email;
+  // Identity across the backend (job / dataset / share ownership) is the email,
+  // never the display name: two OAuth users can share a name but never an email.
+  // The backend reads its identity from the `name` claim first, so the stable
+  // subject is sent there; the human-facing display name rides the session JWT.
+  const subject = email || displayName;
   if (!subject) return undefined;
   const now = Math.floor(Date.now() / 1000);
   const groups = normalizeStringList(token.groups);
@@ -100,7 +148,7 @@ function signBackendToken(token: { name?: unknown; email?: unknown; role?: unkno
     aud: "skynet-backend",
     iss: "skynet-frontend",
     sub: subject,
-    name,
+    name: subject,
     email,
     role: typeof token.role === "string" ? token.role : "user",
     groups,
@@ -151,21 +199,47 @@ if (adfsConfigured) {
     },
   });
 } else {
+  if (googleConfigured) {
+    providers.push(
+      Google({
+        clientId: process.env.AUTH_GOOGLE_ID,
+        clientSecret: process.env.AUTH_GOOGLE_SECRET,
+        // One person, one identity: if they later sign in with another provider
+        // asserting the same verified email, link to the existing account
+        // instead of forking a second one.
+        allowDangerousEmailAccountLinking: true,
+      }),
+    );
+  }
+  if (githubConfigured) {
+    providers.push(
+      GitHub({
+        clientId: process.env.AUTH_GITHUB_ID,
+        clientSecret: process.env.AUTH_GITHUB_SECRET,
+        allowDangerousEmailAccountLinking: true,
+      }),
+    );
+  }
   providers.push(
     Credentials({
-      name: "Dev Login",
+      id: "credentials",
+      name: "Email and password",
       credentials: {
-        username: { label: msg("auto.auth.literal.1"), type: "text" },
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const username = (credentials?.username as string)?.trim();
-        if (!username) return null;
+        const email = (credentials?.email as string)?.trim().toLowerCase();
+        const password = credentials?.password as string;
+        if (!email || !password) return null;
+        const account = await verifyBackendCredentials(email, password);
+        if (!account) return null;
         return {
-          id: username,
-          name: username,
-          email: `${username}@skynet.local`,
+          id: account.email,
+          name: account.name,
+          email: account.email,
           groups: [],
-          role: isAdmin(username, []) ? "admin" : "user",
+          role: account.role,
         };
       },
     }),
@@ -184,8 +258,12 @@ export const { handlers, auth } = NextAuth({
       if (user) {
         token.name = user.name ?? token.name;
         token.email = user.email ?? token.email;
-        token.groups = user.groups ?? [];
-        token.role = user.role ?? "user";
+        token.groups = normalizeStringList(user.groups);
+        // OAuth providers carry no role/groups; derive admin from the email
+        // allowlist so AUTH_ADMINS grants admin for Google/GitHub exactly as
+        // it does for SSO and email/password accounts.
+        const identity = String(user.email ?? user.name ?? "").toLowerCase();
+        token.role = user.role ?? (isAdmin(identity, token.groups) ? "admin" : "user");
       }
       return token;
     },

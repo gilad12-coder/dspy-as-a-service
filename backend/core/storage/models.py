@@ -54,6 +54,29 @@ class ApiTokenModel(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class UserModel(Base):
+    """A Skynet-native account for email/password sign-in.
+
+    Backs only the "create an account in Skynet" path — OAuth (Google/GitHub)
+    users authenticate against their provider and never get a row here. The
+    lowercased ``email`` is the primary key because it is also the cross-app
+    identity (the ``username`` every other table — jobs, datasets, shares —
+    keys ownership on), so a local account and the work it owns line up on a
+    single value. Only the scrypt ``password_hash`` is persisted; the plaintext
+    password is never stored.
+    """
+
+    __tablename__ = "users"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class SearchQueryLogModel(Base):
     """Anonymous log of public-corpus search queries, powering trending searches.
 

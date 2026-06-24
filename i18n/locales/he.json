@@ -68,6 +68,10 @@
     "pauseReason": "הושהתה על ידי המשתמש"
   },
   "messages": {
+    "accounts.email_taken": "כתובת האימייל כבר רשומה.",
+    "accounts.invalid_credentials": "האימייל או הסיסמה שגויים.",
+    "accounts.invalid_email": "כתובת אימייל לא תקינה.",
+    "accounts.weak_password": "הסיסמה חייבת לכלול לפחות 8 תווים.",
     "admin.forbidden": "רק מנהלים יכולים לבצע את הפעולה הזו.",
     "admin.invalid_username": "הזן/הזיני שם משתמש.",
     "admin.quota_save_failed": "לא ניתן לשמור את מגבלת המשתמש.",

@@ -68,6 +68,10 @@ export const TERMS = {
 } as const;
 
 export const I18N_MESSAGES = {
+  "accounts.email_taken": "כתובת האימייל כבר רשומה.",
+  "accounts.invalid_credentials": "האימייל או הסיסמה שגויים.",
+  "accounts.invalid_email": "כתובת אימייל לא תקינה.",
+  "accounts.weak_password": "הסיסמה חייבת לכלול לפחות 8 תווים.",
   "admin.forbidden": "רק מנהלים יכולים לבצע את הפעולה הזו.",
   "admin.invalid_username": "הזן/הזיני שם משתמש.",
   "admin.quota_save_failed": "לא ניתן לשמור את מגבלת המשתמש.",
@@ -209,6 +213,10 @@ export type I18nMessageKey = keyof typeof I18N_MESSAGES;
 export type ErrorCode = I18nMessageKey;
 
 export const I18N_KEY = {
+  ACCOUNTS_EMAIL_TAKEN: "accounts.email_taken",
+  ACCOUNTS_INVALID_CREDENTIALS: "accounts.invalid_credentials",
+  ACCOUNTS_INVALID_EMAIL: "accounts.invalid_email",
+  ACCOUNTS_WEAK_PASSWORD: "accounts.weak_password",
   ADMIN_FORBIDDEN: "admin.forbidden",
   ADMIN_INVALID_USERNAME: "admin.invalid_username",
   ADMIN_QUOTA_SAVE_FAILED: "admin.quota_save_failed",
