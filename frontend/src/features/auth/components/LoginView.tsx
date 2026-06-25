@@ -93,7 +93,6 @@ export function LoginView() {
     google: false,
     github: false,
   });
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [useCase, setUseCase] = useState("");
@@ -153,7 +152,6 @@ export function LoginView() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            name: name.trim(),
             email: cleanEmail,
             password,
             use_case: useCase,
@@ -304,34 +302,6 @@ export function LoginView() {
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-3.5">
-                  <AnimatePresence initial={false}>
-                    {authMode === "signup" && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
-                      >
-                        <Label
-                          htmlFor="login-name"
-                          className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                        >
-                          {msg("auth.login.name")}
-                        </Label>
-                        <Input
-                          id="login-name"
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          placeholder={msg("auth.login.name_placeholder")}
-                          autoComplete="name"
-                          dir="auto"
-                          className="h-11"
-                        />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
                   <div>
                     <Label
                       htmlFor="login-email"
