@@ -36,7 +36,7 @@ export const sidebarMessagesEn: Partial<Record<keyof typeof sidebarMessages, str
   "sidebar.nav.explore": "Explore",
   "sidebar.nav.datasets": "Datasets",
   "sidebar.tab.mine": "Mine",
-  "sidebar.tab.shared": "Shared with me",
+  "sidebar.tab.shared": "Shared",
   "sidebar.tab.aria": "Filter runs",
   "sidebar.mine.empty": "No runs here yet",
   "sidebar.mine.empty.hint": "Your first run will appear here",

@@ -323,7 +323,7 @@ function FilterDropdown({
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="h-7 text-[0.6875rem] py-1.5 pe-7 ps-2 text-right"
+          className="h-7 text-[0.6875rem] py-1.5 pe-7 ps-2 text-start"
           placeholder={msg("shared.excel_filter.search_placeholder")}
           dir={getActiveDir()}
         />

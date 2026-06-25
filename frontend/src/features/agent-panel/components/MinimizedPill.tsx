@@ -36,8 +36,8 @@ export function MinimizedPill({
       aria-label={ariaLabel}
       title={ariaLabel}
       // Set the writing direction on the pill itself so its logical `end-4`
-      // follows the locale (right in LTR/English, left in RTL/Hebrew) instead of
-      // inheriting the global `direction: rtl`, which pins it to the left.
+      // follows the locale (right in LTR/English, left in RTL/Hebrew),
+      // independent of whatever direction an ancestor or portal resolves to.
       dir={getActiveDir()}
       className={cn(
         "fixed bottom-4 end-4 z-40 inline-flex items-center gap-2 rounded-full",

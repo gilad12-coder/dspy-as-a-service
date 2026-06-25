@@ -297,7 +297,10 @@
 }
 
 html {
-  direction: rtl;
+  /* Direction follows the locale via the <html dir> attribute the layout sets
+     (ltr for English, rtl for Hebrew). Do NOT hardcode `direction` here — a CSS
+     rule overrides the dir attribute (a presentational hint), which forced RTL
+     onto body-portaled content (dialogs, sheets) even in the English locale. */
   text-size-adjust: 100%;
   /* The documentElement is the app scroller; keep its gutter during Radix scroll locks. */
   overflow-y: auto;
