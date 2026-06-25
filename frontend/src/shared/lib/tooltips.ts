@@ -1,18 +1,25 @@
 /**
- * Centralized Hebrew tooltip copy.
+ * Centralized tooltip copy.
  *
  * Tooltips that describe the same concept should share a single string.
  * Call sites import `tip(key)` and pass the result to <HelpTip text={...}>.
  *
  *     import { tip } from "@/shared/lib/tooltips";
- *     <HelpTip text={tip("score.baseline")}>ציון בסיס</HelpTip>
+ *     <HelpTip text={tip("score.baseline")}>{TERMS.baselineScore}</HelpTip>
  *
  * Keys are grouped by domain concept, not by feature slice — the same
- * definition of "ציון בסיס" should read identically on the overview
+ * definition of "baseline score" should read identically on the overview
  * tab, the pair detail view, and the compare page.
+ *
+ * `TOOLTIPS` below is the Hebrew base; the English copy is the `TOOLTIPS_EN`
+ * overlay in `tooltips.en.ts`. `tip()` resolves against the active locale, so
+ * any new key MUST be added to BOTH files — an English-missing key falls back
+ * to Hebrew and leaks into the English UI.
  */
 
+import { getActiveLocale } from "@/shared/lib/runtime-locale";
 import { TERMS } from "@/shared/lib/terms";
+import { TOOLTIPS_EN } from "@/shared/lib/tooltips.en";
 
 export const TOOLTIPS = {
   "score.baseline": `${TERMS.baselineScore} לפני ${TERMS.optimization}: איך ה${TERMS.program} הצליחה בלי פרומפט משופר או דוגמאות נבחרות`,
@@ -130,10 +137,17 @@ export const TOOLTIPS = {
 export type TooltipKey = keyof typeof TOOLTIPS;
 
 /**
- * Look up tooltip copy by key. Silently returns the key itself if not
- * found, so missing entries surface as a dev-visible artifact rather
- * than a blank tooltip.
+ * Look up tooltip copy by key in the active locale.
+ *
+ * English uses the `TOOLTIPS_EN` overlay and falls back to the Hebrew base when
+ * a key is not yet translated. A missing key in both maps returns the key
+ * itself, so the gap surfaces as a dev-visible artifact rather than a blank
+ * tooltip.
  */
 export function tip(key: TooltipKey): string {
+  if (getActiveLocale() === "en") {
+    const en = TOOLTIPS_EN[key];
+    if (en !== undefined) return en;
+  }
   return TOOLTIPS[key] ?? key;
 }

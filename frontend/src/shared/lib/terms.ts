@@ -27,5 +27,32 @@
  * 4. Grep for hardcoded variants and migrate or document any deliberate
  *    exceptions in the same change.
  */
-export { TERMS } from "./generated/i18n-catalog";
+import { TERMS as TERMS_HE, TERMS_EN } from "./generated/i18n-catalog";
+import { getActiveLocale } from "./runtime-locale";
+
 export type { TermKey } from "./generated/i18n-catalog";
+
+/**
+ * Locale-aware view over the generated glossary.
+ *
+ * The generated `TERMS_HE` map is Hebrew; `TERMS_EN` is the English overlay.
+ * Reading any property resolves against the active locale AT ACCESS TIME — the
+ * English locale uses the overlay and falls back to the Hebrew term only when a
+ * key has no English value yet. This is what makes plain `TERMS.optimizationPlural`
+ * render the right language in either locale without every call site threading a
+ * locale or routing through a `{term.x}` message template; bare access used to be
+ * Hebrew-forever, which leaked Hebrew terms all over the English UI.
+ *
+ * The handler traps reads only — the app never enumerates this map (no
+ * `Object.keys`/spread), so a `get` trap is sufficient and keeps the exported
+ * shape and `TermKey` typing identical to the raw catalog.
+ */
+export const TERMS: typeof TERMS_HE = new Proxy(TERMS_HE, {
+  get(target, key, receiver) {
+    if (typeof key === "string" && getActiveLocale() === "en") {
+      const en = (TERMS_EN as Record<string, string>)[key];
+      if (en !== undefined) return en;
+    }
+    return Reflect.get(target, key, receiver);
+  },
+});

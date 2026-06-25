@@ -104,14 +104,22 @@ def _load_en_overlay() -> dict[str, dict[str, str]]:
 
 
 def _validate_overlay(catalog: dict[str, Any], en_overlay: dict[str, dict[str, str]]) -> None:
-    """Reject English overlay keys absent from the Hebrew catalog.
+    """Reject English overlay keys absent from the Hebrew catalog, and require
+    every term to be translated.
 
     The generated ``*_EN`` constants are typed against the Hebrew-derived key
     unions (``TermKey`` / ``I18nMessageKey``), so an English-only key would emit
     TypeScript that fails to compile. Fail fast here with a clear message.
 
+    Terms additionally must be translated in full: ``TERMS`` is read locale-aware
+    via the ``terms.ts`` proxy, so a term missing from the English overlay falls
+    back to its Hebrew value and leaks Hebrew into the English UI (the glossary is
+    a closed, ~60-key set, so completeness is cheap to maintain — unlike the
+    open-ended ``messages`` section, which may stay partial).
+
     Raises:
-        ValueError: When the overlay references unknown term or message keys.
+        ValueError: When the overlay references unknown keys, or when a Hebrew
+            term has no English translation.
     """
     for section in ("terms", "messages"):
         unknown = sorted(set(en_overlay[section]) - set(catalog[section]))
@@ -119,6 +127,15 @@ def _validate_overlay(catalog: dict[str, Any], en_overlay: dict[str, dict[str, s
             raise ValueError(
                 f"{EN_CATALOG_PATH} {section} has keys not present in {CATALOG_PATH.name}: {unknown}"
             )
+
+    untranslated_terms = sorted(set(catalog["terms"]) - set(en_overlay["terms"]))
+    if untranslated_terms:
+        raise ValueError(
+            f"{EN_CATALOG_PATH} is missing English translations for these terms: "
+            f"{untranslated_terms}. Every term must be translated — an untranslated "
+            f"term falls back to Hebrew and leaks into the English UI. Add the English "
+            f'value(s) under "terms" in {EN_CATALOG_PATH.name}.'
+        )
 
 
 def _enum_name(key: str) -> str:
