@@ -3,7 +3,16 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { History, PanelLeftClose, Plus, RotateCcw, Sparkles, WandSparkles, XCircle } from "lucide-react";
+import {
+  History,
+  PanelLeftClose,
+  PanelRightClose,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  WandSparkles,
+  XCircle,
+} from "lucide-react";
 import { msg } from "@/shared/lib/messages";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
@@ -693,7 +702,13 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                           "auto.features.agent.panel.components.generalistpanel.literal.4",
                         )}
                       >
-                        <PanelLeftClose className="size-3.5" />
+                        {/* Icon points toward the edge the panel collapses to:
+                            right when docked right (LTR), left when docked left (RTL). */}
+                        {isRtl ? (
+                          <PanelLeftClose className="size-3.5" />
+                        ) : (
+                          <PanelRightClose className="size-3.5" />
+                        )}
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">

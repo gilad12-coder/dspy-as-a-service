@@ -27,6 +27,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { cn } from "@/shared/lib/utils";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { ConversationDrawerSkeleton } from "./ConversationDrawerSkeleton";
 
 import type { ConversationSummary } from "../lib/conversation-api";
@@ -112,11 +113,14 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
     onDelete,
   } = props;
   const groups = groupConversationsByRecency(conversations);
+  // Dock on the same edge as the agent panel (logical `end`): right in LTR,
+  // left in RTL. The Sheet's `side` is physical, so map direction → side.
+  const drawerSide = getActiveDir() === "rtl" ? "left" : "right";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        side="left"
+        side={drawerSide}
         className="w-[min(420px,90vw)] sm:max-w-none p-0 flex flex-col"
       >
         <SheetHeader className="border-b border-border/40 p-3">

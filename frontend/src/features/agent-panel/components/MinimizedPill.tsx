@@ -6,6 +6,7 @@ import { msg } from "@/shared/lib/messages";
 import { formatShortcut, useUserPrefs } from "@/features/settings";
 
 import { cn } from "@/shared/lib/utils";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 interface MinimizedPillProps {
   onOpen: () => void;
@@ -34,6 +35,10 @@ export function MinimizedPill({
       data-tutorial="agent-pill"
       aria-label={ariaLabel}
       title={ariaLabel}
+      // Set the writing direction on the pill itself so its logical `end-4`
+      // follows the locale (right in LTR/English, left in RTL/Hebrew) instead of
+      // inheriting the global `direction: rtl`, which pins it to the left.
+      dir={getActiveDir()}
       className={cn(
         "fixed bottom-4 end-4 z-40 inline-flex items-center gap-2 rounded-full",
         "border border-border/60 bg-background/90 backdrop-blur-md",
