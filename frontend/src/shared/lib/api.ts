@@ -23,17 +23,24 @@ import { I18N_KEY, tI18n } from "@/shared/lib/i18n";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { readNdjsonStream, readServerSentEvents, type ServerSentEvent } from "@/shared/lib/sse";
 
-const API = getRuntimeEnv().apiUrl;
+// Resolve the runtime API base lazily on every call. Capturing it once at
+// module load races the injected `window.__SKYNET_ENV__` script: the framework
+// chunks execute (and evaluate this module) before that inline `<head>` script
+// runs, so a module-scope const freezes the build-time `localhost:8000`
+// fallback and every request hits the wrong origin. Reading at call time always
+// sees the injected env, since requests fire after hydration.
+const apiBase = () => getRuntimeEnv().apiUrl;
 const JOB_CACHE_MS = 1000;
 const QUEUE_CACHE_MS = 5000;
 const SIDEBAR_CACHE_MS = 3000;
 
+const apiUrlAtLoad = apiBase();
 if (
   typeof window !== "undefined" &&
   process.env.NODE_ENV === "production" &&
-  API.startsWith("http://") &&
-  !API.includes("localhost") &&
-  !API.includes("127.0.0.1")
+  apiUrlAtLoad.startsWith("http://") &&
+  !apiUrlAtLoad.includes("localhost") &&
+  !apiUrlAtLoad.includes("127.0.0.1")
 ) {
   console.error(
     "[Skynet] Production API URL uses HTTP — API keys and tokens will be transmitted in plaintext. " +
@@ -197,7 +204,7 @@ export function isStorageQuotaError(err: unknown): err is ApiError {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const send = (token: string | undefined) =>
-    fetch(`${API}${path}`, {
+    fetch(`${apiBase()}${path}`, {
       ...init,
       headers: {
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
@@ -389,7 +396,7 @@ export function generateApiToken() {
 
 /** Revoke the caller's active API token. Idempotent; the route returns 204. */
 export async function revokeApiToken(): Promise<void> {
-  const res = await fetchWithAuthRetry(`${API}/settings/api-token`, { method: "DELETE" });
+  const res = await fetchWithAuthRetry(`${apiBase()}/settings/api-token`, { method: "DELETE" });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
@@ -501,9 +508,7 @@ export function getJob(
       since_progress: String(cursor.sinceProgress),
       since_log: String(cursor.sinceLog),
     });
-    return request<OptimizationStatusResponse>(
-      `/optimizations/${optimizationId}?${q.toString()}`,
-    );
+    return request<OptimizationStatusResponse>(`/optimizations/${optimizationId}?${q.toString()}`);
   }
   return cachedGet<OptimizationStatusResponse>(`/optimizations/${optimizationId}`, JOB_CACHE_MS);
 }
@@ -856,9 +861,7 @@ export function deleteDataset(datasetId: string) {
 
 /** List the runs the caller can see that were submitted from a dataset. */
 export function listDatasetOptimizations(datasetId: string) {
-  return request<DatasetOptimizationsResponse>(
-    `/datasets/library/${datasetId}/optimizations`,
-  );
+  return request<DatasetOptimizationsResponse>(`/datasets/library/${datasetId}/optimizations`);
 }
 
 /** Fetch the current sharing config (general access + members) for a dataset. */
@@ -1154,13 +1157,10 @@ export function stageDatasetForAgent(payload: {
   dataset: Array<Record<string, unknown>>;
   dataset_filename: string;
 }) {
-  return request<{ staged_dataset_id: string; row_count: number }>(
-    "/datasets/stage-for-agent",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-  );
+  return request<{ staged_dataset_id: string; row_count: number }>("/datasets/stage-for-agent", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export interface StagedDatasetResponse {
@@ -1176,9 +1176,7 @@ export interface StagedDatasetResponse {
  * only carries the opaque `staged_dataset_id`; this materialises its rows.
  */
 export function getStagedDataset(stagedDatasetId: string) {
-  return request<StagedDatasetResponse>(
-    `/datasets/staged/${encodeURIComponent(stagedDatasetId)}`,
-  );
+  return request<StagedDatasetResponse>(`/datasets/staged/${encodeURIComponent(stagedDatasetId)}`);
 }
 
 export function validateCode(payload: {
@@ -1307,7 +1305,7 @@ export async function probeModels(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetchWithAuthRetry(`${API}/models/probe`, {
+    res = await fetchWithAuthRetry(`${apiBase()}/models/probe`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
       body: JSON.stringify(payload),
@@ -1441,7 +1439,7 @@ export async function serveProgramStream(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetchWithAuthRetry(`${API}/serve/${optimizationId}/stream`, {
+    res = await fetchWithAuthRetry(`${apiBase()}/serve/${optimizationId}/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
       body: JSON.stringify({ inputs }),
@@ -1491,12 +1489,15 @@ export async function servePairProgramStream(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetchWithAuthRetry(`${API}/serve/${optimizationId}/pair/${pairIndex}/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ inputs }),
-      signal: handlers.signal,
-    });
+    res = await fetchWithAuthRetry(
+      `${apiBase()}/serve/${optimizationId}/pair/${pairIndex}/stream`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify({ inputs }),
+        signal: handlers.signal,
+      },
+    );
   } catch (err) {
     if ((err as Error)?.name === "AbortError") return;
     handlers.onError(msg("auto.shared.lib.api.literal.7"));
@@ -1603,7 +1604,7 @@ export async function streamCodeAgent(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetchWithAuthRetry(`${API}/optimizations/ai-generate-code`, {
+    res = await fetchWithAuthRetry(`${apiBase()}/optimizations/ai-generate-code`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
       body: JSON.stringify(req),
@@ -1663,8 +1664,7 @@ export async function streamCodeAgent(
         // explicit booleans after its validate-and-repair pass.
         signatureValid: data.signature_valid !== false,
         metricValid: data.metric_valid !== false,
-        validationError:
-          typeof data.validation_error === "string" ? data.validation_error : null,
+        validationError: typeof data.validation_error === "string" ? data.validation_error : null,
       });
     } else if (event === "error") {
       handlers.onError(String(data.error ?? msg("auto.shared.lib.api.literal.12")));
@@ -1813,7 +1813,7 @@ export function getPopularQueries(): Promise<PopularQueriesResponse> {
  */
 export function logSearchQuery(query: string): void {
   try {
-    void fetch(`${API}/dashboard/search/log`, {
+    void fetch(`${apiBase()}/dashboard/search/log`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),

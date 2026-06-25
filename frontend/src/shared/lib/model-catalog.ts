@@ -1,7 +1,9 @@
 import type { ModelCatalogResponse, DiscoverModelsResponse } from "@/shared/types/api";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 
-const API = getRuntimeEnv().apiUrl;
+// Resolve lazily — a module-load const races the injected window.__SKYNET_ENV__
+// and freezes the build-time localhost fallback. See shared/lib/api.ts.
+const apiBase = () => getRuntimeEnv().apiUrl;
 const LS_KEY = "skynet:model-catalog";
 const LS_TTL = 10 * 60 * 1000;
 
@@ -35,7 +37,7 @@ const _ready: Promise<ModelCatalogResponse> =
     ? Promise.resolve(_cache ?? EMPTY_CATALOG)
     : (async () => {
         try {
-          const res = await fetch(`${API}/models`);
+          const res = await fetch(`${apiBase()}/models`);
           if (!res.ok) throw new Error(`Server error: ${res.status}`);
           const data: unknown = await res.json();
           if (!isModelCatalogResponse(data)) throw new Error("Invalid model catalog response");
@@ -65,7 +67,7 @@ export async function discoverModels(
   apiKey?: string,
   signal?: AbortSignal,
 ): Promise<DiscoverModelsResponse> {
-  const res = await fetch(`${API}/models/discover`, {
+  const res = await fetch(`${apiBase()}/models/discover`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || undefined }),
