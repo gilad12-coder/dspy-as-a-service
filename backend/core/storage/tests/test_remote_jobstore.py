@@ -225,6 +225,31 @@ def test_delete_job_tolerates_nonexistent_id(store: SQLiteJobStore) -> None:
     store.delete_job("ghost-id")  # must not raise
 
 
+def test_requeue_for_rerun_resets_row_and_clears_children(store: SQLiteJobStore) -> None:
+    """A from-scratch rerun flips the row to pending and wipes the prior attempt in place."""
+    store.create_job("rr1")
+    store.update_job("rr1", status="failed", result={"score": 0.9}, attempts=3)
+    store.append_log("rr1", level="INFO", logger_name="t", message="boom")
+    store.record_progress("rr1", "step", {"x": 1})
+    store.save_gepa_checkpoint("rr1", b"GEPA-STATE", iteration=7)
+
+    assert store.requeue_for_rerun("rr1") is True
+
+    assert store.job_exists("rr1")
+    job = store.get_job("rr1")
+    assert job["status"] == "pending"
+    assert job["result"] is None
+    assert job["attempts"] == 0
+    assert store.get_logs("rr1") == []
+    assert store.get_progress_events("rr1") == []
+    assert store.has_gepa_checkpoint("rr1") is False
+
+
+def test_requeue_for_rerun_missing_id_returns_false(store: SQLiteJobStore) -> None:
+    """Re-running an unknown id is a no-op that reports the miss."""
+    assert store.requeue_for_rerun("ghost") is False
+
+
 def test_get_jobs_status_by_ids_returns_map(store: SQLiteJobStore) -> None:
     """Get jobs status by ids returns map."""
     store.create_job("s1")

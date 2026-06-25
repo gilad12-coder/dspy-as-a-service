@@ -74,7 +74,7 @@ export const sharedMessages = {
   "app.shell.lite.badge": "lite",
   "app.shell.lite.tooltip": "מצב lite פעיל — לחצו ליציאה",
   "app.shell.lite.exit_aria": "יציאה ממצב lite",
-  "app.shell.lite.hint.text": "האתר מרגיש איטי? נסו את המצב הקל",
+  "app.shell.lite.hint.text": "האתר מרגיש איטי? נסו את מצב lite",
   "app.shell.lite.hint.action": "הפעלה",
   "app.shell.lite.hint.dismiss_aria": "סגירת ההצעה",
   "app.shell.advanced.badge": "מתקדם",

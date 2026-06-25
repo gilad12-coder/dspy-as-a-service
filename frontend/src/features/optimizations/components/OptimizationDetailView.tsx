@@ -37,7 +37,7 @@ import {
   getJob,
   cancelJob,
   pauseJob,
-  retryJob,
+  restartJob,
   resumeJob,
   getOptimizationPayload,
   getServeInfo,
@@ -516,13 +516,15 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
     if (skipNetwork || retrying) return;
     setRetrying(true);
     try {
-      const res = await retryJob(id);
+      await restartJob(id);
       toast.success(msg("optimization.rerun.success"));
       window.dispatchEvent(new Event("optimizations-changed"));
-      // Navigating unmounts this view, so leave ``retrying`` set on success.
-      router.push(`/optimizations/${res.optimization_id}`);
+      // Restart re-runs the same id in place, so refresh this view rather than
+      // navigating to a new run.
+      void fetchJob();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : msg("optimization.rerun.failed"));
+    } finally {
       setRetrying(false);
     }
   };

@@ -140,6 +140,7 @@ _SCALAR_PUBLIC_PATHS = frozenset(
         "/optimizations/{optimization_id}/cancel",
         "/optimizations/{optimization_id}/clone",
         "/optimizations/{optimization_id}/retry",
+        "/optimizations/{optimization_id}/restart",
         "/optimizations/{optimization_id}/resume",
         # Inference on a finished optimization
         "/serve/{optimization_id}",

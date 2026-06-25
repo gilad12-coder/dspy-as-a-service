@@ -491,6 +491,50 @@ def register_lifecycle_routes(
         logger.info("Resumed optimization %s in place (attempt %s)", optimization_id, new_attempt)
         return JobCancelResponse(optimization_id=optimization_id, status=OptimizationStatus.pending.value)
 
+    @router.post(
+        "/optimizations/{optimization_id}/restart",
+        response_model=JobCancelResponse,
+        status_code=202,
+        summary="Re-run a failed or cancelled optimization from scratch under the same id",
+        tags=["agent"],
+    )
+    def restart_job(optimization_id: str, current_user: AuthenticatedUserDep) -> JobCancelResponse:
+        """Reset a terminal optimization in place and re-run it from scratch.
+
+        Unlike ``retry`` — which clones the payload into a brand-new id — this
+        keeps the same id, name and URL: the existing row is wiped of its prior
+        attempt's logs, progress, result and checkpoint, flipped back to
+        ``pending`` and re-queued so a worker runs the same configuration from
+        iteration zero. Unlike ``resume`` it does not continue from a checkpoint.
+        Shares ``retry``'s precondition — valid only for a terminal
+        ``failed``/``cancelled`` run.
+
+        Args:
+            optimization_id: The optimization to reset and re-run.
+            current_user: Authenticated caller resolved from the bearer token.
+
+        Returns:
+            A ``JobCancelResponse`` echoing the id and its new ``pending`` status.
+
+        Raises:
+            DomainError: 404 (unknown / inaccessible), 403 (caller's share role
+                below ``editor``), 409 (not in a failed/cancelled state).
+        """
+        job_data, _role = require_role_at_least(job_store, optimization_id, current_user, ShareRole.editor)
+
+        status = status_to_job_status(job_data.get("status", "pending"))
+        if status not in {OptimizationStatus.failed, OptimizationStatus.cancelled}:
+            raise DomainError(
+                "optimization.retry_wrong_status",
+                status=409,
+                params={"status": status.value},
+            )
+
+        if not job_store.requeue_for_rerun(optimization_id):
+            raise DomainError("optimization.not_found", status=404)
+        logger.info("Restarted optimization %s in place from scratch", optimization_id)
+        return JobCancelResponse(optimization_id=optimization_id, status=OptimizationStatus.pending.value)
+
     def _rerun_grid_pair(
         optimization_id: str, pair_index: int, current_user: AuthenticatedUser, *, resume: bool
     ) -> JobCancelResponse:

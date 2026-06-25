@@ -908,6 +908,58 @@ class RemoteDBJobStore:
         finally:
             session.close()
 
+    def requeue_for_rerun(self, optimization_id: str) -> bool:
+        """Reset a terminal job in place for a clean from-scratch re-run.
+
+        Unlike :meth:`requeue_for_resume`, which keeps the checkpoint and
+        continues GEPA where it stopped, this discards every artefact of the
+        previous attempt — logs, progress events, the search embedding, GEPA
+        checkpoints and grid-pair results — and zeroes the row's runtime,
+        result and attempt bookkeeping. Only the immutable identity (id, name,
+        owner, payload) survives, so a worker re-runs the same configuration
+        from iteration zero under the same id. The child-row deletes mirror
+        :meth:`delete_job`, minus the ``JobModel`` row itself.
+
+        Args:
+            optimization_id: The job to reset and re-queue.
+
+        Returns:
+            ``True`` when the row existed and was reset, ``False`` when missing.
+        """
+        session = self._get_session()
+        try:
+            job = session.get(JobModel, optimization_id)
+            if job is None:
+                return False
+            session.query(LogEntryModel).filter(LogEntryModel.optimization_id == optimization_id).delete()
+            session.query(ProgressEventModel).filter(ProgressEventModel.optimization_id == optimization_id).delete()
+            session.query(JobEmbeddingModel).filter(JobEmbeddingModel.optimization_id == optimization_id).delete()
+            session.query(GepaCheckpointModel).filter(GepaCheckpointModel.optimization_id == optimization_id).delete()
+            session.query(GridPairResultModel).filter(GridPairResultModel.optimization_id == optimization_id).delete()
+            job.status = "pending"  # type: ignore[assignment]
+            job.started_at = None  # type: ignore[assignment]
+            job.completed_at = None  # type: ignore[assignment]
+            job.estimated_remaining_seconds = None  # type: ignore[assignment]
+            job.message = None  # type: ignore[assignment]
+            job.latest_metrics = {}  # type: ignore[assignment]
+            job.result = None  # type: ignore[assignment]
+            job.attempts = 0  # type: ignore[assignment]
+            job.claimed_by = None  # type: ignore[assignment]
+            job.claimed_at = None  # type: ignore[assignment]
+            job.lease_expires_at = None  # type: ignore[assignment]
+            # Cleared so the fresh run is free to emit its own completion
+            # notification — the flag is a single-shot guard set per finished run.
+            job.notified_at = None  # type: ignore[assignment]
+            job.accumulated_runtime_seconds = 0.0  # type: ignore[assignment]
+            # The result is gone, so the footprint shrinks to payload + overview.
+            job.stored_bytes = sum(  # type: ignore[assignment]
+                json_byte_size(getattr(job, col)) for col in _STORED_BYTES_JSON_COLUMNS
+            )
+            session.commit()
+            return True
+        finally:
+            session.close()
+
     def get_user_quota_override(self, username: str) -> tuple[bool, int | None]:
         """Return the live quota override row for ``username`` if present.
 

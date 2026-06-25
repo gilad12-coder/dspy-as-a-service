@@ -372,6 +372,25 @@ class _BaseFakeJobStore:
         job["message"] = "Resuming" if bump_attempts else "Re-running grid pair"
         return next_attempt
 
+    def requeue_for_rerun(self, optimization_id: str) -> bool:
+        """Reset a job in place for a fresh re-run, clearing its prior artefacts."""
+        job = self._jobs.get(optimization_id)
+        if job is None:
+            return False
+        self._logs.pop(optimization_id, None)
+        self._progress.pop(optimization_id, None)
+        self._checkpoints.pop(optimization_id, None)
+        self._grid_pair_results.pop(optimization_id, None)
+        job["status"] = "pending"
+        job["started_at"] = None
+        job["completed_at"] = None
+        job["message"] = None
+        job["latest_metrics"] = {}
+        job["result"] = None
+        job["attempts"] = 0
+        job["accumulated_runtime_seconds"] = 0.0
+        return True
+
     def get_job(self, optimization_id: str) -> dict:
         """Return a copy of the stored job row.
 

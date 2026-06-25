@@ -10,7 +10,7 @@ export const sidebarMessages = {
   "sidebar.pin.off": "ההצמדה בוטלה",
   "sidebar.generic_error": "שגיאה",
   "sidebar.rerun": "הרץ/הריצי מחדש",
-  "sidebar.rerun.success": "הרצה חדשה הופעלה",
+  "sidebar.rerun.success": "ההרצה הופעלה מחדש",
   "sidebar.rerun.failed": "הרצה מחדש נכשלה",
   "sidebar.resume": "המשך/המשיכי",
   "sidebar.resume.success": "ההרצה ממשיכה",

@@ -1008,6 +1008,18 @@ export async function retryJob(optimizationId: string) {
   invalidateCache("/optimizations");
   return res;
 }
+// Restart re-runs the SAME run from scratch in place: status flips to pending,
+// the prior attempt's logs/progress/results are cleared, and the id is unchanged.
+// Like resumeJob (and unlike retryJob) callers refresh the current view rather
+// than navigating to a new run.
+export async function restartJob(optimizationId: string) {
+  const res = await request<{ optimization_id: string; status: string }>(
+    `/optimizations/${optimizationId}/restart`,
+    { method: "POST" },
+  );
+  invalidateCache("/optimizations");
+  return res;
+}
 // Resume continues the SAME run from its checkpoint (no new id), so callers
 // refresh the current view rather than navigating, unlike retryJob.
 export async function resumeJob(optimizationId: string) {

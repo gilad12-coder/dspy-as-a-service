@@ -40,7 +40,7 @@ import {
   deleteJob,
   renameOptimization,
   togglePinOptimization,
-  retryJob,
+  restartJob,
   resumeJob,
 } from "@/shared/lib/api";
 import type { SidebarJobItem } from "@/shared/lib/api";
@@ -628,11 +628,12 @@ function JobRow({
   const handleRetry = async () => {
     setMenuOpen(false);
     try {
-      const res = await retryJob(job.optimization_id);
+      await restartJob(job.optimization_id);
       toast.success(msg("sidebar.rerun.success"));
       window.dispatchEvent(new Event("optimizations-changed"));
       onRefresh();
-      router.push(`/optimizations/${res.optimization_id}`);
+      // Restart re-runs the same id in place — open that run, not a new one.
+      router.push(`/optimizations/${job.optimization_id}`);
     } catch (err) {
       // Surface the real backend reason (quota 429, wrong-status 409, …) like
       // the detail-view retry does, falling back to the generic message.
