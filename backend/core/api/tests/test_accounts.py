@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from ...config import settings
@@ -93,6 +94,30 @@ def test_register_then_login_succeeds(accounts_client: TestClient) -> None:
     )
     assert ok.status_code == 200
     assert ok.json()["email"] == "alice@example.com"
+
+
+def test_register_persists_profile_fields(accounts_client: TestClient) -> None:
+    """Valid sign-up profile fields are stored; an unknown choice coerces to NULL."""
+    created = accounts_client.post(
+        "/auth/register",
+        json={
+            "email": "fran@example.com",
+            "password": "longenough1",
+            "name": "Fran",
+            "use_case": "extraction",
+            "experience_level": "expert",
+            "job_role": "bogus-role",
+        },
+        headers=_AUTH_HEADER,
+    )
+    assert created.status_code == 201
+    engine = accounts_client.app.state.job_store.engine
+    with Session(engine) as session:
+        row = session.get(UserModel, "fran@example.com")
+        assert row is not None
+        assert row.use_case == "extraction"
+        assert row.experience_level == "expert"
+        assert row.job_role is None
 
 
 def test_register_rejects_duplicate_email(accounts_client: TestClient) -> None:

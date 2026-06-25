@@ -75,6 +75,12 @@ class UserModel(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Optional profile captured on the rich sign-up form. Nullable because OAuth
+    # accounts (no ``users`` row) and rows created before these columns existed
+    # never set them, and ``job_role`` is optional even on the sign-up form.
+    use_case: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    experience_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    job_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class SearchQueryLogModel(Base):

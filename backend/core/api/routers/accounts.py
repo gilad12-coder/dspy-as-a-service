@@ -27,6 +27,9 @@ from ..passwords import hash_password, verify_password
 
 _MIN_PASSWORD_LENGTH = 8
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_USE_CASES = frozenset({"classification", "extraction", "rag_agents", "generation", "other"})
+_EXPERIENCE_LEVELS = frozenset({"new", "familiar", "expert"})
+_JOB_ROLES = frozenset({"engineer", "researcher", "pm", "other"})
 
 
 # Credentials supplied when creating a Skynet-native account.
@@ -34,6 +37,9 @@ class RegisterRequest(BaseModel):
     email: str = Field(description="Account email; also the cross-app identity.")
     password: str = Field(description="Plaintext password; stored only as a scrypt hash.")
     name: str = Field(default="", description="Display name shown in the app header.")
+    use_case: str = Field(default="", description="Primary optimization use-case from sign-up.")
+    experience_level: str = Field(default="", description="Self-reported optimization experience.")
+    job_role: str = Field(default="", description="Optional job function from sign-up.")
 
 
 # Credentials supplied when signing in to a Skynet-native account.
@@ -59,6 +65,23 @@ def _normalise_email(raw: str) -> str:
         The normalized email.
     """
     return raw.strip().lower()
+
+
+def _coerce_choice(value: str, allowed: frozenset[str]) -> str | None:
+    """Return the value if it is a recognized choice, else ``None``.
+
+    Args:
+        value: Raw choice string from the client.
+        allowed: The permitted values for this field.
+
+    Returns:
+        The trimmed value when it is in ``allowed``; ``None`` otherwise. An
+        unknown or blank choice is stored as "not provided" rather than
+        rejected, since these profile fields are non-critical metadata and the
+        sign-up form already constrains input to the known options.
+    """
+    cleaned = value.strip()
+    return cleaned if cleaned in allowed else None
 
 
 def _role_for(email: str) -> str:
@@ -141,6 +164,9 @@ def create_accounts_router(*, job_store) -> APIRouter:
                     name=name,
                     password_hash=hash_password(body.password),
                     created_at=datetime.now(UTC),
+                    use_case=_coerce_choice(body.use_case, _USE_CASES),
+                    experience_level=_coerce_choice(body.experience_level, _EXPERIENCE_LEVELS),
+                    job_role=_coerce_choice(body.job_role, _JOB_ROLES),
                 )
             )
             session.commit()

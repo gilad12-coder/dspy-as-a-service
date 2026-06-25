@@ -9,6 +9,13 @@ import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
 import { Input } from "@/shared/ui/primitives/input";
 import { Label } from "@/shared/ui/primitives/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/ui/primitives/select";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { LanguageSwitcher } from "@/shared/ui/language-switcher";
 import { msg } from "@/shared/lib/messages";
@@ -89,6 +96,9 @@ export function LoginView() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [useCase, setUseCase] = useState("");
+  const [experience, setExperience] = useState("");
+  const [jobRole, setJobRole] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -142,7 +152,14 @@ export function LoginView() {
         const res = await fetch("/api/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), email: cleanEmail, password }),
+          body: JSON.stringify({
+            name: name.trim(),
+            email: cleanEmail,
+            password,
+            use_case: useCase,
+            experience_level: experience,
+            job_role: jobRole,
+          }),
         });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -175,19 +192,33 @@ export function LoginView() {
   }
 
   const isWorking = mode === "loading" || mode === "sso";
-  const hasOAuth = oauth.google || oauth.github;
-  const canSubmit = !!email.trim() && password.length > 0 && !loading;
+  // OAuth is a sign-IN affordance only: "continue with Google/GitHub" makes no
+  // sense under the "create an account" tab, where we instead collect a richer
+  // profile. So the social buttons show on the signin tab exclusively.
+  const showOAuth = (oauth.google || oauth.github) && authMode === "signin";
+  const credentialsFilled = !!email.trim() && password.length > 0;
+  // Sign-up additionally requires the two profile fields that drive product
+  // behavior (use-case + experience); role is optional.
+  const canSubmit =
+    !loading &&
+    credentialsFilled &&
+    (authMode === "signin" || (!!useCase && !!experience));
 
   return (
     <div className="relative flex min-h-dvh w-full items-center justify-center px-4 py-10">
       <LanguageSwitcher className="absolute end-4 top-4 z-20 bg-background/70 backdrop-blur-sm" />
       <LoginHalo />
+      {/* Clear the full-height centre column so the wordmark and the (taller)
+          sign-up form never collide with a halo chip, while the cards still fan
+          in softly along the left/right wings. A centered radial can't keep both
+          the top logo and a long form clean at once, so this is a vertical band:
+          opaque across the column, fading out toward the sides. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 z-[1]"
         style={{
           background:
-            "radial-gradient(58% 48% at 50% 44%, rgba(250,248,245,0.9) 0%, rgba(250,248,245,0.4) 46%, transparent 76%)",
+            "linear-gradient(90deg, rgba(250,248,245,0) 0%, rgba(250,248,245,0.85) 16%, rgba(250,248,245,1) 30%, rgba(250,248,245,1) 70%, rgba(250,248,245,0.85) 84%, rgba(250,248,245,0) 100%)",
         }}
       />
 
@@ -234,7 +265,7 @@ export function LoginView() {
                   ))}
                 </div>
 
-                {hasOAuth && (
+                {showOAuth && (
                   <>
                     <div className="space-y-2.5">
                       {oauth.google && (
@@ -344,6 +375,103 @@ export function LoginView() {
                       </p>
                     )}
                   </div>
+
+                  <AnimatePresence initial={false}>
+                    {authMode === "signup" && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="space-y-3.5 overflow-hidden"
+                      >
+                        <p className="pt-0.5 text-xs font-medium text-foreground/70">
+                          {msg("auth.login.profile_heading")}
+                        </p>
+
+                        <div>
+                          <Label
+                            htmlFor="signup-usecase"
+                            className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                          >
+                            {msg("auth.login.usecase_label")}
+                          </Label>
+                          <Select value={useCase} onValueChange={setUseCase}>
+                            <SelectTrigger
+                              id="signup-usecase"
+                              className="w-full data-[size=default]:h-11"
+                            >
+                              <SelectValue placeholder={msg("auth.login.select_placeholder")} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="classification">
+                                {msg("auth.login.uc_classification")}
+                              </SelectItem>
+                              <SelectItem value="extraction">
+                                {msg("auth.login.uc_extraction")}
+                              </SelectItem>
+                              <SelectItem value="rag_agents">{msg("auth.login.uc_rag")}</SelectItem>
+                              <SelectItem value="generation">
+                                {msg("auth.login.uc_generation")}
+                              </SelectItem>
+                              <SelectItem value="other">{msg("auth.login.uc_other")}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div>
+                          <Label
+                            htmlFor="signup-experience"
+                            className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                          >
+                            {msg("auth.login.experience_label")}
+                          </Label>
+                          <Select value={experience} onValueChange={setExperience}>
+                            <SelectTrigger
+                              id="signup-experience"
+                              className="w-full data-[size=default]:h-11"
+                            >
+                              <SelectValue placeholder={msg("auth.login.select_placeholder")} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="new">{msg("auth.login.exp_new")}</SelectItem>
+                              <SelectItem value="familiar">
+                                {msg("auth.login.exp_familiar")}
+                              </SelectItem>
+                              <SelectItem value="expert">{msg("auth.login.exp_expert")}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div>
+                          <Label
+                            htmlFor="signup-role"
+                            className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                          >
+                            {msg("auth.login.role_label")}
+                          </Label>
+                          <Select value={jobRole} onValueChange={setJobRole}>
+                            <SelectTrigger
+                              id="signup-role"
+                              className="w-full data-[size=default]:h-11"
+                            >
+                              <SelectValue placeholder={msg("auth.login.select_placeholder")} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="engineer">
+                                {msg("auth.login.role_engineer")}
+                              </SelectItem>
+                              <SelectItem value="researcher">
+                                {msg("auth.login.role_researcher")}
+                              </SelectItem>
+                              <SelectItem value="pm">{msg("auth.login.role_pm")}</SelectItem>
+                              <SelectItem value="other">{msg("auth.login.role_other")}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   <AnimatePresence>
                     {error && (

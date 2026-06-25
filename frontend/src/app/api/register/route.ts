@@ -29,6 +29,10 @@ export async function POST(request: Request): Promise<NextResponse> {
   const email = typeof fields.email === "string" ? fields.email.trim().toLowerCase() : "";
   const password = typeof fields.password === "string" ? fields.password : "";
   const name = typeof fields.name === "string" ? fields.name.trim() : "";
+  const str = (v: unknown): string => (typeof v === "string" ? v : "");
+  const useCase = str(fields.use_case);
+  const experienceLevel = str(fields.experience_level);
+  const jobRole = str(fields.job_role);
   if (!email || !password) {
     return NextResponse.json({ error: "accounts.invalid_email" }, { status: 400 });
   }
@@ -38,7 +42,14 @@ export async function POST(request: Request): Promise<NextResponse> {
     res = await fetch(`${backendBaseUrl}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Internal-Auth": backendAuthSecret },
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({
+        email,
+        password,
+        name,
+        use_case: useCase,
+        experience_level: experienceLevel,
+        job_role: jobRole,
+      }),
     });
   } catch {
     return NextResponse.json({ error: "auth.login.register_failed" }, { status: 502 });
