@@ -111,7 +111,7 @@ def test_settings_defaults_db_pool_config() -> None:
     """Default DB pool settings are production-safe single-pod values."""
     s = Settings(_env_file=None)
 
-    assert s.db_pool_size == 10
+    assert s.db_pool_size == 20
     assert s.db_pool_max_overflow == 20
     assert s.db_pool_recycle_seconds == 3600
     assert s.db_pgbouncer_transaction_mode is False

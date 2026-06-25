@@ -123,8 +123,15 @@ def test_compute_user_storage_is_owner_scoped(store: _SQLiteJobStore) -> None:
     assert alice.total == alice.breakdown["optimizations"]
 
 
-def test_byproducts_fold_into_optimization_footprint(store: _SQLiteJobStore) -> None:
+def test_byproducts_fold_into_optimization_footprint(
+    store: _SQLiteJobStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Logs and embeddings count toward the owning optimization, not a category of their own."""
+    # job_embeddings exists (and thus has rows to count) only on the semantic
+    # backend; usage accounting now skips it when embeddings are disabled, so
+    # pin the flag on for the embedding-bytes assertion below. The SQLite test
+    # store creates every table regardless, which is why this must be explicit.
+    monkeypatch.setattr(settings, "embeddings_enabled", True)
     store.create_job("job-1", username="alice")
     store.update_job("job-1", payload={"a": 1})
 

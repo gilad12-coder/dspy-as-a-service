@@ -673,7 +673,8 @@ class RemoteDBJobStore:
         try:
             session.query(LogEntryModel).filter(LogEntryModel.optimization_id == optimization_id).delete()
             session.query(ProgressEventModel).filter(ProgressEventModel.optimization_id == optimization_id).delete()
-            session.query(JobEmbeddingModel).filter(JobEmbeddingModel.optimization_id == optimization_id).delete()
+            if settings.embeddings_enabled:
+                session.query(JobEmbeddingModel).filter(JobEmbeddingModel.optimization_id == optimization_id).delete()
             session.query(GepaCheckpointModel).filter(GepaCheckpointModel.optimization_id == optimization_id).delete()
             session.query(GridPairResultModel).filter(GridPairResultModel.optimization_id == optimization_id).delete()
             session.query(JobModel).filter(JobModel.optimization_id == optimization_id).delete()
@@ -731,9 +732,10 @@ class RemoteDBJobStore:
             session.query(ProgressEventModel).filter(ProgressEventModel.optimization_id.in_(optimization_ids)).delete(
                 synchronize_session=False
             )
-            session.query(JobEmbeddingModel).filter(JobEmbeddingModel.optimization_id.in_(optimization_ids)).delete(
-                synchronize_session=False
-            )
+            if settings.embeddings_enabled:
+                session.query(JobEmbeddingModel).filter(
+                    JobEmbeddingModel.optimization_id.in_(optimization_ids)
+                ).delete(synchronize_session=False)
             session.query(GepaCheckpointModel).filter(GepaCheckpointModel.optimization_id.in_(optimization_ids)).delete(
                 synchronize_session=False
             )
@@ -933,7 +935,8 @@ class RemoteDBJobStore:
                 return False
             session.query(LogEntryModel).filter(LogEntryModel.optimization_id == optimization_id).delete()
             session.query(ProgressEventModel).filter(ProgressEventModel.optimization_id == optimization_id).delete()
-            session.query(JobEmbeddingModel).filter(JobEmbeddingModel.optimization_id == optimization_id).delete()
+            if settings.embeddings_enabled:
+                session.query(JobEmbeddingModel).filter(JobEmbeddingModel.optimization_id == optimization_id).delete()
             session.query(GepaCheckpointModel).filter(GepaCheckpointModel.optimization_id == optimization_id).delete()
             session.query(GridPairResultModel).filter(GridPairResultModel.optimization_id == optimization_id).delete()
             job.status = "pending"  # type: ignore[assignment]
@@ -2022,6 +2025,9 @@ class RemoteDBJobStore:
             if optimization_ids
             else {}
         )
+        # summary_text lives in job_embeddings, which only exists on the
+        # semantic backend; skip the lookup entirely on the lexical backend so
+        # the join target isn't a missing relation (callers fall back to None).
         summary_texts: dict[str, str | None] = (
             {
                 row[0]: row[1]
@@ -2032,7 +2038,7 @@ class RemoteDBJobStore:
                 .filter(JobEmbeddingModel.optimization_id.in_(optimization_ids))
                 .all()
             }
-            if optimization_ids
+            if optimization_ids and settings.embeddings_enabled
             else {}
         )
         result: list[JobRecord] = []

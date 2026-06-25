@@ -2,13 +2,21 @@
 # install path. Pairs DSPy 3.2.1 with gepa==0.1.1 — newer than the gepa==0.0.27
 # that DSPy 3.2.1 pins by default — because the react /run tool-optimization
 # needs gepa's enable_tool_optimization adapter (a 0.1.x feature). dspy 3.2.1
-# runs cleanly against gepa 0.1.1 (verified). The agent layer bridges classic
-# ReAct vs ReActV2 in core.service_gateway.react_compat, so the same source
-# runs on either line. The DEFAULT line (3.3 preview) lives in requirements.txt.
+# runs cleanly against gepa 0.1.1 at runtime (verified), but its metadata still
+# hard-pins gepa==0.0.27, so install this lockfile with --no-deps — a resolving
+# install fails with ResolutionImpossible. backend/Dockerfile's pip path does
+# exactly that. The agent layer bridges classic ReAct vs ReActV2 in
+# core.service_gateway.react_compat, so the same source runs on either line.
+# The DEFAULT line (3.3 preview) lives in requirements.txt.
+#
+# prometheus-fastapi-instrumentator is held at 7.1.0 (overridden down from the
+# 8.0.2 the bare resolve picks) to match uv.lock / requirements.txt — the
+# install_metrics() call in core.api.observability uses only the long-standing
+# 7.x API, so both lines stay on one instrumentator version.
 #
 # Regenerate after changing dependencies:
 #    uv pip compile pyproject.toml --no-header \
-#        --override <(printf 'dspy==3.2.1\ngepa==0.1.1\n') -o requirements.stable.txt
+#        --override <(printf 'dspy==3.2.1\ngepa==0.1.1\nprometheus-fastapi-instrumentator==7.1.0\n') -o requirements.stable.txt
 aiofile==3.11.1
     # via py-key-value-aio
 aiohappyeyeballs==2.6.2
@@ -233,7 +241,7 @@ prometheus-client==0.25.0
     # via
     #   skynet (pyproject.toml)
     #   prometheus-fastapi-instrumentator
-prometheus-fastapi-instrumentator==8.0.2
+prometheus-fastapi-instrumentator==7.1.0
     # via skynet (pyproject.toml)
 propcache==0.5.2
     # via

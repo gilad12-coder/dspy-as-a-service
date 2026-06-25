@@ -28,6 +28,15 @@ dependencies = [
     # are both bridged in core.service_gateway.react_compat. Air-gap builds vendor
     # one line — see requirements.stable.txt / requirements.preview.txt.
     "dspy>=3.2.1,<3.4",
+    # Floor gepa at the 0.1.x line. dspy 3.2.1's metadata hard-pins gepa==0.0.27,
+    # which lacks the enable_tool_optimization adapter (TOOL_MODULE_PREFIX) that
+    # core.service_gateway.react_compat imports at module load — the backend will
+    # not even import on 0.0.27. Without this floor a bare `pip install -e .`
+    # resolves dspy 3.2.1 + gepa 0.0.27 (3.3.0b1 is a prerelease, skipped by
+    # default) and silently builds a non-booting image; the floor turns that into
+    # a loud resolver error. Supported installs (uv.lock / requirements*.txt)
+    # already carry gepa 0.1.1.
+    "gepa>=0.1.1",
     "litellm>=1.40",
     "sqlalchemy>=2.0",
     "alembic>=1.13",

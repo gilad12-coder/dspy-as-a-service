@@ -962,7 +962,7 @@ class DspyService:
 
         gen_timing = GenLMTimingCallback(student_lm)
         # Mirror the scalar run's trajectory wiring so react gets the same
-        # candidate tree (עץ המועמדים): GEPA persists state into trajectory_log_dir,
+        # candidate tree: GEPA persists state into trajectory_log_dir,
         # trajectory_watch streams candidate/rejected events, capture_proposal_prompts
         # records rejected proposal prompts, and capture_tqdm drives the live bar.
         with (
@@ -973,7 +973,7 @@ class DspyService:
             trajectory_watch(trajectory_log_dir, progress_callback),
         ):
             # Same minibatch recorder the scalar path wraps its metric in, so the
-            # per-example reflection feedback (משוב על ה-mini-batch) and the
+            # per-example reflection feedback and the
             # valset candidate outputs populate the trajectory drawer for react too.
             training_metric = maybe_wrap_minibatch_recorder(
                 metric,

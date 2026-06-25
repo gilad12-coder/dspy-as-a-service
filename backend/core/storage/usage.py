@@ -19,9 +19,10 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Engine, Text, cast, func, select
+from sqlalchemy import Engine, Text, cast, func, literal, select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..constants import PAYLOAD_OVERVIEW_NAME
 from .models import (
     EMBEDDING_DIM,
@@ -196,13 +197,24 @@ def compute_user_storage(engine: Engine, username: str) -> StorageUsage:
                 AgentStagedDatasetModel.username == normalized
             )
         )
-        job_embedding_rows = scalar(
-            select(func.count(JobEmbeddingModel.optimization_id)).where(JobEmbeddingModel.user_id == normalized)
-        )
-        conversation_embedding_rows = scalar(
-            select(func.count(ConversationEmbeddingModel.conversation_id)).where(
-                ConversationEmbeddingModel.username == normalized
+        # job_embeddings / conversation_embeddings only exist on the semantic
+        # backend; on SEARCH_BACKEND=lexical the tables are never created, so
+        # there is nothing to count and the query would hit a missing relation.
+        job_embedding_rows = (
+            scalar(
+                select(func.count(JobEmbeddingModel.optimization_id)).where(JobEmbeddingModel.user_id == normalized)
             )
+            if settings.embeddings_enabled
+            else 0
+        )
+        conversation_embedding_rows = (
+            scalar(
+                select(func.count(ConversationEmbeddingModel.conversation_id)).where(
+                    ConversationEmbeddingModel.username == normalized
+                )
+            )
+            if settings.embeddings_enabled
+            else 0
         )
         optimization_embeddings = job_embedding_rows * _JOB_EMBEDDING_ROW_BYTES
         chat_embeddings = conversation_embedding_rows * _CONVERSATION_EMBEDDING_ROW_BYTES
@@ -371,6 +383,8 @@ def compute_user_storage_category_items(
                 select(func.count(JobEmbeddingModel.optimization_id) * _JOB_EMBEDDING_ROW_BYTES)
                 .where(JobEmbeddingModel.optimization_id == JobModel.optimization_id)
                 .scalar_subquery()
+                if settings.embeddings_enabled
+                else literal(0)
             )
             checkpoint_bytes = (
                 select(func.coalesce(func.sum(GepaCheckpointModel.stored_bytes), 0))
@@ -423,6 +437,8 @@ def compute_user_storage_category_items(
                 select(func.count(ConversationEmbeddingModel.conversation_id) * _CONVERSATION_EMBEDDING_ROW_BYTES)
                 .where(ConversationEmbeddingModel.conversation_id == AgentConversationModel.id)
                 .scalar_subquery()
+                if settings.embeddings_enabled
+                else literal(0)
             )
             footprint = (func.coalesce(chat_bytes, 0) + embedding_bytes).label("chat_size")
             conversation_rows = session.execute(

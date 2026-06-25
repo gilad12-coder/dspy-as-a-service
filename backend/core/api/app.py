@@ -747,7 +747,7 @@ def create_app(
         # shared DB before they begin serving traffic).
         engine = getattr(job_store, "engine", None)
         with advisory_lock(engine, STARTUP_WORK_LOCK_KEY) as is_startup_leader:
-            if is_startup_leader:
+            if is_startup_leader and settings.embeddings_enabled:
                 # The explore search vector is embedded on a daemon thread
                 # when a job succeeds; a crashed thread (LLM creds, API blip)
                 # leaves the row missing forever and the job silently drops
@@ -772,6 +772,8 @@ def create_app(
                             )
                     except Exception as exc:
                         logger.warning("Conversation embedding backfill scan failed: %s", exc)
+            elif is_startup_leader:
+                logger.info("Embedding maintenance skipped — embeddings disabled (lexical backend)")
             else:
                 logger.info("Embedding maintenance skipped — peer replica is leader")
 

@@ -27,12 +27,18 @@ ARG PIP_TRUSTED_HOST
 # is identical either way — only the wheel set differs:
 #   docker build --build-arg PKG_MANAGER=pip --build-arg DSPY_LINE=stable ...
 # Either way the deps land in their own layer (before the source copy) so it
-# caches until the lockfile / requirements change.
+# caches until the lockfile / requirements change. Both requirements files are
+# complete compiled lockfiles, so we install with --no-deps to skip
+# re-resolution. That is load-bearing for the stable line: dspy==3.2.1's
+# metadata hard-pins gepa[dspy]==0.0.27, which collides with the deliberately
+# overridden gepa==0.1.1 in the lockfile and makes a resolving install fail
+# with ResolutionImpossible. gepa 0.1.1 runs cleanly against dspy 3.2.1 at
+# runtime; only the resolver objects, and --no-deps sidesteps it.
 ARG PKG_MANAGER=uv
 ARG DSPY_LINE=preview
 RUN if [ "$PKG_MANAGER" = "pip" ]; then \
         if [ "$DSPY_LINE" = "stable" ]; then REQ=requirements.stable.txt; else REQ=requirements.txt; fi; \
-        pip install --no-cache-dir \
+        pip install --no-cache-dir --no-deps \
             ${PIP_INDEX_URL:+--index-url $PIP_INDEX_URL} \
             ${PIP_TRUSTED_HOST:+--trusted-host $PIP_TRUSTED_HOST} \
             -r "$REQ"; \
