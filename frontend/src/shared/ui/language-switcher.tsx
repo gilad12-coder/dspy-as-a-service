@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Languages } from "lucide-react";
+import { Check, Languages, Wand2 } from "lucide-react";
 import { LOCALES, LOCALE_REGISTRY, type Locale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -25,7 +25,7 @@ function normalize(value: string): string {
  * actual switch — cookie write + reload — stays in LocaleProvider.
  */
 export function LanguageSwitcher({ className }: { className?: string }) {
-  const { locale, setLocale } = useLocale();
+  const { locale, setLocale, isAuto, resetToAuto } = useLocale();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [highlight, setHighlight] = React.useState(0);
@@ -101,6 +101,31 @@ export function LanguageSwitcher({ className }: { className?: string }) {
           aria-label={msg("shared.language.switch_aria")}
           className="mb-1 w-full rounded-md border-b border-border/60 bg-transparent px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
+        {!query.trim() && (
+          <button
+            type="button"
+            role="option"
+            aria-selected={isAuto}
+            onClick={() => {
+              setOpen(false);
+              resetToAuto();
+            }}
+            className="mb-1 flex w-full items-center gap-2 rounded-md border-b border-border/40 px-2 py-1.5 text-start transition-colors cursor-pointer hover:bg-accent/60"
+          >
+            <Wand2 className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-sm text-foreground">
+                {msg("shared.language.auto_detect")}
+              </span>
+              {isAuto && (
+                <span dir={current.dir} className="truncate text-[0.6875rem] text-muted-foreground">
+                  {current.nativeName}
+                </span>
+              )}
+            </span>
+            {isAuto && <Check className="size-4 shrink-0 text-[#C8A882]" aria-hidden="true" />}
+          </button>
+        )}
         <div role="listbox" className="max-h-72 overflow-y-auto">
           {results.length === 0 ? (
             <p className="px-2 py-3 text-center text-xs text-muted-foreground">
@@ -109,7 +134,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
           ) : (
             results.map((l, i) => {
               const entry = LOCALE_REGISTRY[l];
-              const selected = l === locale;
+              const selected = !isAuto && l === locale;
               return (
                 <button
                   key={l}

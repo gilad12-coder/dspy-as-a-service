@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { preload } from "react-dom";
 import { cache } from "react";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import Script from "next/script";
 import { AppShell } from "@/shared/layout/app-shell";
 import { TooltipProvider } from "@/shared/ui/primitives/tooltip";
@@ -28,6 +28,7 @@ import {
   LOCALE_COOKIE,
   dirForLocale,
   isLocale,
+  localeFromAcceptLanguage,
   type Locale,
 } from "@/shared/lib/locale";
 import { serializeLocale, setServerLocale } from "@/shared/lib/runtime-locale";
@@ -61,16 +62,19 @@ function ogLocale(locale: Locale): string {
 }
 
 /**
- * Resolve the request's locale: an explicit switcher cookie wins, else the
- * English default. New visitors land in English regardless of their browser's
- * `Accept-Language`; Hebrew is reached via the language switcher (which sets
- * the cookie). Wrapped in React `cache()` so the layout and `generateMetadata`
- * share a single cookie read per request.
+ * Resolve the request's locale by precedence: an explicit switcher cookie wins,
+ * else the browser's `Accept-Language` is auto-detected (q-weighted, honoring
+ * regional variants like `pt-BR` and primary-language matches like `en-AU -> en`),
+ * else the English default. A returning visitor who picked a language keeps it;
+ * a new visitor lands in the best supported match for their browser. Wrapped in
+ * React `cache()` so the layout and `generateMetadata` share a single
+ * cookie/header read per request.
  */
 const resolveRequestLocale = cache(async (): Promise<Locale> => {
   const cookieLocale = (await cookies()).get(LOCALE_COOKIE)?.value;
   if (isLocale(cookieLocale)) return cookieLocale;
-  return DEFAULT_LOCALE;
+  const detected = localeFromAcceptLanguage((await headers()).get("accept-language"));
+  return detected ?? DEFAULT_LOCALE;
 });
 
 /**

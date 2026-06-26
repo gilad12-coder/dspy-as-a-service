@@ -10,9 +10,9 @@
  * resolution and the sync `msg()` plumbing live in `runtime-locale.ts`.
  *
  * Direction is a property of the writing system, not the language, so the `dir`
- * field is authoritative rather than derived. Today the only RTL locale is
- * Hebrew; an RTL language such as Arabic slots in with `dir: "rtl"` and the
- * existing BiDi / logical-CSS / `<html dir>` plumbing picks it up unchanged.
+ * field is authoritative rather than derived. The RTL locales are Hebrew, Arabic,
+ * and Persian; another RTL language slots in with `dir: "rtl"` and the existing
+ * BiDi / logical-CSS / `<html dir>` plumbing picks it up unchanged.
  *
  * Fallback note: Hebrew is currently the only complete, hand-authored catalog,
  * so it terminates every chain (`he` has `fallback: null`) and English — itself
@@ -32,6 +32,8 @@ export type Direction = "rtl" | "ltr";
 export const LOCALE_REGISTRY = {
   en:        { dir: "ltr", nativeName: "English",                  englishName: "English",                fallback: "he" },
   he:        { dir: "rtl", nativeName: "עברית",                    englishName: "Hebrew",                 fallback: null },
+  ar:        { dir: "rtl", nativeName: "العربية",                  englishName: "Arabic",                 fallback: "en" },
+  fa:        { dir: "rtl", nativeName: "فارسی",                    englishName: "Persian",                fallback: "en" },
   "en-GB":   { dir: "ltr", nativeName: "British English",          englishName: "English (UK)",           fallback: "en" },
   "en-IN":   { dir: "ltr", nativeName: "Indian English",           englishName: "English (India)",        fallback: "en" },
   "zh-Hans": { dir: "ltr", nativeName: "简体中文",                  englishName: "Chinese (Simplified)",   fallback: "en" },

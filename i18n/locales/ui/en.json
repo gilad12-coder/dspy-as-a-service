@@ -2048,6 +2048,7 @@
   "shared.excel_filter.search_placeholder": "Search…",
   "shared.excel_filter.select_all": "Select all",
   "shared.excel_filter.sort_by": "Sort by {label}",
+  "shared.language.auto_detect": "Auto-detect",
   "shared.language.no_results": "No languages found",
   "shared.language.search_placeholder": "Search language…",
   "shared.language.switch_aria": "Choose interface language",

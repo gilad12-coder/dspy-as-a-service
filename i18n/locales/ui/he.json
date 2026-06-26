@@ -2048,6 +2048,7 @@
   "shared.excel_filter.search_placeholder": "חיפוש…",
   "shared.excel_filter.select_all": "בחר/י הכל",
   "shared.excel_filter.sort_by": "מיון לפי {label}",
+  "shared.language.auto_detect": "זיהוי אוטומטי",
   "shared.language.no_results": "לא נמצאו שפות",
   "shared.language.search_placeholder": "חיפוש שפה…",
   "shared.language.switch_aria": "בחירת שפת הממשק",
