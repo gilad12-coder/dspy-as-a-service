@@ -39,6 +39,7 @@ import {
   type SharingState,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { sessionIdentity } from "@/shared/lib/session-identity";
 
 const ROLE_OPTIONS: MemberRole[] = ["viewer", "editor"];
 
@@ -77,7 +78,7 @@ function roleDesc(role: ShareRole): string {
  */
 export function ShareDialog({ optimizationId }: { optimizationId: string }) {
   const { data: session } = useSession();
-  const me = (session?.user?.name ?? "").trim().toLowerCase();
+  const me = sessionIdentity(session);
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<SharingState | null>(null);
   const [savingAccess, setSavingAccess] = useState(false);

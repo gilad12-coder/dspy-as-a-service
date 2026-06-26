@@ -10,6 +10,7 @@ import { toast } from "react-toastify";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
 import { FadeIn } from "@/shared/ui/motion";
 import { msg } from "@/shared/lib/messages";
+import { sessionIdentity } from "@/shared/lib/session-identity";
 import { TERMS } from "@/shared/lib/terms";
 import { useColumnFilters, useColumnResize, type SortDir } from "@/shared/ui/excel-filter";
 import { getJobTypeLabel, getStatusLabel } from "@/shared/constants/job-status";
@@ -56,7 +57,7 @@ export function DashboardView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
-  const sessionUser = session?.user?.name ?? "";
+  const sessionUser = sessionIdentity(session);
   const isAdmin = session?.user?.role === "admin";
 
   const [mounted, setMounted] = useState(false);

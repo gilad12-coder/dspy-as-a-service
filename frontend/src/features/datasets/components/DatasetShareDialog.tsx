@@ -38,6 +38,7 @@ import {
   type ShareRole,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { sessionIdentity } from "@/shared/lib/session-identity";
 
 const ROLE_OPTIONS: MemberRole[] = ["viewer", "editor"];
 
@@ -73,7 +74,7 @@ function roleDesc(role: ShareRole): string {
  */
 export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
   const { data: session } = useSession();
-  const me = (session?.user?.name ?? "").trim().toLowerCase();
+  const me = sessionIdentity(session);
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<DatasetSharingState | null>(null);
   const [savingAccess, setSavingAccess] = useState(false);

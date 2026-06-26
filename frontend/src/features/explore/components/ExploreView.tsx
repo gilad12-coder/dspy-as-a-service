@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { AlertTriangle, Clock, FilterX, LogIn, Plus, SearchX, Send } from "lucide-react";
 import { logSearchQuery, type PublicDashboardPoint } from "@/shared/lib/api";
 import { msg, formatMsg } from "@/shared/lib/messages";
+import { sessionIdentity } from "@/shared/lib/session-identity";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { registerTutorialHook } from "@/features/tutorial";
 import { usePublicDashboard } from "../hooks/use-public-dashboard";
@@ -28,7 +29,7 @@ import { Pagination } from "./Pagination";
  */
 export function ExploreView() {
   const { data: session, status } = useSession();
-  const sessionUser = session?.user?.name ?? "";
+  const sessionUser = sessionIdentity(session);
   const { points: realPoints, loading: corpusLoading, error: corpusError } = usePublicDashboard();
   const [demoPoints, setDemoPoints] = React.useState<PublicDashboardPoint[] | null>(null);
   const points = demoPoints ?? realPoints;

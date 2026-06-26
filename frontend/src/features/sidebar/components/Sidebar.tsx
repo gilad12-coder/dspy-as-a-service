@@ -53,6 +53,7 @@ import { SettingsTrigger, useUserPrefs } from "@/features/settings";
 import { StorageMeter } from "@/features/storage";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { sessionIdentity } from "@/shared/lib/session-identity";
 import { TERMS } from "@/shared/lib/terms";
 import { EmptyState } from "@/shared/ui/empty-state";
 
@@ -87,7 +88,7 @@ export function Sidebar() {
   const parsedPair = activePairParam != null ? parseInt(activePairParam, 10) : NaN;
   const activePairIndex = Number.isFinite(parsedPair) ? parsedPair : null;
   const { data: session } = useSession();
-  const sessionUser = session?.user?.name ?? "";
+  const sessionUser = sessionIdentity(session);
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
   const isRtl = getActiveDir() === "rtl";
 
