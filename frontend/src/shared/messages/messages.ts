@@ -221,6 +221,8 @@ export const sharedMessages = {
   "auto.features.optimizations.components.exportmenu.5": ".json",
   "auto.features.optimizations.components.exportmenu.6": "לוגים",
   "auto.features.optimizations.components.exportmenu.7": ".csv",
+  "auto.features.optimizations.components.exportmenu.8": "תוכנית DSPy",
+  "auto.features.optimizations.components.exportmenu.9": ".zip",
   "auto.features.optimizations.components.gridlivechart.1": "ציונים לפי זוג",
   "auto.features.optimizations.components.gridlivechart.2": " הושלמו",
   "auto.features.optimizations.components.gridoverview.3": "איכות",

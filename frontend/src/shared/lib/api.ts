@@ -529,6 +529,32 @@ export function getTestResults(optimizationId: string) {
 }
 
 /**
+ * Download the self-contained, runnable DSPy program export as a zip and hand
+ * it to the browser. Unlike the other `request`-based calls this returns binary
+ * (a `StreamingResponse` attachment), so it goes through `fetchWithAuthRetry`
+ * and reads the body as a Blob rather than JSON.
+ */
+export async function downloadProgramExport(optimizationId: string): Promise<void> {
+  const res = await fetchWithAuthRetry(`${apiBase()}/optimizations/${optimizationId}/program-export`, {
+    method: "GET",
+  });
+  if (!res.ok) {
+    const parsed = parseError(await res.text().catch(() => ""));
+    throw new ApiError(
+      parsed.message ?? formatMsg("auto.shared.lib.api.template.1", { p1: res.status }),
+      { status: res.status, code: parsed.code, params: parsed.params },
+    );
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `dspy_program_${optimizationId.slice(0, 8)}.zip`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/**
  * Effective/resolved tier on a shared optimization. `owner` is the creator's
  * (and admins') resolved role; it is never a *grantable* member tier — see
  * {@link MemberRole}. Reassigned only via {@link transferOwnership}.

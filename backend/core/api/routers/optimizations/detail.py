@@ -23,7 +23,7 @@ from typing import Annotated, Literal
 
 import dspy
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from ....config import settings
@@ -78,6 +78,7 @@ from .._helpers import (
 )
 from ..constants import TERMINAL_STATUSES
 from ._local import remap_test_indices
+from ._program_export import build_program_export_zip
 
 logger = logging.getLogger(__name__)
 
@@ -704,6 +705,80 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
                 )
 
         raise DomainError("optimization.no_artifact_generic", status=409)
+
+    @router.get(
+        "/optimizations/{optimization_id}/program-export",
+        summary="Download a self-contained, runnable export of the compiled DSPy program",
+    )
+    def export_job_program(optimization_id: str, current_user: AuthenticatedUserDep) -> StreamingResponse:
+        """Stream a zip that reconstructs and runs the program with plain ``dspy``.
+
+        Unlike ``/serve`` (which runs the program on the platform's key), this
+        packages the persisted state JSON, the signature source, the module
+        recipe, and a standalone loader so the caller owns and runs the program
+        themselves — no platform endpoint required. Single-run only, matching
+        ``/artifact``; grid searches 404 here.
+
+        Args:
+            optimization_id: Optimization id whose program should be exported.
+            current_user: Authenticated caller resolved from the bearer token.
+
+        Returns:
+            A ``StreamingResponse`` carrying the zip as a file attachment.
+
+        Raises:
+            DomainError: 404 (unknown / inaccessible / grid), 409 (not success,
+                or no reconstructable program), 500 (corrupt result).
+        """
+
+        job_data = load_job_for_user(job_store, optimization_id, current_user)
+
+        overview = parse_overview(job_data)
+        optimization_type = overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE, OPTIMIZATION_TYPE_RUN)
+
+        if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
+            raise DomainError("grid_search.artifact_per_pair_redirect", status=404)
+
+        status = status_to_job_status(job_data.get("status", "pending"))
+
+        if status in {OptimizationStatus.pending, OptimizationStatus.validating, OptimizationStatus.running}:
+            raise DomainError("optimization.not_finished", status=409)
+        if status == OptimizationStatus.failed:
+            error_msg = job_data.get("message") or "unknown error"
+            raise DomainError("optimization.failed_no_artifact", status=409, error=error_msg)
+        if status == OptimizationStatus.cancelled:
+            raise DomainError("optimization.cancelled_no_artifact", status=409)
+        if status != OptimizationStatus.success:
+            raise DomainError("optimization.no_artifact_generic", status=409)
+
+        result_data = job_data.get("result")
+        if not (result_data and isinstance(result_data, dict)):
+            raise DomainError("optimization.no_artifact_generic", status=409)
+        try:
+            result = RunResponse.model_validate(result_data)
+        except ValidationError:
+            logger.warning("Optimization %s has corrupted result data", optimization_id)
+            raise DomainError("optimization.corrupt_result", status=500) from None
+
+        artifact = result.program_artifact
+        # The export reconstructs from state JSON; a legacy pickle-only artifact
+        # carries no signature_code and isn't portably rebuildable, so it's 409.
+        if artifact is None or artifact.program_state_json is None:
+            raise DomainError("optimization.no_artifact_generic", status=409)
+        if not overview.get(PAYLOAD_OVERVIEW_SIGNATURE_CODE):
+            raise DomainError("optimization.no_signature_code_for_reload", status=409)
+
+        zip_bytes = build_program_export_zip(
+            optimization_id=optimization_id,
+            artifact=artifact,
+            overview=overview,
+        )
+        filename = f"dspy_program_{optimization_id[:8]}.zip"
+        return StreamingResponse(
+            iter([zip_bytes]),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @router.get(
         "/optimizations/{optimization_id}/grid-result",

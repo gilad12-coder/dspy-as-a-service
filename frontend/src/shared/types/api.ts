@@ -232,6 +232,7 @@ export interface ReactOverlay {
 
 export interface ProgramArtifact {
   path?: string | null;
+  program_state_json?: Record<string, unknown> | null;
   program_pickle_base64?: string | null;
   metadata?: Record<string, unknown>;
   optimized_prompt?: OptimizedPredictor;

@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Download, FileJson, FileSpreadsheet, Package } from "lucide-react";
+import { ChevronDown, Download, FileCode, FileJson, FileSpreadsheet, Package } from "lucide-react";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
+import { downloadProgramExport } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
 import type {
   OptimizationLogEntry,
@@ -72,6 +73,9 @@ export function ExportMenu({
     job.result?.program_artifact?.program_pickle_base64 ||
     job.grid_result?.best_pair?.program_artifact?.program_pickle_base64
   );
+  // The runnable export reconstructs from state JSON + signature_code, which the
+  // /program-export endpoint serves for single-run (non-grid) jobs only.
+  const hasProgram = !!job.result?.program_artifact?.program_state_json;
   const itemCls =
     "w-full flex items-center gap-2.5 px-3.5 py-2 text-[0.75rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
   const iconCls = "size-4 shrink-0 text-muted-foreground/60";
@@ -97,44 +101,72 @@ export function ExportMenu({
             transition={{ duration: 0.12 }}
             className="absolute end-0 top-full mt-1.5 z-50 min-w-[180px] max-w-[min(240px,90vw)] rounded-2xl border border-border/40 bg-card shadow-[0_4px_24px_rgba(28,22,18,0.1)] py-1.5"
           >
-            {hasPkl && (
+            {hasProgram && (
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => {
+                onClick={async () => {
                   setOpen(false);
-                  const b64 =
-                    job.result?.program_artifact?.program_pickle_base64 ??
-                    job.grid_result?.best_pair?.program_artifact?.program_pickle_base64;
-                  if (!b64) return;
                   try {
-                    const blob = new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], {
-                      type: "application/octet-stream",
-                    });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `program_${job.optimization_id.slice(0, 8)}.pkl`;
-                    a.click();
-                    setTimeout(() => URL.revokeObjectURL(url), 0);
-                  } catch {
-                    toast.error(msg("optimization.file.parse_error"));
+                    await downloadProgramExport(job.optimization_id);
+                  } catch (err) {
+                    toast.error(
+                      err instanceof Error ? err.message : msg("optimization.file.parse_error"),
+                    );
                   }
                 }}
                 className={itemCls}
               >
-                <Package className={iconCls} />
+                <FileCode className={iconCls} />
                 <span className="flex-1">
-                  {msg("auto.features.optimizations.components.exportmenu.2")}
+                  {msg("auto.features.optimizations.components.exportmenu.8")}
                 </span>
                 <span className={extCls}>
-                  {msg("auto.features.optimizations.components.exportmenu.3")}
+                  {msg("auto.features.optimizations.components.exportmenu.9")}
                 </span>
               </button>
             )}
+            {hasPkl && (
+              <>
+                {hasProgram && divider}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false);
+                    const b64 =
+                      job.result?.program_artifact?.program_pickle_base64 ??
+                      job.grid_result?.best_pair?.program_artifact?.program_pickle_base64;
+                    if (!b64) return;
+                    try {
+                      const blob = new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], {
+                        type: "application/octet-stream",
+                      });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `program_${job.optimization_id.slice(0, 8)}.pkl`;
+                      a.click();
+                      setTimeout(() => URL.revokeObjectURL(url), 0);
+                    } catch {
+                      toast.error(msg("optimization.file.parse_error"));
+                    }
+                  }}
+                  className={itemCls}
+                >
+                  <Package className={iconCls} />
+                  <span className="flex-1">
+                    {msg("auto.features.optimizations.components.exportmenu.2")}
+                  </span>
+                  <span className={extCls}>
+                    {msg("auto.features.optimizations.components.exportmenu.3")}
+                  </span>
+                </button>
+              </>
+            )}
             {optimizedPrompt && (
               <>
-                {hasPkl && divider}
+                {(hasProgram || hasPkl) && divider}
                 <button
                   type="button"
                   role="menuitem"
@@ -156,7 +188,7 @@ export function ExportMenu({
             )}
             {job.logs && job.logs.length > 0 && (
               <>
-                {divider}
+                {(hasProgram || hasPkl || optimizedPrompt) && divider}
                 <button
                   type="button"
                   role="menuitem"

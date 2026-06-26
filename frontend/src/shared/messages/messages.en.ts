@@ -222,6 +222,8 @@ export const sharedMessagesEn: Partial<Record<keyof typeof sharedMessages, strin
   "auto.features.optimizations.components.exportmenu.5": ".json",
   "auto.features.optimizations.components.exportmenu.6": "Logs",
   "auto.features.optimizations.components.exportmenu.7": ".csv",
+  "auto.features.optimizations.components.exportmenu.8": "DSPy program",
+  "auto.features.optimizations.components.exportmenu.9": ".zip",
   "auto.features.optimizations.components.gridlivechart.1": "Scores by pair",
   "auto.features.optimizations.components.gridlivechart.2": " completed",
   "auto.features.optimizations.components.gridoverview.3": "Quality",
