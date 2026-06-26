@@ -1,8 +1,6 @@
 import {
-  I18N_MESSAGES,
-  I18N_MESSAGES_EN,
-  TERMS,
-  TERMS_EN,
+  I18N_MESSAGES_BY_LOCALE,
+  TERMS_BY_LOCALE,
 } from "@/shared/lib/generated/i18n-catalog";
 import { dirForLocale, fallbackChain, type Locale } from "@/shared/lib/locale";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
@@ -36,13 +34,10 @@ function isolate(value: unknown, locale: Locale): string {
   return str;
 }
 
-// Glossary catalogs keyed by locale: Hebrew base + English overlay. Walked via
-// the registry fallback chain, so a new locale inherits English/Hebrew terms
-// until it ships its own overlay.
-const TERM_CATALOGS: Partial<Record<Locale, Record<string, string>>> = {
-  en: TERMS_EN as Record<string, string>,
-  he: TERMS as Record<string, string>,
-};
+// Glossary catalogs keyed by locale (generated registry: Hebrew base + every
+// per-locale overlay). Walked via the registry fallback chain, so a locale
+// without its own term overlay inherits its fallback's terms.
+const TERM_CATALOGS: Record<string, Record<string, string>> = TERMS_BY_LOCALE;
 
 function resolveTerms(template: string, locale: Locale): string {
   return template.replace(TERM_PATTERN, (match, key: string) => {
@@ -169,12 +164,9 @@ export function formatTemplate(
   return resolveSubstitutions(resolved, params, locale);
 }
 
-// Backend-code catalogs keyed by locale: Hebrew base + English overlay, walked
-// via the registry fallback chain.
-const I18N_CATALOGS: Partial<Record<Locale, Record<string, string>>> = {
-  en: I18N_MESSAGES_EN as Record<string, string>,
-  he: I18N_MESSAGES as Record<string, string>,
-};
+// Backend-code catalogs keyed by locale (generated registry: Hebrew base + every
+// per-locale overlay), walked via the registry fallback chain.
+const I18N_CATALOGS: Record<string, Record<string, string>> = I18N_MESSAGES_BY_LOCALE;
 
 /**
  * Resolve a backend i18n code into the active locale, with `{term.x}` term

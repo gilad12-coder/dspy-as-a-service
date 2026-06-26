@@ -1,0 +1,16 @@
+{
+  "$schema": "../schema.json",
+  "locale": "yue",
+  "terms": {
+    "program": "程式"
+  },
+  "messages": {
+    "admin.quota_save_failed": "保存配额覆盖设定失败。",
+    "grid_search.no_best_program_artifact": "胜出的组合没有程式产物。",
+    "grid_search.pair_no_artifact": "位置 {pair_index} 处的组合没有程式产物。",
+    "notifier.email.footer": "这是一封来自 Skynet 的自动讯息。",
+    "optimization.no_program_artifact": "没有程式产物。",
+    "optimization.no_program_artifact_scoped": "优化没有程式产物。",
+    "wizard.code_via_authoring_only": "{field} 无法通过 update_wizard_state 设定。签名和指标代码只能通过 request_code_authoring 编写，该流程会在结果进入向导前对其进行校验。"
+  }
+}

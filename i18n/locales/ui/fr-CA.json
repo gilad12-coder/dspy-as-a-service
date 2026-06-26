@@ -1,0 +1,19 @@
+{
+  "auth.login.email": "Courriel",
+  "auth.login.invalid_credentials": "Courriel ou mot de passe incorrect",
+  "auto.features.agent.panel.components.toolscarousel.literal.17": "Ouvre un formulaire dans le clavardage où vous saisissez une entrée et l'exécutez via le programme optimisé d'une exécution terminée.",
+  "auto.features.submit.components.steps.codestep.template.2": "L'agent a écrit le code à partir de votre {p1}. Vous pouvez demander une modification dans le clavardage ou passer en mode manuel.",
+  "auto.features.tutorial.components.concepts.guide.literal.132": " ce que le modèle reçoit dans chaque exemple, par exemple une question, un courriel, un avis ou une image.",
+  "auto.features.tutorial.components.concepts.guide.literal.44": " : l'information que le modèle reçoit dans chaque exemple, par exemple une question, un courriel, un avis client ou une image.",
+  "auto.features.tutorial.lib.demo.data.literal.1": "Classification de courriels",
+  "auto.features.tutorial.lib.demo.data.literal.16": "Classification de courriels",
+  "auto.features.tutorial.lib.demo.data.literal.2": "Démarrage d'une optimisation : classification de courriels",
+  "auto.features.tutorial.lib.demo.data.literal.3": "Démarrage d'une optimisation : classification de courriels",
+  "auto.features.tutorial.lib.demo.data.literal.4": "Démarrage d'une optimisation : classification de courriels",
+  "auto.features.tutorial.lib.demo.data.literal.5": "Démarrage d'une optimisation : classification de courriels",
+  "auto.features.tutorial.lib.demo.data.literal.6": "Démarrage d'une optimisation : classification de courriels",
+  "auto.features.tutorial.lib.demo.data.literal.7": "Classification de courriels",
+  "auto.features.tutorial.lib.demo.data.literal.8": "Classification des courriels en catégories : pourriel, important, promotionnel",
+  "auto.features.tutorial.lib.demo.data.template.1": "{p1} pour classer les courriels en catégories : pourriel, important, promotionnel",
+  "share.role.editor_desc": "Accès en lecture, plus l'exécution du modèle, le clavardage et le renommage"
+}

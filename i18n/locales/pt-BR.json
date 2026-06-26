@@ -1,0 +1,19 @@
+{
+  "$schema": "../schema.json",
+  "locale": "pt-BR",
+  "terms": {
+    "cancellationReason": "Cancelado pelo usuário",
+    "pauseReason": "Em pausa pelo usuário",
+    "statusValidating": "validando",
+    "user": "usuário"
+  },
+  "messages": {
+    "accounts.invalid_credentials": "Email ou senha incorretos.",
+    "accounts.weak_password": "A senha deve ter pelo menos 8 caracteres.",
+    "admin.invalid_username": "O nome de usuário não pode estar em branco.",
+    "quota.reached": "Atingido o limite por usuário de {quota} otimizações. Elimine otimizações antigas para criar novas.",
+    "serve.chat_not_react": "O chat ao vivo só está disponível para otimizações de módulo ReAct.",
+    "serve.chat_requires_live_mcp": "O chat ao vivo requer uma fonte de ferramentas MCP ao vivo; esta execução usou um instantâneo do conjunto de dados.",
+    "submission.staged_dataset_not_found": "staged_dataset_id '{staged_dataset_id}' não encontrado para este usuário — volte a carregar o conjunto de dados e tente novamente."
+  }
+}

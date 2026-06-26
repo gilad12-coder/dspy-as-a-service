@@ -35,6 +35,9 @@ except ImportError:
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "i18n" / "locales" / "he.json"
 EN_CATALOG_PATH = ROOT / "i18n" / "locales" / "en.json"
+# Hebrew is the complete backend base; every other i18n/locales/<locale>.json is
+# an additive overlay merged at runtime via the registry fallback chain.
+BACKEND_BASE_LOCALE = "he"
 SCHEMA_PATH = ROOT / "i18n" / "schema.json"
 TS_OUT = ROOT / "frontend" / "src" / "shared" / "lib" / "generated" / "i18n-catalog.ts"
 PY_OUT = ROOT / "backend" / "core" / "i18n_keys.py"
@@ -91,57 +94,68 @@ def _load_catalog() -> dict[str, Any]:
     return catalog
 
 
-def _load_en_overlay() -> dict[str, dict[str, str]]:
-    """Load the optional English overlay catalog.
+def _load_backend_overlays() -> dict[str, dict[str, dict[str, str]]]:
+    """Load every per-locale backend overlay from ``i18n/locales/<locale>.json``.
 
-    English is an additive overlay: ``i18n/locales/en.json`` mirrors the Hebrew
-    catalog's ``terms`` and ``messages`` sections but may translate only a
-    subset — missing keys fall back to Hebrew at runtime, so a partial file is
-    valid. The file is optional; absent, both sections render empty.
+    Globs all ``*.json`` except the Hebrew base (``he.json``). Each overlay
+    mirrors the base catalog's ``terms`` and ``messages`` sections but may
+    translate only a subset — missing keys fall back through the registry chain
+    at runtime, so a partial file (e.g. a regional-variant delta) is valid. The
+    ``ui`` subdirectory is a separate tree and is not globbed here.
 
     Returns:
-        Mapping with ``terms`` and ``messages`` dicts (each possibly empty).
+        Mapping of locale tag to ``{"terms": {...}, "messages": {...}}`` (each
+        section possibly empty).
 
     Raises:
         TypeError: When a present section is not a JSON object.
     """
-    if not EN_CATALOG_PATH.exists():
-        return {"terms": {}, "messages": {}}
-    overlay = json.loads(EN_CATALOG_PATH.read_text(encoding="utf-8"))
-    for section in ("terms", "messages"):
-        value = overlay.get(section, {})
-        if not isinstance(value, dict):
-            raise TypeError(f"{EN_CATALOG_PATH} section {section!r} must be an object")
-        overlay[section] = value
-    return overlay
+    overlays: dict[str, dict[str, dict[str, str]]] = {}
+    for path in sorted((ROOT / "i18n" / "locales").glob("*.json")):
+        if path.stem == BACKEND_BASE_LOCALE:
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        sections: dict[str, dict[str, str]] = {}
+        for section in ("terms", "messages"):
+            value = data.get(section, {})
+            if not isinstance(value, dict):
+                raise TypeError(f"{path} section {section!r} must be an object")
+            sections[section] = {k: str(v) for k, v in value.items()}
+        overlays[path.stem] = sections
+    return overlays
 
 
-def _validate_overlay(catalog: dict[str, Any], en_overlay: dict[str, dict[str, str]]) -> None:
-    """Reject English overlay keys absent from the Hebrew catalog, and require
-    every term to be translated.
+def _validate_backend_overlays(
+    catalog: dict[str, Any], overlays: dict[str, dict[str, dict[str, str]]]
+) -> None:
+    """Reject overlay keys absent from the Hebrew base, and require English to
+    translate every term.
 
-    The generated ``*_EN`` constants are typed against the Hebrew-derived key
-    unions (``TermKey`` / ``I18nMessageKey``), so an English-only key would emit
-    TypeScript that fails to compile. Fail fast here with a clear message.
+    Every overlay's ``terms`` / ``messages`` consts are typed against the
+    Hebrew-derived key unions (``TermKey`` / ``I18nMessageKey``), so an unknown
+    key would emit TypeScript that fails to compile. Fail fast here.
 
-    Terms additionally must be translated in full: ``TERMS`` is read locale-aware
-    via the ``terms.ts`` proxy, so a term missing from the English overlay falls
-    back to its Hebrew value and leaks Hebrew into the English UI (the glossary is
-    a closed, ~60-key set, so completeness is cheap to maintain — unlike the
-    open-ended ``messages`` section, which may stay partial).
+    English additionally must translate every term: ``en`` falls back to ``he``,
+    so a term missing from ``en.json`` leaks Hebrew into the English UI. Other
+    locales fall back through English first (e.g. ``fr -> en -> he``), so a
+    partial overlay degrades to English, never Hebrew — partial is fine for them.
 
     Raises:
-        ValueError: When the overlay references unknown keys, or when a Hebrew
+        ValueError: When an overlay references unknown keys, or when a Hebrew
             term has no English translation.
     """
-    for section in ("terms", "messages"):
-        unknown = sorted(set(en_overlay[section]) - set(catalog[section]))
-        if unknown:
-            raise ValueError(
-                f"{EN_CATALOG_PATH} {section} has keys not present in {CATALOG_PATH.name}: {unknown}"
-            )
+    he_sections = {"terms": set(catalog["terms"]), "messages": set(catalog["messages"])}
+    for locale, overlay in overlays.items():
+        for section in ("terms", "messages"):
+            unknown = sorted(set(overlay[section]) - he_sections[section])
+            if unknown:
+                raise ValueError(
+                    f"i18n/locales/{locale}.json {section} has keys not present in "
+                    f"{CATALOG_PATH.name}: {unknown}"
+                )
 
-    untranslated_terms = sorted(set(catalog["terms"]) - set(en_overlay["terms"]))
+    en_terms = set(overlays.get("en", {}).get("terms", {}))
+    untranslated_terms = sorted(he_sections["terms"] - en_terms)
     if untranslated_terms:
         raise ValueError(
             f"{EN_CATALOG_PATH} is missing English translations for these terms: "
@@ -149,6 +163,12 @@ def _validate_overlay(catalog: dict[str, Any], en_overlay: dict[str, dict[str, s
             f"term falls back to Hebrew and leaks into the English UI. Add the English "
             f'value(s) under "terms" in {EN_CATALOG_PATH.name}.'
         )
+
+
+def _be_ident(prefix: str, locale: str) -> str:
+    """Map a locale tag to a backend overlay const identifier (``pt-BR`` ->
+    ``terms_pt_BR``)."""
+    return f"{prefix}_" + re.sub(r"[^A-Za-z0-9]", "_", locale)
 
 
 def _enum_name(key: str) -> str:
@@ -213,54 +233,80 @@ def _ts_object(values: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def _render_ts(catalog: dict[str, Any], en_overlay: dict[str, dict[str, str]]) -> str:
+def _render_ts(catalog: dict[str, Any], overlays: dict[str, dict[str, dict[str, str]]]) -> str:
     """Build the frontend TS catalog source string.
 
     Sorts every section deterministically by key so a re-ordered source catalog
-    produces an identical artefact. Emits the Hebrew catalog plus the partial
-    English overlay (``TERMS_EN`` / ``I18N_MESSAGES_EN``), both typed against the
-    Hebrew-derived key unions.
+    produces an identical artefact. Emits the Hebrew base, each per-locale
+    overlay as a ``Partial`` const, and ``TERMS_BY_LOCALE`` /
+    ``I18N_MESSAGES_BY_LOCALE`` registries keyed by locale tag (which ``i18n.ts``
+    walks via the registry fallback chain). English keeps its historical
+    ``TERMS_EN`` / ``I18N_MESSAGES_EN`` exports for backward compatibility.
 
     Args:
         catalog: Parsed Hebrew catalog.
-        en_overlay: Parsed English overlay (``terms`` / ``messages`` dicts).
+        overlays: Per-locale overlays from ``_load_backend_overlays``.
 
     Returns:
         Full TS file contents (including trailing newline).
     """
     terms_sorted = {k: catalog["terms"][k] for k in sorted(catalog["terms"])}
     messages_sorted = {k: catalog["messages"][k] for k in sorted(catalog["messages"])}
-    en_terms_sorted = {k: en_overlay["terms"][k] for k in sorted(en_overlay["terms"])}
-    en_messages_sorted = {k: en_overlay["messages"][k] for k in sorted(en_overlay["messages"])}
     terms_ts = _ts_object(terms_sorted)
     messages_ts = _ts_object(messages_sorted)
-    en_terms_ts = _ts_object(en_terms_sorted)
-    en_messages_ts = _ts_object(en_messages_sorted)
     message_key_ts = _ts_object(_enum_map(sorted(catalog["messages"]), "messages"))
     term_key_ts = _ts_object(_enum_map(sorted(catalog["terms"]), "terms"))
-    return "\n".join(
-        [
-            "// Generated by scripts/generate_i18n.py. Do not edit by hand.",
-            "",
-            f"export const TERMS = {terms_ts} as const;",
-            "",
-            f"export const I18N_MESSAGES = {messages_ts} as const;",
-            "",
-            "export type TermKey = keyof typeof TERMS;",
-            "export type I18nMessageKey = keyof typeof I18N_MESSAGES;",
-            "export type ErrorCode = I18nMessageKey;",
-            "",
-            "// English overlay — partial; runtime falls back to Hebrew for absent keys.",
-            f"export const TERMS_EN: Partial<Record<TermKey, string>> = {en_terms_ts};",
-            "",
-            f"export const I18N_MESSAGES_EN: Partial<Record<I18nMessageKey, string>> = {en_messages_ts};",
-            "",
-            f"export const I18N_KEY = {message_key_ts} as const;",
-            "",
-            f"export const TERM_KEY = {term_key_ts} as const;",
-            "",
-        ]
-    )
+    overlay_locales = sorted(overlays)
+
+    lines = [
+        "// Generated by scripts/generate_i18n.py. Do not edit by hand.",
+        "",
+        f"export const TERMS = {terms_ts} as const;",
+        "",
+        f"export const I18N_MESSAGES = {messages_ts} as const;",
+        "",
+        "export type TermKey = keyof typeof TERMS;",
+        "export type I18nMessageKey = keyof typeof I18N_MESSAGES;",
+        "export type ErrorCode = I18nMessageKey;",
+        "",
+        "// Per-locale overlays — partial; runtime walks the fallback chain over",
+        "// the registries below, so an absent key degrades to the next locale.",
+    ]
+    term_idents: dict[str, str] = {}
+    msg_idents: dict[str, str] = {}
+    for locale in overlay_locales:
+        overlay = overlays[locale]
+        terms_obj = _ts_object({k: overlay["terms"][k] for k in sorted(overlay["terms"])})
+        msgs_obj = _ts_object({k: overlay["messages"][k] for k in sorted(overlay["messages"])})
+        if locale == "en":
+            t_ident, m_ident, keyword = "TERMS_EN", "I18N_MESSAGES_EN", "export const"
+        else:
+            t_ident, m_ident, keyword = _be_ident("terms", locale), _be_ident("i18n", locale), "const"
+        term_idents[locale] = t_ident
+        msg_idents[locale] = m_ident
+        lines.append(f"{keyword} {t_ident}: Partial<Record<TermKey, string>> = {terms_obj};")
+        lines.append("")
+        lines.append(f"{keyword} {m_ident}: Partial<Record<I18nMessageKey, string>> = {msgs_obj};")
+        lines.append("")
+
+    def _registry(name: str, base_ident: str, idents: dict[str, str]) -> str:
+        rows = [f"export const {name}: Record<string, Record<string, string>> = {{"]
+        rows.append(f"  he: {base_ident} as Record<string, string>,")
+        for locale in overlay_locales:
+            prop = locale if re.fullmatch(r"[A-Za-z_$][0-9A-Za-z_$]*", locale) else json.dumps(locale)
+            rows.append(f"  {prop}: {idents[locale]} as Record<string, string>,")
+        rows.append("};")
+        return "\n".join(rows)
+
+    lines.append(_registry("TERMS_BY_LOCALE", "TERMS", term_idents))
+    lines.append("")
+    lines.append(_registry("I18N_MESSAGES_BY_LOCALE", "I18N_MESSAGES", msg_idents))
+    lines.append("")
+    lines.append(f"export const I18N_KEY = {message_key_ts} as const;")
+    lines.append("")
+    lines.append(f"export const TERM_KEY = {term_key_ts} as const;")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _render_py(catalog: dict[str, Any]) -> str:
@@ -458,9 +504,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     catalog = _load_catalog()
-    en_overlay = _load_en_overlay()
-    _validate_overlay(catalog, en_overlay)
-    ts_content = _render_ts(catalog, en_overlay)
+    overlays = _load_backend_overlays()
+    _validate_backend_overlays(catalog, overlays)
+    ts_content = _render_ts(catalog, overlays)
     py_content = _render_py(catalog)
     py_catalog_content = CATALOG_PATH.read_text(encoding="utf-8")
     ui_ts_content = _render_ui_ts(_load_ui_catalogs())

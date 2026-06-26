@@ -1,0 +1,12 @@
+{
+  "$schema": "../schema.json",
+  "locale": "fr-CA",
+  "terms": {},
+  "messages": {
+    "accounts.email_taken": "Cette adresse de courriel est déjà enregistrée.",
+    "accounts.invalid_credentials": "Courriel ou mot de passe incorrect.",
+    "accounts.invalid_email": "Adresse de courriel invalide.",
+    "serve.chat_not_react": "Le clavardage en direct n'est disponible que pour les optimisations de module ReAct.",
+    "serve.chat_requires_live_mcp": "Le clavardage en direct nécessite une source d'outils MCP en direct ; cette exécution a utilisé un instantané de jeu de données."
+  }
+}
