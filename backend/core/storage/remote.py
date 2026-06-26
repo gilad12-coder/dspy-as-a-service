@@ -1399,6 +1399,13 @@ class RemoteDBJobStore:
         outer ``UPDATE`` then writes the lease metadata, completing the claim
         in one round trip.
 
+        Only rows whose ``payload`` has been written are eligible. A submission
+        inserts the row as ``pending`` (``create_job``) *before* the worker
+        writes the payload (``submit_job``); without the ``payload IS NOT NULL``
+        guard a poll tick landing in that window would claim a payload-less row
+        and fail it with "has no payload". A NULL-payload row simply waits to be
+        claimed until the payload lands a few milliseconds later.
+
         On non-PostgreSQL dialects (eg. SQLite in tests) the query falls back
         to a non-locking SELECT-then-UPDATE; that is racy but tests run
         single-threaded so it is sufficient.
@@ -1431,6 +1438,7 @@ class RemoteDBJobStore:
             WHERE optimization_id = (
                 SELECT optimization_id FROM jobs
                 WHERE status = 'pending'
+                  AND payload IS NOT NULL
                   AND (code_version IS NULL OR code_version = :code_version)
                 ORDER BY created_at ASC
                 LIMIT 1
@@ -1474,6 +1482,7 @@ class RemoteDBJobStore:
             job = (
                 session.query(JobModel)
                 .filter(JobModel.status == "pending")
+                .filter(JobModel.payload.isnot(None))
                 .filter(or_(JobModel.code_version.is_(None), JobModel.code_version == self._current_code_version))
                 .order_by(JobModel.created_at.asc())
                 .first()

@@ -110,6 +110,9 @@ def seeded_jobs(store: RemoteDBJobStore) -> Iterator[list[str]]:
     ids = [f"{prefix}-{i:03d}" for i in range(20)]
     for oid in ids:
         store.create_job(oid)
+        # A pending row is only claimable once its payload is written (see
+        # claim_next_job's payload-presence guard), so seed one here.
+        store.update_job(oid, payload={"ok": True})
     try:
         yield ids
     finally:

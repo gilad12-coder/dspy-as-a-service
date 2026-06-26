@@ -770,7 +770,7 @@ def test_claim_next_job_skips_incompatible_code_version(store: SQLiteJobStore, m
     """A v2 worker cannot claim a job submitted by v1."""
     monkeypatch.setattr(remote_mod.settings, "code_version", "v2", raising=False)
     store.create_job("claim-v1")
-    store.update_job("claim-v1", code_version="v1")
+    store.update_job("claim-v1", code_version="v1", payload={"ok": True})
 
     assert store.claim_next_job("pod-v2", lease_seconds=60.0) is None
 
@@ -779,12 +779,31 @@ def test_claim_next_job_accepts_null_code_version(store: SQLiteJobStore, monkeyp
     """Jobs without a code version remain claimable by any worker."""
     monkeypatch.setattr(remote_mod.settings, "code_version", "v2", raising=False)
     store.create_job("claim-null")
-    store.update_job("claim-null", code_version=None)
+    store.update_job("claim-null", code_version=None, payload={"ok": True})
 
     row = store.claim_next_job("pod-v2", lease_seconds=60.0)
 
     assert row is not None
     assert row["optimization_id"] == "claim-null"
+
+
+def test_claim_next_job_skips_pending_row_without_payload(store: SQLiteJobStore) -> None:
+    """A pending row stays unclaimable until its payload is written.
+
+    Regression: a submission inserts the row as ``pending`` (``create_job``)
+    *before* the worker writes the payload (``submit_job``). A poll tick landing
+    in that window must not claim the payload-less row and fail it with "has no
+    payload" — it waits, then becomes claimable once the payload lands.
+    """
+    store.create_job("claim-nopayload")
+
+    assert store.claim_next_job("pod", lease_seconds=60.0) is None
+
+    store.update_job("claim-nopayload", payload={"ok": True})
+
+    row = store.claim_next_job("pod", lease_seconds=60.0)
+    assert row is not None
+    assert row["optimization_id"] == "claim-nopayload"
 
 
 def test_update_job_unknown_field_raises_value_error(store: SQLiteJobStore) -> None:
