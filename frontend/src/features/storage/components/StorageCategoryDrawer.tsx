@@ -32,6 +32,7 @@ import {
 import { cn } from "@/shared/lib/utils";
 import { formatStorageSize } from "@/shared/lib/formatters";
 import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { StorageItemRow } from "./StorageItemRow";
 
 /** Per-category label keys, mirroring the backend ``STORAGE_CATEGORIES``. */
@@ -87,6 +88,7 @@ interface StorageCategoryDrawerProps {
  * Loads the full set — not a top-N — so the user can clear a whole category here.
  */
 export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageCategoryDrawerProps) {
+  const isRtl = getActiveDir() === "rtl";
   const [items, setItems] = React.useState<StorageItem[] | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [pending, setPending] = React.useState<StorageItem | null>(null);
@@ -242,7 +244,7 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
   return (
     <>
       <Sheet open={category !== null} onOpenChange={(open) => !open && !busy && onClose()}>
-        <SheetContent side="left" aria-describedby={undefined} className="w-full gap-0 p-0 sm:max-w-lg">
+        <SheetContent side={isRtl ? "left" : "right"} aria-describedby={undefined} className="w-full gap-0 p-0 sm:max-w-lg">
           <SheetHeader className="shrink-0 border-b border-border/40 px-6 py-4">
             <div className="flex items-center gap-2">
               <HardDrive className="size-4 text-muted-foreground" aria-hidden="true" />

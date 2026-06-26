@@ -83,7 +83,7 @@ export function ServeChat({
                         }
                       }
                     }}
-                    className="text-right p-3 rounded-xl border border-[#DDD4C8]/60 hover:border-[#C8A882]/60 bg-muted/10 hover:bg-muted/20 transition-all group"
+                    className="text-end p-3 rounded-xl border border-[#DDD4C8]/60 hover:border-[#C8A882]/60 bg-muted/10 hover:bg-muted/20 transition-all group"
                     dir="auto"
                   >
                     <div className="text-[0.625rem] font-medium text-[#3D2E22]/50 mb-1">

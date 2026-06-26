@@ -1302,7 +1302,7 @@ export function CompareView() {
           <Link href="/" className="hover:text-foreground transition-colors">
             {msg("auto.app.compare.page.19")}
           </Link>
-          <ChevronLeft className="h-3 w-3" />
+          <ChevronLeft className="h-3 w-3 rtl:rotate-180" />
           <span className="text-foreground font-medium">
             {msg("auto.app.compare.page.20")}
             {TERMS.optimizationPlural}

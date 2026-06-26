@@ -1279,7 +1279,7 @@ export function SettingsModal() {
             </TabsTrigger>
           </TabsList>
 
-          <div className="mt-4 max-h-[60vh] overflow-y-auto pr-1">
+          <div className="mt-4 max-h-[60vh] overflow-y-auto pe-1">
             <TabsContent value="wizard">
               <WizardTab />
             </TabsContent>

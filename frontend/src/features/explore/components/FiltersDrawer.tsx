@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { msg, formatMsg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import {
   Sheet,
   SheetContent,
@@ -92,11 +93,12 @@ export function FiltersDrawer({
     selectedModules.length +
     (dateFrom ? 1 : 0) +
     (dateTo ? 1 : 0);
+  const isRtl = getActiveDir() === "rtl";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        side="right"
+        side={isRtl ? "left" : "right"}
         showCloseButton={false}
         className="w-full !max-w-md gap-0 border-border bg-background p-0"
       >

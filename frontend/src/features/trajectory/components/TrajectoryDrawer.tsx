@@ -28,6 +28,7 @@ import {
   type ValsetRow,
 } from "../lib/types";
 import { cn } from "@/shared/lib/utils";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { TERMS } from "@/shared/lib/terms";
 import { HelpTip } from "@/shared/ui/help-tip";
@@ -148,11 +149,12 @@ export function TrajectoryDrawer({
   valsetOutputs,
   toolSeverities,
 }: TrajectoryDrawerProps) {
+  const isRtl = getActiveDir() === "rtl";
   if (selection === null) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
-          side="right"
+          side={isRtl ? "left" : "right"}
           className="w-full sm:max-w-md md:max-w-[min(520px,92vw)] overflow-hidden bg-[#fbf8f3]"
         >
           <SheetHeader>
@@ -168,7 +170,7 @@ export function TrajectoryDrawer({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        side="right"
+        side={isRtl ? "left" : "right"}
         className="w-full sm:max-w-md md:max-w-[min(520px,92vw)] overflow-hidden bg-[#fbf8f3] flex flex-col"
       >
         <NodeBody
