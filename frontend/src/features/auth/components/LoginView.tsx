@@ -252,7 +252,7 @@ export function LoginView() {
                       aria-selected={authMode === tab}
                       onClick={() => switchMode(tab)}
                       className={cn(
-                        "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-200",
+                        "flex-1 cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-200",
                         authMode === tab
                           ? "bg-background text-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground",
