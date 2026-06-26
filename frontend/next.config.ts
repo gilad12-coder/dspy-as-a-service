@@ -27,14 +27,9 @@ const nextConfig: NextConfig = {
       source: "/robots.txt",
       headers: [{ key: "Cache-Control", value: "public, max-age=86400" }],
     },
-    ...(process.env.NODE_ENV === "production"
-      ? [
-          {
-            source: "/_next/static/(.*)",
-            headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
-          },
-        ]
-      : []),
+    // Next.js already serves content-hashed /_next/static assets with
+    // `immutable` long-lived caching; setting our own Cache-Control there is
+    // redundant and trips a build-time warning, so it's intentionally omitted.
   ],
   experimental: {
     optimizePackageImports: [

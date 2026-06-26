@@ -17,6 +17,7 @@
  * to Hebrew and leaks into the English UI.
  */
 
+import { fallbackChain, type Locale } from "@/shared/lib/locale";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
 import { TERMS } from "@/shared/lib/terms";
 import { TOOLTIPS_EN } from "@/shared/lib/tooltips.en";
@@ -136,18 +137,25 @@ export const TOOLTIPS = {
 
 export type TooltipKey = keyof typeof TOOLTIPS;
 
+// Tooltip overlays beyond the Hebrew base (English today), walked via the
+// registry fallback chain so a new locale inherits English/Hebrew copy until it
+// ships its own overlay.
+const TOOLTIP_OVERLAYS: Partial<Record<Locale, Partial<Record<TooltipKey, string>>>> = {
+  en: TOOLTIPS_EN,
+};
+
 /**
  * Look up tooltip copy by key in the active locale.
  *
- * English uses the `TOOLTIPS_EN` overlay and falls back to the Hebrew base when
- * a key is not yet translated. A missing key in both maps returns the key
- * itself, so the gap surfaces as a dev-visible artifact rather than a blank
- * tooltip.
+ * Walks the active locale's fallback chain over the tooltip overlays and falls
+ * back to the Hebrew base, so a key not yet translated for the active locale
+ * degrades to its fallback. A missing key everywhere returns the key itself, so
+ * the gap surfaces as a dev-visible artifact rather than a blank tooltip.
  */
 export function tip(key: TooltipKey): string {
-  if (getActiveLocale() === "en") {
-    const en = TOOLTIPS_EN[key];
-    if (en !== undefined) return en;
+  for (const loc of fallbackChain(getActiveLocale())) {
+    const value = TOOLTIP_OVERLAYS[loc]?.[key];
+    if (value !== undefined) return value;
   }
   return TOOLTIPS[key] ?? key;
 }

@@ -88,8 +88,6 @@ export default defineConfig([
       "src/shared/lib/messages.ts",
       "src/shared/lib/tooltips.ts",
       "src/shared/lib/terms.ts",
-      "src/shared/messages/**",
-      "src/features/*/messages.ts",
     ],
     plugins: {
       i18next,
@@ -115,8 +113,6 @@ export default defineConfig([
       "src/shared/lib/locale.ts",
       "src/shared/lib/generated/**",
       "src/shared/constants/job-status.ts",
-      "src/shared/messages/**",
-      "src/features/*/messages.ts",
       "src/features/auth/login-samples.ts",
     ],
     rules: {

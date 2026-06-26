@@ -2,6 +2,7 @@
 
 import { memo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { dirForLocale, fallbackChain } from "@/shared/lib/locale";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
 import { HALO_CARDS, type HaloCard } from "../login-samples";
 import { HALO_CARDS_EN } from "../login-samples.en";
@@ -118,8 +119,11 @@ function HaloChip({
 function LoginHaloImpl() {
   const reduce = useReducedMotion();
   const locale = getActiveLocale();
-  const dir = locale === "en" ? "ltr" : "rtl";
-  const titleOf = (card: LocalizedHaloCard) => (locale === "en" ? card.titleEn : card.title);
+  const dir = dirForLocale(locale);
+  // Cards carry Hebrew + English copy only; any non-Hebrew locale uses the
+  // English title via the same fallback chain the message catalog walks.
+  const useEnglish = fallbackChain(locale).includes("en");
+  const titleOf = (card: LocalizedHaloCard) => (useEnglish ? card.titleEn : card.title);
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden">

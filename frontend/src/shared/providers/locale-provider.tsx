@@ -46,10 +46,13 @@ export function LocaleProvider({
   initialLocale: Locale;
   children: React.ReactNode;
 }) {
-  // Align the sync msg() module-global with the server-resolved locale before
-  // any descendant renders, so the first client render matches SSR. A lazy
-  // useState initializer runs exactly once per mount (server + client), ahead
-  // of children, without the re-render churn of an effect.
+  // Align the sync msg() locale module-global with the server-resolved locale
+  // before any descendant renders, so the first client render matches SSR. A
+  // lazy useState initializer runs exactly once per mount (server + client),
+  // ahead of children, without the re-render churn of an effect. The catalog
+  // itself is not seeded here: the browser reads it lazily from the
+  // `window.__SKYNET_MESSAGES__` shim, and SSR of client components from the
+  // request global the layout publishes (see runtime-messages.ts).
   React.useState(() => {
     setClientLocale(initialLocale);
     return null;

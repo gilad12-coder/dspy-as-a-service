@@ -28,20 +28,29 @@
  *    exceptions in the same change.
  */
 import { TERMS as TERMS_HE, TERMS_EN } from "./generated/i18n-catalog";
+import { fallbackChain, type Locale } from "./locale";
 import { getActiveLocale } from "./runtime-locale";
 
 export type { TermKey } from "./generated/i18n-catalog";
 
+// Glossary overlays beyond the Hebrew base (the Proxy target). Only English
+// exists today; a new locale's overlay slots in here and is preferred over
+// English/Hebrew via the registry fallback chain.
+const TERM_OVERLAYS: Partial<Record<Locale, Record<string, string>>> = {
+  en: TERMS_EN as Record<string, string>,
+};
+
 /**
  * Locale-aware view over the generated glossary.
  *
- * The generated `TERMS_HE` map is Hebrew; `TERMS_EN` is the English overlay.
- * Reading any property resolves against the active locale AT ACCESS TIME — the
- * English locale uses the overlay and falls back to the Hebrew term only when a
- * key has no English value yet. This is what makes plain `TERMS.optimizationPlural`
- * render the right language in either locale without every call site threading a
- * locale or routing through a `{term.x}` message template; bare access used to be
- * Hebrew-forever, which leaked Hebrew terms all over the English UI.
+ * The generated `TERMS_HE` map is the Hebrew base (the Proxy target); other
+ * locales layer in via `TERM_OVERLAYS` (English today). Reading any property
+ * resolves against the active locale's fallback chain AT ACCESS TIME — the first
+ * overlay that defines the term wins, otherwise the Hebrew base. This is what
+ * makes plain `TERMS.optimizationPlural` render the right language in any locale
+ * without every call site threading a locale or routing through a `{term.x}`
+ * message template; bare access used to be Hebrew-forever, which leaked Hebrew
+ * terms all over the non-Hebrew UI.
  *
  * The handler traps reads only — the app never enumerates this map (no
  * `Object.keys`/spread), so a `get` trap is sufficient and keeps the exported
@@ -49,9 +58,11 @@ export type { TermKey } from "./generated/i18n-catalog";
  */
 export const TERMS: typeof TERMS_HE = new Proxy(TERMS_HE, {
   get(target, key, receiver) {
-    if (typeof key === "string" && getActiveLocale() === "en") {
-      const en = (TERMS_EN as Record<string, string>)[key];
-      if (en !== undefined) return en;
+    if (typeof key === "string") {
+      for (const loc of fallbackChain(getActiveLocale())) {
+        const value = TERM_OVERLAYS[loc]?.[key];
+        if (value !== undefined) return value;
+      }
     }
     return Reflect.get(target, key, receiver);
   },
