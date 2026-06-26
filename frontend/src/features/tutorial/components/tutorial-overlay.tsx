@@ -10,6 +10,7 @@ import { SpotlightMask } from "./spotlight-mask";
 import { TutorialPopover } from "./tutorial-popover";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { isTutorialNavigating, registerTutorialHook } from "../lib/bridge";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 export function TutorialOverlay() {
   const {
@@ -367,10 +368,15 @@ export function TutorialOverlay() {
           return;
         }
       }
-      if (e.key === "Enter" || e.key === "ArrowLeft") {
+      // Physical arrow keys follow reading direction: in LTR, Right advances and
+      // Left goes back; they swap in RTL. Enter always advances, Backspace retreats.
+      const rtl = getActiveDir() === "rtl";
+      const forwardKey = rtl ? "ArrowLeft" : "ArrowRight";
+      const backKey = rtl ? "ArrowRight" : "ArrowLeft";
+      if (e.key === "Enter" || e.key === forwardKey) {
         e.preventDefault();
         nextStep();
-      } else if (e.key === "ArrowRight" || e.key === "Backspace") {
+      } else if (e.key === "Backspace" || e.key === backKey) {
         e.preventDefault();
         prevStep();
       } else if (e.key === "Escape") {

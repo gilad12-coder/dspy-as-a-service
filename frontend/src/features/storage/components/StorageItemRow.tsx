@@ -10,12 +10,14 @@ import {
   Sparkles,
   Trash2,
   ArrowUpLeft,
+  ArrowUpRight,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
 import { cn } from "@/shared/lib/utils";
 import { formatStorageSize } from "@/shared/lib/formatters";
 import { msg, type MessageKey } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import type { StorageItem } from "@/shared/lib/api";
 
 /** Per-type icon, in-app jump target, and label key for a ranked storage item. */
@@ -72,6 +74,9 @@ export function StorageItemRow({ item, selected, onToggle, onDelete, onNavigate 
   const meta = TYPE_META[item.type];
   const Icon = meta.icon;
   const href = meta.href(item.id);
+  // The jump-to glyph points toward the reading-forward direction: up-left in
+  // RTL (Hebrew), mirrored to up-right in LTR (English).
+  const OpenArrow = getActiveDir() === "rtl" ? ArrowUpLeft : ArrowUpRight;
 
   return (
     <li
@@ -111,7 +116,7 @@ export function StorageItemRow({ item, selected, onToggle, onDelete, onNavigate 
         {href && (
           <Button asChild variant="ghost" size="icon-sm" aria-label={msg("storage.item.open")}>
             <Link href={href} onClick={() => onNavigate?.()}>
-              <ArrowUpLeft className="size-4" />
+              <OpenArrow className="size-4" />
             </Link>
           </Button>
         )}

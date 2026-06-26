@@ -98,7 +98,9 @@ const MESSAGES_EN: Partial<Record<MessageKey, string>> = {
 export function msg(key: MessageKey, params?: MessageParams): string {
   const locale = getActiveLocale();
   const template = (locale === "en" ? MESSAGES_EN[key] : undefined) ?? MESSAGES[key];
-  return params ? formatTemplate(template, params, locale) : template;
+  // Always run formatTemplate: even param-less strings may carry `{term.x}`
+  // vocabulary placeholders that must resolve rather than leak to the UI.
+  return formatTemplate(template, params, locale);
 }
 
 export function formatMsg(key: MessageKey, params: MessageParams): string {

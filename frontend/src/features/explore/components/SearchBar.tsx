@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import type { ExploreCorpus } from "../hooks/use-semantic-search";
 import { SearchSuggestions } from "./SearchSuggestions";
@@ -165,7 +166,7 @@ export function SearchBar({
       >
         <input
           ref={inputRef}
-          dir="auto"
+          dir={inputDir}
           type="text"
           inputMode="search"
           autoComplete="off"
@@ -258,10 +259,11 @@ export function SearchBar({
 
 /**
  * Walk the typed text and return "rtl" or "ltr" based on the first strong
- * directional character. Defaults to "rtl" when the value is empty so the
- * Hebrew placeholder renders correctly. More reliable than `dir="auto"`,
- * which falls back to the parent direction inconsistently across browsers
- * when the input is empty or starts with whitespace/punctuation.
+ * directional character. Falls back to the active locale's direction when the
+ * value is empty, so the placeholder and caret sit on the locale's start edge
+ * (right for Hebrew, left for English). More reliable than `dir="auto"`, which
+ * resolves the parent direction inconsistently across browsers when the input
+ * is empty or starts with whitespace/punctuation.
  */
 function detectInputDir(text: string): "rtl" | "ltr" {
   for (const ch of text) {
@@ -285,7 +287,7 @@ function detectInputDir(text: string): "rtl" | "ltr" {
       return "ltr";
     }
   }
-  return "rtl";
+  return getActiveDir();
 }
 
 function CorpusToggle({
