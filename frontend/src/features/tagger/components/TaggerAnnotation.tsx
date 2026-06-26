@@ -33,6 +33,7 @@ import { exportAnnotations, buildLibraryRows } from "../lib/export-csv";
 import type { DataField, DataRow, Annotation, TaggerConfig } from "../lib/types";
 import { isStorageQuotaError, saveDataset } from "@/shared/lib/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 interface Props {
   config: TaggerConfig;
@@ -65,6 +66,9 @@ export function TaggerAnnotation({
   onSetFreetext,
   onBack,
 }: Props) {
+  const rtl = getActiveDir() === "rtl";
+  const PrevIcon = rtl ? ChevronRight : ChevronLeft;
+  const NextIcon = rtl ? ChevronLeft : ChevronRight;
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [exportConfirm, setExportConfirm] = useState<"csv" | "json" | "xlsx" | "xls" | null>(null);
@@ -364,7 +368,7 @@ export function TaggerAnnotation({
             disabled={currentIndex === 0}
             className="gap-2"
           >
-            <ChevronRight className="size-4" />
+            <PrevIcon className="size-4" />
             {msg("auto.features.tagger.components.taggerannotation.8")}
           </Button>
 
@@ -473,7 +477,7 @@ export function TaggerAnnotation({
             className="gap-2"
           >
             {msg("auto.features.tagger.components.taggerannotation.13")}
-            <ChevronLeft className="size-4" />
+            <NextIcon className="size-4" />
           </Button>
         </div>
       </div>

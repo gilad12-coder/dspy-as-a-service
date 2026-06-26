@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ChevronLeft,
+  ChevronRight,
   ChevronDown,
   XCircle,
   Trophy,
@@ -58,6 +59,7 @@ import {
   registerTutorialHook,
 } from "@/features/tutorial";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TERMS } from "@/shared/lib/terms";
 import {
   RunChip,
@@ -116,6 +118,7 @@ function CompactRunsLegend({ runs }: { runs: RunInfo[] }) {
 
 function VerdictBlock({ runs, winnerIdx }: { runs: RunInfo[]; winnerIdx: number | null }) {
   const winner = winnerIdx != null ? runs[winnerIdx] : null;
+  const OpenIcon = getActiveDir() === "rtl" ? ChevronLeft : ChevronRight;
 
   if (!winner) {
     return (
@@ -234,7 +237,7 @@ function VerdictBlock({ runs, winnerIdx }: { runs: RunInfo[]; winnerIdx: number 
                     p1: TERMS.optimization,
                   })}
                 >
-                  <ChevronLeft className="size-3.5" />
+                  <OpenIcon className="size-3.5" />
                 </Link>
               </Button>
             </TooltipTrigger>

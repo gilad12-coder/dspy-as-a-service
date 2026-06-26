@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, X, Play, Pause } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import type { TutorialStep } from "../lib/steps";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 interface TutorialPopoverProps {
   step: TutorialStep;
@@ -35,6 +36,11 @@ export function TutorialPopover({
   onToggleAutoPlay,
 }: TutorialPopoverProps) {
   const spring = { type: "spring", stiffness: 400, damping: 35, mass: 0.8 } as const;
+  // Back points toward the start, Next toward the end — the physical arrow
+  // direction flips with the locale (left/right swap in RTL).
+  const rtl = getActiveDir() === "rtl";
+  const BackArrow = rtl ? ArrowRight : ArrowLeft;
+  const NextArrow = rtl ? ArrowLeft : ArrowRight;
 
   return (
     <motion.div
@@ -122,7 +128,7 @@ export function TutorialPopover({
               onClick={onPrev}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-[#3D2E22] text-[#FAF8F5] hover:bg-[#2C2018] transition-colors cursor-pointer"
             >
-              <ArrowRight className="size-3" />
+              <BackArrow className="size-3" />
               {msg("auto.features.tutorial.components.tutorial.popover.2")}
             </button>
           )}
@@ -135,7 +141,7 @@ export function TutorialPopover({
             {isLast
               ? msg("auto.features.tutorial.components.tutorial.popover.literal.6")
               : msg("auto.features.tutorial.components.tutorial.popover.literal.7")}
-            {!isLast && <ArrowLeft className="size-3" />}
+            {!isLast && <NextArrow className="size-3" />}
           </button>
         </div>
 

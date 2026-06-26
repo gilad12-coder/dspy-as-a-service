@@ -69,3 +69,33 @@ def test_job_embeddings_relation_uses_real_table_when_present(monkeypatch) -> No
     """When the table exists, the join targets ``job_embeddings`` unchanged."""
     monkeypatch.setattr(dashboard, "_job_embeddings_table_present", lambda _store: True)
     assert dashboard._job_embeddings_relation(SimpleNamespace(engine=object())) == "job_embeddings"
+
+
+def test_search_optimizations_forces_lexical_when_embeddings_table_absent(monkeypatch) -> None:
+    """A semantic backend with no ``job_embeddings`` table must avoid ``_search_semantic``.
+
+    Regression: with ``SEARCH_BACKEND=semantic`` but the table never created (an
+    airgap deploy without pgvector), an owner/shared scope whose corpus has no
+    unembedded success rows fell straight through to ``_search_semantic`` — which
+    references ``job_embeddings`` by name and raised ``UndefinedTable`` -> 500,
+    surfacing in the browser as "failed to load results" for the Mine / Shared
+    tabs while the public scope (diverted to lexical by the unembedded probe)
+    kept working. The dispatcher now forces lexical whenever the table is absent.
+    """
+    monkeypatch.setattr(dashboard.settings, "embeddings_enabled", True)
+    monkeypatch.setattr(dashboard, "_job_embeddings_table_present", lambda _store: False)
+
+    def _must_not_run(**_kwargs: object) -> dict[str, object]:
+        raise AssertionError("semantic/bm25 search must not run without the table")
+
+    monkeypatch.setattr(dashboard, "_search_semantic", _must_not_run)
+    monkeypatch.setattr(dashboard, "_search_bm25", _must_not_run)
+    sentinel = {"results": [], "total": 0, "matched_ids": [], "search_type": "lexical"}
+    monkeypatch.setattr(dashboard, "_search_lexical", lambda **_kwargs: sentinel)
+
+    out = dashboard.search_optimizations(
+        job_store=SimpleNamespace(engine=object()),
+        query="anything",
+        owner_username="someone@example.com",
+    )
+    assert out is sentinel

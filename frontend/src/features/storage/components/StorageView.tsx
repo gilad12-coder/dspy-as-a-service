@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, HardDrive } from "lucide-react";
+import { ChevronLeft, ChevronRight, HardDrive } from "lucide-react";
 import { getStorageUsage, type StorageUsageResponse } from "@/shared/lib/api";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { formatStorageSize } from "@/shared/lib/formatters";
 import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { StorageCategoryDrawer } from "./StorageCategoryDrawer";
 import { StorageSkeleton } from "./StorageSkeleton";
 
@@ -29,6 +30,8 @@ export function StorageView() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
   const [openCategory, setOpenCategory] = React.useState<string | null>(null);
+
+  const OpenIcon = getActiveDir() === "rtl" ? ChevronLeft : ChevronRight;
 
   const refreshUsage = React.useCallback(() => {
     getStorageUsage()
@@ -133,7 +136,7 @@ export function StorageView() {
                     <div className="flex items-baseline justify-between gap-2 text-sm">
                       <span className="flex items-center gap-1.5 text-foreground">
                         {label}
-                        <ChevronLeft
+                        <OpenIcon
                           className="size-3.5 text-muted-foreground/60 transition-transform duration-150 group-hover:-translate-x-0.5"
                           aria-hidden="true"
                         />

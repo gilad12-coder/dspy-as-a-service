@@ -1,12 +1,13 @@
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
 /**
- * Format ISO date string to Hebrew locale
- * @example "2026-04-11T12:30:00" → "11/04/2026, 12:30:00"
+ * Format ISO date string in the active locale
+ * @example "2026-04-11T12:30:00" → "11/04/2026, 12:30:00" (he) or "4/11/2026, 12:30:00 PM" (en)
  */
 export function formatDate(iso: string): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("he-IL");
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString(getActiveIntlLocale());
 }
 
 /**

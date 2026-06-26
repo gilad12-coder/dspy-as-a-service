@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
 import { PIPELINE_STAGES, type PipelineStage } from "../constants";
 import type { ProgressEvent } from "@/shared/types/api";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
 const VERTICAL_BREAKPOINT_PX = 600;
 
@@ -25,9 +26,10 @@ interface StageTs {
 
 function fmtTs(iso: string): StageTs {
   const d = new Date(iso);
+  const tag = getActiveIntlLocale();
   return {
-    date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-    time: d.toLocaleTimeString("en-US", {
+    date: d.toLocaleDateString(tag, { month: "short", day: "numeric" }),
+    time: d.toLocaleTimeString(tag, {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",

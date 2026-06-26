@@ -4,6 +4,7 @@ import { Sparkles, AlertTriangle, Info } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { cn } from "@/shared/lib/utils";
 import { msg } from "@/shared/lib/messages";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
 import type { SubmitWizardContext } from "../hooks/use-submit-wizard";
 
@@ -224,7 +225,7 @@ function PlanChip({
           {percent}
         </span>
         <span className="text-[10.5px] tabular-nums text-[#8C7A6B]" dir="ltr">
-          {count.toLocaleString("he-IL")}
+          {count.toLocaleString(getActiveIntlLocale())}
         </span>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { toast } from "react-toastify";
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronLeft,
   ChevronRight,
   CopyPlus,
   Crown,
@@ -21,6 +22,7 @@ import { ReasoningPill } from "./ui-primitives";
 import { pairLabel } from "./grid-overview-helpers";
 import { deleteGridPair } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import type { OptimizationStatusResponse, PairResult } from "@/shared/types/api";
 
 export interface PairSelectionStripProps {
@@ -57,6 +59,11 @@ export function PairSelectionStrip({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const rtl = getActiveDir() === "rtl";
+  const BackIcon = rtl ? ChevronRight : ChevronLeft;
+  const PrevArrow = rtl ? ArrowRight : ArrowLeft;
+  const NextArrow = rtl ? ArrowLeft : ArrowRight;
+
   const handleDeletePair = async () => {
     setDeleting(true);
     try {
@@ -81,7 +88,7 @@ export function PairSelectionStrip({
               onClick={onBack}
               className="inline-flex items-center gap-1.5 text-sm font-medium text-[#3D2E22] hover:text-[#3D2E22]/80 transition-colors cursor-pointer"
             >
-              <ChevronRight className="size-4" />
+              <BackIcon className="size-4" />
               <span>{msg("auto.features.optimizations.components.pairdetailview.1")}</span>
             </button>
             <span className="text-[0.6875rem] text-muted-foreground/60">|</span>
@@ -144,7 +151,7 @@ export function PairSelectionStrip({
               className="p-1.5 rounded-lg hover:bg-[#3D2E22]/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
               title={msg("auto.features.optimizations.components.pairdetailview.literal.1")}
             >
-              <ArrowRight className="size-4 text-[#3D2E22]" />
+              <PrevArrow className="size-4 text-[#3D2E22]" />
             </button>
             <span className="text-[0.6875rem] text-muted-foreground tabular-nums font-mono">
               {activePairIndex + 1}/{pairCount}
@@ -156,7 +163,7 @@ export function PairSelectionStrip({
               className="p-1.5 rounded-lg hover:bg-[#3D2E22]/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
               title={msg("auto.features.optimizations.components.pairdetailview.literal.2")}
             >
-              <ArrowLeft className="size-4 text-[#3D2E22]" />
+              <NextArrow className="size-4 text-[#3D2E22]" />
             </button>
           </div>
         </div>

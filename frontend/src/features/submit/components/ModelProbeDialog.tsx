@@ -3,6 +3,7 @@
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowLeft,
   ArrowRight,
   Check,
   ChevronDown,
@@ -28,6 +29,7 @@ import { Input } from "@/shared/ui/primitives/input";
 import { InlineErrorRow } from "@/shared/ui/inline-error-row";
 import { cn } from "@/shared/lib/utils";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TERMS } from "@/shared/lib/terms";
 import { probeModels, type ModelProbeRequest } from "@/shared/lib/api";
 import type { CatalogModel, ColumnMapping } from "@/shared/types/api";
@@ -81,6 +83,8 @@ export function ModelProbeDialog({
     shuffle,
     catalog,
   } = w;
+
+  const BackArrow = getActiveDir() === "rtl" ? ArrowRight : ArrowLeft;
 
   const catalogModels = React.useMemo(() => catalog?.models ?? [], [catalog]);
   const [search, setSearch] = React.useState("");
@@ -693,7 +697,7 @@ export function ModelProbeDialog({
                     onClick={() => setExpandedModel(null)}
                     className="flex items-center gap-1.5 text-[0.75rem] text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
                   >
-                    <ArrowRight className="size-3.5" />
+                    <BackArrow className="size-3.5" />
                     {msg("auto.features.submit.components.modelprobedialog.12")}
                   </motion.button>
 

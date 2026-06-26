@@ -60,6 +60,7 @@ import { formatMsg, msg } from "@/shared/lib/messages";
 import { formatBytes } from "@/shared/lib/formatters";
 import { TERMS } from "@/shared/lib/terms";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { ACTIVE_STATUSES, TERMINAL_STATUSES } from "@/shared/constants/job-status";
 import { registerTutorialHook } from "@/features/tutorial";
 import type { OptimizationStatusResponse, OptimizationPayloadResponse } from "@/shared/types/api";
@@ -1057,8 +1058,12 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                       disabled={resuming}
                       aria-label={msg("optimization.resume")}
                     >
-                      {/* Mirrored so the triangle points in the RTL reading direction. */}
-                      <Play className={`size-4 -scale-x-100${resuming ? " animate-spin" : ""}`} />
+                      {/* Mirror the triangle to point in the reading direction — left in RTL, right in LTR. */}
+                      <Play
+                        className={`size-4${getActiveDir() === "rtl" ? " -scale-x-100" : ""}${
+                          resuming ? " animate-spin" : ""
+                        }`}
+                      />
                     </Button>
                   </TooltipButton>
                 ) : (

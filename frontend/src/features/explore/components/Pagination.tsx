@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { msg, formatMsg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 interface PaginationProps {
   page: number;
@@ -24,6 +25,10 @@ export function Pagination({
   const totalPages = Math.max(1, Math.ceil(total / size));
   const pages = React.useMemo(() => pageList(page, totalPages), [page, totalPages]);
 
+  const rtl = getActiveDir() === "rtl";
+  const PrevIcon = rtl ? ChevronRight : ChevronLeft;
+  const NextIcon = rtl ? ChevronLeft : ChevronRight;
+
   if (totalPages <= 1) return null;
 
   return (
@@ -37,7 +42,7 @@ export function Pagination({
           onClick={() => onPageChange(page - 1)}
           aria="prev"
         >
-          <ChevronRight className="size-4" aria-hidden="true" />
+          <PrevIcon className="size-4" aria-hidden="true" />
           <span>{msg("explore.page.prev")}</span>
         </PageNavButton>
         {pages.map((entry, idx) =>
@@ -64,7 +69,7 @@ export function Pagination({
           aria="next"
         >
           <span>{msg("explore.page.next")}</span>
-          <ChevronLeft className="size-4" aria-hidden="true" />
+          <NextIcon className="size-4" aria-hidden="true" />
         </PageNavButton>
       </nav>
     </div>

@@ -604,6 +604,18 @@ def search_optimizations(
     use_lexical = not settings.embeddings_enabled
     query_vector: list[float] | None = None
 
+    # The semantic branch references job_embeddings by name, so on a database
+    # where that table was never created (e.g. an airgap deploy without
+    # pgvector) it raises UndefinedTable -> 500 -- which the browser surfaces as
+    # a CORS/"failed to load" error on /dashboard/search. The unembedded-job
+    # probe only diverts scopes that have in-scope success rows, so an empty
+    # "mine"/"shared" corpus would otherwise fall straight through to the broken
+    # semantic query. Degrade every scope to lexical when the table is absent;
+    # the lexical/bm25 paths already use the empty-relation stand-in.
+    if not use_lexical and not _job_embeddings_table_present(job_store):
+        logger.info("search_optimizations: job_embeddings table absent, using lexical search")
+        use_lexical = True
+
     if not use_lexical:
         if _has_unembedded_success_jobs(
             job_store,

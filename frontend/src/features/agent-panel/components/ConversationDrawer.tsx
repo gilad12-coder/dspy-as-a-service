@@ -27,7 +27,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { cn } from "@/shared/lib/utils";
 import { msg } from "@/shared/lib/messages";
-import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { ConversationDrawerSkeleton } from "./ConversationDrawerSkeleton";
 
 import type { ConversationSummary } from "../lib/conversation-api";
@@ -49,18 +49,12 @@ interface ConversationDrawerProps {
 
 // Bucket conversations into pinned → concrete calendar dates, mirroring the
 // optimizations sidebar grouping (features/sidebar/lib/group-jobs.ts) so the
-// two histories use the same visual rhythm. Date labels are formatted in
-// he-IL DD/MM/YYYY.
+// two histories use the same visual rhythm. Date labels follow the active
+// locale's short numeric date format.
 interface ConversationGroup {
   label: string;
   rows: ConversationSummary[];
 }
-
-const DATE_FORMATTER = new Intl.DateTimeFormat("he-IL", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-});
 
 function groupConversationsByRecency(rows: ConversationSummary[]): ConversationGroup[] {
   const pinned: ConversationSummary[] = [];
@@ -79,7 +73,11 @@ function groupConversationsByRecency(rows: ConversationSummary[]): ConversationG
         ).padStart(2, "0")}`
       : "unknown";
     const label = validDate
-      ? DATE_FORMATTER.format(updated)
+      ? updated.toLocaleDateString(getActiveIntlLocale(), {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
       : msg("auto.features.agent.panel.components.conversationdrawer.section_unknown_date");
     const group = dated.get(key) ?? { label, rows: [] };
     group.rows.push(row);

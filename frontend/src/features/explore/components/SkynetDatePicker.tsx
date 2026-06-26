@@ -8,36 +8,19 @@ import {
   PopoverContent,
 } from "@/shared/ui/primitives/popover";
 import { msg, formatMsg } from "@/shared/lib/messages";
-import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
-// Hebrew single-letter weekday labels, indexed by JS getDay() (0=Sun..6=Sat).
-const WEEKDAY_LABELS = [
-  msg("explore.datepicker.weekday.sun"),
-  msg("explore.datepicker.weekday.mon"),
-  msg("explore.datepicker.weekday.tue"),
-  msg("explore.datepicker.weekday.wed"),
-  msg("explore.datepicker.weekday.thu"),
-  msg("explore.datepicker.weekday.fri"),
-  msg("explore.datepicker.weekday.sat"),
+// Weekday label message keys, indexed by JS getDay() (0=Sun..6=Sat). Resolved
+// per-render via msg() so the labels follow the active locale.
+const WEEKDAY_KEYS = [
+  "explore.datepicker.weekday.sun",
+  "explore.datepicker.weekday.mon",
+  "explore.datepicker.weekday.tue",
+  "explore.datepicker.weekday.wed",
+  "explore.datepicker.weekday.thu",
+  "explore.datepicker.weekday.fri",
+  "explore.datepicker.weekday.sat",
 ] as const;
-
-const MONTH_HEADER_FMT = new Intl.DateTimeFormat("he-IL", {
-  month: "long",
-  year: "numeric",
-});
-
-const DAY_ARIA_FMT = new Intl.DateTimeFormat("he-IL", {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
-
-const DISPLAY_FMT = new Intl.DateTimeFormat("he-IL", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-});
 
 export function parseISODate(s: string | null | undefined): Date | null {
   if (!s) return null;
@@ -117,8 +100,8 @@ interface SkynetDatePickerProps {
 
 /**
  * Calendar-style date picker tailored to the Skynet visual language.
- * RTL-first: weekday labels read right-to-left starting on Sunday, the
- * "previous month" chevron points right and "next month" points left, and
+ * Locale-aware: weekday labels, the month header and day labels follow the
+ * active UI locale, the month-nav chevrons flip with writing direction, and
  * dates are surfaced as YYYY-MM-DD ISO strings so callers stay timezone-safe.
  */
 export function SkynetDatePicker({
@@ -134,6 +117,31 @@ export function SkynetDatePicker({
   const minDate = React.useMemo(() => parseISODate(min), [min]);
   const maxDate = React.useMemo(() => parseISODate(max), [max]);
   const today = React.useMemo(() => startOfDay(new Date()), []);
+
+  const localeTag = getActiveIntlLocale();
+  const monthHeaderFmt = React.useMemo(
+    () => new Intl.DateTimeFormat(localeTag, { month: "long", year: "numeric" }),
+    [localeTag],
+  );
+  const dayAriaFmt = React.useMemo(
+    () =>
+      new Intl.DateTimeFormat(localeTag, {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }),
+    [localeTag],
+  );
+  const displayFmt = React.useMemo(
+    () =>
+      new Intl.DateTimeFormat(localeTag, {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }),
+    [localeTag],
+  );
 
   const [open, setOpen] = React.useState(false);
   const [viewDate, setViewDate] = React.useState<Date>(() =>
@@ -244,8 +252,8 @@ export function SkynetDatePicker({
   };
 
   const grid = React.useMemo(() => buildMonthGrid(viewDate), [viewDate]);
-  const monthHeader = MONTH_HEADER_FMT.format(viewDate);
-  const displayValue = selectedDate ? DISPLAY_FMT.format(selectedDate) : null;
+  const monthHeader = monthHeaderFmt.format(viewDate);
+  const displayValue = selectedDate ? displayFmt.format(selectedDate) : null;
   const triggerPlaceholder = placeholder ?? msg("explore.datepicker.placeholder");
 
   const prevMonthDisabled = Boolean(
@@ -254,6 +262,10 @@ export function SkynetDatePicker({
   const nextMonthDisabled = Boolean(
     maxDate && addMonths(viewDate, 1) > startOfMonth(maxDate),
   );
+
+  const rtl = getActiveDir() === "rtl";
+  const PrevMonthIcon = rtl ? ChevronRight : ChevronLeft;
+  const NextMonthIcon = rtl ? ChevronLeft : ChevronRight;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -290,7 +302,7 @@ export function SkynetDatePicker({
               disabled={prevMonthDisabled}
               className="inline-flex size-7 items-center justify-center rounded-md text-foreground/60 transition-colors cursor-pointer hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:text-foreground/25 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
             >
-              <ChevronRight className="size-4" aria-hidden="true" />
+              <PrevMonthIcon className="size-4" aria-hidden="true" />
             </button>
             <div
               className="text-[13px] font-medium text-foreground"
@@ -305,7 +317,7 @@ export function SkynetDatePicker({
               disabled={nextMonthDisabled}
               className="inline-flex size-7 items-center justify-center rounded-md text-foreground/60 transition-colors cursor-pointer hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:text-foreground/25 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
             >
-              <ChevronLeft className="size-4" aria-hidden="true" />
+              <NextMonthIcon className="size-4" aria-hidden="true" />
             </button>
           </div>
 
@@ -316,13 +328,13 @@ export function SkynetDatePicker({
             className="px-2 py-2"
           >
             <div role="row" className="grid grid-cols-7 pb-1">
-              {WEEKDAY_LABELS.map((d) => (
+              {WEEKDAY_KEYS.map((k, idx) => (
                 <div
-                  key={d}
+                  key={idx}
                   role="columnheader"
                   className="inline-flex h-7 items-center justify-center text-[11px] font-medium text-foreground/45"
                 >
-                  {d}
+                  {msg(k)}
                 </div>
               ))}
             </div>
@@ -356,7 +368,7 @@ export function SkynetDatePicker({
                     type="button"
                     role="gridcell"
                     aria-label={formatMsg("explore.datepicker.day.aria", {
-                      date: DAY_ARIA_FMT.format(cell),
+                      date: dayAriaFmt.format(cell),
                     })}
                     aria-selected={isSelected}
                     aria-current={isToday ? "date" : undefined}

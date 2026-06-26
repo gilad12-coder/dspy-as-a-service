@@ -5,6 +5,7 @@ import { Activity, MessageSquare, Timer } from "lucide-react";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
 import { msg } from "@/shared/lib/messages";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { tip } from "@/shared/lib/tooltips";
 import type { LMActivity, LMStageStats } from "@/shared/types/api";
 
@@ -54,7 +55,7 @@ function aggregateColumn(
 }
 
 function formatCalls(n: number): string {
-  return n.toLocaleString("he-IL");
+  return n.toLocaleString(getActiveIntlLocale());
 }
 
 // Unified to seconds so the eye doesn't re-parse units row to row. Sub-100ms

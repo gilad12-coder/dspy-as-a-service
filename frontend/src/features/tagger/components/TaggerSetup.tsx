@@ -29,6 +29,7 @@ import { parseDatasetFile } from "@/shared/lib/parse-dataset";
 import { registerTutorialHook, registerTutorialQuery } from "@/features/tutorial";
 import type { AnnotationMode, TaggerConfig, DataRow, Category } from "../lib/types";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 interface TaggerSetupProps {
   onStart: (config: TaggerConfig, rows: DataRow[], columns: string[]) => void;
@@ -455,6 +456,10 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
 
   const isLastStep = step === TAGGER_STEPS.length - 1;
 
+  const rtl = getActiveDir() === "rtl";
+  const BackIcon = rtl ? ChevronRight : ChevronLeft;
+  const NextIcon = rtl ? ChevronLeft : ChevronRight;
+
   return (
     <div className="space-y-6 max-w-2xl mx-auto pb-8 -mt-2 md:-mt-4" data-tutorial="tagger-setup">
       <div className="relative">
@@ -536,7 +541,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
       {!isLastStep ? (
         <div className="flex items-center justify-between">
           <Button variant="outline" onClick={goPrev} disabled={step === 0} className="gap-2">
-            <ChevronRight className="h-4 w-4" />
+            <BackIcon className="h-4 w-4" />
             {msg("auto.features.tagger.components.taggersetup.13")}
           </Button>
           <span className="text-xs text-muted-foreground tabular-nums">
@@ -544,7 +549,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
           </span>
           <Button onClick={handleNext} disabled={!validateStep(step)} className="gap-2">
             {msg("auto.features.tagger.components.taggersetup.14")}
-            <ChevronLeft className="h-4 w-4" />
+            <NextIcon className="h-4 w-4" />
           </Button>
         </div>
       ) : (

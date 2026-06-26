@@ -3,6 +3,7 @@
 import { memo, useMemo, useState } from "react";
 import {
   ChevronLeft,
+  ChevronRight,
   Crown,
   Gauge,
   Loader2,
@@ -41,6 +42,7 @@ import { deleteGridPair, restartGridPair, resumeGridPair } from "@/shared/lib/ap
 import { ChartTable } from "@/shared/charts/chart-table";
 import { useLiteMode } from "@/features/settings";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { tip } from "@/shared/lib/tooltips";
 import { computePairScores } from "../lib/pair-scores";
 import { ReasoningPill } from "./ui-primitives";
@@ -63,6 +65,7 @@ function GridOverviewImpl({
   onPairDeleted?: (pairIndex: number) => void;
 }) {
   const lite = useLiteMode();
+  const OpenIcon = getActiveDir() === "rtl" ? ChevronLeft : ChevronRight;
   const [pendingDelete, setPendingDelete] = useState<PairResult | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [rerunningPair, setRerunningPair] = useState<number | null>(null);
@@ -1054,7 +1057,11 @@ function GridOverviewImpl({
                       }}
                     >
                       {pairResumable ? (
-                        <Play className={`size-3.5 -scale-x-100${rerunBusy ? " animate-spin" : ""}`} />
+                        <Play
+                          className={`size-3.5${getActiveDir() === "rtl" ? " -scale-x-100" : ""}${
+                            rerunBusy ? " animate-spin" : ""
+                          }`}
+                        />
                       ) : (
                         <RotateCcw className={`size-3.5${rerunBusy ? " animate-spin" : ""}`} />
                       )}
@@ -1081,7 +1088,7 @@ function GridOverviewImpl({
                   </Button>
                 </TooltipButton>
 
-                <ChevronLeft className="size-4 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors shrink-0" />
+                <OpenIcon className="size-4 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors shrink-0" />
               </div>
 
               {!pr.error && (

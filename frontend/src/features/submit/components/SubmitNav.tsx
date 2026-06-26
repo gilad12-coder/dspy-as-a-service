@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/shared/ui/primitives/button";
 import { TERMS } from "@/shared/lib/terms";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 import { STEPS } from "../constants";
 import type { SubmitWizardContext } from "../hooks/use-submit-wizard";
@@ -12,11 +13,17 @@ import type { SubmitWizardContext } from "../hooks/use-submit-wizard";
 export function SubmitNav({ w }: { w: SubmitWizardContext }) {
   const { step, goPrev, handleNext, handleSubmit, submitting, advancing } = w;
 
+  // Back points toward the start, Next toward the end — the physical direction
+  // of each flips with the locale (left/right swap in RTL).
+  const rtl = getActiveDir() === "rtl";
+  const BackChevron = rtl ? ChevronRight : ChevronLeft;
+  const NextChevron = rtl ? ChevronLeft : ChevronRight;
+
   if (step < STEPS.length - 1) {
     return (
       <div className="flex items-center justify-between">
         <Button onClick={goPrev} disabled={step === 0 || advancing} className="gap-2">
-          <ChevronRight className="h-4 w-4" />
+          <BackChevron className="h-4 w-4" />
           {msg("auto.features.submit.components.submitnav.1")}
         </Button>
         <Button
@@ -35,7 +42,7 @@ export function SubmitNav({ w }: { w: SubmitWizardContext }) {
           ) : (
             <>
               {msg("auto.features.submit.components.submitnav.2")}
-              <ChevronLeft className="h-4 w-4" />
+              <NextChevron className="h-4 w-4" />
             </>
           )}
         </Button>

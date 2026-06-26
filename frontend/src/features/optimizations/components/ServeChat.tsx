@@ -9,6 +9,7 @@ import type { ServeInfoResponse } from "@/shared/types/api";
 import { autoResizeTextarea, MessageActions } from "@/shared/ui/agent";
 import { formatOutput } from "@/shared/lib";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 export interface ServeChatProps {
   serveInfo: ServeInfoResponse;
@@ -295,7 +296,9 @@ export function ServeChat({
           className="max-w-2xl mx-auto"
         >
           <div
-            className={`flex gap-2 ${serveInfo.input_fields.length > 1 ? "items-center" : "items-start"}`}
+            className={`flex gap-2 ${getActiveDir() === "ltr" ? "flex-row-reverse" : ""} ${
+              serveInfo.input_fields.length > 1 ? "items-center" : "items-start"
+            }`}
           >
             <Button
               type="submit"

@@ -72,7 +72,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { msg } from "@/shared/lib/messages";
 import { formatStorageSize } from "@/shared/lib/formatters";
-import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import {
   deleteStorageQuotaOverride,
@@ -1010,7 +1010,8 @@ function ApiTab() {
     }
   }, [revealed]);
 
-  const formatTimestamp = (iso: string) => new Date(iso).toLocaleString("he-IL");
+  const formatTimestamp = (iso: string) =>
+    new Date(iso).toLocaleString(getActiveIntlLocale());
   const docsUrl = `${getRuntimeEnv().apiUrl}/scalar`;
 
   if (!hasAuth) {

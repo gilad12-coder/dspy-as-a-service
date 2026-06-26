@@ -19,7 +19,13 @@
  */
 
 import { cache } from "react";
-import { DEFAULT_LOCALE, dirForLocale, isLocale, type Locale } from "@/shared/lib/locale";
+import {
+  DEFAULT_LOCALE,
+  dirForLocale,
+  intlLocaleTag,
+  isLocale,
+  type Locale,
+} from "@/shared/lib/locale";
 
 declare global {
   interface Window {
@@ -97,6 +103,15 @@ export function getActiveLocale(): Locale {
  */
 export function getActiveDir(): "rtl" | "ltr" {
   return dirForLocale(getActiveLocale());
+}
+
+/**
+ * BCP-47 tag for the active locale, for `Intl.*` formatters (dates, numbers,
+ * relative time). A one-call convenience so formatted dates/times follow the
+ * active locale instead of being hardcoded to one language.
+ */
+export function getActiveIntlLocale(): string {
+  return intlLocaleTag(getActiveLocale());
 }
 
 /**

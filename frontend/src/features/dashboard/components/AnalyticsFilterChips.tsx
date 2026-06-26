@@ -2,6 +2,7 @@ import * as React from "react";
 import { X } from "lucide-react";
 import { getStatusLabel } from "@/shared/constants/job-status";
 import { msg } from "@/shared/lib/messages";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import type { UseAnalyticsFiltersReturn } from "../hooks/use-analytics-filters";
 
 export function AnalyticsFilterChips({
@@ -88,7 +89,7 @@ export function AnalyticsFilterChips({
       )}
       {date && (
         <FilterChip
-          label={new Date(date).toLocaleDateString("he-IL", {
+          label={new Date(date).toLocaleDateString(getActiveIntlLocale(), {
             day: "numeric",
             month: "short",
             year: "numeric",

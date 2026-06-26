@@ -25,6 +25,9 @@ export const LOCALE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 const LOCALE_DIR: Record<Locale, "rtl" | "ltr"> = { he: "rtl", en: "ltr" };
 
+// BCP-47 tag each locale maps to for Intl date/number/relative-time formatting.
+const LOCALE_BCP47: Record<Locale, string> = { he: "he-IL", en: "en-US" };
+
 /** Native, self-referential label for each locale (used by the switcher). */
 export const LOCALE_LABEL: Record<Locale, string> = { he: "עברית", en: "English" };
 
@@ -39,6 +42,15 @@ export function isLocale(value: unknown): value is Locale {
 /** Writing direction for a locale: Hebrew is RTL, English is LTR. */
 export function dirForLocale(locale: Locale): "rtl" | "ltr" {
   return LOCALE_DIR[locale];
+}
+
+/**
+ * BCP-47 tag an `Intl.*` formatter should use for a locale (e.g. "en-US",
+ * "he-IL"). Keeps date/number/relative-time output following the active UI
+ * locale instead of being pinned to one language.
+ */
+export function intlLocaleTag(locale: Locale): string {
+  return LOCALE_BCP47[locale];
 }
 
 /**

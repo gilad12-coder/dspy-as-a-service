@@ -32,6 +32,7 @@ import { ACTIVE_STATUSES } from "@/shared/constants/job-status";
 import { LiveElapsed } from "./LiveElapsed";
 import type { OptimizationSummaryResponse, PaginatedJobsResponse } from "@/shared/types/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TERMS } from "@/shared/lib/terms";
 import { FETCH_PAGE_SIZE } from "../constants";
 import { formatScore, typeBadge } from "../lib/status-badges";
@@ -153,6 +154,9 @@ export function JobsTab({
   setPageOffset,
   onOpenJob,
 }: JobsTabProps) {
+  const rtl = getActiveDir() === "rtl";
+  const PrevIcon = rtl ? ChevronRight : ChevronLeft;
+  const NextIcon = rtl ? ChevronLeft : ChevronRight;
   return (
     <Card className="border-border/60">
       <CardContent className="pt-5">
@@ -546,7 +550,7 @@ export function JobsTab({
               onClick={() => setPageOffset(Math.max(0, pageOffset - FETCH_PAGE_SIZE))}
               className="gap-1"
             >
-              <ChevronRight className="size-3.5" />
+              <PrevIcon className="size-3.5" />
               {msg("auto.features.dashboard.components.jobstab.11")}
             </Button>
             <span className="text-sm text-muted-foreground tabular-nums px-3 py-1 rounded-md bg-muted/50">
@@ -561,7 +565,7 @@ export function JobsTab({
               className="gap-1"
             >
               {msg("auto.features.dashboard.components.jobstab.12")}
-              <ChevronLeft className="size-3.5" />
+              <NextIcon className="size-3.5" />
             </Button>
           </div>
         )}

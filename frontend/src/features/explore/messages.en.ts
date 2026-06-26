@@ -4,8 +4,8 @@
 import type { exploreMessages } from "./messages";
 
 export const exploreMessagesEn: Partial<Record<keyof typeof exploreMessages, string>> = {
-  "explore.filter.run": "{term.optimizationTypeRun}",
-  "explore.filter.grid": "{term.optimizationTypeGrid}",
+  "explore.filter.run": "Run",
+  "explore.filter.grid": "Grid search",
   "explore.empty.title": "No runs yet",
   "explore.empty.hint": "They'll appear here once the system has processed them",
   "explore.empty.cta": "Create your first run",

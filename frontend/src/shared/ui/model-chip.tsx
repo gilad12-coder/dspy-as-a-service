@@ -5,6 +5,7 @@ import { Settings, Copy, Trash2, Plus, Thermometer, Coins, Eye, Brain } from "lu
 import { cn } from "@/shared/lib/utils";
 import type { CatalogModel, ModelConfig } from "@/shared/types/api";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 
 interface ModelChipProps {
@@ -91,7 +92,9 @@ export function ModelChip({
             "truncate text-sm",
             isEmpty ? "text-muted-foreground" : "text-foreground font-mono font-medium",
           )}
-          dir={isEmpty ? "rtl" : "ltr"}
+          // Placeholder text is localized, so it follows the active direction;
+          // a concrete model id is always Latin and stays LTR.
+          dir={isEmpty ? getActiveDir() : "ltr"}
         >
           {isEmpty ? name : (name.split("/").pop() ?? name)}
         </span>
