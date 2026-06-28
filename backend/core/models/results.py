@@ -44,6 +44,7 @@ class RunResponse(BaseModel):
     program_artifact: ProgramArtifact | None = None
     runtime_seconds: float | None = None
     num_lm_calls: int | None = None
+    total_tokens: int | None = None
     avg_response_time_ms: float | None = None
     lm_activity: LMActivity | None = None
     run_log: list[JobLogEntry] = Field(default_factory=list)
@@ -64,6 +65,7 @@ class PairResult(BaseModel):
     metric_improvement: float | None = None
     runtime_seconds: float | None = None
     num_lm_calls: int | None = None
+    total_tokens: int | None = None
     avg_response_time_ms: float | None = None
     lm_activity: LMActivity | None = None
     program_artifact: ProgramArtifact | None = None
@@ -88,3 +90,4 @@ class GridSearchResponse(BaseModel):
     pair_results: list[PairResult] = Field(default_factory=list)
     best_pair: PairResult | None = None
     runtime_seconds: float | None = None
+    total_tokens: int | None = None

@@ -153,3 +153,55 @@ def build_language_model(config: ModelConfig, *, disable_cache: bool = False) ->
         raise ServiceError(f"Failed to build language model '{config.name}': {exc}") from exc
 
     return language_model
+
+
+def _usage_total_tokens(usage: object) -> int | None:
+    """Extract a non-negative total-token count from one history ``usage`` block.
+
+    Args:
+        usage: The ``usage`` value from a ``dspy.LM`` history entry — a mapping,
+            a provider usage object, or ``None``.
+
+    Returns:
+        The entry's total token count, or ``None`` when ``usage`` carries no
+        recognizable token fields.
+    """
+    if usage is None:
+        return None
+    get = usage.get if isinstance(usage, dict) else lambda key: getattr(usage, key, None)
+    total = get("total_tokens")
+    if isinstance(total, (int, float)) and total > 0:
+        return int(total)
+    parts = [int(p) for p in (get("prompt_tokens"), get("completion_tokens")) if isinstance(p, (int, float))]
+    return sum(parts) if parts else None
+
+
+def total_tokens_from_history(*language_models: object) -> int | None:
+    """Sum the total token usage recorded across one or more LMs' call histories.
+
+    Reads the ``usage`` block each ``dspy.LM`` stamps onto every ``history``
+    entry (the same source ``num_lm_calls`` counts), summing ``total_tokens`` —
+    or ``prompt_tokens + completion_tokens`` when a provider omits the total.
+    This is the per-run token figure the billing worker meters to Stripe.
+
+    Args:
+        *language_models: LMs whose histories to total; ``None`` entries and LMs
+            without a ``history`` list are skipped.
+
+    Returns:
+        The summed token count, or ``None`` when no usage information is present
+        (e.g. mocked LMs in tests) so callers can tell "zero usage" apart from
+        "usage not tracked" and skip metering rather than bill nothing.
+    """
+    total = 0
+    found = False
+    for language_model in language_models:
+        history = getattr(language_model, "history", None)
+        if not isinstance(history, list):
+            continue
+        for entry in history:
+            tokens = _usage_total_tokens(entry.get("usage") if isinstance(entry, dict) else None)
+            if tokens is not None:
+                total += tokens
+                found = True
+    return total if found else None

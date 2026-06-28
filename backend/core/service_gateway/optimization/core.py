@@ -63,7 +63,7 @@ from ...registry import (
     resolve_optimizer_factory,
 )
 from ...worker.log_handler import set_current_pair_index
-from ..language_models import apply_model_reasoning_config, build_language_model
+from ..language_models import apply_model_reasoning_config, build_language_model, total_tokens_from_history
 from ..react_compat import REACT_CLASS
 from ..safe_exec import validate_metric_code, validate_signature_code
 from .artifacts import persist_program
@@ -486,6 +486,7 @@ def _run_grid_pair(
             metric_improvement=improvement,
             runtime_seconds=round(pair_runtime, 2),
             num_lm_calls=pair_lm_calls,
+            total_tokens=total_tokens_from_history(language_model, reflection_lm),
             avg_response_time_ms=pair_avg_ms,
             lm_activity=pair_lm_activity,
             program_artifact=program_artifact,
@@ -852,6 +853,7 @@ class DspyService:
             program_artifact=program_artifact,
             runtime_seconds=runtime_seconds,
             num_lm_calls=num_lm_calls,
+            total_tokens=total_tokens_from_history(language_model, reflection_lm),
             avg_response_time_ms=avg_response_time_ms,
             lm_activity=lm_activity,
             baseline_test_results=baseline_test_results,
@@ -1097,6 +1099,7 @@ class DspyService:
             program_artifact=program_artifact,
             runtime_seconds=runtime_seconds,
             num_lm_calls=num_lm_calls,
+            total_tokens=total_tokens_from_history(student_lm, reflection_lm),
             avg_response_time_ms=avg_response_time_ms,
             # Generation-stage activity: student rollouts are bucketed into
             # baseline/training/evaluation via the timing_callbacks passed into
@@ -1317,6 +1320,8 @@ class DspyService:
         grid_runtime = (datetime.now(UTC) - grid_start).total_seconds()
         completed_count = len([p for p in pair_results if p.error is None])
         failed_count = len([p for p in pair_results if p.error is not None])
+        pair_token_counts = [p.total_tokens for p in pair_results if p.total_tokens is not None]
+        grid_total_tokens = sum(pair_token_counts) if pair_token_counts else None
 
         logger.info(
             "Grid search finished: %d/%d completed, %d failed, best=%s (%.1fs total)",
@@ -1338,6 +1343,7 @@ class DspyService:
             pair_results=pair_results,
             best_pair=best_pair,
             runtime_seconds=round(grid_runtime, 2),
+            total_tokens=grid_total_tokens,
         )
 
     def validate_grid_search_payload(self, payload: GridSearchRequest) -> None:

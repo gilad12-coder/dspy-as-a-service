@@ -13,7 +13,40 @@ from core.models import ModelConfig
 from core.service_gateway.language_models import (
     apply_model_reasoning_config,
     build_language_model,
+    total_tokens_from_history,
 )
+
+
+class _FakeLM:
+    """Minimal stand-in exposing a ``history`` list like ``dspy.LM``."""
+
+    def __init__(self, history: list[dict[str, Any]]) -> None:
+        """Store the canned history entries the LM should report.
+
+        Args:
+            history: Entries shaped like ``dspy.LM.history`` rows.
+        """
+        self.history = history
+
+
+def test_total_tokens_from_history_sums_total_tokens() -> None:
+    """``total_tokens`` from each entry's usage is summed across all LMs."""
+    gen = _FakeLM([{"usage": {"total_tokens": 120}}, {"usage": {"total_tokens": 30}}])
+    refl = _FakeLM([{"usage": {"total_tokens": 50}}])
+    assert total_tokens_from_history(gen, refl) == 200
+
+
+def test_total_tokens_from_history_falls_back_to_prompt_plus_completion() -> None:
+    """A missing ``total_tokens`` is recovered from prompt + completion tokens."""
+    lm = _FakeLM([{"usage": {"prompt_tokens": 10, "completion_tokens": 5}}])
+    assert total_tokens_from_history(lm) == 15
+
+
+def test_total_tokens_from_history_returns_none_when_untracked() -> None:
+    """No usage info anywhere yields ``None`` (so callers skip metering, not bill zero)."""
+    assert total_tokens_from_history(None) is None
+    assert total_tokens_from_history(_FakeLM([{"response": "hi"}])) is None
+    assert total_tokens_from_history(MagicMock(spec=[])) is None
 
 
 def _cfg(**kwargs: Any) -> ModelConfig:
