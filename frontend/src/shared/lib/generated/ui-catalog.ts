@@ -2,6 +2,12 @@
 
 export type MessageKey =
   | "app.meta.description"
+  | "app.shell.account.aria"
+  | "app.shell.account.keys"
+  | "app.shell.account.plan_free"
+  | "app.shell.account.plan_premium"
+  | "app.shell.account.settings"
+  | "app.shell.account.upgrade"
   | "app.shell.advanced.badge"
   | "app.shell.advanced.exit_aria"
   | "app.shell.advanced.tooltip"
@@ -1706,6 +1712,7 @@ export type MessageKey =
   | "billing.chip.empty"
   | "billing.chip.low_note"
   | "billing.founders.active"
+  | "billing.founders.active_short"
   | "billing.founders.closed"
   | "billing.founders.cta"
   | "billing.founders.deadline"
@@ -1736,6 +1743,35 @@ export type MessageKey =
   | "billing.mode.manage_keys"
   | "billing.mode.managed"
   | "billing.mode.managed_hint"
+  | "billing.plans.credits.f1"
+  | "billing.plans.credits.f2"
+  | "billing.plans.credits.f3"
+  | "billing.plans.credits.headline"
+  | "billing.plans.credits.name"
+  | "billing.plans.credits.pack_aria"
+  | "billing.plans.credits.summary"
+  | "billing.plans.footer.byok_q"
+  | "billing.plans.free.cta"
+  | "billing.plans.free.f1"
+  | "billing.plans.free.f2"
+  | "billing.plans.free.f3"
+  | "billing.plans.free.f4"
+  | "billing.plans.free.headline"
+  | "billing.plans.free.included"
+  | "billing.plans.free.name"
+  | "billing.plans.free.note"
+  | "billing.plans.free.summary"
+  | "billing.plans.heading"
+  | "billing.plans.per_month"
+  | "billing.plans.premium.badge"
+  | "billing.plans.premium.everything_free"
+  | "billing.plans.premium.f1"
+  | "billing.plans.premium.headline"
+  | "billing.plans.premium.name"
+  | "billing.plans.premium.summary"
+  | "billing.plans.price_free"
+  | "billing.plans.price_onetime"
+  | "billing.plans.subheading"
   | "billing.popover.byok_active"
   | "billing.popover.byok_hint"
   | "billing.popover.free_grant"
@@ -2234,8 +2270,10 @@ export type MessageKey =
   | "shared.score_chart.prompt_version_axis"
   | "shared.score_chart.score_axis"
   | "shared.score_chart.version_score"
+  | "sidebar.collapse"
   | "sidebar.delete.failed"
   | "sidebar.delete.success"
+  | "sidebar.expand"
   | "sidebar.generic_error"
   | "sidebar.link.copied"
   | "sidebar.mine.empty"
@@ -2465,6 +2503,12 @@ export type MessageKey =
 
 export const UI_MESSAGES: Record<MessageKey, string> = {
   "app.meta.description": "מערכת לאופטימיזציית פרומפטים עם DSPy — שיפור ביצועים של מודלי שפה באופן אוטומטי",
+  "app.shell.account.aria": "תפריט חשבון",
+  "app.shell.account.keys": "מפתחות API",
+  "app.shell.account.plan_free": "חינם",
+  "app.shell.account.plan_premium": "Premium",
+  "app.shell.account.settings": "הגדרות",
+  "app.shell.account.upgrade": "שדרוג תוכנית",
   "app.shell.advanced.badge": "מתקדם",
   "app.shell.advanced.exit_aria": "יציאה ממצב מתקדם",
   "app.shell.advanced.tooltip": "מצב מתקדם פעיל — לחצו ליציאה",
@@ -4169,6 +4213,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "billing.chip.empty": "הוספת קרדיטים",
   "billing.chip.low_note": "היתרה נמוכה. אפשר להוסיף קרדיטים מתי שנוח — מודלים קטנים ממשיכים לרוץ על המענק החינמי.",
   "billing.founders.active": "אתה חבר מייסד — המחיר שלך נעול.",
+  "billing.founders.active_short": "פעיל",
   "billing.founders.closed": "מסלול המייסדים נסגר לחברים חדשים.",
   "billing.founders.cta": "נעילת מסלול המייסדים",
   "billing.founders.deadline": "פתוח עד {p1} · נעול ל-12 חודשים",
@@ -4199,6 +4244,35 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "billing.mode.manage_keys": "ניהול מפתחות",
   "billing.mode.managed": "קרדיטים של Skynet",
   "billing.mode.managed_hint": "ההרצות מחויבות מהקרדיטים שלך ב-Skynet.",
+  "billing.plans.credits.f1": "משלמים רק על מה שמריצים",
+  "billing.plans.credits.f2": "הקרדיטים לא פגים",
+  "billing.plans.credits.f3": "גישה לכל קטלוג מודלי החזית",
+  "billing.plans.credits.headline": "קונים רק מה שמריצים",
+  "billing.plans.credits.name": "לפי שימוש",
+  "billing.plans.credits.pack_aria": "בחירת חבילת קרדיטים",
+  "billing.plans.credits.summary": "קרדיטים מראש, ללא מנוי — והם לא פגים.",
+  "billing.plans.footer.byok_q": "מעדיפים להריץ עם מפתח ספק משלכם?",
+  "billing.plans.free.cta": "התוכנית הנוכחית שלכם",
+  "billing.plans.free.f1": "מענק קרדיטים חודשי חינם",
+  "billing.plans.free.f2": "הרצה של כל מודל בקטלוג",
+  "billing.plans.free.f3": "הוכחת לפני/אחרי בכל הרצה",
+  "billing.plans.free.f4": "היסטוריית גרסאות מלאה",
+  "billing.plans.free.headline": "מתחילים לבצע אופטימיזציה",
+  "billing.plans.free.included": "כלול",
+  "billing.plans.free.name": "חינם",
+  "billing.plans.free.note": "מודלי mini הכי חסכוניים במענק שלכם.",
+  "billing.plans.free.summary": "מענק קרדיטים חודשי חינם להתחלה — אפשר להריץ כל מודל, אך הרצות מתקדמות מכלות אותו מהר.",
+  "billing.plans.heading": "שדרוג התוכנית שלכם",
+  "billing.plans.per_month": "לחודש",
+  "billing.plans.premium.badge": "מומלץ",
+  "billing.plans.premium.everything_free": "כל מה שבחינם, ובנוסף:",
+  "billing.plans.premium.f1": "כל מודלי החזית למשימות ולרפלקציה",
+  "billing.plans.premium.headline": "כל מודלי החזית",
+  "billing.plans.premium.name": "Premium",
+  "billing.plans.premium.summary": "פרומפטים טובים יותר, או שלא משלמים — בתוכנית חודשית אחת קבועה.",
+  "billing.plans.price_free": "חינם",
+  "billing.plans.price_onetime": "חד-פעמי",
+  "billing.plans.subheading": "בחרו את התוכנית שמתאימה לאופן שבו אתם מבצעים אופטימיזציה.",
   "billing.popover.byok_active": "פועל עם מפתח ה-API שלך",
   "billing.popover.byok_hint": "קרדיטים מנוהלים אינם בשימוש כאשר משתמשים במפתח שלך.",
   "billing.popover.free_grant": "מענק חודשי",
@@ -4697,8 +4771,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "shared.score_chart.prompt_version_axis": "גרסת פרומפט",
   "shared.score_chart.score_axis": "{term.score}",
   "shared.score_chart.version_score": "ציון הגרסה",
+  "sidebar.collapse": "כיווץ הסרגל",
   "sidebar.delete.failed": "המחיקה נכשלה",
   "sidebar.delete.success": "נמחק",
+  "sidebar.expand": "הרחבת הסרגל",
   "sidebar.generic_error": "שגיאה",
   "sidebar.link.copied": "קישור הועתק",
   "sidebar.mine.empty": "עדיין אין כאן ריצות",
@@ -9714,6 +9790,12 @@ const ui_de_AT: Partial<Record<MessageKey, string>> = {
 
 const ui_en: Partial<Record<MessageKey, string>> = {
   "app.meta.description": "Prompt optimization with DSPy — automatically improve the performance of language models",
+  "app.shell.account.aria": "Account menu",
+  "app.shell.account.keys": "API keys",
+  "app.shell.account.plan_free": "Free",
+  "app.shell.account.plan_premium": "Premium",
+  "app.shell.account.settings": "Settings",
+  "app.shell.account.upgrade": "Upgrade plan",
   "app.shell.advanced.badge": "Advanced",
   "app.shell.advanced.exit_aria": "Exit advanced mode",
   "app.shell.advanced.tooltip": "Advanced mode is on — click to exit",
@@ -11418,6 +11500,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "billing.chip.empty": "Add credits",
   "billing.chip.low_note": "Running low. Add credits when it suits you — mini models keep running on your free grant.",
   "billing.founders.active": "You're a founding member — your rate is locked.",
+  "billing.founders.active_short": "Active",
   "billing.founders.closed": "The Founder's Rate has closed for new members.",
   "billing.founders.cta": "Lock in the Founder's Rate",
   "billing.founders.deadline": "Open until {p1} · locked for 12 months",
@@ -11448,6 +11531,35 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "billing.mode.manage_keys": "Manage keys",
   "billing.mode.managed": "Skynet credits",
   "billing.mode.managed_hint": "Runs are billed to your Skynet credits.",
+  "billing.plans.credits.f1": "Pay only for what you run",
+  "billing.plans.credits.f2": "Credits never expire",
+  "billing.plans.credits.f3": "Unlock the full frontier catalog",
+  "billing.plans.credits.headline": "Buy only what you run",
+  "billing.plans.credits.name": "Pay as you go",
+  "billing.plans.credits.pack_aria": "Choose a credit pack",
+  "billing.plans.credits.summary": "Prepaid credits, no subscription — they never expire.",
+  "billing.plans.footer.byok_q": "Prefer to run on your own provider key?",
+  "billing.plans.free.cta": "Your current plan",
+  "billing.plans.free.f1": "Monthly free credit grant",
+  "billing.plans.free.f2": "Run any model in the catalog",
+  "billing.plans.free.f3": "Before/after proof on every run",
+  "billing.plans.free.f4": "Full version history",
+  "billing.plans.free.headline": "Start optimizing",
+  "billing.plans.free.included": "Included",
+  "billing.plans.free.name": "Free",
+  "billing.plans.free.note": "Mini models go easiest on your grant.",
+  "billing.plans.free.summary": "A free monthly credit grant to get started — run any model, though frontier runs spend it fast.",
+  "billing.plans.heading": "Upgrade your plan",
+  "billing.plans.per_month": "/ month",
+  "billing.plans.premium.badge": "Recommended",
+  "billing.plans.premium.everything_free": "Everything in Free, plus:",
+  "billing.plans.premium.f1": "Every frontier task & reflection model",
+  "billing.plans.premium.headline": "Every frontier model",
+  "billing.plans.premium.name": "Premium",
+  "billing.plans.premium.summary": "Better prompts, or you don’t pay — on one flat monthly plan.",
+  "billing.plans.price_free": "Free",
+  "billing.plans.price_onetime": "one-time",
+  "billing.plans.subheading": "Pick the plan that fits how you optimize.",
   "billing.popover.byok_active": "Running on your own API key",
   "billing.popover.byok_hint": "Managed credits aren't used while you bring your own key.",
   "billing.popover.free_grant": "Free monthly",
@@ -11946,8 +12058,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "shared.score_chart.prompt_version_axis": "Prompt version",
   "shared.score_chart.score_axis": "Score",
   "shared.score_chart.version_score": "Version score",
+  "sidebar.collapse": "Collapse sidebar",
   "sidebar.delete.failed": "Delete failed",
   "sidebar.delete.success": "Deleted",
+  "sidebar.expand": "Expand sidebar",
   "sidebar.generic_error": "Error",
   "sidebar.link.copied": "Link copied",
   "sidebar.mine.empty": "No runs here yet",

@@ -4,14 +4,13 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Menu, LogOut, GraduationCap, Lightbulb, Feather, Sparkles } from "lucide-react";
-import { useSession, signOut } from "next-auth/react";
+import { Menu, GraduationCap, Lightbulb, Feather, Sparkles } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { useTutorialContext, ConceptsGuide, registerTutorialHook } from "@/features/tutorial";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
-import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { LanguageSwitcher } from "@/shared/ui/language-switcher";
-import { CreditBalanceChip } from "@/features/billing";
+import { AccountMenu } from "./account-menu";
 import { useLocale } from "@/shared/providers";
 import { dirForLocale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
@@ -216,25 +215,8 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="flex items-center gap-1.5">
-          {session?.user && <CreditBalanceChip />}
           <LanguageSwitcher />
-          {session?.user && (
-            <>
-              <span className="hidden sm:inline text-xs font-semibold text-foreground">
-                {session.user.name ?? session.user.email}
-              </span>
-              <TooltipButton tooltip={msg("app.shell.logout")} side="bottom">
-                <button
-                  type="button"
-                  onClick={() => signOut({ callbackUrl: "/login" })}
-                  className="rounded-lg p-2 hover:bg-accent/80 active:scale-95 transition-all duration-200 cursor-pointer hidden sm:block"
-                  aria-label={msg("app.shell.logout")}
-                >
-                  <LogOut className="size-4 rtl:-scale-x-100" />
-                </button>
-              </TooltipButton>
-            </>
-          )}
+          {session?.user && <AccountMenu />}
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
@@ -258,7 +240,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
           aria-hidden={!sidebarOpen}
         />
 
-        <main className="flex-1 overflow-auto min-w-0 page-gradient grid-pattern">
+        <main className="app-main flex-1 overflow-auto min-w-0 page-gradient grid-pattern">
           <div
             className="relative z-[1] mx-auto max-w-7xl py-6 md:py-8"
             style={{ paddingInline: "clamp(1rem, 5vw - 0.5rem, 2rem)" }}
@@ -268,12 +250,14 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         </main>
 
         {/* The sidebar lives after <main> in source order (content-first for
-            assistive tech) but renders at the inline-start edge via md:order-first
-            — right in Hebrew/RTL, left in English/LTR. Below md it's an off-canvas
-            drawer pinned to that same inline-start edge. */}
+            assistive tech) but renders at the inline-start edge — right in
+            Hebrew/RTL, left in English/LTR. On md+ it's position:fixed below the
+            header: a locked rail that never scrolls with the page, with <main>
+            reserving its width via the --app-sidebar-width inline margin. Below md
+            it's an off-canvas drawer pinned to that same inline-start edge. */}
         <div
           id={SIDEBAR_ID}
-          className={`fixed inset-y-0 ${isRtl ? "right-0" : "left-0"} z-50 transform transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] md:sticky md:inset-auto md:top-[var(--header-height)] md:order-first md:self-start md:h-[calc(100dvh-var(--header-height))] md:z-10 md:translate-x-0 md:shadow-none ${sidebarOpen ? "translate-x-0" : isRtl ? "translate-x-full" : "-translate-x-full"}`}
+          className={`fixed inset-y-0 ${isRtl ? "right-0" : "left-0"} z-50 transform transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] md:top-[var(--header-height)] md:z-10 md:translate-x-0 md:shadow-none ${sidebarOpen ? "translate-x-0" : isRtl ? "translate-x-full" : "-translate-x-full"}`}
           aria-hidden={sidebarHidden ? true : undefined}
         >
           <Sidebar />

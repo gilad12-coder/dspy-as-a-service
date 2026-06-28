@@ -22,10 +22,13 @@ import {
   Database,
   RotateCcw,
   Play,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { SidebarMoreSkeleton } from "./SidebarMoreSkeleton";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -71,14 +74,10 @@ const NAV_ITEMS = [
 
 const PAGE_SIZE = 20;
 
-const SIDEBAR_MIN_WIDTH = 210;
-const SIDEBAR_MAX_WIDTH = 420;
-const SIDEBAR_DEFAULT_WIDTH = SIDEBAR_MIN_WIDTH;
-const SIDEBAR_WIDTH_STORAGE_KEY = "skynet.sidebar.width";
-
-function clampSidebarWidth(n: number): number {
-  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(n)));
-}
+const SIDEBAR_WIDTH_EXPANDED = 240;
+const SIDEBAR_WIDTH_COLLAPSED = 64;
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "skynet.sidebar.collapsed";
+const DESKTOP_MQ = "(min-width: 768px)";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -91,6 +90,8 @@ export function Sidebar() {
   const sessionUser = sessionIdentity(session);
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
   const isRtl = getActiveDir() === "rtl";
+  // Collapsed-rail tooltips read toward the content area: right in LTR, left in RTL.
+  const tooltipSide = isRtl ? "left" : "right";
 
   const [tab, setTab] = React.useState<"mine" | "shared">("mine");
   // ``tab`` is the *requested* tab; ``renderedTab`` trails it and only flips
@@ -104,58 +105,40 @@ export function Sidebar() {
   const [activeCount, setActiveCount] = React.useState(0);
   const [loadedAll, setLoadedAll] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
-  const [width, setWidth] = React.useState<number>(SIDEBAR_DEFAULT_WIDTH);
+  const [collapsed, setCollapsed] = React.useState(false);
+  const [isDesktop, setIsDesktop] = React.useState(true);
 
-  // Hydrate the persisted width on the client only — SSR can't read
-  // localStorage, and reading it during initial render would mismatch.
+  // Collapse is a desktop affordance — the mobile drawer always shows the full
+  // sidebar. Persist the choice and hydrate it client-side (SSR can't read
+  // localStorage without risking a mismatch), and track the desktop breakpoint
+  // so a persisted-collapsed state never narrows the mobile drawer.
   React.useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
-      const n = raw ? Number(raw) : NaN;
-      if (Number.isFinite(n)) setWidth(clampSidebarWidth(n));
+      setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "1");
     } catch {
       /* localStorage unavailable */
     }
+    const mq = window.matchMedia(DESKTOP_MQ);
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
   }, []);
 
-  const persistWidth = React.useCallback((next: number) => {
-    const clamped = clampSidebarWidth(next);
-    setWidth(clamped);
-    try {
-      window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(clamped));
-    } catch {
-      /* noop */
-    }
+  const toggleCollapsed = React.useCallback(() => {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        /* noop */
+      }
+      return next;
+    });
   }, []);
 
-  // Drag-resize. The sidebar is pinned to the inline-start edge — the viewport's
-  // right in RTL, left in LTR — so the width grows from the opposite edge: from
-  // ``window.innerWidth - clientX`` in RTL, and from ``clientX`` directly in LTR.
-  const resizingRef = React.useRef(false);
-  const startResize = React.useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      resizingRef.current = true;
-      const prevUserSelect = document.body.style.userSelect;
-      const prevCursor = document.body.style.cursor;
-      document.body.style.userSelect = "none";
-      document.body.style.cursor = "col-resize";
-      const onMove = (ev: MouseEvent) => {
-        if (!resizingRef.current) return;
-        persistWidth(isRtl ? window.innerWidth - ev.clientX : ev.clientX);
-      };
-      const onUp = () => {
-        resizingRef.current = false;
-        document.body.style.userSelect = prevUserSelect;
-        document.body.style.cursor = prevCursor;
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
-      };
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
-    },
-    [persistWidth, isRtl],
-  );
+  const compact = collapsed && isDesktop;
+
   // Sidebar infinite scroll: fetchData (polling + external invalidation)
   // re-requests ``max(PAGE_SIZE, loadedItemsRef.current)`` rows so a
   // background 30s refresh doesn't truncate the user's scrolled position
@@ -330,163 +313,167 @@ export function Sidebar() {
     return { name, id: job.optimization_id };
   }, [deleteConfirm, jobs]);
 
+  // The sidebar is position:fixed on desktop (a locked rail), so it's out of the
+  // shell's flow and can't reserve its own width. Publish the effective width as
+  // a CSS var the shell's <main> consumes for its inline margin — one source of
+  // truth, updated when the rail collapses so content and rail never overlap.
+  const widthExpr = compact
+    ? `${SIDEBAR_WIDTH_COLLAPSED}px`
+    : `min(${SIDEBAR_WIDTH_EXPANDED}px, 40vw, 92vw)`;
+  React.useEffect(() => {
+    document.documentElement.style.setProperty("--app-sidebar-width", widthExpr);
+  }, [widthExpr]);
+
   return (
     <aside
       className="relative flex h-full shrink-0 flex-col border-e border-sidebar-border/60 bg-sidebar/80 backdrop-blur-xl overflow-hidden"
-      style={{ width: `min(${width}px, 40vw, 92vw)` }}
+      style={{ width: widthExpr }}
       data-tutorial="sidebar-full"
     >
-      <button
-        type="button"
-        onMouseDown={startResize}
-        aria-label={msg("auto.features.sidebar.components.sidebar.literal.15")}
-        tabIndex={-1}
-        className="absolute top-0 end-0 z-20 hidden h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/20 active:bg-primary/30 md:block"
-      />
       <div className="flex flex-col h-full">
+        <div className={cn("hidden px-3 pt-3 md:flex", compact ? "justify-center" : "justify-end")}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                aria-label={compact ? msg("sidebar.expand") : msg("sidebar.collapse")}
+                aria-expanded={!compact}
+                className="rounded-lg p-1.5 text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-foreground cursor-pointer"
+              >
+                {compact ? (
+                  <PanelLeftOpen className="size-4 rtl:-scale-x-100" />
+                ) : (
+                  <PanelLeftClose className="size-4 rtl:-scale-x-100" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side={tooltipSide}>
+              {compact ? msg("sidebar.expand") : msg("sidebar.collapse")}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
         <nav
-          className="flex flex-col gap-1 px-3 py-3"
+          className={cn("flex flex-col gap-1 px-3 pb-3 pt-2", compact && "items-center")}
           role="navigation"
           aria-label={msg("auto.features.sidebar.components.sidebar.literal.7")}
           data-tutorial="sidebar-nav"
         >
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-            const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
-            const showBadge = href === "/" && renderedTab === "mine" && activeCount > 0;
-            return (
-              <Link
-                key={href}
-                href={href}
-                {...(href === "/tagger" ? { "data-tutorial": "sidebar-tagger" } : {})}
-                className={cn(
-                  "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
-                  active
-                    ? "text-primary"
-                    : "text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground hover:translate-x-[-2px]",
-                )}
-              >
-                {active && (
-                  <motion.div
-                    layoutId="sidebar-active"
-                    className="absolute inset-0 rounded-lg bg-primary/[0.08] ring-1 ring-primary/10"
-                    style={{ borderInlineStart: "3px solid var(--primary)" }}
-                    transition={{ type: "spring", stiffness: 350, damping: 28 }}
-                  />
-                )}
-                <span className="relative z-10 flex items-center gap-2.5 flex-1 min-w-0">
-                  <Icon
-                    className={cn(
-                      "size-4 shrink-0 transition-colors duration-200",
-                      active ? "text-primary" : "group-hover:text-sidebar-foreground",
-                    )}
-                  />
-                  <span className="truncate flex-1">{label}</span>
-                  {showBadge && (
-                    <span className="shrink-0 text-[0.625rem] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-full tabular-nums">
-                      {activeCount}
-                    </span>
-                  )}
-                </span>
-              </Link>
-            );
-          })}
+          {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
+            <NavItem
+              key={href}
+              href={href}
+              label={label}
+              Icon={Icon}
+              active={href === "/" ? pathname === "/" : pathname.startsWith(href)}
+              badge={href === "/" && renderedTab === "mine" && activeCount > 0 ? activeCount : null}
+              compact={compact}
+              tooltipSide={tooltipSide}
+              isTagger={href === "/tagger"}
+            />
+          ))}
         </nav>
 
-        <div aria-hidden="true" className="mx-3 h-px bg-sidebar-border/40" />
+        {!compact && (
+          <>
+            <div aria-hidden="true" className="mx-3 h-px bg-sidebar-border/40" />
 
-        <div
-          role="tablist"
-          aria-label={msg("sidebar.tab.aria")}
-          className="relative mx-3 mt-2.5 mb-0.5 flex rounded-lg bg-muted p-1 gap-1"
-        >
-          <div
-            aria-hidden="true"
-            className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-100 ease-out"
-            style={{ insetInlineStart: tab === "mine" ? 4 : "calc(50% + 2px)" }}
-          />
-          {(["mine", "shared"] as const).map((key) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={tab === key}
-              onClick={() => handleTabChange(key)}
-              className={cn(
-                "relative z-10 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-center text-[0.6875rem] font-medium transition-colors duration-200",
-                tab === key ? "text-foreground" : "text-foreground/60 hover:text-foreground",
-              )}
+            <div
+              role="tablist"
+              aria-label={msg("sidebar.tab.aria")}
+              className="relative mx-3 mt-2.5 mb-0.5 flex rounded-lg bg-muted p-1 gap-1"
             >
-              {msg(key === "mine" ? "sidebar.tab.mine" : "sidebar.tab.shared")}
-            </button>
-          ))}
-        </div>
+              <div
+                aria-hidden="true"
+                className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-100 ease-out"
+                style={{ insetInlineStart: tab === "mine" ? 4 : "calc(50% + 2px)" }}
+              />
+              {(["mine", "shared"] as const).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === key}
+                  onClick={() => handleTabChange(key)}
+                  className={cn(
+                    "relative z-10 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-center text-[0.6875rem] font-medium transition-colors duration-200",
+                    tab === key ? "text-foreground" : "text-foreground/60 hover:text-foreground",
+                  )}
+                >
+                  {msg(key === "mine" ? "sidebar.tab.mine" : "sidebar.tab.shared")}
+                </button>
+              ))}
+            </div>
 
-        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-          <div ref={listRef} className="flex-1 overflow-y-auto px-3 pt-2 pb-2 no-scrollbar">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={renderedTab}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.14, ease: "easeOut" }}
-              >
-                {groupedJobs.map((group) => (
-                  <div key={group.label} className="mb-2">
-                    <p className="flex items-center gap-1.5 text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground/50 px-2 py-1.5">
-                      <span>{group.label}</span>
-                      <span className="tabular-nums text-muted-foreground/40 font-normal">
-                        {group.jobs.length}
-                      </span>
-                    </p>
-                    {group.jobs.map((job) => (
-                      <JobRow
-                        key={job.optimization_id}
-                        job={job}
-                        isShared={renderedTab === "shared"}
-                        isActive={pathname === `/optimizations/${job.optimization_id}`}
-                        activePair={
-                          pathname === `/optimizations/${job.optimization_id}`
-                            ? activePairIndex
-                            : null
-                        }
-                        onDelete={handleDelete}
-                        onRefresh={fetchData}
-                      />
+            <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+              <div ref={listRef} className="flex-1 overflow-y-auto px-3 pt-2 pb-2 no-scrollbar">
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={renderedTab}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.14, ease: "easeOut" }}
+                  >
+                    {groupedJobs.map((group) => (
+                      <div key={group.label} className="mb-2">
+                        <p className="flex items-center gap-1.5 text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground/50 px-2 py-1.5">
+                          <span>{group.label}</span>
+                          <span className="tabular-nums text-muted-foreground/40 font-normal">
+                            {group.jobs.length}
+                          </span>
+                        </p>
+                        {group.jobs.map((job) => (
+                          <JobRow
+                            key={job.optimization_id}
+                            job={job}
+                            isShared={renderedTab === "shared"}
+                            isActive={pathname === `/optimizations/${job.optimization_id}`}
+                            activePair={
+                              pathname === `/optimizations/${job.optimization_id}`
+                                ? activePairIndex
+                                : null
+                            }
+                            onDelete={handleDelete}
+                            onRefresh={fetchData}
+                          />
+                        ))}
+                      </div>
                     ))}
+                    {loadedAll && groupedJobs.length === 0 && (
+                      <EmptyState
+                        variant="list"
+                        icon={renderedTab === "shared" ? undefined : Send}
+                        title={msg(
+                          renderedTab === "shared" ? "sidebar.shared.empty" : "sidebar.mine.empty",
+                        )}
+                        description={msg(
+                          renderedTab === "shared"
+                            ? "sidebar.shared.empty.hint"
+                            : "sidebar.mine.empty.hint",
+                        )}
+                      />
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+                {loadingMore && (
+                  <div className="px-1 pt-1 pb-2" aria-hidden="true">
+                    <SidebarMoreSkeleton />
                   </div>
-                ))}
-                {loadedAll && groupedJobs.length === 0 && (
-                  <EmptyState
-                    variant="list"
-                    icon={renderedTab === "shared" ? undefined : Send}
-                    title={msg(
-                      renderedTab === "shared" ? "sidebar.shared.empty" : "sidebar.mine.empty",
-                    )}
-                    description={msg(
-                      renderedTab === "shared"
-                        ? "sidebar.shared.empty.hint"
-                        : "sidebar.mine.empty.hint",
-                    )}
-                  />
                 )}
-              </motion.div>
-            </AnimatePresence>
-            {loadingMore && (
-              <div className="px-1 pt-1 pb-2" aria-hidden="true">
-                <SidebarMoreSkeleton />
+                {!loadedAll && <div ref={sentinelRef} aria-hidden="true" className="h-1 w-full" />}
               </div>
-            )}
-            {!loadedAll && (
-              <div ref={sentinelRef} aria-hidden="true" className="h-1 w-full" />
-            )}
-          </div>
-        </div>
+            </div>
+          </>
+        )}
+
+        {compact && <div className="flex-1" aria-hidden="true" />}
 
         <div className="border-t border-sidebar-border/60">
-          <StorageMeter />
-          <div className="px-3 py-2">
-            <SettingsTrigger />
+          {!compact && <StorageMeter />}
+          <div className={cn("py-2", compact ? "flex justify-center px-2" : "px-3")}>
+            <SettingsTrigger collapsed={compact} />
           </div>
         </div>
       </div>
@@ -509,8 +496,7 @@ export function Sidebar() {
               <span className="font-semibold text-foreground break-words" dir="auto">
                 {deleteJobInfo?.name}
               </span>
-              ?{" "}
-              {msg("delete.irreversible")}
+              ? {msg("delete.irreversible")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-2 gap-3">
@@ -541,6 +527,97 @@ export function Sidebar() {
   );
 }
 
+/**
+ * One primary-nav entry. Expanded shows icon + label (+ an optional count badge);
+ * collapsed shrinks to an icon-only target wrapped in a tooltip that names the
+ * destination, so the rail stays usable when minimized.
+ */
+function NavItem({
+  href,
+  label,
+  Icon,
+  active,
+  badge,
+  compact,
+  tooltipSide,
+  isTagger,
+}: {
+  href: string;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  active: boolean;
+  badge: number | null;
+  compact: boolean;
+  tooltipSide: "left" | "right";
+  isTagger: boolean;
+}) {
+  const link = (
+    <Link
+      href={href}
+      {...(isTagger ? { "data-tutorial": "sidebar-tagger" } : {})}
+      aria-label={compact ? label : undefined}
+      className={cn(
+        "group relative flex items-center rounded-lg text-sm font-medium transition-all duration-200",
+        compact ? "justify-center p-2.5" : "gap-3 px-3 py-2",
+        active
+          ? "text-primary"
+          : cn(
+              "text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground",
+              !compact && "hover:translate-x-[-2px]",
+            ),
+      )}
+    >
+      {active && (
+        <motion.div
+          layoutId="sidebar-active"
+          className="absolute inset-0 rounded-lg bg-primary/[0.08] ring-1 ring-primary/10"
+          style={compact ? undefined : { borderInlineStart: "3px solid var(--primary)" }}
+          transition={{ type: "spring", stiffness: 350, damping: 28 }}
+        />
+      )}
+      {compact ? (
+        <span className="relative z-10 inline-flex">
+          <Icon
+            className={cn(
+              "size-4 shrink-0 transition-colors duration-200",
+              active ? "text-primary" : "group-hover:text-sidebar-foreground",
+            )}
+          />
+          {badge != null && (
+            <span
+              aria-hidden="true"
+              className="absolute -top-1 -end-1 size-1.5 rounded-full bg-primary"
+            />
+          )}
+        </span>
+      ) : (
+        <span className="relative z-10 flex items-center gap-2.5 flex-1 min-w-0">
+          <Icon
+            className={cn(
+              "size-4 shrink-0 transition-colors duration-200",
+              active ? "text-primary" : "group-hover:text-sidebar-foreground",
+            )}
+          />
+          <span className="truncate flex-1">{label}</span>
+          {badge != null && (
+            <span className="shrink-0 text-[0.625rem] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-full tabular-nums">
+              {badge}
+            </span>
+          )}
+        </span>
+      )}
+    </Link>
+  );
+
+  if (!compact) return link;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent side={tooltipSide}>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function JobRow({
   job,
   isShared,
@@ -568,9 +645,7 @@ function JobRow({
   const btnRef = React.useRef<HTMLButtonElement>(null);
   const renameRef = React.useRef<HTMLInputElement>(null);
   const isGridSearch =
-    prefs.advancedMode &&
-    job.optimization_type === "grid_search" &&
-    (job.total_pairs ?? 0) > 0;
+    prefs.advancedMode && job.optimization_type === "grid_search" && (job.total_pairs ?? 0) > 0;
   const displayName =
     job.name ||
     [job.module_name, job.optimizer_name].filter(Boolean).join(" · ") ||

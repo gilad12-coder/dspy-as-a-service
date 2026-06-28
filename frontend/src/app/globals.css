@@ -568,6 +568,16 @@ main {
   scrollbar-gutter: stable;
 }
 
+/* The desktop sidebar is position:fixed (a locked rail), so it's out of flow and
+   reserves no width. <main> reserves it here via the width the Sidebar publishes
+   to --app-sidebar-width on each collapse. Scoped to .app-main so the bare login/
+   share routes (which render no sidebar) are unaffected. */
+@media (min-width: 768px) {
+  .app-main {
+    margin-inline-start: var(--app-sidebar-width, min(240px, 40vw, 92vw));
+  }
+}
+
 /* Radix popovers (Select, Dialog, DropdownMenu) lock scroll via
    react-remove-scroll, which tags <body data-scroll-locked> and adds
    margin/padding to compensate for the document scrollbar it hides. The root
