@@ -21,6 +21,11 @@ import {
   SettingsModal,
 } from "@/features/settings";
 import { StorageQuotaModalHost } from "@/features/storage";
+import {
+  CreditProvider,
+  ByokKeysProvider,
+  InsufficientCreditsModalHost,
+} from "@/features/billing";
 import { AppSkeletonTheme } from "@/shared/ui/skeleton";
 import { msg } from "@/shared/lib/messages";
 import { getServerRuntimeEnv, serializeRuntimeEnv } from "@/shared/lib/runtime-env";
@@ -202,28 +207,33 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body suppressHydrationWarning>
         <LocaleProvider initialLocale={locale}>
           <SessionProvider>
-            <UserPrefsProvider>
-              <LiteModeProvider>
-                <ThemeProvider>
-                  <TooltipProvider>
-                    <AppSkeletonTheme>
-                      <SplashScreen />
-                      <TutorialProvider>
-                        <SettingsModalProvider>
-                          <AppShell>{children}</AppShell>
-                          <SettingsModal />
-                        </SettingsModalProvider>
-                        <TutorialOverlay />
-                        <TutorialMenu />
-                      </TutorialProvider>
-                    </AppSkeletonTheme>
-                  </TooltipProvider>
-                </ThemeProvider>
-              </LiteModeProvider>
-            </UserPrefsProvider>
+            <CreditProvider>
+              <ByokKeysProvider>
+                <UserPrefsProvider>
+                  <LiteModeProvider>
+                    <ThemeProvider>
+                      <TooltipProvider>
+                        <AppSkeletonTheme>
+                          <SplashScreen />
+                          <TutorialProvider>
+                            <SettingsModalProvider>
+                              <AppShell>{children}</AppShell>
+                              <SettingsModal />
+                            </SettingsModalProvider>
+                            <TutorialOverlay />
+                            <TutorialMenu />
+                          </TutorialProvider>
+                        </AppSkeletonTheme>
+                      </TooltipProvider>
+                    </ThemeProvider>
+                  </LiteModeProvider>
+                </UserPrefsProvider>
+              </ByokKeysProvider>
+            </CreditProvider>
           </SessionProvider>
           <TelemetryProvider />
           <StorageQuotaModalHost />
+          <InsufficientCreditsModalHost />
           <ToastContainer />
         </LocaleProvider>
       </body>

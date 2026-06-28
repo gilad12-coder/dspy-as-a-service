@@ -8,7 +8,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import { cn } from "@/shared/lib/utils";
 
 import { EntryRow } from "./EntryRow";
-import { DEFAULT_META, TOOL_META, type ApprovalSeverity } from "../lib/tool-meta";
+import { getToolMeta, type ApprovalSeverity } from "../lib/tool-meta";
 import type { PendingApprovalPayload } from "../lib/types";
 
 interface ApprovalCardProps {
@@ -89,7 +89,7 @@ export function ApprovalCard({ payload, onResolve, className }: ApprovalCardProp
     }
   };
 
-  const meta = TOOL_META[payload.tool] ?? DEFAULT_META;
+  const meta = getToolMeta(payload.tool);
   const styles = SEVERITY_STYLES[meta.severity];
   const Icon = meta.icon;
   const entries = Object.entries(payload.arguments ?? {});

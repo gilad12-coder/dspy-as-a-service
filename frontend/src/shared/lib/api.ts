@@ -172,6 +172,12 @@ export const STORAGE_QUOTA_CODE = I18N_KEY.USER_STORAGE_QUOTA_EXCEEDED;
 /** Browser event the central error path fires when a write hits the storage budget. */
 export const STORAGE_QUOTA_EVENT = "storage-quota-exceeded";
 
+/** Backend error code for a managed run blocked by an empty credit balance (HTTP 402). */
+export const INSUFFICIENT_CREDITS_CODE = I18N_KEY.BILLING_INSUFFICIENT_CREDITS;
+
+/** Browser event the central error path fires when a submit hits the credit gate. */
+export const INSUFFICIENT_CREDITS_EVENT = "billing-insufficient-credits";
+
 /** Browser event fired after a storage-freeing delete so the meter re-reads usage. */
 export const STORAGE_CHANGED_EVENT = "storage-changed";
 
@@ -200,6 +206,11 @@ export class ApiError extends Error {
 /** Narrow a caught value to the storage-budget 409 so its toast can be suppressed. */
 export function isStorageQuotaError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.code === STORAGE_QUOTA_CODE;
+}
+
+/** Narrow a caught value to the credit-gate 402 so its toast can be suppressed. */
+export function isInsufficientCreditsError(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.code === INSUFFICIENT_CREDITS_CODE;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -231,6 +242,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // isStorageQuotaError so the modal is the single surface.
     if (parsed.code === STORAGE_QUOTA_CODE && typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(STORAGE_QUOTA_EVENT, { detail: parsed.params }));
+    }
+    // The credit gate is account-wide like the storage budget: any blocked submit
+    // opens the one paywall modal, and producers suppress their own toast via
+    // isInsufficientCreditsError so the modal is the single surface.
+    if (parsed.code === INSUFFICIENT_CREDITS_CODE && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(INSUFFICIENT_CREDITS_EVENT));
     }
     throw new ApiError(
       parsed.message ?? formatMsg("auto.shared.lib.api.template.1", { p1: res.status }),
@@ -437,6 +454,111 @@ export async function revokeApiToken(): Promise<void> {
       parseErrorMessage(text) ?? formatMsg("auto.shared.lib.api.template.1", { p1: res.status }),
     );
   }
+}
+
+export interface BillingFreeGrant {
+  credits_remaining: number;
+  credits_total: number;
+  resets_at: string;
+}
+
+export interface BillingUsageEntry {
+  id: string;
+  at: string;
+  label: string;
+  model: string | null;
+  credits: number;
+  kind: string;
+}
+
+/** The caller's wallet as the backend reports it (snake_case mirrors the API). */
+export interface BillingWalletResponse {
+  paid_balance_credits: number;
+  free_grant: BillingFreeGrant;
+  premium_active: boolean;
+  subscription_status: string | null;
+  subscription_current_period_end: string | null;
+  usage: BillingUsageEntry[];
+}
+
+/** Fetch the caller's credit wallet + subscription state. Reads work even without Stripe. */
+export function getWallet() {
+  return request<BillingWalletResponse>("/billing/wallet");
+}
+
+/** Start a Stripe Checkout session for a credit pack; redirect the browser to `.url`. */
+export function createCheckoutSession(packId: string) {
+  return request<{ url: string }>("/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ pack_id: packId }),
+  });
+}
+
+/** Start a Stripe Checkout session for the Premium subscription; redirect to `.url`. */
+export function createSubscriptionCheckout() {
+  return request<{ url: string }>("/billing/subscribe", { method: "POST" });
+}
+
+/** The Founder's Rate availability: the deadline gate and the 12-month price-lock window. */
+export interface FoundersRateResponse {
+  open: boolean;
+  closes_at: string;
+  price_locked_until: string;
+}
+
+/** Read the Founder's Rate availability (open/closed + lock window). Works without Stripe. */
+export function getFoundersRate() {
+  return request<FoundersRateResponse>("/billing/founders");
+}
+
+/** Start a Stripe Checkout session for the Founder's Rate subscription; redirect to `.url`. */
+export function createFoundersCheckout() {
+  return request<{ url: string }>("/billing/founders/subscribe", { method: "POST" });
+}
+
+/** Open the Stripe Billing Portal (manage card / invoices / cancel); redirect to `.url`. */
+export function openBillingPortal() {
+  return request<{ url: string }>("/billing/portal", { method: "POST" });
+}
+
+/** One stored BYOK provider key as the backend reports it — masked, never the secret. */
+export interface ProviderKeyResponse {
+  provider: string;
+  last4: string;
+  status: "verified" | "unverified" | "invalid";
+  added_at: string;
+}
+
+/** The caller's stored BYOK provider keys, masked. */
+export interface ProviderKeysResponse {
+  keys: ProviderKeyResponse[];
+}
+
+/** List the caller's stored BYOK provider keys (masked). Reads work without the vault key. */
+export function getProviderKeys() {
+  return request<ProviderKeysResponse>("/billing/byok/keys");
+}
+
+/**
+ * Save (or rotate) a BYOK provider key. The secret is encrypted at rest on the
+ * backend and verified on entry; the response carries only the masked tail and
+ * the entry-time verify verdict — the plaintext is never echoed back.
+ */
+export function saveProviderKey(provider: string, secret: string) {
+  return request<ProviderKeyResponse>("/billing/byok/keys", {
+    method: "PUT",
+    body: JSON.stringify({ provider, secret }),
+  });
+}
+
+/** Re-run the verify probe against a stored BYOK key and return the fresh verdict. */
+export function verifyProviderKey(provider: string) {
+  return request<ProviderKeyResponse>(`/billing/byok/keys/${provider}/verify`, { method: "POST" });
+}
+
+/** Forget a stored BYOK provider key; returns the remaining masked keys. */
+export function removeProviderKey(provider: string) {
+  return request<ProviderKeysResponse>(`/billing/byok/keys/${provider}`, { method: "DELETE" });
 }
 
 export interface DirectoryUserMatch {
@@ -1270,155 +1392,6 @@ export function validateDataset(payload: ValidateDatasetRequest) {
     method: "POST",
     body: JSON.stringify(payload),
   });
-}
-
-export interface ModelProbeRequest {
-  signature_code: string;
-  metric_code: string;
-  module_name: string;
-  optimizer_name: string;
-  dataset: Array<Record<string, unknown>>;
-  column_mapping: ColumnMapping;
-  train_count?: number;
-  eval_count?: number;
-  shuffle?: boolean;
-  seed?: number | null;
-  model_ids?: string[] | null;
-  reflection_model_name?: string | null;
-}
-
-export interface ModelProbeStartEvent {
-  event: "start";
-  total: number;
-  train_count: number;
-  eval_count: number;
-  dataset_size?: number;
-}
-
-export interface ProbeScalingFit {
-  asymptote: number | null;
-  last_score: number | null;
-  method: string;
-  points: number;
-  signal: "strong" | "observed" | "weak";
-  message?: string;
-}
-
-export interface ModelProbeModelStartEvent {
-  event: "model_start";
-  position: number;
-  model: string;
-  label: string;
-  provider: string;
-}
-
-export interface ModelProbeLogEvent {
-  event: "model_log";
-  position: number;
-  timestamp: string;
-  level: string;
-  logger: string;
-  message: string;
-}
-
-export interface ModelProbeTrajectoryEvent {
-  event: "model_trajectory";
-  position: number;
-  point: { step: number; score: number };
-  scaling: ProbeScalingFit;
-}
-
-export interface ModelProbeResultEvent {
-  event: "result";
-  position: number;
-  model: string;
-  label: string;
-  provider: string;
-  status: "ok" | "error";
-  score: number | null;
-  scaling: ProbeScalingFit | null;
-  duration_ms: number;
-  message?: string;
-}
-
-export interface ModelProbeCompleteEvent {
-  event: "complete";
-}
-
-export interface ModelProbeErrorEvent {
-  event: "error";
-  message: string;
-}
-
-export type ModelProbeEvent =
-  | ModelProbeStartEvent
-  | ModelProbeModelStartEvent
-  | ModelProbeLogEvent
-  | ModelProbeTrajectoryEvent
-  | ModelProbeResultEvent
-  | ModelProbeCompleteEvent
-  | ModelProbeErrorEvent;
-
-export interface ModelProbeHandlers {
-  onStart?: (event: ModelProbeStartEvent) => void;
-  onModelStart?: (event: ModelProbeModelStartEvent) => void;
-  onLog?: (event: ModelProbeLogEvent) => void;
-  onTrajectory?: (event: ModelProbeTrajectoryEvent) => void;
-  onResult?: (event: ModelProbeResultEvent) => void;
-  onComplete?: (event: ModelProbeCompleteEvent) => void;
-  onError?: (message: string) => void;
-  signal?: AbortSignal;
-}
-
-/** Stream per-model probe scores via POST /models/probe (NDJSON). */
-export async function probeModels(
-  payload: ModelProbeRequest,
-  handlers: ModelProbeHandlers,
-): Promise<void> {
-  let res: Response;
-  try {
-    res = await fetchWithAuthRetry(`${apiBase()}/models/probe`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
-      body: JSON.stringify(payload),
-      signal: handlers.signal,
-    });
-  } catch (err) {
-    if ((err as Error)?.name === "AbortError") return;
-    handlers.onError?.(msg("auto.shared.lib.api.literal.2"));
-    return;
-  }
-  if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => "");
-    handlers.onError?.(
-      parseErrorMessage(text) ?? formatMsg("auto.shared.lib.api.template.2", { p1: res.status }),
-    );
-    return;
-  }
-  const dispatch = (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    let data: ModelProbeEvent;
-    try {
-      data = JSON.parse(trimmed) as ModelProbeEvent;
-    } catch {
-      return;
-    }
-    if (data.event === "start") handlers.onStart?.(data);
-    else if (data.event === "model_start") handlers.onModelStart?.(data);
-    else if (data.event === "model_log") handlers.onLog?.(data);
-    else if (data.event === "model_trajectory") handlers.onTrajectory?.(data);
-    else if (data.event === "result") handlers.onResult?.(data);
-    else if (data.event === "complete") handlers.onComplete?.(data);
-    else if (data.event === "error") handlers.onError?.(data.message);
-  };
-  try {
-    await readNdjsonStream(res.body, dispatch);
-  } catch (err) {
-    if ((err as Error)?.name !== "AbortError") {
-      handlers.onError?.(err instanceof Error ? err.message : msg("auto.shared.lib.api.literal.3"));
-    }
-  }
 }
 
 export function getQueueStatus() {

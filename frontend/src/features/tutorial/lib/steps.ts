@@ -675,20 +675,6 @@ const tutorialSteps: TutorialStep[] = [
     readingTimeSec: 7,
   },
   {
-    id: "dd-model-probe",
-    title: msg("auto.features.tutorial.lib.steps.literal.36"),
-    description: msg("auto.features.tutorial.lib.steps.literal.51"),
-    target: "[data-tutorial='model-probe']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(4);
-    },
-    track: "deep-dive",
-    readingTimeSec: 8,
-  },
-
-  {
     id: "dd-review",
     title: msg("auto.features.tutorial.lib.steps.literal.21"),
     description: formatMsg("auto.features.tutorial.lib.steps.template.26", {
@@ -1067,7 +1053,6 @@ const ADVANCED_ONLY_STEP_IDS = new Set([
   "dd-compare-examples",
   "dd-splits",
   "dd-auto-level",
-  "dd-model-probe",
   "dd-score-chart",
   "dd-trajectory",
   "dd-playground",

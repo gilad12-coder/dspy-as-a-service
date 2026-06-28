@@ -42,6 +42,10 @@ PAYLOAD_OVERVIEW_SEED = "seed"
 PAYLOAD_OVERVIEW_OPTIMIZER_KWARGS = "optimizer_kwargs"
 PAYLOAD_OVERVIEW_COMPILE_KWARGS = "compile_kwargs"
 PAYLOAD_OVERVIEW_TASK_FINGERPRINT = "task_fingerprint"
+# Token source the run bills against: "managed" (Skynet credits) or "byok"
+# (the user's own provider key). Threaded from the wizard so frontier-locking
+# and the "No lift, no charge" guarantee are enforced server-side, not advisory.
+PAYLOAD_OVERVIEW_TOKEN_SOURCE = "token_source"
 PAYLOAD_OVERVIEW_IS_PRIVATE = "is_private"
 # Id of the personal-library dataset a run was submitted from, when the submit
 # was by-reference. Persisted so the optimization detail surfaces a live link
@@ -88,6 +92,17 @@ STRUCTURAL_PROGRESS_EVENTS = frozenset(
 PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE = "optimization_type"
 OPTIMIZATION_TYPE_RUN = "run"
 OPTIMIZATION_TYPE_GRID_SEARCH = "grid_search"
+
+# Token source modes. "managed" bills Skynet credits and gates frontier models;
+# "byok" runs on the user's own provider key and never locks the catalog.
+TOKEN_SOURCE_MANAGED = "managed"
+TOKEN_SOURCE_BYOK = "byok"
+
+# Which slice the "No lift, no charge" guarantee is adjudicated on. "test" is the
+# held-out split the optimizer never saw (unbiased proof); "val" is the fallback
+# when the dataset was too small to reserve a test split.
+GUARANTEE_BASIS_TEST = "test"
+GUARANTEE_BASIS_VAL = "val"
 
 PAYLOAD_OVERVIEW_TOTAL_PAIRS = "total_pairs"
 PAYLOAD_OVERVIEW_GENERATION_MODELS = "generation_models"

@@ -1704,12 +1704,34 @@ export type MessageKey =
   | "billing.chip.aria"
   | "billing.chip.byok"
   | "billing.chip.empty"
+  | "billing.chip.low_note"
+  | "billing.founders.active"
+  | "billing.founders.closed"
+  | "billing.founders.cta"
+  | "billing.founders.deadline"
+  | "billing.founders.eyebrow"
+  | "billing.founders.lead"
+  | "billing.founders.manage"
+  | "billing.founders.packs_lead"
+  | "billing.founders.packs_title"
+  | "billing.founders.price"
+  | "billing.founders.price_note"
+  | "billing.founders.stack_credits"
+  | "billing.founders.stack_guarantee"
+  | "billing.founders.stack_history"
+  | "billing.founders.stack_lock"
+  | "billing.founders.stack_managed"
+  | "billing.founders.stack_proof"
+  | "billing.founders.stack_serving"
+  | "billing.founders.stack_title"
+  | "billing.founders.title"
   | "billing.history.byok_tag"
   | "billing.lock.frontier"
   | "billing.lock.frontier_note"
   | "billing.mode.aria"
   | "billing.mode.byok"
   | "billing.mode.byok_hint"
+  | "billing.mode.byok_queue_note"
   | "billing.mode.label"
   | "billing.mode.manage_keys"
   | "billing.mode.managed"
@@ -1717,7 +1739,6 @@ export type MessageKey =
   | "billing.popover.byok_active"
   | "billing.popover.byok_hint"
   | "billing.popover.free_grant"
-  | "billing.popover.grant_resets"
   | "billing.popover.paid"
   | "billing.popover.title"
   | "billing.premium.active"
@@ -1921,6 +1942,30 @@ export type MessageKey =
   | "not_found.back_dashboard"
   | "not_found.description"
   | "not_found.title"
+  | "onboarding.cta.free_note"
+  | "onboarding.cta.run"
+  | "onboarding.demo.after_label"
+  | "onboarding.demo.before_label"
+  | "onboarding.demo.caption"
+  | "onboarding.demo.desc"
+  | "onboarding.demo.task_label"
+  | "onboarding.demo.task_value"
+  | "onboarding.demo.title"
+  | "onboarding.eyebrow"
+  | "onboarding.lead"
+  | "onboarding.mode.desc"
+  | "onboarding.mode.title"
+  | "onboarding.skip"
+  | "onboarding.title"
+  | "onboarding.upload.baseline_desc"
+  | "onboarding.upload.baseline_title"
+  | "onboarding.upload.desc"
+  | "onboarding.upload.dropzone_hint"
+  | "onboarding.upload.dropzone_label"
+  | "onboarding.upload.error"
+  | "onboarding.upload.parsing"
+  | "onboarding.upload.rows_columns"
+  | "onboarding.upload.title"
   | "optimization.access_banner.editor"
   | "optimization.access_banner.viewer"
   | "optimization.cancel.failed"
@@ -1940,6 +1985,14 @@ export type MessageKey =
   | "optimization.pause.success"
   | "optimization.pause_tooltip"
   | "optimization.progress.gepa"
+  | "optimization.proof.basis.test"
+  | "optimization.proof.basis.val"
+  | "optimization.proof.billed.line"
+  | "optimization.proof.billed.neutral"
+  | "optimization.proof.billed.neutral.title"
+  | "optimization.proof.billed.title"
+  | "optimization.proof.refunded.line"
+  | "optimization.proof.refunded.title"
   | "optimization.readonly_by"
   | "optimization.rerun"
   | "optimization.rerun.failed"
@@ -2046,17 +2099,21 @@ export type MessageKey =
   | "settings.keys.cancel"
   | "settings.keys.description"
   | "settings.keys.invalid"
-  | "settings.keys.privacy"
+  | "settings.keys.invalid_toast"
   | "settings.keys.remove"
+  | "settings.keys.remove_failed_toast"
   | "settings.keys.removed_toast"
   | "settings.keys.replace"
   | "settings.keys.save"
+  | "settings.keys.save_failed_toast"
   | "settings.keys.saved_toast"
   | "settings.keys.title"
   | "settings.keys.unverified"
+  | "settings.keys.unverified_toast"
   | "settings.keys.verified"
   | "settings.keys.verified_toast"
   | "settings.keys.verify"
+  | "settings.keys.verify_failed_toast"
   | "settings.keys.verifying"
   | "settings.open"
   | "settings.saved"
@@ -2260,6 +2317,12 @@ export type MessageKey =
   | "submit.code.agent.tool.metric.title"
   | "submit.code.agent.tool.signature.title"
   | "submit.code_validation_failed"
+  | "submit.cost_ceiling.bracket"
+  | "submit.cost_ceiling.cap_label"
+  | "submit.cost_ceiling.cap_unit"
+  | "submit.cost_ceiling.enable"
+  | "submit.cost_ceiling.label"
+  | "submit.cost_ceiling.no_cap"
   | "submit.dataset.column_kind.image"
   | "submit.dataset.column_kind.image_auto_hint"
   | "submit.dataset.column_kind.text"
@@ -2274,6 +2337,7 @@ export type MessageKey =
   | "submit.dataset.library_picker_title"
   | "submit.dataset.library_search"
   | "submit.dataset.library_search_empty"
+  | "submit.nav.run_cap"
   | "submit.nav.validating"
   | "submit.probe.asymptote_label"
   | "submit.probe.details.logs"
@@ -4103,12 +4167,34 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "billing.chip.aria": "יתרת קרדיטים: {p1}",
   "billing.chip.byok": "המפתח שלך",
   "billing.chip.empty": "הוספת קרדיטים",
+  "billing.chip.low_note": "היתרה נמוכה. אפשר להוסיף קרדיטים מתי שנוח — מודלים קטנים ממשיכים לרוץ על המענק החינמי.",
+  "billing.founders.active": "אתה חבר מייסד — המחיר שלך נעול.",
+  "billing.founders.closed": "מסלול המייסדים נסגר לחברים חדשים.",
+  "billing.founders.cta": "נעילת מסלול המייסדים",
+  "billing.founders.deadline": "פתוח עד {p1} · נעול ל-12 חודשים",
+  "billing.founders.eyebrow": "מסלול המייסדים",
+  "billing.founders.lead": "Skynet מבצעת אופטימיזציה לתוכנית ה-DSPy שלך ומוכיחה את השיפור על נתונים שהאופטימייזר מעולם לא ראה. אין שיפור? ההרצה חינם.",
+  "billing.founders.manage": "ניהול המנוי",
+  "billing.founders.packs_lead": "אפשר להוסיף קרדיטים בכל עת בחבילה מראש — בנפרד מהחברות שלך.",
+  "billing.founders.packs_title": "צריך עוד קרדיטים?",
+  "billing.founders.price": "{p1}/חודש",
+  "billing.founders.price_note": "נעול ל-12 חודשים.",
+  "billing.founders.stack_credits": "פי 2 קרדיטים בחודש הראשון",
+  "billing.founders.stack_guarantee": "אין שיפור, אין חיוב — מובטח",
+  "billing.founders.stack_history": "היסטוריית גרסאות מלאה",
+  "billing.founders.stack_lock": "מחיר נעול ל-12 חודשים · קו ישיר לצוות",
+  "billing.founders.stack_managed": "אופטימיזציה מנוהלת ללא התקנה",
+  "billing.founders.stack_proof": "הוכחת לפני/אחרי על מערך המבחן",
+  "billing.founders.stack_serving": "אירוח של כל תוכנית מותאמת",
+  "billing.founders.stack_title": "חברות מייסדים כוללת",
+  "billing.founders.title": "פרומפטים טובים יותר, או שלא משלמים.",
   "billing.history.byok_tag": "מפתח שלך",
   "billing.lock.frontier": "הוספת קרדיטים לפתיחה",
   "billing.lock.frontier_note": "מודלים מתקדמים דורשים קרדיטים.",
   "billing.mode.aria": "בחירת אופן החיוב על ההרצות",
   "billing.mode.byok": "המפתח שלך",
   "billing.mode.byok_hint": "ההרצות מחויבות למפתח הספק שלך, לא ל-Skynet.",
+  "billing.mode.byok_queue_note": "הרצות עם המפתח שלך חולקות את משאבי המחשוב המתארחים של Skynet, ולכן ייתכן שימתינו בתור בשעות עומס. זו מגבלת מקביליות, לא קנס על קרדיטים.",
   "billing.mode.label": "מקור הטוקנים",
   "billing.mode.manage_keys": "ניהול מפתחות",
   "billing.mode.managed": "קרדיטים של Skynet",
@@ -4116,7 +4202,6 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "billing.popover.byok_active": "פועל עם מפתח ה-API שלך",
   "billing.popover.byok_hint": "קרדיטים מנוהלים אינם בשימוש כאשר משתמשים במפתח שלך.",
   "billing.popover.free_grant": "מענק חודשי",
-  "billing.popover.grant_resets": "הקרדיטים החינמיים מתחדשים ב-{p1}",
   "billing.popover.paid": "בתשלום",
   "billing.popover.title": "קרדיטים",
   "billing.premium.active": "מנוי Premium פעיל",
@@ -4320,6 +4405,30 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "not_found.back_dashboard": "חזור/חזרי ללוח הבקרה",
   "not_found.description": "הכתובת שחיפשת לא קיימת או שהועברה למיקום אחר",
   "not_found.title": "הדף לא נמצא",
+  "onboarding.cta.free_note": "האופטימיזציה הראשונה שלך על משימה מכוסה בערבות — אם היא לא תנצח את קו הבסיס שלך, ההרצה חינם.",
+  "onboarding.cta.run": "אופטימיזציה — ההרצה הראשונה שלך חינם",
+  "onboarding.demo.after_label": "אחרי Skynet",
+  "onboarding.demo.before_label": "קו הבסיס שלך",
+  "onboarding.demo.caption": "נמדד על פיצול בדיקה שמור שהאופטימייזר מעולם לא ראה.",
+  "onboarding.demo.desc": "הנה משימה לדוגמה שכבר ביצענו עליה אופטימיזציה, כדי שתראו את צורת התוצאה עוד לפני שהרמתם אצבע.",
+  "onboarding.demo.task_label": "משימה לדוגמה",
+  "onboarding.demo.task_value": "סיווג כוונת פניות תמיכה",
+  "onboarding.demo.title": "קודם תראו שזה עובד",
+  "onboarding.eyebrow": "הרצה ראשונה",
+  "onboarding.lead": "שתי דקות מכאן ועד תוצאה מדודה של לפני־ואחרי על הנתונים שלכם — בלי כרטיס, בלי הגדרות.",
+  "onboarding.mode.desc": "הרצות מנוהלות רצות על הקרדיטים של Skynet בלי שום דבר להגדיר. אפשר לעבור למפתח הספק שלכם בכל רגע.",
+  "onboarding.mode.title": "איך ההרצה שלכם מחויבת",
+  "onboarding.skip": "דלגו — קחו אותי להגדרה המלאה",
+  "onboarding.title": "בואו נוכיח את זה על הנתונים שלכם",
+  "onboarding.upload.baseline_desc": "העלו, ואנחנו נשמור בצד {p1} דוגמאות שמורות שעליהן ננקד את התוכנית שלכם — הפער שהאופטימייזר צריך לסגור.",
+  "onboarding.upload.baseline_title": "קו הבסיס שלכם, נמדד על {p1} דוגמאות שמורות",
+  "onboarding.upload.desc": "גררו קובץ CSV, JSON או JSONL. נקרא אותו כאן בדפדפן שלכם — שום דבר לא נשלח עד שתתחילו את ההרצה.",
+  "onboarding.upload.dropzone_hint": "CSV, JSON או JSONL",
+  "onboarding.upload.dropzone_label": "בחרו קובץ או גררו אותו לכאן",
+  "onboarding.upload.error": "לא הצלחנו לקרוא את הקובץ. ודאו שזה CSV, JSON או JSONL תקין ונסו שוב.",
+  "onboarding.upload.parsing": "קוראים את הנתונים שלכם…",
+  "onboarding.upload.rows_columns": "{p1} שורות · {p2} עמודות",
+  "onboarding.upload.title": "עכשיו, הנתונים שלכם",
   "optimization.access_banner.editor": "שיתפו איתך · הרשאת עריכה",
   "optimization.access_banner.viewer": "שיתפו איתך · הרשאת צפייה",
   "optimization.cancel.failed": "ביטול נכשל",
@@ -4339,6 +4448,14 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "optimization.pause.success": "ההרצה הושהתה",
   "optimization.pause_tooltip": "השהה/השהי את ההרצה — אפשר להמשיך אותה מאותה נקודה",
   "optimization.progress.gepa": "אופטימיזציית GEPA",
+  "optimization.proof.basis.test": "נתונים שהאופטימייזר מעולם לא ראה",
+  "optimization.proof.basis.val": "סט האימות שלך",
+  "optimization.proof.billed.line": "ניצחנו את קו הבסיס שלך ב-{p1} על {p2} — ולכן הרצה זו חויבה: {p3} קרדיטים.",
+  "optimization.proof.billed.neutral": "הרצה זו חויבה: {p1} קרדיטים.",
+  "optimization.proof.billed.neutral.title": "הרצה זו חויבה",
+  "optimization.proof.billed.title": "הוכח על נתונים שמורים",
+  "optimization.proof.refunded.line": "לא הצלחנו לנצח את קו הבסיס שלך על {p1}, ולכן הרצה זו הייתה חינם. {p2} קרדיטים זוכו לארנק שלך.",
+  "optimization.proof.refunded.title": "אין שיפור — הרצה זו הייתה חינם",
   "optimization.readonly_by": "מאת {name}",
   "optimization.rerun": "הרץ/הריצי שוב",
   "optimization.rerun.failed": "לא ניתן להריץ מחדש",
@@ -4445,17 +4562,21 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.keys.cancel": "ביטול",
   "settings.keys.description": "שמירת מפתחות הספק שלך כדי להריץ על חשבונך במקום קרדיטים של Skynet.",
   "settings.keys.invalid": "לא תקין",
-  "settings.keys.privacy": "המפתחות מוצפנים באחסון ולא מוצגים שוב לאחר השמירה.",
+  "settings.keys.invalid_toast": "המפתח נדחה על ידי הספק. בדוק/י אותו ונסה/י שוב.",
   "settings.keys.remove": "הסרה",
+  "settings.keys.remove_failed_toast": "לא ניתן היה להסיר את המפתח. נסה/י שוב.",
   "settings.keys.removed_toast": "המפתח הוסר.",
   "settings.keys.replace": "החלפה",
   "settings.keys.save": "שמירת מפתח",
+  "settings.keys.save_failed_toast": "לא ניתן היה לשמור את המפתח. נסה/י שוב.",
   "settings.keys.saved_toast": "המפתח נשמר.",
   "settings.keys.title": "מפתחות API של ספקים",
   "settings.keys.unverified": "לא מאומת",
+  "settings.keys.unverified_toast": "לא ניתן היה ליצור קשר עם הספק לאימות. המפתח נשמר — נסה/י לאמת שוב.",
   "settings.keys.verified": "מאומת",
   "settings.keys.verified_toast": "המפתח אומת.",
   "settings.keys.verify": "אימות",
+  "settings.keys.verify_failed_toast": "לא ניתן היה לאמת את המפתח. נסה/י שוב.",
   "settings.keys.verifying": "באימות…",
   "settings.open": "פתח/י הגדרות",
   "settings.saved": "ההגדרה נשמרה",
@@ -4659,6 +4780,12 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.code.agent.tool.metric.title": "עריכת {term.metric}",
   "submit.code.agent.tool.signature.title": "עריכת {term.signature}",
   "submit.code_validation_failed": "שגיאה באימות הקוד",
+  "submit.cost_ceiling.bracket": "טווח צפוי: {low}–{high} קרדיטים",
+  "submit.cost_ceiling.cap_label": "תקרה",
+  "submit.cost_ceiling.cap_unit": "קרדיטים",
+  "submit.cost_ceiling.enable": "הגבלת עלות הריצה",
+  "submit.cost_ceiling.label": "תקרת עלות",
+  "submit.cost_ceiling.no_cap": "ללא תקרה",
   "submit.dataset.column_kind.image": "תמונה",
   "submit.dataset.column_kind.image_auto_hint": "זוהתה אוטומטית כעמודת תמונה",
   "submit.dataset.column_kind.text": "טקסט",
@@ -4673,6 +4800,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.dataset.library_picker_title": "בחירת {term.dataset} מהספרייה",
   "submit.dataset.library_search": "חיפוש {term.dataset}…",
   "submit.dataset.library_search_empty": "לא נמצאו דאטאסטים תואמים",
+  "submit.nav.run_cap": "תקרה: {credits} קרדיטים",
   "submit.nav.validating": "מאמת…",
   "submit.probe.asymptote_label": "{term.expectedScore}",
   "submit.probe.details.logs": "יומן ריצה",
@@ -6515,7 +6643,6 @@ const ui_ar: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "يعمل باستخدام مفتاح API الخاص بك",
   "billing.popover.byok_hint": "لا تُستخدَم الأرصدة المُدارة أثناء استعمال مفتاحك الخاص.",
   "billing.popover.free_grant": "منحة شهرية مجانية",
-  "billing.popover.grant_resets": "تتجدّد الأرصدة المجانية في {p1}",
   "billing.popover.paid": "مدفوعة",
   "billing.popover.title": "الأرصدة",
   "billing.unit.credits": "أرصدة",
@@ -6838,7 +6965,6 @@ const ui_ar: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "إلغاء",
   "settings.keys.description": "احفظ مفاتيح المزوّد الخاصة بك للتشغيل على حسابك بدلًا من أرصدة Skynet.",
   "settings.keys.invalid": "غير صالح",
-  "settings.keys.privacy": "تُخزَّن المفاتيح مُشفّرة، ولا تُعرض مرة أخرى بعد الحفظ.",
   "settings.keys.remove": "إزالة",
   "settings.keys.removed_toast": "أُزيل المفتاح.",
   "settings.keys.replace": "استبدال",
@@ -8908,7 +9034,6 @@ const ui_de: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "Läuft über deinen eigenen API-Schlüssel",
   "billing.popover.byok_hint": "Verwaltete Credits werden nicht genutzt, solange du deinen eigenen Schlüssel verwendest.",
   "billing.popover.free_grant": "Kostenlos monatlich",
-  "billing.popover.grant_resets": "Kostenlose Credits werden am {p1} zurückgesetzt",
   "billing.popover.paid": "Gekauft",
   "billing.popover.title": "Credits",
   "billing.unit.credits": "Credits",
@@ -9231,7 +9356,6 @@ const ui_de: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "Abbrechen",
   "settings.keys.description": "Speichere deine eigenen Anbieter-Schlüssel, um über dein Konto statt mit Skynet-Credits auszuführen.",
   "settings.keys.invalid": "Ungültig",
-  "settings.keys.privacy": "Schlüssel werden verschlüsselt gespeichert und nach dem Speichern nie wieder angezeigt.",
   "settings.keys.remove": "Entfernen",
   "settings.keys.removed_toast": "Schlüssel entfernt.",
   "settings.keys.replace": "Ersetzen",
@@ -11292,12 +11416,34 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "billing.chip.aria": "Credit balance: {p1}",
   "billing.chip.byok": "Your key",
   "billing.chip.empty": "Add credits",
+  "billing.chip.low_note": "Running low. Add credits when it suits you — mini models keep running on your free grant.",
+  "billing.founders.active": "You're a founding member — your rate is locked.",
+  "billing.founders.closed": "The Founder's Rate has closed for new members.",
+  "billing.founders.cta": "Lock in the Founder's Rate",
+  "billing.founders.deadline": "Open until {p1} · locked for 12 months",
+  "billing.founders.eyebrow": "The Founder's Rate",
+  "billing.founders.lead": "Skynet optimizes your DSPy program and proves the lift on data the optimizer never saw. No improvement? The run's free.",
+  "billing.founders.manage": "Manage subscription",
+  "billing.founders.packs_lead": "Top up anytime with a prepaid pack — separate from your membership.",
+  "billing.founders.packs_title": "Need more credits?",
+  "billing.founders.price": "{p1}/mo",
+  "billing.founders.price_note": "Locked for 12 months.",
+  "billing.founders.stack_credits": "2× first-month credits",
+  "billing.founders.stack_guarantee": "No lift, no charge — guaranteed",
+  "billing.founders.stack_history": "Full version history",
+  "billing.founders.stack_lock": "Price locked 12 months · a direct line to the team",
+  "billing.founders.stack_managed": "Setup-free managed optimization",
+  "billing.founders.stack_proof": "Test-split before/after proof",
+  "billing.founders.stack_serving": "Hosted serving of every optimized program",
+  "billing.founders.stack_title": "Founding membership includes",
+  "billing.founders.title": "Better prompts, or you don't pay.",
   "billing.history.byok_tag": "BYOK",
   "billing.lock.frontier": "Add credits to unlock",
   "billing.lock.frontier_note": "Frontier models need credits.",
   "billing.mode.aria": "Choose how runs are billed",
   "billing.mode.byok": "Your own key",
   "billing.mode.byok_hint": "Runs are billed to your own provider key, not Skynet.",
+  "billing.mode.byok_queue_note": "Your-key runs share Skynet's self-hosted compute, so they may wait in line at busy times. It's a concurrency limit, not a credits penalty.",
   "billing.mode.label": "Token source",
   "billing.mode.manage_keys": "Manage keys",
   "billing.mode.managed": "Skynet credits",
@@ -11305,7 +11451,6 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "Running on your own API key",
   "billing.popover.byok_hint": "Managed credits aren't used while you bring your own key.",
   "billing.popover.free_grant": "Free monthly",
-  "billing.popover.grant_resets": "Free credits reset {p1}",
   "billing.popover.paid": "Purchased",
   "billing.popover.title": "Credits",
   "billing.premium.active": "Premium active",
@@ -11509,6 +11654,30 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "not_found.back_dashboard": "Back to dashboard",
   "not_found.description": "The address you requested doesn't exist or has moved",
   "not_found.title": "Page not found",
+  "onboarding.cta.free_note": "Your first optimization on a task is covered by the guarantee — if it doesn't beat your baseline, the run is free.",
+  "onboarding.cta.run": "Optimize — your first run is free",
+  "onboarding.demo.after_label": "After Skynet",
+  "onboarding.demo.before_label": "Your baseline",
+  "onboarding.demo.caption": "Measured on a held-out test split the optimizer never saw.",
+  "onboarding.demo.desc": "Here's a sample task we already optimized, so you can see the shape of the result before lifting a finger.",
+  "onboarding.demo.task_label": "Sample task",
+  "onboarding.demo.task_value": "Support-ticket intent classification",
+  "onboarding.demo.title": "See it work first",
+  "onboarding.eyebrow": "First run",
+  "onboarding.lead": "Two minutes from here to a measured before-and-after on your own data — no card, no setup.",
+  "onboarding.mode.desc": "Managed runs on Skynet's credits with nothing to configure. You can switch to your own provider key any time.",
+  "onboarding.mode.title": "How your run is billed",
+  "onboarding.skip": "Skip — take me to the full setup",
+  "onboarding.title": "Let's prove it on your data",
+  "onboarding.upload.baseline_desc": "Upload, and we'll set aside {p1} held-out examples to score your program against — the gap the optimizer has to close.",
+  "onboarding.upload.baseline_title": "Your baseline, measured on {p1} held-out examples",
+  "onboarding.upload.desc": "Drop in a CSV, JSON, or JSONL file. We'll read it here in your browser — nothing is sent until you start the run.",
+  "onboarding.upload.dropzone_hint": "CSV, JSON, or JSONL",
+  "onboarding.upload.dropzone_label": "Choose a file or drop it here",
+  "onboarding.upload.error": "We couldn't read that file. Check it's a valid CSV, JSON, or JSONL and try again.",
+  "onboarding.upload.parsing": "Reading your data…",
+  "onboarding.upload.rows_columns": "{p1} rows · {p2} columns",
+  "onboarding.upload.title": "Now, your data",
   "optimization.access_banner.editor": "Shared with you · Editor access",
   "optimization.access_banner.viewer": "Shared with you · Viewer access",
   "optimization.cancel.failed": "Cancellation failed",
@@ -11528,6 +11697,14 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "optimization.pause.success": "Run paused",
   "optimization.pause_tooltip": "Pause the run — you can resume it from the same point",
   "optimization.progress.gepa": "GEPA optimization",
+  "optimization.proof.basis.test": "data the optimizer never saw",
+  "optimization.proof.basis.val": "your validation set",
+  "optimization.proof.billed.line": "We beat your baseline by {p1} on {p2} — that's why this run was billed: {p3} credits.",
+  "optimization.proof.billed.neutral": "This run was billed: {p1} credits.",
+  "optimization.proof.billed.neutral.title": "This run was billed",
+  "optimization.proof.billed.title": "Proven on held-out data",
+  "optimization.proof.refunded.line": "We couldn't beat your baseline on {p1}, so this run was free. {p2} credits refunded to your wallet.",
+  "optimization.proof.refunded.title": "No lift — this run was free",
   "optimization.readonly_by": "by {name}",
   "optimization.rerun": "Run again",
   "optimization.rerun.failed": "Couldn't create a new optimization",
@@ -11634,17 +11811,21 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "Cancel",
   "settings.keys.description": "Save your own provider keys to run on your account instead of Skynet credits.",
   "settings.keys.invalid": "Invalid",
-  "settings.keys.privacy": "Keys are encrypted at rest and never shown again after saving.",
+  "settings.keys.invalid_toast": "That key was rejected by the provider. Check it and try again.",
   "settings.keys.remove": "Remove",
+  "settings.keys.remove_failed_toast": "Couldn't remove the key. Try again.",
   "settings.keys.removed_toast": "Key removed.",
   "settings.keys.replace": "Replace",
   "settings.keys.save": "Save key",
+  "settings.keys.save_failed_toast": "Couldn't save the key. Try again.",
   "settings.keys.saved_toast": "Key saved.",
   "settings.keys.title": "Provider API keys",
   "settings.keys.unverified": "Not verified",
+  "settings.keys.unverified_toast": "Couldn't reach the provider to verify. The key is saved — try verifying again.",
   "settings.keys.verified": "Verified",
   "settings.keys.verified_toast": "Key verified.",
   "settings.keys.verify": "Verify",
+  "settings.keys.verify_failed_toast": "Couldn't verify the key. Try again.",
   "settings.keys.verifying": "Verifying…",
   "settings.open": "Open settings",
   "settings.saved": "Setting saved",
@@ -11848,6 +12029,12 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.code.agent.tool.metric.title": "Edit metric",
   "submit.code.agent.tool.signature.title": "Edit Signature",
   "submit.code_validation_failed": "Code validation failed",
+  "submit.cost_ceiling.bracket": "Projected range: {low}–{high} credits",
+  "submit.cost_ceiling.cap_label": "Ceiling",
+  "submit.cost_ceiling.cap_unit": "credits",
+  "submit.cost_ceiling.enable": "Cap this run's cost",
+  "submit.cost_ceiling.label": "Max cost ceiling",
+  "submit.cost_ceiling.no_cap": "No ceiling",
   "submit.dataset.column_kind.image": "Image",
   "submit.dataset.column_kind.image_auto_hint": "Auto-detected as an image column",
   "submit.dataset.column_kind.text": "Text",
@@ -11862,6 +12049,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.dataset.library_picker_title": "Pick a dataset from the library",
   "submit.dataset.library_search": "Search datasets…",
   "submit.dataset.library_search_empty": "No matching datasets found",
+  "submit.nav.run_cap": "Cap: {credits} credits",
   "submit.nav.validating": "Validating…",
   "submit.probe.asymptote_label": "Expected score",
   "submit.probe.details.logs": "Run log",
@@ -13877,7 +14065,6 @@ const ui_es: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "Funcionando con tu propia clave de API",
   "billing.popover.byok_hint": "Los créditos gestionados no se usan mientras utilizas tu propia clave.",
   "billing.popover.free_grant": "Gratis cada mes",
-  "billing.popover.grant_resets": "Los créditos gratuitos se renuevan el {p1}",
   "billing.popover.paid": "Comprados",
   "billing.popover.title": "Créditos",
   "billing.unit.credits": "créditos",
@@ -14200,7 +14387,6 @@ const ui_es: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "Cancelar",
   "settings.keys.description": "Guarda tus propias claves de proveedor para ejecutar en tu cuenta en lugar de con créditos de Skynet.",
   "settings.keys.invalid": "No válida",
-  "settings.keys.privacy": "Las claves se cifran en reposo y no se vuelven a mostrar tras guardarlas.",
   "settings.keys.remove": "Eliminar",
   "settings.keys.removed_toast": "Clave eliminada.",
   "settings.keys.replace": "Reemplazar",
@@ -16277,7 +16463,6 @@ const ui_fa: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "در حال اجرا با کلید API شخصی شما",
   "billing.popover.byok_hint": "تا زمانی که از کلید شخصی خود استفاده می‌کنید، اعتبار مدیریت‌شده مصرف نمی‌شود.",
   "billing.popover.free_grant": "رایگان ماهانه",
-  "billing.popover.grant_resets": "اعتبار رایگان در {p1} بازنشانی می‌شود",
   "billing.popover.paid": "خریداری‌شده",
   "billing.popover.title": "اعتبار",
   "billing.unit.credits": "اعتبار",
@@ -16600,7 +16785,6 @@ const ui_fa: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "لغو",
   "settings.keys.description": "کلیدهای ارائه‌دهنده‌ی خود را ذخیره کنید تا به‌جای اعتبار Skynet روی حساب خودتان اجرا کنید.",
   "settings.keys.invalid": "نامعتبر",
-  "settings.keys.privacy": "کلیدها در حالت ذخیره رمزگذاری می‌شوند و پس از ذخیره دیگر هرگز نمایش داده نمی‌شوند.",
   "settings.keys.remove": "حذف",
   "settings.keys.removed_toast": "کلید حذف شد.",
   "settings.keys.replace": "جایگزینی",
@@ -18670,7 +18854,6 @@ const ui_fr: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "Fonctionne avec votre propre clé API",
   "billing.popover.byok_hint": "Les crédits gérés ne sont pas utilisés lorsque vous utilisez votre propre clé.",
   "billing.popover.free_grant": "Gratuit chaque mois",
-  "billing.popover.grant_resets": "Réinitialisation des crédits gratuits le {p1}",
   "billing.popover.paid": "Acheté",
   "billing.popover.title": "Crédits",
   "billing.unit.credits": "crédits",
@@ -18993,7 +19176,6 @@ const ui_fr: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "Annuler",
   "settings.keys.description": "Enregistrez vos propres clés de fournisseur pour exécuter sur votre compte au lieu des crédits Skynet.",
   "settings.keys.invalid": "Invalide",
-  "settings.keys.privacy": "Les clés sont chiffrées au repos et ne sont plus affichées après l'enregistrement.",
   "settings.keys.remove": "Supprimer",
   "settings.keys.removed_toast": "Clé supprimée.",
   "settings.keys.replace": "Remplacer",
@@ -21082,7 +21264,6 @@ const ui_hi: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "आपकी अपनी API कुंजी पर चल रहा है",
   "billing.popover.byok_hint": "जब आप अपनी कुंजी का उपयोग करते हैं तो प्रबंधित क्रेडिट उपयोग नहीं होते।",
   "billing.popover.free_grant": "मासिक मुफ़्त",
-  "billing.popover.grant_resets": "मुफ़्त क्रेडिट {p1} को रीसेट होते हैं",
   "billing.popover.paid": "खरीदे गए",
   "billing.popover.title": "क्रेडिट",
   "billing.unit.credits": "क्रेडिट",
@@ -21405,7 +21586,6 @@ const ui_hi: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "रद्द करें",
   "settings.keys.description": "Skynet क्रेडिट के बजाय अपने खाते पर चलाने के लिए अपनी प्रदाता कुंजियाँ सहेजें।",
   "settings.keys.invalid": "अमान्य",
-  "settings.keys.privacy": "कुंजियाँ संग्रहण में एन्क्रिप्टेड होती हैं और सहेजने के बाद फिर कभी नहीं दिखाई जातीं।",
   "settings.keys.remove": "हटाएँ",
   "settings.keys.removed_toast": "कुंजी हटा दी गई।",
   "settings.keys.replace": "बदलें",
@@ -23474,7 +23654,6 @@ const ui_it: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "In esecuzione con la tua chiave API",
   "billing.popover.byok_hint": "I crediti gestiti non vengono usati mentre utilizzi la tua chiave.",
   "billing.popover.free_grant": "Gratis ogni mese",
-  "billing.popover.grant_resets": "I crediti gratuiti si rinnovano il {p1}",
   "billing.popover.paid": "Acquistati",
   "billing.popover.title": "Crediti",
   "billing.unit.credits": "crediti",
@@ -23797,7 +23976,6 @@ const ui_it: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "Annulla",
   "settings.keys.description": "Salva le tue chiavi del provider per eseguire sul tuo account invece che con i crediti Skynet.",
   "settings.keys.invalid": "Non valida",
-  "settings.keys.privacy": "Le chiavi sono crittografate a riposo e non vengono più mostrate dopo il salvataggio.",
   "settings.keys.remove": "Rimuovi",
   "settings.keys.removed_toast": "Chiave rimossa.",
   "settings.keys.replace": "Sostituisci",
@@ -25866,7 +26044,6 @@ const ui_ja: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "自分のAPIキーで実行中",
   "billing.popover.byok_hint": "自分のキーを使用している間は、管理クレジットは消費されません。",
   "billing.popover.free_grant": "毎月無料",
-  "billing.popover.grant_resets": "無料クレジットは{p1}にリセットされます",
   "billing.popover.paid": "購入済み",
   "billing.popover.title": "クレジット",
   "billing.unit.credits": "クレジット",
@@ -26189,7 +26366,6 @@ const ui_ja: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "キャンセル",
   "settings.keys.description": "自分のプロバイダーキーを保存すると、Skynetクレジットの代わりに自分のアカウントで実行できます。",
   "settings.keys.invalid": "無効",
-  "settings.keys.privacy": "キーは保存時に暗号化され、保存後は二度と表示されません。",
   "settings.keys.remove": "削除",
   "settings.keys.removed_toast": "キーを削除しました。",
   "settings.keys.replace": "置き換える",
@@ -28258,7 +28434,6 @@ const ui_ko: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "내 API 키로 실행 중",
   "billing.popover.byok_hint": "내 키를 사용하는 동안에는 관리형 크레딧이 사용되지 않습니다.",
   "billing.popover.free_grant": "매월 무료",
-  "billing.popover.grant_resets": "무료 크레딧 초기화 {p1}",
   "billing.popover.paid": "구매함",
   "billing.popover.title": "크레딧",
   "billing.unit.credits": "크레딧",
@@ -28581,7 +28756,6 @@ const ui_ko: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "취소",
   "settings.keys.description": "내 공급자 키를 저장하면 Skynet 크레딧 대신 내 계정으로 실행할 수 있습니다.",
   "settings.keys.invalid": "유효하지 않음",
-  "settings.keys.privacy": "키는 저장 시 암호화되며 저장 후에는 다시 표시되지 않습니다.",
   "settings.keys.remove": "제거",
   "settings.keys.removed_toast": "키가 제거되었습니다.",
   "settings.keys.replace": "교체",
@@ -30650,7 +30824,6 @@ const ui_pt: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "A executar com a sua própria chave de API",
   "billing.popover.byok_hint": "Os créditos geridos não são utilizados enquanto usa a sua própria chave.",
   "billing.popover.free_grant": "Gratuitos mensais",
-  "billing.popover.grant_resets": "Os créditos gratuitos renovam-se a {p1}",
   "billing.popover.paid": "Comprados",
   "billing.popover.title": "Créditos",
   "billing.unit.credits": "créditos",
@@ -30973,7 +31146,6 @@ const ui_pt: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "Cancelar",
   "settings.keys.description": "Guarde as suas próprias chaves de fornecedor para executar na sua conta em vez de usar créditos Skynet.",
   "settings.keys.invalid": "Inválida",
-  "settings.keys.privacy": "As chaves são encriptadas em repouso e nunca mais são mostradas após guardar.",
   "settings.keys.remove": "Remover",
   "settings.keys.removed_toast": "Chave removida.",
   "settings.keys.replace": "Substituir",
@@ -33267,7 +33439,6 @@ const ui_ru: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "Работа на вашем собственном API-ключе",
   "billing.popover.byok_hint": "Управляемые кредиты не используются, пока подключён ваш собственный ключ.",
   "billing.popover.free_grant": "Бесплатно в месяц",
-  "billing.popover.grant_resets": "Бесплатные кредиты обновляются {p1}",
   "billing.popover.paid": "Куплено",
   "billing.popover.title": "Кредиты",
   "billing.unit.credits": "кредиты",
@@ -33590,7 +33761,6 @@ const ui_ru: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "Отменить",
   "settings.keys.description": "Сохраните собственные ключи провайдеров, чтобы запускать на своём аккаунте вместо кредитов Skynet.",
   "settings.keys.invalid": "Недействителен",
-  "settings.keys.privacy": "Ключи хранятся в зашифрованном виде и больше не отображаются после сохранения.",
   "settings.keys.remove": "Удалить",
   "settings.keys.removed_toast": "Ключ удалён.",
   "settings.keys.replace": "Заменить",
@@ -35659,7 +35829,6 @@ const ui_tr: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "Kendi API anahtarınızla çalışıyor",
   "billing.popover.byok_hint": "Kendi anahtarınızı kullandığınız sürece yönetilen krediler harcanmaz.",
   "billing.popover.free_grant": "Aylık ücretsiz",
-  "billing.popover.grant_resets": "Ücretsiz krediler {p1} sıfırlanır",
   "billing.popover.paid": "Satın alınan",
   "billing.popover.title": "Krediler",
   "billing.unit.credits": "kredi",
@@ -35982,7 +36151,6 @@ const ui_tr: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "İptal",
   "settings.keys.description": "Skynet kredileri yerine kendi hesabınızda çalıştırmak için kendi sağlayıcı anahtarlarınızı kaydedin.",
   "settings.keys.invalid": "Geçersiz",
-  "settings.keys.privacy": "Anahtarlar saklanırken şifrelenir ve kaydedildikten sonra bir daha gösterilmez.",
   "settings.keys.remove": "Kaldır",
   "settings.keys.removed_toast": "Anahtar kaldırıldı.",
   "settings.keys.replace": "Değiştir",
@@ -38051,7 +38219,6 @@ const ui_uk: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "Працює з вашим власним ключем API",
   "billing.popover.byok_hint": "Керовані кредити не використовуються, поки ви застосовуєте власний ключ.",
   "billing.popover.free_grant": "Безкоштовно щомісяця",
-  "billing.popover.grant_resets": "Безкоштовні кредити оновлюються {p1}",
   "billing.popover.paid": "Придбано",
   "billing.popover.title": "Кредити",
   "billing.unit.credits": "кредитів",
@@ -38374,7 +38541,6 @@ const ui_uk: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "Скасувати",
   "settings.keys.description": "Збережіть власні ключі постачальників, щоб запускати у своєму обліковому записі замість кредитів Skynet.",
   "settings.keys.invalid": "Недійсний",
-  "settings.keys.privacy": "Ключі зашифровано при зберіганні й більше не показуються після збереження.",
   "settings.keys.remove": "Видалити",
   "settings.keys.removed_toast": "Ключ видалено.",
   "settings.keys.replace": "Замінити",
@@ -40500,7 +40666,6 @@ const ui_zh_Hans: Partial<Record<MessageKey, string>> = {
   "billing.popover.byok_active": "正在使用你自己的 API 密钥运行",
   "billing.popover.byok_hint": "使用你自己的密钥时，不会消耗托管额度。",
   "billing.popover.free_grant": "每月免费",
-  "billing.popover.grant_resets": "免费额度将于 {p1} 重置",
   "billing.popover.paid": "已购买",
   "billing.popover.title": "额度",
   "billing.unit.credits": "额度",
@@ -40823,7 +40988,6 @@ const ui_zh_Hans: Partial<Record<MessageKey, string>> = {
   "settings.keys.cancel": "取消",
   "settings.keys.description": "保存你自己的提供方密钥，即可使用你的账户而非 Skynet 额度来运行。",
   "settings.keys.invalid": "无效",
-  "settings.keys.privacy": "密钥以加密方式存储，保存后将不再显示。",
   "settings.keys.remove": "移除",
   "settings.keys.removed_toast": "密钥已移除。",
   "settings.keys.replace": "替换",

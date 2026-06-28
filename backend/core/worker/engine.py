@@ -26,12 +26,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..billing import StripeBillingService
 from ..config import settings
 from ..constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
+    PAYLOAD_OVERVIEW_MODEL_NAME,
+    PAYLOAD_OVERVIEW_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
+    PAYLOAD_OVERVIEW_TASK_FINGERPRINT,
+    PAYLOAD_OVERVIEW_TOKEN_SOURCE,
     PAYLOAD_OVERVIEW_USERNAME,
+    TOKEN_SOURCE_MANAGED,
 )
 from ..i18n import CANCELLATION_REASON
 from ..models import GridSearchRequest, RunRequest
@@ -619,6 +625,33 @@ class BackgroundWorker:
                             baseline_score=_baseline,
                             optimized_score=_optimized,
                         )
+                        # Both the local credit debit and the Stripe metering share
+                        # the once-only completion claim so a redelivered/re-run job
+                        # is never double-billed. Success only — a failed (e.g.
+                        # all-pairs-failed) run is not billed.
+                        if final_status == "success":
+                            billed = self._debit_run_credits(
+                                _username,
+                                result_dict,
+                                run_name=overview.get(PAYLOAD_OVERVIEW_NAME) or "",
+                                model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
+                            )
+                            # Adjudicate the guarantee after the debit so a no-lift
+                            # first run can write its offsetting refund against the
+                            # just-debited cost. Shares the once-only completion
+                            # claim, so a re-run never double-refunds.
+                            refunded = self._apply_guarantee_best_effort(
+                                _username, result_dict, overview, optimization_id
+                            )
+                            # Stamp the billing outcome onto the persisted result so
+                            # the result screen can frame billing as proof: a billed
+                            # run is the receipt the lift was real, a refunded run
+                            # shows the credits restored. Re-persisted because the two
+                            # billing calls run after the first completion write.
+                            self._stamp_billing_outcome(
+                                optimization_id, result_dict, billed=billed, refunded=refunded
+                            )
+                            self._report_run_usage_best_effort(_username, result_dict)
                     if final_status == "success":
                         self._schedule_embedding_indexing(optimization_id)
                 except KeyError:
@@ -856,6 +889,198 @@ class BackgroundWorker:
             embed_finished_job(optimization_id, job_store=self._job_store)
         except Exception as exc:  # isolation boundary: best-effort indexing must never impact job status
             logger.debug("Embedding indexing for %s failed: %s", optimization_id, exc)
+
+    def _debit_run_credits(
+        self, username: str, result_dict: dict[str, Any] | None, *, run_name: str, model: str | None
+    ) -> int:
+        """Debit a finished run's credit cost from the account's local ledger.
+
+        Writes a signed ``run`` row and decrements the account's grant/balance via
+        :meth:`StripeBillingService.debit_run`. Runs inline (not on a daemon
+        thread) so the wallet visibly reflects the spend the moment the run lands,
+        but wrapped so a billing-DB hiccup can never flip job status — the local
+        ledger is the credit source of truth, independent of whether Stripe is
+        configured. A no-op when the store exposes no SQL engine (legacy/in-memory),
+        the caller is anonymous, or the run reported no token usage.
+
+        Args:
+            username: Account the run is billed to.
+            result_dict: The serialized run/grid result; its ``total_tokens`` is
+                the figure charged.
+            run_name: Run name for the ledger row's human label.
+            model: Model id stamped on the ledger row, or ``None``.
+
+        Returns:
+            The credits charged (``0`` when nothing was billed or the debit was
+            skipped/failed).
+        """
+        engine = getattr(self._job_store, "engine", None)
+        if engine is None or not username:
+            return 0
+        total_tokens = result_dict.get("total_tokens") if isinstance(result_dict, dict) else None
+        if not isinstance(total_tokens, int) or total_tokens <= 0:
+            return 0
+        try:
+            return StripeBillingService(engine=engine).debit_run(
+                username, total_tokens, model=model, description=run_name or "Run"
+            )
+        except Exception as exc:  # isolation boundary: a debit failure must never impact job status
+            logger.debug("Credit debit for %s failed: %s", username, exc)
+            return 0
+
+    def _apply_guarantee_best_effort(
+        self,
+        username: str,
+        result_dict: dict[str, Any] | None,
+        overview: dict[str, Any],
+        optimization_id: str,
+    ) -> int:
+        """Adjudicate the "No lift, no charge" guarantee for a finished run.
+
+        Reads the run's adjudication scores (``result_dict['guarantee']`` — test
+        split, or valset fallback), the task fingerprint and token-source mode
+        (both from the overview), and hands them to
+        :meth:`StripeBillingService.adjudicate_guarantee`, which covers only the
+        first run per ``(user, task)``: a no-lift first run lands an offsetting
+        refund (full cost for managed, platform fee for BYOK) while re-runs and
+        runs with lift bill normally. Runs inline (mirroring the debit) so the
+        wallet reflects a refund the moment the run lands, but wrapped so a
+        billing-DB hiccup can never flip job status. A no-op when the store
+        exposes no SQL engine, the caller is anonymous, the task fingerprint is
+        absent, or the run reported no token usage.
+
+        Args:
+            username: Account the run was billed to.
+            result_dict: The serialized run/grid result; carries ``guarantee``
+                and ``total_tokens``.
+            overview: The job's payload overview (task fingerprint, token source,
+                run name, model).
+            optimization_id: The finished run claiming or skipping the slot.
+
+        Returns:
+            The credits refunded (``0`` when the run billed, wasn't covered, or
+            adjudication was skipped/failed).
+        """
+        engine = getattr(self._job_store, "engine", None)
+        if engine is None or not username or not isinstance(result_dict, dict):
+            return 0
+        task_fingerprint = overview.get(PAYLOAD_OVERVIEW_TASK_FINGERPRINT)
+        if not task_fingerprint:
+            return 0
+        total_tokens = result_dict.get("total_tokens")
+        if not isinstance(total_tokens, int) or total_tokens <= 0:
+            return 0
+        token_source = overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED
+        run_name = overview.get(PAYLOAD_OVERVIEW_NAME) or "Run"
+        try:
+            refunded = StripeBillingService(engine=engine).adjudicate_guarantee(
+                username,
+                str(task_fingerprint),
+                str(optimization_id),
+                result_dict.get("guarantee"),
+                token_source=str(token_source),
+                total_tokens=total_tokens,
+                model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
+                description=f"No lift — refunded · {run_name}",
+            )
+            if refunded:
+                logger.info(
+                    "Guarantee refund of %d credits applied for %s (task=%s)",
+                    refunded,
+                    username,
+                    task_fingerprint,
+                )
+            return refunded
+        except Exception as exc:  # isolation boundary: a guarantee failure must never impact job status
+            logger.debug("Guarantee adjudication for %s failed: %s", username, exc)
+            return 0
+
+    def _stamp_billing_outcome(
+        self,
+        optimization_id: str,
+        result_dict: dict[str, Any] | None,
+        *,
+        billed: int,
+        refunded: int,
+    ) -> None:
+        """Record the run's billing outcome on its result for the proof screen.
+
+        Writes ``result['details']['billing']`` — ``{outcome, credits}`` where
+        ``outcome`` is ``"refunded"`` when the guarantee returned credits (the run
+        was free) or ``"billed"`` otherwise, and ``credits`` is the amount restored
+        (refund) or charged (bill). The result screen reads this to frame billing
+        as proof: a charge is the receipt the lift was real, a refund the evidence
+        the guarantee held. Only stamps single-run results (a grid envelope has no
+        per-run ``details``) and only when a credit amount exists, so a free-grant
+        run that cost nothing adds no row. Re-persists the result via the job store
+        because the billing calls run after the first completion write; wrapped so a
+        store hiccup can never flip job status.
+
+        Args:
+            optimization_id: The finished run whose result is updated.
+            result_dict: The serialized run result; mutated in place and re-saved.
+            billed: Credits charged by :meth:`_debit_run_credits`.
+            refunded: Credits returned by :meth:`_apply_guarantee_best_effort`.
+        """
+        if not isinstance(result_dict, dict) or "pair_results" in result_dict:
+            return
+        outcome = "refunded" if refunded > 0 else "billed"
+        credits = refunded if refunded > 0 else billed
+        if credits <= 0:
+            return
+        try:
+            details = result_dict.get("details")
+            if not isinstance(details, dict):
+                details = {}
+                result_dict["details"] = details
+            details["billing"] = {"outcome": outcome, "credits": credits}
+            self._job_store.update_job(optimization_id, result=result_dict)
+        except Exception as exc:  # isolation boundary: stamping must never impact job status
+            logger.debug("Billing-outcome stamp for %s failed: %s", optimization_id, exc)
+
+    def _report_run_usage_best_effort(self, username: str, result_dict: dict[str, Any] | None) -> None:
+        """Meter a finished run's token usage to Stripe, off the worker hot path.
+
+        Reads the run's ``total_tokens`` (captured from LM history into the
+        result payload) and reports it on a daemon thread so a slow or hung
+        Stripe call cannot stall the worker. A no-op when the store exposes no
+        SQL engine (legacy/in-memory), Stripe is unconfigured, the caller is
+        anonymous, or the run reported no token usage — billing must never
+        affect job status.
+
+        Args:
+            username: Account the run is billed to.
+            result_dict: The serialized run/grid result; its ``total_tokens`` is
+                the figure metered.
+        """
+        engine = getattr(self._job_store, "engine", None)
+        if engine is None or not username or settings.stripe_secret_key is None:
+            return
+        total_tokens = result_dict.get("total_tokens") if isinstance(result_dict, dict) else None
+        if not isinstance(total_tokens, int) or total_tokens <= 0:
+            return
+        threading.Thread(
+            target=self._meter_run_usage,
+            args=(engine, username, total_tokens),
+            name=f"meter-{username[:8]}",
+            daemon=True,
+        ).start()
+
+    def _meter_run_usage(self, engine: Any, username: str, total_tokens: int) -> None:
+        """Report run usage to Stripe, swallowing failures so they never reach the worker.
+
+        A Stripe outage or an unconfigured meter only surfaces on this daemon
+        thread; the job is already marked success by the time this runs.
+
+        Args:
+            engine: SQLAlchemy engine backing the billing tables.
+            username: Account the run is billed to.
+            total_tokens: Tokens the run consumed.
+        """
+        try:
+            StripeBillingService(engine=engine).report_run_usage(username, total_tokens)
+        except Exception as exc:  # isolation boundary: metering must never impact job status
+            logger.debug("Metered usage report for %s failed: %s", username, exc)
 
     def _terminate_run_process(self, run_process: mp.process.BaseProcess, optimization_id: str) -> None:
         """Terminate a still-running job subprocess, escalating to SIGKILL after a 3-second grace period.

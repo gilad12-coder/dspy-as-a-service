@@ -482,10 +482,9 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         metric_code = payload.get("metric_code", "")
         if not metric_code:
             raise DomainError("optimization.no_metric_code", status=400)
-        # exec() isolation gap: runs user code in the API process. Same Phase B
-        # story as ``/probe-models`` — evaluate-examples calls the metric once
-        # per requested row, so ``safe_exec.probe_metric_on_sample`` would
-        # spawn a subprocess per row. The payload here was already validated
+        # exec() isolation gap: runs user code in the API process. evaluate-examples
+        # calls the metric once per requested row, so ``safe_exec.probe_metric_on_sample``
+        # would spawn a subprocess per row. The payload here was already validated
         # through the subprocess boundary when the job was submitted.
         metric = load_metric_from_code(metric_code)
 

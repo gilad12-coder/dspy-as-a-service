@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, Boxes, Check, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Boxes, Trash2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -15,8 +15,9 @@ import { cn } from "@/shared/lib/utils";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { TERMS } from "@/shared/lib/terms";
 import { ModelChip, AddModelButton } from "@/shared/ui/model-chip";
+import { TokenSourceToggle, useCredits } from "@/features/billing";
 import { ModelConfigModal } from "../ModelConfigModal";
-import { ModelProbeDialog } from "../ModelProbeDialog";
+import { CostCeilingCard } from "../CostCeilingCard";
 
 import { emptyModelConfig } from "../../constants";
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
@@ -93,11 +94,9 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
     catalog,
   } = w;
 
+  const { wallet } = useCredits();
   const availableCount = catalog?.models.length ?? 0;
   const catalogEmpty = catalog != null && availableCount === 0;
-  const [probeOpen, setProbeOpen] = React.useState(false);
-  const [probeRunning, setProbeRunning] = React.useState(false);
-  const [probeHasResults, setProbeHasResults] = React.useState(false);
 
   return (
     <Card
@@ -114,62 +113,12 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        <TokenSourceToggle />
         {jobType === "run" ? (
           <div className="space-y-3" data-tutorial="model-catalog">
             <Label className="text-sm font-semibold">
               {msg("auto.features.submit.components.steps.modelstep.13")}
             </Label>
-            <button
-              type="button"
-              onClick={() => setProbeOpen(true)}
-              className={cn(
-                "group flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-start transition-colors cursor-pointer",
-                probeRunning
-                  ? "border-primary/60 bg-primary/10 shadow-sm shadow-primary/10"
-                  : probeHasResults
-                    ? "border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-500/60 hover:bg-emerald-500/10"
-                    : "border-dashed border-primary/30 bg-primary/5 hover:border-primary/50 hover:bg-primary/10",
-              )}
-              data-tutorial="model-probe"
-            >
-              <span
-                className={cn(
-                  "flex size-9 shrink-0 items-center justify-center rounded-md",
-                  probeRunning
-                    ? "bg-primary/20 text-primary"
-                    : probeHasResults
-                      ? "bg-emerald-500/10 text-emerald-600 group-hover:bg-emerald-500/15"
-                      : "bg-primary/10 text-primary group-hover:bg-primary/15",
-                )}
-              >
-                {probeRunning ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : probeHasResults ? (
-                  <Check className="size-4" />
-                ) : (
-                  <Sparkles className="size-4" />
-                )}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-sm font-medium text-foreground">
-                  {probeRunning
-                    ? msg("auto.features.submit.components.steps.modelstep.literal.2")
-                    : probeHasResults
-                      ? msg("auto.features.submit.components.steps.modelstep.literal.3")
-                      : msg("auto.features.submit.components.steps.modelstep.literal.4")}
-                </span>
-                <span className="text-[0.6875rem] text-muted-foreground">
-                  {probeRunning
-                    ? msg("auto.features.submit.components.steps.modelstep.literal.5")
-                    : probeHasResults
-                      ? msg("auto.features.submit.components.steps.modelstep.literal.6")
-                      : formatMsg("auto.features.submit.components.steps.modelstep.template.1", {
-                          p1: TERMS.model,
-                          p2: TERMS.dataset,
-                        })}
-                </span>
-              </span>
-            </button>
             <div className="space-y-2">
               <ModelChip
                 config={modelConfig}
@@ -327,6 +276,10 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
             </div>
           </div>
         )}
+        {/* Pre-run cost bracket + Max Cost Ceiling [FG-1] — a managed-credit
+            guardrail, so it's hidden in BYOK mode (the user's own key isn't
+            metered against Skynet credits). */}
+        {wallet.mode === "managed" && <CostCeilingCard w={w} />}
         {/* Model config modal — shared across all model chips */}
         <ModelConfigModal
           open={!!editingModel}
@@ -353,16 +306,6 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
                 }
               : undefined
           }
-        />
-        <ModelProbeDialog
-          open={probeOpen}
-          onOpenChange={setProbeOpen}
-          w={w}
-          onSelect={(modelValue) => {
-            setModelConfig({ ...modelConfig, name: modelValue });
-          }}
-          onRunningChange={setProbeRunning}
-          onHasResultsChange={setProbeHasResults}
         />
       </CardContent>
     </Card>

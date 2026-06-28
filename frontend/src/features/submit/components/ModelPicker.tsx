@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Eye, Search, Loader2, RefreshCw } from "lucide-react";
+import { Check, ChevronDown, Eye, Lock, Search, Loader2, RefreshCw } from "lucide-react";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
@@ -20,6 +20,8 @@ interface ModelPickerProps {
   className?: string;
   /** Constrain picks to this provider slug (e.g. "openai"). */
   providerFilter?: string;
+  /** Returns true for a model the current token mode/balance can't run; renders it locked. */
+  isLocked?: (modelValue: string) => boolean;
 }
 
 interface EnrichedModel extends CatalogModel {
@@ -43,6 +45,7 @@ export function ModelPicker({
   disabled,
   className,
   providerFilter,
+  isLocked,
 }: ModelPickerProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -303,44 +306,54 @@ export function ModelPicker({
                 >
                   {providerLabel(provider)}
                 </div>
-                {items.map((m) => (
-                  <button
-                    key={m.value}
-                    type="button"
-                    onClick={() => commit(m.value)}
-                    className={cn(
-                      "flex w-full items-center gap-2 px-3 py-1.5 text-start text-sm transition-colors",
-                      "hover:bg-accent/70",
-                      value === m.value && "bg-accent/50",
-                      !m.available && "opacity-60",
-                    )}
-                    role="option"
-                    aria-selected={value === m.value}
-                  >
-                    <span className="flex min-w-0 flex-1 items-center gap-1.5" dir="ltr">
-                      <span className="truncate text-[0.8125rem]">{m.label}</span>
-                      {m.max_input_tokens && (
-                        <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground">
-                          {formatCtx(m.max_input_tokens)}
-                        </span>
-                      )}
-                      {m.supports_vision && (
-                        <span
-                          className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-primary/10 px-1 py-px text-[9px] text-primary"
-                          title={msg("shared.model_chip.vision_badge")}
-                        >
-                          <Eye className="size-2.5" />
-                        </span>
-                      )}
-                    </span>
-                    <Check
+                {items.map((m) => {
+                  const locked = isLocked?.(m.value) ?? false;
+                  return (
+                    <button
+                      key={m.value}
+                      type="button"
+                      disabled={locked}
+                      onClick={() => commit(m.value)}
+                      title={locked ? msg("billing.lock.frontier") : undefined}
                       className={cn(
-                        "size-3.5 shrink-0",
-                        value === m.value ? "opacity-100" : "opacity-0",
+                        "flex w-full items-center gap-2 px-3 py-1.5 text-start text-sm transition-colors",
+                        locked ? "cursor-not-allowed opacity-50" : "hover:bg-accent/70",
+                        value === m.value && "bg-accent/50",
+                        !m.available && !locked && "opacity-60",
                       )}
-                    />
-                  </button>
-                ))}
+                      role="option"
+                      aria-selected={value === m.value}
+                      aria-disabled={locked}
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-1.5" dir="ltr">
+                        <span className="truncate text-[0.8125rem]">{m.label}</span>
+                        {m.max_input_tokens && (
+                          <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground">
+                            {formatCtx(m.max_input_tokens)}
+                          </span>
+                        )}
+                        {m.supports_vision && (
+                          <span
+                            className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-primary/10 px-1 py-px text-[9px] text-primary"
+                            title={msg("shared.model_chip.vision_badge")}
+                          >
+                            <Eye className="size-2.5" />
+                          </span>
+                        )}
+                      </span>
+                      {locked ? (
+                        <Lock className="size-3.5 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <Check
+                          className={cn(
+                            "size-3.5 shrink-0",
+                            value === m.value ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>

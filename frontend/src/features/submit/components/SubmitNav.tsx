@@ -3,15 +3,16 @@
 import { ChevronLeft, ChevronRight, ChevronDown, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/shared/ui/primitives/button";
+import { formatCredits } from "@/features/billing";
 import { TERMS } from "@/shared/lib/terms";
-import { msg } from "@/shared/lib/messages";
-import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
 import { STEPS } from "../constants";
 import type { SubmitWizardContext } from "../hooks/use-submit-wizard";
 
 export function SubmitNav({ w }: { w: SubmitWizardContext }) {
-  const { step, goPrev, handleNext, handleSubmit, submitting, advancing } = w;
+  const { step, goPrev, handleNext, handleSubmit, submitting, advancing, maxCostCredits } = w;
 
   // Back points toward the start, Next toward the end — the physical direction
   // of each flips with the locale (left/right swap in RTL).
@@ -67,9 +68,18 @@ export function SubmitNav({ w }: { w: SubmitWizardContext }) {
         </span>
       ) : (
         <div className="flex flex-col items-center gap-4">
-          <span>
-            {msg("auto.features.submit.components.submitnav.4")}
-            {TERMS.optimization}
+          <span className="flex flex-col items-center gap-1">
+            <span>
+              {msg("auto.features.submit.components.submitnav.4")}
+              {TERMS.optimization}
+            </span>
+            {maxCostCredits != null && (
+              <span className="text-xs font-normal text-primary-foreground/75" dir="auto">
+                {formatMsg("submit.nav.run_cap", {
+                  credits: formatCredits(maxCostCredits, getActiveIntlLocale()),
+                })}
+              </span>
+            )}
           </span>
           <div className="flex flex-col items-center -space-y-7 h-0 overflow-visible opacity-70 group-hover:opacity-100 transition-opacity duration-200 [&>svg]:animate-[cascadeDown_1s_ease-in-out_infinite] group-hover:[&>svg]:animate-[cascadeDownHyper_0.5s_ease-out_infinite]">
             <ChevronDown className="size-10 [animation-delay:0s] group-hover:[animation-delay:0s]" />

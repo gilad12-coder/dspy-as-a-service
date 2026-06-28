@@ -44,6 +44,7 @@ dependencies = [
     "pgvector>=0.3",
     "numpy>=1.24",
     "requests>=2.31",
+    "stripe>=11,<13",
     "ldap3>=2.9",
     "python-dotenv>=1.0",
     "scalar-fastapi>=1.8",

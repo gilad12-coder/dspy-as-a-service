@@ -33,13 +33,18 @@ export const defaultReactConfig = (): ReactConfig => ({
   toolFilter: "",
 });
 
+// Labels are thunks, not pre-resolved strings: `msg()` reads the active locale's
+// catalog, which is delivered out of band and is empty at module-eval time on the
+// server (frozen process-wide to the raw key) but populated in the browser —
+// resolving eagerly here would hydrate-mismatch. Resolving per render keeps both
+// sides inside the request, where the catalog is pinned.
 export const STEPS = [
-  { id: "basics", label: msg("auto.features.submit.constants.literal.1") },
-  { id: "data", label: TERMS.dataset },
-  { id: "params", label: msg("auto.features.submit.constants.literal.2") },
-  { id: "code", label: msg("auto.features.submit.constants.literal.3") },
-  { id: "model", label: TERMS.model },
-  { id: "review", label: msg("auto.features.submit.constants.literal.4") },
+  { id: "basics", label: () => msg("auto.features.submit.constants.literal.1") },
+  { id: "data", label: () => TERMS.dataset },
+  { id: "params", label: () => msg("auto.features.submit.constants.literal.2") },
+  { id: "code", label: () => msg("auto.features.submit.constants.literal.3") },
+  { id: "model", label: () => TERMS.model },
+  { id: "review", label: () => msg("auto.features.submit.constants.literal.4") },
 ] as const;
 
 export const RECENT_KEY = "skynet:recent-model-configs";

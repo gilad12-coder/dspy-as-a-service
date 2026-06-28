@@ -46,7 +46,9 @@ import {
 } from "@/shared/ui/primitives/select";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { Button } from "@/shared/ui/primitives/button";
+import { WalletTab, ByokKeysSection } from "@/features/billing";
 import { Input } from "@/shared/ui/primitives/input";
+import { Separator } from "@/shared/ui/primitives/separator";
 import { NumberInput } from "@/shared/ui/number-input";
 import {
   Table,
@@ -193,10 +195,7 @@ function AccountTab() {
         label={msg("settings.account.advanced.label")}
         description={msg("settings.account.advanced.description")}
       >
-        <Switch
-          checked={prefs.advancedMode}
-          onCheckedChange={(v) => setPref("advancedMode", v)}
-        />
+        <Switch checked={prefs.advancedMode} onCheckedChange={(v) => setPref("advancedMode", v)} />
       </SettingsRow>
 
       <SettingsRow
@@ -217,7 +216,7 @@ function AccountTab() {
               disabled={!username}
               aria-label={msg("settings.account.logout.action")}
             >
-              <LogOut className="size-3.5" />
+              <LogOut className="size-3.5 rtl:-scale-x-100" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{msg("settings.account.logout.action")}</TooltipContent>
@@ -243,9 +242,12 @@ function UsernameCombobox({
   const [results, setResults] = React.useState<DirectoryUserMatch[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [open, setOpen] = React.useState(false);
-  const [pos, setPos] = React.useState<{ top: number; left: number; width: number; maxH: number } | null>(
-    null,
-  );
+  const [pos, setPos] = React.useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxH: number;
+  } | null>(null);
   const anchorRef = React.useRef<HTMLDivElement | null>(null);
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -519,9 +521,7 @@ function AdminTab() {
 
   const filterOptions = React.useMemo(() => {
     const unique = (key: keyof StorageQuotaOverride) => {
-      const vals = [
-        ...new Set(overrides.map((o) => String(o[key] ?? "")).filter(Boolean)),
-      ].sort();
+      const vals = [...new Set(overrides.map((o) => String(o[key] ?? "")).filter(Boolean))].sort();
       return vals.map((v) => ({ value: v, label: v }));
     };
     return {
@@ -592,7 +592,10 @@ function AdminTab() {
     }
     setBusy(true);
     try {
-      const saved = await setStorageQuotaOverride(normalizedUsername, pendingBudgetMb * BYTES_PER_MB);
+      const saved = await setStorageQuotaOverride(
+        normalizedUsername,
+        pendingBudgetMb * BYTES_PER_MB,
+      );
       setOverrides((prev) => {
         const without = prev.filter((row) => row.username !== saved.username);
         return [saved, ...without];
@@ -665,7 +668,9 @@ function AdminTab() {
         label={msg("settings.admin.storage.title")}
         description={
           defaultBytes != null
-            ? msg("settings.admin.storage.default_budget", { value: formatStorageSize(defaultBytes) })
+            ? msg("settings.admin.storage.default_budget", {
+                value: formatStorageSize(defaultBytes),
+              })
             : undefined
         }
       >
@@ -703,7 +708,9 @@ function AdminTab() {
             </span>
             {defaultBytes != null && (
               <span className="text-[0.6875rem] text-muted-foreground" dir="ltr">
-                {msg("settings.admin.storage.default_budget", { value: formatStorageSize(defaultBytes) })}
+                {msg("settings.admin.storage.default_budget", {
+                  value: formatStorageSize(defaultBytes),
+                })}
               </span>
             )}
             <ResetColumnsButton resize={colResize} />
@@ -721,168 +728,167 @@ function AdminTab() {
           <div className="flex-1 overflow-auto">
             <div className="table-scroll">
               <Table style={{ minWidth: "560px" }}>
-              <TableHeader className="sticky top-0 z-10 bg-muted/40 backdrop-blur-sm">
-                <TableRow>
-                  <ColumnHeader
-                    label={msg("settings.admin.storage.username")}
-                    sortKey="username"
-                    currentSort={sortKey}
-                    sortDir={sortDir}
-                    onSort={toggleSort}
-                    filterCol="username"
-                    filterOptions={filterOptions.username}
-                    filters={colFilters.filters}
-                    onFilter={colFilters.setColumnFilter}
-                    openFilter={colFilters.openFilter}
-                    setOpenFilter={colFilters.setOpenFilter}
-                    width={colResize.widths["username"]}
-                    onResize={colResize.setColumnWidth}
-                  />
-                  <ColumnHeader
-                    label={msg("settings.admin.storage.budget")}
-                    sortKey="effective_bytes"
-                    currentSort={sortKey}
-                    sortDir={sortDir}
-                    onSort={toggleSort}
-                    width={colResize.widths["effective_bytes"]}
-                    onResize={colResize.setColumnWidth}
-                  />
-                  <ColumnHeader
-                    label={msg("settings.admin.storage.used")}
-                    sortKey="used_bytes"
-                    currentSort={sortKey}
-                    sortDir={sortDir}
-                    onSort={toggleSort}
-                    width={colResize.widths["used_bytes"]}
-                    onResize={colResize.setColumnWidth}
-                  />
-                  <ColumnHeader
-                    label={msg("settings.admin.storage.updated_by")}
-                    sortKey="updated_by"
-                    currentSort={sortKey}
-                    sortDir={sortDir}
-                    onSort={toggleSort}
-                    filterCol="updated_by"
-                    filterOptions={filterOptions.updated_by}
-                    filters={colFilters.filters}
-                    onFilter={colFilters.setColumnFilter}
-                    openFilter={colFilters.openFilter}
-                    setOpenFilter={colFilters.setOpenFilter}
-                    width={colResize.widths["updated_by"]}
-                    onResize={colResize.setColumnWidth}
-                  />
-                  <TableHead className="w-12" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow className="border-border/40 bg-muted/10">
-                  <TableCell className="text-center" dir="ltr">
-                    <UsernameCombobox
-                      value={pendingUsername}
-                      onChange={setPendingUsername}
-                      onSelect={(entry) => setPendingUsername(entry.username)}
-                      disabled={busy}
-                      placeholder={msg("settings.admin.storage.username_placeholder")}
-                    />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <span className="inline-flex items-center justify-center gap-1" dir="ltr">
-                      <NumberInput
-                        value={pendingBudgetMb}
-                        onChange={setPendingBudgetMb}
-                        min={1}
-                        disabled={busy}
-                        className="mx-auto h-8 w-36"
-                      />
-                      <span className="text-[0.6875rem] text-muted-foreground">MB</span>
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-center text-xs text-muted-foreground/70">—</TableCell>
-                  <TableCell className="text-center text-xs text-muted-foreground/70">—</TableCell>
-                  <TableCell className="w-12 text-center">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => void addPendingUser()}
-                          disabled={busy || !pendingUsername.trim() || pendingBudgetMb === ""}
-                          aria-label={msg("settings.admin.storage.add_row")}
-                        >
-                          <Plus className="size-3.5 text-primary" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{msg("settings.admin.storage.add_row")}</TooltipContent>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-
-                {filteredOverrides.length === 0 ? (
+                <TableHeader className="sticky top-0 z-10 bg-muted/40 backdrop-blur-sm">
                   <TableRow>
-                    <TableCell
-                      colSpan={5}
-                      className="px-6 py-10 text-center text-sm text-muted-foreground"
-                    >
-                      {overrides.length === 0
-                        ? msg("settings.admin.storage.empty")
-                        : msg("settings.admin.storage.no_results")}
+                    <ColumnHeader
+                      label={msg("settings.admin.storage.username")}
+                      sortKey="username"
+                      currentSort={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                      filterCol="username"
+                      filterOptions={filterOptions.username}
+                      filters={colFilters.filters}
+                      onFilter={colFilters.setColumnFilter}
+                      openFilter={colFilters.openFilter}
+                      setOpenFilter={colFilters.setOpenFilter}
+                      width={colResize.widths["username"]}
+                      onResize={colResize.setColumnWidth}
+                    />
+                    <ColumnHeader
+                      label={msg("settings.admin.storage.budget")}
+                      sortKey="effective_bytes"
+                      currentSort={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                      width={colResize.widths["effective_bytes"]}
+                      onResize={colResize.setColumnWidth}
+                    />
+                    <ColumnHeader
+                      label={msg("settings.admin.storage.used")}
+                      sortKey="used_bytes"
+                      currentSort={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                      width={colResize.widths["used_bytes"]}
+                      onResize={colResize.setColumnWidth}
+                    />
+                    <ColumnHeader
+                      label={msg("settings.admin.storage.updated_by")}
+                      sortKey="updated_by"
+                      currentSort={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                      filterCol="updated_by"
+                      filterOptions={filterOptions.updated_by}
+                      filters={colFilters.filters}
+                      onFilter={colFilters.setColumnFilter}
+                      openFilter={colFilters.openFilter}
+                      setOpenFilter={colFilters.setOpenFilter}
+                      width={colResize.widths["updated_by"]}
+                      onResize={colResize.setColumnWidth}
+                    />
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow className="border-border/40 bg-muted/10">
+                    <TableCell className="text-center" dir="ltr">
+                      <UsernameCombobox
+                        value={pendingUsername}
+                        onChange={setPendingUsername}
+                        onSelect={(entry) => setPendingUsername(entry.username)}
+                        disabled={busy}
+                        placeholder={msg("settings.admin.storage.username_placeholder")}
+                      />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <span className="inline-flex items-center justify-center gap-1" dir="ltr">
+                        <NumberInput
+                          value={pendingBudgetMb}
+                          onChange={setPendingBudgetMb}
+                          min={1}
+                          disabled={busy}
+                          className="mx-auto h-8 w-36"
+                        />
+                        <span className="text-[0.6875rem] text-muted-foreground">MB</span>
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center text-xs text-muted-foreground/70">
+                      —
+                    </TableCell>
+                    <TableCell className="text-center text-xs text-muted-foreground/70">
+                      —
+                    </TableCell>
+                    <TableCell className="w-12 text-center">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => void addPendingUser()}
+                            disabled={busy || !pendingUsername.trim() || pendingBudgetMb === ""}
+                            aria-label={msg("settings.admin.storage.add_row")}
+                          >
+                            <Plus className="size-3.5 text-primary" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{msg("settings.admin.storage.add_row")}</TooltipContent>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
-                ) : (
-                  filteredOverrides.map((item) => (
-                    <TableRow
-                      key={item.username}
-                      className="border-border/40 hover:bg-accent/30"
-                    >
+
+                  {filteredOverrides.length === 0 ? (
+                    <TableRow>
                       <TableCell
-                        className="max-w-[200px] truncate text-center font-semibold text-xs text-foreground"
-                        dir="ltr"
-                        title={item.username}
+                        colSpan={5}
+                        className="px-6 py-10 text-center text-sm text-muted-foreground"
                       >
-                        {item.username}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <EditableBudgetCell
-                          bytes={item.effective_bytes}
-                          onSave={(nextBytes) => updateRowBudget(item.username, nextBytes)}
-                          disabled={busy}
-                        />
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <UsageMeter used={item.used_bytes} budget={item.effective_bytes} />
-                      </TableCell>
-                      <TableCell
-                        className="max-w-[180px] truncate text-center text-xs text-muted-foreground"
-                        dir="ltr"
-                        title={item.updated_by || msg("settings.admin.storage.default")}
-                      >
-                        {item.updated_by || msg("settings.admin.storage.default")}
-                      </TableCell>
-                      <TableCell className="w-12 text-center">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={() => void handleDelete(item.username)}
-                              disabled={busy}
-                              className="close-button mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
-                              aria-label={msg("settings.admin.storage.delete")}
-                            >
-                              <X aria-hidden="true" />
-                              <span className="sr-only">
-                                {msg("settings.admin.storage.delete")}
-                              </span>
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {msg("settings.admin.storage.delete")}
-                          </TooltipContent>
-                        </Tooltip>
+                        {overrides.length === 0
+                          ? msg("settings.admin.storage.empty")
+                          : msg("settings.admin.storage.no_results")}
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
+                  ) : (
+                    filteredOverrides.map((item) => (
+                      <TableRow key={item.username} className="border-border/40 hover:bg-accent/30">
+                        <TableCell
+                          className="max-w-[200px] truncate text-center font-semibold text-xs text-foreground"
+                          dir="ltr"
+                          title={item.username}
+                        >
+                          {item.username}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <EditableBudgetCell
+                            bytes={item.effective_bytes}
+                            onSave={(nextBytes) => updateRowBudget(item.username, nextBytes)}
+                            disabled={busy}
+                          />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <UsageMeter used={item.used_bytes} budget={item.effective_bytes} />
+                        </TableCell>
+                        <TableCell
+                          className="max-w-[180px] truncate text-center text-xs text-muted-foreground"
+                          dir="ltr"
+                          title={item.updated_by || msg("settings.admin.storage.default")}
+                        >
+                          {item.updated_by || msg("settings.admin.storage.default")}
+                        </TableCell>
+                        <TableCell className="w-12 text-center">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => void handleDelete(item.username)}
+                                disabled={busy}
+                                className="close-button mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                                aria-label={msg("settings.admin.storage.delete")}
+                              >
+                                <X aria-hidden="true" />
+                                <span className="sr-only">
+                                  {msg("settings.admin.storage.delete")}
+                                </span>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>{msg("settings.admin.storage.delete")}</TooltipContent>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
               </Table>
             </div>
           </div>
@@ -1011,8 +1017,7 @@ function ApiTab() {
     }
   }, [revealed]);
 
-  const formatTimestamp = (iso: string) =>
-    new Date(iso).toLocaleString(getActiveIntlLocale());
+  const formatTimestamp = (iso: string) => new Date(iso).toLocaleString(getActiveIntlLocale());
   const docsUrl = `${getRuntimeEnv().apiUrl}/scalar`;
 
   if (!hasAuth) {
@@ -1025,6 +1030,10 @@ function ApiTab() {
 
   return (
     <div className="space-y-4">
+      <ByokKeysSection />
+
+      <Separator />
+
       {loadError && (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           {loadError}
@@ -1162,12 +1171,12 @@ function ApiTab() {
   );
 }
 
-
 const SETTINGS_TAB_ORDER = [
   "wizard",
   "agent",
   "admin",
   "account",
+  "billing",
   "api",
   "about",
 ] as const;
@@ -1177,7 +1186,7 @@ const SETTINGS_TAB_TRIGGER_CLASS =
   "relative z-10 w-full shrink-0 whitespace-nowrap text-center text-[clamp(0.75rem,2.2vw,0.875rem)] rounded-md px-1.5 py-2 font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5 leading-tight";
 
 export function SettingsModal() {
-  const { open, setOpen } = useSettingsModal();
+  const { open, setOpen, targetTab, clearTarget } = useSettingsModal();
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
   const [activeTab, setActiveTab] = React.useState<SettingsTab>("wizard");
@@ -1188,6 +1197,16 @@ export function SettingsModal() {
   React.useEffect(() => {
     if (!tabs.includes(activeTab)) setActiveTab("wizard");
   }, [activeTab, tabs]);
+  // Honor a deep-link (e.g. the credit chip → wallet): when something opens the
+  // modal targeting a tab, jump there once, then clear so a later manual open
+  // keeps whatever tab the user last left it on.
+  React.useEffect(() => {
+    if (!targetTab) return;
+    if ((tabs as readonly string[]).includes(targetTab)) {
+      setActiveTab(targetTab as SettingsTab);
+    }
+    clearTarget();
+  }, [targetTab, tabs, clearTarget]);
   // Fire settings_opened on the closed→open transition only; the ref stops a
   // re-render with open still true from re-emitting it.
   const wasOpen = React.useRef(false);
@@ -1282,6 +1301,9 @@ export function SettingsModal() {
             <TabsTrigger value="account" className={SETTINGS_TAB_TRIGGER_CLASS}>
               {msg("settings.tab.account")}
             </TabsTrigger>
+            <TabsTrigger value="billing" className={SETTINGS_TAB_TRIGGER_CLASS}>
+              {msg("settings.tab.billing")}
+            </TabsTrigger>
             <TabsTrigger value="api" className={SETTINGS_TAB_TRIGGER_CLASS}>
               {msg("settings.tab.api")}
             </TabsTrigger>
@@ -1304,6 +1326,9 @@ export function SettingsModal() {
             )}
             <TabsContent value="account">
               <AccountTab />
+            </TabsContent>
+            <TabsContent value="billing">
+              <WalletTab />
             </TabsContent>
             <TabsContent value="api">
               <ApiTab />

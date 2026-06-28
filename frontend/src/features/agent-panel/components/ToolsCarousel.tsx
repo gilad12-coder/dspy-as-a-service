@@ -130,7 +130,7 @@ export function ToolsCarousel({
       toolKeys.map((key) => ({
         key,
         description:
-          descriptions?.[key] ?? TOUR_DESCRIPTIONS[key] ?? TOOL_META[key]?.description ?? "",
+          descriptions?.[key] ?? TOUR_DESCRIPTIONS[key] ?? TOOL_META[key]?.description?.() ?? "",
       })),
     [toolKeys, descriptions],
   );

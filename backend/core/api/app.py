@@ -85,6 +85,7 @@ from .routers.admin import create_admin_router
 from .routers.agent_history import create_agent_history_router
 from .routers.analytics import create_analytics_router
 from .routers.api_tokens import create_api_tokens_router
+from .routers.billing import create_billing_router
 from .routers.code_agent import create_code_agent_router
 from .routers.code_validation import create_code_validation_router
 from .routers.dashboard import create_dashboard_router
@@ -1207,6 +1208,7 @@ def create_app(
     app.include_router(create_generalist_agent_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_agent_history_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_api_tokens_router(job_store=job_store), tags=["Settings"])
+    app.include_router(create_billing_router(job_store=job_store), tags=["Billing"])
     app.include_router(create_accounts_router(job_store=job_store), tags=["Auth"])
     app.include_router(create_datasets_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_dataset_library_router(job_store=job_store), tags=["Datasets"])

@@ -1,7 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { Boxes, ChevronDown, X } from "lucide-react";
+import Link from "next/link";
+import { Boxes, ChevronDown, Coins, KeyRound, X } from "lucide-react";
+import { useCredits, isModelLocked } from "@/features/billing";
+import { useSettingsModal } from "@/features/settings";
 import { Dialog, DialogContent, DialogFooter } from "@/shared/ui/primitives/dialog";
 import { DialogTitleRow } from "@/shared/ui/dialog-title-row";
 import { Button } from "@/shared/ui/primitives/button";
@@ -50,19 +53,30 @@ export function ModelConfigModal({
   onRemoveRecent,
   onSelectAllAvailable,
 }: ModelConfigModalProps) {
+  const { wallet, frontierUnlocked } = useCredits();
+  const { openTo } = useSettingsModal();
+  const mode = wallet.mode;
+
   const [draft, setDraft] = React.useState<ModelConfig>(config);
-  // Custom-connection section is collapsed for the common (built-in provider)
-  // case; it auto-expands when the opened config already carries an endpoint
-  // or key, so a populated field is never hidden behind a closed disclosure.
+  // Custom-connection section is collapsed for the common (managed) case; it
+  // auto-expands in BYOK mode (where a key is expected) and whenever the opened
+  // config already carries an endpoint or key, so a populated field is never
+  // hidden behind a closed disclosure.
   const [connectionOpen, setConnectionOpen] = React.useState(false);
 
   // Sync draft when config changes externally (e.g. opening with different model)
   React.useEffect(() => {
     if (open) {
       setDraft(config);
-      setConnectionOpen(!!(config.base_url || config.extra?.api_key));
+      setConnectionOpen(mode === "byok" || !!(config.base_url || config.extra?.api_key));
     }
-  }, [open, config]);
+  }, [open, config, mode]);
+
+  // A frontier model picked while on the free tier (managed, no credits and no
+  // Premium) can't be saved — the picker locks the option, this guards a
+  // restored recent.
+  const draftLocked = isModelLocked(draft.name, mode, frontierUnlocked);
+  const showFrontierNote = mode === "managed" && !frontierUnlocked;
 
   const canThink = modelSupportsThinking(draft.name, catalogModels);
   const thinkingEnabled = !!draft.extra?.reasoning_effort;
@@ -208,6 +222,36 @@ export function ModelConfigModal({
             </div>
           )}
 
+          <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
+            {mode === "managed" ? (
+              <>
+                <Coins className="size-3.5 shrink-0" aria-hidden="true" />
+                <span>{msg("billing.mode.managed_hint")}</span>
+              </>
+            ) : (
+              <>
+                <KeyRound className="size-3.5 shrink-0" aria-hidden="true" />
+                <span>{msg("billing.mode.byok_hint")}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenChange(false);
+                    openTo("api");
+                  }}
+                  className="cursor-pointer font-medium text-foreground underline-offset-4 hover:underline"
+                >
+                  {msg("billing.mode.manage_keys")}
+                </button>
+                {/* BYOK concurrency note [FG-2]: your-key runs share self-hosted
+                    compute and may queue at peak — stated so it reads as a limit,
+                    not a penalty for not buying credits. */}
+                <span className="w-full text-muted-foreground/80">
+                  {msg("billing.mode.byok_queue_note")}
+                </span>
+              </>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => setConnectionOpen((o) => !o)}
@@ -303,7 +347,19 @@ export function ModelConfigModal({
               discoverUrl={draft.base_url?.trim() || undefined}
               discoverApiKey={(draft.extra?.api_key as string | undefined) || undefined}
               placeholder={msg("auto.features.submit.components.modelconfigmodal.literal.3")}
+              isLocked={(v) => isModelLocked(v, mode, frontierUnlocked)}
             />
+            {showFrontierNote && (
+              <p className="flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
+                <span>{msg("billing.lock.frontier_note")}</span>
+                <Link
+                  href="/upgrade"
+                  className="font-medium text-[#3D2E22] underline-offset-4 hover:underline"
+                >
+                  {msg("billing.action.add_credits")}
+                </Link>
+              </p>
+            )}
           </div>
 
           <Separator />
@@ -426,7 +482,11 @@ export function ModelConfigModal({
           <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
             {msg("auto.features.submit.components.modelconfigmodal.10")}
           </Button>
-          <Button onClick={handleSave} disabled={!draft.name.trim()} className="flex-1">
+          <Button
+            onClick={handleSave}
+            disabled={!draft.name.trim() || draftLocked}
+            className="flex-1"
+          >
             {msg("auto.features.submit.components.modelconfigmodal.11")}
           </Button>
         </DialogFooter>

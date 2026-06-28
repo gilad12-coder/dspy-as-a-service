@@ -193,7 +193,7 @@ export function JobsTab({
             icon={Send}
             title={`${msg("auto.features.dashboard.components.jobstab.4")}${TERMS.optimizationPlural}`}
             description={msg("auto.features.dashboard.components.jobstab.5")}
-            action={{ label: TERMS.notificationNewOpt, href: "/submit", icon: Plus }}
+            action={{ label: TERMS.notificationNewOpt, href: "/onboarding", icon: Plus }}
           />
         )}
 

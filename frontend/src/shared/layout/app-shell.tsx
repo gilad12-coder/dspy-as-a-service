@@ -11,6 +11,7 @@ import { useTutorialContext, ConceptsGuide, registerTutorialHook } from "@/featu
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { LanguageSwitcher } from "@/shared/ui/language-switcher";
+import { CreditBalanceChip } from "@/features/billing";
 import { useLocale } from "@/shared/providers";
 import { dirForLocale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
@@ -215,6 +216,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="flex items-center gap-1.5">
+          {session?.user && <CreditBalanceChip />}
           <LanguageSwitcher />
           {session?.user && (
             <>
@@ -228,7 +230,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
                   className="rounded-lg p-2 hover:bg-accent/80 active:scale-95 transition-all duration-200 cursor-pointer hidden sm:block"
                   aria-label={msg("app.shell.logout")}
                 >
-                  <LogOut className="size-4" />
+                  <LogOut className="size-4 rtl:-scale-x-100" />
                 </button>
               </TooltipButton>
             </>

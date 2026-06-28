@@ -17,6 +17,8 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
+from ...billing import StripeBillingService
+from ...billing.model_access import is_model_locked
 from ...constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
@@ -44,8 +46,11 @@ from ...constants import (
     PAYLOAD_OVERVIEW_SPLIT_FRACTIONS,
     PAYLOAD_OVERVIEW_TASK_FINGERPRINT,
     PAYLOAD_OVERVIEW_TASK_MODEL,
+    PAYLOAD_OVERVIEW_TOKEN_SOURCE,
     PAYLOAD_OVERVIEW_TOTAL_PAIRS,
     PAYLOAD_OVERVIEW_USERNAME,
+    TOKEN_SOURCE_BYOK,
+    TOKEN_SOURCE_MANAGED,
 )
 from ...i18n import t
 from ...i18n_keys import I18nKey
@@ -315,6 +320,67 @@ def _expand_catalog_grid_payload(payload: GridSearchRequest) -> None:
         payload.reflection_models = expanded
 
 
+def _enforce_credit_balance(job_store, username: str, token_source: str) -> None:
+    """Block a depleted account from starting a managed run at submit time.
+
+    Reads the account's spendable credits (free grant + purchased balance, with
+    the rolling grant reset applied) and refuses the submission when nothing is
+    left. The free grant means a brand-new account always passes; this only fires
+    once both the grant and any purchased balance are exhausted. A BYOK run bills
+    the user's own provider key, so it spends no credits and is exempt — the gate
+    fires for managed runs only.
+
+    Args:
+        job_store: Job-store instance whose ORM engine backs the billing tables.
+        username: Account attempting the submission.
+        token_source: ``"managed"`` or ``"byok"``; BYOK runs skip the gate.
+
+    Raises:
+        DomainError: 402 when a managed account has no spendable credits.
+    """
+    if token_source == TOKEN_SOURCE_BYOK:
+        return
+    engine = getattr(job_store, "engine", None)
+    if engine is None or not username:
+        return
+    service = StripeBillingService(engine=engine)
+    if service.spendable_credits(username) <= 0:
+        raise DomainError("billing.insufficient_credits", status=402)
+
+
+def _enforce_frontier_lock(
+    job_store, username: str, token_source: str, model_values: list[str]
+) -> None:
+    """Refuse a managed run on a frontier model the account can't yet unlock.
+
+    Mirrors the wizard's client-side lock server-side so it is enforced, not
+    advisory: in managed mode an account without a purchased balance (or active
+    Premium) may run mini models on its free grant but not the frontier
+    task/reflection models. BYOK runs bill the user's own key and never lock, so
+    they are exempt. A no-op when the store exposes no SQL engine (legacy/in-memory).
+
+    Args:
+        job_store: Job-store instance whose ORM engine backs the billing tables.
+        username: Account attempting the submission.
+        token_source: ``"managed"`` or ``"byok"``; BYOK is exempt.
+        model_values: Fully-qualified model ids the run would execute on.
+
+    Raises:
+        DomainError: 402 ``billing.frontier_locked`` listing the locked models.
+    """
+    if token_source != TOKEN_SOURCE_MANAGED:
+        return
+    engine = getattr(job_store, "engine", None)
+    if engine is None or not username:
+        return
+    service = StripeBillingService(engine=engine)
+    if service.frontier_unlocked(username):
+        return
+    locked = sorted({m for m in model_values if m and is_model_locked(m, token_source, False)})
+    if locked:
+        raise DomainError("billing.frontier_locked", status=402, model=", ".join(locked))
+
+
 def create_submissions_router(*, service, job_store) -> APIRouter:
     """Build the submissions router.
 
@@ -399,6 +465,14 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             incoming_bytes=json_byte_size(payload.model_dump(mode="json", by_alias=True)),
         )
 
+        _enforce_credit_balance(job_store, payload.username, payload.token_source)
+        _run_model_values = [
+            cfg.normalized_identifier()
+            for cfg in (payload.model_settings, payload.reflection_model_settings, payload.task_model_settings)
+            if cfg is not None
+        ]
+        _enforce_frontier_lock(job_store, payload.username, payload.token_source, _run_model_values)
+
         optimization_id = str(uuid4())
         task_fingerprint = compute_task_fingerprint(payload.signature_code, payload.metric_code, payload.dataset)
         # Derive the default seed from the task fingerprint (not the optimization id)
@@ -438,6 +512,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 PAYLOAD_OVERVIEW_OPTIMIZER_KWARGS: dict(payload.optimizer_kwargs),
                 PAYLOAD_OVERVIEW_COMPILE_KWARGS: dict(payload.compile_kwargs),
                 PAYLOAD_OVERVIEW_TASK_FINGERPRINT: task_fingerprint,
+                PAYLOAD_OVERVIEW_TOKEN_SOURCE: payload.token_source,
                 PAYLOAD_OVERVIEW_IS_PRIVATE: payload.is_private,
                 PAYLOAD_OVERVIEW_SOURCE_DATASET_ID: source_dataset_id,
             },
@@ -547,6 +622,13 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             incoming_bytes=json_byte_size(payload.model_dump(mode="json", by_alias=True)),
         )
 
+        _enforce_credit_balance(job_store, payload.username, payload.token_source)
+        _grid_model_values = [
+            cfg.normalized_identifier()
+            for cfg in (*payload.generation_models, *payload.reflection_models)
+        ]
+        _enforce_frontier_lock(job_store, payload.username, payload.token_source, _grid_model_values)
+
         optimization_id = str(uuid4())
         if payload.seed is None:
             payload.seed = stable_seed(optimization_id)
@@ -578,6 +660,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 PAYLOAD_OVERVIEW_GENERATION_MODELS: [m.model_dump() for m in payload.generation_models],
                 PAYLOAD_OVERVIEW_REFLECTION_MODELS: [m.model_dump() for m in payload.reflection_models],
                 PAYLOAD_OVERVIEW_TASK_FINGERPRINT: task_fingerprint,
+                PAYLOAD_OVERVIEW_TOKEN_SOURCE: payload.token_source,
                 PAYLOAD_OVERVIEW_IS_PRIVATE: payload.is_private,
                 PAYLOAD_OVERVIEW_SOURCE_DATASET_ID: source_dataset_id,
             },

@@ -15,6 +15,7 @@ import { TERMS } from "@/shared/lib/terms";
 import type { ScorePoint } from "../lib/extract-scores";
 import { InfoCard } from "./ui-primitives";
 import { PipelineStages, computeStageTimestamps } from "./PipelineStages";
+import { ProofMoment } from "./ProofMoment";
 import { TrajectoryPanel } from "@/features/trajectory";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
@@ -344,6 +345,16 @@ function OverviewTabImpl({
             </StaggerItem>
           </StaggerContainer>
         </div>
+      )}
+
+      {/* Proof moment — billing as the evidence the run worked. Only on a settled
+          standalone run (a pair carries no billing stamp of its own). */}
+      {renderRunBlocks && !isPairContext && scoresReady && (
+        <ProofMoment
+          improvement={displayImprovement}
+          guarantee={job.result?.guarantee}
+          details={job.result?.details}
+        />
       )}
 
       {renderRunBlocks && (

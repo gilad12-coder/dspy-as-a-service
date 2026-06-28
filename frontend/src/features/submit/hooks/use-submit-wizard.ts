@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
@@ -19,6 +19,7 @@ import {
   getStagedDataset,
   getDatasetRows,
   isStorageQuotaError,
+  isInsufficientCreditsError,
   type DatasetSummary,
 } from "@/shared/lib/api";
 import type {
@@ -37,12 +38,18 @@ import { registerTutorialHook } from "@/features/tutorial";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { useWizardStateOptional } from "@/features/agent-panel";
 import { readPref, useUserPrefs } from "@/features/settings";
+import { useCredits } from "@/features/billing";
 
 import { STEPS, emptyModelConfig, defaultSplit, defaultReactConfig } from "../constants";
 import type { ReactConfig, ColumnRole } from "../constants";
 import { buildSignatureTemplate } from "../lib/build-signature";
 import { buildMetricTemplate } from "../lib/build-metric";
 import { buildOptimizerKwargs } from "../lib/build-kwargs";
+import {
+  projectCostBracket,
+  defaultCeilingForBracket,
+  type CostBracket,
+} from "../lib/cost-bracket";
 import { useCodeAgent } from "@/shared/hooks/use-code-agent";
 import {
   buildColumnMapping,
@@ -63,6 +70,10 @@ export function useSubmitWizard() {
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const { prefs } = useUserPrefs();
+  // The active token-source mode (managed credits vs the user's own key). Sent
+  // on every submit so frontier-locking and the guarantee are enforced
+  // server-side, not just shown in the wizard.
+  const { wallet } = useCredits();
 
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(0);
@@ -187,6 +198,10 @@ export function useSubmitWizard() {
   const [maxFullEvals, setMaxFullEvals] = useState<string>("6");
   const [useMerge, setUseMerge] = useState(true);
   const [shuffle, setShuffle] = useState(true);
+  // User-set Max Cost Ceiling, in credits — null until the user opts into a cap.
+  // The run is hard-stopped server-side once spend exceeds it (Phase 2 [FG-1]),
+  // and the run button carries the cap. `null` ⇒ no ceiling sent.
+  const [maxCostCredits, setMaxCostCredits] = useState<number | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<"idle" | "sending" | "splash" | "done">("idle");
@@ -377,6 +392,37 @@ export function useSubmitWizard() {
       wizardCtx.setField("dataset_columns", columns, "user");
     }
   }, [parsedDataset, wizardCtx]);
+
+  // Projected pre-run credit bracket [FG-1]: a DSPy job's token use isn't linear,
+  // so we show a range rather than a false-precision single number and seed the
+  // Max Cost Ceiling from its high end. For a grid, count the (gen × refl) pairs
+  // so the bracket reflects the whole sweep.
+  const gridPairs =
+    jobType === "grid_search"
+      ? Math.max(
+          1,
+          (useAllGenerationModels ? catalog?.models.length ?? 1 : generationModels.filter((m) => m.name.trim()).length || 1) *
+            (useAllReflectionModels ? catalog?.models.length ?? 1 : reflectionModels.filter((m) => m.name.trim()).length || 1),
+        )
+      : 1;
+  const costBracket: CostBracket = useMemo(
+    () =>
+      projectCostBracket({
+        autoLevel,
+        maxFullEvals,
+        datasetRows: parsedDataset?.rowCount ?? 0,
+        hasReflection:
+          jobType === "grid_search"
+            ? true
+            : !!secondModelConfig?.name?.trim(),
+        pairs: gridPairs,
+      }),
+    [autoLevel, maxFullEvals, parsedDataset?.rowCount, jobType, secondModelConfig, gridPairs],
+  );
+
+  // Default the cap to the bracket's high end (with headroom) the first time a
+  // user opens the ceiling control; once they set a value we leave it alone.
+  const suggestedCeiling = useMemo(() => defaultCeilingForBracket(costBracket), [costBracket]);
 
   // Stage the parsed rows on the backend so the agent can submit by id
   // without inlining tens of thousands of rows into its tool arguments.
@@ -1474,6 +1520,8 @@ export function useSubmitWizard() {
         split_fractions: split,
         shuffle,
         is_private: isPrivate,
+        token_source: wallet.mode,
+        ...(maxCostCredits != null && { max_cost_credits: maxCostCredits }),
         ...(seed != null && { seed }),
         ...(Object.keys(optKw).length > 0 && { optimizer_kwargs: optKw }),
       };
@@ -1599,9 +1647,10 @@ export function useSubmitWizard() {
         router.push(jobUrl);
       }, 1500);
     } catch (err) {
-      // The storage-budget 409 opens the shared quota modal centrally; suppress
-      // the redundant toast so the modal is the single surface.
-      if (!isStorageQuotaError(err)) {
+      // The storage-budget 409 and the credit-gate 402 each open their own shared
+      // modal centrally; suppress the redundant toast so the modal is the single
+      // surface for both.
+      if (!isStorageQuotaError(err) && !isInsufficientCreditsError(err)) {
         toast.error(err instanceof Error ? err.message : msg("submit.submit_failed"));
       }
       setSubmitPhase("idle");
@@ -1735,6 +1784,10 @@ export function useSubmitWizard() {
     setMaxFullEvals,
     useMerge,
     setUseMerge,
+    maxCostCredits,
+    setMaxCostCredits,
+    costBracket,
+    suggestedCeiling,
     submitting,
     submitPhase,
     advancing,

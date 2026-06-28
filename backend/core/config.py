@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import UTC, datetime
 from functools import cached_property
 from pathlib import Path
 from typing import Literal
@@ -56,6 +57,64 @@ class Settings(BaseSettings):
             "training-ground grounding scorer reads it here to call the echo "
             "completions endpoint directly."
         ),
+    )
+
+    stripe_secret_key: SecretStr | None = Field(
+        default=None,
+        alias="STRIPE_SECRET_KEY",
+        description="Stripe secret API key (sk_test_… in test mode). Unset disables every billing mutation; reads still work.",
+    )
+    stripe_webhook_secret: SecretStr | None = Field(
+        default=None,
+        alias="STRIPE_WEBHOOK_SECRET",
+        description="Stripe webhook signing secret (whsec_…) used to verify event payload authenticity.",
+    )
+    stripe_price_pack_starter: str = Field(
+        default="", alias="STRIPE_PRICE_PACK_STARTER", description="Stripe price id for the 'starter' one-time credit pack."
+    )
+    stripe_price_pack_plus: str = Field(
+        default="", alias="STRIPE_PRICE_PACK_PLUS", description="Stripe price id for the 'plus' one-time credit pack."
+    )
+    stripe_price_pack_pro: str = Field(
+        default="", alias="STRIPE_PRICE_PACK_PRO", description="Stripe price id for the 'pro' one-time credit pack."
+    )
+    stripe_price_premium: str = Field(
+        default="", alias="STRIPE_PRICE_PREMIUM", description="Stripe price id for the recurring Premium subscription."
+    )
+    stripe_price_founders: str = Field(
+        default="",
+        alias="STRIPE_PRICE_FOUNDERS",
+        description="Stripe price id for the Founder's Rate subscription ($20/mo, locked 12 months). Unset falls back to the Premium price.",
+    )
+    stripe_price_metered: str = Field(
+        default="",
+        alias="STRIPE_PRICE_METERED",
+        description="Stripe price id for usage-based overage (metered). Optional until per-run token metering lands.",
+    )
+    stripe_meter_event_name: str = Field(
+        default="skynet_tokens",
+        alias="STRIPE_METER_EVENT_NAME",
+        description="Stripe Billing Meter event_name the metered overage price aggregates.",
+    )
+    app_public_url: str = Field(
+        default="http://localhost:3000",
+        alias="APP_PUBLIC_URL",
+        description="Public origin of the web app, used to build Stripe Checkout success/cancel return URLs.",
+    )
+    byok_vault_key: SecretStr | None = Field(
+        default=None,
+        alias="BYOK_VAULT_KEY",
+        description="Fernet key (urlsafe base64, 32 bytes) that encrypts stored BYOK provider secrets at rest. Unset disables saving keys (the vault degrades to read-only); reads of already-stored masked metadata still work.",
+    )
+    # PLACEHOLDER close date — the one open input for the Founder's Rate. Set
+    # FOUNDERS_RATE_CLOSES_AT to the real deadline (ISO-8601, e.g.
+    # 2026-07-31T23:59:59Z); after it passes the offer becomes unavailable. The
+    # default is intentionally a far-future sentinel so the gate stays open until
+    # a real date is configured, never silently closing in a fresh deploy.
+    founders_rate_closes_at: str = Field(
+        default="2099-12-31T23:59:59Z",
+        alias="FOUNDERS_RATE_CLOSES_AT",
+        description="ISO-8601 instant the Founder's Rate stops accepting new subscriptions. Placeholder default (2099) keeps it open until the real deadline is set.",
     )
 
     worker_threads: int = Field(
@@ -536,6 +595,45 @@ class Settings(BaseSettings):
     def admin_groups_set(self) -> frozenset[str]:
         """Return admin IdP groups as a lowercase frozenset."""
         return frozenset(s.strip().lower() for s in self.admin_groups.split(",") if s.strip())
+
+    @property
+    def is_stripe_configured(self) -> bool:
+        """Return whether a Stripe secret key is present (billing mutations enabled)."""
+        return self.stripe_secret_key is not None
+
+    @property
+    def is_byok_vault_configured(self) -> bool:
+        """Return whether a BYOK vault key is present (saving provider keys enabled)."""
+        return self.byok_vault_key is not None
+
+    @property
+    def stripe_pack_price_ids(self) -> dict[str, str]:
+        """Return the one-time credit-pack Stripe price ids keyed by pack id."""
+        return {
+            "starter": self.stripe_price_pack_starter,
+            "plus": self.stripe_price_pack_plus,
+            "pro": self.stripe_price_pack_pro,
+        }
+
+    @property
+    def founders_rate_closes_at_dt(self) -> datetime:
+        """Return the Founder's Rate close instant as an aware UTC datetime.
+
+        Parses :attr:`founders_rate_closes_at` (``fromisoformat`` accepts the
+        ``Z`` suffix); a naive value is assumed UTC. An unparseable value falls
+        back to the far-future placeholder so a malformed env var keeps the offer
+        open rather than silently closing it.
+
+        Returns:
+            The close instant in UTC.
+        """
+        try:
+            parsed = datetime.fromisoformat(self.founders_rate_closes_at.strip())
+        except ValueError:
+            parsed = datetime(2099, 12, 31, 23, 59, 59)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed
 
     @cached_property
     def quota_overrides(self) -> dict[str, int | None]:

@@ -83,6 +83,162 @@ class UserModel(Base):
     job_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
+class BillingCustomerModel(Base):
+    """Per-user billing state synced from Stripe (one row per paying identity).
+
+    Keyed on ``username`` (the lowercased email every other table owns rows by)
+    rather than a foreign key to ``users`` so SSO accounts — which never get a
+    ``users`` row — are billed too. ``stripe_customer_id`` is the durable link to
+    Stripe. ``credit_balance`` is the denormalized spendable purchased-credit
+    total, kept in step with ``credit_ledger`` on every mutation so the
+    frontier-access gate reads a single fast integer. The ``subscription_*``
+    columns mirror the account's Premium subscription as last reported by a
+    Stripe webhook (the sync-Stripe-to-DB pattern): the DB is a cache of Stripe,
+    never the source of truth for subscription state.
+    """
+
+    __tablename__ = "billing_customers"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    stripe_customer_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )
+    credit_balance: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    # The free grant is a rolling, non-cumulative per-user window: ``grant_remaining``
+    # is what is left of the current 200-credit allowance, and ``grant_reset_at`` is
+    # when it tops back up to a flat 200 (leftover expires — no banking). Both are
+    # NULL until the first wallet read or run seeds them, at which point a full grant
+    # and a +30d anchor are written; the reset is lazy-evaluated on read, never cron'd.
+    grant_remaining: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=True
+    )
+    grant_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    subscription_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    subscription_price_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    subscription_current_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class CreditLedgerModel(Base):
+    """Immutable, append-only record of every credit movement for an account.
+
+    Each row is a signed ``delta_credits`` against ``username``: positive for a
+    top-up (pack purchase) or monthly grant, negative for a run charge. The
+    running sum is denormalized onto ``billing_customers.credit_balance`` for
+    fast gating; this table is the audit trail that explains that balance and
+    backs the wallet's usage ledger. ``stripe_event_id`` ties a top-up row to the
+    webhook event that created it so a redelivered event can't double-credit.
+    """
+
+    __tablename__ = "credit_ledger"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    delta_credits: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    stripe_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+
+
+class BillingWebhookEventModel(Base):
+    """Idempotency ledger of Stripe webhook events already applied.
+
+    The webhook endpoint records each ``evt_…`` id here inside the same
+    transaction that applies the event's effect, and skips any event whose id is
+    already present. Stripe guarantees at-least-once delivery, so without this a
+    retried ``checkout.session.completed`` would credit the same purchase twice.
+    """
+
+    __tablename__ = "billing_webhook_events"
+
+    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class GuaranteeRunModel(Base):
+    """One ``(user, task)`` pair that has spent its single guaranteed run.
+
+    Backs the "No lift, no charge" guarantee's anti-gaming rule: only the
+    **first** optimization of a given task carries the guarantee, so re-runs on
+    an already-good program bill normally and can't fish for repeated free
+    compute. A row is inserted the first time an account runs a task; its
+    presence is what makes a later run on the same task ineligible. The pair
+    ``(username, task_fingerprint)`` is the primary key — ``task_fingerprint``
+    is the same content hash the submit path computes from signature + metric +
+    dataset, so the same task always maps to the same row regardless of the
+    optimization id. ``optimization_id`` records which run claimed the slot, and
+    ``refunded`` flips true when that run had no lift and was auto-refunded.
+    """
+
+    __tablename__ = "guarantee_runs"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    task_fingerprint: Mapped[str] = mapped_column(String(64), primary_key=True)
+    optimization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    refunded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class BillingProviderKeyModel(Base):
+    """One account's bring-your-own-key secret for a single provider, encrypted at rest.
+
+    Backs BYOK mode: when an account runs in ``byok`` token source, jobs bill the
+    user's own provider key instead of Skynet credits. The secret is never stored
+    in plaintext — only ``secret_ciphertext`` (the Fernet-encrypted bytes) is
+    persisted, so a database dump never leaks a usable key. ``last4`` is the
+    recognizable tail kept for masked display, and ``status`` records whether the
+    key was checked against its provider (``unverified`` / ``verified`` /
+    ``invalid``) so the UI can tell a typo'd key from a working one before a job
+    ever runs. The pair ``(username, provider)`` is the primary key, so saving a
+    key for a provider replaces the account's previous one for it (rotation).
+    """
+
+    __tablename__ = "billing_provider_keys"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), primary_key=True)
+    secret_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    last4: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unverified", server_default="unverified"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
 class SearchQueryLogModel(Base):
     """Anonymous log of public-corpus search queries, powering trending searches.
 

@@ -86,6 +86,27 @@ class _OptimizationRequestBase(BaseModel):
         default=False,
         description="When true, the optimization is excluded from the public explore page.",
     )
+    token_source: Literal["managed", "byok"] = Field(
+        default="managed",
+        description=(
+            "How the run's tokens are billed: 'managed' (Skynet credits, gates frontier models "
+            "until the account holds purchased credits or Premium) or 'byok' (the user's own "
+            "provider key — nothing is locked). Threaded from the wizard so frontier-locking and "
+            "the 'No lift, no charge' guarantee are enforced server-side, not advisory."
+        ),
+    )
+    max_cost_credits: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "User-set per-job spend ceiling, in credits. A DSPy optimizer's token use is not "
+            "linear (bootstrapping, compile steps, validation loops), so the wizard shows a "
+            "projected bracket rather than a tight estimate and lets the user cap the run here. "
+            "The run is hard-stopped server-side once accumulated token usage exceeds the budget "
+            "this cap buys (TOKENS_PER_CREDIT each); a stopped run fails and is never billed. "
+            "Omit (null) for no ceiling."
+        ),
+    )
 
     @model_validator(mode="after")
     def _ensure_dataset(self) -> _OptimizationRequestBase:

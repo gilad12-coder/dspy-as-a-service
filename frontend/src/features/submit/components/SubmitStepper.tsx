@@ -71,7 +71,7 @@ export function SubmitStepper({ w }: { w: SubmitWizardContext }) {
                   active ? "text-foreground" : completed ? "text-primary" : "text-muted-foreground",
                 )}
               >
-                {s.label}
+                {s.label()}
               </span>
             </div>
           );

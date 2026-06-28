@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
+from ...billing.service import GRANT_WINDOW_DAYS
 from ...constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
@@ -25,6 +30,7 @@ from ...constants import (
 from ...i18n_keys import I18nKey
 from ...registry import RegistryError
 from ...service_gateway import ServiceError
+from ...storage.models import Base, BillingCustomerModel
 from ...storage.usage import StorageUsage
 from ..model_catalog import CatalogModel, ModelCatalogResponse
 from ..routers import submissions as _sub_mod
@@ -968,6 +974,150 @@ def test_submit_grid_search_accepts_image_signature_when_all_models_support_visi
     resp = client.post("/grid-search", json=payload)
 
     assert resp.status_code == 201
+
+
+def test_submit_run_returns_402_when_credits_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A managed run is blocked at submit when the account has no spendable credits."""
+    # StaticPool keeps one shared connection so the in-memory schema is visible
+    # from the request threadpool, not just the thread that ran create_all.
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice",
+                stripe_customer_id="cus_alice",
+                credit_balance=0,
+                grant_remaining=0,
+                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
+            )
+        )
+        session.commit()
+
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_run_payload())
+
+    assert resp.status_code == 402
+    assert resp.json()["code"] == "billing.insufficient_credits"
+    assert store.created_ids() == []
+
+
+def test_submit_run_allowed_with_remaining_credits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A managed run with grant left passes the credit gate and is enqueued."""
+    # StaticPool keeps one shared connection so the in-memory schema is visible
+    # from the request threadpool, not just the thread that ran create_all.
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice",
+                stripe_customer_id="cus_alice",
+                credit_balance=0,
+                grant_remaining=50,
+                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
+            )
+        )
+        session.commit()
+
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_run_payload())
+
+    assert resp.status_code == 201
+
+
+def _billing_engine() -> Any:
+    """Build a StaticPool in-memory engine with the billing schema."""
+    engine = create_engine(
+        "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    return engine
+
+
+def test_submit_run_managed_frontier_model_blocked_without_balance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A managed run on a frontier model is refused when the account can't unlock it."""
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice",
+                stripe_customer_id="cus_alice",
+                credit_balance=0,
+                grant_remaining=200,
+                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
+            )
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    payload = {**_run_payload(), "model_settings": {"name": "openai/gpt-4o"}, "token_source": "managed"}
+    resp = client.post("/run", json=payload)
+
+    assert resp.status_code == 402
+    assert resp.json()["code"] == "billing.frontier_locked"
+    assert store.created_ids() == []
+
+
+def test_submit_run_byok_frontier_model_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A BYOK run on a frontier model is never locked (own key), and persists the mode."""
+    engine = _billing_engine()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    payload = {**_run_payload(), "model_settings": {"name": "openai/gpt-4o"}, "token_source": "byok"}
+    resp = client.post("/run", json=payload)
+
+    assert resp.status_code == 201
+    overview = store._jobs[store.created_ids()[0]]["overview"]
+    assert overview["token_source"] == "byok"
+
+
+def test_submit_run_managed_frontier_allowed_with_paid_balance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A purchased balance unlocks the frontier catalog for a managed run."""
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice", stripe_customer_id="cus_alice", credit_balance=500
+            )
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    payload = {**_run_payload(), "model_settings": {"name": "openai/gpt-4o"}, "token_source": "managed"}
+    resp = client.post("/run", json=payload)
+
+    assert resp.status_code == 201
+
+
+def test_submit_run_defaults_token_source_to_managed_in_overview(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An omitted token_source defaults to managed and is persisted on the overview."""
+    store = _FakeJobStore()
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_run_payload())
+
+    assert resp.status_code == 201
+    overview = store._jobs[store.created_ids()[0]]["overview"]
+    assert overview["token_source"] == "managed"
 
 
 def test_submit_run_idempotent_retry_returns_same_optimization_id(

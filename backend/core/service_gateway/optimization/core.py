@@ -20,6 +20,7 @@ from typing import Any
 
 import dspy
 
+from ...billing import tokens_for_credits
 from ...config import settings as app_settings
 from ...constants import (
     DETAIL_BASELINE,
@@ -27,6 +28,8 @@ from ...constants import (
     DETAIL_TEST,
     DETAIL_TRAIN,
     DETAIL_VAL,
+    GUARANTEE_BASIS_TEST,
+    GUARANTEE_BASIS_VAL,
     META_COMPILE_KWARGS,
     META_MODEL_IDENTIFIER,
     META_MODULE_KWARGS,
@@ -55,6 +58,7 @@ from ...models import (
     SplitCounts,
 )
 from ...models.artifacts import ProgramArtifact, ReactOverlay
+from ...models.results import GuaranteeBasis
 from ...registry import (
     ResolverError,
     ServiceRegistry,
@@ -67,6 +71,7 @@ from ..language_models import apply_model_reasoning_config, build_language_model
 from ..react_compat import REACT_CLASS
 from ..safe_exec import validate_metric_code, validate_signature_code
 from .artifacts import persist_program
+from .cost_ceiling import CostCeilingCallback
 from .data import (
     extract_signature_fields,
     image_input_field_names,
@@ -248,6 +253,50 @@ def _build_lm_activity(
     return LMActivity(generation=generation, reflection=reflection)
 
 
+def _guarantee_basis(
+    *,
+    baseline_program: Any,
+    optimized_program: Any,
+    splits: Any,
+    metric: Any,
+    test_baseline: float | None,
+    test_optimized: float | None,
+) -> GuaranteeBasis | None:
+    """Resolve the baseline/optimized scores the lift guarantee is judged on.
+
+    The guarantee is adjudicated on the held-out **test** split whenever one was
+    reserved — the unbiased slice the optimizer never saw. When the dataset was
+    too small to carve out a test split, it falls back to scoring both programs
+    on the **valset** so a tiny first-run still gets a guarantee (clearly
+    labelled ``basis="val"``) rather than being refused. Returns ``None`` only
+    when neither split can produce a comparable pair (e.g. an empty valset),
+    which leaves the run uncovered rather than guessing.
+
+    Args:
+        baseline_program: The unoptimized program (pre-compile).
+        optimized_program: The compiled program.
+        splits: The train/val/test split bundle.
+        metric: The scoring callable both programs are evaluated with.
+        test_baseline: Baseline test score already computed by the caller, or
+            ``None`` when no test split exists.
+        test_optimized: Optimized test score already computed by the caller, or
+            ``None`` when no test split exists.
+
+    Returns:
+        A :class:`GuaranteeBasis` labelling the basis and carrying the scores,
+        or ``None`` when no comparable pair is available.
+    """
+    if splits.test and test_baseline is not None and test_optimized is not None:
+        return GuaranteeBasis(basis=GUARANTEE_BASIS_TEST, baseline=test_baseline, optimized=test_optimized)
+    if not splits.val:
+        return None
+    val_baseline = evaluate_on_test(baseline_program, splits.val, metric)
+    val_optimized = evaluate_on_test(optimized_program, splits.val, metric)
+    if val_baseline is None or val_optimized is None:
+        return None
+    return GuaranteeBasis(basis=GUARANTEE_BASIS_VAL, baseline=val_baseline, optimized=val_optimized)
+
+
 @dataclass
 class _GridPairContext:
     """Shared state threaded through grid-search pair workers.
@@ -268,6 +317,10 @@ class _GridPairContext:
     splits: Any
     artifact_id: str | None
     progress_callback: Callable[[str, dict[str, Any]], None] | None
+    # Per-pair token budget from the Max Cost Ceiling: the job-wide cap split
+    # evenly across pairs (pairs run concurrently with independent LM histories),
+    # so the grid's aggregate spend never exceeds the user's cap. 0 = no ceiling.
+    pair_max_tokens: int = 0
     # Worker-owned base dir for resumable grids; each pair writes its GEPA state
     # and (on success) ``result.json`` under ``<base>/pair_<i>``. None = ephemeral.
     gepa_log_dir_base: str | None = None
@@ -376,6 +429,10 @@ def _run_grid_pair(
         callbacks: list[Any] = [gen_timing]
         if refl_timing is not None:
             callbacks.append(refl_timing)
+        # Hard-stop this pair at its share of the Max Cost Ceiling so the grid's
+        # concurrent pairs can't collectively overrun the user's job-wide cap.
+        if ctx.pair_max_tokens > 0:
+            callbacks.append(CostCeilingCallback(ctx.pair_max_tokens, language_model, reflection_lm))
 
         with dspy.context(lm=language_model, callbacks=callbacks), gepa_log_dir(
             ctx.payload.optimizer_name, pair_dir
@@ -711,6 +768,16 @@ class DspyService:
         callbacks: list[Any] = [gen_timing]
         if refl_timing is not None:
             callbacks.append(refl_timing)
+        # Hard-stop the run once token spend exceeds the user's Max Cost Ceiling.
+        # Registered alongside the timing callbacks so it sees every LM call on
+        # every worker thread; a trip raises out of the run and the worker leaves
+        # the job failed (and unbilled — debiting only fires on success).
+        if payload.max_cost_credits is not None:
+            callbacks.append(
+                CostCeilingCallback(
+                    tokens_for_credits(payload.max_cost_credits), language_model, reflection_lm
+                )
+            )
         with gepa_log_dir(payload.optimizer_name, gepa_log_dir_path) as trajectory_log_dir:
             training_metric = maybe_wrap_minibatch_recorder(
                 metric,
@@ -792,6 +859,20 @@ class DspyService:
                             {DETAIL_OPTIMIZED: optimized_test_metric},
                         )
 
+                # Adjudicate the guarantee on the unbiased test split, or fall
+                # back to the valset for a dataset too small to reserve one. Done
+                # under the dspy context (the fallback re-scores both programs)
+                # and before the baseline-swap below so it reflects the true
+                # baseline-vs-optimized comparison, not the kept-baseline floor.
+                guarantee = _guarantee_basis(
+                    baseline_program=program,
+                    optimized_program=compiled_program,
+                    splits=splits,
+                    metric=metric,
+                    test_baseline=baseline_test_metric,
+                    test_optimized=optimized_test_metric,
+                )
+
                 best_program = compiled_program
                 if (
                     baseline_test_metric is not None
@@ -847,6 +928,7 @@ class DspyService:
             baseline_test_metric=baseline_test_metric,
             optimized_test_metric=optimized_test_metric,
             metric_improvement=metric_improvement,
+            guarantee=guarantee,
             optimization_metadata=optimization_metadata,
             details=details,
             program_artifact_path=program_artifact.path if program_artifact else None,
@@ -963,13 +1045,23 @@ class DspyService:
         seed = payload.seed if payload.seed is not None else (self.default_seed or 0)
 
         gen_timing = GenLMTimingCallback(student_lm)
+        react_callbacks: list[Any] = [gen_timing]
+        # Same Max Cost Ceiling hard-stop the scalar path registers. React routes
+        # both the student and the reflection LM through ``gepa.optimize``; the
+        # ceiling totals usage across both so the cap covers the whole run.
+        if payload.max_cost_credits is not None:
+            react_callbacks.append(
+                CostCeilingCallback(
+                    tokens_for_credits(payload.max_cost_credits), student_lm, reflection_lm
+                )
+            )
         # Mirror the scalar run's trajectory wiring so react gets the same
         # candidate tree: GEPA persists state into trajectory_log_dir,
         # trajectory_watch streams candidate/rejected events, capture_proposal_prompts
         # records rejected proposal prompts, and capture_tqdm drives the live bar.
         with (
             gepa_log_dir(payload.optimizer_name, gepa_log_dir_path) as trajectory_log_dir,
-            dspy.context(lm=student_lm, callbacks=[gen_timing]),
+            dspy.context(lm=student_lm, callbacks=react_callbacks),
             capture_tqdm(progress_callback),
             capture_proposal_prompts(payload.optimizer_name),
             trajectory_watch(trajectory_log_dir, progress_callback),
@@ -1093,6 +1185,14 @@ class DspyService:
             baseline_test_metric=baseline_scalar,
             optimized_test_metric=optimized_scalar,
             metric_improvement=metric_improvement,
+            # React scores the seed and best candidate against ``test`` when a
+            # test split exists, else the valset — mirror that basis label so the
+            # guarantee reads from the same scores shown on the result.
+            guarantee=GuaranteeBasis(
+                basis=GUARANTEE_BASIS_TEST if splits.test else GUARANTEE_BASIS_VAL,
+                baseline=baseline_scalar,
+                optimized=optimized_scalar,
+            ),
             optimization_metadata=optimization_metadata,
             details=details,
             program_artifact_path=program_artifact.path if program_artifact else None,
@@ -1278,6 +1378,13 @@ class DspyService:
                 pair_results[idx] = PairResult.model_validate(stored)
         pending = [(i, gen_cfg, ref_cfg) for i, (gen_cfg, ref_cfg) in enumerate(pairs) if i not in completed]
 
+        # Split the job-wide cost ceiling evenly across pairs so concurrent pairs
+        # can't collectively exceed the user's cap; 0 when no ceiling was set.
+        pair_max_tokens = (
+            tokens_for_credits(payload.max_cost_credits) // total_pairs
+            if payload.max_cost_credits is not None and total_pairs > 0
+            else 0
+        )
         grid_ctx = _GridPairContext(
             total_pairs=total_pairs,
             module_factory=module_factory,
@@ -1288,6 +1395,7 @@ class DspyService:
             splits=splits,
             artifact_id=artifact_id,
             progress_callback=progress_callback,
+            pair_max_tokens=pair_max_tokens,
             gepa_log_dir_base=gepa_log_dir_path,
             completed=len(completed),
         )
@@ -1332,6 +1440,23 @@ class DspyService:
             grid_runtime,
         )
 
+        # The guarantee reads the winning pair's test-split scores. Grid pairs
+        # only score baseline/optimized when a test split exists, so a dataset
+        # too small for one leaves the grid uncovered (guarantee None) rather
+        # than fabricating a basis the pairs never evaluated.
+        guarantee = None
+        if (
+            best_pair is not None
+            and split_counts.test
+            and best_pair.baseline_test_metric is not None
+            and best_pair.optimized_test_metric is not None
+        ):
+            guarantee = GuaranteeBasis(
+                basis=GUARANTEE_BASIS_TEST,
+                baseline=best_pair.baseline_test_metric,
+                optimized=best_pair.optimized_test_metric,
+            )
+
         return GridSearchResponse(
             module_name=payload.module_name,
             optimizer_name=payload.optimizer_name,
@@ -1344,6 +1469,7 @@ class DspyService:
             best_pair=best_pair,
             runtime_seconds=round(grid_runtime, 2),
             total_tokens=grid_total_tokens,
+            guarantee=guarantee,
         )
 
     def validate_grid_search_payload(self, payload: GridSearchRequest) -> None:

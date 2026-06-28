@@ -133,6 +133,8 @@
     "quota.reached": "הגעת למגבלת {quota} {term.optimizationPlural} לכל משתמש. מחק/י {term.optimizationPlural} ישנות כדי ליצור חדשות.",
     "user.storage.quota_exceeded": "חרגת ממכסת האחסון שלך ({used_mb}MB מתוך {quota_mb}MB). פנה/י מקום ונסה/י שוב.",
     "submit.no_models_available": "אין {term.modelPlural} זמינים בקטלוג — הגדר/הגדירי קודם API key של ספק.",
+    "billing.insufficient_credits": "המאזן שלך ריק. טען/טעני קרדיטים או המתן/המתיני לחידוש המענק החינמי כדי להריץ על מחשוב מנוהל.",
+    "billing.frontier_locked": "{model} הוא מודל פרונטיר. טען/טעני קרדיטים או הפעל/הפעילי Premium כדי להריץ אותו על מחשוב מנוהל, או עבור/עברי למפתח שלך.",
     "submission.validation_failed": "אימות ההגדרות נכשל. בדוק/בדקי את האופטימייזר, המודול ומיפוי העמודות.",
     "submission.module_resolve_failed": "טעינת ה{term.module} נכשלה: {error}",
     "submission.staged_dataset_not_found": "הדאטאסט השמור ({staged_dataset_id}) לא נמצא או שייך למשתמש אחר.",

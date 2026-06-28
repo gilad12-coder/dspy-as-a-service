@@ -89,6 +89,16 @@ interface OptimizationRequestBase {
   shuffle?: boolean;
   seed?: number | null;
   is_private?: boolean;
+  // How the run's tokens are billed: "managed" (Skynet credits, frontier models
+  // gated until paid/Premium) or "byok" (the user's own key — nothing locked).
+  // Threaded from the wizard's token-source toggle so frontier-locking and the
+  // guarantee are enforced server-side, not advisory. Defaults to "managed".
+  token_source?: "managed" | "byok";
+  // User-set Max Cost Ceiling in credits [FG-1]. A DSPy job's token use isn't
+  // linear, so the wizard shows a projected bracket instead of a tight estimate
+  // and lets the user cap the run here; the backend hard-stops the job once spend
+  // exceeds the budget this cap buys. Omitted when no ceiling is set.
+  max_cost_credits?: number;
 }
 
 export interface RunRequest extends OptimizationRequestBase {
@@ -257,6 +267,29 @@ export interface LMActivity {
   reflection: Record<string, LMStageStats>;
 }
 
+/**
+ * Baseline-vs-optimized scores the "No lift, no charge" guarantee is judged on.
+ * `basis` is `"test"` when a held-out test split was reserved (the strongest,
+ * unbiased proof the optimizer never saw the data) or `"val"` when the dataset
+ * was too small and the guarantee fell back to the valset gain.
+ */
+export interface GuaranteeBasis {
+  basis: "test" | "val";
+  baseline?: number | null;
+  optimized?: number | null;
+}
+
+/**
+ * How a finished run settled against the credit ledger. `outcome` is `"billed"`
+ * when the run charged (the receipt that the lift was real) or `"refunded"` when
+ * the guarantee returned the credits (the run was free); `credits` is that
+ * amount. Stamped by the worker under `RunResult.details.billing`.
+ */
+export interface RunBillingOutcome {
+  outcome: "billed" | "refunded";
+  credits: number;
+}
+
 export interface PairResult {
   pair_index: number;
   generation_model: string;
@@ -284,6 +317,7 @@ export interface RunResult {
   baseline_test_metric?: number | null;
   optimized_test_metric?: number | null;
   metric_improvement?: number | null;
+  guarantee?: GuaranteeBasis | null;
   optimization_metadata?: Record<string, unknown>;
   details?: Record<string, unknown>;
   program_artifact_path?: string | null;

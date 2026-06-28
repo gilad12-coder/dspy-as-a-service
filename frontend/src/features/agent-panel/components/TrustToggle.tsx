@@ -27,7 +27,7 @@ const MODE_ORDER: TrustMode[] = ["ask", "auto_safe", "yolo"];
 export function TrustToggle({ mode, onCycle, className }: TrustToggleProps) {
   const Icon = ICONS[mode];
   const hue = TRUST_MODE_HUE[mode];
-  const label = TRUST_MODE_LABEL[mode];
+  const label = TRUST_MODE_LABEL[mode]();
 
   return (
     <Tooltip>
@@ -72,9 +72,9 @@ export function TrustToggle({ mode, onCycle, className }: TrustToggleProps) {
                 <ModeIcon className="size-3 shrink-0 mt-[2px]" aria-hidden="true" />
                 <span>
                   <span className={active ? "font-semibold" : "font-medium"}>
-                    {TRUST_MODE_LABEL[m]}
+                    {TRUST_MODE_LABEL[m]()}
                   </span>
-                  <span className="opacity-80"> — {TRUST_MODE_DESCRIPTION[m]}</span>
+                  <span className="opacity-80"> — {TRUST_MODE_DESCRIPTION[m]()}</span>
                 </span>
               </li>
             );
