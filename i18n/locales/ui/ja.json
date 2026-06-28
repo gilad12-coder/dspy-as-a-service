@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "詳細モード",
   "settings.account.lite.description": "アニメーションを無効化し、重い表示を簡易なものに置き換えます。低スペックのマシンでも快適に動作します",
   "settings.account.lite.label": "ライトモード",
-  "settings.account.logout.action": "サインアウト",
-  "settings.account.logout.label": "サインアウト",
   "settings.account.role.admin": "管理者",
   "settings.account.role.label": "ロール",
   "settings.account.role.user": "ユーザー",

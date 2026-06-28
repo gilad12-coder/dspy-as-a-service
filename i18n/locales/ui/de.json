@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "Erweiterter Modus",
   "settings.account.lite.description": "Deaktiviert Animationen und ersetzt aufwendige Ansichten durch einfachere — für ein flüssiges Erlebnis auf leistungsschwachen Geräten",
   "settings.account.lite.label": "Lite-Modus",
-  "settings.account.logout.action": "Abmelden",
-  "settings.account.logout.label": "Abmelden",
   "settings.account.role.admin": "Admin",
   "settings.account.role.label": "Rolle",
   "settings.account.role.user": "Benutzer",

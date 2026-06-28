@@ -2065,8 +2065,6 @@
   "settings.account.advanced.label": "Advanced mode",
   "settings.account.lite.description": "Disables animations and swaps heavy views for simpler ones — for a smooth experience on low-end machines",
   "settings.account.lite.label": "Lite mode",
-  "settings.account.logout.action": "Sign out",
-  "settings.account.logout.label": "Sign out",
   "settings.account.role.admin": "Admin",
   "settings.account.role.label": "Role",
   "settings.account.role.user": "User",

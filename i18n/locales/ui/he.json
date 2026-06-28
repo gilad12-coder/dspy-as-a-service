@@ -2065,8 +2065,6 @@
   "settings.account.advanced.label": "מצב מתקדם",
   "settings.account.lite.description": "מכבה אנימציות ומחליף תצוגות כבדות בגרסאות פשוטות — לחוויה חלקה במחשבים חלשים",
   "settings.account.lite.label": "מצב lite",
-  "settings.account.logout.action": "התנתק/י",
-  "settings.account.logout.label": "יציאה מהחשבון",
   "settings.account.role.admin": "מנהל",
   "settings.account.role.label": "הרשאה",
   "settings.account.role.user": "משתמש",

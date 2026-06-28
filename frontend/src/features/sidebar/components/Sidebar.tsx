@@ -52,7 +52,10 @@ import { useJobsStream } from "@/shared/hooks/use-jobs-stream";
 import { toast } from "react-toastify";
 import { useSession } from "next-auth/react";
 import { groupJobsByRecency } from "@/features/sidebar";
-import { SettingsTrigger, useUserPrefs } from "@/features/settings";
+import { useUserPrefs } from "@/features/settings";
+import { AccountMenu } from "@/shared/layout/account-menu";
+import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
+import { ShareDialog } from "@/features/optimizations";
 import { StorageMeter } from "@/features/storage";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
@@ -331,7 +334,15 @@ export function Sidebar() {
       data-tutorial="sidebar-full"
     >
       <div className="flex flex-col h-full">
-        <div className={cn("hidden px-3 pt-3 md:flex", compact ? "justify-center" : "justify-end")}>
+        <div
+          className={cn(
+            "hidden items-center px-3 pt-3 md:flex",
+            compact ? "justify-center" : "justify-between",
+          )}
+        >
+          {/* The morphing SKYNET wordmark anchors the rail (md+ only). It's dropped
+              in the collapsed 64px state, where there's no room beside the toggle. */}
+          {!compact && <AnimatedWordmark size={16} autoMorph morphSpeed={250} />}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -339,13 +350,42 @@ export function Sidebar() {
                 onClick={toggleCollapsed}
                 aria-label={compact ? msg("sidebar.expand") : msg("sidebar.collapse")}
                 aria-expanded={!compact}
-                className="rounded-lg p-1.5 text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-foreground cursor-pointer"
+                className="group rounded-lg p-1.5 text-sidebar-foreground/60 transition-[color,background-color,transform] duration-200 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground active:scale-90 cursor-pointer"
               >
-                {compact ? (
-                  <PanelLeftOpen className="size-4 rtl:-scale-x-100" />
-                ) : (
-                  <PanelLeftClose className="size-4 rtl:-scale-x-100" />
-                )}
+                {/* Directional icon swap. Both icons stay mounted (symmetric +
+                    interruptible — no AnimatePresence exit to drop mid-reflow) and
+                    slide PAST each other on the start↔end axis: the outgoing icon
+                    leaves toward the start while the incoming arrives from the end, so
+                    they never sit superimposed. A plain opacity crossfade ghosted the
+                    two near-identical panels into a doubled chevron at the midpoint;
+                    the offset reads instead as the panel itself sliding open/closed.
+                    Slide direction is mirrored in RTL. Expo ease keeps it snappy. */}
+                <span className="relative inline-flex size-4 items-center justify-center">
+                  <motion.span
+                    className="absolute inset-0 inline-flex items-center justify-center"
+                    initial={false}
+                    animate={{
+                      opacity: compact ? 0 : 1,
+                      x: compact ? (isRtl ? 6 : -6) : 0,
+                      scale: compact ? 0.6 : 1,
+                    }}
+                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  >
+                    <PanelLeftClose className="size-4 rtl:-scale-x-100" />
+                  </motion.span>
+                  <motion.span
+                    className="absolute inset-0 inline-flex items-center justify-center"
+                    initial={false}
+                    animate={{
+                      opacity: compact ? 1 : 0,
+                      x: compact ? 0 : isRtl ? -6 : 6,
+                      scale: compact ? 1 : 0.6,
+                    }}
+                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  >
+                    <PanelLeftOpen className="size-4 rtl:-scale-x-100" />
+                  </motion.span>
+                </span>
               </button>
             </TooltipTrigger>
             <TooltipContent side={tooltipSide}>
@@ -472,8 +512,8 @@ export function Sidebar() {
 
         <div className="border-t border-sidebar-border/60">
           {!compact && <StorageMeter />}
-          <div className={cn("py-2", compact ? "flex justify-center px-2" : "px-3")}>
-            <SettingsTrigger collapsed={compact} />
+          <div className={cn("py-2", compact ? "flex justify-center px-2" : "px-2")}>
+            <AccountMenu collapsed={compact} />
           </div>
         </div>
       </div>
@@ -687,13 +727,13 @@ function JobRow({
     if (renaming) renameRef.current?.focus();
   }, [renaming]);
 
+  const [shareOpen, setShareOpen] = React.useState(false);
+
+  // Open the same Drive-style sharing dialog the optimization page uses, instead
+  // of a bare link copy — the dialog itself offers copy plus roles and visibility.
   const handleShare = () => {
-    const url = `${window.location.origin}/optimizations/${job.optimization_id}`;
-    navigator.clipboard
-      .writeText(url)
-      .then(() => toast.success(msg("sidebar.link.copied")))
-      .catch(() => toast.error(msg("clipboard.copy_failed")));
     setMenuOpen(false);
+    setShareOpen(true);
   };
 
   const handleClone = () => {
@@ -1055,6 +1095,15 @@ function JobRow({
           </motion.div>,
           document.body,
         )}
+
+      {!isShared && (
+        <ShareDialog
+          optimizationId={job.optimization_id}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          hideTrigger
+        />
+      )}
     </div>
   );
 }

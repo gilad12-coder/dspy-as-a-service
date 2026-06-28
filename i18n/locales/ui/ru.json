@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "Расширенный режим",
   "settings.account.lite.description": "Отключает анимации и заменяет тяжёлые представления на более простые — для плавной работы на слабых компьютерах",
   "settings.account.lite.label": "Облегчённый режим",
-  "settings.account.logout.action": "Выйти",
-  "settings.account.logout.label": "Выйти",
   "settings.account.role.admin": "Администратор",
   "settings.account.role.label": "Роль",
   "settings.account.role.user": "Пользователь",

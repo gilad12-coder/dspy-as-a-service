@@ -42,8 +42,6 @@
   "settings.about.reset_all.description": "删除所有设定并喺呢部装置上还原预设值",
   "settings.about.reset_all.label": "重设所有偏好设定",
   "settings.about.reset_all.success": "偏好设定已重设",
-  "settings.account.logout.action": "登出",
-  "settings.account.logout.label": "登出",
   "settings.account.signed_out": "未登入",
   "settings.admin.storage.default": "预设",
   "settings.admin.storage.default_budget": "预设：{value}",

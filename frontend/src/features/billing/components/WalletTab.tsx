@@ -9,14 +9,9 @@ import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
 import { SettingsRow } from "@/shared/ui/settings-row";
 import { Switch } from "@/shared/ui/primitives/switch";
-import { createSubscriptionCheckout, openBillingPortal } from "@/shared/lib/api";
+import { openBillingPortal } from "@/shared/lib/api";
 import { useCredits } from "../providers/credit-provider";
-import {
-  formatCredits,
-  formatResetDate,
-  type LedgerKind,
-  type UsageEntry,
-} from "../lib/credit";
+import { formatCredits, formatResetDate, type LedgerKind, type UsageEntry } from "../lib/credit";
 
 const KIND_ICON: Record<LedgerKind, React.ComponentType<{ className?: string }>> = {
   run: Sparkles,
@@ -118,26 +113,12 @@ export function WalletTab() {
               {formatCredits(totalCredits, locale)}
             </span>
           </div>
-          <span className="text-xs text-muted-foreground">
-            {formatMsg("billing.wallet.breakdown", {
-              p1: formatCredits(wallet.paidBalanceCredits, locale),
-              p2: formatCredits(wallet.freeGrant.creditsRemaining, locale),
-              p3: formatCredits(wallet.freeGrant.creditsTotal, locale),
-            })}
-          </span>
           {/* Low balance stays an operational metric here too — same calm line as
               the header chip, no red, no urgency. */}
           {status === "low" && (
             <span className="text-xs text-muted-foreground/80">{msg("billing.chip.low_note")}</span>
           )}
         </div>
-        <Link
-          href="/upgrade"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-[#3D2E22] px-3.5 py-2 text-sm font-semibold text-[#FAF8F5] transition-colors duration-200 hover:bg-[#2A1F17] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
-        >
-          <Plus className="size-4" aria-hidden="true" />
-          {msg("billing.action.add_credits")}
-        </Link>
       </div>
 
       <div>
@@ -172,13 +153,12 @@ export function WalletTab() {
               {msg("billing.premium.manage")}
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={() => goToStripe(createSubscriptionCheckout)}
+            <Link
+              href="/upgrade"
               className="inline-flex items-center gap-1.5 rounded-lg border border-[#C8A882]/60 px-3 py-1.5 text-xs font-semibold text-[#8a6d44] transition-colors duration-200 hover:bg-[#C8A882]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
             >
               {msg("billing.premium.subscribe")}
-            </button>
+            </Link>
           )}
         </SettingsRow>
       </div>

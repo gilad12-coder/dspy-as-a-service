@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "Mode avancé",
   "settings.account.lite.description": "Désactive les animations et remplace les vues lourdes par des versions plus simples — pour une expérience fluide sur les machines peu puissantes",
   "settings.account.lite.label": "Mode allégé",
-  "settings.account.logout.action": "Se déconnecter",
-  "settings.account.logout.label": "Se déconnecter",
   "settings.account.role.admin": "Administrateur",
   "settings.account.role.label": "Rôle",
   "settings.account.role.user": "Utilisateur",

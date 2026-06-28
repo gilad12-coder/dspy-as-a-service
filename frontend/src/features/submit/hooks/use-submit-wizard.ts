@@ -82,7 +82,7 @@ export function useSubmitWizard() {
   const [summaryCodeTab, setSummaryCodeTab] = useState<string>("signature");
 
   const [jobType, setOptimizationType] = useState<"run" | "grid_search">("run");
-  const [isPrivate, setIsPrivate] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(true);
 
   const username = session?.user?.name ?? "";
   const [jobName, setJobName] = useState("");

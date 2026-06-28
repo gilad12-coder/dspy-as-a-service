@@ -52,8 +52,9 @@ const TRANSFER_VALUE = "__transfer__";
 // text. The username goes in a <bdi> below so its directionality stays
 // isolated inside the Hebrew sentence — the same protection formatTemplate's
 // FSI/PDI wrapping would have provided.
-const [TRANSFER_BODY_BEFORE, TRANSFER_BODY_AFTER] =
-  msg("share.transfer.confirm_body").split("{name}");
+const [TRANSFER_BODY_BEFORE, TRANSFER_BODY_AFTER] = msg("share.transfer.confirm_body").split(
+  "{name}",
+);
 
 /** Localised label for a member tier role. */
 function roleLabel(role: ShareRole): string {
@@ -76,10 +77,30 @@ function roleDesc(role: ShareRole): string {
  * per-member role) and a General-access section (Restricted vs Anyone-with-link),
  * plus a copy-link row. Different purpose, same components.
  */
-export function ShareDialog({ optimizationId }: { optimizationId: string }) {
+export function ShareDialog({
+  optimizationId,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
+}: {
+  optimizationId: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}) {
   const { data: session } = useSession();
   const me = sessionIdentity(session);
-  const [open, setOpen] = useState(false);
+  // Open state is uncontrolled by default (the built-in trigger drives it), but a
+  // parent can drive it — the sidebar row menu opens this same dialog without
+  // rendering the trigger (hideTrigger). Every existing setOpen() call still works
+  // and now also notifies a controlling parent.
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
   const [state, setState] = useState<SharingState | null>(null);
   const [savingAccess, setSavingAccess] = useState(false);
   const [savingVisibility, setSavingVisibility] = useState(false);
@@ -99,14 +120,18 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
   // Owner (if present) plus every invited member — drives the header count.
   const accessCount = state ? (state.owner ? 1 : 0) + state.members.length : 0;
 
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (next && state === null) {
+  const handleOpenChange = (next: boolean) => setOpen(next);
+
+  // Lazy-load the sharing state the first time the dialog opens — whether by the
+  // built-in trigger or a controlling parent. An effect catches both; the trigger's
+  // click handler alone would miss the externally-driven open.
+  useEffect(() => {
+    if (open && state === null) {
       getSharing(optimizationId)
         .then(setState)
         .catch((err) => toast.error(err instanceof Error ? err.message : msg("share.error")));
     }
-  };
+  }, [open, state, optimizationId]);
 
   const handleAccessChange = async (value: GeneralAccess) => {
     setSavingAccess(true);
@@ -125,7 +150,9 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
     setSavingVisibility(true);
     try {
       setState(await setOptimizationVisibility(optimizationId, isPrivate));
-      toast.success(isPrivate ? msg("share.visibility.now_private") : msg("share.visibility.now_public"));
+      toast.success(
+        isPrivate ? msg("share.visibility.now_private") : msg("share.visibility.now_public"),
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
     } finally {
@@ -208,17 +235,19 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
 
   return (
     <>
-      <TooltipButton tooltip={msg("share.button")}>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          onClick={() => handleOpenChange(true)}
-          aria-label={msg("share.button")}
-        >
-          <Users className="size-4" />
-        </Button>
-      </TooltipButton>
+      {!hideTrigger && (
+        <TooltipButton tooltip={msg("share.button")}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={() => handleOpenChange(true)}
+            aria-label={msg("share.button")}
+          >
+            <Users className="size-4" />
+          </Button>
+        </TooltipButton>
+      )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent
@@ -483,9 +512,7 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
             description={
               <>
                 {TRANSFER_BODY_BEFORE}
-                <bdi className="font-mono font-medium text-foreground">
-                  {transferTarget}
-                </bdi>
+                <bdi className="font-mono font-medium text-foreground">{transferTarget}</bdi>
                 {TRANSFER_BODY_AFTER}
               </>
             }
@@ -643,9 +670,7 @@ function InvitePeople({
                 </SelectItem>
               ))}
               {canTransfer && (
-                <SelectItem value={TRANSFER_VALUE}>
-                  {msg("share.transfer.action")}
-                </SelectItem>
+                <SelectItem value={TRANSFER_VALUE}>{msg("share.transfer.action")}</SelectItem>
               )}
             </SelectContent>
           </Select>

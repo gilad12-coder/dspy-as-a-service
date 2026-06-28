@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "حالت پیشرفته",
   "settings.account.lite.description": "انیمیشن‌ها را غیرفعال می‌کند و نماهای سنگین را با نماهای ساده‌تر جایگزین می‌کند — برای تجربه‌ای روان روی دستگاه‌های کم‌توان",
   "settings.account.lite.label": "حالت سبک",
-  "settings.account.logout.action": "خروج از حساب",
-  "settings.account.logout.label": "خروج",
   "settings.account.role.admin": "مدیر",
   "settings.account.role.label": "نقش",
   "settings.account.role.user": "کاربر",

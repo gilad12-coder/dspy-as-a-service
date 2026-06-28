@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "الوضع المتقدّم",
   "settings.account.lite.description": "يعطّل الرسوم المتحركة ويستبدل العروض الثقيلة بأخرى أبسط — لتجربة سلسة على الأجهزة منخفضة الأداء",
   "settings.account.lite.label": "الوضع المبسّط",
-  "settings.account.logout.action": "تسجيل الخروج",
-  "settings.account.logout.label": "تسجيل الخروج",
   "settings.account.role.admin": "مسؤول",
   "settings.account.role.label": "الدور",
   "settings.account.role.user": "مستخدم",

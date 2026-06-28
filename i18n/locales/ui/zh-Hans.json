@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "高级模式",
   "settings.account.lite.description": "禁用动画并将复杂视图替换为更简单的视图——在低端设备上获得流畅体验",
   "settings.account.lite.label": "轻量模式",
-  "settings.account.logout.action": "退出登录",
-  "settings.account.logout.label": "退出登录",
   "settings.account.role.admin": "管理员",
   "settings.account.role.label": "角色",
   "settings.account.role.user": "用户",

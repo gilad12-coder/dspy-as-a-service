@@ -5,12 +5,9 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { Menu, GraduationCap, Lightbulb, Feather, Sparkles } from "lucide-react";
-import { useSession } from "next-auth/react";
-import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { useTutorialContext, ConceptsGuide, registerTutorialHook } from "@/features/tutorial";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { LanguageSwitcher } from "@/shared/ui/language-switcher";
-import { AccountMenu } from "./account-menu";
 import { useLocale } from "@/shared/providers";
 import { dirForLocale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
@@ -60,7 +57,6 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [conceptsOpen, setConceptsOpen] = React.useState(false);
   const [isDesktop, setIsDesktop] = React.useState(false);
-  const { data: session } = useSession();
   const pathname = usePathname();
   const { locale } = useLocale();
   const dir = dirForLocale(locale);
@@ -129,7 +125,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="sticky top-0 z-30 flex items-center justify-between bg-background/60 backdrop-blur-2xl backdrop-saturate-[1.8] px-4 py-2.5 border-b border-border/40 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)]"
+        className="fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-background/60 backdrop-blur-2xl backdrop-saturate-[1.8] px-4 py-2.5 border-b border-border/40 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)]"
         dir={dir}
         style={{
           borderImage:
@@ -137,11 +133,10 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         }}
       >
         <div className="flex items-center gap-1.5 cursor-default">
-          <div className="hidden sm:block">
-            <AnimatedWordmark size={16} autoMorph morphSpeed={250} />
-          </div>
+          {/* Brand sits in the header only below md — at md+ the morphing wordmark
+              lives in the sidebar rail's collapse row (which is itself md:flex). */}
           <span
-            className="sm:hidden text-sm font-bold tracking-[0.14em] uppercase text-foreground cursor-default"
+            className="md:hidden text-sm font-bold tracking-[0.14em] uppercase text-foreground cursor-default"
             style={{ fontFamily: '"Inter Variable", system-ui, sans-serif' }}
           >
             SKYNET
@@ -216,7 +211,6 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
 
         <div className="flex items-center gap-1.5">
           <LanguageSwitcher />
-          {session?.user && <AccountMenu />}
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
@@ -230,7 +224,10 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         </div>
       </motion.header>
 
-      <div className="flex flex-1" dir={dir}>
+      {/* The header is position:fixed, so it's out of flow — reserve its height
+          here so content starts below it. The fixed sidebar inside this row is
+          unaffected by the padding and stays pinned at top:var(--header-height). */}
+      <div className="flex flex-1 pt-[var(--header-height)]" dir={dir}>
         <button
           type="button"
           aria-label={msg("app.shell.menu_close")}

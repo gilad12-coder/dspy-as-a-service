@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "고급 모드",
   "settings.account.lite.description": "애니메이션을 비활성화하고 무거운 화면을 단순한 화면으로 전환합니다 — 저사양 기기에서 부드러운 사용 경험을 위해",
   "settings.account.lite.label": "라이트 모드",
-  "settings.account.logout.action": "로그아웃",
-  "settings.account.logout.label": "로그아웃",
   "settings.account.role.admin": "관리자",
   "settings.account.role.label": "역할",
   "settings.account.role.user": "사용자",

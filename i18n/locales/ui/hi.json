@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "उन्नत मोड",
   "settings.account.lite.description": "एनिमेशन बंद करता है और भारी व्यू को सरल व्यू से बदल देता है — कम-शक्ति वाली मशीनों पर सहज अनुभव के लिए",
   "settings.account.lite.label": "लाइट मोड",
-  "settings.account.logout.action": "साइन आउट करें",
-  "settings.account.logout.label": "साइन आउट करें",
   "settings.account.role.admin": "एडमिन",
   "settings.account.role.label": "भूमिका",
   "settings.account.role.user": "उपयोगकर्ता",

@@ -2,19 +2,21 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
 import {
   BookOpen,
+  Bot,
   Columns2,
   Check,
   Copy,
+  CreditCard,
   KeyRound,
   ExternalLink,
   Feather,
   HardDrive,
   Keyboard,
-  LogOut,
+  type LucideIcon,
   Pencil,
   Plus,
   RotateCcw,
@@ -204,23 +206,6 @@ function AccountTab() {
         description={msg("settings.account.lite.description")}
       >
         <Switch checked={prefs.liteMode} onCheckedChange={(v) => setPref("liteMode", v)} />
-      </SettingsRow>
-
-      <SettingsRow icon={LogOut} label={msg("settings.account.logout.label")}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              disabled={!username}
-              aria-label={msg("settings.account.logout.action")}
-            >
-              <LogOut className="size-3.5 rtl:-scale-x-100" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{msg("settings.account.logout.action")}</TooltipContent>
-        </Tooltip>
       </SettingsRow>
     </div>
   );
@@ -1182,8 +1167,26 @@ const SETTINGS_TAB_ORDER = [
 ] as const;
 type SettingsTab = (typeof SETTINGS_TAB_ORDER)[number];
 
-const SETTINGS_TAB_TRIGGER_CLASS =
-  "relative z-10 w-full shrink-0 whitespace-nowrap text-center text-[clamp(0.75rem,2.2vw,0.875rem)] rounded-md px-1.5 py-2 font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5 leading-tight";
+const SETTINGS_TAB_META: Record<
+  SettingsTab,
+  { icon: LucideIcon; labelKey: Parameters<typeof msg>[0] }
+> = {
+  wizard: { icon: Sparkles, labelKey: "settings.tab.wizard" },
+  agent: { icon: Bot, labelKey: "settings.tab.agent" },
+  admin: { icon: HardDrive, labelKey: "settings.tab.admin" },
+  account: { icon: User, labelKey: "settings.tab.account" },
+  billing: { icon: CreditCard, labelKey: "settings.tab.billing" },
+  api: { icon: KeyRound, labelKey: "settings.tab.api" },
+  about: { icon: Info, labelKey: "settings.tab.about" },
+};
+
+// Vertical-rail item: full-width, icon + label, start-aligned. The dark active
+// fill, hover and focus states all come from the shared TabsTrigger; here we
+// only undo its horizontal sizing (equal-width flex-1, full-height stretch) and
+// set rail spacing. On mobile the rail is a horizontal scroll strip, so the item
+// drops back to auto width.
+const SETTINGS_RAIL_ITEM_CLASS =
+  "h-auto w-full flex-none justify-start gap-2.5 px-2.5 py-2 font-medium data-[state=inactive]:hover:bg-accent/50 max-md:w-auto!";
 
 export function SettingsModal() {
   const { open, setOpen, targetTab, clearTarget } = useSettingsModal();
@@ -1214,105 +1217,43 @@ export function SettingsModal() {
     if (open && !wasOpen.current) track(TelemetryEvent.SettingsOpened);
     wasOpen.current = open;
   }, [open]);
-  const tabCount = tabs.length;
-  const listElRef = React.useRef<HTMLElement | null>(null);
-  const observerRef = React.useRef<ResizeObserver | null>(null);
-  const [indicator, setIndicator] = React.useState<{ left: number; width: number } | null>(null);
-
-  // Measure the active trigger from the DOM rather than computing from its
-  // index: the columns are `minmax(max-content, 1fr)`, so they are equal-width
-  // only when every label fits the equal share. On narrow widths — and when the
-  // admin tab drops the count to five — the columns diverge, and an index-based
-  // offset slides the pill off the active tab. offsetLeft/Width are physical, so
-  // this stays correct in RTL too. The >0 guard avoids painting a collapsed pill
-  // before the dialog grid has laid out.
-  const measure = React.useCallback(() => {
-    const active = listElRef.current?.querySelector<HTMLElement>('[data-state="active"]');
-    if (active && active.offsetWidth > 0) {
-      setIndicator({ left: active.offsetLeft, width: active.offsetWidth });
-    }
-  }, []);
-
-  // Callback ref on the pill: fires when the dialog content is actually
-  // attached. Radix portals the content a beat after `open` flips, so a parent
-  // open-keyed effect races the mount and can bind to a null ref; a callback ref
-  // can't. The ResizeObserver delivers the first valid measure (0→full as the
-  // dialog lays out) and keeps the pill aligned on responsive resize.
-  const bindIndicator = React.useCallback(
-    (node: HTMLDivElement | null) => {
-      observerRef.current?.disconnect();
-      observerRef.current = null;
-      const list = node?.parentElement ?? null;
-      listElRef.current = list;
-      if (!list) return;
-      measure();
-      const observer = new ResizeObserver(measure);
-      observer.observe(list);
-      observerRef.current = observer;
-    },
-    [measure],
-  );
-
-  // Switching tab resizes nothing, so the observer won't fire — re-measure here
-  // so the pill slides to the newly active tab.
-  React.useLayoutEffect(() => {
-    measure();
-  }, [activeTab, measure]);
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-2xl sm:max-w-2xl p-0 overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border/40">
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogHeader className="border-b border-border/40 px-5 py-3.5 text-start">
           <DialogTitle>{msg("settings.title")}</DialogTitle>
-          <DialogDescription>{msg("settings.subtitle")}</DialogDescription>
+          {/* Title is enough up top, ChatGPT-style; the subtitle stays for screen
+              readers but is out of the way of the rail. */}
+          <DialogDescription className="sr-only">{msg("settings.subtitle")}</DialogDescription>
         </DialogHeader>
 
+        {/* Vertical rail + content panel. orientation="vertical" gives the rail its
+            full-width start-aligned items and up/down keyboard nav for free; the
+            container is a column on mobile (rail becomes a horizontal scroll strip)
+            and a row on md+ (rail pinned to the start edge, content scrolls beside
+            it). Both sides scroll independently within a fixed-height body. */}
         <Tabs
+          orientation="vertical"
           value={activeTab}
           onValueChange={(v) => {
             setActiveTab(v as SettingsTab);
             track(TelemetryEvent.SettingsTabChanged, { tab: v });
           }}
-          className="px-6 pb-6 pt-2"
+          className="flex h-[70vh] max-h-[600px] min-h-0 flex-col gap-0 md:flex-row"
         >
-          <TabsList
-            className="relative grid w-full rounded-lg bg-muted p-1 gap-1 border-none shadow-none h-auto items-stretch overflow-x-auto no-scrollbar"
-            style={{ gridTemplateColumns: `repeat(${tabCount}, minmax(max-content, 1fr))` }}
-          >
-            <div
-              ref={bindIndicator}
-              aria-hidden="true"
-              className={`pointer-events-none absolute top-1 bottom-1 rounded-md bg-[#3D2E22] shadow-sm transition-[left,width] duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none ${
-                indicator ? "opacity-100" : "opacity-0"
-              }`}
-              style={indicator ? { left: indicator.left, width: indicator.width } : undefined}
-            />
-            <TabsTrigger value="wizard" className={SETTINGS_TAB_TRIGGER_CLASS}>
-              {msg("settings.tab.wizard")}
-            </TabsTrigger>
-            <TabsTrigger value="agent" className={SETTINGS_TAB_TRIGGER_CLASS}>
-              {msg("settings.tab.agent")}
-            </TabsTrigger>
-            {isAdmin && (
-              <TabsTrigger value="admin" className={SETTINGS_TAB_TRIGGER_CLASS}>
-                {msg("settings.tab.admin")}
-              </TabsTrigger>
-            )}
-            <TabsTrigger value="account" className={SETTINGS_TAB_TRIGGER_CLASS}>
-              {msg("settings.tab.account")}
-            </TabsTrigger>
-            <TabsTrigger value="billing" className={SETTINGS_TAB_TRIGGER_CLASS}>
-              {msg("settings.tab.billing")}
-            </TabsTrigger>
-            <TabsTrigger value="api" className={SETTINGS_TAB_TRIGGER_CLASS}>
-              {msg("settings.tab.api")}
-            </TabsTrigger>
-            <TabsTrigger value="about" className={SETTINGS_TAB_TRIGGER_CLASS}>
-              {msg("settings.tab.about")}
-            </TabsTrigger>
+          <TabsList className="relative flex h-auto w-full shrink-0 items-stretch justify-start gap-1 overflow-x-auto rounded-none border-0 border-b border-border/40 bg-transparent p-2 shadow-none no-scrollbar max-md:flex-row! md:w-[210px] md:overflow-x-visible md:overflow-y-auto md:border-b-0 md:border-e">
+            {tabs.map((tab) => {
+              const { icon: Icon, labelKey } = SETTINGS_TAB_META[tab];
+              return (
+                <TabsTrigger key={tab} value={tab} className={SETTINGS_RAIL_ITEM_CLASS}>
+                  <Icon aria-hidden="true" />
+                  <span className="truncate">{msg(labelKey)}</span>
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
 
-          <div className="mt-4 max-h-[60vh] overflow-y-auto pe-1">
+          <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4">
             <TabsContent value="wizard">
               <WizardTab />
             </TabsContent>

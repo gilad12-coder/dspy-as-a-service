@@ -3,12 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, KeyRound, Loader2, Sparkles, Zap } from "lucide-react";
+import { Check, Loader2, Zap } from "lucide-react";
 import { toast } from "react-toastify";
-import { msg, formatMsg } from "@/shared/lib/messages";
+import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
-import { useSettingsModal } from "@/features/settings";
 import {
   createCheckoutSession,
   createFoundersCheckout,
@@ -17,9 +16,13 @@ import {
   type FoundersRateResponse,
 } from "@/shared/lib/api";
 import { useCredits } from "../providers/credit-provider";
-import { CREDIT_PACKS, formatCredits, formatResetDate, type CreditPack } from "../lib/credit";
+import { CREDIT_PACKS, formatCredits, type CreditPack } from "../lib/credit";
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
+
+// Slide transition for the credit-pack selector's shared-layout pill — matches the
+// runs-source segmented control in explore/SearchBar so the two read identically.
+const PILL_TRANSITION = { type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1] } as const;
 
 // Monthly price of the Founder's Rate, in USD. Mirrors the Stripe price; the
 // Premium column shows it as the big number above "/ month".
@@ -57,7 +60,6 @@ function PlanCard({
   price,
   cta,
   features,
-  footer,
   highlight,
   index,
 }: {
@@ -69,7 +71,6 @@ function PlanCard({
   price: React.ReactNode;
   cta: React.ReactNode;
   features: Feature[];
-  footer?: React.ReactNode;
   highlight?: boolean;
   index: number;
 }) {
@@ -122,7 +123,10 @@ function PlanCard({
               {f.label}
             </li>
           ) : (
-            <li key={i} className="flex items-start gap-3 text-[0.9375rem] leading-5 text-foreground">
+            <li
+              key={i}
+              className="flex items-start gap-3 text-[0.9375rem] leading-5 text-foreground"
+            >
               <Check
                 className={cn(
                   "mt-0.5 size-4 shrink-0",
@@ -135,10 +139,6 @@ function PlanCard({
           ),
         )}
       </ul>
-
-      {footer && (
-        <div className="mt-auto pt-6 text-xs leading-relaxed text-muted-foreground/80">{footer}</div>
-      )}
     </motion.div>
   );
 }
@@ -147,7 +147,10 @@ function PlanCard({
 function Price({ amount, suffix }: { amount: string; suffix?: string }) {
   return (
     <div className="flex items-end gap-1.5">
-      <span dir="ltr" className="text-[2.75rem] font-semibold leading-none tracking-tight text-foreground tabular-nums">
+      <span
+        dir="ltr"
+        className="text-[2.75rem] font-semibold leading-none tracking-tight text-foreground tabular-nums"
+      >
         {amount}
       </span>
       {suffix && <span className="pb-1 text-sm text-muted-foreground">{suffix}</span>}
@@ -183,7 +186,6 @@ function FreeCard({ premiumActive, index }: { premiumActive: boolean; index: num
         </button>
       }
       features={features}
-      footer={msg("billing.plans.free.note")}
     />
   );
 }
@@ -249,7 +251,11 @@ function PremiumCard({
         disabled={working}
         className={PRIMARY_CTA}
       >
-        {working ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" aria-hidden="true" />}
+        {working ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <Zap className="size-4" aria-hidden="true" />
+        )}
         {msg("billing.founders.cta")}
       </button>
     );
@@ -260,11 +266,6 @@ function PremiumCard({
       </button>
     );
   }
-
-  const note =
-    !premiumActive && open && founders
-      ? formatMsg("billing.founders.deadline", { p1: formatResetDate(founders.closes_at, locale) })
-      : msg("billing.founders.price_note");
 
   return (
     <PlanCard
@@ -278,12 +279,14 @@ function PremiumCard({
         premiumActive ? (
           <Price amount={msg("billing.founders.active_short")} />
         ) : (
-          <Price amount={formatUsdWhole(FOUNDERS_USD_PER_MONTH, locale)} suffix={msg("billing.plans.per_month")} />
+          <Price
+            amount={formatUsdWhole(FOUNDERS_USD_PER_MONTH, locale)}
+            suffix={msg("billing.plans.per_month")}
+          />
         )
       }
       cta={cta}
       features={features}
-      footer={note}
     />
   );
 }
@@ -315,7 +318,7 @@ function CreditsCard({ index }: { index: number }) {
     <div
       role="group"
       aria-label={msg("billing.plans.credits.pack_aria")}
-      className="flex shrink-0 gap-0.5 rounded-full border border-border/50 bg-muted/40 p-0.5"
+      className="relative flex shrink-0 gap-0.5 rounded-full border border-border/50 bg-muted/40 p-0.5"
     >
       {CREDIT_PACKS.map((p) => {
         const active = p.id === pack.id;
@@ -327,13 +330,23 @@ function CreditsCard({ index }: { index: number }) {
             aria-checked={active}
             onClick={() => setPack(p)}
             className={cn(
-              "rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums transition-colors duration-150 cursor-pointer",
-              active
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
+              "relative rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums transition-colors duration-150 cursor-pointer",
+              active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
-            <span dir="ltr">{formatCredits(p.credits, locale)}</span>
+            {/* Shared-layout pill slides between packs instead of the selected
+                background snapping — mirrors the runs-source segmented control. */}
+            {active && (
+              <motion.span
+                layoutId="credit-pack-pill"
+                className="absolute inset-0 rounded-full bg-background shadow-sm"
+                transition={PILL_TRANSITION}
+                aria-hidden="true"
+              />
+            )}
+            <span dir="ltr" className="relative z-10">
+              {formatCredits(p.credits, locale)}
+            </span>
           </button>
         );
       })}
@@ -354,7 +367,10 @@ function CreditsCard({ index }: { index: number }) {
       headline={msg("billing.plans.credits.headline")}
       summary={msg("billing.plans.credits.summary")}
       price={
-        <Price amount={formatUsdWhole(pack.usd, locale)} suffix={msg("billing.plans.price_onetime")} />
+        <Price
+          amount={formatUsdWhole(pack.usd, locale)}
+          suffix={msg("billing.plans.price_onetime")}
+        />
       }
       cta={
         <button type="button" onClick={onBuy} disabled={buying} className={SECONDARY_CTA}>
@@ -363,7 +379,6 @@ function CreditsCard({ index }: { index: number }) {
         </button>
       }
       features={features}
-      footer={msg("billing.upgrade.reassurance")}
     />
   );
 }
@@ -379,7 +394,6 @@ function CreditsCard({ index }: { index: number }) {
  * [FG-3] — is preserved from the prior layout.
  */
 export function UpgradeView() {
-  const { openTo } = useSettingsModal();
   const { beginSync, wallet } = useCredits();
   const [founders, setFounders] = React.useState<FoundersRateResponse | null>(null);
 
@@ -412,7 +426,9 @@ export function UpgradeView() {
         <h1 className="text-[clamp(1.75rem,4vw,2.25rem)] font-semibold tracking-tight text-foreground">
           {msg("billing.plans.heading")}
         </h1>
-        <p className="max-w-[46ch] text-sm text-muted-foreground">{msg("billing.plans.subheading")}</p>
+        <p className="max-w-[46ch] text-sm text-muted-foreground">
+          {msg("billing.plans.subheading")}
+        </p>
       </header>
 
       <div className="grid items-stretch gap-5 md:grid-cols-2 min-[60rem]:grid-cols-3">
@@ -420,21 +436,6 @@ export function UpgradeView() {
         <PremiumCard founders={founders} premiumActive={wallet.premiumActive} index={1} />
         <CreditsCard index={2} />
       </div>
-
-      <footer className="flex flex-col items-center gap-2 border-t border-border/40 pt-6 text-center">
-        <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <KeyRound className="size-4" aria-hidden="true" />
-          {msg("billing.plans.footer.byok_q")}
-        </span>
-        <button
-          type="button"
-          onClick={() => openTo("api")}
-          className="inline-flex items-center gap-1 text-sm font-semibold text-[#3D2E22] underline-offset-4 hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 rounded"
-        >
-          <Sparkles className="size-3.5" aria-hidden="true" />
-          {msg("billing.upgrade.byok_action")}
-        </button>
-      </footer>
     </div>
   );
 }

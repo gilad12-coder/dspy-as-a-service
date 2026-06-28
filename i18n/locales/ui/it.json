@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "Modalità avanzata",
   "settings.account.lite.description": "Disattiva le animazioni e sostituisce le viste pesanti con altre più semplici — per un'esperienza fluida su macchine poco potenti",
   "settings.account.lite.label": "Modalità leggera",
-  "settings.account.logout.action": "Esci",
-  "settings.account.logout.label": "Esci",
   "settings.account.role.admin": "Amministratore",
   "settings.account.role.label": "Ruolo",
   "settings.account.role.user": "Utente",

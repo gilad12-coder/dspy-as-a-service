@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { toast } from "react-toastify";
 import { Inbox, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
@@ -18,11 +19,7 @@ import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
 import { msg } from "@/shared/lib/messages";
 import { tip } from "@/shared/lib/tooltips";
-import {
-  getOptimizationDataset,
-  getTestResults,
-  getPairTestResults,
-} from "@/shared/lib/api";
+import { getOptimizationDataset, getTestResults, getPairTestResults } from "@/shared/lib/api";
 import type {
   OptimizationDatasetResponse,
   OptimizationStatusResponse,
@@ -303,9 +300,7 @@ export function DataTab({
   return (
     <div className="space-y-4 mt-4">
       <FadeIn>
-        <p className="text-sm text-muted-foreground">
-          {msg("optimizations.datatab.description")}
-        </p>
+        <p className="text-sm text-muted-foreground">{msg("optimizations.datatab.description")}</p>
       </FadeIn>
       {/* Test evaluation bar — shows cached results */}
       {split === "test" && (
@@ -322,25 +317,43 @@ export function DataTab({
                   </HelpTip>
                 </div>
               </div>
+              {/* The selection pill is a shared-layout element: framer animates it from
+                  the old button's box to the new one, so it always wraps the active
+                  label exactly. A fixed 50% pill drifted because the two labels differ
+                  in width; this also gives the slide+resize the other segmented
+                  controls use. Label sits above the pill and is centred by the px-3. */}
               <div className="relative inline-flex rounded-lg bg-[#F0EBE4] p-1 gap-1 text-[0.6875rem] shrink-0">
-                <div
-                  className="absolute top-1 bottom-1 rounded-md bg-[#3D2E22] shadow-sm transition-[inset-inline-start] duration-150 ease-out"
-                  style={{
-                    width: "calc(50% - 6px)",
-                    insetInlineStart: programType === "baseline" ? 4 : "calc(50% + 2px)",
-                  }}
-                />
                 <button
                   onClick={() => setProgramType("baseline")}
-                  className={`relative z-10 flex items-center gap-1.5 rounded-md px-3 py-1.5 cursor-pointer transition-colors duration-150 ${programType === "baseline" ? "text-[#FAF8F5] font-semibold" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+                  className={`relative rounded-md px-3 py-1.5 cursor-pointer transition-colors duration-150 ${programType === "baseline" ? "text-[#FAF8F5] font-semibold" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
                 >
-                  {msg("auto.features.optimizations.components.datatab.2")}
+                  {programType === "baseline" && (
+                    <motion.span
+                      layoutId="datatab-program-pill"
+                      className="absolute inset-0 rounded-md bg-[#3D2E22] shadow-sm"
+                      transition={{ type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="relative z-10 whitespace-nowrap">
+                    {msg("auto.features.optimizations.components.datatab.2")}
+                  </span>
                 </button>
                 <button
                   onClick={() => setProgramType("optimized")}
-                  className={`relative z-10 flex items-center gap-1.5 rounded-md px-3 py-1.5 cursor-pointer transition-colors duration-150 ${programType === "optimized" ? "text-[#FAF8F5] font-semibold" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+                  className={`relative rounded-md px-3 py-1.5 cursor-pointer transition-colors duration-150 ${programType === "optimized" ? "text-[#FAF8F5] font-semibold" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
                 >
-                  {msg("auto.features.optimizations.components.datatab.3")}
+                  {programType === "optimized" && (
+                    <motion.span
+                      layoutId="datatab-program-pill"
+                      className="absolute inset-0 rounded-md bg-[#3D2E22] shadow-sm"
+                      transition={{ type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="relative z-10 whitespace-nowrap">
+                    {msg("auto.features.optimizations.components.datatab.3")}
+                  </span>
                 </button>
               </div>
               {testResultsLoading && (

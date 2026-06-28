@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "Gelişmiş mod",
   "settings.account.lite.description": "Animasyonları devre dışı bırakır ve ağır görünümleri daha basit olanlarla değiştirir — düşük donanımlı makinelerde akıcı bir deneyim için",
   "settings.account.lite.label": "Hafif mod",
-  "settings.account.logout.action": "Oturumu kapat",
-  "settings.account.logout.label": "Oturumu kapat",
   "settings.account.role.admin": "Yönetici",
   "settings.account.role.label": "Rol",
   "settings.account.role.user": "Kullanıcı",

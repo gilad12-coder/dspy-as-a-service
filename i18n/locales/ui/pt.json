@@ -1968,8 +1968,6 @@
   "settings.account.advanced.label": "Modo avançado",
   "settings.account.lite.description": "Desativa as animações e troca as vistas pesadas por outras mais simples — para uma experiência fluida em máquinas de baixo desempenho",
   "settings.account.lite.label": "Modo leve",
-  "settings.account.logout.action": "Terminar sessão",
-  "settings.account.logout.label": "Terminar sessão",
   "settings.account.role.admin": "Administrador",
   "settings.account.role.label": "Função",
   "settings.account.role.user": "Utilizador",
