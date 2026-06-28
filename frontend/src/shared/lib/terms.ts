@@ -27,24 +27,25 @@
  * 4. Grep for hardcoded variants and migrate or document any deliberate
  *    exceptions in the same change.
  */
-import { TERMS as TERMS_HE, TERMS_EN } from "./generated/i18n-catalog";
-import { fallbackChain, type Locale } from "./locale";
+import { TERMS as TERMS_HE, TERMS_BY_LOCALE } from "./generated/i18n-catalog";
+import { fallbackChain } from "./locale";
 import { getActiveLocale } from "./runtime-locale";
 
 export type { TermKey } from "./generated/i18n-catalog";
 
-// Glossary overlays beyond the Hebrew base (the Proxy target). Only English
-// exists today; a new locale's overlay slots in here and is preferred over
-// English/Hebrew via the registry fallback chain.
-const TERM_OVERLAYS: Partial<Record<Locale, Record<string, string>>> = {
-  en: TERMS_EN as Record<string, string>,
-};
+// Glossary overlays by locale, generated from i18n/locales/*.json. Each locale's
+// full term catalog layers over the Hebrew base (the Proxy target); a read walks
+// the active locale's fallback chain and takes the first overlay that defines the
+// term. New locales appear here automatically via codegen — nothing to wire by
+// hand. (`he` is present too and equals the base, harmlessly.) This is the same
+// registry i18n.ts resolves `{term.x}` placeholders against.
+const TERM_OVERLAYS: Record<string, Record<string, string>> = TERMS_BY_LOCALE;
 
 /**
  * Locale-aware view over the generated glossary.
  *
- * The generated `TERMS_HE` map is the Hebrew base (the Proxy target); other
- * locales layer in via `TERM_OVERLAYS` (English today). Reading any property
+ * The generated `TERMS_HE` map is the Hebrew base (the Proxy target); every
+ * other locale layers in via `TERM_OVERLAYS`. Reading any property
  * resolves against the active locale's fallback chain AT ACCESS TIME — the first
  * overlay that defines the term wins, otherwise the Hebrew base. This is what
  * makes plain `TERMS.optimizationPlural` render the right language in any locale
