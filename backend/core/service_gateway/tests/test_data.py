@@ -210,7 +210,9 @@ class PredictDecade(dspy.Signature):
     assert not any(
         isinstance(f.annotation, typing.ForwardRef) for f in sig.model_fields.values()
     )
-    assert sig.model_fields["subcategories"].annotation == typing.List[str]
+    # The loader must preserve the user's typing.List form verbatim; list[str]
+    # is a distinct object that compares unequal, so UP006 must not rewrite this.
+    assert sig.model_fields["subcategories"].annotation == typing.List[str]  # noqa: UP006
     sig.with_instructions("rebuilt")  # GEPA rebuild path must not raise
 
 

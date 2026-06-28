@@ -261,7 +261,7 @@ def _schema_from_run_payload(payload: dict[str, Any], rows: list[dict[str, Any]]
         A ``{column_order, column_roles, column_kinds}`` schema dict.
     """
     raw_mapping = payload.get("column_mapping") or {}
-    column_roles: dict[str, str] = {col: "input" for col in _mapping_columns(raw_mapping.get("inputs"))}
+    column_roles: dict[str, str] = dict.fromkeys(_mapping_columns(raw_mapping.get("inputs")), "input")
     for col in _mapping_columns(raw_mapping.get("outputs")):
         column_roles[col] = "output"
     order = payload.get("column_order")
@@ -271,7 +271,7 @@ def _schema_from_run_payload(payload: dict[str, Any], rows: list[dict[str, Any]]
     return {
         "column_order": column_order,
         "column_roles": column_roles,
-        "column_kinds": {col: "text" for col in column_order},
+        "column_kinds": dict.fromkeys(column_order, "text"),
     }
 
 

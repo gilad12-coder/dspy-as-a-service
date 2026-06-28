@@ -145,7 +145,7 @@ def _completion_content(body: dict[str, Any], prompt_hash: int) -> str:
     value = _stable_text(prompt_hash)
     json_fields = _schema_field_names(body)
     if json_fields:
-        return json.dumps({name: value for name in json_fields})
+        return json.dumps(dict.fromkeys(json_fields, value))
     messages = body.get("messages") or []
     prompt_text = "\n".join(
         m.get("content", "") if isinstance(m.get("content"), str) else "" for m in messages
@@ -157,7 +157,7 @@ def _completion_content(body: dict[str, Any], prompt_hash: int) -> str:
         parts.append("[[ ## completed ## ]]")
         return "\n\n".join(parts)
     if field_names:
-        return json.dumps({name: value for name in field_names})
+        return json.dumps(dict.fromkeys(field_names, value))
     return value
 
 

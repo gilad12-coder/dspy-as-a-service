@@ -178,7 +178,7 @@ async def _sample_sse(
             async for raw_line in response.aiter_lines():
                 if ttfb == 0.0:
                     ttfb = time.monotonic() - t0
-                if raw_line.startswith("data:") or raw_line.startswith("event:"):
+                if raw_line.startswith(("data:", "event:")):
                     events += 1
                 if time.monotonic() >= deadline:
                     break

@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -77,7 +78,7 @@ def _kill_replica(config: FailureInjectionConfig) -> bool:
         container could be resolved (still useful so the scenario logs
         clearly instead of crashing).
     """
-    ps = subprocess.run(  # noqa: S603 — controlled args
+    ps = subprocess.run(
         _docker_compose_cmd(config, "ps", "-q", config.target_replica.split("-")[0]),
         check=False,
         capture_output=True,
@@ -91,13 +92,10 @@ def _kill_replica(config: FailureInjectionConfig) -> bool:
     parts = config.target_replica.split("-")
     if len(parts) == 2 and parts[1].isdigit():
         idx = int(parts[1]) - 1
-        if 0 <= idx < len(ids):
-            target_id = ids[idx]
-        else:
-            target_id = ids[0]
+        target_id = ids[idx] if 0 <= idx < len(ids) else ids[0]
     else:
         target_id = ids[0]
-    subprocess.run(  # noqa: S603 — controlled args
+    subprocess.run(
         ["docker", "kill", "--signal=KILL", target_id],
         check=False,
         capture_output=True,
@@ -117,7 +115,7 @@ def _restart_replica(config: FailureInjectionConfig) -> None:
         config: Scenario knobs carrying compose identifiers.
     """
     service = config.target_replica.split("-")[0]
-    subprocess.run(  # noqa: S603 — controlled args
+    subprocess.run(
         _docker_compose_cmd(config, "up", "-d", "--no-deps", service),
         check=False,
         capture_output=True,
@@ -351,7 +349,7 @@ def default_config(api_base_url: str, mock_lm_url: str) -> FailureInjectionConfi
         num_jobs=12,
         compose_file=os.environ.get(
             "LOAD_TEST_COMPOSE_FILE",
-            os.path.join(os.path.dirname(__file__), "..", "docker-compose.loadtest.yml"),
+            str(Path(__file__).parent / ".." / "docker-compose.loadtest.yml"),
         ),
         compose_project=os.environ.get("LOAD_TEST_COMPOSE_PROJECT", "skynet-loadtest"),
         target_replica=os.environ.get("LOAD_TEST_TARGET_REPLICA", "api-2"),

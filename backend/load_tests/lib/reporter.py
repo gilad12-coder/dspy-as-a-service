@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from .metrics import ScenarioResult
 
@@ -75,13 +75,13 @@ def write_markdown_report(results: Iterable[ScenarioResult], out_path: Path) -> 
     rows: list[str] = []
     rows.append("| Scenario | Reqs | Errors | RPS | p50 | p95 | p99 | Max |")
     rows.append("|---|---:|---:|---:|---:|---:|---:|---:|")
-    for r in results:
-        rows.append(
-            f"| {r.name} | {r.total} | {r.errors} | "
-            f"{r.rps:.1f} | {r.latency_p50_ms:.0f}ms | "
-            f"{r.latency_p95_ms:.0f}ms | {r.latency_p99_ms:.0f}ms | "
-            f"{r.latency_max_ms:.0f}ms |"
-        )
+    rows.extend(
+        f"| {r.name} | {r.total} | {r.errors} | "
+        f"{r.rps:.1f} | {r.latency_p50_ms:.0f}ms | "
+        f"{r.latency_p95_ms:.0f}ms | {r.latency_p99_ms:.0f}ms | "
+        f"{r.latency_max_ms:.0f}ms |"
+        for r in results
+    )
     body = "# Skynet Load Test Report\n\n"
     body += f"Generated: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n\n"
     body += "\n".join(rows) + "\n\n"

@@ -99,7 +99,7 @@ _EMPTY_JOB_EMBEDDINGS_REL = (
     "WHERE FALSE)"
 )
 
-_EMBEDDINGS_TABLE_PRESENT: "weakref.WeakKeyDictionary[Any, bool]" = weakref.WeakKeyDictionary()
+_EMBEDDINGS_TABLE_PRESENT: weakref.WeakKeyDictionary[Any, bool] = weakref.WeakKeyDictionary()
 
 
 def _job_embeddings_table_present(job_store: Any) -> bool:

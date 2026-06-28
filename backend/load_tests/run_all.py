@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-import socket
 import subprocess
 import sys
 import time
@@ -131,7 +130,7 @@ def _run(argv: list[str], *, check: bool = True) -> subprocess.CompletedProcess[
     Returns:
         The completed :class:`subprocess.CompletedProcess`.
     """
-    return subprocess.run(  # noqa: S603 — controlled args
+    return subprocess.run(
         argv,
         check=check,
         text=True,
@@ -169,7 +168,7 @@ def _wait_for_http(url: str, *, timeout_seconds: float = 240.0) -> None:
                 if 200 <= response.status < 300:
                     return
                 last_error = f"status={response.status}"
-        except (urllib.error.URLError, socket.timeout, ConnectionError, OSError) as exc:
+        except (TimeoutError, urllib.error.URLError, ConnectionError, OSError) as exc:
             last_error = repr(exc)
         time.sleep(2.0)
     raise TimeoutError(f"timed out waiting for {url}: {last_error}")
