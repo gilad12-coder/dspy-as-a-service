@@ -285,6 +285,40 @@ function parseErrorMessage(text: string): string | undefined {
   return parseError(text).message;
 }
 
+/**
+ * Fire-and-forget sender for the telemetry SDK. Best-effort by contract: it
+ * never throws, never blocks, and never surfaces an error — telemetry must not
+ * affect the product. `keepalive` lets a flush survive the page navigation that
+ * often triggers it. The bearer token is attached when present so events are
+ * attributed to the signed-in user; an anonymous batch (no token) is still
+ * accepted by the public ingest route. Falls back to a headerless `sendBeacon`
+ * if a `keepalive` fetch can't be issued (e.g. payload over the ~64KB cap).
+ */
+export function postTelemetry(body: unknown): void {
+  if (typeof window === "undefined") return;
+  const url = `${apiBase()}/telemetry/events`;
+  const payload = JSON.stringify(body);
+  try {
+    void fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(_authToken ? { Authorization: `Bearer ${_authToken}` } : {}),
+      },
+      body: payload,
+      keepalive: true,
+    }).catch(() => {
+      /* lossy by design — swallow network failures */
+    });
+  } catch {
+    try {
+      navigator.sendBeacon?.(url, new Blob([payload], { type: "application/json" }));
+    } catch {
+      /* give up: telemetry never raises to the caller */
+    }
+  }
+}
+
 export function submitRun(payload: RunRequest) {
   return request<OptimizationSubmissionResponse>("/run", {
     method: "POST",

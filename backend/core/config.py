@@ -115,6 +115,16 @@ class Settings(BaseSettings):
         ),
         alias="EVENT_LOOP_LAG_MONITOR",
     )
+    telemetry_enabled: bool = Field(
+        default=True,
+        description=(
+            "Accept first-party product-telemetry events at POST /telemetry/events. "
+            "When off, ingestion is a silent no-op (events are dropped, never "
+            "stored) — an ops kill switch for incident response or write-volume "
+            "control. The read endpoints are unaffected."
+        ),
+        alias="TELEMETRY_ENABLED",
+    )
     event_loop_lag_threshold_ms: float = Field(
         default=100.0,
         ge=10.0,

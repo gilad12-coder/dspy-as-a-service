@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/shared/ui/primitives/tooltip";
 import {
   LocaleProvider,
   SessionProvider,
+  TelemetryProvider,
   ThemeProvider,
   ToastContainer,
 } from "@/shared/providers";
@@ -221,6 +222,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </LiteModeProvider>
             </UserPrefsProvider>
           </SessionProvider>
+          <TelemetryProvider />
           <StorageQuotaModalHost />
           <ToastContainer />
         </LocaleProvider>

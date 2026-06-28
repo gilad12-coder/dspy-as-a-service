@@ -21,6 +21,7 @@ import { LanguageSwitcher } from "@/shared/ui/language-switcher";
 import { msg } from "@/shared/lib/messages";
 import { tI18n } from "@/shared/lib/i18n";
 import { cn } from "@/shared/lib/utils";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import { LoginHalo } from "./LoginHalo";
 
 const ENTER_EASE = [0.16, 1, 0.3, 1] as const;
@@ -148,6 +149,7 @@ export function LoginView() {
     setLoading(true);
     try {
       if (authMode === "signup") {
+        track(TelemetryEvent.SignupStarted);
         const res = await fetch("/api/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -161,6 +163,7 @@ export function LoginView() {
         });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as { error?: string };
+          track(TelemetryEvent.LoginFailed, { method: "signup" });
           setError(describeRegisterError(data.error ?? "auth.login.register_failed"));
           setLoading(false);
           return;
@@ -174,9 +177,21 @@ export function LoginView() {
         redirect: false,
       });
       if (result?.error) {
+        track(TelemetryEvent.LoginFailed, {
+          method: authMode === "signup" ? "signup" : "credentials",
+        });
         setError(msg("auth.login.invalid_credentials"));
         setLoading(false);
         return;
+      }
+      if (authMode === "signup") {
+        track(TelemetryEvent.SignupSucceeded, {
+          use_case: useCase,
+          experience_level: experience,
+          job_role: jobRole,
+        });
+      } else {
+        track(TelemetryEvent.LoginSucceeded, { method: "credentials" });
       }
       // Soft-nav so we don't hard-reload and double-fetch the dashboard. Honor
       // the post-login target so a recipient bounced here from a /share/<token>

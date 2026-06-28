@@ -112,6 +112,65 @@ class SearchQueryLogModel(Base):
     )
 
 
+class TelemetryEventModel(Base):
+    """Append-only product-telemetry event — how the app is actually used.
+
+    One row per captured interaction (a page view, a labelled click, a named
+    flow event). The pipeline is first-party: the browser SDK batches events to
+    ``POST /telemetry/events`` and they land here, queryable beside the rest of
+    the product data — no third-party analytics service ever sees a user.
+
+    Identity is split deliberately. ``username`` is the *server-trusted* caller
+    derived from the request's auth token (never from the request body), so it
+    is set only when the batch was sent authenticated; the client can't forge
+    another user's identity onto an event. ``anonymous_id`` is an opaque,
+    per-browser id the SDK generates (no email, no name), letting pre-login and
+    logged-out activity be funnel-counted without profiling a person.
+    ``session_id`` scopes a single browsing session. No IP address is stored,
+    and ``properties`` is contractually PII-free (the SDK only emits structural
+    descriptors), so aggregates can be computed without holding personal data.
+
+    ``occurred_at`` is the client-reported event time (best-effort, clock-skewed);
+    ``received_at`` is the authoritative server insert time the read endpoints
+    order and bucket on.
+    """
+
+    __tablename__ = "telemetry_events"
+
+    # BigInteger on Postgres (BIGSERIAL); INTEGER on SQLite so its rowid
+    # autoincrement kicks in for the create_all-based test stores.
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    event_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        index=True,
+    )
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    anonymous_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    locale: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    app_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    properties: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, default=dict)
+    context: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, default=dict)
+
+    # Top-events-over-time and per-user activity are the two read shapes; each
+    # filters on its leading column and orders by recency, so a composite beats
+    # two standalone indexes. The bare received_at index above still serves the
+    # global time-series (all events, no name/user filter).
+    __table_args__ = (
+        Index("ix_telemetry_events_name_received", "event_name", "received_at"),
+        Index("ix_telemetry_events_user_received", "username", "received_at"),
+    )
+
+
 class OptimizationShareLinkModel(Base):
     """Per-optimization sharing config keyed by a public link token.
 

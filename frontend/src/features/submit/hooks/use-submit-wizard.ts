@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 
 import {
   submitRun,
@@ -1526,6 +1527,10 @@ export function useSubmitWizard() {
           ...(isReact ? buildReactFields() : {}),
         };
         result = await submitRun(runPayload);
+        track(TelemetryEvent.RunSubmitted, {
+          react: isReact,
+          has_reflection: Boolean(secondApplied),
+        });
       } else {
         const validGen = generationModels.filter((m) => m.name.trim()).map(applyGlobals);
         const validRef = reflectionModels.filter((m) => m.name.trim()).map(applyGlobals);
@@ -1559,6 +1564,12 @@ export function useSubmitWizard() {
           reflection_models: useAllReflectionModels ? [] : validRef,
           ...(useAllGenerationModels && { use_all_available_generation_models: true }),
           ...(useAllReflectionModels && { use_all_available_reflection_models: true }),
+        });
+        track(TelemetryEvent.GridSearchSubmitted, {
+          generation_models: validGen.length,
+          reflection_models: validRef.length,
+          use_all_generation: useAllGenerationModels,
+          use_all_reflection: useAllReflectionModels,
         });
       }
 
