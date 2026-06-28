@@ -198,25 +198,24 @@ export function LoginView() {
   // Sign-up additionally requires the two profile fields that drive product
   // behavior (use-case + experience); role is optional.
   const canSubmit =
-    !loading &&
-    credentialsFilled &&
-    (authMode === "signin" || (!!useCase && !!experience));
+    !loading && credentialsFilled && (authMode === "signin" || (!!useCase && !!experience));
 
   return (
     <div className="relative flex min-h-dvh w-full items-center justify-center px-4 py-10">
       <LanguageSwitcher className="absolute end-4 top-4 z-20 bg-background/70 backdrop-blur-sm" />
       <LoginHalo />
       {/* Clear the full-height centre column so the wordmark and the (taller)
-          sign-up form never collide with a halo chip, while the cards still fan
-          in softly along the left/right wings. A centered radial can't keep both
-          the top logo and a long form clean at once, so this is a vertical band:
-          opaque across the column, fading out toward the sides. */}
+          sign-up form never collide with a halo chip. A centered radial can't
+          keep both the top logo and a long form clean at once, so this is a
+          vertical band: opaque only across the form's column (30–70%), going
+          fully clear by ~24%/76% so the wing chips that hug the form on either
+          side read crisply instead of dissolving into the mask. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 z-[1]"
         style={{
           background:
-            "linear-gradient(90deg, rgba(250,248,245,0) 0%, rgba(250,248,245,0.85) 16%, rgba(250,248,245,1) 30%, rgba(250,248,245,1) 70%, rgba(250,248,245,0.85) 84%, rgba(250,248,245,0) 100%)",
+            "linear-gradient(90deg, rgba(250,248,245,0) 0%, rgba(250,248,245,0) 24%, rgba(250,248,245,1) 30%, rgba(250,248,245,1) 70%, rgba(250,248,245,0) 76%, rgba(250,248,245,0) 100%)",
         }}
       />
 
