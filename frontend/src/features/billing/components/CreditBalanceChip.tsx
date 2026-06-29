@@ -169,7 +169,7 @@ export function CreditBalanceChip({ className }: { className?: string }) {
                 setOpen(false);
                 openTo("billing");
               }}
-              className="rounded-lg border border-border/70 px-3 py-1.5 text-xs font-medium text-foreground transition-colors duration-200 cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+              className="inline-flex flex-1 items-center justify-center rounded-lg border border-border/70 px-3 py-1.5 text-xs font-medium text-foreground transition-colors duration-200 cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
             >
               {msg("billing.action.view_wallet")}
             </button>
