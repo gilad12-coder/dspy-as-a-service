@@ -21,6 +21,7 @@ import {
   Lock,
   type LucideIcon,
   Pencil,
+  Plug,
   Plus,
   RotateCcw,
   Server,
@@ -53,7 +54,6 @@ import { Switch } from "@/shared/ui/primitives/switch";
 import { Button } from "@/shared/ui/primitives/button";
 import { WalletTab, ByokKeysSection } from "@/features/billing";
 import { Input } from "@/shared/ui/primitives/input";
-import { Separator } from "@/shared/ui/primitives/separator";
 import { NumberInput } from "@/shared/ui/number-input";
 import {
   Table,
@@ -1020,10 +1020,6 @@ function ApiTab() {
 
   return (
     <div className="space-y-4">
-      <ByokKeysSection />
-
-      <Separator />
-
       {loadError && (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           {loadError}
@@ -1169,6 +1165,7 @@ const SETTINGS_TAB_ORDER = [
   "account",
   "privacy",
   "billing",
+  "providers",
   "api",
   "about",
 ] as const;
@@ -1185,6 +1182,7 @@ const SETTINGS_TAB_META: Record<
   account: { icon: User, labelKey: "settings.tab.account" },
   privacy: { icon: Lock, labelKey: "settings.tab.privacy" },
   billing: { icon: CreditCard, labelKey: "settings.tab.billing" },
+  providers: { icon: Plug, labelKey: "settings.tab.providers" },
   api: { icon: KeyRound, labelKey: "settings.tab.api" },
   about: { icon: Info, labelKey: "settings.tab.about" },
 };
@@ -1315,6 +1313,9 @@ export function SettingsModal() {
               </TabsContent>
               <TabsContent value="billing">
                 <WalletTab />
+              </TabsContent>
+              <TabsContent value="providers">
+                <ByokKeysSection />
               </TabsContent>
               <TabsContent value="api">
                 <ApiTab />

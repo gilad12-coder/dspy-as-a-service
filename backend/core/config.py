@@ -106,6 +106,16 @@ class Settings(BaseSettings):
         alias="BYOK_VAULT_KEY",
         description="Fernet key (urlsafe base64, 32 bytes) that encrypts stored BYOK provider secrets at rest. Unset disables saving keys (the vault degrades to read-only); reads of already-stored masked metadata still work.",
     )
+    litellm_proxy_url: str | None = Field(
+        default=None,
+        alias="LITELLM_PROXY_URL",
+        description="Base URL of the self-hosted LiteLLM proxy that fronts managed inference (e.g. https://proxy.internal/v1). Unset (the default) routes managed runs directly to providers via process env keys; set it to flow all managed traffic through the metered gateway. BYOK runs always bypass the proxy and reach their provider directly.",
+    )
+    litellm_proxy_api_key: SecretStr | None = Field(
+        default=None,
+        alias="LITELLM_PROXY_API_KEY",
+        description="Virtual key the backend presents to the LiteLLM proxy for managed runs. Only consulted when LITELLM_PROXY_URL is set.",
+    )
     # PLACEHOLDER close date — the one open input for the Founder's Rate. Set
     # FOUNDERS_RATE_CLOSES_AT to the real deadline (ISO-8601, e.g.
     # 2026-07-31T23:59:59Z); after it passes the offer becomes unavailable. The

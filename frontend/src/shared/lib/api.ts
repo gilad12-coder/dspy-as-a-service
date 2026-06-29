@@ -521,12 +521,22 @@ export function openBillingPortal() {
   return request<{ url: string }>("/billing/portal", { method: "POST" });
 }
 
-/** One stored BYOK provider key as the backend reports it — masked, never the secret. */
+/** One stored BYOK provider connection as the backend reports it — masked, never the secret. */
 export interface ProviderKeyResponse {
+  id: string;
   provider: string;
+  label?: string | null;
   last4: string;
+  api_base?: string | null;
   status: "verified" | "unverified" | "invalid";
   added_at: string;
+}
+
+/** Optional connection metadata sent alongside a saved key. */
+export interface SaveProviderKeyOptions {
+  label?: string | null;
+  apiBase?: string | null;
+  params?: Record<string, unknown>;
 }
 
 /** The caller's stored BYOK provider keys, masked. */
@@ -540,14 +550,21 @@ export function getProviderKeys() {
 }
 
 /**
- * Save (or rotate) a BYOK provider key. The secret is encrypted at rest on the
- * backend and verified on entry; the response carries only the masked tail and
- * the entry-time verify verdict — the plaintext is never echoed back.
+ * Save (or rotate) a BYOK provider connection. The secret is encrypted at rest
+ * on the backend and verified on entry — against `apiBase` when given, so a
+ * custom endpoint is checked too. The response carries only the masked tail and
+ * the entry-time verify verdict; the plaintext is never echoed back.
  */
-export function saveProviderKey(provider: string, secret: string) {
+export function saveProviderKey(provider: string, secret: string, opts?: SaveProviderKeyOptions) {
   return request<ProviderKeyResponse>("/billing/byok/keys", {
     method: "PUT",
-    body: JSON.stringify({ provider, secret }),
+    body: JSON.stringify({
+      provider,
+      secret,
+      label: opts?.label ?? null,
+      api_base: opts?.apiBase ?? null,
+      params: opts?.params ?? {},
+    }),
   });
 }
 

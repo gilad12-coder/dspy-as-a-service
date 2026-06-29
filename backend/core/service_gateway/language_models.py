@@ -96,6 +96,33 @@ def apply_model_reasoning_config(config: ModelConfig) -> ModelConfig:
     )
 
 
+def _apply_managed_gateway(lm_kwargs: dict[str, object]) -> None:
+    """Route a managed call through the self-hosted LiteLLM proxy when configured.
+
+    A BYOK call already carries the user's ``api_key`` (stamped onto the
+    ModelConfig by the run-path bridge); a managed call does not — so the
+    presence of ``api_key`` distinguishes the two here without threading the
+    token source down to the LM factory. When a proxy URL is configured and the
+    call is managed (no ``api_key``) and not already pinned to a specific
+    endpoint (no ``base_url``), point it at the proxy and authenticate with the
+    managed virtual key, so all platform inference flows through one metered
+    seam. A no-op when no proxy is configured, leaving the default
+    dspy → provider path unchanged; BYOK and endpoint-pinned calls are never
+    rerouted.
+
+    Args:
+        lm_kwargs: The ``dspy.LM`` kwargs assembled so far, mutated in place.
+    """
+    if "api_key" in lm_kwargs or "base_url" in lm_kwargs:
+        return
+    proxy_url = settings.litellm_proxy_url
+    if not proxy_url:
+        return
+    lm_kwargs["base_url"] = proxy_url
+    if settings.litellm_proxy_api_key is not None:
+        lm_kwargs["api_key"] = settings.litellm_proxy_api_key.get_secret_value()
+
+
 def build_language_model(config: ModelConfig, *, disable_cache: bool = False) -> dspy.LM:
     """Construct a DSPy language model from a ModelConfig.
 
@@ -145,6 +172,7 @@ def build_language_model(config: ModelConfig, *, disable_cache: bool = False) ->
     if config.top_p is not None:
         lm_kwargs["top_p"] = config.top_p
     lm_kwargs.update(config.extra)
+    _apply_managed_gateway(lm_kwargs)
     if disable_cache:
         lm_kwargs["cache"] = False
     try:

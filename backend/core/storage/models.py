@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -110,8 +111,8 @@ class BillingCustomerModel(Base):
         server_default="0",
     )
     # The free grant is a rolling, non-cumulative per-user window: ``grant_remaining``
-    # is what is left of the current 200-credit allowance, and ``grant_reset_at`` is
-    # when it tops back up to a flat 200 (leftover expires — no banking). Both are
+    # is what is left of the current 500-credit allowance, and ``grant_reset_at`` is
+    # when it tops back up to a flat 500 (leftover expires — no banking). Both are
     # NULL until the first wallet read or run seeds them, at which point a full grant
     # and a +30d anchor are written; the reset is lazy-evaluated on read, never cron'd.
     grant_remaining: Mapped[int | None] = mapped_column(
@@ -209,23 +210,31 @@ class GuaranteeRunModel(Base):
 
 
 class BillingProviderKeyModel(Base):
-    """One account's bring-your-own-key secret for a single provider, encrypted at rest.
+    """One stored BYOK provider connection for an account, encrypted at rest.
 
     Backs BYOK mode: when an account runs in ``byok`` token source, jobs bill the
     user's own provider key instead of Skynet credits. The secret is never stored
     in plaintext — only ``secret_ciphertext`` (the Fernet-encrypted bytes) is
     persisted, so a database dump never leaks a usable key. ``last4`` is the
     recognizable tail kept for masked display, and ``status`` records whether the
-    key was checked against its provider (``unverified`` / ``verified`` /
+    connection was checked against its provider (``unverified`` / ``verified`` /
     ``invalid``) so the UI can tell a typo'd key from a working one before a job
-    ever runs. The pair ``(username, provider)`` is the primary key, so saving a
-    key for a provider replaces the account's previous one for it (rotation).
+    ever runs. ``api_base`` and ``params`` carry an optional custom endpoint and
+    extra LiteLLM kwargs so a connection can target any OpenAI-compatible host,
+    and ``label`` is an optional user-facing name. The surrogate ``id`` is the
+    primary key, so an account may hold several connections for one provider
+    (e.g. two OpenAI-compatible endpoints); ``(username, provider)`` is indexed
+    for the run-path and settings lookups.
     """
 
     __tablename__ = "billing_provider_keys"
 
-    username: Mapped[str] = mapped_column(String(255), primary_key=True)
-    provider: Mapped[str] = mapped_column(String(32), primary_key=True)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    api_base: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, nullable=False, default=dict)
     secret_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     last4: Mapped[str] = mapped_column(String(8), nullable=False)
     status: Mapped[str] = mapped_column(
@@ -236,6 +245,10 @@ class BillingProviderKeyModel(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("ix_billing_provider_keys_username_provider", "username", "provider"),
     )
 
 

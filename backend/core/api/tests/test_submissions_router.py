@@ -30,7 +30,7 @@ from ...constants import (
 from ...i18n_keys import I18nKey
 from ...registry import RegistryError
 from ...service_gateway import ServiceError
-from ...storage.models import Base, BillingCustomerModel
+from ...storage.models import Base, BillingCustomerModel, BillingProviderKeyModel
 from ...storage.usage import StorageUsage
 from ..model_catalog import CatalogModel, ModelCatalogResponse
 from ..routers import submissions as _sub_mod
@@ -1072,6 +1072,18 @@ def test_submit_run_managed_frontier_model_blocked_without_balance(
 def test_submit_run_byok_frontier_model_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
     """A BYOK run on a frontier model is never locked (own key), and persists the mode."""
     engine = _billing_engine()
+    with Session(engine) as session:
+        # BYOK runs now require a saved connection for the model's provider.
+        session.add(
+            BillingProviderKeyModel(
+                username="alice",
+                provider="openai",
+                secret_ciphertext=b"ciphertext",
+                last4="4o20",
+                status="verified",
+            )
+        )
+        session.commit()
     store = _FakeJobStore()
     store.engine = engine
     client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
@@ -1082,6 +1094,21 @@ def test_submit_run_byok_frontier_model_allowed(monkeypatch: pytest.MonkeyPatch)
     assert resp.status_code == 201
     overview = store._jobs[store.created_ids()[0]]["overview"]
     assert overview["token_source"] == "byok"
+
+
+def test_submit_run_byok_without_connection_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A BYOK run is refused at submit when the account saved no key for the provider."""
+    engine = _billing_engine()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    payload = {**_run_payload(), "model_settings": {"name": "openai/gpt-4o"}, "token_source": "byok"}
+    resp = client.post("/run", json=payload)
+
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "billing.byok_missing_connection"
+    assert store.created_ids() == []
 
 
 def test_submit_run_managed_frontier_allowed_with_paid_balance(

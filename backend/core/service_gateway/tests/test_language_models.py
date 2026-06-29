@@ -6,11 +6,13 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import SecretStr
 
 from core.config import settings
 from core.exceptions import ServiceError
 from core.models import ModelConfig
 from core.service_gateway.language_models import (
+    _apply_managed_gateway,
     apply_model_reasoning_config,
     build_language_model,
     total_tokens_from_history,
@@ -273,3 +275,41 @@ def test_apply_reasoning_config_non_reasoning_model_is_floored_plain() -> None:
     assert out.max_tokens == 4000
     assert out.temperature is None
     assert out.extra == {}
+
+
+def test_managed_gateway_routes_managed_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A managed call (no api_key / base_url) routes through the configured proxy."""
+    monkeypatch.setattr(settings, "litellm_proxy_url", "https://proxy.internal/v1")
+    monkeypatch.setattr(settings, "litellm_proxy_api_key", SecretStr("sk-proxy"))
+    kwargs: dict[str, object] = {"model": "openai/gpt-4o"}
+    _apply_managed_gateway(kwargs)
+    assert kwargs["base_url"] == "https://proxy.internal/v1"
+    assert kwargs["api_key"] == "sk-proxy"
+
+
+def test_managed_gateway_skips_byok_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A BYOK call (api_key already stamped on) bypasses the proxy, key untouched."""
+    monkeypatch.setattr(settings, "litellm_proxy_url", "https://proxy.internal/v1")
+    monkeypatch.setattr(settings, "litellm_proxy_api_key", SecretStr("sk-proxy"))
+    kwargs: dict[str, object] = {"model": "openai/gpt-4o", "api_key": "sk-user"}
+    _apply_managed_gateway(kwargs)
+    assert kwargs["api_key"] == "sk-user"
+    assert "base_url" not in kwargs
+
+
+def test_managed_gateway_skips_endpoint_pinned_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A call already pinned to a base_url is left on that endpoint, not rerouted."""
+    monkeypatch.setattr(settings, "litellm_proxy_url", "https://proxy.internal/v1")
+    kwargs: dict[str, object] = {"model": "x", "base_url": "https://custom/v1"}
+    _apply_managed_gateway(kwargs)
+    assert kwargs["base_url"] == "https://custom/v1"
+    assert "api_key" not in kwargs
+
+
+def test_managed_gateway_noop_without_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no proxy configured, the default dspy → provider path is unchanged."""
+    monkeypatch.setattr(settings, "litellm_proxy_url", None)
+    kwargs: dict[str, object] = {"model": "openai/gpt-4o"}
+    _apply_managed_gateway(kwargs)
+    assert "base_url" not in kwargs
+    assert "api_key" not in kwargs

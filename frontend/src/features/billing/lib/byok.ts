@@ -22,12 +22,18 @@ export interface ByokProviderInfo {
   placeholder: string;
 }
 
-/** A saved provider key as the UI sees it — never the secret, only its tail + state. */
+/** A saved provider connection as the UI sees it — never the secret, only its tail + state. */
 export interface ProviderKey {
+  /** Stable handle for the connection. */
+  id: string;
   /** Matches a `ByokProviderInfo.slug`. */
   provider: string;
+  /** Optional user-facing name for the connection. */
+  label?: string | null;
   /** Last 4 characters of the secret, for recognition without revealing it. */
   last4: string;
+  /** Optional custom endpoint the connection targets. */
+  apiBase?: string | null;
   status: KeyStatus;
   /** ISO-8601 instant the key was saved. */
   addedAt: string;

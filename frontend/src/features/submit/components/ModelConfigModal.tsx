@@ -236,7 +236,7 @@ export function ModelConfigModal({
                   type="button"
                   onClick={() => {
                     onOpenChange(false);
-                    openTo("api");
+                    openTo("providers");
                   }}
                   className="cursor-pointer font-medium text-foreground underline-offset-4 hover:underline"
                 >

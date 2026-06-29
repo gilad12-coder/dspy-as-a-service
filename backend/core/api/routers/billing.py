@@ -12,7 +12,7 @@ mutations raise ``DomainError("billing.not_configured", 503)``.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -87,12 +87,15 @@ class WebhookAck(BaseModel):
 
 
 class ProviderKeyResponse(BaseModel):
-    """One stored BYOK provider key as the settings UI sees it — never the secret."""
+    """One stored BYOK provider connection as the settings UI sees it — never the secret."""
 
-    provider: str = Field(description="Provider slug the key belongs to (e.g. 'openai').")
+    id: str = Field(description="Stable handle for the connection.")
+    provider: str = Field(description="Provider slug the connection belongs to (e.g. 'openai').")
+    label: str | None = Field(default=None, description="Optional user-facing name for the connection.")
     last4: str = Field(description="Masked tail of the secret, for recognition without revealing it.")
+    api_base: str | None = Field(default=None, description="Optional custom endpoint the connection targets.")
     status: str = Field(description="Verification state: 'unverified', 'verified', or 'invalid'.")
-    added_at: str = Field(description="ISO-8601 instant the key was saved.")
+    added_at: str = Field(description="ISO-8601 instant the connection was saved.")
 
 
 class ProviderKeysResponse(BaseModel):
@@ -103,11 +106,16 @@ class ProviderKeysResponse(BaseModel):
     )
 
 
-# Request to save (or rotate) a provider's BYOK key. The secret is encrypted at
-# rest the instant it lands and is never returned.
+# Request to save (or rotate) a provider's BYOK connection. The secret is
+# encrypted at rest the instant it lands and is never returned. ``api_base`` and
+# ``params`` let a connection target any OpenAI-compatible host; ``api_base`` is
+# required when the provider slug is not a known BYOK provider.
 class SaveProviderKeyRequest(BaseModel):
-    provider: str = Field(description="Provider slug to save the key for (e.g. 'anthropic').")
+    provider: str = Field(description="Provider slug to save the connection for (e.g. 'anthropic').")
     secret: str = Field(description="The plaintext provider key; stored encrypted, never echoed back.")
+    label: str | None = Field(default=None, description="Optional user-facing name for the connection.")
+    api_base: str | None = Field(default=None, description="Optional custom endpoint; required for an unknown provider.")
+    params: dict[str, Any] = Field(default_factory=dict, description="Optional extra LiteLLM kwargs for the connection.")
 
 
 def create_billing_router(*, job_store) -> APIRouter:
@@ -302,7 +310,13 @@ def create_billing_router(*, job_store) -> APIRouter:
         return ProviderKeysResponse(
             keys=[
                 ProviderKeyResponse(
-                    provider=k.provider, last4=k.last4, status=k.status, added_at=k.added_at
+                    id=k.id,
+                    provider=k.provider,
+                    label=k.label,
+                    last4=k.last4,
+                    api_base=k.api_base,
+                    status=k.status,
+                    added_at=k.added_at,
                 )
                 for k in snapshot.keys
             ]
@@ -329,9 +343,22 @@ def create_billing_router(*, job_store) -> APIRouter:
         Returns:
             The masked, verified view of the stored key.
         """
-        view = vault.save_key(user.username, body.provider, body.secret)
+        view = vault.save_key(
+            user.username,
+            body.provider,
+            body.secret,
+            label=body.label,
+            api_base=body.api_base,
+            params=body.params,
+        )
         return ProviderKeyResponse(
-            provider=view.provider, last4=view.last4, status=view.status, added_at=view.added_at
+            id=view.id,
+            provider=view.provider,
+            label=view.label,
+            last4=view.last4,
+            api_base=view.api_base,
+            status=view.status,
+            added_at=view.added_at,
         )
 
     @router.post(
@@ -354,7 +381,13 @@ def create_billing_router(*, job_store) -> APIRouter:
         """
         view = vault.verify_key(user.username, provider)
         return ProviderKeyResponse(
-            provider=view.provider, last4=view.last4, status=view.status, added_at=view.added_at
+            id=view.id,
+            provider=view.provider,
+            label=view.label,
+            last4=view.last4,
+            api_base=view.api_base,
+            status=view.status,
+            added_at=view.added_at,
         )
 
     @router.delete(
@@ -380,7 +413,13 @@ def create_billing_router(*, job_store) -> APIRouter:
         return ProviderKeysResponse(
             keys=[
                 ProviderKeyResponse(
-                    provider=k.provider, last4=k.last4, status=k.status, added_at=k.added_at
+                    id=k.id,
+                    provider=k.provider,
+                    label=k.label,
+                    last4=k.last4,
+                    api_base=k.api_base,
+                    status=k.status,
+                    added_at=k.added_at,
                 )
                 for k in snapshot.keys
             ]

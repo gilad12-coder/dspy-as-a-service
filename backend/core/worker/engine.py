@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..billing import StripeBillingService
+from ..billing import ProviderKeyVault, StripeBillingService, inject_byok_connections
 from ..config import settings
 from ..constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
@@ -37,6 +37,7 @@ from ..constants import (
     PAYLOAD_OVERVIEW_TASK_FINGERPRINT,
     PAYLOAD_OVERVIEW_TOKEN_SOURCE,
     PAYLOAD_OVERVIEW_USERNAME,
+    TOKEN_SOURCE_BYOK,
     TOKEN_SOURCE_MANAGED,
 )
 from ..i18n import CANCELLATION_REASON
@@ -460,6 +461,22 @@ class BackgroundWorker:
                         # Resume: hand the child the pairs that already finished so
                         # it keeps them and runs only the rest.
                         payload_dict["_completed_pairs"] = self._job_store.get_grid_pair_results(optimization_id)
+
+                # BYOK bridge: for a run that bills the user's own provider key,
+                # resolve each model's key from the vault and stamp it onto the
+                # payload's ModelConfigs in memory — the only seam where the key
+                # crosses into the run subprocess (and the grid threads it fans
+                # out). Never persisted: the stored overview already dropped any
+                # client-supplied key.
+                token_source = overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED
+                byok_engine = getattr(self._job_store, "engine", None)
+                if token_source == TOKEN_SOURCE_BYOK and byok_engine is not None:
+                    byok_payload = grid_payload if is_grid else run_payload
+                    inject_byok_connections(
+                        payload_dict,
+                        username=byok_payload.username,
+                        vault=ProviderKeyVault(engine=byok_engine),
+                    )
 
                 event_queue = self._mp_ctx.Queue()
                 run_process = self._mp_ctx.Process(  # type: ignore[attr-defined]

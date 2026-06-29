@@ -12,6 +12,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/
 import { useByokKeys } from "../providers/byok-provider";
 import { formatResetDate } from "../lib/credit";
 import { BYOK_PROVIDERS, type ByokProviderInfo, type KeyStatus } from "../lib/byok";
+import { ProviderLogo } from "./ProviderLogo";
+import { ByokJsonImport } from "./ByokJsonImport";
 
 /** The status pill next to a saved key. Gold for verified, calm muted/destructive otherwise. */
 function StatusPill({ status }: { status: KeyStatus }) {
@@ -44,11 +46,13 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
 
   const [editing, setEditing] = React.useState(false);
   const [secret, setSecret] = React.useState("");
+  const [baseUrl, setBaseUrl] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [verifying, setVerifying] = React.useState(false);
 
   const startEditing = () => {
     setSecret("");
+    setBaseUrl(saved?.apiBase ?? "");
     setEditing(true);
   };
 
@@ -57,8 +61,9 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
     if (!trimmed) return;
     setSaving(true);
     try {
-      const status = await saveKey(provider.slug, trimmed);
+      const status = await saveKey(provider.slug, trimmed, { apiBase: baseUrl.trim() || null });
       setSecret("");
+      setBaseUrl("");
       setEditing(false);
       // The vault verifies on entry, so a saved key can already come back
       // rejected; surface that honestly rather than a blanket "saved".
@@ -104,16 +109,24 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
   return (
     <div className="rounded-lg border border-border/50 px-3 py-2.5">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="text-sm font-medium text-foreground">{provider.label}</span>
-          {saved && (
-            <span className="flex items-center gap-2">
-              <code dir="ltr" className="font-mono text-xs text-muted-foreground">
-                ••••&nbsp;{saved.last4}
+        <div className="flex min-w-0 items-center gap-2.5">
+          <ProviderLogo slug={provider.slug} size={28} />
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-sm font-medium text-foreground">{provider.label}</span>
+            {saved && (
+              <span className="flex items-center gap-2">
+                <code dir="ltr" className="font-mono text-xs text-muted-foreground">
+                  ••••&nbsp;{saved.last4}
+                </code>
+                <StatusPill status={saved.status} />
+              </span>
+            )}
+            {saved?.apiBase && (
+              <code dir="ltr" className="truncate font-mono text-[0.6875rem] text-muted-foreground/70">
+                {saved.apiBase}
               </code>
-              <StatusPill status={saved.status} />
-            </span>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
@@ -174,36 +187,50 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
       )}
 
       {editing && (
-        <div className="mt-2.5 flex items-center gap-2 animate-in fade-in-0 slide-in-from-top-1">
+        <div className="mt-2.5 flex flex-col gap-2 animate-in fade-in-0 slide-in-from-top-1">
+          <div className="flex items-center gap-2">
+            <Input
+              dir="ltr"
+              type="password"
+              autoFocus
+              autoComplete="new-password"
+              placeholder={provider.placeholder}
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleSave();
+                if (e.key === "Escape") setEditing(false);
+              }}
+              className="h-8 flex-1"
+            />
+            <Button size="xs" onClick={handleSave} disabled={!secret.trim() || saving}>
+              {saving ? <Loader2 className="size-3.5 animate-spin" /> : msg("settings.keys.save")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setEditing(false)}
+              aria-label={msg("settings.keys.cancel")}
+            >
+              <X className="size-3.5" />
+            </Button>
+          </div>
           <Input
             dir="ltr"
-            type="password"
-            autoFocus
-            autoComplete="new-password"
-            placeholder={provider.placeholder}
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
+            type="url"
+            autoComplete="off"
+            placeholder={msg("settings.keys.base_url_placeholder")}
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") void handleSave();
               if (e.key === "Escape") setEditing(false);
             }}
-            className="h-8 flex-1"
+            className="h-7 text-xs"
           />
-          <Button size="xs" onClick={handleSave} disabled={!secret.trim() || saving}>
-            {saving ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              msg("settings.keys.save")
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setEditing(false)}
-            aria-label={msg("settings.keys.cancel")}
-          >
-            <X className="size-3.5" />
-          </Button>
+          <p className="text-[0.6875rem] text-muted-foreground/70">
+            {msg("settings.keys.base_url_hint")}
+          </p>
         </div>
       )}
     </div>
@@ -211,7 +238,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
 }
 
 /**
- * BYOK provider-key manager — lives in the Settings "api" tab.
+ * BYOK provider-key manager — lives in the Settings "Providers" tab.
  *
  * Each major provider gets a row: add a key, verify it, replace it, or remove
  * it. The secret is entered once and never shown again (only its masked tail),
@@ -236,6 +263,8 @@ export function ByokKeysSection() {
           <ProviderKeyRow key={p.slug} provider={p} />
         ))}
       </div>
+
+      <ByokJsonImport />
     </div>
   );
 }

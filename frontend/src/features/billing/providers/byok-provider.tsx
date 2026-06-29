@@ -7,6 +7,7 @@ import {
   verifyProviderKey,
   removeProviderKey,
   type ProviderKeyResponse,
+  type SaveProviderKeyOptions,
 } from "@/shared/lib/api";
 import { type KeyStatus, type ProviderKey } from "../lib/byok";
 
@@ -20,9 +21,10 @@ interface ByokContextValue {
   /**
    * Save (or rotate) a provider's key. The plaintext is sent once to the vault,
    * encrypted at rest, and verified on entry; only the masked tail + verdict
-   * come back. Resolves to the saved key's status.
+   * come back. `opts` carries an optional custom endpoint / label. Resolves to
+   * the saved key's status.
    */
-  saveKey: (provider: string, secret: string) => Promise<KeyStatus>;
+  saveKey: (provider: string, secret: string, opts?: SaveProviderKeyOptions) => Promise<KeyStatus>;
   /** Re-run the verify probe against a stored key and persist the fresh verdict. */
   verifyKey: (provider: string) => Promise<KeyStatus>;
   /** Forget a provider's key. */
@@ -31,9 +33,17 @@ interface ByokContextValue {
 
 const ByokContext = React.createContext<ByokContextValue | null>(null);
 
-/** Map a backend masked-key response onto the UI's ProviderKey shape. */
+/** Map a backend masked-connection response onto the UI's ProviderKey shape. */
 function toProviderKey(r: ProviderKeyResponse): ProviderKey {
-  return { provider: r.provider, last4: r.last4, status: r.status, addedAt: r.added_at };
+  return {
+    id: r.id,
+    provider: r.provider,
+    label: r.label ?? null,
+    last4: r.last4,
+    apiBase: r.api_base ?? null,
+    status: r.status,
+    addedAt: r.added_at,
+  };
 }
 
 /** Read the BYOK key store from the nearest ByokKeysProvider. */
@@ -96,8 +106,8 @@ export function ByokKeysProvider({
   }, []);
 
   const saveKey = React.useCallback(
-    async (provider: string, secret: string): Promise<KeyStatus> => {
-      const saved = await saveProviderKey(provider, secret);
+    async (provider: string, secret: string, opts?: SaveProviderKeyOptions): Promise<KeyStatus> => {
+      const saved = await saveProviderKey(provider, secret, opts);
       upsert(toProviderKey(saved));
       return saved.status;
     },

@@ -1,0 +1,40 @@
+# LiteLLM proxy — the managed-inference gateway for Skynet.
+#
+# Fronts a single OpenRouter master account: when LITELLM_PROXY_URL points the
+# backend here, every *managed* run routes through this proxy, gets metered, and
+# is capped by per-key budgets. BYOK runs never reach this proxy — the run-path
+# bridge stamps the user's own key onto the request, which sends it straight to
+# the provider (see backend/core/billing/byok_bridge.py).
+#
+# Spend caps here are a backstop only. The Skynet credit ledger
+# (backend/core/billing/service.py) stays the source of truth for what a user is
+# charged; the proxy budget is a circuit breaker against runaway upstream spend.
+
+model_list:
+  # Wildcard pass-through: any model the OpenRouter master key can reach is
+  # callable as "openrouter/<model>". The backend already emits provider-prefixed
+  # model strings, so no per-model entries are needed here.
+  - model_name: "*"
+    litellm_params:
+      model: "openrouter/*"
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+litellm_settings:
+  drop_params: true
+  # Prompt caching is a margin lever; provider/model dependent. Backed by Redis
+  # so cache survives a proxy restart. Remove this block to disable caching.
+  cache: true
+  cache_params:
+    type: redis
+    host: os.environ/REDIS_HOST
+    port: os.environ/REDIS_PORT
+
+general_settings:
+  # Admin key for minting per-user / per-job virtual keys via the proxy's
+  # /key/generate endpoint. The backend presents a virtual key (LITELLM_PROXY_API_KEY),
+  # never this master key.
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Postgres backing the proxy's virtual keys + spend tracking. Keep this
+  # separate from the Skynet application database.
+  database_url: os.environ/LITELLM_DATABASE_URL

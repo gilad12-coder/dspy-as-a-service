@@ -1,0 +1,32 @@
+# Self-hosted LiteLLM proxy for Skynet's managed-inference gateway.
+#
+#   cd deploy/litellm
+#   cp .env.example .env   # fill in the secrets below
+#   docker compose up -d
+#
+# Then enable it on the backend by setting LITELLM_PROXY_URL (e.g.
+# http://litellm-proxy:4000/v1) and LITELLM_PROXY_API_KEY (a virtual key minted
+# from the master key). Until those are set, the backend routes managed runs
+# directly to providers and this proxy is dormant.
+
+services:
+  litellm-proxy:
+    image: ghcr.io/berriai/litellm:main-stable
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set the OpenRouter master key}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set a strong admin/master key}
+      LITELLM_DATABASE_URL: ${LITELLM_DATABASE_URL:?Postgres URL for virtual keys + spend}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped

@@ -17,7 +17,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
-from ...billing import StripeBillingService
+from ...billing import ProviderKeyVault, StripeBillingService, provider_slug_for_model
 from ...billing.model_access import is_model_locked
 from ...constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
@@ -381,6 +381,43 @@ def _enforce_frontier_lock(
         raise DomainError("billing.frontier_locked", status=402, model=", ".join(locked))
 
 
+def _enforce_byok_connections(
+    job_store, username: str, token_source: str, model_values: list[str]
+) -> None:
+    """Refuse a BYOK run when the account has no saved key for a model's provider.
+
+    In BYOK mode every model authenticates with the user's own provider key,
+    resolved from the encrypt-at-rest vault at run time. If the account saved no
+    connection for a model's provider, the run would have nothing to authenticate
+    with, so reject it at submit with a clear, translated error rather than
+    letting the job fail mid-run. Managed runs are exempt (they spend platform
+    credits). Models with no ``provider/`` prefix are skipped — there is no
+    provider to resolve a key for. A no-op when the store exposes no SQL engine.
+
+    Args:
+        job_store: Job-store instance whose ORM engine backs the billing tables.
+        username: Account attempting the submission.
+        token_source: ``"managed"`` or ``"byok"``; managed is exempt.
+        model_values: Fully-qualified model ids the run would execute on.
+
+    Raises:
+        DomainError: 400 ``billing.byok_missing_connection`` listing the providers
+            the account has no saved connection for.
+    """
+    if token_source != TOKEN_SOURCE_BYOK:
+        return
+    engine = getattr(job_store, "engine", None)
+    if engine is None or not username:
+        return
+    vault = ProviderKeyVault(engine=engine)
+    providers = {provider_slug_for_model(m) for m in model_values if m}
+    missing = sorted(
+        p for p in providers if p is not None and not vault.has_connection(username, p)
+    )
+    if missing:
+        raise DomainError("billing.byok_missing_connection", status=400, provider=", ".join(missing))
+
+
 def create_submissions_router(*, service, job_store) -> APIRouter:
     """Build the submissions router.
 
@@ -472,6 +509,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             if cfg is not None
         ]
         _enforce_frontier_lock(job_store, payload.username, payload.token_source, _run_model_values)
+        _enforce_byok_connections(job_store, payload.username, payload.token_source, _run_model_values)
 
         optimization_id = str(uuid4())
         task_fingerprint = compute_task_fingerprint(payload.signature_code, payload.metric_code, payload.dataset)
@@ -628,6 +666,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             for cfg in (*payload.generation_models, *payload.reflection_models)
         ]
         _enforce_frontier_lock(job_store, payload.username, payload.token_source, _grid_model_values)
+        _enforce_byok_connections(job_store, payload.username, payload.token_source, _grid_model_values)
 
         optimization_id = str(uuid4())
         if payload.seed is None:

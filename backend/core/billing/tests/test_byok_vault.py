@@ -70,7 +70,11 @@ def test_save_key_stores_ciphertext_not_plaintext(engine: object, vault_key: str
     assert view.last4 == "abcd"
     assert view.status == STATUS_VERIFIED
     with Session(engine) as session:
-        row = session.get(BillingProviderKeyModel, ("u@x.com", "openai"))
+        row = (
+            session.query(BillingProviderKeyModel)
+            .filter_by(username="u@x.com", provider="openai")
+            .one()
+        )
         assert row is not None
         assert secret.encode("utf-8") not in row.secret_ciphertext
         # The ciphertext round-trips back to the original secret under the key.
@@ -203,3 +207,65 @@ def test_reveal_secret_missing_returns_none(engine: object, vault_key: str) -> N
     """Revealing a provider with no stored key returns None, not an error."""
     vault = ProviderKeyVault(engine=engine)
     assert vault.reveal_secret("u@x.com", "openai") is None
+
+
+def test_save_key_custom_api_base_probes_that_endpoint(engine: object, vault_key: str) -> None:
+    """A connection with a custom api_base verifies against that endpoint, not a default."""
+    vault = ProviderKeyVault(engine=engine)
+    captured: dict[str, str] = {}
+
+    def fake_get(url: str, headers: dict[str, str], timeout: float) -> object:
+        """Record the probe URL + auth header, then report a 2xx.
+
+        Args:
+            url: The endpoint the probe hit.
+            headers: The request headers (carrying the auth shape).
+            timeout: The probe timeout (unused).
+
+        Returns:
+            A stand-in 200 response.
+        """
+        captured["url"] = url
+        captured["auth"] = headers.get("Authorization", "")
+        return _probe_response(200)
+
+    with patch("core.billing.byok_vault.httpx.get", side_effect=fake_get):
+        view = vault.save_key(
+            "u@x.com", "custom", "sk-custom-1234", api_base="https://host.example/v1"
+        )
+    assert view.status == STATUS_VERIFIED
+    assert view.api_base == "https://host.example/v1"
+    assert captured["url"] == "https://host.example/v1/models"
+    assert captured["auth"] == "Bearer sk-custom-1234"
+
+
+def test_save_key_unknown_provider_without_api_base_rejected(engine: object, vault_key: str) -> None:
+    """An unknown provider with no custom api_base is rejected with a 400."""
+    vault = ProviderKeyVault(engine=engine)
+    with pytest.raises(DomainError) as exc:
+        vault.save_key("u@x.com", "custom", "sk-1234")
+    assert exc.value.status_code == 400
+
+
+def test_resolve_connection_round_trips_api_base_and_params(engine: object, vault_key: str) -> None:
+    """The run path resolves the secret along with the custom endpoint and params."""
+    vault = ProviderKeyVault(engine=engine)
+    with patch("core.billing.byok_vault.httpx.get", return_value=_probe_response(200)):
+        vault.save_key(
+            "u@x.com",
+            "custom",
+            "sk-resolve-9999",
+            api_base="https://host.example/v1",
+            params={"organization": "org-1"},
+        )
+    resolved = vault.resolve_connection("u@x.com", "custom")
+    assert resolved is not None
+    assert resolved.secret == "sk-resolve-9999"
+    assert resolved.api_base == "https://host.example/v1"
+    assert resolved.params == {"organization": "org-1"}
+
+
+def test_resolve_connection_missing_returns_none(engine: object, vault_key: str) -> None:
+    """Resolving a provider with no stored connection returns None."""
+    vault = ProviderKeyVault(engine=engine)
+    assert vault.resolve_connection("u@x.com", "openai") is None
