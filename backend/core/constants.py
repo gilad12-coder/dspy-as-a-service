@@ -46,6 +46,11 @@ PAYLOAD_OVERVIEW_TASK_FINGERPRINT = "task_fingerprint"
 # (the user's own provider key). Threaded from the wizard so frontier-locking
 # and the "No lift, no charge" guarantee are enforced server-side, not advisory.
 PAYLOAD_OVERVIEW_TOKEN_SOURCE = "token_source"
+# Low/high ends of the projected credit bracket the wizard showed at submit.
+# Persisted so the post-run proof moment can reconcile the estimate against the
+# actual charge; advisory only — never gates or bills.
+PAYLOAD_OVERVIEW_ESTIMATED_LOW = "estimated_credits_low"
+PAYLOAD_OVERVIEW_ESTIMATED_HIGH = "estimated_credits_high"
 PAYLOAD_OVERVIEW_IS_PRIVATE = "is_private"
 # Id of the personal-library dataset a run was submitted from, when the submit
 # was by-reference. Persisted so the optimization detail surfaces a live link

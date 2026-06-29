@@ -17,7 +17,6 @@ from .service import (
     StripeBillingService,
     WalletSnapshot,
     cost_ceiling_budget,
-    tokens_for_credits,
 )
 
 __all__ = [
@@ -33,5 +32,4 @@ __all__ = [
     "cost_ceiling_budget",
     "inject_byok_connections",
     "provider_slug_for_model",
-    "tokens_for_credits",
 ]

@@ -42,6 +42,20 @@ export function ProofMoment({
       : msg("optimization.proof.basis.test");
   const credits = formatCredits(billing.credits, locale);
 
+  // Estimate-vs-actual reconciliation, shown on billed runs only (a refund means
+  // no charge, so reconciling against a charge estimate would mislead). Present
+  // only when the run was submitted with a persisted estimate. The range is
+  // wrapped in an LTR isolate (U+2066…U+2069) so its en-dash doesn't flip the
+  // numbers under RTL; the separator is a direction-neutral middot.
+  const reconciliation =
+    billing.estimated_low != null && billing.estimated_high != null
+      ? formatMsg("optimization.proof.estimate_reconcile", {
+          low: `\u2066${formatCredits(billing.estimated_low, locale)}`,
+          high: `${formatCredits(billing.estimated_high, locale)}\u2069`,
+          actual: credits,
+        })
+      : null;
+
   if (variant === "refunded") {
     return (
       <FadeIn>
@@ -95,6 +109,11 @@ export function ProofMoment({
                   })
                 : formatMsg("optimization.proof.billed.neutral", { p1: credits })}
             </p>
+            {reconciliation && (
+              <p className="text-xs leading-relaxed text-[#8a7259]" dir="auto">
+                {reconciliation}
+              </p>
+            )}
           </div>
         </div>
       </div>

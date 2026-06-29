@@ -16,19 +16,22 @@ from core.service_gateway.language_models import (
     apply_model_reasoning_config,
     build_language_model,
     total_tokens_from_history,
+    usage_by_model_from_history,
 )
 
 
 class _FakeLM:
-    """Minimal stand-in exposing a ``history`` list like ``dspy.LM``."""
+    """Minimal stand-in exposing ``history`` (and ``model``) like ``dspy.LM``."""
 
-    def __init__(self, history: list[dict[str, Any]]) -> None:
-        """Store the canned history entries the LM should report.
+    def __init__(self, history: list[dict[str, Any]], model: str = "unknown") -> None:
+        """Store the canned history entries and model id the LM should report.
 
         Args:
             history: Entries shaped like ``dspy.LM.history`` rows.
+            model: Model id the LM reports (read by per-model usage aggregation).
         """
         self.history = history
+        self.model = model
 
 
 def test_total_tokens_from_history_sums_total_tokens() -> None:
@@ -49,6 +52,47 @@ def test_total_tokens_from_history_returns_none_when_untracked() -> None:
     assert total_tokens_from_history(None) is None
     assert total_tokens_from_history(_FakeLM([{"response": "hi"}])) is None
     assert total_tokens_from_history(MagicMock(spec=[])) is None
+
+
+def test_usage_by_model_splits_input_and_output_per_model() -> None:
+    """Usage is keyed by each LM's model id, preserving the input/output split."""
+    gen = _FakeLM(
+        [{"usage": {"prompt_tokens": 100, "completion_tokens": 40}}],
+        model="openai/gpt-4o-mini",
+    )
+    refl = _FakeLM(
+        [{"usage": {"prompt_tokens": 200, "completion_tokens": 80}}],
+        model="anthropic/claude-opus-4-8",
+    )
+    assert usage_by_model_from_history(gen, refl) == {
+        "openai/gpt-4o-mini": (100, 40),
+        "anthropic/claude-opus-4-8": (200, 80),
+    }
+
+
+def test_usage_by_model_folds_same_model_across_lms_and_entries() -> None:
+    """Multiple LMs (and entries) on the same model accumulate into one bucket."""
+    a = _FakeLM(
+        [
+            {"usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+            {"usage": {"prompt_tokens": 7, "completion_tokens": 3}},
+        ],
+        model="openai/gpt-4o-mini",
+    )
+    b = _FakeLM([{"usage": {"prompt_tokens": 1, "completion_tokens": 2}}], model="openai/gpt-4o-mini")
+    assert usage_by_model_from_history(a, b) == {"openai/gpt-4o-mini": (18, 10)}
+
+
+def test_usage_by_model_total_only_attributes_to_input() -> None:
+    """A provider reporting only total_tokens books it all as input (cheaper side)."""
+    lm = _FakeLM([{"usage": {"total_tokens": 90}}], model="x/y")
+    assert usage_by_model_from_history(lm) == {"x/y": (90, 0)}
+
+
+def test_usage_by_model_returns_none_when_untracked() -> None:
+    """No usage anywhere yields ``None`` so callers skip charging, not bill zero."""
+    assert usage_by_model_from_history(None) is None
+    assert usage_by_model_from_history(_FakeLM([{"response": "hi"}], model="x/y")) is None
 
 
 def _cfg(**kwargs: Any) -> ModelConfig:
@@ -232,9 +276,7 @@ def test_apply_reasoning_config_native_minimax_sets_extra_and_floor() -> None:
 
 def test_apply_reasoning_config_fireworks_minimax_floors_without_extra() -> None:
     """The shipped Fireworks minimax default gets max_tokens>=4000 and no extra."""
-    out = apply_model_reasoning_config(
-        ModelConfig(name=settings.generalist_agent_model)
-    )
+    out = apply_model_reasoning_config(ModelConfig(name=settings.generalist_agent_model))
 
     assert "minimax" in settings.generalist_agent_model.lower()
     assert out.max_tokens == 4000
@@ -252,18 +294,14 @@ def test_apply_reasoning_config_openai_reasoning_sets_temperature_and_floor() ->
 
 def test_apply_reasoning_config_does_not_shrink_caller_max_tokens() -> None:
     """A caller-supplied larger ``max_tokens`` is preserved, never clamped to the floor."""
-    out = apply_model_reasoning_config(
-        ModelConfig(name="minimax/abc", max_tokens=8000)
-    )
+    out = apply_model_reasoning_config(ModelConfig(name="minimax/abc", max_tokens=8000))
 
     assert out.max_tokens == 8000
 
 
 def test_apply_reasoning_config_caller_extra_wins_on_conflict() -> None:
     """``config.extra`` overrides the model-specific extras on key conflict."""
-    out = apply_model_reasoning_config(
-        ModelConfig(name="minimax/abc", extra={"extra_body": {"custom": 1}})
-    )
+    out = apply_model_reasoning_config(ModelConfig(name="minimax/abc", extra={"extra_body": {"custom": 1}}))
 
     assert out.extra["extra_body"] == {"custom": 1}
 

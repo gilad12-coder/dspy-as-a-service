@@ -28,6 +28,16 @@ class LMActivity(BaseModel):
     reflection: dict[str, LMStageStats] = Field(default_factory=dict)
 
 
+# Per-model measured token usage (input/output split) stamped onto a run result
+# so the billing worker charges per-model and the UI reconciles the pre-run
+# estimate against real per-model spend. Pydantic class docstrings are part of
+# the OpenAPI contract — see AGENTS.md — so this annotation lives in a comment.
+class ModelTokenUsage(BaseModel):
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 # Baseline-vs-optimized scores on the slice the "No lift, no charge" guarantee
 # is adjudicated against. ``basis`` is "test" when a held-out test split was
 # reserved (the strongest, unbiased proof) or "val" when the dataset was too
@@ -60,6 +70,9 @@ class RunResponse(BaseModel):
     runtime_seconds: float | None = None
     num_lm_calls: int | None = None
     total_tokens: int | None = None
+    # Per-model input/output split behind ``total_tokens`` — the basis the billing
+    # worker charges from and the UI reconciles the estimate against.
+    usage_by_model: list[ModelTokenUsage] = Field(default_factory=list)
     avg_response_time_ms: float | None = None
     lm_activity: LMActivity | None = None
     run_log: list[JobLogEntry] = Field(default_factory=list)
@@ -81,6 +94,7 @@ class PairResult(BaseModel):
     runtime_seconds: float | None = None
     num_lm_calls: int | None = None
     total_tokens: int | None = None
+    usage_by_model: list[ModelTokenUsage] = Field(default_factory=list)
     avg_response_time_ms: float | None = None
     lm_activity: LMActivity | None = None
     program_artifact: ProgramArtifact | None = None
@@ -106,6 +120,9 @@ class GridSearchResponse(BaseModel):
     best_pair: PairResult | None = None
     runtime_seconds: float | None = None
     total_tokens: int | None = None
+    # Per-model usage summed across all pairs — the basis the worker charges the
+    # whole grid from (each pair priced on its own gen/refl models).
+    usage_by_model: list[ModelTokenUsage] = Field(default_factory=list)
     # Scores the guarantee is judged on — the best pair's baseline/optimized on
     # the test split (or valset fallback). None when no pair produced a pair.
     guarantee: GuaranteeBasis | None = None

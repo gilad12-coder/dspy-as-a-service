@@ -276,10 +276,10 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
             </div>
           </div>
         )}
-        {/* Pre-run cost bracket + Max Cost Ceiling [FG-1] — a managed-credit
-            guardrail, so it's hidden in BYOK mode (the user's own key isn't
-            metered against Skynet credits). */}
-        {wallet.mode === "managed" && <CostCeilingCard w={w} />}
+        {/* Pre-run cost bracket + Max Cost Ceiling [FG-1]. Shown in both modes:
+            managed displays the full per-model credit cost, BYOK the platform fee
+            (the provider key absorbs the model cost, but credits still meter it). */}
+        <CostCeilingCard w={w} mode={wallet.mode} />
         {/* Model config modal — shared across all model chips */}
         <ModelConfigModal
           open={!!editingModel}

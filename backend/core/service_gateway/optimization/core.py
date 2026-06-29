@@ -20,7 +20,6 @@ from typing import Any
 
 import dspy
 
-from ...billing import tokens_for_credits
 from ...config import settings as app_settings
 from ...constants import (
     DETAIL_BASELINE,
@@ -58,7 +57,7 @@ from ...models import (
     SplitCounts,
 )
 from ...models.artifacts import ProgramArtifact, ReactOverlay
-from ...models.results import GuaranteeBasis
+from ...models.results import GuaranteeBasis, ModelTokenUsage
 from ...registry import (
     ResolverError,
     ServiceRegistry,
@@ -67,7 +66,12 @@ from ...registry import (
     resolve_optimizer_factory,
 )
 from ...worker.log_handler import set_current_pair_index
-from ..language_models import apply_model_reasoning_config, build_language_model, total_tokens_from_history
+from ..language_models import (
+    apply_model_reasoning_config,
+    build_language_model,
+    total_tokens_from_history,
+    usage_by_model_from_history,
+)
 from ..react_compat import REACT_CLASS
 from ..safe_exec import validate_metric_code, validate_signature_code
 from .artifacts import persist_program
@@ -114,6 +118,52 @@ from .validators import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _usage_by_model_rows(*language_models: object) -> list[ModelTokenUsage]:
+    """Build a result's per-model usage rows from the run's LM histories.
+
+    Wraps :func:`usage_by_model_from_history`, turning its ``model → (input,
+    output)`` breakdown into the :class:`ModelTokenUsage` rows the billing worker
+    charges from and the UI reconciles against. Returns an empty list when usage
+    is untracked (e.g. mocked LMs), mirroring the ``total_tokens`` companion.
+
+    Args:
+        *language_models: The run's LMs — generation and, when present, reflection.
+
+    Returns:
+        One row per distinct model that recorded usage.
+    """
+    breakdown = usage_by_model_from_history(*language_models)
+    if not breakdown:
+        return []
+    return [
+        ModelTokenUsage(model=model, input_tokens=in_out[0], output_tokens=in_out[1])
+        for model, in_out in breakdown.items()
+    ]
+
+
+def _merge_usage_rows(rows: list[ModelTokenUsage]) -> list[ModelTokenUsage]:
+    """Fold per-model usage rows from several runs into one row per model.
+
+    Used to sum a grid search's pairs into a single per-model breakdown the
+    worker charges the whole grid from.
+
+    Args:
+        rows: Per-model usage rows across all pairs (models may repeat).
+
+    Returns:
+        One :class:`ModelTokenUsage` per distinct model, token counts summed.
+    """
+    merged: dict[str, list[int]] = {}
+    for row in rows:
+        accumulator = merged.setdefault(row.model, [0, 0])
+        accumulator[0] += row.input_tokens
+        accumulator[1] += row.output_tokens
+    return [
+        ModelTokenUsage(model=model, input_tokens=in_out[0], output_tokens=in_out[1])
+        for model, in_out in merged.items()
+    ]
 
 
 def _resolve_max_metric_calls(optimizer_kwargs: dict[str, Any]) -> int:
@@ -193,9 +243,7 @@ def _tool_to_snapshot_spec(tool: Any) -> dict[str, Any]:
     return spec
 
 
-def _react_prediction_outputs(
-    prediction: Any, output_fields: Iterable[str]
-) -> dict[str, Any]:
+def _react_prediction_outputs(prediction: Any, output_fields: Iterable[str]) -> dict[str, Any]:
     """Pull a react rollout's per-field answer off its ``Prediction``.
 
     Mirrors the on-demand ``evaluate-examples`` endpoint's extraction
@@ -320,7 +368,7 @@ class _GridPairContext:
     # Per-pair token budget from the Max Cost Ceiling: the job-wide cap split
     # evenly across pairs (pairs run concurrently with independent LM histories),
     # so the grid's aggregate spend never exceeds the user's cap. 0 = no ceiling.
-    pair_max_tokens: int = 0
+    pair_max_credits: int = 0
     # Worker-owned base dir for resumable grids; each pair writes its GEPA state
     # and (on success) ``result.json`` under ``<base>/pair_<i>``. None = ephemeral.
     gepa_log_dir_base: str | None = None
@@ -435,12 +483,13 @@ def _run_grid_pair(
         callbacks: list[Any] = list(timing_callbacks)
         # Hard-stop this pair at its share of the Max Cost Ceiling so the grid's
         # concurrent pairs can't collectively overrun the user's job-wide cap.
-        if ctx.pair_max_tokens > 0:
-            callbacks.append(CostCeilingCallback(ctx.pair_max_tokens, language_model, reflection_lm))
+        if ctx.pair_max_credits > 0:
+            callbacks.append(CostCeilingCallback(ctx.pair_max_credits, language_model, reflection_lm))
 
-        with dspy.context(lm=language_model, callbacks=callbacks), gepa_log_dir(
-            ctx.payload.optimizer_name, pair_dir
-        ) as trajectory_log_dir:
+        with (
+            dspy.context(lm=language_model, callbacks=callbacks),
+            gepa_log_dir(ctx.payload.optimizer_name, pair_dir) as trajectory_log_dir,
+        ):
             trajectory_callback: Callable[[str, dict[str, Any]], None] | None = (
                 functools.partial(_tag_candidate_event, ctx.progress_callback, i)
                 if ctx.progress_callback is not None
@@ -548,6 +597,7 @@ def _run_grid_pair(
             runtime_seconds=round(pair_runtime, 2),
             num_lm_calls=pair_lm_calls,
             total_tokens=total_tokens_from_history(language_model, reflection_lm),
+            usage_by_model=_usage_by_model_rows(language_model, reflection_lm),
             avg_response_time_ms=pair_avg_ms,
             lm_activity=pair_lm_activity,
             program_artifact=program_artifact,
@@ -781,11 +831,7 @@ class DspyService:
         # every worker thread; a trip raises out of the run and the worker leaves
         # the job failed (and unbilled — debiting only fires on success).
         if payload.max_cost_credits is not None:
-            callbacks.append(
-                CostCeilingCallback(
-                    tokens_for_credits(payload.max_cost_credits), language_model, reflection_lm
-                )
-            )
+            callbacks.append(CostCeilingCallback(payload.max_cost_credits, language_model, reflection_lm))
         with gepa_log_dir(payload.optimizer_name, gepa_log_dir_path) as trajectory_log_dir:
             training_metric = maybe_wrap_minibatch_recorder(
                 metric,
@@ -814,9 +860,7 @@ class DspyService:
                             metric,
                             collect_per_example=True,
                         )
-                    logger.info(
-                        "%s baseline test metric: %s", payload.module_name, baseline_test_metric
-                    )
+                    logger.info("%s baseline test metric: %s", payload.module_name, baseline_test_metric)
                     if progress_callback and baseline_test_metric is not None:
                         progress_callback(
                             PROGRESS_BASELINE,
@@ -944,6 +988,7 @@ class DspyService:
             runtime_seconds=runtime_seconds,
             num_lm_calls=num_lm_calls,
             total_tokens=total_tokens_from_history(language_model, reflection_lm),
+            usage_by_model=_usage_by_model_rows(language_model, reflection_lm),
             avg_response_time_ms=avg_response_time_ms,
             lm_activity=lm_activity,
             baseline_test_results=baseline_test_results,
@@ -1039,13 +1084,9 @@ class DspyService:
         # student model gets a safe max_tokens floor + extras automatically;
         # without it a bare minimax ModelConfig truncates into malformed
         # tool_calls (a dspy ToolCalls ValidationError) during the react loop.
-        student_lm = build_language_model(
-            apply_model_reasoning_config(payload.model_settings)
-        )
+        student_lm = build_language_model(apply_model_reasoning_config(payload.model_settings))
         reflection_lm = (
-            build_language_model(
-                apply_model_reasoning_config(payload.reflection_model_settings)
-            )
+            build_language_model(apply_model_reasoning_config(payload.reflection_model_settings))
             if payload.reflection_model_settings is not None
             else student_lm
         )
@@ -1058,11 +1099,7 @@ class DspyService:
         # both the student and the reflection LM through ``gepa.optimize``; the
         # ceiling totals usage across both so the cap covers the whole run.
         if payload.max_cost_credits is not None:
-            react_callbacks.append(
-                CostCeilingCallback(
-                    tokens_for_credits(payload.max_cost_credits), student_lm, reflection_lm
-                )
-            )
+            react_callbacks.append(CostCeilingCallback(payload.max_cost_credits, student_lm, reflection_lm))
         # Mirror the scalar run's trajectory wiring so react gets the same
         # candidate tree: GEPA persists state into trajectory_log_dir,
         # trajectory_watch streams candidate/rejected events, capture_proposal_prompts
@@ -1122,9 +1159,7 @@ class DspyService:
             # is scored on the held-out test set.
             progress_callback(PROGRESS_OPTIMIZED, {DETAIL_OPTIMIZED: optimized_scalar})
 
-        split_counts = SplitCounts(
-            train=len(splits.train), val=len(splits.val), test=len(splits.test)
-        )
+        split_counts = SplitCounts(train=len(splits.train), val=len(splits.val), test=len(splits.test))
         details: dict[str, Any] = {
             DETAIL_TRAIN: split_counts.train,
             DETAIL_VAL: split_counts.val,
@@ -1208,6 +1243,7 @@ class DspyService:
             runtime_seconds=runtime_seconds,
             num_lm_calls=num_lm_calls,
             total_tokens=total_tokens_from_history(student_lm, reflection_lm),
+            usage_by_model=_usage_by_model_rows(student_lm, reflection_lm),
             avg_response_time_ms=avg_response_time_ms,
             # Generation-stage activity: student rollouts are bucketed into
             # baseline/training/evaluation via the timing_callbacks passed into
@@ -1253,9 +1289,7 @@ class DspyService:
             The persisted :class:`ProgramArtifact` with ``react_overlay`` set,
             or ``None`` when persistence produced no artifact.
         """
-        program = REACT_CLASS(
-            signature_cls, tools=tools, max_iters=overlay["max_iters"]
-        )
+        program = REACT_CLASS(signature_cls, tools=tools, max_iters=overlay["max_iters"])
         program.load_state(program_state)
         artifact = persist_program(program, artifact_id)
         if artifact is None:
@@ -1273,20 +1307,12 @@ class DspyService:
             elif tool_source.kind == "dataset_snapshot":
                 # Persist the resolved roster as snapshot specs so serve can
                 # rebuild the tool surface without the original dataset.
-                source_meta["tool_snapshot"] = [
-                    _tool_to_snapshot_spec(tool) for tool in tools
-                ]
+                source_meta["tool_snapshot"] = [_tool_to_snapshot_spec(tool) for tool in tools]
         tool_names = overlay.get("tool_names")
-        tool_severities = {
-            tool.name: severity
-            for tool in tools
-            if (severity := tool_severity(tool)) is not None
-        }
+        tool_severities = {tool.name: severity for tool in tools if (severity := tool_severity(tool)) is not None}
         artifact.react_overlay = ReactOverlay(
             tool_descriptions=dict(overlay["tool_descriptions"]),
-            tool_arg_descriptions={
-                name: dict(args) for name, args in overlay["tool_arg_descriptions"].items()
-            },
+            tool_arg_descriptions={name: dict(args) for name, args in overlay["tool_arg_descriptions"].items()},
             tool_schema_hashes=dict(overlay["tool_schema_hashes"]),
             max_iters=int(overlay["max_iters"]),
             tool_source=source_meta,
@@ -1386,12 +1412,10 @@ class DspyService:
                 pair_results[idx] = PairResult.model_validate(stored)
         pending = [(i, gen_cfg, ref_cfg) for i, (gen_cfg, ref_cfg) in enumerate(pairs) if i not in completed]
 
-        # Split the job-wide cost ceiling evenly across pairs so concurrent pairs
-        # can't collectively exceed the user's cap; 0 when no ceiling was set.
-        pair_max_tokens = (
-            tokens_for_credits(payload.max_cost_credits) // total_pairs
-            if payload.max_cost_credits is not None and total_pairs > 0
-            else 0
+        # Split the job-wide cost ceiling (in credits) evenly across pairs so
+        # concurrent pairs can't collectively exceed the user's cap; 0 = no ceiling.
+        pair_max_credits = (
+            payload.max_cost_credits // total_pairs if payload.max_cost_credits is not None and total_pairs > 0 else 0
         )
         grid_ctx = _GridPairContext(
             total_pairs=total_pairs,
@@ -1403,7 +1427,7 @@ class DspyService:
             splits=splits,
             artifact_id=artifact_id,
             progress_callback=progress_callback,
-            pair_max_tokens=pair_max_tokens,
+            pair_max_credits=pair_max_credits,
             gepa_log_dir_base=gepa_log_dir_path,
             completed=len(completed),
         )
@@ -1419,8 +1443,7 @@ class DspyService:
             max_workers = min(len(pending), 4)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {
-                    executor.submit(_run_grid_pair, grid_ctx, i, gen_cfg, ref_cfg): i
-                    for i, gen_cfg, ref_cfg in pending
+                    executor.submit(_run_grid_pair, grid_ctx, i, gen_cfg, ref_cfg): i for i, gen_cfg, ref_cfg in pending
                 }
                 for future in as_completed(futures):
                     idx = futures[future]
@@ -1428,7 +1451,10 @@ class DspyService:
 
         successful = [p for p in pair_results if p.error is None and p.optimized_test_metric is not None]
         best_pair = (
-            max(successful, key=lambda p: p.optimized_test_metric if p.optimized_test_metric is not None else float("-inf"))
+            max(
+                successful,
+                key=lambda p: p.optimized_test_metric if p.optimized_test_metric is not None else float("-inf"),
+            )
             if successful
             else None
         )
@@ -1438,6 +1464,7 @@ class DspyService:
         failed_count = len([p for p in pair_results if p.error is not None])
         pair_token_counts = [p.total_tokens for p in pair_results if p.total_tokens is not None]
         grid_total_tokens = sum(pair_token_counts) if pair_token_counts else None
+        grid_usage_by_model = _merge_usage_rows([row for p in pair_results for row in p.usage_by_model])
 
         logger.info(
             "Grid search finished: %d/%d completed, %d failed, best=%s (%.1fs total)",
@@ -1477,6 +1504,7 @@ class DspyService:
             best_pair=best_pair,
             runtime_seconds=round(grid_runtime, 2),
             total_tokens=grid_total_tokens,
+            usage_by_model=grid_usage_by_model,
             guarantee=guarantee,
         )
 
@@ -1563,9 +1591,7 @@ class DspyService:
         if payload.metric_code is None:
             raise ServiceError("react runs require metric_code.")
         metric_info = validate_metric_code(payload.metric_code)
-        _require_metric_compatible_with_optimizer(
-            payload.optimizer_name, metric_info.param_names
-        )
+        _require_metric_compatible_with_optimizer(payload.optimizer_name, metric_info.param_names)
 
     def _get_module_factory(self, name: str) -> tuple[Callable[..., Any], bool]:
         """Resolve a module factory by name from registry or built-in resolver.

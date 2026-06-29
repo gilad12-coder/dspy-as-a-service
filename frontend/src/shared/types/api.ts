@@ -99,6 +99,12 @@ interface OptimizationRequestBase {
   // and lets the user cap the run here; the backend hard-stops the job once spend
   // exceeds the budget this cap buys. Omitted when no ceiling is set.
   max_cost_credits?: number;
+  // Projected credit bracket the wizard showed at submit [FG-1], persisted so the
+  // post-run proof moment can reconcile estimate vs. actual ("estimated 180–320 →
+  // billed 210"). Carries the chargeable bracket for the run's token source
+  // (managed: full per-model cost; byok: platform fee). Omitted when unestimated.
+  estimated_credits_low?: number;
+  estimated_credits_high?: number;
 }
 
 export interface RunRequest extends OptimizationRequestBase {
@@ -288,6 +294,11 @@ export interface GuaranteeBasis {
 export interface RunBillingOutcome {
   outcome: "billed" | "refunded";
   credits: number;
+  // The projected credit bracket persisted at submit, echoed back so the proof
+  // moment can reconcile estimate vs. actual. Absent on runs submitted before an
+  // estimate was persisted (older runs), in which case no reconciliation shows.
+  estimated_low?: number;
+  estimated_high?: number;
 }
 
 export interface PairResult {
@@ -440,6 +451,10 @@ export interface CatalogModel {
   supports_vision: boolean;
   available: boolean;
   max_input_tokens?: number | null;
+  // Provider per-token costs (USD) from LiteLLM; null/absent when unpriced, so
+  // the estimate falls back to a default rate rather than treating it as free.
+  input_cost_per_token?: number | null;
+  output_cost_per_token?: number | null;
 }
 
 export interface CatalogProvider {

@@ -45,6 +45,8 @@ def test_catalog_model_defaults() -> None:
     assert m.available is False
     assert m.max_input_tokens is None
     assert m.data_center is None
+    assert m.input_cost_per_token is None
+    assert m.output_cost_per_token is None
 
 
 def test_catalog_model_stores_all_fields() -> None:
@@ -137,6 +139,36 @@ def test_get_catalog_returns_correct_types(monkeypatch: pytest.MonkeyPatch) -> N
     # The injected model should be available and visible
     values = [m.value for m in result.models]
     assert any("fakeprovider-model-a" in v for v in values)
+
+
+def test_get_catalog_surfaces_per_token_costs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Positive LiteLLM per-token costs ride onto the catalog; zero/absent → None."""
+    fake_cost: dict = {
+        "priced-model": {
+            "mode": "chat",
+            "litellm_provider": "openai",
+            "max_input_tokens": 4096,
+            "input_cost_per_token": 1.5e-7,
+            "output_cost_per_token": 6e-7,
+        },
+        "freebie-model": {
+            "mode": "chat",
+            "litellm_provider": "openai",
+            "max_input_tokens": 4096,
+            "input_cost_per_token": 0,  # zero/absent must surface as None, not free
+        },
+    }
+    monkeypatch.setattr(litellm, "model_cost", fake_cost)
+    monkeypatch.setattr(litellm, "get_valid_models", lambda: ["priced-model", "freebie-model"])
+    monkeypatch.setattr(mc, "_probe_all_providers", dict)
+
+    by_value = {m.value: m for m in get_catalog().models}
+    priced = by_value["openai/priced-model"]
+    assert priced.input_cost_per_token == 1.5e-7
+    assert priced.output_cost_per_token == 6e-7
+    freebie = by_value["openai/freebie-model"]
+    assert freebie.input_cost_per_token is None
+    assert freebie.output_cost_per_token is None
 
 
 def test_get_catalog_only_returns_available_models(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -348,13 +380,9 @@ def test_on_prem_gateway_surfaces_as_extra_data_center(monkeypatch: pytest.Monke
     dcs = sorted((m.data_center or "") for m in openai_models)
     assert dcs == ["", "On-prem gateway"]
 
-    on_prem_provider = next(
-        p for p in result.providers if p.slug == "openai" and p.data_center == "On-prem gateway"
-    )
+    on_prem_provider = next(p for p in result.providers if p.slug == "openai" and p.data_center == "On-prem gateway")
     assert on_prem_provider.default_base_url == "https://llm.internal/v1"
-    native_provider = next(
-        p for p in result.providers if p.slug == "openai" and p.data_center is None
-    )
+    native_provider = next(p for p in result.providers if p.slug == "openai" and p.data_center is None)
     assert native_provider.default_base_url == "https://api.openai.com/v1"
 
 

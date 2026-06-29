@@ -18,14 +18,18 @@ import {
   Database,
   Cpu,
   Boxes,
+  Gauge,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { msg } from "@/shared/lib/messages";
+import { formatMsg, msg } from "@/shared/lib/messages";
 import { moduleLabel } from "@/shared/lib/formatters";
 import { TERMS } from "@/shared/lib/terms";
 import { ModelChip } from "@/shared/ui/model-chip";
 import { Skeleton } from "@/shared/ui/skeleton";
+import { formatCredits, useCredits } from "@/features/billing";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
+import { chargeableBracket } from "../../lib/cost-bracket";
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 
 const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
@@ -108,7 +112,19 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
     useMerge,
     signatureCode,
     metricCode,
+    costBracket,
+    maxCostCredits,
   } = w;
+
+  // Read-only echo of the pre-run estimate the user set on the model step, so the
+  // final review restates what this run is expected to cost (and any hard cap)
+  // without making them step back. BYOK shows the platform fee, not the full
+  // per-model cost the provider key absorbs — same chargeable bracket the cost
+  // surface used, so the two never disagree.
+  const { wallet } = useCredits();
+  const locale = getActiveIntlLocale();
+  const byok = wallet.mode === "byok";
+  const estimate = chargeableBracket(costBracket, wallet.mode);
 
   return (
     <div className="space-y-4" data-tutorial="wizard-step-6">
@@ -506,6 +522,32 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
           </AnimatePresence>
         </div>
       </motion.div>
+
+      <div className="rounded-xl border border-[#C8B9A8]/50 bg-[#FAF8F5] px-3.5 py-3 shadow-[0_1px_2px_rgba(61,46,34,0.04)]">
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex items-center gap-2 text-[13px] font-semibold text-[#3D2E22]">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#C8A882]/15 text-[#A8895E]">
+              <Gauge className="h-3 w-3" />
+            </span>
+            {byok ? msg("submit.summary.estimate_fee") : msg("submit.summary.estimate_cost")}
+          </span>
+          <span className="text-[13px] font-medium text-[#3D2E22]" dir="auto">
+            {/* Isolate "low–high" as one LTR run (U+2066…U+2069) so the en-dash
+                between the two number groups doesn't flip them under RTL. */}
+            {formatMsg("submit.summary.estimate_range", {
+              low: `\u2066${formatCredits(estimate.lowCredits, locale)}`,
+              high: `${formatCredits(estimate.highCredits, locale)}\u2069`,
+            })}
+          </span>
+        </div>
+        {maxCostCredits != null && (
+          <p className="mt-1.5 text-[11px] text-[#8C7A6B]">
+            {formatMsg("submit.summary.estimate_capped", {
+              cap: formatCredits(maxCostCredits, locale),
+            })}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

@@ -48,6 +48,7 @@ import { buildOptimizerKwargs } from "../lib/build-kwargs";
 import {
   projectCostBracket,
   defaultCeilingForBracket,
+  chargeableBracket,
   type CostBracket,
 } from "../lib/cost-bracket";
 import { useCodeAgent } from "@/shared/hooks/use-code-agent";
@@ -401,24 +402,52 @@ export function useSubmitWizard() {
     jobType === "grid_search"
       ? Math.max(
           1,
-          (useAllGenerationModels ? catalog?.models.length ?? 1 : generationModels.filter((m) => m.name.trim()).length || 1) *
-            (useAllReflectionModels ? catalog?.models.length ?? 1 : reflectionModels.filter((m) => m.name.trim()).length || 1),
+          (useAllGenerationModels
+            ? (catalog?.models.length ?? 1)
+            : generationModels.filter((m) => m.name.trim()).length || 1) *
+            (useAllReflectionModels
+              ? (catalog?.models.length ?? 1)
+              : reflectionModels.filter((m) => m.name.trim()).length || 1),
         )
       : 1;
-  const costBracket: CostBracket = useMemo(
-    () =>
-      projectCostBracket({
-        autoLevel,
-        maxFullEvals,
-        datasetRows: parsedDataset?.rowCount ?? 0,
-        hasReflection:
-          jobType === "grid_search"
-            ? true
-            : !!secondModelConfig?.name?.trim(),
-        pairs: gridPairs,
-      }),
-    [autoLevel, maxFullEvals, parsedDataset?.rowCount, jobType, secondModelConfig, gridPairs],
-  );
+  const costBracket: CostBracket = useMemo(() => {
+    // Price the projection on the actually-chosen models (a representative
+    // gen/refl pair for a grid). Looked up in the catalog so each model's real
+    // $/token moves the estimate; unresolved names price at the engine defaults.
+    const taskName =
+      jobType === "grid_search"
+        ? generationModels.find((m) => m.name.trim())?.name
+        : modelConfig.name;
+    const reflName =
+      jobType === "grid_search"
+        ? reflectionModels.find((m) => m.name.trim())?.name
+        : secondModelConfig?.name;
+    const taskModel = taskName?.trim()
+      ? (catalog?.models.find((m) => m.value === taskName) ?? null)
+      : null;
+    const reflectionModel = reflName?.trim()
+      ? (catalog?.models.find((m) => m.value === reflName) ?? null)
+      : null;
+    return projectCostBracket({
+      autoLevel,
+      maxFullEvals,
+      datasetRows: parsedDataset?.rowCount ?? 0,
+      pairs: gridPairs,
+      taskModel,
+      reflectionModel,
+    });
+  }, [
+    autoLevel,
+    maxFullEvals,
+    parsedDataset?.rowCount,
+    jobType,
+    modelConfig.name,
+    secondModelConfig,
+    generationModels,
+    reflectionModels,
+    catalog,
+    gridPairs,
+  ]);
 
   // Default the cap to the bracket's high end (with headroom) the first time a
   // user opens the ceiling control; once they set a value we leave it alone.
@@ -1501,6 +1530,10 @@ export function useSubmitWizard() {
         librarySourceRef.current && librarySourceRef.current.parsed === parsedDataset
           ? librarySourceRef.current.id
           : null;
+      // Persist the chargeable bracket the user just saw so the post-run proof
+      // moment can reconcile it against the actual charge. Same bracket the cost
+      // surface and review recap showed (managed: full per-model; byok: fee).
+      const estimate = chargeableBracket(costBracket, wallet.mode);
       const base = {
         name: jobName.trim() || undefined,
         description: jobDescription.trim() || undefined,
@@ -1521,6 +1554,8 @@ export function useSubmitWizard() {
         shuffle,
         is_private: isPrivate,
         token_source: wallet.mode,
+        estimated_credits_low: estimate.lowCredits,
+        estimated_credits_high: estimate.highCredits,
         ...(maxCostCredits != null && { max_cost_credits: maxCostCredits }),
         ...(seed != null && { seed }),
         ...(Object.keys(optKw).length > 0 && { optimizer_kwargs: optKw }),

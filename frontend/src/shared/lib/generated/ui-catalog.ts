@@ -2035,6 +2035,7 @@ export type MessageKey =
   | "optimization.proof.billed.neutral"
   | "optimization.proof.billed.neutral.title"
   | "optimization.proof.billed.title"
+  | "optimization.proof.estimate_reconcile"
   | "optimization.proof.refunded.line"
   | "optimization.proof.refunded.title"
   | "optimization.readonly_by"
@@ -2385,6 +2386,7 @@ export type MessageKey =
   | "submit.code.agent.tool.signature.title"
   | "submit.code_validation_failed"
   | "submit.cost_ceiling.bracket"
+  | "submit.cost_ceiling.bracket_byok"
   | "submit.cost_ceiling.cap_label"
   | "submit.cost_ceiling.cap_unit"
   | "submit.cost_ceiling.enable"
@@ -2439,6 +2441,10 @@ export type MessageKey =
   | "submit.split.warning.too_small"
   | "submit.split.warnings_title"
   | "submit.submit_failed"
+  | "submit.summary.estimate_capped"
+  | "submit.summary.estimate_cost"
+  | "submit.summary.estimate_fee"
+  | "submit.summary.estimate_range"
   | "submit.validation.api_key_required"
   | "submit.validation.code_has_errors"
   | "submit.validation.dataset_before_code"
@@ -4574,6 +4580,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "optimization.proof.billed.neutral": "הרצה זו חויבה: {p1} קרדיטים.",
   "optimization.proof.billed.neutral.title": "הרצה זו חויבה",
   "optimization.proof.billed.title": "הוכח על נתונים שמורים",
+  "optimization.proof.estimate_reconcile": "הערכה {low}–{high} קרדיטים · חיוב בפועל {actual}",
   "optimization.proof.refunded.line": "לא הצלחנו לנצח את קו הבסיס שלך על {p1}, ולכן הרצה זו הייתה חינם. {p2} קרדיטים זוכו לארנק שלך.",
   "optimization.proof.refunded.title": "אין שיפור — הרצה זו הייתה חינם",
   "optimization.readonly_by": "מאת {name}",
@@ -4924,6 +4931,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.code.agent.tool.signature.title": "עריכת {term.signature}",
   "submit.code_validation_failed": "שגיאה באימות הקוד",
   "submit.cost_ceiling.bracket": "טווח צפוי: {low}–{high} קרדיטים",
+  "submit.cost_ceiling.bracket_byok": "עמלת פלטפורמה: {low}–{high} קרדיטים — מפתח הספק שלך משלם על המודל",
   "submit.cost_ceiling.cap_label": "תקרה",
   "submit.cost_ceiling.cap_unit": "קרדיטים",
   "submit.cost_ceiling.enable": "הגבלת עלות הריצה",
@@ -4978,6 +4986,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.split.warning.too_small": "הדאטאסט מכיל {row_count} {term.examplePlural} — מעט מדי כדי למדוד שיפור בצורה אמינה. כדאי להוסיף עוד {term.examplePlural} כדי לקבל ציונים יציבים יותר.",
   "submit.split.warnings_title": "שים/שימי לב",
   "submit.submit_failed": "שגיאה בשליחת ה{term.optimization}",
+  "submit.summary.estimate_capped": "תקרה קשיחה {cap} קרדיטים",
+  "submit.summary.estimate_cost": "עלות משוערת",
+  "submit.summary.estimate_fee": "עמלת פלטפורמה משוערת",
+  "submit.summary.estimate_range": "{low}–{high} קרדיטים",
   "submit.validation.api_key_required": "הזן/הזיני {term.apiKey} — הוא לא מוגדר ב-env ולא הוזן ידנית",
   "submit.validation.code_has_errors": "יש שגיאות בקוד — בדוק/בדקי את הפירוט למטה",
   "submit.validation.dataset_before_code": "העלה/העלי {term.dataset} לפני אימות הקוד",
@@ -11975,6 +11987,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "optimization.proof.billed.neutral": "This run was billed: {p1} credits.",
   "optimization.proof.billed.neutral.title": "This run was billed",
   "optimization.proof.billed.title": "Proven on held-out data",
+  "optimization.proof.estimate_reconcile": "Estimated {low}–{high} credits · billed {actual}",
   "optimization.proof.refunded.line": "We couldn't beat your baseline on {p1}, so this run was free. {p2} credits refunded to your wallet.",
   "optimization.proof.refunded.title": "No lift — this run was free",
   "optimization.readonly_by": "by {name}",
@@ -12325,6 +12338,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.code.agent.tool.signature.title": "Edit Signature",
   "submit.code_validation_failed": "Code validation failed",
   "submit.cost_ceiling.bracket": "Projected range: {low}–{high} credits",
+  "submit.cost_ceiling.bracket_byok": "Platform fee: {low}–{high} credits — your provider key pays the model",
   "submit.cost_ceiling.cap_label": "Ceiling",
   "submit.cost_ceiling.cap_unit": "credits",
   "submit.cost_ceiling.enable": "Cap this run's cost",
@@ -12379,6 +12393,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.split.warning.too_small": "This dataset has {row_count} {term.examplePlural} — too few to measure improvement reliably. Add more {term.examplePlural} for more stable scores.",
   "submit.split.warnings_title": "Note",
   "submit.submit_failed": "Error submitting the optimization",
+  "submit.summary.estimate_capped": "Hard cap {cap} credits",
+  "submit.summary.estimate_cost": "Estimated cost",
+  "submit.summary.estimate_fee": "Estimated platform fee",
+  "submit.summary.estimate_range": "{low}–{high} credits",
   "submit.validation.api_key_required": "Enter an API key — it isn't set in env and wasn't entered manually",
   "submit.validation.code_has_errors": "There are errors in the code — check the details below",
   "submit.validation.dataset_before_code": "Upload a dataset before validating the code",

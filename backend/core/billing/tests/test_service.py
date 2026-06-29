@@ -22,17 +22,18 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from core.api.errors import DomainError
+from core.billing.pricing import ModelUsage, credits_for_usage
 from core.billing.service import (
     FOUNDERS_LOCK_DAYS,
     FREE_GRANT_CREDITS,
     GRANT_WINDOW_DAYS,
-    METER_UNIT_TOKENS,
     PREMIUM_GRANT_CREDITS,
     TOKENS_PER_CREDIT,
     StripeBillingService,
     cost_ceiling_budget,
     credits_for_tokens,
     platform_fee_credits,
+    platform_fee_credits_for_usage,
 )
 from core.config import settings
 from core.constants import GUARANTEE_BASIS_TEST, GUARANTEE_BASIS_VAL, TOKEN_SOURCE_BYOK, TOKEN_SOURCE_MANAGED
@@ -46,6 +47,16 @@ def engine() -> Iterator[object]:
     Base.metadata.create_all(eng)
     yield eng
     Base.metadata.drop_all(eng)
+
+
+def _usages(input_tokens: int, output_tokens: int = 0) -> list[ModelUsage]:
+    """Single-model usage on an unpriced model so default per-token costs apply.
+
+    Pricing is then deterministic (the module default 1e-6 input / 3e-6 output ×
+    MARKUP) regardless of LiteLLM's live table, so a debit's credit cost is stable
+    across versions. ``_usages(100_000)`` ≈ 15 credits; ``_usages(200_000)`` ≈ 30.
+    """
+    return [ModelUsage(model="test/unpriced", input_tokens=input_tokens, output_tokens=output_tokens)]
 
 
 @pytest.fixture
@@ -62,17 +73,11 @@ def _seed_customer(engine: object, username: str) -> None:
         username: Account identity to create a Stripe-customer link for.
     """
     with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username=username, stripe_customer_id=f"cus_{username}", credit_balance=0
-            )
-        )
+        session.add(BillingCustomerModel(username=username, stripe_customer_id=f"cus_{username}", credit_balance=0))
         session.commit()
 
 
-def test_report_run_usage_noop_when_stripe_unconfigured(
-    engine: object, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_report_run_usage_noop_when_stripe_unconfigured(engine: object, monkeypatch: pytest.MonkeyPatch) -> None:
     """No meter event is pushed when no Stripe secret key is configured."""
     monkeypatch.setattr(settings, "stripe_secret_key", None)
     _seed_customer(engine, "u@x.com")
@@ -92,26 +97,26 @@ def test_report_run_usage_noop_without_billing_customer(engine: object, configur
         assert session.get(BillingCustomerModel, "nobody@x.com") is None
 
 
-def test_report_run_usage_noop_below_one_unit(engine: object, configured: None) -> None:
-    """A run smaller than one meter unit reports nothing rather than rounding up."""
+def test_report_run_usage_noop_for_zero_credits(engine: object, configured: None) -> None:
+    """A run that cost nothing reports no meter event."""
     _seed_customer(engine, "u@x.com")
     service = StripeBillingService(engine=engine)
     with patch("stripe.billing.MeterEvent.create") as create:
-        service.report_run_usage("u@x.com", METER_UNIT_TOKENS - 1)
+        service.report_run_usage("u@x.com", 0)
     create.assert_not_called()
 
 
-def test_report_run_usage_meters_whole_units_for_customer(engine: object, configured: None) -> None:
-    """Tokens are floored to whole meter units and pushed for the right customer."""
+def test_report_run_usage_meters_credits_for_customer(engine: object, configured: None) -> None:
+    """Credits are metered one-to-one (one unit per credit) for the right customer."""
     _seed_customer(engine, "u@x.com")
     service = StripeBillingService(engine=engine)
     with patch("stripe.billing.MeterEvent.create") as create:
-        service.report_run_usage("u@x.com", 2 * METER_UNIT_TOKENS + 500)
+        service.report_run_usage("u@x.com", 7)
     create.assert_called_once()
     kwargs = create.call_args.kwargs
     assert kwargs["event_name"] == settings.stripe_meter_event_name
     assert kwargs["payload"]["stripe_customer_id"] == "cus_u@x.com"
-    assert kwargs["payload"]["value"] == "2"
+    assert kwargs["payload"]["value"] == "7"
 
 
 def test_subscription_checkout_includes_metered_item(
@@ -146,9 +151,7 @@ def test_subscription_checkout_omits_metered_when_unconfigured(
     assert create.call_args.kwargs["line_items"] == [{"price": "price_premium", "quantity": 1}]
 
 
-def test_founders_rate_open_before_close_date(
-    engine: object, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_founders_rate_open_before_close_date(engine: object, monkeypatch: pytest.MonkeyPatch) -> None:
     """Before the close date the offer is open and reports a 12-month lock window."""
     monkeypatch.setattr(settings, "founders_rate_closes_at", "2099-12-31T23:59:59Z")
     service = StripeBillingService(engine=engine)
@@ -158,9 +161,7 @@ def test_founders_rate_open_before_close_date(
     assert status.price_locked_until == (now + timedelta(days=FOUNDERS_LOCK_DAYS)).isoformat()
 
 
-def test_founders_rate_closed_after_close_date(
-    engine: object, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_founders_rate_closed_after_close_date(engine: object, monkeypatch: pytest.MonkeyPatch) -> None:
     """Past the configured deadline the offer reports closed."""
     monkeypatch.setattr(settings, "founders_rate_closes_at", "2026-07-31T23:59:59Z")
     service = StripeBillingService(engine=engine)
@@ -284,17 +285,18 @@ def test_debit_run_draws_from_grant_first(engine: object) -> None:
     """A run debit decrements the free grant before touching the paid balance."""
     _seed_customer(engine, "u@x.com")
     service = StripeBillingService(engine=engine)
-    cost = service.debit_run(
-        "u@x.com", 5 * TOKENS_PER_CREDIT, model="openai/gpt-5.5-mini", description="run-a"
-    )
-    assert cost == 5
+    usages = _usages(100_000)
+    expected = credits_for_usage(usages)
+    cost = service.debit_run("u@x.com", usages, model="openai/gpt-5.5-mini", description="run-a")
+    assert cost == expected
+    assert 0 < expected < FREE_GRANT_CREDITS
     snapshot = service.get_wallet("u@x.com")
-    assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS - 5
+    assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS - expected
     assert snapshot.paid_balance_credits == 0
     with Session(engine) as session:
         rows = session.query(CreditLedgerModel).filter_by(username="u@x.com").all()
     assert len(rows) == 1
-    assert rows[0].delta_credits == -5
+    assert rows[0].delta_credits == -expected
     assert rows[0].kind == "run"
     assert rows[0].model == "openai/gpt-5.5-mini"
 
@@ -313,29 +315,33 @@ def test_debit_run_overflows_grant_into_paid_balance(engine: object) -> None:
         )
         session.commit()
     service = StripeBillingService(engine=engine)
-    cost = service.debit_run("u@x.com", 30 * TOKENS_PER_CREDIT, model=None, description="big")
-    assert cost == 30
+    usages = _usages(200_000)
+    expected = credits_for_usage(usages)
+    cost = service.debit_run("u@x.com", usages, model=None, description="big")
+    assert cost == expected
+    assert expected > 10  # must exceed the remaining grant to overflow into paid
     snapshot = service.get_wallet("u@x.com")
     assert snapshot.free_grant_remaining == 0
-    assert snapshot.paid_balance_credits == 80
+    assert snapshot.paid_balance_credits == 100 - (expected - 10)
 
 
 def test_debit_run_creates_local_row_for_customerless_account(engine: object) -> None:
     """A run for an account that never touched Stripe seeds a local billing row."""
     service = StripeBillingService(engine=engine)
-    service.debit_run("free@x.com", 3 * TOKENS_PER_CREDIT, model=None, description="r")
+    usages = _usages(20_000)
+    service.debit_run("free@x.com", usages, model=None, description="r")
     with Session(engine) as session:
         customer = session.get(BillingCustomerModel, "free@x.com")
     assert customer is not None
     assert customer.stripe_customer_id.startswith("local:")
-    assert customer.grant_remaining == FREE_GRANT_CREDITS - 3
+    assert customer.grant_remaining == FREE_GRANT_CREDITS - credits_for_usage(usages)
 
 
 def test_debit_run_zero_cost_writes_nothing(engine: object) -> None:
     """A run under one credit's worth of tokens writes no ledger row or debit."""
     _seed_customer(engine, "u@x.com")
     service = StripeBillingService(engine=engine)
-    assert service.debit_run("u@x.com", 0, model=None, description="r") == 0
+    assert service.debit_run("u@x.com", [], model=None, description="r") == 0
     with Session(engine) as session:
         assert session.query(CreditLedgerModel).filter_by(username="u@x.com").count() == 0
         assert session.get(BillingCustomerModel, "u@x.com").grant_remaining in (None, FREE_GRANT_CREDITS)
@@ -442,44 +448,47 @@ def test_platform_fee_is_a_floor_and_fraction_of_cost() -> None:
 def test_guarantee_refunds_full_run_on_no_lift_managed(engine: object) -> None:
     """A managed first run with no lift is fully refunded and the slot is flagged."""
     service = StripeBillingService(engine=engine)
-    # Debit 50 credits worth first (mirrors the worker's debit before adjudication).
-    service.debit_run("u@x.com", 50 * TOKENS_PER_CREDIT, model="m1", description="r")
-    assert _balance(engine, "u@x.com")[0] == FREE_GRANT_CREDITS - 50
+    usages = _usages(200_000)
+    expected = credits_for_usage(usages)
+    # Debit first (mirrors the worker's debit before adjudication).
+    service.debit_run("u@x.com", usages, model="m1", description="r")
+    assert _balance(engine, "u@x.com")[0] == FREE_GRANT_CREDITS - expected
     refunded = service.adjudicate_guarantee(
         "u@x.com",
         "task-abc",
         "opt-1",
         _lift(0.7, 0.7),
         token_source=TOKEN_SOURCE_MANAGED,
-        total_tokens=50 * TOKENS_PER_CREDIT,
+        usages=usages,
         model="m1",
         description="No lift — refunded",
     )
-    assert refunded == 50
+    assert refunded == expected
     assert _balance(engine, "u@x.com")[0] == FREE_GRANT_CREDITS  # restored
     with Session(engine) as session:
         claim = session.get(GuaranteeRunModel, ("u@x.com", "task-abc"))
         assert claim is not None
         assert claim.refunded is True
         rows = session.query(CreditLedgerModel).filter_by(username="u@x.com").all()
-    assert sorted(r.delta_credits for r in rows) == [-50, 50]
+    assert sorted(r.delta_credits for r in rows) == [-expected, expected]
 
 
 def test_guarantee_refunds_only_platform_fee_on_byok_no_lift(engine: object) -> None:
     """A BYOK no-lift run refunds only Skynet's platform fee, not provider tokens."""
     service = StripeBillingService(engine=engine)
+    usages = _usages(200_000)
     refunded = service.adjudicate_guarantee(
         "u@x.com",
         "task-byok",
         "opt-1",
         _lift(0.5, 0.5),
         token_source=TOKEN_SOURCE_BYOK,
-        total_tokens=100 * TOKENS_PER_CREDIT,
+        usages=usages,
         model=None,
         description="No lift — refunded",
     )
-    assert refunded == platform_fee_credits(100 * TOKENS_PER_CREDIT)
-    assert refunded == 20
+    assert refunded == platform_fee_credits_for_usage(usages)
+    assert 0 < refunded < credits_for_usage(usages)  # only the platform fee, not the full cost
 
 
 def test_guarantee_no_refund_when_run_has_lift(engine: object) -> None:
@@ -491,7 +500,7 @@ def test_guarantee_no_refund_when_run_has_lift(engine: object) -> None:
         "opt-1",
         _lift(0.6, 0.61),
         token_source=TOKEN_SOURCE_MANAGED,
-        total_tokens=10 * TOKENS_PER_CREDIT,
+        usages=_usages(100_000),
         model=None,
         description="No lift — refunded",
     )
@@ -506,24 +515,25 @@ def test_guarantee_no_refund_when_run_has_lift(engine: object) -> None:
 def test_guarantee_only_covers_first_run_per_task(engine: object) -> None:
     """A re-run on the same task bills regardless — only the first run is covered."""
     service = StripeBillingService(engine=engine)
+    usages = _usages(200_000)
     first = service.adjudicate_guarantee(
         "u@x.com",
         "task-dup",
         "opt-1",
         _lift(0.7, 0.7),
         token_source=TOKEN_SOURCE_MANAGED,
-        total_tokens=20 * TOKENS_PER_CREDIT,
+        usages=usages,
         model=None,
         description="No lift — refunded",
     )
-    assert first == 20
+    assert first == credits_for_usage(usages)
     second = service.adjudicate_guarantee(
         "u@x.com",
         "task-dup",
         "opt-2",
         _lift(0.7, 0.7),
         token_source=TOKEN_SOURCE_MANAGED,
-        total_tokens=20 * TOKENS_PER_CREDIT,
+        usages=usages,
         model=None,
         description="No lift — refunded",
     )
@@ -543,11 +553,11 @@ def test_guarantee_valset_basis_judges_lift(engine: object) -> None:
         "opt-1",
         _lift(0.8, 0.8, basis=GUARANTEE_BASIS_VAL),
         token_source=TOKEN_SOURCE_MANAGED,
-        total_tokens=5 * TOKENS_PER_CREDIT,
+        usages=_usages(100_000),
         model=None,
         description="No lift — refunded",
     )
-    assert refunded == 5
+    assert refunded == credits_for_usage(_usages(100_000))
 
 
 def test_guarantee_billed_when_no_comparable_scores(engine: object) -> None:
@@ -559,7 +569,7 @@ def test_guarantee_billed_when_no_comparable_scores(engine: object) -> None:
         "opt-1",
         None,
         token_source=TOKEN_SOURCE_MANAGED,
-        total_tokens=5 * TOKENS_PER_CREDIT,
+        usages=_usages(100_000),
         model=None,
         description="No lift — refunded",
     )
@@ -572,27 +582,27 @@ def test_debit_run_byok_charges_only_platform_fee(engine: object) -> None:
     """A BYOK run debits only Skynet's platform fee, not the full per-token cost."""
     _seed_customer(engine, "u@x.com")
     service = StripeBillingService(engine=engine)
+    usages = _usages(200_000)
     cost = service.debit_run(
         "u@x.com",
-        100 * TOKENS_PER_CREDIT,
+        usages,
         model="m1",
         description="byok-run",
         token_source=TOKEN_SOURCE_BYOK,
     )
-    assert cost == platform_fee_credits(100 * TOKENS_PER_CREDIT)
-    assert cost == 20  # 20% of the 100-credit full cost a managed run would have paid
+    assert cost == platform_fee_credits_for_usage(usages)
+    assert 0 < cost < credits_for_usage(usages)  # only a fraction of the full cost
     snapshot = service.get_wallet("u@x.com")
-    assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS - 20
+    assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS - cost
 
 
 def test_debit_run_managed_still_charges_full_cost(engine: object) -> None:
     """A managed run is unaffected — it still pays the full per-token credit cost."""
     _seed_customer(engine, "u@x.com")
     service = StripeBillingService(engine=engine)
-    cost = service.debit_run(
-        "u@x.com", 100 * TOKENS_PER_CREDIT, model="m1", description="managed-run"
-    )
-    assert cost == 100
+    usages = _usages(200_000)
+    cost = service.debit_run("u@x.com", usages, model="m1", description="managed-run")
+    assert cost == credits_for_usage(usages)
 
 
 def test_cost_ceiling_budget_managed_is_the_balance(engine: object) -> None:

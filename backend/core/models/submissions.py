@@ -108,6 +108,25 @@ class _OptimizationRequestBase(BaseModel):
             "Omit (null) for no ceiling."
         ),
     )
+    estimated_credits_low: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Low end of the projected credit bracket the wizard showed at submit. Persisted so "
+            "the post-run proof moment can reconcile the estimate against the actual charge. "
+            "Carries the chargeable bracket for the run's token_source (managed: full per-model "
+            "cost; byok: platform fee). Advisory only — never gates or bills. Omit (null) when "
+            "no estimate was computed."
+        ),
+    )
+    estimated_credits_high: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "High end of the projected credit bracket (see estimated_credits_low). Seeds the "
+            "post-run estimate-vs-actual reconciliation. Advisory only."
+        ),
+    )
 
     @model_validator(mode="after")
     def _ensure_dataset(self) -> _OptimizationRequestBase:

@@ -4,10 +4,11 @@ import * as React from "react";
 import { Gauge } from "lucide-react";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { NumberInput } from "@/shared/ui/number-input";
-import { formatCredits } from "@/features/billing";
+import { formatCredits, type TokenSourceMode } from "@/features/billing";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
+import { chargeableBracket } from "../lib/cost-bracket";
 import type { SubmitWizardContext } from "../hooks/use-submit-wizard";
 
 /**
@@ -15,12 +16,21 @@ import type { SubmitWizardContext } from "../hooks/use-submit-wizard";
  * false-precision number) plus an optional user-set Max Cost Ceiling. Enabling
  * the cap threads `max_cost_credits` into the submit payload; the backend
  * hard-stops the run once spend would exceed it. The run button carries the cap
- * separately (see SubmitNav). Warm, calm, factual — no alarm, no sales pressure.
+ * separately (see SubmitNav).
+ *
+ * Mode-aware: a managed run shows the full per-model credit cost; a BYOK run
+ * shows only the platform fee (the provider tokens are paid on the user's own
+ * key), so the surface stays honest in both modes. Warm, calm, factual.
  */
-export function CostCeilingCard({ w }: { w: SubmitWizardContext }) {
+export function CostCeilingCard({ w, mode }: { w: SubmitWizardContext; mode: TokenSourceMode }) {
   const { costBracket, suggestedCeiling, maxCostCredits, setMaxCostCredits } = w;
   const locale = getActiveIntlLocale();
   const capped = maxCostCredits != null;
+  const byok = mode === "byok";
+  // In BYOK the user is charged only Skynet's platform fee, so the headline range
+  // shows the fee, not the full per-model cost the provider key absorbs.
+  const displayBracket = chargeableBracket(costBracket, mode);
+  const bracketKey = byok ? "submit.cost_ceiling.bracket_byok" : "submit.cost_ceiling.bracket";
 
   const toggleCap = (on: boolean) => {
     setMaxCostCredits(on ? suggestedCeiling : null);
@@ -39,9 +49,7 @@ export function CostCeilingCard({ w }: { w: SubmitWizardContext }) {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-[#8C7A6B]">
-              {msg("submit.cost_ceiling.enable")}
-            </span>
+            <span className="text-[11px] text-[#8C7A6B]">{msg("submit.cost_ceiling.enable")}</span>
             <Switch checked={capped} onCheckedChange={toggleCap} />
           </div>
         </div>
@@ -51,16 +59,14 @@ export function CostCeilingCard({ w }: { w: SubmitWizardContext }) {
               en-dash between two Latin number groups is a neutral that resolves to
               the paragraph's RTL direction and visually swaps the numbers to
               "high–low". Isolating "low–high" as one LTR run keeps the order. */}
-          {formatMsg("submit.cost_ceiling.bracket", {
-            low: `\u2066${formatCredits(costBracket.lowCredits, locale)}`,
-            high: `${formatCredits(costBracket.highCredits, locale)}\u2069`,
+          {formatMsg(bracketKey, {
+            low: `\u2066${formatCredits(displayBracket.lowCredits, locale)}`,
+            high: `${formatCredits(displayBracket.highCredits, locale)}\u2069`,
           })}
         </p>
       </div>
 
-      <div
-        className={cnGrid(capped)}
-      >
+      <div className={cnGrid(capped)}>
         <div className="overflow-hidden">
           <div className="border-t border-[#DDD6CC]/60 px-3.5 py-3 space-y-2">
             <div className="flex items-center justify-between gap-3">

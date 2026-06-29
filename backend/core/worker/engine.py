@@ -27,10 +27,13 @@ from pathlib import Path
 from typing import Any
 
 from ..billing import ProviderKeyVault, StripeBillingService, inject_byok_connections
+from ..billing.pricing import ModelUsage
 from ..config import settings
 from ..constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
+    PAYLOAD_OVERVIEW_ESTIMATED_HIGH,
+    PAYLOAD_OVERVIEW_ESTIMATED_LOW,
     PAYLOAD_OVERVIEW_MODEL_NAME,
     PAYLOAD_OVERVIEW_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
@@ -52,6 +55,46 @@ from .constants import EVENT_ERROR, EVENT_LOG, EVENT_PROGRESS, EVENT_RESULT
 from .subprocess_runner import run_service_in_subprocess, set_fork_service
 
 logger = logging.getLogger(__name__)
+
+
+def _usages_from_result(result_dict: dict[str, Any] | None, fallback_model: str | None) -> list[ModelUsage]:
+    """Build per-model :class:`ModelUsage` from a serialized run/grid result.
+
+    Reads the result's ``usage_by_model`` rows (stamped by the optimizer from the
+    LM histories). A result that predates the per-model split — or an in-flight
+    job spanning the deploy — has no rows; it falls back to pricing the whole
+    ``total_tokens`` on ``fallback_model``, attributing it to input (the cheaper
+    side) so the legacy path under-charges rather than over-charges.
+
+    Args:
+        result_dict: The serialized run/grid result, or ``None``.
+        fallback_model: Model id to price a rows-less legacy result against.
+
+    Returns:
+        Per-model usage rows with positive token counts, or ``[]`` when the run
+        reported no usage at all.
+    """
+    if not isinstance(result_dict, dict):
+        return []
+    usages: list[ModelUsage] = []
+    rows = result_dict.get("usage_by_model")
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            model = row.get("model")
+            in_tokens = row.get("input_tokens", 0)
+            out_tokens = row.get("output_tokens", 0)
+            if not isinstance(model, str) or not isinstance(in_tokens, int) or not isinstance(out_tokens, int):
+                continue
+            if in_tokens > 0 or out_tokens > 0:
+                usages.append(ModelUsage(model=model, input_tokens=in_tokens, output_tokens=out_tokens))
+    if usages:
+        return usages
+    total_tokens = result_dict.get("total_tokens")
+    if isinstance(total_tokens, int) and total_tokens > 0:
+        return [ModelUsage(model=fallback_model or "unknown", input_tokens=total_tokens, output_tokens=0)]
+    return []
 
 
 class CancellationError(Exception):
@@ -652,8 +695,7 @@ class BackgroundWorker:
                                 result_dict,
                                 run_name=overview.get(PAYLOAD_OVERVIEW_NAME) or "",
                                 model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
-                                token_source=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE)
-                                or TOKEN_SOURCE_MANAGED,
+                                token_source=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED,
                             )
                             # Adjudicate the guarantee after the debit so a no-lift
                             # first run can write its offsetting refund against the
@@ -668,9 +710,14 @@ class BackgroundWorker:
                             # shows the credits restored. Re-persisted because the two
                             # billing calls run after the first completion write.
                             self._stamp_billing_outcome(
-                                optimization_id, result_dict, billed=billed, refunded=refunded
+                                optimization_id,
+                                result_dict,
+                                billed=billed,
+                                refunded=refunded,
+                                estimated_low=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_LOW),
+                                estimated_high=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_HIGH),
                             )
-                            self._report_run_usage_best_effort(_username, result_dict)
+                            self._report_run_usage_best_effort(_username, billed)
                     if final_status == "success":
                         self._schedule_embedding_indexing(optimization_id)
                 except KeyError:
@@ -933,8 +980,8 @@ class BackgroundWorker:
 
         Args:
             username: Account the run is billed to.
-            result_dict: The serialized run/grid result; its ``total_tokens`` is
-                the figure charged.
+            result_dict: The serialized run/grid result; its ``usage_by_model`` is
+                priced per-model into the charge (falling back to ``total_tokens``).
             run_name: Run name for the ledger row's human label.
             model: Model id stamped on the ledger row, or ``None``.
             token_source: ``"managed"`` (full cost) or ``"byok"`` (platform fee
@@ -947,13 +994,13 @@ class BackgroundWorker:
         engine = getattr(self._job_store, "engine", None)
         if engine is None or not username:
             return 0
-        total_tokens = result_dict.get("total_tokens") if isinstance(result_dict, dict) else None
-        if not isinstance(total_tokens, int) or total_tokens <= 0:
+        usages = _usages_from_result(result_dict, model)
+        if not usages:
             return 0
         try:
             return StripeBillingService(engine=engine).debit_run(
                 username,
-                total_tokens,
+                usages,
                 model=model,
                 description=run_name or "Run",
                 token_source=token_source,
@@ -986,7 +1033,7 @@ class BackgroundWorker:
         Args:
             username: Account the run was billed to.
             result_dict: The serialized run/grid result; carries ``guarantee``
-                and ``total_tokens``.
+                and ``usage_by_model`` (falling back to ``total_tokens``).
             overview: The job's payload overview (task fingerprint, token source,
                 run name, model).
             optimization_id: The finished run claiming or skipping the slot.
@@ -1001,8 +1048,8 @@ class BackgroundWorker:
         task_fingerprint = overview.get(PAYLOAD_OVERVIEW_TASK_FINGERPRINT)
         if not task_fingerprint:
             return 0
-        total_tokens = result_dict.get("total_tokens")
-        if not isinstance(total_tokens, int) or total_tokens <= 0:
+        usages = _usages_from_result(result_dict, overview.get(PAYLOAD_OVERVIEW_MODEL_NAME))
+        if not usages:
             return 0
         token_source = overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED
         run_name = overview.get(PAYLOAD_OVERVIEW_NAME) or "Run"
@@ -1013,7 +1060,7 @@ class BackgroundWorker:
                 str(optimization_id),
                 result_dict.get("guarantee"),
                 token_source=str(token_source),
-                total_tokens=total_tokens,
+                usages=usages,
                 model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
                 description=f"No lift — refunded · {run_name}",
             )
@@ -1036,25 +1083,33 @@ class BackgroundWorker:
         *,
         billed: int,
         refunded: int,
+        estimated_low: int | None = None,
+        estimated_high: int | None = None,
     ) -> None:
         """Record the run's billing outcome on its result for the proof screen.
 
         Writes ``result['details']['billing']`` — ``{outcome, credits}`` where
         ``outcome`` is ``"refunded"`` when the guarantee returned credits (the run
         was free) or ``"billed"`` otherwise, and ``credits`` is the amount restored
-        (refund) or charged (bill). The result screen reads this to frame billing
-        as proof: a charge is the receipt the lift was real, a refund the evidence
-        the guarantee held. Only stamps single-run results (a grid envelope has no
-        per-run ``details``) and only when a credit amount exists, so a free-grant
-        run that cost nothing adds no row. Re-persists the result via the job store
-        because the billing calls run after the first completion write; wrapped so a
-        store hiccup can never flip job status.
+        (refund) or charged (bill). When the run was submitted with a projected
+        bracket, ``estimated_low``/``estimated_high`` are echoed alongside so the
+        proof screen can reconcile the estimate against the actual charge. The
+        result screen reads this to frame billing as proof: a charge is the receipt
+        the lift was real, a refund the evidence the guarantee held. Only stamps
+        single-run results (a grid envelope has no per-run ``details``) and only
+        when a credit amount exists, so a free-grant run that cost nothing adds no
+        row. Re-persists the result via the job store because the billing calls run
+        after the first completion write; wrapped so a store hiccup can never flip
+        job status.
 
         Args:
             optimization_id: The finished run whose result is updated.
             result_dict: The serialized run result; mutated in place and re-saved.
             billed: Credits charged by :meth:`_debit_run_credits`.
             refunded: Credits returned by :meth:`_apply_guarantee_best_effort`.
+            estimated_low: Low end of the projected credit bracket, or None when
+                the run carried no estimate.
+            estimated_high: High end of the projected credit bracket, or None.
         """
         if not isinstance(result_dict, dict) or "pair_results" in result_dict:
             return
@@ -1067,41 +1122,42 @@ class BackgroundWorker:
             if not isinstance(details, dict):
                 details = {}
                 result_dict["details"] = details
-            details["billing"] = {"outcome": outcome, "credits": credits}
+            billing: dict[str, Any] = {"outcome": outcome, "credits": credits}
+            if estimated_low is not None and estimated_high is not None:
+                billing["estimated_low"] = estimated_low
+                billing["estimated_high"] = estimated_high
+            details["billing"] = billing
             self._job_store.update_job(optimization_id, result=result_dict)
         except Exception as exc:  # isolation boundary: stamping must never impact job status
             logger.debug("Billing-outcome stamp for %s failed: %s", optimization_id, exc)
 
-    def _report_run_usage_best_effort(self, username: str, result_dict: dict[str, Any] | None) -> None:
-        """Meter a finished run's token usage to Stripe, off the worker hot path.
+    def _report_run_usage_best_effort(self, username: str, credits: int) -> None:
+        """Meter a finished run's credit cost to Stripe, off the worker hot path.
 
-        Reads the run's ``total_tokens`` (captured from LM history into the
-        result payload) and reports it on a daemon thread so a slow or hung
-        Stripe call cannot stall the worker. A no-op when the store exposes no
-        SQL engine (legacy/in-memory), Stripe is unconfigured, the caller is
-        anonymous, or the run reported no token usage — billing must never
-        affect job status.
+        Meters the run's per-model credit cost (the same figure the local debit
+        charged) on a daemon thread so a slow or hung Stripe call cannot stall the
+        worker. A no-op when the store exposes no SQL engine (legacy/in-memory),
+        Stripe is unconfigured, the caller is anonymous, or the run cost nothing —
+        billing must never affect job status.
 
         Args:
             username: Account the run is billed to.
-            result_dict: The serialized run/grid result; its ``total_tokens`` is
-                the figure metered.
+            credits: The run's credit cost to meter (the debited amount).
         """
         engine = getattr(self._job_store, "engine", None)
         if engine is None or not username or settings.stripe_secret_key is None:
             return
-        total_tokens = result_dict.get("total_tokens") if isinstance(result_dict, dict) else None
-        if not isinstance(total_tokens, int) or total_tokens <= 0:
+        if not isinstance(credits, int) or credits <= 0:
             return
         threading.Thread(
             target=self._meter_run_usage,
-            args=(engine, username, total_tokens),
+            args=(engine, username, credits),
             name=f"meter-{username[:8]}",
             daemon=True,
         ).start()
 
-    def _meter_run_usage(self, engine: Any, username: str, total_tokens: int) -> None:
-        """Report run usage to Stripe, swallowing failures so they never reach the worker.
+    def _meter_run_usage(self, engine: Any, username: str, credits: int) -> None:
+        """Report run credits to Stripe, swallowing failures so they never reach the worker.
 
         A Stripe outage or an unconfigured meter only surfaces on this daemon
         thread; the job is already marked success by the time this runs.
@@ -1109,10 +1165,10 @@ class BackgroundWorker:
         Args:
             engine: SQLAlchemy engine backing the billing tables.
             username: Account the run is billed to.
-            total_tokens: Tokens the run consumed.
+            credits: The run's credit cost to meter.
         """
         try:
-            StripeBillingService(engine=engine).report_run_usage(username, total_tokens)
+            StripeBillingService(engine=engine).report_run_usage(username, credits)
         except Exception as exc:  # isolation boundary: metering must never impact job status
             logger.debug("Metered usage report for %s failed: %s", username, exc)
 

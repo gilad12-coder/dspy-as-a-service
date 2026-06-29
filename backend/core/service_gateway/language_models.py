@@ -243,3 +243,75 @@ def total_tokens_from_history(*language_models: object) -> int | None:
                 total += tokens
                 found = True
     return total if found else None
+
+
+def _usage_in_out_tokens(usage: object) -> tuple[int, int] | None:
+    """Split one history ``usage`` block into ``(input, output)`` token counts.
+
+    Returns ``prompt_tokens`` / ``completion_tokens`` when either is present.
+    When a provider reports only a combined ``total_tokens``, the whole amount is
+    attributed to input — the cheaper side — so the fallback under-charges output
+    rather than inventing a split that over-bills. Returns ``None`` when the block
+    carries no recognizable token fields.
+
+    Args:
+        usage: The ``usage`` value from a ``dspy.LM`` history entry — a mapping,
+            a provider usage object, or ``None``.
+
+    Returns:
+        The ``(input_tokens, output_tokens)`` pair, or ``None`` when untracked.
+    """
+    if usage is None:
+        return None
+    get = usage.get if isinstance(usage, dict) else lambda key: getattr(usage, key, None)
+    prompt = get("prompt_tokens")
+    completion = get("completion_tokens")
+    if isinstance(prompt, (int, float)) or isinstance(completion, (int, float)):
+        in_tokens = int(prompt) if isinstance(prompt, (int, float)) and prompt > 0 else 0
+        out_tokens = int(completion) if isinstance(completion, (int, float)) and completion > 0 else 0
+        if in_tokens or out_tokens:
+            return in_tokens, out_tokens
+    total = get("total_tokens")
+    if isinstance(total, (int, float)) and total > 0:
+        return int(total), 0
+    return None
+
+
+def usage_by_model_from_history(*language_models: object) -> dict[str, tuple[int, int]] | None:
+    """Aggregate per-model ``(input, output)`` token usage across LMs' histories.
+
+    The per-model companion to :func:`total_tokens_from_history`: it keys usage
+    by each ``dspy.LM``'s ``model`` id and preserves the input/output split that
+    per-model pricing needs, folding several LMs on the same model together.
+    Stays billing-agnostic — it returns plain token counts, leaving the
+    cost conversion to :mod:`core.billing.pricing`.
+
+    Args:
+        *language_models: LMs whose histories to total; ``None`` entries and LMs
+            without a ``history`` list are skipped. An LM with no ``model``
+            attribute buckets under ``"unknown"``.
+
+    Returns:
+        A ``model id → (input_tokens, output_tokens)`` mapping, or ``None`` when
+        no usage information is present anywhere — mirroring
+        :func:`total_tokens_from_history` so callers can tell "zero usage" from
+        "usage not tracked" and skip charging rather than bill nothing.
+    """
+    by_model: dict[str, list[int]] = {}
+    found = False
+    for language_model in language_models:
+        history = getattr(language_model, "history", None)
+        if not isinstance(history, list):
+            continue
+        model = getattr(language_model, "model", None) or "unknown"
+        for entry in history:
+            split = _usage_in_out_tokens(entry.get("usage") if isinstance(entry, dict) else None)
+            if split is None:
+                continue
+            accumulator = by_model.setdefault(model, [0, 0])
+            accumulator[0] += split[0]
+            accumulator[1] += split[1]
+            found = True
+    if not found:
+        return None
+    return {model: (in_out[0], in_out[1]) for model, in_out in by_model.items()}
