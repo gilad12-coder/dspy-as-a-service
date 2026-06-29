@@ -29,6 +29,10 @@ litellm_settings:
     type: redis
     host: os.environ/REDIS_HOST
     port: os.environ/REDIS_PORT
+    # Empty for the bundled local redis (no auth); set in hosted deploys where
+    # the managed Redis requires AUTH (e.g. Railway). redis-py skips AUTH on an
+    # empty password, so this stays backward-compatible with the local stack.
+    password: os.environ/REDIS_PASSWORD
 
 general_settings:
   # Admin key for minting per-user / per-job virtual keys via the proxy's
