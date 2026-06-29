@@ -2406,5 +2406,22 @@
   "settings.privacy.clear_cache.action": "清除",
   "settings.privacy.clear_cache.success": "缓存数据已清除",
   "settings.privacy.copy_username.label": "用户名",
-  "settings.privacy.copy_email.label": "电子邮箱"
+  "settings.privacy.copy_email.label": "电子邮箱",
+  "billing.wallet.autoreload_amount_label": "充值额度",
+  "billing.wallet.autoreload_rate": "每额度 {p1}",
+  "billing.wallet.autoreload_saved": "自动充值已设置为 {p1} 额度",
+  "billing.wallet.filter_all": "全部",
+  "billing.wallet.filter_applied": "正在显示{p1}",
+  "billing.wallet.filter_costs": "支出",
+  "billing.wallet.filter_empty": "没有匹配的活动",
+  "billing.wallet.filter_refunds": "退款",
+  "submit.split.rationale.tiny": "此数据集非常小（{total} {term.examplePlural}）。{term.examplePlural} 不足以划分出单独的 {term.splitVal} 或 {term.splitTest}，因此 GEPA 在 {term.optimization} 期间将同一批样本同时用于 {term.splitTrain} 和评估。",
+  "submit.split.rationale.small": "此数据集较小（{total} {term.examplePlural}）。其中 80% 用于 {term.splitTrain}，20% 用于 {term.splitVal}，以便为 GEPA 提供单独的评估集；{term.examplePlural} 不足以再划分出 {term.splitTest}。",
+  "submit.split.rationale.medium": "这是一个中等规模的数据集（{total} {term.examplePlural}）。采用 60/20/20 划分可为三个集合都留出足够的 {term.examplePlural}。",
+  "submit.split.rationale.large": "这是一个大型数据集（{total} {term.examplePlural}）。{val_count} {term.examplePlural} 用于 {term.splitVal}，{test_count} 用于 {term.splitTest}；当数据集达到这些上限后，便能在不评估超出所需数量的 {term.examplePlural} 的情况下，将 {term.optimization} 时间控制在合理范围内。",
+  "submit.split.warning.too_small": "此数据集仅有 {row_count} {term.examplePlural}，太少，无法可靠地衡量改进。请添加更多 {term.examplePlural} 以获得更稳定的评分。",
+  "submit.split.warning.duplicates": "按 {term.inputColumns} 发现了 {duplicate_count} 条重复的 {term.rowPlural}。重复可能导致相同的 {term.examplePlural} 出现在多个划分中。",
+  "submit.split.warning.missing_target": "有 {missing} {term.rowPlural} 在 {term.outputColumnTarget}“{column_name}”中缺少值。请在运行前删除或补全它们。",
+  "submit.split.warning.rare_class": "列“{column_name}”包含稀有类别（{rare_classes}）——其中一些可能不会出现在 {term.splitVal} 或 {term.splitTest} 中。",
+  "submit.split.warning.class_imbalance": "“{column_name}”存在类别不平衡（比例 {ratio}:1）。请考虑为占比偏少的类别添加 {term.examplePlural}。"
 }

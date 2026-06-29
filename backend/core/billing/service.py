@@ -38,7 +38,7 @@ from ..storage.models import (
 PACK_CREDITS: dict[str, int] = {"starter": 500, "plus": 2200, "pro": 6500}
 
 # Renewing allowance that keeps the free tier usable on mini models.
-FREE_GRANT_CREDITS = 200
+FREE_GRANT_CREDITS = 500
 
 # The free grant rolls on a per-user 30-day window rather than a calendar month,
 # so resets scatter across the month instead of all landing on the 1st. The

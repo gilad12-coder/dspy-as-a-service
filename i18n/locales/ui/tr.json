@@ -2406,5 +2406,22 @@
   "settings.privacy.clear_cache.action": "Temizle",
   "settings.privacy.clear_cache.success": "Önbelleğe alınan veriler temizlendi",
   "settings.privacy.copy_username.label": "Kullanıcı adı",
-  "settings.privacy.copy_email.label": "E-posta"
+  "settings.privacy.copy_email.label": "E-posta",
+  "billing.wallet.autoreload_amount_label": "Yükleme tutarı",
+  "billing.wallet.autoreload_rate": "kredi başına {p1}",
+  "billing.wallet.autoreload_saved": "Otomatik yükleme {p1} krediye ayarlandı",
+  "billing.wallet.filter_all": "Tümü",
+  "billing.wallet.filter_applied": "{p1} gösteriliyor",
+  "billing.wallet.filter_costs": "Maliyetler",
+  "billing.wallet.filter_empty": "Eşleşen etkinlik yok",
+  "billing.wallet.filter_refunds": "İadeler",
+  "submit.split.rationale.tiny": "Bu veri kümesi çok küçük ({total} {term.examplePlural}). Ayrı bir {term.splitVal} veya {term.splitTest} için yeterli {term.examplePlural} yok, bu nedenle GEPA {term.optimization} sırasında aynı örnekleri hem {term.splitTrain} hem de değerlendirme için yeniden kullanır.",
+  "submit.split.rationale.small": "Bu veri kümesi küçük ({total} {term.examplePlural}). GEPA'ya ayrı bir değerlendirme kümesi sağlamak için %80'i {term.splitTrain}, %20'si {term.splitVal} olarak ayrılır; ayrıca bir {term.splitTest} için yeterli {term.examplePlural} yok.",
+  "submit.split.rationale.medium": "Bu orta boyutlu bir veri kümesi ({total} {term.examplePlural}). 60/20/20 bölmesi üç kümenin tümü için yeterli {term.examplePlural} bırakır.",
+  "submit.split.rationale.large": "Bu büyük bir veri kümesi ({total} {term.examplePlural}). {val_count} {term.examplePlural} {term.splitVal} kümesine, {test_count} ise {term.splitTest} kümesine gider; veri kümesi bu üst sınırlara ulaştığında, gerekenden fazla {term.examplePlural} üzerinde değerlendirme yapmadan {term.optimization} süresini makul tutarlar.",
+  "submit.split.warning.too_small": "Bu veri kümesinde {row_count} {term.examplePlural} var — iyileşmeyi güvenilir biçimde ölçmek için fazla az. Daha kararlı puanlar için daha fazla {term.examplePlural} ekleyin.",
+  "submit.split.warning.duplicates": "{term.inputColumns} bazında {duplicate_count} yinelenen {term.rowPlural} bulundu. Yinelemeler, aynı {term.examplePlural} öğesinin birden fazla bölmede yer almasına yol açabilir.",
+  "submit.split.warning.missing_target": "{missing} {term.rowPlural}, {term.outputColumnTarget} '{column_name}' alanında değer içermiyor. Çalıştırmadan önce bunları kaldırın veya doldurun.",
+  "submit.split.warning.rare_class": "'{column_name}' sütununda nadir kategoriler var ({rare_classes}) — bazıları {term.splitVal} veya {term.splitTest} içinde yer almayabilir.",
+  "submit.split.warning.class_imbalance": "'{column_name}' sütununda sınıf dengesizliği var (oran {ratio}:1). Yetersiz temsil edilen kategoriler için {term.examplePlural} eklemeyi düşünün."
 }

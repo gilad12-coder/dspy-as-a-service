@@ -2406,5 +2406,22 @@
   "settings.privacy.clear_cache.action": "Löschen",
   "settings.privacy.clear_cache.success": "Zwischengespeicherte Daten gelöscht",
   "settings.privacy.copy_username.label": "Benutzername",
-  "settings.privacy.copy_email.label": "E-Mail"
+  "settings.privacy.copy_email.label": "E-Mail",
+  "billing.wallet.autoreload_amount_label": "Aufladebetrag",
+  "billing.wallet.autoreload_rate": "{p1} pro Credit",
+  "billing.wallet.autoreload_saved": "Automatisch aufladen auf {p1} Credits festgelegt",
+  "billing.wallet.filter_all": "Alle",
+  "billing.wallet.filter_applied": "Zeige {p1}",
+  "billing.wallet.filter_costs": "Kosten",
+  "billing.wallet.filter_empty": "Keine passende Aktivität",
+  "billing.wallet.filter_refunds": "Erstattungen",
+  "submit.split.rationale.tiny": "Dieser Datensatz ist sehr klein ({total} {term.examplePlural}). Es gibt nicht genügend {term.examplePlural} für einen separaten {term.splitVal} oder {term.splitTest}, daher verwendet GEPA dieselben Beispiele sowohl für {term.splitTrain} als auch für die Auswertung während der {term.optimization} erneut.",
+  "submit.split.rationale.small": "Dieser Datensatz ist klein ({total} {term.examplePlural}). 80% gehen an {term.splitTrain} und 20% an {term.splitVal}, um GEPA einen separaten Auswertungssatz zu geben; es gibt nicht genügend {term.examplePlural} auch für einen {term.splitTest}.",
+  "submit.split.rationale.medium": "Dies ist ein mittelgroßer Datensatz ({total} {term.examplePlural}). Eine Aufteilung von 60/20/20 lässt genügend {term.examplePlural} für alle drei Sätze übrig.",
+  "submit.split.rationale.large": "Dies ist ein großer Datensatz ({total} {term.examplePlural}). {val_count} {term.examplePlural} gehen an {term.splitVal} und {test_count} an {term.splitTest}; sobald der Datensatz diese Obergrenzen erreicht, halten sie die {term.optimization}-Zeit angemessen, ohne mehr {term.examplePlural} als nötig auszuwerten.",
+  "submit.split.warning.too_small": "Dieser Datensatz hat {row_count} {term.examplePlural} — zu wenige, um Verbesserungen zuverlässig zu messen. Fügen Sie mehr {term.examplePlural} für stabilere Werte hinzu.",
+  "submit.split.warning.duplicates": "{duplicate_count} doppelte {term.rowPlural} nach {term.inputColumns} gefunden. Duplikate können dazu führen, dass dieselben {term.examplePlural} in mehr als einer Aufteilung erscheinen.",
+  "submit.split.warning.missing_target": "In {missing} {term.rowPlural} fehlt ein Wert in der {term.outputColumnTarget} '{column_name}'. Entfernen oder füllen Sie sie vor dem Lauf.",
+  "submit.split.warning.rare_class": "Die Spalte '{column_name}' enthält seltene Kategorien ({rare_classes}) — einige erscheinen möglicherweise nicht in {term.splitVal} oder {term.splitTest}.",
+  "submit.split.warning.class_imbalance": "Klassenungleichgewicht in '{column_name}' (Verhältnis {ratio}:1). Erwägen Sie, {term.examplePlural} für die unterrepräsentierten Kategorien hinzuzufügen."
 }

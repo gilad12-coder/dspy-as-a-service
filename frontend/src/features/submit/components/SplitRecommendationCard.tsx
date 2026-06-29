@@ -3,15 +3,85 @@
 import { Sparkles, AlertTriangle, Info } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { cn } from "@/shared/lib/utils";
-import { msg } from "@/shared/lib/messages";
+import { msg, type MessageKey } from "@/shared/lib/messages";
 import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
+import { useLocale } from "@/shared/providers";
+import { dirForLocale } from "@/shared/lib/locale";
 
 import type { SubmitWizardContext } from "../hooks/use-submit-wizard";
+import type { ProfileWarning, ProfileWarningCode } from "@/shared/types/api";
 
 const percent = (value: number): string => `${Math.round(value * 100)}%`;
 
+// Tier thresholds mirror backend planner.py (recommend_split / _recommend_fractions):
+// the split fractions are chosen there purely by total row count, so we recover the
+// matching rationale tier from the same total and localize it through the UI catalog.
+// The backend only ships Hebrew copy for these, so rendering them client-side is what
+// gives every locale its own translation (and correct direction).
+const TIER_TINY = 30;
+const TIER_SMALL = 80;
+const TIER_MEDIUM = 300;
+
+function rationaleKey(total: number): MessageKey {
+  if (total < TIER_TINY) return "submit.split.rationale.tiny";
+  if (total < TIER_SMALL) return "submit.split.rationale.small";
+  if (total < TIER_MEDIUM) return "submit.split.rationale.medium";
+  return "submit.split.rationale.large";
+}
+
+const WARNING_KEY: Partial<Record<ProfileWarningCode, MessageKey>> = {
+  too_small: "submit.split.warning.too_small",
+  duplicates: "submit.split.warning.duplicates",
+  missing_target: "submit.split.warning.missing_target",
+  rare_class: "submit.split.warning.rare_class",
+  class_imbalance: "submit.split.warning.class_imbalance",
+};
+
+/** Re-shape a warning's structured `details` into the params its message template expects. */
+function warningParams(
+  details: Record<string, unknown>,
+  code: ProfileWarningCode,
+): Record<string, string | number> {
+  switch (code) {
+    case "too_small":
+      return { row_count: Number(details.row_count ?? 0) };
+    case "duplicates":
+      return { duplicate_count: Number(details.duplicate_count ?? 0) };
+    case "missing_target":
+      return {
+        missing: Number(details.missing_count ?? 0),
+        column_name: String(details.target_column ?? ""),
+      };
+    case "rare_class":
+      return {
+        column_name: String(details.target_column ?? ""),
+        rare_classes: Object.keys((details.rare_classes as Record<string, number> | undefined) ?? {})
+          .sort()
+          .join(", "),
+      };
+    case "class_imbalance": {
+      const majority = Number(details.majority ?? 0);
+      const minority = Number(details.minority ?? 0);
+      return {
+        column_name: String(details.target_column ?? ""),
+        ratio: minority > 0 ? Math.floor(majority / minority) : majority,
+      };
+    }
+  }
+}
+
+/** Localized warning copy from its code + details; falls back to the server message for unknown codes. */
+function warningText(warning: ProfileWarning): string {
+  const key = WARNING_KEY[warning.code];
+  return key ? msg(key, warningParams(warning.details, warning.code)) : warning.message;
+}
+
 export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
   const { splitPlan, datasetProfile, splitMode, setSplitMode, profileLoading } = w;
+  // The rationale/warning copy is portaled into a Radix tooltip, where the `rtl:`
+  // variant doesn't fire — drive direction off the locale explicitly instead.
+  const { locale } = useLocale();
+  const dir = dirForLocale(locale);
 
   if (!splitPlan) {
     if (profileLoading) {
@@ -27,9 +97,15 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
     return null;
   }
 
-  const { fractions, counts, rationale } = splitPlan;
+  const { fractions, counts } = splitPlan;
+  const total = counts.train + counts.val + counts.test;
+  const rationaleText = msg(rationaleKey(total), {
+    total,
+    val_count: counts.val,
+    test_count: counts.test,
+  });
   const warnings = datasetProfile?.warnings ?? [];
-  const hasRationale = rationale.length > 0;
+  const hasRationale = total > 0;
   const hasWarnings = warnings.length > 0;
   const hasInfo = hasRationale || hasWarnings;
 
@@ -60,7 +136,8 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
                 <TooltipContent
                   side="bottom"
                   sideOffset={8}
-                  className="max-w-[min(320px,92vw)] rounded-xl border border-[#C8B9A8]/60 bg-[#FAF8F5] px-4 py-3 text-end text-[#3D2E22] shadow-[0_8px_24px_-8px_rgba(61,46,34,0.2)] [&>span]:hidden"
+                  dir={dir}
+                  className="max-w-[min(320px,92vw)] rounded-xl border border-[#C8B9A8]/60 bg-[#FAF8F5] px-4 py-3 text-start text-[#3D2E22] shadow-[0_8px_24px_-8px_rgba(61,46,34,0.2)] [&>span]:hidden"
                 >
                   {hasRationale && (
                     <>
@@ -69,12 +146,10 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
                         {msg("submit.split.rationale_title")}
                       </div>
                       <ul className="space-y-1.5 text-[12px] leading-relaxed text-[#3D2E22]">
-                        {rationale.map((line, idx) => (
-                          <li key={idx} className="flex gap-2">
-                            <span className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-[#C8A882]" />
-                            <span>{line}</span>
-                          </li>
-                        ))}
+                        <li className="flex gap-2">
+                          <span className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-[#C8A882]" />
+                          <span>{rationaleText}</span>
+                        </li>
                       </ul>
                     </>
                   )}
@@ -93,7 +168,7 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
                         {warnings.map((warning) => (
                           <li key={warning.code} className="flex gap-2">
                             <span className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-[#C8924A]" />
-                            <span>{warning.message}</span>
+                            <span>{warningText(warning)}</span>
                           </li>
                         ))}
                       </ul>

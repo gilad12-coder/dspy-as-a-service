@@ -2518,5 +2518,22 @@
   "settings.privacy.clear_cache.action": "ניקוי",
   "settings.privacy.clear_cache.success": "הנתונים השמורים נמחקו",
   "settings.privacy.copy_username.label": "שם משתמש",
-  "settings.privacy.copy_email.label": "אימייל"
+  "settings.privacy.copy_email.label": "אימייל",
+  "billing.wallet.autoreload_amount_label": "סכום הטעינה",
+  "billing.wallet.autoreload_rate": "{p1} לקרדיט",
+  "billing.wallet.autoreload_saved": "טעינה אוטומטית הוגדרה ל-{p1} קרדיטים",
+  "billing.wallet.filter_all": "הכול",
+  "billing.wallet.filter_applied": "מציג {p1}",
+  "billing.wallet.filter_costs": "עלויות",
+  "billing.wallet.filter_empty": "אין פעילות תואמת",
+  "billing.wallet.filter_refunds": "החזרים",
+  "submit.split.rationale.tiny": "הדאטאסט קטן מאוד ({total} {term.examplePlural}). אין מספיק {term.examplePlural} ל{term.splitVal} או ל{term.splitTest} נפרד, ולכן GEPA ישתמש באותן דוגמאות גם ל{term.splitTrain} וגם להערכה במהלך ה{term.optimization}.",
+  "submit.split.rationale.small": "הדאטאסט קטן ({total} {term.examplePlural}). הוקצו 80% ל{term.splitTrain} ו-20% ל{term.splitVal} כדי לתת ל-GEPA בסיס הערכה נפרד; אין מספיק {term.examplePlural} גם ל{term.splitTest}.",
+  "submit.split.rationale.medium": "הדאטאסט בגודל בינוני ({total} {term.examplePlural}). חלוקת 60/20/20 משאירה מספיק {term.examplePlural} לכל שלושת הסטים.",
+  "submit.split.rationale.large": "הדאטאסט גדול ({total} {term.examplePlural}). הוקצו {val_count} {term.examplePlural} ל{term.splitVal} ו-{test_count} ל{term.splitTest}; כשהדאטאסט מגיע למכסות האלה, הן שומרות על זמן {term.optimization} סביר בלי להריץ הערכה על יותר {term.examplePlural} מהנדרש.",
+  "submit.split.warning.too_small": "הדאטאסט מכיל {row_count} {term.examplePlural} — מעט מדי כדי למדוד שיפור בצורה אמינה. כדאי להוסיף עוד {term.examplePlural} כדי לקבל ציונים יציבים יותר.",
+  "submit.split.warning.duplicates": "זוהו {duplicate_count} {term.rowPlural} כפולות לפי {term.inputColumns}. כפילויות עלולות לגרום לאותן {term.examplePlural} להופיע ביותר מחלוקה אחת.",
+  "submit.split.warning.missing_target": "{missing} {term.rowPlural} חסרות ערך ב{term.outputColumnTarget} '{column_name}'. מומלץ להסיר או למלא אותן לפני הריצה.",
+  "submit.split.warning.rare_class": "העמודה '{column_name}' מכילה קטגוריות נדירות ({rare_classes}) — חלק מהן עלול שלא להופיע ב{term.splitVal} או ב{term.splitTest}.",
+  "submit.split.warning.class_imbalance": "חוסר איזון בקטגוריות של '{column_name}' (יחס {ratio}:1). כדאי להוסיף {term.examplePlural} לקטגוריות שמיוצגות פחות."
 }

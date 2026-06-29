@@ -2406,5 +2406,22 @@
   "settings.privacy.clear_cache.action": "साफ़ करें",
   "settings.privacy.clear_cache.success": "कैश किया गया डेटा साफ़ कर दिया गया",
   "settings.privacy.copy_username.label": "उपयोगकर्ता नाम",
-  "settings.privacy.copy_email.label": "ईमेल"
+  "settings.privacy.copy_email.label": "ईमेल",
+  "billing.wallet.autoreload_amount_label": "टॉप-अप राशि",
+  "billing.wallet.autoreload_rate": "{p1} प्रति क्रेडिट",
+  "billing.wallet.autoreload_saved": "ऑटो-रीलोड {p1} क्रेडिट पर सेट किया गया",
+  "billing.wallet.filter_all": "सभी",
+  "billing.wallet.filter_applied": "{p1} दिखा रहे हैं",
+  "billing.wallet.filter_costs": "लागत",
+  "billing.wallet.filter_empty": "कोई मिलती-जुलती गतिविधि नहीं",
+  "billing.wallet.filter_refunds": "रिफंड",
+  "submit.split.rationale.tiny": "यह डेटासेट बहुत छोटा है ({total} {term.examplePlural})। अलग {term.splitVal} या {term.splitTest} सेट के लिए पर्याप्त {term.examplePlural} नहीं हैं, इसलिए GEPA {term.optimization} के दौरान {term.splitTrain} और मूल्यांकन दोनों के लिए वही उदाहरण दोबारा इस्तेमाल करता है।",
+  "submit.split.rationale.small": "यह डेटासेट छोटा है ({total} {term.examplePlural})। GEPA को एक अलग मूल्यांकन सेट देने के लिए 80% {term.splitTrain} को और 20% {term.splitVal} को जाता है; एक {term.splitTest} सेट के लिए भी पर्याप्त {term.examplePlural} नहीं हैं।",
+  "submit.split.rationale.medium": "यह एक मध्यम आकार का डेटासेट है ({total} {term.examplePlural})। 60/20/20 विभाजन तीनों सेटों के लिए पर्याप्त {term.examplePlural} छोड़ देता है।",
+  "submit.split.rationale.large": "यह एक बड़ा डेटासेट है ({total} {term.examplePlural})। {val_count} {term.examplePlural} {term.splitVal} को और {test_count} {term.splitTest} को जाते हैं; जब डेटासेट इन सीमाओं तक पहुँच जाता है, तो ये ज़रूरत से ज़्यादा {term.examplePlural} पर मूल्यांकन किए बिना {term.optimization} समय को उचित बनाए रखते हैं।",
+  "submit.split.warning.too_small": "इस डेटासेट में {row_count} {term.examplePlural} हैं — सुधार को विश्वसनीय रूप से मापने के लिए बहुत कम। अधिक स्थिर स्कोर के लिए और {term.examplePlural} जोड़ें।",
+  "submit.split.warning.duplicates": "{term.inputColumns} के अनुसार {duplicate_count} डुप्लिकेट {term.rowPlural} मिलीं। डुप्लिकेट के कारण एक ही {term.examplePlural} एक से अधिक विभाजन में दिखाई दे सकते हैं।",
+  "submit.split.warning.missing_target": "{missing} {term.rowPlural} में {term.outputColumnTarget} '{column_name}' का मान अनुपस्थित है। रन से पहले इन्हें हटाएँ या भरें।",
+  "submit.split.warning.rare_class": "कॉलम '{column_name}' में दुर्लभ श्रेणियाँ हैं ({rare_classes}) — कुछ {term.splitVal} या {term.splitTest} में दिखाई न दें।",
+  "submit.split.warning.class_imbalance": "'{column_name}' में श्रेणी असंतुलन है ({ratio}:1 अनुपात)। कम प्रतिनिधित्व वाली श्रेणियों के लिए {term.examplePlural} जोड़ने पर विचार करें।"
 }

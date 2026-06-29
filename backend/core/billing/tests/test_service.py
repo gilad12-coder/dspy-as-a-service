@@ -340,7 +340,7 @@ def test_debit_run_zero_cost_writes_nothing(engine: object) -> None:
 
 
 def test_grant_reset_is_rolling_and_non_cumulative(engine: object) -> None:
-    """Past the window the grant tops up to a flat 200; leftover does not bank."""
+    """Past the window the grant tops up to a flat 500; leftover does not bank."""
     past = datetime.now(UTC) - timedelta(days=1)
     with Session(engine) as session:
         session.add(

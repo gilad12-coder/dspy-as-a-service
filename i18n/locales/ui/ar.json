@@ -2407,5 +2407,22 @@
   "settings.privacy.clear_cache.action": "مسح",
   "settings.privacy.clear_cache.success": "تم مسح البيانات المخزنة مؤقتًا",
   "settings.privacy.copy_username.label": "اسم المستخدم",
-  "settings.privacy.copy_email.label": "البريد الإلكتروني"
+  "settings.privacy.copy_email.label": "البريد الإلكتروني",
+  "billing.wallet.autoreload_amount_label": "مبلغ إعادة الشحن",
+  "billing.wallet.autoreload_rate": "{p1} لكل رصيد",
+  "billing.wallet.autoreload_saved": "تم ضبط إعادة الشحن التلقائية على {p1} رصيد",
+  "billing.wallet.filter_all": "الكل",
+  "billing.wallet.filter_applied": "عرض {p1}",
+  "billing.wallet.filter_costs": "التكاليف",
+  "billing.wallet.filter_empty": "لا يوجد نشاط مطابق",
+  "billing.wallet.filter_refunds": "المبالغ المستردة",
+  "submit.split.rationale.tiny": "مجموعة البيانات هذه صغيرة جدًا ({total} {term.examplePlural}). لا يوجد عدد كافٍ من {term.examplePlural} لإنشاء {term.splitVal} أو {term.splitTest} منفصلة، لذا يعيد GEPA استخدام نفس الأمثلة لكلٍّ من {term.splitTrain} والتقييم أثناء {term.optimization}.",
+  "submit.split.rationale.small": "مجموعة البيانات هذه صغيرة ({total} {term.examplePlural}). يذهب 80% إلى {term.splitTrain} و20% إلى {term.splitVal} لمنح GEPA مجموعة تقييم منفصلة؛ لا يوجد عدد كافٍ من {term.examplePlural} لإنشاء {term.splitTest} أيضًا.",
+  "submit.split.rationale.medium": "هذه مجموعة بيانات متوسطة الحجم ({total} {term.examplePlural}). يترك تقسيم 60/20/20 عددًا كافيًا من {term.examplePlural} للمجموعات الثلاث جميعها.",
+  "submit.split.rationale.large": "هذه مجموعة بيانات كبيرة ({total} {term.examplePlural}). يذهب {val_count} {term.examplePlural} إلى {term.splitVal} و{test_count} إلى {term.splitTest}؛ بمجرد بلوغ مجموعة البيانات هذه الحدود القصوى، تُبقي زمن {term.optimization} معقولًا دون التقييم على عدد من {term.examplePlural} أكثر من اللازم.",
+  "submit.split.warning.too_small": "تحتوي مجموعة البيانات هذه على {row_count} {term.examplePlural} — وهو عدد قليل جدًا لقياس التحسّن بموثوقية. أضِف المزيد من {term.examplePlural} للحصول على درجات أكثر استقرارًا.",
+  "submit.split.warning.duplicates": "تم العثور على {duplicate_count} من {term.rowPlural} المكررة حسب {term.inputColumns}. يمكن أن تؤدي التكرارات إلى ظهور نفس {term.examplePlural} في أكثر من تقسيم واحد.",
+  "submit.split.warning.missing_target": "يفتقد {missing} من {term.rowPlural} قيمةً في {term.outputColumnTarget} '{column_name}'. احذفها أو املأها قبل التشغيل.",
+  "submit.split.warning.rare_class": "يحتوي العمود '{column_name}' على فئات نادرة ({rare_classes}) — وقد لا يظهر بعضها في {term.splitVal} أو {term.splitTest}.",
+  "submit.split.warning.class_imbalance": "هناك عدم توازن في الفئات ضمن '{column_name}' (بنسبة {ratio}:1). فكّر في إضافة {term.examplePlural} للفئات قليلة التمثيل."
 }

@@ -79,6 +79,9 @@ import { CodeTab } from "./CodeTab";
 import { StageInfoModal } from "./StageInfoModal";
 import { PairSelectionStrip } from "./PairSelectionStrip";
 import { OverviewTab } from "./OverviewTab";
+import { ProofMoment } from "./ProofMoment";
+import { RunCreditsChip } from "./RunCreditsChip";
+import { readBilling } from "../lib/proof-banner";
 import { GridServeTab } from "./GridServeTab";
 import { LMActivityTab } from "./LMActivityTab";
 import { ReactServeChat } from "./ReactServeChat";
@@ -1030,6 +1033,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                     {formatBytes(job.stored_bytes ?? 0)}
                   </Link>
                 )}
+                {!isPairContext && <RunCreditsChip details={job.result?.details} />}
               </div>
             </div>
             {!isShare && (
@@ -1137,6 +1141,18 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
               </div>
             )}
           </div>
+          {/* The proof moment rides in the header so the billing outcome stays
+              visible on every tab, not just Overview. readBilling gates the spacing
+              so an unsettled run leaves no empty gap. */}
+          {!isPairContext && readBilling(job.result?.details) != null && (
+            <div className="mt-4">
+              <ProofMoment
+                improvement={job.result?.metric_improvement ?? undefined}
+                guarantee={job.result?.guarantee}
+                details={job.result?.details}
+              />
+            </div>
+          )}
         </div>
       </FadeIn>
 

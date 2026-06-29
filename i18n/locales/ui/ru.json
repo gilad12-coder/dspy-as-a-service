@@ -2406,5 +2406,22 @@
   "settings.privacy.clear_cache.action": "Очистить",
   "settings.privacy.clear_cache.success": "Кэш данных очищен",
   "settings.privacy.copy_username.label": "Имя пользователя",
-  "settings.privacy.copy_email.label": "Эл. почта"
+  "settings.privacy.copy_email.label": "Эл. почта",
+  "billing.wallet.autoreload_amount_label": "Сумма пополнения",
+  "billing.wallet.autoreload_rate": "{p1} за кредит",
+  "billing.wallet.autoreload_saved": "Автопополнение установлено на {p1} кредитов",
+  "billing.wallet.filter_all": "Все",
+  "billing.wallet.filter_applied": "Показаны: {p1}",
+  "billing.wallet.filter_costs": "Расходы",
+  "billing.wallet.filter_empty": "Нет подходящих операций",
+  "billing.wallet.filter_refunds": "Возвраты",
+  "submit.split.rationale.tiny": "Этот набор данных очень мал ({total} {term.examplePlural}). Здесь недостаточно {term.examplePlural} для отдельного {term.splitVal} или {term.splitTest}, поэтому GEPA повторно использует одни и те же примеры как для {term.splitTrain}, так и для оценки во время {term.optimization}.",
+  "submit.split.rationale.small": "Этот набор данных небольшой ({total} {term.examplePlural}). 80% идёт в {term.splitTrain}, а 20% — в {term.splitVal}, чтобы дать GEPA отдельный набор для оценки; здесь недостаточно {term.examplePlural} ещё и для {term.splitTest}.",
+  "submit.split.rationale.medium": "Это набор данных среднего размера ({total} {term.examplePlural}). Разбиение 60/20/20 оставляет достаточно {term.examplePlural} для всех трёх наборов.",
+  "submit.split.rationale.large": "Это большой набор данных ({total} {term.examplePlural}). {val_count} {term.examplePlural} идут в {term.splitVal}, а {test_count} — в {term.splitTest}; как только набор данных достигает этих пределов, они удерживают время {term.optimization} в разумных рамках, не выполняя оценку на большем числе {term.examplePlural}, чем нужно.",
+  "submit.split.warning.too_small": "В этом наборе данных {row_count} {term.examplePlural} — слишком мало, чтобы надёжно измерить улучшение. Добавьте больше {term.examplePlural} для более стабильных оценок.",
+  "submit.split.warning.duplicates": "Найдено {duplicate_count} дублирующихся {term.rowPlural} по {term.inputColumns}. Из-за дубликатов одни и те же {term.examplePlural} могут попасть более чем в одно разбиение.",
+  "submit.split.warning.missing_target": "В {missing} {term.rowPlural} отсутствует значение в {term.outputColumnTarget} '{column_name}'. Удалите или заполните их перед запуском.",
+  "submit.split.warning.rare_class": "В столбце '{column_name}' есть редкие категории ({rare_classes}) — некоторые из них могут не попасть в {term.splitVal} или {term.splitTest}.",
+  "submit.split.warning.class_imbalance": "Дисбаланс классов в '{column_name}' (соотношение {ratio}:1). Рассмотрите возможность добавить {term.examplePlural} для недостаточно представленных категорий."
 }

@@ -2406,5 +2406,22 @@
   "settings.privacy.clear_cache.action": "Effacer",
   "settings.privacy.clear_cache.success": "Données en cache effacées",
   "settings.privacy.copy_username.label": "Nom d'utilisateur",
-  "settings.privacy.copy_email.label": "E-mail"
+  "settings.privacy.copy_email.label": "E-mail",
+  "billing.wallet.autoreload_amount_label": "Montant de recharge",
+  "billing.wallet.autoreload_rate": "{p1} par crédit",
+  "billing.wallet.autoreload_saved": "Rechargement automatique défini sur {p1} crédits",
+  "billing.wallet.filter_all": "Tout",
+  "billing.wallet.filter_applied": "Affichage : {p1}",
+  "billing.wallet.filter_costs": "Coûts",
+  "billing.wallet.filter_empty": "Aucune activité correspondante",
+  "billing.wallet.filter_refunds": "Remboursements",
+  "submit.split.rationale.tiny": "Ce jeu de données est très petit ({total} {term.examplePlural}). Il n'y a pas assez de {term.examplePlural} pour un {term.splitVal} ou un {term.splitTest} distinct, donc GEPA réutilise les mêmes exemples à la fois pour {term.splitTrain} et pour l'évaluation pendant l'{term.optimization}.",
+  "submit.split.rationale.small": "Ce jeu de données est petit ({total} {term.examplePlural}). 80% va à {term.splitTrain} et 20% à {term.splitVal} pour donner à GEPA un ensemble d'évaluation distinct ; il n'y a pas assez de {term.examplePlural} pour un {term.splitTest} en plus.",
+  "submit.split.rationale.medium": "Il s'agit d'un jeu de données de taille moyenne ({total} {term.examplePlural}). Une répartition 60/20/20 laisse assez de {term.examplePlural} pour les trois ensembles.",
+  "submit.split.rationale.large": "Il s'agit d'un grand jeu de données ({total} {term.examplePlural}). {val_count} {term.examplePlural} vont à {term.splitVal} et {test_count} à {term.splitTest} ; une fois que le jeu de données atteint ces plafonds, ils maintiennent un temps d'{term.optimization} raisonnable sans évaluer sur plus de {term.examplePlural} que nécessaire.",
+  "submit.split.warning.too_small": "Ce jeu de données comporte {row_count} {term.examplePlural} : trop peu pour mesurer l'amélioration de façon fiable. Ajoutez plus de {term.examplePlural} pour des scores plus stables.",
+  "submit.split.warning.duplicates": "{duplicate_count} {term.rowPlural} en double détectées d'après les {term.inputColumns}. Les doublons peuvent faire apparaître les mêmes {term.examplePlural} dans plusieurs répartitions.",
+  "submit.split.warning.missing_target": "{missing} {term.rowPlural} n'ont pas de valeur dans la {term.outputColumnTarget} '{column_name}'. Supprimez-les ou complétez-les avant l'exécution.",
+  "submit.split.warning.rare_class": "La colonne '{column_name}' contient des catégories rares ({rare_classes}) : certaines pourraient ne pas apparaître dans {term.splitVal} ou {term.splitTest}.",
+  "submit.split.warning.class_imbalance": "Déséquilibre des classes dans '{column_name}' (ratio {ratio}:1). Envisagez d'ajouter des {term.examplePlural} pour les catégories sous-représentées."
 }

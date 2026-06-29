@@ -2406,5 +2406,22 @@
   "settings.privacy.clear_cache.action": "Limpar",
   "settings.privacy.clear_cache.success": "Dados em cache limpos",
   "settings.privacy.copy_username.label": "Nome de usuário",
-  "settings.privacy.copy_email.label": "E-mail"
+  "settings.privacy.copy_email.label": "E-mail",
+  "billing.wallet.autoreload_amount_label": "Valor da recarga",
+  "billing.wallet.autoreload_rate": "{p1} por crédito",
+  "billing.wallet.autoreload_saved": "Recarga automática definida para {p1} créditos",
+  "billing.wallet.filter_all": "Tudo",
+  "billing.wallet.filter_applied": "Mostrando {p1}",
+  "billing.wallet.filter_costs": "Custos",
+  "billing.wallet.filter_empty": "Nenhuma atividade correspondente",
+  "billing.wallet.filter_refunds": "Reembolsos",
+  "submit.split.rationale.tiny": "Este conjunto de dados é muito pequeno ({total} {term.examplePlural}). Não há {term.examplePlural} suficientes para um {term.splitVal} ou {term.splitTest} separado, por isso o GEPA reutiliza os mesmos exemplos tanto para {term.splitTrain} como para a avaliação durante a {term.optimization}.",
+  "submit.split.rationale.small": "Este conjunto de dados é pequeno ({total} {term.examplePlural}). 80% vai para {term.splitTrain} e 20% para {term.splitVal} para dar ao GEPA um conjunto de avaliação separado; não há {term.examplePlural} suficientes também para um {term.splitTest}.",
+  "submit.split.rationale.medium": "Este é um conjunto de dados de tamanho médio ({total} {term.examplePlural}). Uma divisão 60/20/20 deixa {term.examplePlural} suficientes para os três conjuntos.",
+  "submit.split.rationale.large": "Este é um conjunto de dados grande ({total} {term.examplePlural}). {val_count} {term.examplePlural} vão para {term.splitVal} e {test_count} para {term.splitTest}; assim que o conjunto de dados atinge estes limites, mantêm o tempo de {term.optimization} razoável sem avaliar mais {term.examplePlural} do que o necessário.",
+  "submit.split.warning.too_small": "Este conjunto de dados tem {row_count} {term.examplePlural} — poucos demais para medir a melhoria de forma fiável. Adicione mais {term.examplePlural} para obter pontuações mais estáveis.",
+  "submit.split.warning.duplicates": "Encontradas {duplicate_count} {term.rowPlural} duplicadas por {term.inputColumns}. Os duplicados podem fazer com que os mesmos {term.examplePlural} apareçam em mais do que uma divisão.",
+  "submit.split.warning.missing_target": "{missing} {term.rowPlural} não têm valor na {term.outputColumnTarget} '{column_name}'. Remova-as ou preencha-as antes da execução.",
+  "submit.split.warning.rare_class": "A coluna '{column_name}' tem categorias raras ({rare_classes}) — algumas podem não aparecer em {term.splitVal} ou {term.splitTest}.",
+  "submit.split.warning.class_imbalance": "Desequilíbrio de classes em '{column_name}' (rácio {ratio}:1). Considere adicionar {term.examplePlural} para as categorias sub-representadas."
 }

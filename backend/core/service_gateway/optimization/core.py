@@ -426,9 +426,13 @@ def _run_grid_pair(
         reflection_lm = build_language_model(ref_cfg) if ref_cfg is not None else None
         gen_timing = GenLMTimingCallback(language_model)
         refl_timing = ReflectionLMTimingCallback(reflection_lm) if reflection_lm is not None else None
-        callbacks: list[Any] = [gen_timing]
+        # Only the timing callbacks carry per-stage state (set_stage/_current_stage),
+        # so track_stage must be splatted with these alone. The cost-ceiling callback
+        # is a plain on_lm_end listener and would raise AttributeError inside track_stage.
+        timing_callbacks: list[Any] = [gen_timing]
         if refl_timing is not None:
-            callbacks.append(refl_timing)
+            timing_callbacks.append(refl_timing)
+        callbacks: list[Any] = list(timing_callbacks)
         # Hard-stop this pair at its share of the Max Cost Ceiling so the grid's
         # concurrent pairs can't collectively overrun the user's job-wide cap.
         if ctx.pair_max_tokens > 0:
@@ -461,7 +465,7 @@ def _run_grid_pair(
             baseline = None
             baseline_test_results: list[dict] = []
             if ctx.splits.test:
-                with track_stage(STAGE_BASELINE, *callbacks):
+                with track_stage(STAGE_BASELINE, *timing_callbacks):
                     baseline, baseline_test_results = evaluate_on_test(
                         program,
                         ctx.splits.test,
@@ -479,7 +483,7 @@ def _run_grid_pair(
 
             with (
                 capture_tqdm(ctx.progress_callback),
-                track_stage(STAGE_TRAINING, *callbacks),
+                track_stage(STAGE_TRAINING, *timing_callbacks),
                 capture_proposal_prompts(ctx.payload.optimizer_name),
                 trajectory_watch(trajectory_log_dir, trajectory_callback),
             ):
@@ -494,7 +498,7 @@ def _run_grid_pair(
             optimized = None
             optimized_test_results: list[dict] = []
             if ctx.splits.test:
-                with track_stage(STAGE_EVALUATION, *callbacks):
+                with track_stage(STAGE_EVALUATION, *timing_callbacks):
                     optimized, optimized_test_results = evaluate_on_test(
                         compiled,
                         ctx.splits.test,
@@ -765,9 +769,13 @@ class DspyService:
 
         gen_timing = GenLMTimingCallback(language_model)
         refl_timing = ReflectionLMTimingCallback(reflection_lm) if reflection_lm is not None else None
-        callbacks: list[Any] = [gen_timing]
+        # Only the timing callbacks carry per-stage state (set_stage/_current_stage),
+        # so track_stage must be splatted with these alone. The cost-ceiling callback
+        # is a plain on_lm_end listener and would raise AttributeError inside track_stage.
+        timing_callbacks: list[Any] = [gen_timing]
         if refl_timing is not None:
-            callbacks.append(refl_timing)
+            timing_callbacks.append(refl_timing)
+        callbacks: list[Any] = list(timing_callbacks)
         # Hard-stop the run once token spend exceeds the user's Max Cost Ceiling.
         # Registered alongside the timing callbacks so it sees every LM call on
         # every worker thread; a trip raises out of the run and the worker leaves
@@ -799,7 +807,7 @@ class DspyService:
                 baseline_test_metric = None
                 baseline_test_results: list[dict] = []
                 if splits.test:
-                    with track_stage(STAGE_BASELINE, *callbacks):
+                    with track_stage(STAGE_BASELINE, *timing_callbacks):
                         baseline_test_metric, baseline_test_results = evaluate_on_test(
                             program,
                             splits.test,
@@ -829,7 +837,7 @@ class DspyService:
                 )
                 with (
                     capture_tqdm(progress_callback),
-                    track_stage(STAGE_TRAINING, *callbacks),
+                    track_stage(STAGE_TRAINING, *timing_callbacks),
                     capture_proposal_prompts(payload.optimizer_name),
                     trajectory_watch(trajectory_log_dir, progress_callback),
                 ):
@@ -845,7 +853,7 @@ class DspyService:
                 optimized_test_metric = None
                 optimized_test_results: list[dict] = []
                 if splits.test:
-                    with track_stage(STAGE_EVALUATION, *callbacks):
+                    with track_stage(STAGE_EVALUATION, *timing_callbacks):
                         optimized_test_metric, optimized_test_results = evaluate_on_test(
                             compiled_program,
                             splits.test,

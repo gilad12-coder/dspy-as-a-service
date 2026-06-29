@@ -116,10 +116,14 @@ export function CreditBalanceChip({ className }: { className?: string }) {
             </div>
           ) : (
             <>
-              <div className="px-4 pb-3">
+              {/* Balance sits directly under the title. An inline-block (not a
+                  full-width `text-right` block) lets the parent's logical
+                  `text-start` place it at the inline-start in both LTR and RTL,
+                  while `dir="ltr"` keeps the numerals themselves left-to-right. */}
+              <div className="px-4 pb-3 text-start">
                 <span
                   dir="ltr"
-                  className="block text-right text-2xl font-semibold text-foreground tabular-nums"
+                  className="inline-block text-2xl font-semibold text-foreground tabular-nums"
                 >
                   {formatCredits(totalCredits, locale)}
                 </span>

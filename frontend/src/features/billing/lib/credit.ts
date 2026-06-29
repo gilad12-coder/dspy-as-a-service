@@ -158,7 +158,7 @@ export const CREDIT_PACKS: CreditPack[] = [
  */
 export const STUB_WALLET: CreditWallet = {
   paidBalanceCredits: 1240,
-  freeGrant: { creditsRemaining: 180, creditsTotal: 200, resetsAt: "2026-07-01T00:00:00Z" },
+  freeGrant: { creditsRemaining: 480, creditsTotal: 500, resetsAt: "2026-07-01T00:00:00Z" },
   mode: "managed",
   premiumActive: false,
   autoReload: { enabled: false, thresholdCredits: 200, topUpCredits: 2200 },
@@ -213,7 +213,7 @@ export const STUB_WALLET: CreditWallet = {
       at: "2026-06-01T00:00:00Z",
       label: "Monthly grant",
       model: null,
-      credits: 200,
+      credits: 500,
       mode: "managed",
       kind: "grant",
     },

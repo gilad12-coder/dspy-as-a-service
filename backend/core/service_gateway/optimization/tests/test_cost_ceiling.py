@@ -17,6 +17,7 @@ from core.service_gateway.optimization.cost_ceiling import (
     CostCeilingCallback,
     CostCeilingExceededError,
 )
+from core.service_gateway.optimization.timing import GenLMTimingCallback, track_stage
 
 
 class _FakeLM:
@@ -107,3 +108,31 @@ def test_tokens_for_credits_maps_cap_to_budget() -> None:
     assert tokens_for_credits(54) == 54_000
     assert tokens_for_credits(0) == 0
     assert tokens_for_credits(-5) == 0
+
+
+def test_cost_ceiling_callback_stays_out_of_stage_tracking() -> None:
+    """Regression: the ceiling callback must not be splatted into ``track_stage``.
+
+    It is a plain ``on_lm_end`` listener with no per-stage state, so it rides the
+    dspy callbacks list (which it shares with the timing callbacks) but must be kept
+    out of ``track_stage`` — which reads ``_current_stage``/``set_stage`` on each
+    callback it is given. Passing the full list crashed with
+    ``'CostCeilingCallback' object has no attribute '_current_stage'``; core.py now
+    keeps a separate ``timing_callbacks`` list for stage tracking. This mirrors that
+    split and pins both halves of the contract.
+    """
+    gen_lm = _FakeLM()
+    gen_timing = GenLMTimingCallback(gen_lm)
+    timing_callbacks = [gen_timing]
+    callbacks = [*timing_callbacks, CostCeilingCallback(100, gen_lm)]
+
+    # The ceiling belongs in the dspy callbacks list, but only timing callbacks may
+    # drive stage tracking — which sets and restores the stage on them.
+    assert any(isinstance(cb, CostCeilingCallback) for cb in callbacks)
+    with track_stage("baseline", *timing_callbacks):
+        assert gen_timing._current_stage == "baseline"
+    assert gen_timing._current_stage is None
+
+    # Splatting the full list (the original bug) is what raised AttributeError.
+    with pytest.raises(AttributeError), track_stage("baseline", *callbacks):
+        pass

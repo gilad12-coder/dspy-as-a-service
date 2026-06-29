@@ -2406,5 +2406,22 @@
   "settings.privacy.clear_cache.action": "지우기",
   "settings.privacy.clear_cache.success": "캐시된 데이터를 지웠습니다",
   "settings.privacy.copy_username.label": "사용자 이름",
-  "settings.privacy.copy_email.label": "이메일"
+  "settings.privacy.copy_email.label": "이메일",
+  "billing.wallet.autoreload_amount_label": "충전량",
+  "billing.wallet.autoreload_rate": "크레딧당 {p1}",
+  "billing.wallet.autoreload_saved": "자동 충전을 {p1} 크레딧으로 설정했습니다",
+  "billing.wallet.filter_all": "전체",
+  "billing.wallet.filter_applied": "{p1} 표시 중",
+  "billing.wallet.filter_costs": "비용",
+  "billing.wallet.filter_empty": "일치하는 활동이 없습니다",
+  "billing.wallet.filter_refunds": "환불",
+  "submit.split.rationale.tiny": "이 데이터셋은 매우 작습니다({total} {term.examplePlural}). 별도의 {term.splitVal}이나 {term.splitTest}을 만들 만큼 {term.examplePlural}이 충분하지 않아, GEPA는 {term.optimization} 중에 {term.splitTrain}과 평가 모두에 동일한 예제를 재사용합니다.",
+  "submit.split.rationale.small": "이 데이터셋은 작습니다({total} {term.examplePlural}). GEPA에 별도의 평가 세트를 제공하기 위해 80%는 {term.splitTrain}에, 20%는 {term.splitVal}에 할당합니다. {term.splitTest}까지 만들기에는 {term.examplePlural}이 충분하지 않습니다.",
+  "submit.split.rationale.medium": "이것은 중간 규모의 데이터셋입니다({total} {term.examplePlural}). 60/20/20 분할이면 세 세트 모두에 충분한 {term.examplePlural}이 남습니다.",
+  "submit.split.rationale.large": "이것은 대규모 데이터셋입니다({total} {term.examplePlural}). {val_count} {term.examplePlural}은 {term.splitVal}에, {test_count}은 {term.splitTest}에 할당됩니다. 데이터셋이 이 한도에 도달하면 필요 이상의 {term.examplePlural}로 평가하지 않으면서 {term.optimization} 시간을 적절하게 유지합니다.",
+  "submit.split.warning.too_small": "이 데이터셋에는 {row_count} {term.examplePlural}밖에 없어 개선을 안정적으로 측정하기에는 너무 적습니다. 점수를 더 안정적으로 만들려면 {term.examplePlural}을 추가하세요.",
+  "submit.split.warning.duplicates": "{term.inputColumns} 기준으로 중복된 {term.rowPlural} {duplicate_count}개를 발견했습니다. 중복이 있으면 동일한 {term.examplePlural}이 둘 이상의 분할에 나타날 수 있습니다.",
+  "submit.split.warning.missing_target": "{missing} {term.rowPlural}에 {term.outputColumnTarget} '{column_name}'의 값이 없습니다. 실행 전에 제거하거나 값을 채우세요.",
+  "submit.split.warning.rare_class": "'{column_name}' 열에는 희귀 범주({rare_classes})가 있습니다. 일부는 {term.splitVal}이나 {term.splitTest}에 나타나지 않을 수 있습니다.",
+  "submit.split.warning.class_imbalance": "'{column_name}'의 클래스 불균형(비율 {ratio}:1)이 있습니다. 과소 대표된 범주를 위해 {term.examplePlural}을 추가하는 것을 고려하세요."
 }

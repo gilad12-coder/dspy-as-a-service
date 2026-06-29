@@ -13,6 +13,7 @@ import { dirForLocale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
 import { JobsStreamProvider } from "@/shared/hooks/use-jobs-stream";
 import { useUserPrefs, LiteModeHint } from "@/features/settings";
+import { CreditBalanceChip } from "@/features/billing";
 import {
   GeneralistPanel,
   GeneralistPanelProvider,
@@ -210,6 +211,9 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="flex items-center gap-1.5">
+          {/* Credit balance reads inline-end of the language switcher — the chip's
+              own popover carries the breakdown + "Add credits" path. */}
+          <CreditBalanceChip />
           <LanguageSwitcher />
           <button
             type="button"

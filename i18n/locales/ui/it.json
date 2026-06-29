@@ -2406,5 +2406,22 @@
   "settings.privacy.clear_cache.action": "Cancella",
   "settings.privacy.clear_cache.success": "Dati nella cache cancellati",
   "settings.privacy.copy_username.label": "Nome utente",
-  "settings.privacy.copy_email.label": "Email"
+  "settings.privacy.copy_email.label": "Email",
+  "billing.wallet.autoreload_amount_label": "Importo di ricarica",
+  "billing.wallet.autoreload_rate": "{p1} per credito",
+  "billing.wallet.autoreload_saved": "Ricarica automatica impostata su {p1} crediti",
+  "billing.wallet.filter_all": "Tutti",
+  "billing.wallet.filter_applied": "Mostra {p1}",
+  "billing.wallet.filter_costs": "Costi",
+  "billing.wallet.filter_empty": "Nessuna attività corrispondente",
+  "billing.wallet.filter_refunds": "Rimborsi",
+  "submit.split.rationale.tiny": "Questo set di dati è molto piccolo ({total} {term.examplePlural}). Non ci sono abbastanza {term.examplePlural} per un {term.splitVal} o un {term.splitTest} separato, quindi GEPA riutilizza gli stessi esempi sia per {term.splitTrain} sia per la valutazione durante l'{term.optimization}.",
+  "submit.split.rationale.small": "Questo set di dati è piccolo ({total} {term.examplePlural}). L'80% va a {term.splitTrain} e il 20% a {term.splitVal} per dare a GEPA un set di valutazione separato; non ci sono abbastanza {term.examplePlural} anche per un {term.splitTest}.",
+  "submit.split.rationale.medium": "Questo è un set di dati di medie dimensioni ({total} {term.examplePlural}). Una suddivisione 60/20/20 lascia abbastanza {term.examplePlural} per tutti e tre i set.",
+  "submit.split.rationale.large": "Questo è un set di dati grande ({total} {term.examplePlural}). {val_count} {term.examplePlural} vanno a {term.splitVal} e {test_count} a {term.splitTest}; una volta che il set di dati raggiunge questi limiti, mantengono ragionevole il tempo di {term.optimization} senza valutare su più {term.examplePlural} del necessario.",
+  "submit.split.warning.too_small": "Questo set di dati ha {row_count} {term.examplePlural}: troppo pochi per misurare il miglioramento in modo affidabile. Aggiungi altri {term.examplePlural} per punteggi più stabili.",
+  "submit.split.warning.duplicates": "Trovate {duplicate_count} {term.rowPlural} duplicate per {term.inputColumns}. I duplicati possono far comparire gli stessi {term.examplePlural} in più di una suddivisione.",
+  "submit.split.warning.missing_target": "A {missing} {term.rowPlural} manca un valore nella {term.outputColumnTarget} '{column_name}'. Rimuovile o completale prima dell'esecuzione.",
+  "submit.split.warning.rare_class": "La colonna '{column_name}' ha categorie rare ({rare_classes}): alcune potrebbero non comparire in {term.splitVal} o {term.splitTest}.",
+  "submit.split.warning.class_imbalance": "Squilibrio tra le classi in '{column_name}' (rapporto {ratio}:1). Valuta di aggiungere {term.examplePlural} per le categorie sottorappresentate."
 }

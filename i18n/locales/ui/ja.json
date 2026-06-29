@@ -2406,5 +2406,22 @@
   "settings.privacy.clear_cache.action": "消去",
   "settings.privacy.clear_cache.success": "キャッシュデータを消去しました",
   "settings.privacy.copy_username.label": "ユーザー名",
-  "settings.privacy.copy_email.label": "メールアドレス"
+  "settings.privacy.copy_email.label": "メールアドレス",
+  "billing.wallet.autoreload_amount_label": "チャージ額",
+  "billing.wallet.autoreload_rate": "クレジットあたり{p1}",
+  "billing.wallet.autoreload_saved": "自動チャージを{p1}クレジットに設定しました",
+  "billing.wallet.filter_all": "すべて",
+  "billing.wallet.filter_applied": "{p1}を表示中",
+  "billing.wallet.filter_costs": "費用",
+  "billing.wallet.filter_empty": "一致するアクティビティはありません",
+  "billing.wallet.filter_refunds": "返金",
+  "submit.split.rationale.tiny": "このデータセットは非常に小さいです（{total} {term.examplePlural}）。独立した {term.splitVal} や {term.splitTest} を作るには {term.examplePlural} が足りないため、GEPA は {term.optimization} 中、{term.splitTrain} と評価の両方に同じ例を再利用します。",
+  "submit.split.rationale.small": "このデータセットは小さいです（{total} {term.examplePlural}）。GEPA に独立した評価セットを与えるため、80% を {term.splitTrain} に、20% を {term.splitVal} に割り当てます。{term.splitTest} まで作るには {term.examplePlural} が足りません。",
+  "submit.split.rationale.medium": "これは中規模のデータセットです（{total} {term.examplePlural}）。60/20/20 の分割なら、3 つのセットすべてに十分な {term.examplePlural} が残ります。",
+  "submit.split.rationale.large": "これは大規模なデータセットです（{total} {term.examplePlural}）。{val_count} {term.examplePlural} を {term.splitVal} に、{test_count} を {term.splitTest} に割り当てます。データセットがこれらの上限に達すると、必要以上の {term.examplePlural} で評価せずに {term.optimization} の時間を妥当に保ちます。",
+  "submit.split.warning.too_small": "このデータセットには {row_count} {term.examplePlural} しかなく、改善を確実に測定するには少なすぎます。スコアを安定させるには {term.examplePlural} を追加してください。",
+  "submit.split.warning.duplicates": "{term.inputColumns} を基準に重複した {term.rowPlural} が {duplicate_count} 件見つかりました。重複があると、同じ {term.examplePlural} が複数の分割に現れる可能性があります。",
+  "submit.split.warning.missing_target": "{missing} {term.rowPlural} で {term.outputColumnTarget}「{column_name}」の値が欠落しています。実行前に削除するか値を入力してください。",
+  "submit.split.warning.rare_class": "列「{column_name}」には希少なカテゴリ（{rare_classes}）があります。一部は {term.splitVal} や {term.splitTest} に現れない可能性があります。",
+  "submit.split.warning.class_imbalance": "「{column_name}」のクラスに偏りがあります（比率 {ratio}:1）。少数派のカテゴリ向けに {term.examplePlural} を追加することを検討してください。"
 }

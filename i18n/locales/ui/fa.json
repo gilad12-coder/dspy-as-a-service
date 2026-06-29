@@ -2407,5 +2407,22 @@
   "settings.privacy.clear_cache.action": "پاک کردن",
   "settings.privacy.clear_cache.success": "دادهٔ ذخیره‌شده پاک شد",
   "settings.privacy.copy_username.label": "نام کاربری",
-  "settings.privacy.copy_email.label": "ایمیل"
+  "settings.privacy.copy_email.label": "ایمیل",
+  "billing.wallet.autoreload_amount_label": "مبلغ شارژ مجدد",
+  "billing.wallet.autoreload_rate": "{p1} به ازای هر اعتبار",
+  "billing.wallet.autoreload_saved": "شارژ خودکار روی {p1} اعتبار تنظیم شد",
+  "billing.wallet.filter_all": "همه",
+  "billing.wallet.filter_applied": "نمایش {p1}",
+  "billing.wallet.filter_costs": "هزینه‌ها",
+  "billing.wallet.filter_empty": "فعالیت منطبقی وجود ندارد",
+  "billing.wallet.filter_refunds": "بازپرداخت‌ها",
+  "submit.split.rationale.tiny": "این مجموعه‌داده بسیار کوچک است ({total} {term.examplePlural}). به‌اندازه‌ی کافی {term.examplePlural} برای یک {term.splitVal} یا {term.splitTest} جداگانه وجود ندارد، بنابراین GEPA همان نمونه‌ها را هم برای {term.splitTrain} و هم برای ارزیابی در طول {term.optimization} دوباره استفاده می‌کند.",
+  "submit.split.rationale.small": "این مجموعه‌داده کوچک است ({total} {term.examplePlural}). ۸۰٪ به {term.splitTrain} و ۲۰٪ به {term.splitVal} اختصاص می‌یابد تا GEPA یک مجموعه‌ی ارزیابی جداگانه داشته باشد؛ به‌اندازه‌ی کافی {term.examplePlural} برای یک {term.splitTest} هم وجود ندارد.",
+  "submit.split.rationale.medium": "این یک مجموعه‌داده‌ی متوسط است ({total} {term.examplePlural}). یک تقسیم ۶۰/۲۰/۲۰ به‌اندازه‌ی کافی {term.examplePlural} برای هر سه مجموعه باقی می‌گذارد.",
+  "submit.split.rationale.large": "این یک مجموعه‌داده‌ی بزرگ است ({total} {term.examplePlural}). {val_count} {term.examplePlural} به {term.splitVal} و {test_count} به {term.splitTest} می‌رود؛ هنگامی که مجموعه‌داده به این سقف‌ها برسد، زمان {term.optimization} را معقول نگه می‌دارند بدون اینکه روی {term.examplePlural} بیشتری از نیاز ارزیابی شود.",
+  "submit.split.warning.too_small": "این مجموعه‌داده {row_count} {term.examplePlural} دارد — برای سنجش قابل‌اعتماد بهبود بسیار کم است. برای امتیازهای پایدارتر، {term.examplePlural} بیشتری اضافه کنید.",
+  "submit.split.warning.duplicates": "{duplicate_count} {term.rowPlural} تکراری بر اساس {term.inputColumns} پیدا شد. موارد تکراری می‌توانند باعث شوند که {term.examplePlural} یکسان در بیش از یک تقسیم ظاهر شوند.",
+  "submit.split.warning.missing_target": "{missing} {term.rowPlural} در {term.outputColumnTarget} '{column_name}' فاقد مقدار هستند. پیش از اجرا آن‌ها را حذف کنید یا مقدارشان را پر کنید.",
+  "submit.split.warning.rare_class": "ستون '{column_name}' دارای دسته‌های نادر است ({rare_classes}) — ممکن است برخی در {term.splitVal} یا {term.splitTest} ظاهر نشوند.",
+  "submit.split.warning.class_imbalance": "عدم توازن دسته‌ها در '{column_name}' (نسبت {ratio}:1). افزودن {term.examplePlural} برای دسته‌های کم‌نماینده را در نظر بگیرید."
 }

@@ -2518,5 +2518,22 @@
   "settings.privacy.clear_cache.action": "Clear",
   "settings.privacy.clear_cache.success": "Cached data cleared",
   "settings.privacy.copy_username.label": "Username",
-  "settings.privacy.copy_email.label": "Email"
+  "settings.privacy.copy_email.label": "Email",
+  "billing.wallet.autoreload_amount_label": "Top-up amount",
+  "billing.wallet.autoreload_rate": "{p1} per credit",
+  "billing.wallet.autoreload_saved": "Auto-reload set to {p1} credits",
+  "billing.wallet.filter_all": "All",
+  "billing.wallet.filter_applied": "Showing {p1}",
+  "billing.wallet.filter_costs": "Costs",
+  "billing.wallet.filter_empty": "No matching activity",
+  "billing.wallet.filter_refunds": "Refunds",
+  "submit.split.rationale.tiny": "This dataset is very small ({total} {term.examplePlural}). There aren't enough {term.examplePlural} for a separate {term.splitVal} or {term.splitTest} set, so GEPA reuses the same examples for both {term.splitTrain} and evaluation during {term.optimization}.",
+  "submit.split.rationale.small": "This dataset is small ({total} {term.examplePlural}). 80% goes to {term.splitTrain} and 20% to {term.splitVal} to give GEPA a separate evaluation set; there aren't enough {term.examplePlural} for a {term.splitTest} set too.",
+  "submit.split.rationale.medium": "This is a medium-sized dataset ({total} {term.examplePlural}). A 60/20/20 split leaves enough {term.examplePlural} for all three sets.",
+  "submit.split.rationale.large": "This is a large dataset ({total} {term.examplePlural}). {val_count} {term.examplePlural} go to {term.splitVal} and {test_count} to {term.splitTest}; once the dataset reaches these caps they keep {term.optimization} time reasonable without evaluating on more {term.examplePlural} than needed.",
+  "submit.split.warning.too_small": "This dataset has {row_count} {term.examplePlural} — too few to measure improvement reliably. Add more {term.examplePlural} for more stable scores.",
+  "submit.split.warning.duplicates": "Found {duplicate_count} duplicate {term.rowPlural} by {term.inputColumns}. Duplicates can make the same {term.examplePlural} appear in more than one split.",
+  "submit.split.warning.missing_target": "{missing} {term.rowPlural} are missing a value in the {term.outputColumnTarget} '{column_name}'. Remove or fill them before the run.",
+  "submit.split.warning.rare_class": "The column '{column_name}' has rare categories ({rare_classes}) — some may not appear in {term.splitVal} or {term.splitTest}.",
+  "submit.split.warning.class_imbalance": "Class imbalance in '{column_name}' (ratio {ratio}:1). Consider adding {term.examplePlural} for the under-represented categories."
 }

@@ -1,29 +1,13 @@
 "use client";
 
 import { BadgeCheck, Undo2 } from "lucide-react";
-import type { GuaranteeBasis, RunBillingOutcome } from "@/shared/types/api";
+import type { GuaranteeBasis } from "@/shared/types/api";
 import { FadeIn } from "@/shared/ui/motion";
 import { formatCredits } from "@/features/billing";
 import { useLocale } from "@/shared/providers";
 import { formatImprovement } from "@/shared/lib";
 import { formatMsg, msg } from "@/shared/lib/messages";
-import { proofBannerVariant } from "../lib/proof-banner";
-
-/** Read the typed billing outcome the worker stamps under `result.details.billing`. */
-function readBilling(details: Record<string, unknown> | undefined): RunBillingOutcome | null {
-  const billing = details?.billing;
-  if (
-    billing &&
-    typeof billing === "object" &&
-    "outcome" in billing &&
-    "credits" in billing &&
-    ((billing as RunBillingOutcome).outcome === "billed" ||
-      (billing as RunBillingOutcome).outcome === "refunded")
-  ) {
-    return billing as RunBillingOutcome;
-  }
-  return null;
-}
+import { proofBannerVariant, readBilling } from "../lib/proof-banner";
 
 /**
  * The proof moment — the trust climax on a finished run.
