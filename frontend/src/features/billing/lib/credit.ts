@@ -106,11 +106,6 @@ export function hasPaidBalance(wallet: CreditWallet): boolean {
   return wallet.paidBalanceCredits > 0;
 }
 
-/** True once the account may run frontier models: holds purchased credits, or has active Premium. */
-export function isFrontierUnlocked(wallet: CreditWallet): boolean {
-  return hasPaidBalance(wallet) || wallet.premiumActive;
-}
-
 /** Derive the chip's health bucket from spendable value. */
 export function walletStatus(wallet: CreditWallet): WalletStatus {
   const total = totalCredits(wallet);

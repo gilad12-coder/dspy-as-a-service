@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { Boxes, ChevronDown, Coins, KeyRound, X } from "lucide-react";
-import { useCredits, isModelLocked } from "@/features/billing";
+import { useCredits } from "@/features/billing";
 import { useSettingsModal } from "@/features/settings";
 import { Dialog, DialogContent, DialogFooter } from "@/shared/ui/primitives/dialog";
 import { DialogTitleRow } from "@/shared/ui/dialog-title-row";
@@ -53,7 +52,7 @@ export function ModelConfigModal({
   onRemoveRecent,
   onSelectAllAvailable,
 }: ModelConfigModalProps) {
-  const { wallet, frontierUnlocked } = useCredits();
+  const { wallet } = useCredits();
   const { openTo } = useSettingsModal();
   const mode = wallet.mode;
 
@@ -71,12 +70,6 @@ export function ModelConfigModal({
       setConnectionOpen(mode === "byok" || !!(config.base_url || config.extra?.api_key));
     }
   }, [open, config, mode]);
-
-  // A frontier model picked while on the free tier (managed, no credits and no
-  // Premium) can't be saved — the picker locks the option, this guards a
-  // restored recent.
-  const draftLocked = isModelLocked(draft.name, mode, frontierUnlocked);
-  const showFrontierNote = mode === "managed" && !frontierUnlocked;
 
   const canThink = modelSupportsThinking(draft.name, catalogModels);
   const thinkingEnabled = !!draft.extra?.reasoning_effort;
@@ -347,19 +340,7 @@ export function ModelConfigModal({
               discoverUrl={draft.base_url?.trim() || undefined}
               discoverApiKey={(draft.extra?.api_key as string | undefined) || undefined}
               placeholder={msg("auto.features.submit.components.modelconfigmodal.literal.3")}
-              isLocked={(v) => isModelLocked(v, mode, frontierUnlocked)}
             />
-            {showFrontierNote && (
-              <p className="flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
-                <span>{msg("billing.lock.frontier_note")}</span>
-                <Link
-                  href="/upgrade"
-                  className="font-medium text-[#3D2E22] underline-offset-4 hover:underline"
-                >
-                  {msg("billing.action.add_credits")}
-                </Link>
-              </p>
-            )}
           </div>
 
           <Separator />
@@ -484,7 +465,7 @@ export function ModelConfigModal({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={!draft.name.trim() || draftLocked}
+            disabled={!draft.name.trim()}
             className="flex-1"
           >
             {msg("auto.features.submit.components.modelconfigmodal.11")}

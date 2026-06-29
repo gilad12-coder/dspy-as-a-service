@@ -68,7 +68,7 @@ METER_UNIT_TOKENS = 1000
 # guarantee logic.
 PLATFORM_FEE_FRACTION = 0.20
 
-# Stripe subscription statuses that entitle an account to the frontier catalog.
+# Stripe subscription statuses that count an account as having active Premium.
 _ACTIVE_SUBSCRIPTION_STATUSES = frozenset({"active", "trialing", "past_due"})
 
 # How long a Founder's Rate subscriber's price is held. The offer promises the
@@ -576,30 +576,6 @@ class StripeBillingService:
             if customer is not None and session.is_modified(customer):
                 session.commit()
         return max(grant_remaining + paid, 0)
-
-    def frontier_unlocked(self, username: str) -> bool:
-        """Return whether the account may run frontier models in managed mode.
-
-        Frontier access is entitled by a purchased credit balance or an active
-        Premium subscription — the same line the wizard draws client-side. Read
-        directly off the billing row (no Stripe call), so it serves on a
-        key-less deploy. A brand-new account with no row is locked (free grant
-        runs mini models only).
-
-        Args:
-            username: Account to check.
-
-        Returns:
-            ``True`` when the account holds purchased credits or active Premium.
-        """
-        with Session(self._engine) as session:
-            customer = session.get(BillingCustomerModel, username)
-            if customer is None:
-                return False
-            if int(customer.credit_balance) > 0:
-                return True
-            status = customer.subscription_status
-            return status in _ACTIVE_SUBSCRIPTION_STATUSES if status else False
 
     def debit_run(
         self, username: str, total_tokens: int, *, model: str | None, description: str

@@ -12,7 +12,6 @@ export {
   type KeyStatus,
   type ProviderKey,
 } from "./lib/byok";
-export { modelTier, isModelLocked, type ModelTier } from "./lib/model-access";
 export {
   CREDIT_PACKS,
   CREDIT_USD_VALUE,
@@ -22,7 +21,6 @@ export {
   formatResetDate,
   formatUsd,
   hasPaidBalance,
-  isFrontierUnlocked,
   totalCredits,
   walletStatus,
   type CreditPack,

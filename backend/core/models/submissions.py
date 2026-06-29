@@ -89,10 +89,11 @@ class _OptimizationRequestBase(BaseModel):
     token_source: Literal["managed", "byok"] = Field(
         default="managed",
         description=(
-            "How the run's tokens are billed: 'managed' (Skynet credits, gates frontier models "
-            "until the account holds purchased credits or Premium) or 'byok' (the user's own "
-            "provider key — nothing is locked). Threaded from the wizard so frontier-locking and "
-            "the 'No lift, no charge' guarantee are enforced server-side, not advisory."
+            "How the run's tokens are billed: 'managed' (Skynet credits — any model is runnable, "
+            "and the run's cost ceiling is capped at the account's spendable credits so it can't "
+            "overspend) or 'byok' (the user's own provider key — billed directly, no credits). "
+            "Threaded from the wizard so the credit gate and the 'No lift, no charge' guarantee "
+            "are enforced server-side, not advisory."
         ),
     )
     max_cost_credits: int | None = Field(

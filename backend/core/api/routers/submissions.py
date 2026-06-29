@@ -18,7 +18,6 @@ from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
 from ...billing import ProviderKeyVault, StripeBillingService, provider_slug_for_model
-from ...billing.model_access import is_model_locked
 from ...constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
@@ -50,7 +49,6 @@ from ...constants import (
     PAYLOAD_OVERVIEW_TOTAL_PAIRS,
     PAYLOAD_OVERVIEW_USERNAME,
     TOKEN_SOURCE_BYOK,
-    TOKEN_SOURCE_MANAGED,
 )
 from ...i18n import t
 from ...i18n_keys import I18nKey
@@ -320,65 +318,64 @@ def _expand_catalog_grid_payload(payload: GridSearchRequest) -> None:
         payload.reflection_models = expanded
 
 
-def _enforce_credit_balance(job_store, username: str, token_source: str) -> None:
-    """Block a depleted account from starting a managed run at submit time.
+def _enforce_credit_balance(job_store, username: str, token_source: str) -> int | None:
+    """Block a depleted account from starting a managed run, and report its balance.
 
     Reads the account's spendable credits (free grant + purchased balance, with
     the rolling grant reset applied) and refuses the submission when nothing is
     left. The free grant means a brand-new account always passes; this only fires
     once both the grant and any purchased balance are exhausted. A BYOK run bills
     the user's own provider key, so it spends no credits and is exempt — the gate
-    fires for managed runs only.
+    fires for managed runs only. The returned balance feeds the per-run cost
+    ceiling (see :func:`_cap_cost_ceiling_to_balance`) so a managed run can never
+    spend past what the account holds.
 
     Args:
         job_store: Job-store instance whose ORM engine backs the billing tables.
         username: Account attempting the submission.
         token_source: ``"managed"`` or ``"byok"``; BYOK runs skip the gate.
 
+    Returns:
+        The account's spendable credits for a managed run, or ``None`` for a BYOK
+        run (exempt) or a store with no SQL engine (legacy/in-memory).
+
     Raises:
         DomainError: 402 when a managed account has no spendable credits.
     """
     if token_source == TOKEN_SOURCE_BYOK:
-        return
+        return None
     engine = getattr(job_store, "engine", None)
     if engine is None or not username:
-        return
+        return None
     service = StripeBillingService(engine=engine)
-    if service.spendable_credits(username) <= 0:
+    spendable = service.spendable_credits(username)
+    if spendable <= 0:
         raise DomainError("billing.insufficient_credits", status=402)
+    return spendable
 
 
-def _enforce_frontier_lock(
-    job_store, username: str, token_source: str, model_values: list[str]
-) -> None:
-    """Refuse a managed run on a frontier model the account can't yet unlock.
+def _cap_cost_ceiling_to_balance(payload: _OptimizationRequestBase, spendable: int | None) -> None:
+    """Pin a managed run's cost ceiling to the account's spendable credits.
 
-    Mirrors the wizard's client-side lock server-side so it is enforced, not
-    advisory: in managed mode an account without a purchased balance (or active
-    Premium) may run mini models on its free grant but not the frontier
-    task/reflection models. BYOK runs bill the user's own key and never lock, so
-    they are exempt. A no-op when the store exposes no SQL engine (legacy/in-memory).
+    With model-tier gating gone, any model is runnable and credits are the only
+    thing between a user and an expensive one — so a managed run must not be
+    allowed to spend more credits than the account holds. This clamps
+    ``max_cost_credits`` to the spendable balance: a user-set cap still wins when
+    it is tighter, but an absent or larger cap is lowered to the balance. The
+    run's ``CostCeilingCallback`` then hard-stops it once usage crosses that
+    budget, so an over-ambitious run fails mid-flight (and is never billed)
+    instead of driving the balance negative. A no-op for BYOK / engine-less
+    stores, where ``spendable`` is ``None`` (BYOK bills the user's own key).
 
     Args:
-        job_store: Job-store instance whose ORM engine backs the billing tables.
-        username: Account attempting the submission.
-        token_source: ``"managed"`` or ``"byok"``; BYOK is exempt.
-        model_values: Fully-qualified model ids the run would execute on.
-
-    Raises:
-        DomainError: 402 ``billing.frontier_locked`` listing the locked models.
+        payload: The submission whose ``max_cost_credits`` is clamped in place.
+        spendable: The account's spendable credits from
+            :func:`_enforce_credit_balance`, or ``None`` to leave the cap as-is.
     """
-    if token_source != TOKEN_SOURCE_MANAGED:
+    if spendable is None:
         return
-    engine = getattr(job_store, "engine", None)
-    if engine is None or not username:
-        return
-    service = StripeBillingService(engine=engine)
-    if service.frontier_unlocked(username):
-        return
-    locked = sorted({m for m in model_values if m and is_model_locked(m, token_source, False)})
-    if locked:
-        raise DomainError("billing.frontier_locked", status=402, model=", ".join(locked))
+    current = payload.max_cost_credits
+    payload.max_cost_credits = spendable if current is None else min(current, spendable)
 
 
 def _enforce_byok_connections(
@@ -502,13 +499,13 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             incoming_bytes=json_byte_size(payload.model_dump(mode="json", by_alias=True)),
         )
 
-        _enforce_credit_balance(job_store, payload.username, payload.token_source)
+        _spendable = _enforce_credit_balance(job_store, payload.username, payload.token_source)
+        _cap_cost_ceiling_to_balance(payload, _spendable)
         _run_model_values = [
             cfg.normalized_identifier()
             for cfg in (payload.model_settings, payload.reflection_model_settings, payload.task_model_settings)
             if cfg is not None
         ]
-        _enforce_frontier_lock(job_store, payload.username, payload.token_source, _run_model_values)
         _enforce_byok_connections(job_store, payload.username, payload.token_source, _run_model_values)
 
         optimization_id = str(uuid4())
@@ -660,12 +657,12 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             incoming_bytes=json_byte_size(payload.model_dump(mode="json", by_alias=True)),
         )
 
-        _enforce_credit_balance(job_store, payload.username, payload.token_source)
+        _spendable = _enforce_credit_balance(job_store, payload.username, payload.token_source)
+        _cap_cost_ceiling_to_balance(payload, _spendable)
         _grid_model_values = [
             cfg.normalized_identifier()
             for cfg in (*payload.generation_models, *payload.reflection_models)
         ]
-        _enforce_frontier_lock(job_store, payload.username, payload.token_source, _grid_model_values)
         _enforce_byok_connections(job_store, payload.username, payload.token_source, _grid_model_values)
 
         optimization_id = str(uuid4())

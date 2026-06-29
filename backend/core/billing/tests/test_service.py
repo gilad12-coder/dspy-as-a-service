@@ -564,30 +564,3 @@ def test_guarantee_billed_when_no_comparable_scores(engine: object) -> None:
     assert refunded == 0
     with Session(engine) as session:
         assert session.get(GuaranteeRunModel, ("u@x.com", "task-none")) is not None
-
-
-def test_frontier_unlocked_requires_balance_or_premium(engine: object) -> None:
-    """Frontier access needs purchased credits or active Premium; a new account is locked."""
-    service = StripeBillingService(engine=engine)
-    assert service.frontier_unlocked("new@x.com") is False
-    with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(username="paid@x.com", stripe_customer_id="cus_p", credit_balance=100)
-        )
-        session.add(
-            BillingCustomerModel(
-                username="sub@x.com",
-                stripe_customer_id="cus_s",
-                credit_balance=0,
-                subscription_status="active",
-            )
-        )
-        session.add(
-            BillingCustomerModel(
-                username="free@x.com", stripe_customer_id="cus_f", credit_balance=0
-            )
-        )
-        session.commit()
-    assert service.frontier_unlocked("paid@x.com") is True
-    assert service.frontier_unlocked("sub@x.com") is True
-    assert service.frontier_unlocked("free@x.com") is False

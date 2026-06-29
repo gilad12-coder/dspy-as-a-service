@@ -5,7 +5,6 @@ import { getWallet, type BillingWalletResponse } from "@/shared/lib/api";
 import {
   STUB_WALLET,
   hasPaidBalance,
-  isFrontierUnlocked,
   totalCredits,
   walletStatus,
   type AutoReload,
@@ -28,8 +27,6 @@ interface CreditContextValue {
   status: WalletStatus;
   totalCredits: number;
   hasPaidBalance: boolean;
-  /** True once the account may run frontier models (purchased credits or active Premium). */
-  frontierUnlocked: boolean;
   /** Patch the auto-reload settings (stub: local only until the backend lands). */
   setAutoReload: (patch: Partial<AutoReload>) => void;
   /** Switch the active token source (managed credits vs the user's own key). */
@@ -167,7 +164,6 @@ export function CreditProvider({
       status: walletStatus(wallet),
       totalCredits: totalCredits(wallet),
       hasPaidBalance: hasPaidBalance(wallet),
-      frontierUnlocked: isFrontierUnlocked(wallet),
       setAutoReload,
       setMode,
       refresh,

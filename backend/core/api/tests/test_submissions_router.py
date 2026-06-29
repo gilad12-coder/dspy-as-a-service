@@ -1041,10 +1041,15 @@ def _billing_engine() -> Any:
     return engine
 
 
-def test_submit_run_managed_frontier_model_blocked_without_balance(
+def test_submit_run_managed_any_model_allowed_and_ceiling_capped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A managed run on a frontier model is refused when the account can't unlock it."""
+    """Any model runs in managed mode; the per-run ceiling is capped to the balance.
+
+    With tier gating gone, a formerly frontier-locked model (gpt-4o) is allowed on
+    the free grant, and the run's ``max_cost_credits`` is clamped down to the
+    account's spendable credits so it can't overspend.
+    """
     engine = _billing_engine()
     with Session(engine) as session:
         session.add(
@@ -1064,9 +1069,9 @@ def test_submit_run_managed_frontier_model_blocked_without_balance(
     payload = {**_run_payload(), "model_settings": {"name": "openai/gpt-4o"}, "token_source": "managed"}
     resp = client.post("/run", json=payload)
 
-    assert resp.status_code == 402
-    assert resp.json()["code"] == "billing.frontier_locked"
-    assert store.created_ids() == []
+    assert resp.status_code == 201
+    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
+    assert submitted.max_cost_credits == 200
 
 
 def test_submit_run_byok_frontier_model_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1111,10 +1116,14 @@ def test_submit_run_byok_without_connection_blocked(monkeypatch: pytest.MonkeyPa
     assert store.created_ids() == []
 
 
-def test_submit_run_managed_frontier_allowed_with_paid_balance(
+def test_submit_run_managed_user_ceiling_wins_when_below_balance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A purchased balance unlocks the frontier catalog for a managed run."""
+    """A user-set cost ceiling tighter than the balance is left untouched.
+
+    The balance clamp only lowers an absent or larger cap; a user's own tighter
+    ``max_cost_credits`` still wins.
+    """
     engine = _billing_engine()
     with Session(engine) as session:
         session.add(
@@ -1127,10 +1136,17 @@ def test_submit_run_managed_frontier_allowed_with_paid_balance(
     store.engine = engine
     client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
 
-    payload = {**_run_payload(), "model_settings": {"name": "openai/gpt-4o"}, "token_source": "managed"}
+    payload = {
+        **_run_payload(),
+        "model_settings": {"name": "openai/gpt-4o"},
+        "token_source": "managed",
+        "max_cost_credits": 50,
+    }
     resp = client.post("/run", json=payload)
 
     assert resp.status_code == 201
+    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
+    assert submitted.max_cost_credits == 50
 
 
 def test_submit_run_defaults_token_source_to_managed_in_overview(
