@@ -24,9 +24,33 @@ services:
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
     depends_on:
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    # Backs the proxy's own virtual-key + spend tables — separate from the
+    # Skynet application database. Credentials must match LITELLM_DATABASE_URL
+    # in .env (defaults to litellm:litellm@db:5432/litellm in .env.example).
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: litellm
+      POSTGRES_DB: litellm
+    volumes:
+      - litellm-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  litellm-db:

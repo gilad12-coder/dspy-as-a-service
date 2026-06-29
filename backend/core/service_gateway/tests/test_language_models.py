@@ -285,6 +285,23 @@ def test_managed_gateway_routes_managed_call(monkeypatch: pytest.MonkeyPatch) ->
     _apply_managed_gateway(kwargs)
     assert kwargs["base_url"] == "https://proxy.internal/v1"
     assert kwargs["api_key"] == "sk-proxy"
+    # Addressed via the litellm_proxy provider so the OpenRouter slug reaches the
+    # proxy intact — a bare ``openai/`` prefix would otherwise be stripped to a
+    # slug the proxy's ``*`` -> ``openrouter/*`` wildcard can't reconstruct.
+    assert kwargs["model"] == "litellm_proxy/openai/gpt-4o"
+
+
+def test_managed_gateway_strips_openrouter_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An openrouter-prefixed id is reduced to its slug before the proxy prefix.
+
+    The proxy's ``*`` -> ``openrouter/*`` wildcard re-adds ``openrouter/``, so
+    passing the id through verbatim would double-prefix the model upstream.
+    """
+    monkeypatch.setattr(settings, "litellm_proxy_url", "https://proxy.internal/v1")
+    monkeypatch.setattr(settings, "litellm_proxy_api_key", SecretStr("sk-proxy"))
+    kwargs: dict[str, object] = {"model": "openrouter/minimax/minimax-m3"}
+    _apply_managed_gateway(kwargs)
+    assert kwargs["model"] == "litellm_proxy/minimax/minimax-m3"
 
 
 def test_managed_gateway_skips_byok_call(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -295,6 +312,7 @@ def test_managed_gateway_skips_byok_call(monkeypatch: pytest.MonkeyPatch) -> Non
     _apply_managed_gateway(kwargs)
     assert kwargs["api_key"] == "sk-user"
     assert "base_url" not in kwargs
+    assert kwargs["model"] == "openai/gpt-4o"  # not rewritten for BYOK
 
 
 def test_managed_gateway_skips_endpoint_pinned_call(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -304,6 +322,7 @@ def test_managed_gateway_skips_endpoint_pinned_call(monkeypatch: pytest.MonkeyPa
     _apply_managed_gateway(kwargs)
     assert kwargs["base_url"] == "https://custom/v1"
     assert "api_key" not in kwargs
+    assert kwargs["model"] == "x"  # endpoint-pinned call not rewritten
 
 
 def test_managed_gateway_noop_without_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -313,3 +332,4 @@ def test_managed_gateway_noop_without_proxy(monkeypatch: pytest.MonkeyPatch) -> 
     _apply_managed_gateway(kwargs)
     assert "base_url" not in kwargs
     assert "api_key" not in kwargs
+    assert kwargs["model"] == "openai/gpt-4o"  # untouched without a proxy

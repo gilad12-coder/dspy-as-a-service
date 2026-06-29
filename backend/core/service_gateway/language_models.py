@@ -104,11 +104,11 @@ def _apply_managed_gateway(lm_kwargs: dict[str, object]) -> None:
     presence of ``api_key`` distinguishes the two here without threading the
     token source down to the LM factory. When a proxy URL is configured and the
     call is managed (no ``api_key``) and not already pinned to a specific
-    endpoint (no ``base_url``), point it at the proxy and authenticate with the
-    managed virtual key, so all platform inference flows through one metered
-    seam. A no-op when no proxy is configured, leaving the default
-    dspy → provider path unchanged; BYOK and endpoint-pinned calls are never
-    rerouted.
+    endpoint (no ``base_url``), point it at the proxy via litellm's
+    ``litellm_proxy/`` provider and authenticate with the managed virtual key,
+    so all platform inference flows through one metered seam. A no-op when no
+    proxy is configured, leaving the default dspy → provider path unchanged;
+    BYOK and endpoint-pinned calls are never rerouted.
 
     Args:
         lm_kwargs: The ``dspy.LM`` kwargs assembled so far, mutated in place.
@@ -121,6 +121,16 @@ def _apply_managed_gateway(lm_kwargs: dict[str, object]) -> None:
     lm_kwargs["base_url"] = proxy_url
     if settings.litellm_proxy_api_key is not None:
         lm_kwargs["api_key"] = settings.litellm_proxy_api_key.get_secret_value()
+    # Address the proxy through litellm's dedicated ``litellm_proxy/`` provider so
+    # the OpenRouter slug reaches it intact. Without the prefix litellm resolves
+    # the bare provider segment itself (``openai/gpt-4o-mini`` -> openai provider,
+    # sending just ``gpt-4o-mini``), and the proxy's ``*`` -> ``openrouter/*``
+    # wildcard then can't reconstruct a real slug. A leading ``openrouter/`` is
+    # dropped first because that wildcard re-adds it — otherwise an already
+    # OpenRouter-prefixed id (``openrouter/minimax/...``) would double-prefix.
+    model = lm_kwargs.get("model")
+    if isinstance(model, str):
+        lm_kwargs["model"] = f"litellm_proxy/{model.removeprefix('openrouter/')}"
 
 
 def build_language_model(config: ModelConfig, *, disable_cache: bool = False) -> dspy.LM:
