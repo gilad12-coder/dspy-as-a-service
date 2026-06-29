@@ -2383,5 +2383,20 @@
   "trajectory.prompt.react.tools_carousel_aria": "टूल विवरणों के बीच पेजिंग",
   "trajectory.scrubber.generation_value": "जनरेशन {gen}",
   "trajectory.scrubber.label": "जनरेशन के अनुसार फ़िल्टर करें",
-  "trajectory.scrubber.live": "लाइव"
+  "trajectory.scrubber.live": "लाइव",
+  "settings.tab.language": "भाषा",
+  "settings.language.interface.label": "इंटरफ़ेस भाषा",
+  "settings.language.interface.description": "इंटरफ़ेस में उपयोग की जाने वाली भाषा चुनें। इसे बदलने पर पेज फिर से लोड होता है।",
+  "settings.language.auto.label": "ब्राउज़र से पहचानें",
+  "settings.language.auto.description": "अपनी पसंद हटाएँ और फिर से अपने ब्राउज़र की भाषा का अनुसरण करें।",
+  "settings.language.auto.action": "रीसेट करें",
+  "settings.tab.privacy": "गोपनीयता और डेटा",
+  "settings.privacy.analytics.label": "गुमनाम उपयोग विश्लेषण भेजें",
+  "settings.privacy.analytics.description": "गुमनाम उपयोग डेटा साझा करके Skynet को बेहतर बनाने में मदद करें। भेजना रोकने के लिए इसे बंद करें।",
+  "settings.privacy.clear_cache.label": "कैश किया गया डेटा साफ़ करें",
+  "settings.privacy.clear_cache.description": "स्थानीय रूप से कैश की गई प्रतिक्रियाएँ हटाएँ ताकि अगली बार ताज़ा डेटा लोड हो।",
+  "settings.privacy.clear_cache.action": "साफ़ करें",
+  "settings.privacy.clear_cache.success": "कैश किया गया डेटा साफ़ कर दिया गया",
+  "settings.privacy.copy_username.label": "उपयोगकर्ता नाम",
+  "settings.privacy.copy_email.label": "ईमेल"
 }

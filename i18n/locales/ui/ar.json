@@ -2384,5 +2384,20 @@
   "trajectory.prompt.react.tools_carousel_aria": "تصفّح أوصاف الأدوات",
   "trajectory.scrubber.generation_value": "الجيل {gen}",
   "trajectory.scrubber.label": "التصفية حسب الجيل",
-  "trajectory.scrubber.live": "مباشر"
+  "trajectory.scrubber.live": "مباشر",
+  "settings.tab.language": "اللغة",
+  "settings.language.interface.label": "لغة الواجهة",
+  "settings.language.interface.description": "اختر اللغة المستخدمة في الواجهة. تغييرها يعيد تحميل الصفحة.",
+  "settings.language.auto.label": "الكشف من المتصفح",
+  "settings.language.auto.description": "تجاهل اختيارك واتبع لغة متصفحك من جديد.",
+  "settings.language.auto.action": "إعادة تعيين",
+  "settings.tab.privacy": "الخصوصية والبيانات",
+  "settings.privacy.analytics.label": "إرسال تحليلات استخدام مجهولة",
+  "settings.privacy.analytics.description": "ساعد في تحسين Skynet بمشاركة بيانات استخدام مجهولة. أوقفه لإيقاف الإرسال.",
+  "settings.privacy.clear_cache.label": "مسح البيانات المخزنة مؤقتًا",
+  "settings.privacy.clear_cache.description": "احذف الاستجابات المخزنة محليًا ليجلب التحميل التالي بيانات جديدة.",
+  "settings.privacy.clear_cache.action": "مسح",
+  "settings.privacy.clear_cache.success": "تم مسح البيانات المخزنة مؤقتًا",
+  "settings.privacy.copy_username.label": "اسم المستخدم",
+  "settings.privacy.copy_email.label": "البريد الإلكتروني"
 }

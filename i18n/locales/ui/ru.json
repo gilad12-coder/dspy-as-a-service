@@ -2383,5 +2383,20 @@
   "trajectory.prompt.react.tools_carousel_aria": "Листание описаний инструментов",
   "trajectory.scrubber.generation_value": "Генерация {gen}",
   "trajectory.scrubber.label": "Фильтр по генерации",
-  "trajectory.scrubber.live": "В реальном времени"
+  "trajectory.scrubber.live": "В реальном времени",
+  "settings.tab.language": "Язык",
+  "settings.language.interface.label": "Язык интерфейса",
+  "settings.language.interface.description": "Выберите язык интерфейса. При изменении страница перезагрузится.",
+  "settings.language.auto.label": "Определять по браузеру",
+  "settings.language.auto.description": "Забыть выбор и снова следовать языку браузера.",
+  "settings.language.auto.action": "Сбросить",
+  "settings.tab.privacy": "Приватность и данные",
+  "settings.privacy.analytics.label": "Отправлять анонимную аналитику использования",
+  "settings.privacy.analytics.description": "Помогите улучшить Skynet, делясь анонимными данными об использовании. Отключите, чтобы прекратить отправку.",
+  "settings.privacy.clear_cache.label": "Очистить кэш данных",
+  "settings.privacy.clear_cache.description": "Удалить локально закэшированные ответы, чтобы при следующей загрузке получить свежие данные.",
+  "settings.privacy.clear_cache.action": "Очистить",
+  "settings.privacy.clear_cache.success": "Кэш данных очищен",
+  "settings.privacy.copy_username.label": "Имя пользователя",
+  "settings.privacy.copy_email.label": "Эл. почта"
 }

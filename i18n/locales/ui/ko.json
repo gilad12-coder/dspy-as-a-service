@@ -2383,5 +2383,20 @@
   "trajectory.prompt.react.tools_carousel_aria": "도구 설명 페이지 넘기기",
   "trajectory.scrubber.generation_value": "생성 {gen}",
   "trajectory.scrubber.label": "생성별 필터링",
-  "trajectory.scrubber.live": "실시간"
+  "trajectory.scrubber.live": "실시간",
+  "settings.tab.language": "언어",
+  "settings.language.interface.label": "인터페이스 언어",
+  "settings.language.interface.description": "인터페이스 전반에 사용할 언어를 선택하세요. 변경하면 페이지가 새로고침됩니다.",
+  "settings.language.auto.label": "브라우저에서 감지",
+  "settings.language.auto.description": "선택을 지우고 다시 브라우저 언어를 따릅니다.",
+  "settings.language.auto.action": "초기화",
+  "settings.tab.privacy": "개인정보 및 데이터",
+  "settings.privacy.analytics.label": "익명 사용 분석 전송",
+  "settings.privacy.analytics.description": "익명 사용 데이터를 공유해 Skynet 개선에 도움을 주세요. 끄면 전송이 중단됩니다.",
+  "settings.privacy.clear_cache.label": "캐시된 데이터 지우기",
+  "settings.privacy.clear_cache.description": "로컬에 캐시된 응답을 삭제해 다음 로드 시 최신 데이터를 가져옵니다.",
+  "settings.privacy.clear_cache.action": "지우기",
+  "settings.privacy.clear_cache.success": "캐시된 데이터를 지웠습니다",
+  "settings.privacy.copy_username.label": "사용자 이름",
+  "settings.privacy.copy_email.label": "이메일"
 }

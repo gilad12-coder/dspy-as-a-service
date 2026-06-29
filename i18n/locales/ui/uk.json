@@ -2383,5 +2383,20 @@
   "trajectory.prompt.react.tools_carousel_aria": "Гортання описів інструментів",
   "trajectory.scrubber.generation_value": "Генерація {gen}",
   "trajectory.scrubber.label": "Фільтрувати за генерацією",
-  "trajectory.scrubber.live": "Наживо"
+  "trajectory.scrubber.live": "Наживо",
+  "settings.tab.language": "Мова",
+  "settings.language.interface.label": "Мова інтерфейсу",
+  "settings.language.interface.description": "Виберіть мову, що використовується в усьому інтерфейсі. Її зміна перезавантажить сторінку.",
+  "settings.language.auto.label": "Визначати з браузера",
+  "settings.language.auto.description": "Забути ваш вибір і знову слідувати мові браузера.",
+  "settings.language.auto.action": "Скинути",
+  "settings.tab.privacy": "Конфіденційність і дані",
+  "settings.privacy.analytics.label": "Надсилати анонімну аналітику використання",
+  "settings.privacy.analytics.description": "Допоможіть покращити Skynet, ділячись анонімними даними про використання. Вимкніть, щоб припинити їх надсилання.",
+  "settings.privacy.clear_cache.label": "Очистити кешовані дані",
+  "settings.privacy.clear_cache.description": "Скиньте локально кешовані відповіді, щоб наступне завантаження отримало свіжі дані.",
+  "settings.privacy.clear_cache.action": "Очистити",
+  "settings.privacy.clear_cache.success": "Кешовані дані очищено",
+  "settings.privacy.copy_username.label": "Ім'я користувача",
+  "settings.privacy.copy_email.label": "Електронна пошта"
 }

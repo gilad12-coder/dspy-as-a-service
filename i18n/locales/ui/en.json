@@ -2495,5 +2495,20 @@
   "trajectory.prompt.react.tools_carousel_aria": "Paging through tool descriptions",
   "trajectory.scrubber.generation_value": "Generation {gen}",
   "trajectory.scrubber.label": "Filter by generation",
-  "trajectory.scrubber.live": "Live"
+  "trajectory.scrubber.live": "Live",
+  "settings.tab.language": "Language",
+  "settings.language.interface.label": "Interface language",
+  "settings.language.interface.description": "Choose the language used across the interface. Changing it reloads the page.",
+  "settings.language.auto.label": "Detect from browser",
+  "settings.language.auto.description": "Forget your choice and follow your browser's language again.",
+  "settings.language.auto.action": "Reset",
+  "settings.tab.privacy": "Privacy & data",
+  "settings.privacy.analytics.label": "Send anonymous usage analytics",
+  "settings.privacy.analytics.description": "Help improve Skynet by sharing anonymous usage data. Turn off to stop sending it.",
+  "settings.privacy.clear_cache.label": "Clear cached data",
+  "settings.privacy.clear_cache.description": "Drop locally cached responses so the next load fetches fresh data.",
+  "settings.privacy.clear_cache.action": "Clear",
+  "settings.privacy.clear_cache.success": "Cached data cleared",
+  "settings.privacy.copy_username.label": "Username",
+  "settings.privacy.copy_email.label": "Email"
 }

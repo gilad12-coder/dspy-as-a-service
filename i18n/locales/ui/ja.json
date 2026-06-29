@@ -2383,5 +2383,20 @@
   "trajectory.prompt.react.tools_carousel_aria": "ツールの説明をページ送り",
   "trajectory.scrubber.generation_value": "生成 {gen}",
   "trajectory.scrubber.label": "生成で絞り込む",
-  "trajectory.scrubber.live": "ライブ"
+  "trajectory.scrubber.live": "ライブ",
+  "settings.tab.language": "言語",
+  "settings.language.interface.label": "インターフェースの言語",
+  "settings.language.interface.description": "インターフェース全体で使用する言語を選択します。変更するとページが再読み込みされます。",
+  "settings.language.auto.label": "ブラウザから検出",
+  "settings.language.auto.description": "選択を破棄して、再びブラウザの言語に従います。",
+  "settings.language.auto.action": "リセット",
+  "settings.tab.privacy": "プライバシーとデータ",
+  "settings.privacy.analytics.label": "匿名の使用状況分析を送信",
+  "settings.privacy.analytics.description": "匿名の使用状況データを共有してSkynetの改善にご協力ください。オフにすると送信を停止します。",
+  "settings.privacy.clear_cache.label": "キャッシュデータを消去",
+  "settings.privacy.clear_cache.description": "ローカルにキャッシュされた応答を破棄し、次回の読み込みで最新のデータを取得します。",
+  "settings.privacy.clear_cache.action": "消去",
+  "settings.privacy.clear_cache.success": "キャッシュデータを消去しました",
+  "settings.privacy.copy_username.label": "ユーザー名",
+  "settings.privacy.copy_email.label": "メールアドレス"
 }

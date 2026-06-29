@@ -2383,5 +2383,20 @@
   "trajectory.prompt.react.tools_carousel_aria": "Araç açıklamaları arasında gezinme",
   "trajectory.scrubber.generation_value": "Üretim {gen}",
   "trajectory.scrubber.label": "Üretime göre filtrele",
-  "trajectory.scrubber.live": "Canlı"
+  "trajectory.scrubber.live": "Canlı",
+  "settings.tab.language": "Dil",
+  "settings.language.interface.label": "Arayüz dili",
+  "settings.language.interface.description": "Arayüzde kullanılan dili seçin. Değiştirmek sayfayı yeniden yükler.",
+  "settings.language.auto.label": "Tarayıcıdan algıla",
+  "settings.language.auto.description": "Seçiminizi unutup yeniden tarayıcınızın dilini izleyin.",
+  "settings.language.auto.action": "Sıfırla",
+  "settings.tab.privacy": "Gizlilik ve veri",
+  "settings.privacy.analytics.label": "Anonim kullanım analizleri gönder",
+  "settings.privacy.analytics.description": "Anonim kullanım verileri paylaşarak Skynet'i geliştirmeye yardımcı olun. Göndermeyi durdurmak için kapatın.",
+  "settings.privacy.clear_cache.label": "Önbelleğe alınan verileri temizle",
+  "settings.privacy.clear_cache.description": "Yerel olarak önbelleğe alınan yanıtları silin, böylece sonraki yükleme güncel verileri alır.",
+  "settings.privacy.clear_cache.action": "Temizle",
+  "settings.privacy.clear_cache.success": "Önbelleğe alınan veriler temizlendi",
+  "settings.privacy.copy_username.label": "Kullanıcı adı",
+  "settings.privacy.copy_email.label": "E-posta"
 }

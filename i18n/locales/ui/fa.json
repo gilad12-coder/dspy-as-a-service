@@ -2384,5 +2384,20 @@
   "trajectory.prompt.react.tools_carousel_aria": "پیمایش میان توضیحات ابزار",
   "trajectory.scrubber.generation_value": "نسل {gen}",
   "trajectory.scrubber.label": "فیلتر بر اساس نسل",
-  "trajectory.scrubber.live": "زنده"
+  "trajectory.scrubber.live": "زنده",
+  "settings.tab.language": "زبان",
+  "settings.language.interface.label": "زبان رابط کاربری",
+  "settings.language.interface.description": "زبان مورد استفاده در سراسر رابط کاربری را انتخاب کنید. تغییر آن صفحه را بارگذاری مجدد می‌کند.",
+  "settings.language.auto.label": "تشخیص از مرورگر",
+  "settings.language.auto.description": "انتخاب خود را فراموش کنید و دوباره از زبان مرورگر پیروی کنید.",
+  "settings.language.auto.action": "بازنشانی",
+  "settings.tab.privacy": "حریم خصوصی و داده‌ها",
+  "settings.privacy.analytics.label": "ارسال آمار استفادهٔ ناشناس",
+  "settings.privacy.analytics.description": "با اشتراک‌گذاری دادهٔ استفادهٔ ناشناس به بهبود Skynet کمک کنید. برای توقف ارسال، آن را خاموش کنید.",
+  "settings.privacy.clear_cache.label": "پاک کردن دادهٔ ذخیره‌شده",
+  "settings.privacy.clear_cache.description": "پاسخ‌های ذخیره‌شدهٔ محلی را حذف کنید تا بارگذاری بعدی دادهٔ تازه دریافت کند.",
+  "settings.privacy.clear_cache.action": "پاک کردن",
+  "settings.privacy.clear_cache.success": "دادهٔ ذخیره‌شده پاک شد",
+  "settings.privacy.copy_username.label": "نام کاربری",
+  "settings.privacy.copy_email.label": "ایمیل"
 }

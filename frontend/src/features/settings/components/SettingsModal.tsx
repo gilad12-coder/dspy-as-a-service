@@ -4,6 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   BookOpen,
   Bot,
@@ -16,6 +17,8 @@ import {
   Feather,
   HardDrive,
   Keyboard,
+  Languages,
+  Lock,
   type LucideIcon,
   Pencil,
   Plus,
@@ -95,6 +98,8 @@ import {
 import { useUserPrefs } from "../hooks/use-user-prefs";
 import { useSettingsModal } from "../hooks/use-settings-modal";
 import { ShortcutRecorder } from "./ShortcutRecorder";
+import { LanguageTab } from "./LanguageTab";
+import { PrivacyTab } from "./PrivacyTab";
 import { SettingsRow } from "@/shared/ui/settings-row";
 
 function WizardTab() {
@@ -1159,8 +1164,10 @@ function ApiTab() {
 const SETTINGS_TAB_ORDER = [
   "wizard",
   "agent",
+  "language",
   "admin",
   "account",
+  "privacy",
   "billing",
   "api",
   "about",
@@ -1173,25 +1180,33 @@ const SETTINGS_TAB_META: Record<
 > = {
   wizard: { icon: Sparkles, labelKey: "settings.tab.wizard" },
   agent: { icon: Bot, labelKey: "settings.tab.agent" },
+  language: { icon: Languages, labelKey: "settings.tab.language" },
   admin: { icon: HardDrive, labelKey: "settings.tab.admin" },
   account: { icon: User, labelKey: "settings.tab.account" },
+  privacy: { icon: Lock, labelKey: "settings.tab.privacy" },
   billing: { icon: CreditCard, labelKey: "settings.tab.billing" },
   api: { icon: KeyRound, labelKey: "settings.tab.api" },
   about: { icon: Info, labelKey: "settings.tab.about" },
 };
 
-// Vertical-rail item: full-width, icon + label, start-aligned. The dark active
-// fill, hover and focus states all come from the shared TabsTrigger; here we
-// only undo its horizontal sizing (equal-width flex-1, full-height stretch) and
-// set rail spacing. On mobile the rail is a horizontal scroll strip, so the item
-// drops back to auto width.
+// Vertical-rail item, styled to match the main sidebar nav exactly (Sidebar.tsx
+// `NavItem`): a full-width start-aligned row in `sidebar-foreground/60` with a
+// left-nudge hover and `text-primary` when active. The active highlight itself —
+// a primary tint + ring + logical inline-start stripe — is a shared-`layoutId`
+// `motion.div` rendered on the active trigger (see the rail map), so it SLIDES
+// between tabs like the sidebar's active pill instead of snapping. This class
+// only neutralizes the shared TabsTrigger's dark pill (bg/border/weight) so the
+// sliding overlay reads cleanly; the override lives here, not in the primitive,
+// so other tab groups keep the pill. On mobile the rail is a horizontal strip,
+// so the item drops back to auto width.
 const SETTINGS_RAIL_ITEM_CLASS =
-  "h-auto w-full flex-none justify-start gap-2.5 px-2.5 py-2 font-medium data-[state=inactive]:hover:bg-accent/50 max-md:w-auto!";
+  "h-auto w-full flex-none justify-start gap-2.5 rounded-lg px-3 py-2 font-medium text-sidebar-foreground/60 data-[state=inactive]:hover:translate-x-[-2px] data-[state=inactive]:hover:bg-sidebar-accent/40 data-[state=inactive]:hover:text-sidebar-foreground data-[state=active]:bg-transparent data-[state=active]:border-transparent data-[state=active]:font-medium data-[state=active]:text-primary data-[state=active]:hover:text-primary max-md:w-auto!";
 
 export function SettingsModal() {
   const { open, setOpen, targetTab, clearTarget } = useSettingsModal();
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
+  const prefersReduced = useReducedMotion();
   const [activeTab, setActiveTab] = React.useState<SettingsTab>("wizard");
   const tabs = React.useMemo(
     () => SETTINGS_TAB_ORDER.filter((tab) => isAdmin || tab !== "admin"),
@@ -1241,42 +1256,73 @@ export function SettingsModal() {
           }}
           className="flex h-[70vh] max-h-[600px] min-h-0 flex-col gap-0 md:flex-row"
         >
-          <TabsList className="relative flex h-auto w-full shrink-0 items-stretch justify-start gap-1 overflow-x-auto rounded-none border-0 border-b border-border/40 bg-transparent p-2 shadow-none no-scrollbar max-md:flex-row! md:w-[210px] md:overflow-x-visible md:overflow-y-auto md:border-b-0 md:border-e">
+          <TabsList className="relative flex h-auto w-full shrink-0 items-stretch justify-start gap-1 overflow-x-auto rounded-none border-0 border-b border-border/40 bg-transparent px-3 pb-3 pt-2 shadow-none no-scrollbar max-md:flex-row! md:w-[210px] md:overflow-x-visible md:overflow-y-auto md:border-b-0 md:border-e">
             {tabs.map((tab) => {
               const { icon: Icon, labelKey } = SETTINGS_TAB_META[tab];
               return (
                 <TabsTrigger key={tab} value={tab} className={SETTINGS_RAIL_ITEM_CLASS}>
-                  <Icon aria-hidden="true" />
-                  <span className="truncate">{msg(labelKey)}</span>
+                  {/* Shared-layoutId overlay: the same id on every active trigger lets
+                      Framer slide this highlight from the old tab to the new one,
+                      exactly like the sidebar's `sidebar-active` pill. */}
+                  {tab === activeTab && (
+                    <motion.div
+                      layoutId="settings-rail-active"
+                      className="absolute inset-0 rounded-lg bg-primary/[0.08] ring-1 ring-primary/10"
+                      style={{ borderInlineStart: "3px solid var(--primary)" }}
+                      transition={
+                        prefersReduced ? { duration: 0 } : { type: "spring", stiffness: 350, damping: 28 }
+                      }
+                    />
+                  )}
+                  <span className="relative z-10 flex flex-1 items-center gap-2.5 min-w-0">
+                    <Icon aria-hidden="true" className="size-4 shrink-0 transition-colors duration-200" />
+                    <span className="truncate flex-1">{msg(labelKey)}</span>
+                  </span>
                 </TabsTrigger>
               );
             })}
           </TabsList>
 
           <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4">
-            <TabsContent value="wizard">
-              <WizardTab />
-            </TabsContent>
-            <TabsContent value="agent">
-              <AgentTab />
-            </TabsContent>
-            {isAdmin && (
-              <TabsContent value="admin">
-                <AdminTab />
+            {/* Keyed on the active tab so each switch remounts the panel and replays
+                the entrance — a subtle fade + rise that signals the tab moved. A
+                vertical offset stays direction-neutral in RTL (no x-shift to flip). */}
+            <motion.div
+              key={activeTab}
+              initial={prefersReduced ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: prefersReduced ? 0 : 0.18, ease: [0.2, 0.8, 0.2, 1] }}
+            >
+              <TabsContent value="wizard">
+                <WizardTab />
               </TabsContent>
-            )}
-            <TabsContent value="account">
-              <AccountTab />
-            </TabsContent>
-            <TabsContent value="billing">
-              <WalletTab />
-            </TabsContent>
-            <TabsContent value="api">
-              <ApiTab />
-            </TabsContent>
-            <TabsContent value="about">
-              <AboutTab />
-            </TabsContent>
+              <TabsContent value="agent">
+                <AgentTab />
+              </TabsContent>
+              <TabsContent value="language">
+                <LanguageTab />
+              </TabsContent>
+              {isAdmin && (
+                <TabsContent value="admin">
+                  <AdminTab />
+                </TabsContent>
+              )}
+              <TabsContent value="account">
+                <AccountTab />
+              </TabsContent>
+              <TabsContent value="privacy">
+                <PrivacyTab />
+              </TabsContent>
+              <TabsContent value="billing">
+                <WalletTab />
+              </TabsContent>
+              <TabsContent value="api">
+                <ApiTab />
+              </TabsContent>
+              <TabsContent value="about">
+                <AboutTab />
+              </TabsContent>
+            </motion.div>
           </div>
         </Tabs>
       </DialogContent>

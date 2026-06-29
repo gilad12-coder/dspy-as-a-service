@@ -2495,5 +2495,20 @@
   "trajectory.prompt.react.tools_carousel_aria": "דפדוף בין תיאורי הכלים",
   "trajectory.scrubber.generation_value": "דור {gen}",
   "trajectory.scrubber.label": "סינון לפי דור",
-  "trajectory.scrubber.live": "חי"
+  "trajectory.scrubber.live": "חי",
+  "settings.tab.language": "שפה",
+  "settings.language.interface.label": "שפת הממשק",
+  "settings.language.interface.description": "בחרו את השפה שבה מוצג הממשק. שינוי השפה יטען מחדש את העמוד.",
+  "settings.language.auto.label": "זיהוי מהדפדפן",
+  "settings.language.auto.description": "מחיקת הבחירה שלכם וחזרה לשפת הדפדפן.",
+  "settings.language.auto.action": "איפוס",
+  "settings.tab.privacy": "פרטיות ונתונים",
+  "settings.privacy.analytics.label": "שליחת נתוני שימוש אנונימיים",
+  "settings.privacy.analytics.description": "עזרו לשפר את Skynet בשיתוף נתוני שימוש אנונימיים. כבו כדי להפסיק את השליחה.",
+  "settings.privacy.clear_cache.label": "ניקוי נתונים שמורים",
+  "settings.privacy.clear_cache.description": "מחיקת התשובות השמורות מקומית כך שהטעינה הבאה תביא נתונים עדכניים.",
+  "settings.privacy.clear_cache.action": "ניקוי",
+  "settings.privacy.clear_cache.success": "הנתונים השמורים נמחקו",
+  "settings.privacy.copy_username.label": "שם משתמש",
+  "settings.privacy.copy_email.label": "אימייל"
 }
