@@ -27,8 +27,10 @@ from core.billing.service import (
     FREE_GRANT_CREDITS,
     GRANT_WINDOW_DAYS,
     METER_UNIT_TOKENS,
+    PREMIUM_GRANT_CREDITS,
     TOKENS_PER_CREDIT,
     StripeBillingService,
+    cost_ceiling_budget,
     credits_for_tokens,
     platform_fee_credits,
 )
@@ -564,3 +566,144 @@ def test_guarantee_billed_when_no_comparable_scores(engine: object) -> None:
     assert refunded == 0
     with Session(engine) as session:
         assert session.get(GuaranteeRunModel, ("u@x.com", "task-none")) is not None
+
+
+def test_debit_run_byok_charges_only_platform_fee(engine: object) -> None:
+    """A BYOK run debits only Skynet's platform fee, not the full per-token cost."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    cost = service.debit_run(
+        "u@x.com",
+        100 * TOKENS_PER_CREDIT,
+        model="m1",
+        description="byok-run",
+        token_source=TOKEN_SOURCE_BYOK,
+    )
+    assert cost == platform_fee_credits(100 * TOKENS_PER_CREDIT)
+    assert cost == 20  # 20% of the 100-credit full cost a managed run would have paid
+    snapshot = service.get_wallet("u@x.com")
+    assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS - 20
+
+
+def test_debit_run_managed_still_charges_full_cost(engine: object) -> None:
+    """A managed run is unaffected — it still pays the full per-token credit cost."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    cost = service.debit_run(
+        "u@x.com", 100 * TOKENS_PER_CREDIT, model="m1", description="managed-run"
+    )
+    assert cost == 100
+
+
+def test_cost_ceiling_budget_managed_is_the_balance(engine: object) -> None:
+    """A managed run's ceiling budget is exactly the spendable balance."""
+    assert cost_ceiling_budget(0, TOKEN_SOURCE_MANAGED) == 0
+    assert cost_ceiling_budget(100, TOKEN_SOURCE_MANAGED) == 100
+
+
+def test_cost_ceiling_budget_byok_is_fee_aware_and_larger(engine: object) -> None:
+    """A BYOK ceiling is the largest full-cost budget whose platform fee fits the balance."""
+    assert cost_ceiling_budget(0, TOKEN_SOURCE_BYOK) == 0
+    budget = cost_ceiling_budget(100, TOKEN_SOURCE_BYOK)
+    # Proportionally larger than the raw balance (a BYOK run spends only the fee)...
+    assert budget > 100
+    # ...and the fee of a run that exhausts the budget never exceeds the balance,
+    # while one credit more would (the cap is tight, erring conservative on floats).
+    assert platform_fee_credits(budget * TOKENS_PER_CREDIT) <= 100
+    assert platform_fee_credits((budget + 1) * TOKENS_PER_CREDIT) > 100
+
+
+def test_wallet_reports_premium_grant_total_for_subscriber(engine: object) -> None:
+    """An active Premium account's grant total is the larger Premium allotment."""
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="pro@x.com",
+                stripe_customer_id="cus_pro",
+                credit_balance=0,
+                grant_remaining=2000,
+                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
+                subscription_status="active",
+            )
+        )
+        session.commit()
+    snapshot = StripeBillingService(engine=engine).get_wallet("pro@x.com")
+    assert snapshot.free_grant_total == PREMIUM_GRANT_CREDITS
+    assert snapshot.free_grant_remaining == 2000
+    assert snapshot.premium_active is True
+
+
+def test_premium_grant_resets_to_premium_allotment(engine: object) -> None:
+    """Past the window, a Premium account tops up to the Premium allotment, not 500."""
+    past = datetime.now(UTC) - timedelta(days=1)
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="pro@x.com",
+                stripe_customer_id="cus_pro",
+                credit_balance=0,
+                grant_remaining=10,
+                grant_reset_at=past,
+                subscription_status="active",
+            )
+        )
+        session.commit()
+    snapshot = StripeBillingService(engine=engine).get_wallet("pro@x.com")
+    assert snapshot.free_grant_remaining == PREMIUM_GRANT_CREDITS
+
+
+def test_subscription_activation_grants_premium_allotment_immediately(engine: object) -> None:
+    """A fresh activation tops the grant up to the Premium allotment right away."""
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="up@x.com",
+                stripe_customer_id="cus_up",
+                credit_balance=0,
+                grant_remaining=300,
+                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
+            )
+        )
+        session.commit()
+    period_end = int(datetime(2026, 8, 1, tzinfo=UTC).timestamp())
+    sub = {
+        "customer": "cus_up",
+        "status": "active",
+        "items": {"data": [{"price": {"id": "price_premium"}, "current_period_end": period_end}]},
+    }
+    service = StripeBillingService(engine=engine)
+    with Session(engine) as session:
+        service._on_subscription_change(session, sub)
+        session.commit()
+    grant, _paid = _balance(engine, "up@x.com")
+    assert grant == PREMIUM_GRANT_CREDITS
+    with Session(engine) as session:
+        customer = session.get(BillingCustomerModel, "up@x.com")
+    assert _as_utc(customer.grant_reset_at) == datetime(2026, 8, 1, tzinfo=UTC)
+
+
+def test_subscription_update_while_active_does_not_refill_grant(engine: object) -> None:
+    """An update event on an already-active sub must not top the grant back up."""
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="act@x.com",
+                stripe_customer_id="cus_act",
+                credit_balance=0,
+                grant_remaining=100,
+                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
+                subscription_status="active",
+            )
+        )
+        session.commit()
+    period_end = int(datetime(2026, 9, 1, tzinfo=UTC).timestamp())
+    sub = {
+        "customer": "cus_act",
+        "status": "active",
+        "items": {"data": [{"price": {"id": "price_premium"}, "current_period_end": period_end}]},
+    }
+    service = StripeBillingService(engine=engine)
+    with Session(engine) as session:
+        service._on_subscription_change(session, sub)
+        session.commit()
+    assert _balance(engine, "act@x.com")[0] == 100

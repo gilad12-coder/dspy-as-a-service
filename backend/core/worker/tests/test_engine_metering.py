@@ -135,7 +135,20 @@ def test_debit_hook_charges_credits_for_successful_run() -> None:
         )
     billing_cls.assert_called_once_with(engine=engine)
     billing_cls.return_value.debit_run.assert_called_once_with(
-        "u@x.com", 5000, model="m1", description="sentiment v3"
+        "u@x.com", 5000, model="m1", description="sentiment v3", token_source="managed"
+    )
+
+
+def test_debit_hook_charges_platform_fee_for_byok_run() -> None:
+    """A BYOK run debits with token_source='byok' so only the platform fee is charged."""
+    engine = object()
+    worker = _worker(_Store(engine=engine))
+    with patch("core.worker.engine.StripeBillingService") as billing_cls:
+        worker._debit_run_credits(
+            "u@x.com", {"total_tokens": 5000}, run_name="r", model="m1", token_source="byok"
+        )
+    billing_cls.return_value.debit_run.assert_called_once_with(
+        "u@x.com", 5000, model="m1", description="r", token_source="byok"
     )
 
 

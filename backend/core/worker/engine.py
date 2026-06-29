@@ -652,6 +652,8 @@ class BackgroundWorker:
                                 result_dict,
                                 run_name=overview.get(PAYLOAD_OVERVIEW_NAME) or "",
                                 model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
+                                token_source=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE)
+                                or TOKEN_SOURCE_MANAGED,
                             )
                             # Adjudicate the guarantee after the debit so a no-lift
                             # first run can write its offsetting refund against the
@@ -908,7 +910,13 @@ class BackgroundWorker:
             logger.debug("Embedding indexing for %s failed: %s", optimization_id, exc)
 
     def _debit_run_credits(
-        self, username: str, result_dict: dict[str, Any] | None, *, run_name: str, model: str | None
+        self,
+        username: str,
+        result_dict: dict[str, Any] | None,
+        *,
+        run_name: str,
+        model: str | None,
+        token_source: str = TOKEN_SOURCE_MANAGED,
     ) -> int:
         """Debit a finished run's credit cost from the account's local ledger.
 
@@ -917,7 +925,10 @@ class BackgroundWorker:
         thread) so the wallet visibly reflects the spend the moment the run lands,
         but wrapped so a billing-DB hiccup can never flip job status — the local
         ledger is the credit source of truth, independent of whether Stripe is
-        configured. A no-op when the store exposes no SQL engine (legacy/in-memory),
+        configured. A managed run is charged its full per-token cost; a BYOK run is
+        charged only Skynet's platform fee (the provider tokens were paid on the
+        user's own key), so credits still meter a BYOK run without double-charging
+        for inference. A no-op when the store exposes no SQL engine (legacy/in-memory),
         the caller is anonymous, or the run reported no token usage.
 
         Args:
@@ -926,6 +937,8 @@ class BackgroundWorker:
                 the figure charged.
             run_name: Run name for the ledger row's human label.
             model: Model id stamped on the ledger row, or ``None``.
+            token_source: ``"managed"`` (full cost) or ``"byok"`` (platform fee
+                only); defaults to managed.
 
         Returns:
             The credits charged (``0`` when nothing was billed or the debit was
@@ -939,7 +952,11 @@ class BackgroundWorker:
             return 0
         try:
             return StripeBillingService(engine=engine).debit_run(
-                username, total_tokens, model=model, description=run_name or "Run"
+                username,
+                total_tokens,
+                model=model,
+                description=run_name or "Run",
+                token_source=token_source,
             )
         except Exception as exc:  # isolation boundary: a debit failure must never impact job status
             logger.debug("Credit debit for %s failed: %s", username, exc)

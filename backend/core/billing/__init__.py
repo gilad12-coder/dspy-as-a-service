@@ -12,21 +12,25 @@ from .byok_vault import ProviderKeyVault, ProviderKeyView, VaultSnapshot
 from .service import (
     FREE_GRANT_CREDITS,
     PACK_CREDITS,
+    PREMIUM_GRANT_CREDITS,
     LedgerRow,
     StripeBillingService,
     WalletSnapshot,
+    cost_ceiling_budget,
     tokens_for_credits,
 )
 
 __all__ = [
     "FREE_GRANT_CREDITS",
     "PACK_CREDITS",
+    "PREMIUM_GRANT_CREDITS",
     "LedgerRow",
     "ProviderKeyVault",
     "ProviderKeyView",
     "StripeBillingService",
     "VaultSnapshot",
     "WalletSnapshot",
+    "cost_ceiling_budget",
     "inject_byok_connections",
     "provider_slug_for_model",
     "tokens_for_credits",

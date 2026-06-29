@@ -17,7 +17,12 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
-from ...billing import ProviderKeyVault, StripeBillingService, provider_slug_for_model
+from ...billing import (
+    ProviderKeyVault,
+    StripeBillingService,
+    cost_ceiling_budget,
+    provider_slug_for_model,
+)
 from ...constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
@@ -319,31 +324,30 @@ def _expand_catalog_grid_payload(payload: GridSearchRequest) -> None:
 
 
 def _enforce_credit_balance(job_store, username: str, token_source: str) -> int | None:
-    """Block a depleted account from starting a managed run, and report its balance.
+    """Block a depleted account from starting a run, and report its spendable balance.
 
     Reads the account's spendable credits (free grant + purchased balance, with
     the rolling grant reset applied) and refuses the submission when nothing is
     left. The free grant means a brand-new account always passes; this only fires
-    once both the grant and any purchased balance are exhausted. A BYOK run bills
-    the user's own provider key, so it spends no credits and is exempt — the gate
-    fires for managed runs only. The returned balance feeds the per-run cost
-    ceiling (see :func:`_cap_cost_ceiling_to_balance`) so a managed run can never
-    spend past what the account holds.
+    once both the grant and any purchased balance are exhausted. Both run modes are
+    gated: a managed run spends its full per-token cost, and a BYOK run still spends
+    Skynet's platform fee (the provider tokens are on the user's own key), so a zero
+    balance can cover neither. The returned balance feeds the per-run cost ceiling
+    (see :func:`_cap_cost_ceiling_to_balance`) so a run can never spend past what the
+    account holds.
 
     Args:
         job_store: Job-store instance whose ORM engine backs the billing tables.
         username: Account attempting the submission.
-        token_source: ``"managed"`` or ``"byok"``; BYOK runs skip the gate.
+        token_source: ``"managed"`` or ``"byok"`` — carried to the cost-ceiling cap.
 
     Returns:
-        The account's spendable credits for a managed run, or ``None`` for a BYOK
-        run (exempt) or a store with no SQL engine (legacy/in-memory).
+        The account's spendable credits, or ``None`` for a store with no SQL engine
+        (legacy/in-memory).
 
     Raises:
-        DomainError: 402 when a managed account has no spendable credits.
+        DomainError: 402 when the account has no spendable credits.
     """
-    if token_source == TOKEN_SOURCE_BYOK:
-        return None
     engine = getattr(job_store, "engine", None)
     if engine is None or not username:
         return None
@@ -354,28 +358,33 @@ def _enforce_credit_balance(job_store, username: str, token_source: str) -> int 
     return spendable
 
 
-def _cap_cost_ceiling_to_balance(payload: _OptimizationRequestBase, spendable: int | None) -> None:
-    """Pin a managed run's cost ceiling to the account's spendable credits.
+def _cap_cost_ceiling_to_balance(
+    payload: _OptimizationRequestBase, spendable: int | None, token_source: str
+) -> None:
+    """Pin a run's cost ceiling to what the account's spendable credits can back.
 
     With model-tier gating gone, any model is runnable and credits are the only
-    thing between a user and an expensive one — so a managed run must not be
-    allowed to spend more credits than the account holds. This clamps
-    ``max_cost_credits`` to the spendable balance: a user-set cap still wins when
-    it is tighter, but an absent or larger cap is lowered to the balance. The
-    run's ``CostCeilingCallback`` then hard-stops it once usage crosses that
-    budget, so an over-ambitious run fails mid-flight (and is never billed)
-    instead of driving the balance negative. A no-op for BYOK / engine-less
-    stores, where ``spendable`` is ``None`` (BYOK bills the user's own key).
+    thing between a user and an expensive one — so a run must not be allowed to
+    spend more credits than the account holds. This clamps ``max_cost_credits`` to
+    the balance-backed budget: a user-set cap still wins when it is tighter, but an
+    absent or larger cap is lowered to the budget. For a managed run the budget is
+    the spendable balance; for a BYOK run it is proportionally larger, since the run
+    only spends the platform fee (see :func:`cost_ceiling_budget`). The run's
+    ``CostCeilingCallback`` then hard-stops it once usage crosses that budget, so an
+    over-ambitious run fails mid-flight (and is never billed) instead of driving the
+    balance negative. A no-op for engine-less stores, where ``spendable`` is ``None``.
 
     Args:
         payload: The submission whose ``max_cost_credits`` is clamped in place.
         spendable: The account's spendable credits from
             :func:`_enforce_credit_balance`, or ``None`` to leave the cap as-is.
+        token_source: ``"managed"`` or ``"byok"`` — sets the balance→budget conversion.
     """
     if spendable is None:
         return
+    budget = cost_ceiling_budget(spendable, token_source)
     current = payload.max_cost_credits
-    payload.max_cost_credits = spendable if current is None else min(current, spendable)
+    payload.max_cost_credits = budget if current is None else min(current, budget)
 
 
 def _enforce_byok_connections(
@@ -500,7 +509,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         )
 
         _spendable = _enforce_credit_balance(job_store, payload.username, payload.token_source)
-        _cap_cost_ceiling_to_balance(payload, _spendable)
+        _cap_cost_ceiling_to_balance(payload, _spendable, payload.token_source)
         _run_model_values = [
             cfg.normalized_identifier()
             for cfg in (payload.model_settings, payload.reflection_model_settings, payload.task_model_settings)
@@ -658,7 +667,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         )
 
         _spendable = _enforce_credit_balance(job_store, payload.username, payload.token_source)
-        _cap_cost_ceiling_to_balance(payload, _spendable)
+        _cap_cost_ceiling_to_balance(payload, _spendable, payload.token_source)
         _grid_model_values = [
             cfg.normalized_identifier()
             for cfg in (*payload.generation_models, *payload.reflection_models)

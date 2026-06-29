@@ -13,7 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from ...billing.service import GRANT_WINDOW_DAYS
+from ...billing.service import GRANT_WINDOW_DAYS, cost_ceiling_budget
 from ...constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
@@ -1147,6 +1147,89 @@ def test_submit_run_managed_user_ceiling_wins_when_below_balance(
     assert resp.status_code == 201
     submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
     assert submitted.max_cost_credits == 50
+
+
+def test_submit_run_byok_blocked_without_credits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A BYOK run is now refused when the account can't cover the platform fee.
+
+    BYOK is no longer credit-free: the run still spends Skynet's platform fee, so a
+    fully depleted account (zero grant, zero balance) is blocked at submit even with
+    a saved provider key.
+    """
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice",
+                stripe_customer_id="cus_alice",
+                credit_balance=0,
+                grant_remaining=0,
+                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
+            )
+        )
+        session.add(
+            BillingProviderKeyModel(
+                username="alice",
+                provider="openai",
+                secret_ciphertext=b"ciphertext",
+                last4="4o20",
+                status="verified",
+            )
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    payload = {**_run_payload(), "model_settings": {"name": "openai/gpt-4o"}, "token_source": "byok"}
+    resp = client.post("/run", json=payload)
+
+    assert resp.status_code == 402
+    assert resp.json()["code"] == "billing.insufficient_credits"
+    assert store.created_ids() == []
+
+
+def test_submit_run_byok_ceiling_capped_to_fee_aware_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A BYOK run's ceiling is clamped to a fee-aware budget, larger than the balance.
+
+    Because a BYOK run spends only the platform fee, the same balance backs a
+    proportionally larger token budget than a managed run would (see
+    ``cost_ceiling_budget``), so the clamp lands above the raw spendable figure.
+    """
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice",
+                stripe_customer_id="cus_alice",
+                credit_balance=0,
+                grant_remaining=200,
+                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
+            )
+        )
+        session.add(
+            BillingProviderKeyModel(
+                username="alice",
+                provider="openai",
+                secret_ciphertext=b"ciphertext",
+                last4="4o20",
+                status="verified",
+            )
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    payload = {**_run_payload(), "model_settings": {"name": "openai/gpt-4o"}, "token_source": "byok"}
+    resp = client.post("/run", json=payload)
+
+    assert resp.status_code == 201
+    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
+    assert submitted.max_cost_credits == cost_ceiling_budget(200, "byok")
+    assert submitted.max_cost_credits > 200
 
 
 def test_submit_run_defaults_token_source_to_managed_in_overview(

@@ -25,7 +25,12 @@ from sqlalchemy.orm import Session
 
 from ..api.errors import DomainError
 from ..config import settings
-from ..constants import GUARANTEE_BASIS_TEST, GUARANTEE_BASIS_VAL, TOKEN_SOURCE_BYOK
+from ..constants import (
+    GUARANTEE_BASIS_TEST,
+    GUARANTEE_BASIS_VAL,
+    TOKEN_SOURCE_BYOK,
+    TOKEN_SOURCE_MANAGED,
+)
 from ..storage.models import (
     BillingCustomerModel,
     BillingWebhookEventModel,
@@ -39,6 +44,11 @@ PACK_CREDITS: dict[str, int] = {"starter": 500, "plus": 2200, "pro": 6500}
 
 # Renewing allowance that keeps the free tier usable on mini models.
 FREE_GRANT_CREDITS = 500
+
+# Renewing allowance for an active Premium subscriber — the monthly credit
+# allotment the subscription buys, replacing (not stacking on) the free grant.
+# Re-priceable here: the margin lever is the token→credit markup, not this count.
+PREMIUM_GRANT_CREDITS = 2500
 
 # The free grant rolls on a per-user 30-day window rather than a calendar month,
 # so resets scatter across the month instead of all landing on the 1st. The
@@ -181,6 +191,56 @@ def platform_fee_credits(total_tokens: int) -> int:
     return max(1, math.ceil(cost * PLATFORM_FEE_FRACTION))
 
 
+def cost_ceiling_budget(spendable: int, token_source: str) -> int:
+    """Return the max per-run cost ceiling (full-cost credits) a balance can back.
+
+    A managed run spends its full per-token credit cost, so the balance backs a
+    ceiling of exactly ``spendable``. A BYOK run spends only Skynet's platform fee
+    (:data:`PLATFORM_FEE_FRACTION` of the full cost — the provider tokens are paid
+    on the user's own key), so the same balance backs a proportionally larger
+    ceiling: the largest full-cost budget whose platform fee still fits within
+    ``spendable``. Clamping ``max_cost_credits`` to this keeps a runaway BYOK run's
+    fee from ever exceeding the balance, mirroring the managed clamp. Computed by
+    over-estimating then stepping down against the real fee function so float
+    imprecision in the fraction can only err conservative (toward the balance).
+
+    Args:
+        spendable: The account's spendable credits; non-positive yields ``0``.
+        token_source: ``"managed"`` or ``"byok"`` — sets the conversion.
+
+    Returns:
+        The non-negative ceiling, in full-cost credits, to clamp the run to.
+    """
+    if spendable <= 0:
+        return 0
+    if token_source != TOKEN_SOURCE_BYOK:
+        return spendable
+    budget = math.ceil(spendable / PLATFORM_FEE_FRACTION)
+    while budget > 1 and max(1, math.ceil(budget * PLATFORM_FEE_FRACTION)) > spendable:
+        budget -= 1
+    return budget
+
+
+def _grant_allotment(customer: BillingCustomerModel | None) -> int:
+    """Return the account's monthly grant size — larger for an active Premium sub.
+
+    The renewing allowance the grant tops up to: :data:`PREMIUM_GRANT_CREDITS` for
+    an account whose subscription is in an active state, else the free-tier
+    :data:`FREE_GRANT_CREDITS`. A missing row (``None``) is a free account.
+
+    Args:
+        customer: The account's billing row, or ``None`` when it has none yet.
+
+    Returns:
+        The credit allotment the account's grant renews to.
+    """
+    if customer is None:
+        return FREE_GRANT_CREDITS
+    if customer.subscription_status in _ACTIVE_SUBSCRIPTION_STATUSES:
+        return PREMIUM_GRANT_CREDITS
+    return FREE_GRANT_CREDITS
+
+
 def _grant_window_end(now: datetime) -> datetime:
     """Return the instant the free grant next tops up, a fixed window past ``now``.
 
@@ -226,16 +286,17 @@ class StripeBillingService:
         """
         if customer is None:
             return FREE_GRANT_CREDITS
+        allotment = _grant_allotment(customer)
         if customer.grant_reset_at is None or customer.grant_remaining is None:
-            customer.grant_remaining = FREE_GRANT_CREDITS
+            customer.grant_remaining = allotment
             customer.grant_reset_at = _grant_window_end(now)
             customer.updated_at = now
-            return FREE_GRANT_CREDITS
+            return allotment
         reset_at = customer.grant_reset_at
         if reset_at.tzinfo is None:
             reset_at = reset_at.replace(tzinfo=UTC)
         if now > reset_at:
-            customer.grant_remaining = FREE_GRANT_CREDITS
+            customer.grant_remaining = allotment
             customer.grant_reset_at = _grant_window_end(now)
             customer.updated_at = now
         return int(customer.grant_remaining)
@@ -545,7 +606,7 @@ class StripeBillingService:
             return WalletSnapshot(
                 paid_balance_credits=customer.credit_balance if customer else 0,
                 free_grant_remaining=grant_remaining,
-                free_grant_total=FREE_GRANT_CREDITS,
+                free_grant_total=_grant_allotment(customer),
                 free_grant_resets_at=resets_at.isoformat(),
                 premium_active=premium_active,
                 subscription_status=status,
@@ -578,30 +639,45 @@ class StripeBillingService:
         return max(grant_remaining + paid, 0)
 
     def debit_run(
-        self, username: str, total_tokens: int, *, model: str | None, description: str
+        self,
+        username: str,
+        total_tokens: int,
+        *,
+        model: str | None,
+        description: str,
+        token_source: str = TOKEN_SOURCE_MANAGED,
     ) -> int:
         """Charge a finished run's credit cost to the account, free grant first.
 
         Writes one signed negative ``run`` row to ``credit_ledger`` and draws the
         cost from the free grant before the purchased balance, mirroring how
-        :meth:`get_wallet` reports spendable credits (grant then paid). The rolling
-        grant reset is applied first so a run that completes after the window
-        elapsed bills against the topped-up grant. Idempotency is the caller's
-        responsibility: the worker debits inside its once-only completion claim, so
-        a redelivered/re-run job never double-charges. A run costing zero credits
-        (no tokens, or under one credit's worth) writes nothing.
+        :meth:`get_wallet` reports spendable credits (grant then paid). A **managed**
+        run is charged its full per-token cost (:func:`credits_for_tokens`); a
+        **BYOK** run is charged only Skynet's platform fee
+        (:func:`platform_fee_credits`), since the provider tokens were already paid
+        on the user's own key — so credits still meter the platform on a BYOK run
+        without double-charging for inference. The rolling grant reset is applied
+        first so a run that completes after the window elapsed bills against the
+        topped-up grant. Idempotency is the caller's responsibility: the worker
+        debits inside its once-only completion claim, so a redelivered/re-run job
+        never double-charges. A run costing zero credits writes nothing.
 
         Args:
             username: Account the run is billed to.
-            total_tokens: Tokens the run consumed; converted via
-                :func:`credits_for_tokens`.
+            total_tokens: Tokens the run consumed; converted to a credit cost.
             model: Model id stamped on the ledger row, or ``None``.
             description: Human label for the ledger row (typically the run name).
+            token_source: ``"managed"`` (full cost) or ``"byok"`` (platform fee
+                only); defaults to managed.
 
         Returns:
             The credit cost charged (``0`` when nothing was billed).
         """
-        cost = credits_for_tokens(total_tokens)
+        cost = (
+            platform_fee_credits(total_tokens)
+            if token_source == TOKEN_SOURCE_BYOK
+            else credits_for_tokens(total_tokens)
+        )
         if cost <= 0:
             return 0
         now = datetime.now(UTC)
@@ -670,8 +746,9 @@ class StripeBillingService:
         self._resolve_grant(customer, now)
         # Restore the grant up to its full allowance first (it was drawn first on
         # debit), then send any overflow to the purchased balance.
+        allotment = _grant_allotment(customer)
         grant = int(customer.grant_remaining or 0)
-        to_grant = min(FREE_GRANT_CREDITS - grant, credits) if grant < FREE_GRANT_CREDITS else 0
+        to_grant = min(allotment - grant, credits) if grant < allotment else 0
         to_grant = max(to_grant, 0)
         customer.grant_remaining = grant + to_grant
         customer.credit_balance = int(customer.credit_balance) + (credits - to_grant)
@@ -918,11 +995,21 @@ class StripeBillingService:
         period_end_ts = obj.get("current_period_end") or (
             items[0].get("current_period_end") if items else None
         )
+        was_active = row.subscription_status in _ACTIVE_SUBSCRIPTION_STATUSES
         row.subscription_status = str(obj.get("status") or "")
         row.subscription_price_id = price_id
         row.subscription_current_period_end = (
             datetime.fromtimestamp(int(period_end_ts), tz=UTC) if period_end_ts else None
         )
+        # A fresh activation delivers the Premium monthly allotment immediately
+        # (top up to it, never clawing back a larger balance), so a new subscriber
+        # doesn't wait for the next rolling-window reset — every later renewal is
+        # handled lazily by the premium-aware reset in ``_resolve_grant``. Anchored
+        # to the billing period so the first premium window aligns to the cycle.
+        if not was_active and row.subscription_status in _ACTIVE_SUBSCRIPTION_STATUSES:
+            row.grant_remaining = max(int(row.grant_remaining or 0), PREMIUM_GRANT_CREDITS)
+            if row.subscription_current_period_end is not None:
+                row.grant_reset_at = row.subscription_current_period_end
         row.updated_at = datetime.now(UTC)
 
     def report_run_usage(self, username: str, total_tokens: int) -> None:
