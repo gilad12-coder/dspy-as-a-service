@@ -179,6 +179,7 @@ function FreeCard({ premiumActive, index }: { premiumActive: boolean; index: num
     { label: formatMsg("billing.plans.free.f1", { p1: formatCredits(FREE_GRANT_CREDITS, locale) }) },
     { label: msg("billing.plans.free.f2") },
     { label: msg("billing.plans.free.f3") },
+    { label: msg("billing.plans.free.f5") },
     { label: msg("billing.plans.free.f4") },
   ];
   return (
@@ -232,9 +233,7 @@ function PremiumCard({
 
   const features: Feature[] = [
     { label: msg("billing.plans.premium.everything_free"), header: true },
-    { label: msg("billing.plans.premium.f1") },
     { label: msg("billing.founders.stack_guarantee") },
-    { label: msg("billing.founders.stack_serving") },
     {
       label: formatMsg("billing.founders.stack_credits", {
         p1: formatCredits(PREMIUM_MONTHLY_CREDITS, locale),
