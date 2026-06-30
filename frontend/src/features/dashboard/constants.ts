@@ -1,5 +1,3 @@
-export const PAGE_SIZE = 20;
-
 export const FETCH_PAGE_SIZE = 50;
 
 export const COMPARE_MAX = 4;

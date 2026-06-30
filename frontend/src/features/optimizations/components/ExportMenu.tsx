@@ -30,7 +30,7 @@ function escapeCsvField(value: string | number | null | undefined): string {
   return s;
 }
 
-export function exportPromptAsJson(prompt: OptimizedPredictor, optimizationId: string) {
+function exportPromptAsJson(prompt: OptimizedPredictor, optimizationId: string) {
   downloadFile(
     JSON.stringify(prompt, null, 2),
     `prompt_${optimizationId.slice(0, 8)}.json`,
@@ -38,7 +38,7 @@ export function exportPromptAsJson(prompt: OptimizedPredictor, optimizationId: s
   );
 }
 
-export function exportLogsAsCsv(logs: OptimizationLogEntry[], optimizationId: string) {
+function exportLogsAsCsv(logs: OptimizationLogEntry[], optimizationId: string) {
   const header = "timestamp,level,logger,message\n";
   const rows = logs
     .map(

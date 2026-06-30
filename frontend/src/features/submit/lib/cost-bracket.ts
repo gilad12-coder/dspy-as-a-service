@@ -191,7 +191,7 @@ export function defaultCeilingForBracket(bracket: CostBracket): number {
 }
 
 /** Round a credit cap up to a readable step (10s under 500, 50s above). */
-export function roundToNiceCap(credits: number): number {
+function roundToNiceCap(credits: number): number {
   if (credits <= 0) return 1;
   const step = credits < 500 ? 10 : 50;
   return Math.ceil(credits / step) * step;

@@ -27,14 +27,6 @@ export type LedgerKind = "run" | "topup" | "grant";
 /** Platform value of one credit, in USD. The user-facing "$ equivalent" of a credit balance. */
 export const CREDIT_USD_VALUE = 0.01;
 
-/**
- * Run tokens charged per credit — mirrors the backend `TOKENS_PER_CREDIT`. The
- * pre-run cost bracket and the Max Cost Ceiling convert between credits and the
- * token budget the cap buys through this rate. Kept here as the single FE source
- * of truth for the credit↔token mapping.
- */
-export const TOKENS_PER_CREDIT = 1000;
-
 /** Below this much spendable value the wallet reads as "running low" (calm, not alarming). */
 export const LOW_BALANCE_USD = 0.5;
 

@@ -271,7 +271,7 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
 // triangle, so the default must communicate "completed successfully" — a plain
 // check, not a warning triangle which used to mis-render every finished
 // read-only call as if it were a danger pill (see PER-?? screenshots).
-export const DEFAULT_META: ToolMetaDef = {
+const DEFAULT_META: ToolMetaDef = {
   title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.51"),
   description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.52"),
   confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.53"),
@@ -313,7 +313,7 @@ const TOOL_TITLES: Record<string, LocaleString> = {
   get_pair_test_results_optimizations: () => msg("auto.features.agent.panel.lib.tool.meta.literal.78"),
 };
 
-export function prettifyToolName(tool: string): string {
+function prettifyToolName(tool: string): string {
   return tool
     .replace(/_(post|get|put|delete|patch)$/i, "")
     .replace(/_/g, " ")

@@ -122,7 +122,7 @@ const REASONING_EFFORT_LABELS: Record<string, string> = {
   high: "High",
 };
 
-export function reasoningEffortLabel(value: string | null | undefined): string | null {
+function reasoningEffortLabel(value: string | null | undefined): string | null {
   if (!value) return null;
   return REASONING_EFFORT_LABELS[value.toLowerCase()] ?? value;
 }

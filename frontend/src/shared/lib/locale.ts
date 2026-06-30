@@ -61,9 +61,6 @@ export const LOCALE_REGISTRY = {
 
 export type Locale = keyof typeof LOCALE_REGISTRY;
 
-/** One registry row, as stored. */
-export type LocaleEntry = (typeof LOCALE_REGISTRY)[Locale];
-
 /** All supported locale tags, in registry (switcher) order. */
 export const LOCALES = Object.keys(LOCALE_REGISTRY) as Locale[];
 

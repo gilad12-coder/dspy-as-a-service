@@ -22,7 +22,7 @@ const WEEKDAY_KEYS = [
   "explore.datepicker.weekday.sat",
 ] as const;
 
-export function parseISODate(s: string | null | undefined): Date | null {
+function parseISODate(s: string | null | undefined): Date | null {
   if (!s) return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
   if (!match) return null;

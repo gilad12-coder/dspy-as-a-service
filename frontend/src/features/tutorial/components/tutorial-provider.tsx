@@ -5,7 +5,7 @@ import { useReducer, useEffect, useCallback, useRef, createContext, useContext }
 import type { TutorialTrack, TutorialStep } from "../lib/steps";
 import { getTrack, resetTutorialOneShotState } from "../lib/steps";
 
-export interface TutorialState {
+interface TutorialState {
   activeTrack: TutorialTrack | null;
   currentStepIndex: number;
   isVisible: boolean;

@@ -9,7 +9,7 @@ import { HelpTip } from "@/shared/ui/help-tip";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 
-export type ChatRole = "user" | "assistant" | "system" | "tool";
+type ChatRole = "user" | "assistant" | "system" | "tool";
 
 export interface ChatMessage {
   role: ChatRole;

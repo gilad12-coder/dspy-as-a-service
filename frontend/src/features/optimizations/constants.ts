@@ -1,15 +1,6 @@
 import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
-export const STATUS_COLORS: Record<string, string> = {
-  pending: "status-pill-pending",
-  validating: "status-pill-running",
-  running: "status-pill-running",
-  success: "status-pill-success",
-  failed: "status-pill-failed",
-  cancelled: "status-pill-cancelled",
-};
-
 export type PipelineStage =
   | "validating"
   | "splitting"

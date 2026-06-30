@@ -9,12 +9,12 @@ import { TERMS } from "@/shared/lib/terms";
 import type { ParsedDataset } from "@/shared/lib/parse-dataset";
 import type { ValidateCodeResponse } from "@/shared/types/api";
 
-export type AgentStatus = "idle" | "streaming" | "done" | "error";
-export type AgentMode = "seed" | "chat";
+type AgentStatus = "idle" | "streaming" | "done" | "error";
+type AgentMode = "seed" | "chat";
 export type ArtifactStatus = "idle" | "waiting" | "writing" | "done";
 
-export type AgentToolName = "edit_signature" | "edit_metric";
-export type AgentToolStatus = "running" | "done" | "error";
+type AgentToolName = "edit_signature" | "edit_metric";
+type AgentToolStatus = "running" | "done" | "error";
 
 export interface AgentToolCall {
   id: string;
@@ -63,19 +63,17 @@ const SEED_USER_MESSAGE = formatMsg("auto.features.submit.hooks.use.code.agent.t
   p1: TERMS.dataset,
 });
 
-export interface AgentMessage {
+interface AgentMessage {
   role: "assistant" | "user";
   content: string;
   toolCalls?: AgentToolCall[];
   model?: string | null;
 }
 
-export interface ArtifactVersion {
+interface ArtifactVersion {
   code: string;
   ts: number;
 }
-
-export type ArtifactKind = "signature" | "metric";
 
 export interface CodeAgentState {
   status: AgentStatus;

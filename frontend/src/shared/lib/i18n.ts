@@ -5,12 +5,7 @@ import {
 import { dirForLocale, fallbackChain, type Locale } from "@/shared/lib/locale";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
 
-export {
-  I18N_MESSAGES,
-  I18N_KEY,
-  type ErrorCode,
-  type I18nMessageKey,
-} from "@/shared/lib/generated/i18n-catalog";
+export { I18N_KEY } from "@/shared/lib/generated/i18n-catalog";
 
 const TERM_PATTERN = /\{term\.([A-Za-z0-9_]+)\}/g;
 

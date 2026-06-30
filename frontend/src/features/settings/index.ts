@@ -3,13 +3,6 @@ export { LiteModeProvider, useLiteMode } from "./hooks/use-lite-mode";
 export { SettingsModalProvider, useSettingsModal } from "./hooks/use-settings-modal";
 export { SettingsModal } from "./components/SettingsModal";
 export { LiteModeHint } from "./components/LiteModeHint";
-export { SettingsTrigger } from "./components/SettingsTrigger";
-export {
-  readPref,
-  writePref,
-  DEFAULT_PREFS,
-  DEFAULT_AGENT_SHORTCUT,
-  PREF_KEYS,
-} from "./lib/prefs";
+export { readPref } from "./lib/prefs";
 export type { AgentShortcut } from "./lib/prefs";
-export { formatShortcut, recordShortcut } from "./lib/shortcuts";
+export { formatShortcut } from "./lib/shortcuts";

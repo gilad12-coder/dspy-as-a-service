@@ -108,7 +108,7 @@ export const CODE_KEYS = new Set([
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function shortenId(s: string): string {
+function shortenId(s: string): string {
   return UUID_RE.test(s) ? s.slice(0, 8) : s;
 }
 

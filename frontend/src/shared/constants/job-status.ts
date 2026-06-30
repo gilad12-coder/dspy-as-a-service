@@ -38,7 +38,7 @@ const statusesWith = (kind: StatusLifecycle): ReadonlySet<JobStatus> =>
 export const ACTIVE_STATUSES: ReadonlySet<JobStatus> = statusesWith("active");
 export const TERMINAL_STATUSES: ReadonlySet<JobStatus> = statusesWith("terminal");
 
-export const STATUS_LABELS = {
+const STATUS_LABELS = {
   pending: TERMS.statusPending,
   validating: TERMS.statusValidating,
   running: TERMS.statusRunning,
@@ -48,7 +48,7 @@ export const STATUS_LABELS = {
   paused: TERMS.statusPaused,
 } as const satisfies Record<JobStatus, string>;
 
-export const JOB_TYPE_LABELS = {
+const JOB_TYPE_LABELS = {
   run: TERMS.optimizationTypeRun,
   grid_search: TERMS.optimizationTypeGrid,
 } as const satisfies Record<OptimizationType, string>;

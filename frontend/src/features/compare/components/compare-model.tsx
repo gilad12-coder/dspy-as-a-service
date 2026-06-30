@@ -24,7 +24,7 @@ export type RunInfo = {
 // 8 warm-brown values (one per run up to COMPARE_MAX in DashboardView).
 // Ordered so each neighbor alternates dark/light for high adjacent contrast
 // at small N (2-4, the common case); later slots fill in remaining L gaps.
-export const COL_HUES = [
+const COL_HUES = [
   "#2B1E14", // A · deep espresso   (L≈22)
   "#D8BC9A", // B · light cream     (L≈78)
   "#6B4F38", // C · coffee          (L≈40)

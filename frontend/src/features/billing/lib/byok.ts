@@ -57,11 +57,6 @@ export const BYOK_PROVIDERS: ByokProviderInfo[] = [
   { slug: "openrouter", label: "OpenRouter", placeholder: "sk-or-…" },
 ];
 
-/** Take the recognizable tail of a secret for masked display. */
-export function keyLast4(secret: string): string {
-  return secret.slice(-4) || "····";
-}
-
 /**
  * Maps a BYOK provider slug to the LiteLLM provider prefix its models carry in
  * the catalog (e.g. a key saved under `together` runs models prefixed

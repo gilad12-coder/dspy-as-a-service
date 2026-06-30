@@ -33,7 +33,7 @@ export function computePareto(points: ScatterPoint[]): {
   return { pareto, dominated };
 }
 
-export function shortEffort(value: string | null | undefined): string | null {
+function shortEffort(value: string | null | undefined): string | null {
   if (!value) return null;
   const v = value.toLowerCase();
   if (v === "minimal") return "min";

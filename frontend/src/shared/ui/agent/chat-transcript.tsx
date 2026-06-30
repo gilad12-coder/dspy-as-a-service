@@ -14,7 +14,7 @@ type Pair = {
   agent: AgentMessage | null;
 };
 
-export interface ChatTranscriptState {
+interface ChatTranscriptState {
   isEditingAny: boolean;
   editingIndex: number | null;
 }

@@ -31,8 +31,6 @@ import { TERMS as TERMS_HE, TERMS_BY_LOCALE } from "./generated/i18n-catalog";
 import { fallbackChain } from "./locale";
 import { getActiveLocale } from "./runtime-locale";
 
-export type { TermKey } from "./generated/i18n-catalog";
-
 // Glossary overlays by locale, generated from i18n/locales/*.json. Each locale's
 // full term catalog layers over the Hebrew base (the Proxy target); a read walks
 // the active locale's fallback chain and takes the first overlay that defines the
