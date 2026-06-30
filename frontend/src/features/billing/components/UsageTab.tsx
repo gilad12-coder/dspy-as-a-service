@@ -28,6 +28,13 @@ import { ChartTooltip, ChartEmptyState } from "@/shared/charts/chart-utils";
 import { ChartTable } from "@/shared/charts/chart-table";
 import { useLiteMode } from "@/features/settings";
 import { EmptyState } from "@/shared/ui/empty-state";
+import { Button } from "@/shared/ui/primitives/button";
+import {
+  Tooltip as UITooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/shared/ui/primitives/tooltip";
+import { Popover as PopoverPrimitive } from "radix-ui";
 import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
@@ -229,13 +236,35 @@ function exportCsv(entries: BillingUsageEntry[]): void {
   const header = ["date", "label", "model", "kind", "credits"];
   const lines = [header, ...entries.map((e) => [e.at, e.label, e.model ?? "", e.kind, String(e.credits)])];
   const csv = lines.map((row) => row.map(csvCell).join(",")).join("\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+  triggerDownload(csv, "skynet-usage.csv", "text/csv;charset=utf-8;");
+  toast.success(formatMsg("usage.export.done", { p1: String(entries.length) }));
+}
+
+/** Download the in-range ledger as JSON; toast the outcome. Mirrors the CSV columns. */
+function exportJson(entries: BillingUsageEntry[]): void {
+  if (entries.length === 0) {
+    toast.error(msg("usage.export.empty"));
+    return;
+  }
+  const rows = entries.map((e) => ({
+    date: e.at,
+    label: e.label,
+    model: e.model ?? null,
+    kind: e.kind,
+    credits: e.credits,
+  }));
+  triggerDownload(JSON.stringify(rows, null, 2), "skynet-usage.json", "application/json");
+  toast.success(formatMsg("usage.export.done", { p1: String(entries.length) }));
+}
+
+/** Stream a blob to the browser as a file download. */
+function triggerDownload(content: string, filename: string, mimeType: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type: mimeType }));
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = "skynet-usage.csv";
+  anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
-  toast.success(formatMsg("usage.export.done", { p1: String(entries.length) }));
 }
 
 function PanelHeading({ children }: { children: React.ReactNode }) {
@@ -317,6 +346,48 @@ function ToolbarButton({
     >
       <Icon className={cn("size-3.5", spinning && "animate-spin")} aria-hidden="true" />
     </button>
+  );
+}
+
+/** Export the in-range ledger from a compact icon dropdown: CSV or JSON. */
+function ExportDropdown({ entries }: { entries: BillingUsageEntry[] }) {
+  const formats = [
+    { label: "CSV", run: () => exportCsv(entries) },
+    { label: "JSON", run: () => exportJson(entries) },
+  ];
+  return (
+    <PopoverPrimitive.Root>
+      <UITooltip>
+        <TooltipTrigger asChild>
+          <PopoverPrimitive.Trigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label={msg("usage.action.export")}>
+              <Download className="size-4" />
+            </Button>
+          </PopoverPrimitive.Trigger>
+        </TooltipTrigger>
+        <TooltipContent>{msg("usage.action.export")}</TooltipContent>
+      </UITooltip>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          side="bottom"
+          align="end"
+          sideOffset={8}
+          className="z-50 w-40 rounded-lg border bg-background p-1 shadow-lg animate-in fade-in-0 zoom-in-95"
+        >
+          {formats.map(({ label, run }) => (
+            <PopoverPrimitive.Close key={label} asChild>
+              <button
+                type="button"
+                onClick={run}
+                className="flex w-full items-center rounded-md px-3 py-1.5 text-xs font-medium text-foreground cursor-pointer transition-colors hover:bg-accent"
+              >
+                {label}
+              </button>
+            </PopoverPrimitive.Close>
+          ))}
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   );
 }
 
@@ -661,11 +732,7 @@ export function UsageTab() {
             onClick={load}
             spinning={loading}
           />
-          <ToolbarButton
-            icon={Download}
-            label={msg("usage.action.export")}
-            onClick={() => exportCsv(entries)}
-          />
+          <ExportDropdown entries={entries} />
         </div>
       </div>
       {range === "custom" && (

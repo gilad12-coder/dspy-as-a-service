@@ -111,15 +111,17 @@ export function DatasetsView() {
             className="pe-9"
           />
         </div>
-        <Button
-          variant="outline"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="shrink-0"
-        >
-          <Upload className="size-4" />
-          {msg("datasets.upload")}
-        </Button>
+        {datasets.length > 0 && (
+          <Button
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="shrink-0"
+          >
+            <Upload className="size-4" />
+            {msg("datasets.upload")}
+          </Button>
+        )}
       </div>
 
       <div

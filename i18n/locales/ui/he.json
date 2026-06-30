@@ -2203,7 +2203,7 @@
   "usage.group.week": "שבועי",
   "usage.group.label": "קיבוץ",
   "usage.action.refresh": "רענון",
-  "usage.action.export": "ייצוא CSV",
+  "usage.action.export": "ייצוא",
   "usage.export.empty": "אין מה לייצא",
   "usage.export.done": "יוצאו {p1} שורות",
   "usage.stat.spent": "קרדיטים שנוצלו",

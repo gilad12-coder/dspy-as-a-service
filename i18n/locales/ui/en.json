@@ -2203,7 +2203,7 @@
   "usage.group.week": "Weekly",
   "usage.group.label": "Group by",
   "usage.action.refresh": "Refresh",
-  "usage.action.export": "Export CSV",
+  "usage.action.export": "Export",
   "usage.export.empty": "Nothing to export",
   "usage.export.done": "Exported {p1} rows",
   "usage.stat.spent": "Credits spent",
