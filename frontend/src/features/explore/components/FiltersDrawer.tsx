@@ -20,7 +20,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/shared/ui/primitives/sheet";
-import { SkynetDatePicker } from "./SkynetDatePicker";
+import { SkynetDatePicker } from "@/shared/ui/skynet-date-picker";
 
 interface FiltersDrawerProps {
   open: boolean;

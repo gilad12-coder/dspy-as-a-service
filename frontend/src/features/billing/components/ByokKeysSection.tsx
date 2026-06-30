@@ -131,13 +131,13 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
 
         <div className="flex shrink-0 items-center gap-1.5">
           {!saved && !editing && (
-            <Button variant="outline" size="xs" onClick={startEditing}>
+            <Button variant="outline" size="sm" onClick={startEditing}>
               <KeyRound className="size-3.5" />
               {msg("settings.keys.add")}
             </Button>
           )}
           {saved && saved.status !== "verified" && !editing && (
-            <Button variant="outline" size="xs" disabled={verifying} onClick={handleVerify}>
+            <Button variant="outline" size="sm" disabled={verifying} onClick={handleVerify}>
               {verifying ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : (
@@ -203,7 +203,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
               }}
               className="h-8 flex-1"
             />
-            <Button size="xs" onClick={handleSave} disabled={!secret.trim() || saving}>
+            <Button size="sm" onClick={handleSave} disabled={!secret.trim() || saving}>
               {saving ? <Loader2 className="size-3.5 animate-spin" /> : msg("settings.keys.save")}
             </Button>
             <Button

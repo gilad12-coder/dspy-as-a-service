@@ -5,7 +5,13 @@ import { Check, ChevronDown, Eye, Search, Loader2, RefreshCw } from "lucide-reac
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
-import { getModelCatalog, cachedCatalog, discoverModels } from "@/shared/lib/model-catalog";
+import {
+  getModelCatalog,
+  cachedCatalog,
+  getByokModelCatalog,
+  cachedByokCatalog,
+  discoverModels,
+} from "@/shared/lib/model-catalog";
 import type { CatalogModel, CatalogProvider } from "@/shared/types/api";
 
 interface ModelPickerProps {
@@ -20,6 +26,14 @@ interface ModelPickerProps {
   className?: string;
   /** Constrain picks to this provider slug (e.g. "openai"). */
   providerFilter?: string;
+  /**
+   * In BYOK mode the picker lists the BYOK catalog (every offered provider's
+   * models, independent of platform keys) instead of the managed catalog,
+   * narrowed to `byokProviders` — the LiteLLM provider slugs the user has saved
+   * a key for.
+   */
+  byokMode?: boolean;
+  byokProviders?: string[];
 }
 
 interface EnrichedModel extends CatalogModel {
@@ -43,6 +57,8 @@ export function ModelPicker({
   disabled,
   className,
   providerFilter,
+  byokMode = false,
+  byokProviders,
 }: ModelPickerProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -51,6 +67,11 @@ export function ModelPicker({
     providers: CatalogProvider[];
     models: CatalogModel[];
   } | null>(cachedCatalog);
+  // BYOK catalog is fetched lazily the first time BYOK mode needs it.
+  const [byokCatalog, setByokCatalog] = React.useState<{
+    providers: CatalogProvider[];
+    models: CatalogModel[];
+  } | null>(cachedByokCatalog());
   const [discovered, setDiscovered] = React.useState<string[]>([]);
   const [discovering, setDiscovering] = React.useState(false);
   const [discoveryError, setDiscoveryError] = React.useState<string | null>(null);
@@ -71,6 +92,26 @@ export function ModelPicker({
       cancelled = true;
     };
   }, [catalog]);
+
+  // Load the BYOK catalog the first time the picker is opened in BYOK mode.
+  React.useEffect(() => {
+    if (!byokMode || byokCatalog) return;
+    let cancelled = false;
+    getByokModelCatalog()
+      .then((c) => {
+        if (!cancelled) setByokCatalog(c);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [byokMode, byokCatalog]);
+
+  const activeCatalog = byokMode ? byokCatalog : catalog;
+  const byokProviderSet = React.useMemo(
+    () => new Set(byokProviders ?? []),
+    [byokProviders],
+  );
 
   const runDiscover = React.useCallback(
     async (signal?: AbortSignal) => {
@@ -133,7 +174,11 @@ export function ModelPicker({
   }, [open]);
 
   const allModels: EnrichedModel[] = React.useMemo(() => {
-    const staticModels = catalog?.models ?? [];
+    let staticModels = activeCatalog?.models ?? [];
+    // In BYOK mode, only surface models for providers the user has connected.
+    if (byokMode) {
+      staticModels = staticModels.filter((m) => byokProviderSet.has(m.provider));
+    }
     const filtered = providerFilter
       ? staticModels.filter((m) => m.provider === providerFilter)
       : staticModels;
@@ -157,7 +202,7 @@ export function ModelPicker({
       })
       .filter((m) => !existingValues.has(m.value));
     return [...discoveredEntries, ...filtered];
-  }, [catalog, discovered, providerFilter]);
+  }, [activeCatalog, byokMode, byokProviderSet, discovered, providerFilter]);
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -187,14 +232,14 @@ export function ModelPicker({
       const [slug = "", dataCenter = ""] = groupKey.split("\u0000");
       if (slug === "discovered")
         return msg("auto.features.submit.components.modelpicker.template.1");
-      const base = catalog?.providers.find((p) => p.slug === slug)?.label ?? slug;
+      const base = activeCatalog?.providers.find((p) => p.slug === slug)?.label ?? slug;
       if (!dataCenter) return base;
       return formatMsg("auto.features.submit.components.modelpicker.template.2", {
         p1: base,
         p2: dataCenter,
       });
     },
-    [catalog],
+    [activeCatalog],
   );
 
   const selectedModel = allModels.find((m) => m.value === value);

@@ -1,7 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { Anthropic, Gemini, Mistral, OpenAI, OpenRouter } from "@lobehub/icons";
+import {
+  Anthropic,
+  Cohere,
+  DeepSeek,
+  Fireworks,
+  Gemini,
+  Groq,
+  Mistral,
+  OpenAI,
+  OpenRouter,
+  Together,
+  XAI,
+} from "@lobehub/icons";
 import { Plug } from "lucide-react";
 
 /**
@@ -41,8 +53,20 @@ function renderBrand(slug: string, size: number): React.ReactNode {
       return <Anthropic.Avatar size={size} />;
     case "google":
       return <Gemini.Avatar size={size} />;
+    case "xai":
+      return <XAI.Avatar size={size} />;
+    case "deepseek":
+      return <DeepSeek.Avatar size={size} />;
     case "mistral":
       return <Mistral.Avatar size={size} />;
+    case "groq":
+      return <Groq.Avatar size={size} />;
+    case "together":
+      return <Together.Avatar size={size} />;
+    case "fireworks":
+      return <Fireworks.Avatar size={size} />;
+    case "cohere":
+      return <Cohere.Avatar size={size} />;
     case "openrouter":
       return <OpenRouter.Avatar size={size} />;
     default:

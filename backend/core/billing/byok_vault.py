@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from ..api.errors import DomainError
 from ..config import settings
+from ..provider_registry import LITELLM_TO_BYOK_PROVIDER
 from ..storage.models import BillingProviderKeyModel
 
 # Verification states a stored key can carry. ``unverified`` is the default and
@@ -66,8 +67,38 @@ _PROVIDER_PROBES: dict[str, dict[str, str]] = {
         "header_name": "x-goog-api-key",
         "header_value": "{secret}",
     },
+    "xai": {
+        "url": "https://api.x.ai/v1/models",
+        "header_name": "Authorization",
+        "header_value": "Bearer {secret}",
+    },
+    "deepseek": {
+        "url": "https://api.deepseek.com/models",
+        "header_name": "Authorization",
+        "header_value": "Bearer {secret}",
+    },
     "mistral": {
         "url": "https://api.mistral.ai/v1/models",
+        "header_name": "Authorization",
+        "header_value": "Bearer {secret}",
+    },
+    "groq": {
+        "url": "https://api.groq.com/openai/v1/models",
+        "header_name": "Authorization",
+        "header_value": "Bearer {secret}",
+    },
+    "together": {
+        "url": "https://api.together.xyz/v1/models",
+        "header_name": "Authorization",
+        "header_value": "Bearer {secret}",
+    },
+    "fireworks": {
+        "url": "https://api.fireworks.ai/inference/v1/models",
+        "header_name": "Authorization",
+        "header_value": "Bearer {secret}",
+    },
+    "cohere": {
+        "url": "https://api.cohere.com/v1/models",
         "header_name": "Authorization",
         "header_value": "Bearer {secret}",
     },
@@ -82,6 +113,22 @@ _PROVIDER_PROBES: dict[str, dict[str, str]] = {
 # treated as "couldn't reach a verdict" (status stays ``unverified``), never as
 # an invalid key.
 _PROBE_TIMEOUT_SECONDS = 8.0
+
+def byok_provider_for_litellm(prefix: str) -> str:
+    """Return the BYOK vault slug a LiteLLM provider prefix resolves a key for.
+
+    The run path extracts a model's leading ``provider/`` segment (a LiteLLM
+    prefix such as ``gemini`` or ``together_ai``); this maps it back to the vault
+    slug the user saved their key under (``google`` / ``together``). Identity for
+    prefixes whose vault slug already matches.
+
+    Args:
+        prefix: The LiteLLM provider prefix from a model id.
+
+    Returns:
+        The vault provider slug to resolve a connection for.
+    """
+    return LITELLM_TO_BYOK_PROVIDER.get(prefix, prefix)
 
 
 @dataclass(frozen=True)

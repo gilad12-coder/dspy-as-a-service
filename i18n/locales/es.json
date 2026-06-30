@@ -68,6 +68,8 @@
     "winningCandidate": "candidato ganador"
   },
   "messages": {
+    "billing.frontier_locked": "{model} es un modelo de vanguardia. Añade créditos o inicia Premium para ejecutarlo en cómputo gestionado, o cambia a tu propia clave.",
+    "billing.insufficient_credits": "Tu saldo está vacío. Añade créditos o espera a que se renueve la asignación gratuita para ejecutar en cómputo gestionado.",
     "accounts.email_taken": "Esa dirección de correo electrónico ya está registrada.",
     "accounts.invalid_credentials": "Correo electrónico o contraseña incorrectos.",
     "accounts.invalid_email": "Dirección de correo electrónico no válida.",

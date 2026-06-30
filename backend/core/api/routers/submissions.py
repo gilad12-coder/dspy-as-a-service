@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from ...billing import (
     ProviderKeyVault,
     StripeBillingService,
+    byok_provider_for_litellm,
     cost_ceiling_budget,
     provider_slug_for_model,
 )
@@ -418,10 +419,15 @@ def _enforce_byok_connections(
     if engine is None or not username:
         return
     vault = ProviderKeyVault(engine=engine)
-    providers = {provider_slug_for_model(m) for m in model_values if m}
-    missing = sorted(
-        p for p in providers if p is not None and not vault.has_connection(username, p)
-    )
+    # A model id carries a LiteLLM prefix (``gemini``, ``together_ai``) but the
+    # key is saved under the vault slug (``google``, ``together``); bridge the two
+    # exactly as the run path does so the gate sees the same connections it will.
+    providers = {
+        byok_provider_for_litellm(prefix)
+        for m in model_values
+        if m and (prefix := provider_slug_for_model(m)) is not None
+    }
+    missing = sorted(p for p in providers if not vault.has_connection(username, p))
     if missing:
         raise DomainError("billing.byok_missing_connection", status=400, provider=", ".join(missing))
 

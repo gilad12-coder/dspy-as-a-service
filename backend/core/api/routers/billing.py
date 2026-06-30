@@ -12,6 +12,7 @@ mutations raise ``DomainError("billing.not_configured", 503)``.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
@@ -21,6 +22,32 @@ from ...billing import ProviderKeyVault, StripeBillingService
 from ..auth import AuthenticatedUser, get_authenticated_user
 
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
+
+# Default usage window when the dashboard omits an explicit range.
+USAGE_DEFAULT_WINDOW_DAYS = 30
+
+
+def _parse_instant(value: str | None, default: datetime) -> datetime:
+    """Parse an ISO-8601 query value into a UTC-aware instant, or fall back.
+
+    Tolerates a trailing ``Z`` and a naive value (assumed UTC). A malformed or
+    missing value yields ``default`` rather than a 422, so a stray query string
+    degrades to the default window instead of failing the dashboard read.
+
+    Args:
+        value: Raw query-string value, or ``None`` when the param was omitted.
+        default: Instant returned when ``value`` is missing or unparseable.
+
+    Returns:
+        A timezone-aware UTC datetime.
+    """
+    if not value:
+        return default
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return default
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 class FreeGrantResponse(BaseModel):
@@ -56,6 +83,41 @@ class WalletResponse(BaseModel):
     )
     usage: list[UsageEntryResponse] = Field(
         default_factory=list, description="Most-recent-first ledger rows."
+    )
+
+
+class UsageDayResponse(BaseModel):
+    """One day's run spend, split into billed and refunded credits."""
+
+    date: str = Field(description="Calendar day (YYYY-MM-DD, UTC).")
+    billed_credits: int = Field(description="Gross run credits billed that day.")
+    refunded_credits: int = Field(description="Run credits refunded that day by the guarantee.")
+
+
+class UsageModelResponse(BaseModel):
+    """One model's share of run spend over the window."""
+
+    model: str | None = Field(default=None, description="Model id, or null for runs without one.")
+    credits: int = Field(description="Gross run credits billed to this model.")
+    runs: int = Field(description="Billed runs attributed to this model.")
+
+
+class UsageResponse(BaseModel):
+    """Date-ranged usage rollup for the billing Usage dashboard."""
+
+    start: str = Field(description="ISO-8601 inclusive window start.")
+    end: str = Field(description="ISO-8601 inclusive window end.")
+    billed_credits: int = Field(description="Gross run credits billed across the window.")
+    refunded_credits: int = Field(description="Run credits refunded across the window.")
+    runs: int = Field(description="Billed runs across the window.")
+    by_day: list[UsageDayResponse] = Field(
+        default_factory=list, description="Per-day spend series, ascending by date."
+    )
+    by_model: list[UsageModelResponse] = Field(
+        default_factory=list, description="Per-model spend series, descending by credits."
+    )
+    entries: list[UsageEntryResponse] = Field(
+        default_factory=list, description="Most-recent-first raw ledger rows in the window."
     )
 
 
@@ -167,6 +229,66 @@ def create_billing_router(*, job_store) -> APIRouter:
                     kind=row.kind,
                 )
                 for row in snapshot.usage
+            ],
+        )
+
+    @router.get(
+        "/billing/usage",
+        response_model=UsageResponse,
+        summary="Return a date-ranged usage rollup for the caller",
+    )
+    def get_usage(
+        user: AuthenticatedUserDep,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> UsageResponse:
+        """Return the caller's usage rollup over an optional date window.
+
+        ``start``/``end`` are ISO-8601 instants; an omitted or unparseable bound
+        defaults the window to the last :data:`USAGE_DEFAULT_WINDOW_DAYS` days
+        ending now. A pure ledger read — serves on a key-less deploy (empty
+        rollups for an account with no runs).
+
+        Args:
+            user: Authenticated caller whose ledger is summarized.
+            start: ISO-8601 window start, or null for ``end`` minus the default window.
+            end: ISO-8601 window end, or null for now.
+
+        Returns:
+            The totals, per-day and per-model series, and recent ledger rows.
+        """
+        now = datetime.now(UTC)
+        end_dt = _parse_instant(end, now)
+        start_dt = _parse_instant(start, end_dt - timedelta(days=USAGE_DEFAULT_WINDOW_DAYS))
+        snapshot = service.get_usage(user.username, start_dt, end_dt)
+        return UsageResponse(
+            start=snapshot.start,
+            end=snapshot.end,
+            billed_credits=snapshot.billed_credits,
+            refunded_credits=snapshot.refunded_credits,
+            runs=snapshot.runs,
+            by_day=[
+                UsageDayResponse(
+                    date=day.date,
+                    billed_credits=day.billed_credits,
+                    refunded_credits=day.refunded_credits,
+                )
+                for day in snapshot.by_day
+            ],
+            by_model=[
+                UsageModelResponse(model=row.model, credits=row.credits, runs=row.runs)
+                for row in snapshot.by_model
+            ],
+            entries=[
+                UsageEntryResponse(
+                    id=row.id,
+                    at=row.at,
+                    label=row.label,
+                    model=row.model,
+                    credits=row.credits,
+                    kind=row.kind,
+                )
+                for row in snapshot.entries
             ],
         )
 

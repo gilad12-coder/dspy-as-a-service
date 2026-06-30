@@ -140,6 +140,38 @@ def test_enforce_byok_connections_passes_when_present(vault: ProviderKeyVault, e
     _enforce_byok_connections(job_store, "u@x.com", "byok", ["openai/gpt-4o"])
 
 
+def test_enforce_byok_connections_bridges_litellm_prefix_to_vault_slug(
+    vault: ProviderKeyVault, engine: object
+) -> None:
+    """A key saved under the vault slug satisfies a model carrying its LiteLLM prefix.
+
+    Regression: ``gemini/...`` models resolve a key saved under ``google``. Before
+    the gate bridged the prefix it looked up ``has_connection(.., "gemini")`` —
+    always false — and wrongly blocked the run despite a valid saved key. Covers
+    every provider whose LiteLLM prefix differs from its vault slug.
+    """
+    with patch("core.billing.byok_vault.httpx.get", return_value=_ok_response()):
+        vault.save_key("u@x.com", "google", "AIza-google-6666")
+        vault.save_key("u@x.com", "together", "sk-together-7777")
+    job_store = SimpleNamespace(engine=engine)
+    _enforce_byok_connections(
+        job_store,
+        "u@x.com",
+        "byok",
+        ["gemini/gemini-1.5-pro", "together_ai/mistral-7b"],
+    )
+
+
+def test_enforce_byok_connections_reports_bridged_slug(
+    vault: ProviderKeyVault, engine: object
+) -> None:
+    """A missing connection is reported under the savable vault slug, not the prefix."""
+    job_store = SimpleNamespace(engine=engine)
+    with pytest.raises(DomainError) as exc:
+        _enforce_byok_connections(job_store, "u@x.com", "byok", ["gemini/gemini-1.5-pro"])
+    assert exc.value.params["provider"] == "google"
+
+
 def test_enforce_byok_connections_managed_is_noop(engine: object) -> None:
     """Managed runs skip the BYOK gate entirely — no vault access, no raise."""
     job_store = SimpleNamespace(engine=engine)

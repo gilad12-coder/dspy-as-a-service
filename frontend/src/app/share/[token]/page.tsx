@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Loader2 } from "lucide-react";
 
 import { claimSharedOptimization, setApiAuthToken } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { Button } from "@/shared/ui/primitives/button";
 
 /**
  * Share-link redeemer (Google-Drive semantics). The route is login-gated, so the
@@ -49,6 +51,9 @@ export default function SharePage() {
       <div className="flex flex-col items-center justify-center min-h-screen gap-3 px-6 text-center">
         <h1 className="text-lg font-semibold">{msg("share.not_found_title")}</h1>
         <p className="text-sm text-muted-foreground">{msg("share.not_found_body")}</p>
+        <Button asChild variant="outline" className="mt-2">
+          <Link href="/">{msg("not_found.back_dashboard")}</Link>
+        </Button>
       </div>
     );
   }

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .byok_vault import ProviderKeyVault
+from .byok_vault import ProviderKeyVault, byok_provider_for_litellm
 
 # Payload keys holding ModelConfig blocks. Runs persist their configs under the
 # field *aliases* (``model_settings`` → ``"model_config"``); grids use the plain
@@ -92,9 +92,13 @@ def inject_byok_connections(
             silently falling back to a platform key.
     """
     for cfg in _model_config_dicts(payload_dict):
-        provider = provider_slug_for_model(cfg.get("name", ""))
-        if provider is None:
+        prefix = provider_slug_for_model(cfg.get("name", ""))
+        if prefix is None:
             continue
+        # The model id carries a LiteLLM prefix (``gemini``, ``together_ai``);
+        # the user saved their key under the vault slug (``google``,
+        # ``together``). Bridge the two so the lookup hits.
+        provider = byok_provider_for_litellm(prefix)
         resolved = vault.resolve_connection(username, provider)
         if resolved is None:
             raise ValueError(

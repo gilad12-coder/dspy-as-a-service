@@ -68,6 +68,8 @@
     "winningCandidate": "최우수 후보"
   },
   "messages": {
+    "billing.frontier_locked": "{model}은(는) 프런티어 모델입니다. 크레딧을 추가하거나 Premium을 시작해 관리형 컴퓨팅에서 실행하거나, 직접 사용하는 키로 전환하세요.",
+    "billing.insufficient_credits": "잔액이 없습니다. 크레딧을 추가하거나 무료 제공량이 갱신될 때까지 기다린 후 관리형 컴퓨팅에서 실행하세요.",
     "accounts.email_taken": "이미 등록된 이메일 주소입니다.",
     "accounts.invalid_credentials": "이메일 또는 비밀번호가 올바르지 않습니다.",
     "accounts.invalid_email": "유효하지 않은 이메일 주소입니다.",

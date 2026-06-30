@@ -62,6 +62,37 @@ export function cachedCatalog(): ModelCatalogResponse | null {
   return _cache;
 }
 
+// BYOK catalog — every offered provider's models, regardless of platform keys
+// (a BYOK run pays with the user's own key). Fetched lazily on first need (only
+// in BYOK mode), not at module load, and held in memory for the session.
+let _byokCache: ModelCatalogResponse | null = null;
+let _byokReady: Promise<ModelCatalogResponse> | null = null;
+
+export function getByokModelCatalog(): Promise<ModelCatalogResponse> {
+  if (_byokReady) return _byokReady;
+  if (typeof window === "undefined") return Promise.resolve(EMPTY_CATALOG);
+  _byokReady = (async () => {
+    try {
+      const res = await fetch(`${apiBase()}/models/byok`);
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data: unknown = await res.json();
+      if (!isModelCatalogResponse(data)) throw new Error("Invalid BYOK catalog response");
+      _byokCache = data;
+      return data;
+    } catch {
+      // Reset so a transient failure can retry on the next BYOK switch.
+      _byokReady = null;
+      return _byokCache ?? EMPTY_CATALOG;
+    }
+  })();
+  return _byokReady;
+}
+
+/** Synchronously inspect the cached BYOK catalog (null before its first fetch resolves). */
+export function cachedByokCatalog(): ModelCatalogResponse | null {
+  return _byokCache;
+}
+
 export async function discoverModels(
   baseUrl: string,
   apiKey?: string,

@@ -486,6 +486,44 @@ export function getWallet() {
   return request<BillingWalletResponse>("/billing/wallet");
 }
 
+/** One day's run spend, billed vs refunded (the usage dashboard's time series). */
+export interface BillingUsageDay {
+  date: string;
+  billed_credits: number;
+  refunded_credits: number;
+}
+
+/** One model's share of run spend over the window. */
+export interface BillingUsageModel {
+  model: string | null;
+  credits: number;
+  runs: number;
+}
+
+/** A date-ranged usage rollup for the Usage dashboard (snake_case mirrors the API). */
+export interface BillingUsageResponse {
+  start: string;
+  end: string;
+  billed_credits: number;
+  refunded_credits: number;
+  runs: number;
+  by_day: BillingUsageDay[];
+  by_model: BillingUsageModel[];
+  entries: BillingUsageEntry[];
+}
+
+/**
+ * Fetch a date-ranged usage rollup (totals + per-day + per-model + recent rows).
+ * `start`/`end` are ISO-8601; omit both for the backend's default 30-day window.
+ */
+export function getUsage(start?: string, end?: string) {
+  const params = new URLSearchParams();
+  if (start) params.set("start", start);
+  if (end) params.set("end", end);
+  const qs = params.toString();
+  return request<BillingUsageResponse>(`/billing/usage${qs ? `?${qs}` : ""}`);
+}
+
 /** Start a Stripe Checkout session for a credit pack; redirect the browser to `.url`. */
 export function createCheckoutSession(packId: string) {
   return request<{ url: string }>("/billing/checkout", {

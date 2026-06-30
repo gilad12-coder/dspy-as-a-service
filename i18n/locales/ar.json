@@ -68,6 +68,8 @@
     "winningCandidate": "المرشّح الفائز"
   },
   "messages": {
+    "billing.frontier_locked": "‏{model}‏ نموذج متقدّم. أضِف رصيدًا أو ابدأ اشتراك Premium لتشغيله على الحوسبة المُدارة، أو بدّل إلى مفتاحك الخاص.",
+    "billing.insufficient_credits": "رصيدك فارغ. أضِف رصيدًا أو انتظر تجديد المنحة المجانية للتشغيل على الحوسبة المُدارة.",
     "accounts.email_taken": "عنوان البريد الإلكتروني هذا مُسجّل بالفعل.",
     "accounts.invalid_credentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
     "accounts.invalid_email": "عنوان بريد إلكتروني غير صالح.",

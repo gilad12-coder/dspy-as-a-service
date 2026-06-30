@@ -24,7 +24,12 @@ from pydantic import BaseModel, Field
 
 from ...config import settings
 from ..auth import AuthenticatedUser, get_authenticated_user
-from ..model_catalog import CatalogModel, ModelCatalogResponse, get_catalog_cached
+from ..model_catalog import (
+    CatalogModel,
+    ModelCatalogResponse,
+    get_byok_catalog_cached,
+    get_catalog_cached,
+)
 from ..response_limits import AGENT_MAX_LIST, AGENT_MAX_TEXT, cap_list, truncate_text
 
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
@@ -228,6 +233,25 @@ def create_models_router() -> APIRouter:
         """
         catalog = get_catalog_cached()
         return catalog
+
+    @router.get(
+        "/models/byok",
+        response_model=ModelCatalogResponse,
+        summary="List BYOK-eligible models (the caller authenticates each run with their own key)",
+    )
+    def list_byok_models() -> ModelCatalogResponse:
+        """List every BYOK-offered provider's chat models, regardless of platform keys.
+
+        In bring-your-own-key mode a run authenticates with the user's own
+        provider key, so availability isn't gated on a platform key the way
+        ``/models`` is. The client narrows this to the providers it has saved
+        keys for. Unauthenticated and effectively static, like ``/models`` — the
+        payload is just public registry data.
+
+        Returns:
+            The BYOK model catalog (all offered providers' chat models).
+        """
+        return get_byok_catalog_cached()
 
     @router.get(
         "/models/for-agent",

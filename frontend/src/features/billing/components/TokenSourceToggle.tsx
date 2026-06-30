@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { motion } from "framer-motion";
 import { Coins, KeyRound } from "lucide-react";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -15,6 +16,9 @@ const SEGMENTS: Array<{
   { mode: "managed", icon: Coins, labelKey: "billing.mode.managed" },
   { mode: "byok", icon: KeyRound, labelKey: "billing.mode.byok" },
 ];
+
+// Mirrors the logs verbosity pill so the billing-mode toggle slides alike.
+const PILL_TRANSITION = { type: "tween", duration: 0.16, ease: [0.22, 1, 0.36, 1] } as const;
 
 /**
  * Managed-credits ↔ your-own-key toggle for the model step.
@@ -43,14 +47,22 @@ export function TokenSourceToggle() {
               onClick={() => setMode(value)}
               aria-pressed={mode === value}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
-                mode === value
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                "relative flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                mode === value ? "text-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              <Icon className="size-3.5" aria-hidden="true" />
-              {msg(labelKey)}
+              {mode === value && (
+                <motion.span
+                  layoutId="token-source-pill"
+                  className="absolute inset-0 rounded-md bg-background shadow-[0_1px_2px_oklch(0.25_0.04_45/.12)]"
+                  transition={PILL_TRANSITION}
+                  aria-hidden="true"
+                />
+              )}
+              <span className="relative z-10 flex items-center gap-1.5">
+                <Icon className="size-3.5" aria-hidden="true" />
+                {msg(labelKey)}
+              </span>
             </button>
           ))}
         </div>
@@ -58,12 +70,6 @@ export function TokenSourceToggle() {
       <p className="text-xs text-muted-foreground">
         {mode === "managed" ? msg("billing.mode.managed_hint") : msg("billing.mode.byok_hint")}
       </p>
-      {/* BYOK concurrency note [FG-2]: a your-key run shares Skynet's self-hosted
-          LiteLLM compute and may queue at peak. Stating the reason keeps it from
-          reading as a pay-to-skip penalty for not buying credits. */}
-      {mode === "byok" && (
-        <p className="text-xs text-muted-foreground/80">{msg("billing.mode.byok_queue_note")}</p>
-      )}
     </div>
   );
 }

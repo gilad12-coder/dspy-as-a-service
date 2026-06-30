@@ -68,6 +68,8 @@
     "winningCandidate": "candidat gagnant"
   },
   "messages": {
+    "billing.frontier_locked": "{model} est un modèle de pointe. Ajoutez des crédits ou démarrez Premium pour l'exécuter sur le calcul géré, ou utilisez votre propre clé.",
+    "billing.insufficient_credits": "Votre solde est vide. Ajoutez des crédits ou attendez le renouvellement de l'offre gratuite pour utiliser le calcul géré.",
     "accounts.email_taken": "Cette adresse e-mail est déjà enregistrée.",
     "accounts.invalid_credentials": "E-mail ou mot de passe incorrect.",
     "accounts.invalid_email": "Adresse e-mail invalide.",

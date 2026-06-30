@@ -8,7 +8,12 @@ through :class:`StripeBillingService`; nothing else imports ``stripe``.
 from __future__ import annotations
 
 from .byok_bridge import inject_byok_connections, provider_slug_for_model
-from .byok_vault import ProviderKeyVault, ProviderKeyView, VaultSnapshot
+from .byok_vault import (
+    ProviderKeyVault,
+    ProviderKeyView,
+    VaultSnapshot,
+    byok_provider_for_litellm,
+)
 from .service import (
     FREE_GRANT_CREDITS,
     PACK_CREDITS,
@@ -29,6 +34,7 @@ __all__ = [
     "StripeBillingService",
     "VaultSnapshot",
     "WalletSnapshot",
+    "byok_provider_for_litellm",
     "cost_ceiling_budget",
     "inject_byok_connections",
     "provider_slug_for_model",

@@ -109,19 +109,19 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
           <div className="relative inline-flex w-full rounded-lg bg-muted p-1 gap-1">
             <div
               className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-100 ease-out"
-              style={{ insetInlineStart: !isPrivate ? 4 : "calc(50% + 2px)" }}
+              style={{ insetInlineStart: isPrivate ? 4 : "calc(50% + 2px)" }}
             />
             {(
               [
                 [
-                  false,
-                  msg("submit.basics.privacy.public"),
-                  msg("submit.basics.privacy.public_desc"),
-                ],
-                [
                   true,
                   msg("submit.basics.privacy.private"),
                   msg("submit.basics.privacy.private_desc"),
+                ],
+                [
+                  false,
+                  msg("submit.basics.privacy.public"),
+                  msg("submit.basics.privacy.public_desc"),
                 ],
               ] as const
             ).map(([val, label, desc]) => (

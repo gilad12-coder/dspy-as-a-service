@@ -68,6 +68,8 @@
     "winningCandidate": "Gewinnerkandidat"
   },
   "messages": {
+    "billing.frontier_locked": "{model} ist ein Frontier-Modell. Füge Guthaben hinzu oder starte Premium, um es auf verwalteter Infrastruktur auszuführen, oder wechsle zu deinem eigenen Schlüssel.",
+    "billing.insufficient_credits": "Dein Guthaben ist aufgebraucht. Füge Guthaben hinzu oder warte auf die Erneuerung des kostenlosen Kontingents, um auf verwalteter Infrastruktur auszuführen.",
     "accounts.email_taken": "Diese E-Mail-Adresse ist bereits registriert.",
     "accounts.invalid_credentials": "E-Mail oder Passwort ist falsch.",
     "accounts.invalid_email": "Ungültige E-Mail-Adresse.",

@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { Boxes, ChevronDown, Coins, KeyRound, X } from "lucide-react";
-import { useCredits } from "@/features/billing";
+import { useCredits, useByokKeys, litellmProviderForByok } from "@/features/billing";
 import { useSettingsModal } from "@/features/settings";
+import { getByokModelCatalog, cachedByokCatalog } from "@/shared/lib/model-catalog";
 import { Dialog, DialogContent, DialogFooter } from "@/shared/ui/primitives/dialog";
 import { DialogTitleRow } from "@/shared/ui/dialog-title-row";
 import { Button } from "@/shared/ui/primitives/button";
@@ -53,8 +54,39 @@ export function ModelConfigModal({
   onSelectAllAvailable,
 }: ModelConfigModalProps) {
   const { wallet } = useCredits();
+  const { keys } = useByokKeys();
   const { openTo } = useSettingsModal();
   const mode = wallet.mode;
+
+  // In BYOK mode the picker lists the BYOK catalog narrowed to the providers
+  // the user has a *verified* key for (mapped to their LiteLLM prefix), so a
+  // typo'd, revoked, or unverified key never offers models a run could only
+  // fail to authenticate.
+  const byokProviders = React.useMemo(
+    () =>
+      keys
+        .filter((k) => k.status === "verified")
+        .map((k) => litellmProviderForByok(k.provider)),
+    [keys],
+  );
+  // BYOK catalog models also feed reasoning-toggle detection, since a BYOK model
+  // won't appear in the managed `catalogModels`.
+  const [byokModels, setByokModels] = React.useState<CatalogModel[] | null>(
+    cachedByokCatalog()?.models ?? null,
+  );
+  React.useEffect(() => {
+    if (mode !== "byok" || byokModels) return;
+    let cancelled = false;
+    getByokModelCatalog()
+      .then((c) => {
+        if (!cancelled) setByokModels(c.models);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, byokModels]);
+  const detectionModels = mode === "byok" ? (byokModels ?? undefined) : catalogModels;
 
   const [draft, setDraft] = React.useState<ModelConfig>(config);
   // Custom-connection section is collapsed for the common (managed) case; it
@@ -71,7 +103,7 @@ export function ModelConfigModal({
     }
   }, [open, config, mode]);
 
-  const canThink = modelSupportsThinking(draft.name, catalogModels);
+  const canThink = modelSupportsThinking(draft.name, detectionModels);
   const thinkingEnabled = !!draft.extra?.reasoning_effort;
   const reasoningEffort = (draft.extra?.reasoning_effort as string) ?? "medium";
 
@@ -329,7 +361,7 @@ export function ModelConfigModal({
               value={draft.name}
               onChange={(next) => {
                 setDraft((p) => ({ ...p, name: next }));
-                if (!modelSupportsThinking(next, catalogModels)) {
+                if (!modelSupportsThinking(next, detectionModels)) {
                   setDraft((p) => {
                     const rest = { ...p.extra };
                     delete rest.reasoning_effort;
@@ -339,6 +371,8 @@ export function ModelConfigModal({
               }}
               discoverUrl={draft.base_url?.trim() || undefined}
               discoverApiKey={(draft.extra?.api_key as string | undefined) || undefined}
+              byokMode={mode === "byok"}
+              byokProviders={byokProviders}
               placeholder={msg("auto.features.submit.components.modelconfigmodal.literal.3")}
             />
           </div>

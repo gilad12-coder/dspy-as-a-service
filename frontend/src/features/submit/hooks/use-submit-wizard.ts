@@ -51,6 +51,12 @@ import {
   chargeableBracket,
   type CostBracket,
 } from "../lib/cost-bracket";
+import {
+  saveWizardDraft,
+  readWizardDraft,
+  clearWizardDraft,
+  type WizardDraftData,
+} from "../lib/wizard-draft";
 import { useCodeAgent } from "@/shared/hooks/use-code-agent";
 import {
   buildColumnMapping,
@@ -261,9 +267,120 @@ export function useSubmitWizard() {
     wizardCtxRef.current = wizardCtx;
   }, [wizardCtx]);
   const submittedRef = useRef(false);
+
+  // Mirror the full serializable wizard snapshot into a ref every commit so the
+  // unmount cleanup below parks the *latest* values — a []-deps cleanup would
+  // otherwise close over the first render's state.
+  const draftRef = useRef<WizardDraftData | null>(null);
+  useEffect(() => {
+    draftRef.current = {
+      step,
+      furthestReachedStep,
+      summaryTab,
+      summaryCodeTab,
+      jobType,
+      isPrivate,
+      jobName,
+      jobDescription,
+      moduleName,
+      optimizerName,
+      reactConfig,
+      signatureCode,
+      metricCode,
+      signatureManuallyEdited,
+      metricManuallyEdited,
+      parsedDataset,
+      datasetFileName,
+      columnRoles,
+      columnKinds,
+      globalBaseUrl,
+      globalApiKey,
+      modelConfig,
+      secondModelConfig,
+      generationModels,
+      reflectionModels,
+      useAllGenerationModels,
+      useAllReflectionModels,
+      split,
+      seed,
+      autoLevel,
+      reflectionMinibatchSize,
+      maxFullEvals,
+      useMerge,
+      shuffle,
+      maxCostCredits,
+    };
+  });
+
+  // Restore a parked draft on mount so switching to another sidebar tab and
+  // coming back lands the user on the same step with inputs intact. Skipped when
+  // a clone/share URL owns hydration — that flow populates the form itself.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    if (searchParams.get("clone") || searchParams.get("shareToken")) return;
+    const d = readWizardDraft();
+    if (!d) return;
+    setStep(d.step);
+    setFurthestReachedStep(d.furthestReachedStep);
+    setSummaryTab(d.summaryTab);
+    setSummaryCodeTab(d.summaryCodeTab);
+    setOptimizationType(d.jobType);
+    setIsPrivate(d.isPrivate);
+    setJobName(d.jobName);
+    setJobDescription(d.jobDescription);
+    setModuleName(d.moduleName);
+    setOptimizerName(d.optimizerName);
+    setReactConfig(d.reactConfig);
+    setSignatureCode(d.signatureCode);
+    setMetricCode(d.metricCode);
+    setSignatureManuallyEdited(d.signatureManuallyEdited);
+    setMetricManuallyEdited(d.metricManuallyEdited);
+    setParsedDataset(d.parsedDataset);
+    setDatasetFileName(d.datasetFileName);
+    setColumnRoles(d.columnRoles);
+    setColumnKinds(d.columnKinds);
+    setGlobalBaseUrl(d.globalBaseUrl);
+    setGlobalApiKey(d.globalApiKey);
+    setModelConfig(d.modelConfig);
+    setSecondModelConfig(d.secondModelConfig);
+    setGenerationModels(d.generationModels);
+    setReflectionModels(d.reflectionModels);
+    setUseAllGenerationModels(d.useAllGenerationModels);
+    setUseAllReflectionModels(d.useAllReflectionModels);
+    setSplit(d.split);
+    setSeed(d.seed);
+    setAutoLevel(d.autoLevel);
+    setReflectionMinibatchSize(d.reflectionMinibatchSize);
+    setMaxFullEvals(d.maxFullEvals);
+    setUseMerge(d.useMerge);
+    setShuffle(d.shuffle);
+    setMaxCostCredits(d.maxCostCredits);
+  }, []);
+
   useEffect(
     () => () => {
-      if (submittedRef.current) wizardCtxRef.current?.reset();
+      if (submittedRef.current) {
+        // A submitted run navigated away on purpose — reset the shared agent state
+        // and drop any draft parked on an earlier nav-away.
+        wizardCtxRef.current?.reset();
+        clearWizardDraft();
+        return;
+      }
+      // Park a half-filled form (skip a pristine one) so the round-trip restores.
+      const d = draftRef.current;
+      if (
+        d &&
+        (d.step > 0 ||
+          d.parsedDataset !== null ||
+          d.datasetFileName !== null ||
+          d.jobName.trim() !== "")
+      ) {
+        saveWizardDraft(d);
+      } else {
+        clearWizardDraft();
+      }
     },
     [],
   );

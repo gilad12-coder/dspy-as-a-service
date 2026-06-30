@@ -40,30 +40,35 @@ export function CostCeilingCard({ w, mode }: { w: SubmitWizardContext; mode: Tok
     <div className="rounded-xl border border-[#C8B9A8]/50 bg-[#FAF8F5] shadow-[0_1px_2px_rgba(61,46,34,0.04)] overflow-hidden">
       <div className="px-3.5 pt-3 pb-2.5">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-[#3D2E22]">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#C8A882]/15 text-[#A8895E]">
-              <Gauge className="h-3 w-3" />
-            </span>
-            <span className="text-[13px] font-semibold tracking-tight">
-              {msg("submit.cost_ceiling.label")}
-            </span>
+          {/* Title + estimate form one column; the enable switch is the row's other
+              child, so `items-center` drops it onto the block's vertical midline. */}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[#3D2E22]">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#C8A882]/15 text-[#A8895E]">
+                <Gauge className="h-3 w-3" />
+              </span>
+              <span className="text-[13px] font-semibold tracking-tight">
+                {msg("submit.cost_ceiling.label")}
+              </span>
+            </div>
+
+            <p className="mt-2 text-[12px] leading-relaxed text-[#3D2E22]" dir="auto">
+              {/* Wrap the range in an LTR isolate (U+2066…U+2069): in an RTL line the
+              en-dash between two Latin number groups is a neutral that resolves to
+              the paragraph's RTL direction and visually swaps the numbers to
+              "high–low". Isolating "low–high" as one LTR run keeps the order. */}
+              {formatMsg(bracketKey, {
+                low: `\u2066${formatCredits(displayBracket.lowCredits, locale)}`,
+                high: `${formatCredits(displayBracket.highCredits, locale)}\u2069`,
+              })}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex shrink-0 items-center gap-2">
             <span className="text-[11px] text-[#8C7A6B]">{msg("submit.cost_ceiling.enable")}</span>
             <Switch checked={capped} onCheckedChange={toggleCap} />
           </div>
         </div>
-
-        <p className="mt-2 text-[12px] leading-relaxed text-[#3D2E22]" dir="auto">
-          {/* Wrap the range in an LTR isolate (U+2066…U+2069): in an RTL line the
-              en-dash between two Latin number groups is a neutral that resolves to
-              the paragraph's RTL direction and visually swaps the numbers to
-              "high–low". Isolating "low–high" as one LTR run keeps the order. */}
-          {formatMsg(bracketKey, {
-            low: `\u2066${formatCredits(displayBracket.lowCredits, locale)}`,
-            high: `${formatCredits(displayBracket.highCredits, locale)}\u2069`,
-          })}
-        </p>
       </div>
 
       <div className={cnGrid(capped)}>

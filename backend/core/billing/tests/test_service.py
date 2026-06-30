@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+import stripe
 from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -37,7 +38,13 @@ from core.billing.service import (
 )
 from core.config import settings
 from core.constants import GUARANTEE_BASIS_TEST, GUARANTEE_BASIS_VAL, TOKEN_SOURCE_BYOK, TOKEN_SOURCE_MANAGED
-from core.storage.models import Base, BillingCustomerModel, CreditLedgerModel, GuaranteeRunModel
+from core.storage.models import (
+    Base,
+    BillingCustomerModel,
+    BillingWebhookEventModel,
+    CreditLedgerModel,
+    GuaranteeRunModel,
+)
 
 
 @pytest.fixture
@@ -717,3 +724,168 @@ def test_subscription_update_while_active_does_not_refill_grant(engine: object) 
         service._on_subscription_change(session, sub)
         session.commit()
     assert _balance(engine, "act@x.com")[0] == 100
+
+
+def _add_ledger(
+    engine: object,
+    username: str,
+    *,
+    delta: int,
+    kind: str,
+    model: str | None,
+    when: datetime,
+    description: str = "",
+) -> None:
+    """Insert one credit-ledger row at an explicit instant.
+
+    Args:
+        engine: SQLite engine to write to.
+        username: Account the row belongs to.
+        delta: Signed credit delta (negative for a spend).
+        kind: Ledger kind ('run', 'topup', 'grant').
+        model: Model id, or None for non-run rows.
+        when: ``created_at`` instant the row is stamped with.
+        description: Row label; defaults to the kind.
+    """
+    with Session(engine) as session:
+        session.add(
+            CreditLedgerModel(
+                username=username,
+                delta_credits=delta,
+                kind=kind,
+                description=description or kind,
+                model=model,
+                created_at=when,
+            )
+        )
+        session.commit()
+
+
+def test_get_usage_aggregates_runs_by_day_and_model(engine: object) -> None:
+    """get_usage sums billed/refunded spend, counts runs, and rolls up by day and model."""
+    user = "u@x.com"
+    now = datetime.now(UTC)
+    day1 = now - timedelta(days=1)
+    day2 = now - timedelta(days=2)
+    _add_ledger(engine, user, delta=-300, kind="run", model="openai/gpt-5.5", when=day1)
+    _add_ledger(engine, user, delta=-50, kind="run", model="anthropic/claude", when=day1)
+    _add_ledger(engine, user, delta=120, kind="run", model="openai/gpt-5.5", when=day1)
+    _add_ledger(engine, user, delta=-100, kind="run", model="openai/gpt-5.5", when=day2)
+    _add_ledger(engine, user, delta=2200, kind="topup", model=None, when=day1)
+
+    service = StripeBillingService(engine=engine)
+    snapshot = service.get_usage(user, now - timedelta(days=3), now)
+
+    assert snapshot.billed_credits == 450
+    assert snapshot.refunded_credits == 120
+    assert snapshot.runs == 3
+    # Top-ups are excluded from the spend rollups but still ride along in entries.
+    assert len(snapshot.entries) == 5
+    assert [m.model for m in snapshot.by_model] == ["openai/gpt-5.5", "anthropic/claude"]
+    assert snapshot.by_model[0].credits == 400
+    assert snapshot.by_model[0].runs == 2
+    assert [d.date for d in snapshot.by_day] == [day2.date().isoformat(), day1.date().isoformat()]
+    day1_row = next(d for d in snapshot.by_day if d.date == day1.date().isoformat())
+    assert day1_row.billed_credits == 350
+    assert day1_row.refunded_credits == 120
+
+
+def test_get_usage_excludes_rows_outside_window(engine: object) -> None:
+    """Rows older than the window's start are not counted in the rollup."""
+    user = "u@x.com"
+    now = datetime.now(UTC)
+    _add_ledger(engine, user, delta=-40, kind="run", model="m", when=now - timedelta(days=1))
+    _add_ledger(engine, user, delta=-999, kind="run", model="m", when=now - timedelta(days=40))
+
+    service = StripeBillingService(engine=engine)
+    snapshot = service.get_usage(user, now - timedelta(days=7), now)
+
+    assert snapshot.billed_credits == 40
+    assert snapshot.runs == 1
+    assert len(snapshot.entries) == 1
+
+
+def _checkout_event(event_id: str, username: str, credits: int, pack_id: str = "pack_small") -> dict:
+    """Build a minimal ``checkout.session.completed`` event for a paid pack purchase.
+
+    Args:
+        event_id: Stripe event id (the idempotency key the handler records).
+        username: Buyer the credits land on.
+        credits: Credit quantity the pack grants.
+        pack_id: Pack identifier carried in the session metadata.
+
+    Returns:
+        An event dict shaped like the fields ``handle_webhook`` reads.
+    """
+    return {
+        "id": event_id,
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "mode": "payment",
+                "payment_status": "paid",
+                "customer": f"cus_{username}",
+                "metadata": {"username": username, "credits": str(credits), "pack_id": pack_id},
+            }
+        },
+    }
+
+
+@pytest.fixture
+def webhook_ready(configured: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Configure both the Stripe secret and the webhook signing secret."""
+    monkeypatch.setattr(settings, "stripe_webhook_secret", SecretStr("whsec_test"))
+
+
+def test_webhook_raises_503_when_signing_secret_unconfigured(
+    engine: object, configured: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unconfigured webhook secret is a 503, never a silent accept."""
+    monkeypatch.setattr(settings, "stripe_webhook_secret", None)
+    service = StripeBillingService(engine=engine)
+    with pytest.raises(DomainError) as exc:
+        service.handle_webhook(b"{}", "sig")
+    assert exc.value.status_code == 503
+
+
+def test_webhook_rejects_bad_signature_with_400(engine: object, webhook_ready: None) -> None:
+    """A signature that fails verification is rejected as a 400, nothing applied."""
+    service = StripeBillingService(engine=engine)
+    err = stripe.SignatureVerificationError("invalid signature", "t=1,v1=bad")
+    with (
+        patch("stripe.Webhook.construct_event", side_effect=err),
+        pytest.raises(DomainError) as exc,
+    ):
+        service.handle_webhook(b"{}", "t=1,v1=bad")
+    assert exc.value.status_code == 400
+    assert exc.value.code == "billing.webhook_invalid"
+
+
+def test_webhook_credits_pack_topup(engine: object, webhook_ready: None) -> None:
+    """A verified paid checkout credits the buyer and writes one topup ledger row."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    event = _checkout_event("evt_1", "u@x.com", 500)
+    with patch("stripe.Webhook.construct_event", return_value=event):
+        service.handle_webhook(b"{}", "sig")
+    with Session(engine) as session:
+        assert session.get(BillingCustomerModel, "u@x.com").credit_balance == 500
+        rows = session.query(CreditLedgerModel).filter_by(username="u@x.com", kind="topup").all()
+        assert len(rows) == 1
+        assert rows[0].delta_credits == 500
+        assert rows[0].stripe_event_id == "evt_1"
+        assert session.get(BillingWebhookEventModel, "evt_1") is not None
+
+
+def test_webhook_is_idempotent_on_redelivery(engine: object, webhook_ready: None) -> None:
+    """A redelivered event (same id) credits exactly once — no double top-up."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    event = _checkout_event("evt_dup", "u@x.com", 500)
+    with patch("stripe.Webhook.construct_event", return_value=event):
+        service.handle_webhook(b"{}", "sig")
+        service.handle_webhook(b"{}", "sig")
+    with Session(engine) as session:
+        assert session.get(BillingCustomerModel, "u@x.com").credit_balance == 500
+        rows = session.query(CreditLedgerModel).filter_by(username="u@x.com", kind="topup").all()
+        assert len(rows) == 1

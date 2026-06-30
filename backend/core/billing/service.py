@@ -45,9 +45,9 @@ from .pricing import ModelUsage, credits_for_usage
 PACK_CREDITS: dict[str, int] = {"starter": 500, "plus": 2200, "pro": 6500}
 
 # Renewing allowance that keeps the free tier usable on mini models. Under
-# per-model pricing a credit is real marked-up provider cost, so 150 credits is
-# ~$1 of mini inference (~2-3 light runs) — trial-tight, never a frontier loss.
-FREE_GRANT_CREDITS = 150
+# per-model pricing a credit is real marked-up provider cost, so 200 credits is
+# ~$1.3 of mini inference (~3-4 light runs) — trial-tight, never a frontier loss.
+FREE_GRANT_CREDITS = 200
 
 # Renewing allowance for an active Premium subscriber — the monthly credit
 # allotment the subscription buys, replacing (not stacking on) the free grant.
@@ -85,6 +85,11 @@ _ACTIVE_SUBSCRIPTION_STATUSES = frozenset({"active", "trialing", "past_due"})
 # subscription metadata at checkout so the held-through date is auditable and
 # surfaced back to the subscriber.
 FOUNDERS_LOCK_DAYS = 365
+
+# Most recent ledger rows the usage dashboard carries back per window. The
+# per-day/per-model rollups span every row in range; only the raw activity list
+# (and the per-run breakdown derived from it) is bounded, to cap payload size.
+USAGE_ENTRY_LIMIT = 200
 
 
 @dataclass(frozen=True)
@@ -129,6 +134,46 @@ class WalletSnapshot:
     subscription_status: str | None
     subscription_current_period_end: str | None
     usage: list[LedgerRow] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class UsageDayRow:
+    """One calendar day's run spend, split into billed and refunded credits."""
+
+    date: str
+    billed_credits: int
+    refunded_credits: int
+
+
+@dataclass(frozen=True)
+class UsageModelRow:
+    """One model's share of run spend over the window: gross billed credits and run count."""
+
+    model: str | None
+    credits: int
+    runs: int
+
+
+@dataclass(frozen=True)
+class UsageSnapshot:
+    """A date-ranged usage rollup for the billing Usage dashboard.
+
+    Aggregates the credit ledger over ``[start, end]`` into the totals, per-day,
+    and per-model series the dashboard charts, plus the most recent raw ledger
+    rows for the activity list. ``billed_credits`` is gross run spend (the
+    absolute value of negative run rows); ``refunded_credits`` is the credit
+    returned by no-lift guarantees (positive run rows). Top-ups and grants are
+    excluded from the spend rollups but still surface in ``entries``.
+    """
+
+    start: str
+    end: str
+    billed_credits: int
+    refunded_credits: int
+    runs: int
+    by_day: list[UsageDayRow] = field(default_factory=list)
+    by_model: list[UsageModelRow] = field(default_factory=list)
+    entries: list[LedgerRow] = field(default_factory=list)
 
 
 def credits_for_tokens(total_tokens: int) -> int:
@@ -633,6 +678,88 @@ class StripeBillingService:
                 subscription_current_period_end=period_end.isoformat() if period_end else None,
                 usage=usage,
             )
+
+    def get_usage(self, username: str, start: datetime, end: datetime) -> UsageSnapshot:
+        """Aggregate the account's credit ledger over a date window for the dashboard.
+
+        A pure DB read — no Stripe call. Sums run rows in ``[start, end]`` into
+        gross billed spend, refunded credit, a run count, a per-day
+        billed/refunded series (ascending by date), and a per-model spend series
+        (descending by credits); top-ups and grants are excluded from those
+        rollups. The most recent :data:`USAGE_ENTRY_LIMIT` raw ledger rows in the
+        window ride along as ``entries`` for the activity list and the per-run
+        breakdown, while the rollups span every row in range regardless of that
+        cap.
+
+        Args:
+            username: Account to summarize.
+            start: Inclusive lower bound on ``created_at``.
+            end: Inclusive upper bound on ``created_at``.
+
+        Returns:
+            A :class:`UsageSnapshot` of totals, per-day and per-model series, and
+            the most recent ledger rows.
+        """
+        with Session(self._engine) as session:
+            rows = (
+                session.query(CreditLedgerModel)
+                .filter(
+                    CreditLedgerModel.username == username,
+                    CreditLedgerModel.created_at >= start,
+                    CreditLedgerModel.created_at <= end,
+                )
+                .order_by(CreditLedgerModel.created_at.desc())
+                .all()
+            )
+        billed = 0
+        refunded = 0
+        runs = 0
+        per_day: dict[str, list[int]] = {}
+        per_model: dict[str | None, list[int]] = {}
+        for row in rows:
+            if row.kind != "run":
+                continue
+            day = per_day.setdefault(row.created_at.date().isoformat(), [0, 0])
+            if row.delta_credits < 0:
+                spent = -row.delta_credits
+                billed += spent
+                runs += 1
+                day[0] += spent
+                model = per_model.setdefault(row.model, [0, 0])
+                model[0] += spent
+                model[1] += 1
+            elif row.delta_credits > 0:
+                refunded += row.delta_credits
+                day[1] += row.delta_credits
+        by_day = [
+            UsageDayRow(date=date, billed_credits=vals[0], refunded_credits=vals[1])
+            for date, vals in sorted(per_day.items())
+        ]
+        by_model = [
+            UsageModelRow(model=model, credits=vals[0], runs=vals[1])
+            for model, vals in sorted(per_model.items(), key=lambda kv: kv[1][0], reverse=True)
+        ]
+        entries = [
+            LedgerRow(
+                id=str(row.id),
+                at=row.created_at.isoformat(),
+                label=row.description or row.kind,
+                model=row.model,
+                credits=row.delta_credits,
+                kind=row.kind,
+            )
+            for row in rows[:USAGE_ENTRY_LIMIT]
+        ]
+        return UsageSnapshot(
+            start=start.isoformat(),
+            end=end.isoformat(),
+            billed_credits=billed,
+            refunded_credits=refunded,
+            runs=runs,
+            by_day=by_day,
+            by_model=by_model,
+            entries=entries,
+        )
 
     def spendable_credits(self, username: str) -> int:
         """Return the account's total spendable credits (free grant + paid balance).

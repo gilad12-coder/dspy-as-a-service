@@ -508,3 +508,36 @@ def test_get_catalog_does_not_duplicate_registry_models_from_probe(
 
     matches = [m for m in result.models if m.value == "openrouter/vendor/known"]
     assert len(matches) == 1
+
+
+def test_background_refresh_clears_flag_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed background refresh releases the in-flight guard so it can re-trigger.
+
+    Regression: the guard was only cleared on the success path, so one transient
+    failure wedged ``_refresh_in_flight`` True and disabled background refresh for
+    the rest of the process's life.
+    """
+
+    def boom() -> mc.ModelCatalogResponse:
+        raise RuntimeError("catalog source unreachable")
+
+    monkeypatch.setattr(mc, "get_catalog", boom)
+    monkeypatch.setattr(mc, "_refresh_in_flight", True, raising=False)
+    mc._refresh_catalog_in_background()
+    assert mc._refresh_in_flight is False
+
+
+def test_background_refresh_swaps_cache_and_clears_flag_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful refresh swaps the fresh snapshot in and releases the guard."""
+    fresh = mc.ModelCatalogResponse(providers=[], models=[])
+    prev = mc._cached_response
+    monkeypatch.setattr(mc, "get_catalog", lambda: fresh)
+    monkeypatch.setattr(mc, "_refresh_in_flight", True, raising=False)
+    try:
+        mc._refresh_catalog_in_background()
+        assert mc._cached_response is fresh
+        assert mc._refresh_in_flight is False
+    finally:
+        mc._cached_response = prev

@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
 import { motion, useReducedMotion } from "framer-motion";
 import {
+  BarChart3,
   BookOpen,
   Bot,
   Columns2,
@@ -17,7 +18,6 @@ import {
   Feather,
   HardDrive,
   Keyboard,
-  Languages,
   Lock,
   type LucideIcon,
   Pencil,
@@ -52,7 +52,7 @@ import {
 } from "@/shared/ui/primitives/select";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { Button } from "@/shared/ui/primitives/button";
-import { WalletTab, ByokKeysSection } from "@/features/billing";
+import { WalletTab, UsageTab, ByokKeysSection } from "@/features/billing";
 import { Input } from "@/shared/ui/primitives/input";
 import { NumberInput } from "@/shared/ui/number-input";
 import {
@@ -98,7 +98,6 @@ import {
 import { useUserPrefs } from "../hooks/use-user-prefs";
 import { useSettingsModal } from "../hooks/use-settings-modal";
 import { ShortcutRecorder } from "./ShortcutRecorder";
-import { LanguageTab } from "./LanguageTab";
 import { PrivacyTab } from "./PrivacyTab";
 import { SettingsRow } from "@/shared/ui/settings-row";
 
@@ -1160,11 +1159,11 @@ function ApiTab() {
 const SETTINGS_TAB_ORDER = [
   "wizard",
   "agent",
-  "language",
   "admin",
   "account",
   "privacy",
   "billing",
+  "usage",
   "providers",
   "api",
   "about",
@@ -1177,11 +1176,11 @@ const SETTINGS_TAB_META: Record<
 > = {
   wizard: { icon: Sparkles, labelKey: "settings.tab.wizard" },
   agent: { icon: Bot, labelKey: "settings.tab.agent" },
-  language: { icon: Languages, labelKey: "settings.tab.language" },
   admin: { icon: HardDrive, labelKey: "settings.tab.admin" },
   account: { icon: User, labelKey: "settings.tab.account" },
   privacy: { icon: Lock, labelKey: "settings.tab.privacy" },
   billing: { icon: CreditCard, labelKey: "settings.tab.billing" },
+  usage: { icon: BarChart3, labelKey: "settings.tab.usage" },
   providers: { icon: Plug, labelKey: "settings.tab.providers" },
   api: { icon: KeyRound, labelKey: "settings.tab.api" },
   about: { icon: Info, labelKey: "settings.tab.about" },
@@ -1297,9 +1296,6 @@ export function SettingsModal() {
               <TabsContent value="agent">
                 <AgentTab />
               </TabsContent>
-              <TabsContent value="language">
-                <LanguageTab />
-              </TabsContent>
               {isAdmin && (
                 <TabsContent value="admin">
                   <AdminTab />
@@ -1313,6 +1309,9 @@ export function SettingsModal() {
               </TabsContent>
               <TabsContent value="billing">
                 <WalletTab />
+              </TabsContent>
+              <TabsContent value="usage">
+                <UsageTab />
               </TabsContent>
               <TabsContent value="providers">
                 <ByokKeysSection />

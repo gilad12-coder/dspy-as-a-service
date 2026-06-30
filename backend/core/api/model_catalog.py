@@ -22,6 +22,7 @@ import litellm
 from pydantic import BaseModel, Field
 
 from ..config import settings
+from ..provider_registry import BYOK_CATALOG_PREFIXES
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +245,14 @@ _PROVIDER_META: dict[str, tuple[str, list[_DataCenter]]] = {
 _ON_PREM_DC_LABEL = "On-prem gateway"
 
 _DATE_SUFFIX_RE = re.compile(r"-\d{4}-\d{2}-\d{2}$")
+
+# LiteLLM provider prefixes offered for bring-your-own-key. The BYOK catalog
+# lists these providers' registry models regardless of platform API keys, since
+# a BYOK run authenticates with the user's own key. Sourced from the canonical
+# ``core.provider_registry`` — a stdlib-only leaf, so this stays clear of the
+# Stripe import chain ``core.billing`` pulls at import time — which the vault
+# shares, so the offered prefixes and the savable slugs can never drift apart.
+_BYOK_CATALOG_PROVIDERS: frozenset[str] = BYOK_CATALOG_PREFIXES
 
 
 def _on_prem_base_url() -> str | None:
@@ -675,23 +684,26 @@ def _refresh_catalog_in_background() -> None:
     refresh threads.
     """
     global _cached_response, _cached_at_monotonic, _refresh_in_flight
+    fresh: ModelCatalogResponse | None = None
     try:
         fresh = get_catalog()
     except Exception:
         logger.exception("Model catalog background refresh failed; keeping previous snapshot")
-        return
     finally:
-        # Clear the flag regardless so the next stale read can re-trigger.
-        pass
-    with _cache_lock:
-        _cached_response = fresh
-        _cached_at_monotonic = time.monotonic()
-        _refresh_in_flight = False
-    logger.info(
-        "Model catalog refreshed in background: %d providers, %d models",
-        len(fresh.providers),
-        len(fresh.models),
-    )
+        # Clearing in finally (not just the success path) is the point: a failed
+        # refresh must still release the guard, or it wedges True and no future
+        # stale read can ever re-trigger a refresh for the process's lifetime.
+        with _cache_lock:
+            if fresh is not None:
+                _cached_response = fresh
+                _cached_at_monotonic = time.monotonic()
+            _refresh_in_flight = False
+    if fresh is not None:
+        logger.info(
+            "Model catalog refreshed in background: %d providers, %d models",
+            len(fresh.providers),
+            len(fresh.models),
+        )
 
 
 def _kick_background_refresh() -> None:
@@ -763,3 +775,88 @@ def prewarm_catalog() -> None:
     if _cached_response is not None:
         return
     _kick_background_refresh()
+
+
+def get_byok_catalog() -> ModelCatalogResponse:
+    """Build the bring-your-own-key model catalog from LiteLLM's registry.
+
+    Unlike :func:`get_catalog`, availability is not gated on a platform API key:
+    every chat model of a BYOK-offered provider is listed and marked available,
+    because a BYOK run pays with the user's own key, not the platform's. The
+    client narrows this to the providers the signed-in user has actually
+    connected. There is no live network probe — purely the bundled
+    ``litellm.model_cost`` registry — so the build is cheap and deterministic.
+
+    Returns:
+        A :class:`ModelCatalogResponse` of every BYOK-offered provider's chat
+        models, each ``available=True``, grouped by provider.
+    """
+    cost: dict[str, dict] = litellm.model_cost
+    seen_providers: dict[str, CatalogProvider] = {}
+    models: list[CatalogModel] = []
+    base_names_seen: set[str] = set()
+
+    for model_id, meta in cost.items():
+        if meta.get("mode") != "chat":
+            continue
+        provider_slug: str = meta.get("litellm_provider", "unknown")
+        if provider_slug not in _BYOK_CATALOG_PROVIDERS:
+            continue
+
+        base_name = _DATE_SUFFIX_RE.sub("", model_id)
+        if base_name != model_id and base_name in cost:
+            continue
+        if base_name in base_names_seen:
+            continue
+        base_names_seen.add(base_name)
+
+        # dspy.LM rejects un-prefixed IDs — always emit ``provider/model``.
+        prefixed_id = model_id if "/" in model_id else f"{provider_slug}/{model_id}"
+
+        if provider_slug not in seen_providers:
+            seen_providers[provider_slug] = CatalogProvider(
+                slug=provider_slug,
+                label=_PROVIDER_META[provider_slug][0],
+                data_center=None,
+                env_var=None,
+                default_base_url=None,
+                has_env_key=False,
+            )
+
+        models.append(
+            CatalogModel(
+                value=prefixed_id,
+                label=_make_label(model_id),
+                provider=provider_slug,
+                data_center=None,
+                supports_thinking=bool(meta.get("supports_reasoning")),
+                supports_vision=bool(meta.get("supports_vision")),
+                available=True,
+                max_input_tokens=meta.get("max_input_tokens"),
+                input_cost_per_token=_positive_cost(meta, "input_cost_per_token"),
+                output_cost_per_token=_positive_cost(meta, "output_cost_per_token"),
+            )
+        )
+
+    models.sort(key=lambda m: (m.provider, m.value))
+    providers = sorted(seen_providers.values(), key=lambda p: p.slug)
+    return ModelCatalogResponse(providers=providers, models=models)
+
+
+_byok_cached: ModelCatalogResponse | None = None
+
+
+def get_byok_catalog_cached() -> ModelCatalogResponse:
+    """Return the BYOK catalog, built once per process.
+
+    The bundled registry is static for a process's lifetime, so a single lazy
+    build (no TTL, no background refresh) is enough — unlike the platform catalog
+    whose availability depends on live provider probes.
+
+    Returns:
+        The cached BYOK :class:`ModelCatalogResponse`.
+    """
+    global _byok_cached
+    if _byok_cached is None:
+        _byok_cached = get_byok_catalog()
+    return _byok_cached
