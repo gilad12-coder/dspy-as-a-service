@@ -275,7 +275,7 @@ function Segmented<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(option.value)}
             className={cn(
-              "relative rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45",
+              "relative cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45",
               active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -313,7 +313,7 @@ function ToolbarButton({
       onClick={onClick}
       aria-label={label}
       title={label}
-      className="inline-flex size-8 items-center justify-center rounded-md border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+      className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
     >
       <Icon className={cn("size-3.5", spinning && "animate-spin")} aria-hidden="true" />
     </button>
