@@ -37,18 +37,22 @@ import {
 import {
   listJobsSidebar,
   listJobsSharedWithMe,
+  listTaggerSessions,
   deleteJob,
+  deleteTaggerSession,
   renameOptimization,
   togglePinOptimization,
   restartJob,
   resumeJob,
 } from "@/shared/lib/api";
-import type { SidebarJobItem } from "@/shared/lib/api";
+import type { SidebarJobItem, TaggerSessionSummary } from "@/shared/lib/api";
 import { isActiveStatus } from "@/shared/constants/job-status";
 import { useJobsStream } from "@/shared/hooks/use-jobs-stream";
 import { toast } from "react-toastify";
 import { useSession } from "next-auth/react";
 import { groupJobsByRecency } from "@/features/sidebar";
+import { TAGGER_SESSIONS_CHANGED } from "@/features/tagger";
+import { TaggerSessionRow } from "./TaggerSessionRow";
 import { useUserPrefs } from "@/features/settings";
 import { AccountMenu } from "@/shared/layout/account-menu";
 import { ShareDialog } from "@/features/optimizations";
@@ -84,6 +88,27 @@ function clampSidebarWidth(n: number): number {
   return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(n)));
 }
 
+/**
+ * Adapt a saved tagger session into the shared sidebar-item shape so it groups
+ * and renders in the one unified list. ``optimization_id`` carries the session
+ * id (the list key, dedupe key, and route param); ``status`` is left blank so
+ * the recency grouping never treats it as an active run; ``kind: "tagger"`` is
+ * what the row renderer branches on.
+ */
+function taggerSummaryToItem(s: TaggerSessionSummary): SidebarJobItem {
+  return {
+    kind: "tagger",
+    optimization_id: s.id,
+    status: "",
+    name: s.name,
+    created_at: s.created_at,
+    pinned: s.pinned,
+    tagged_count: s.tagged_count,
+    row_count: s.row_count,
+    phase: s.phase,
+  };
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -105,6 +130,10 @@ export function Sidebar() {
   const tabRef = React.useRef<"mine" | "shared">("mine");
   const switchingRef = React.useRef(false);
   const [jobs, setJobs] = React.useState<SidebarJobItem[]>([]);
+  // Saved tagger sessions (the "mine" tab only) — a separate, unpaginated list
+  // merged into the optimization list at render time so the optimization
+  // pagination/dedupe machinery stays untouched.
+  const [taggerItems, setTaggerItems] = React.useState<SidebarJobItem[]>([]);
   const [activeCount, setActiveCount] = React.useState(0);
   const [loadedAll, setLoadedAll] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
@@ -205,6 +234,23 @@ export function Sidebar() {
     }
   }, [sessionUser, isAdmin, tab]);
 
+  // Saved tagger sessions are personal, so they only appear on the "mine" tab.
+  // They're few, so the whole list is fetched at once (no pagination) and merged
+  // into the optimization list for display.
+  const fetchTaggerSessions = React.useCallback(async () => {
+    if (tab !== "mine") {
+      setTaggerItems([]);
+      return;
+    }
+    try {
+      const res = await listTaggerSessions({ limit: 200 });
+      if (tabRef.current !== "mine") return;
+      setTaggerItems(res.items.map(taggerSummaryToItem));
+    } catch (err) {
+      console.warn("sidebar tagger fetch failed:", err);
+    }
+  }, [tab]);
+
   React.useEffect(() => {
     // Dep change (login / admin toggle) — reset depth so the next fetch
     // starts fresh at one page.
@@ -227,6 +273,16 @@ export function Sidebar() {
       window.removeEventListener("optimizations-changed", onJobsChanged);
     };
   }, [fetchData]);
+
+  // Tagger sessions: fetch on mount / tab change, and refresh when the tagger
+  // create/rename/pin/delete flow signals a change. No SSE/poll — sessions are
+  // static documents, not running jobs.
+  React.useEffect(() => {
+    void fetchTaggerSessions();
+    const onChanged = () => void fetchTaggerSessions();
+    window.addEventListener(TAGGER_SESSIONS_CHANGED, onChanged);
+    return () => window.removeEventListener(TAGGER_SESSIONS_CHANGED, onChanged);
+  }, [fetchTaggerSessions]);
 
   // Live updates while jobs are active: subscribe to the shared dashboard SSE
   // stream (3s server cadence) so the running badge and per-job status pills
@@ -288,25 +344,50 @@ export function Sidebar() {
     return () => observer.disconnect();
   }, [loadedAll, loadMore, jobs.length]);
 
-  const [deleteConfirm, setDeleteConfirm] = React.useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = React.useState<{
+    id: string;
+    kind: "optimization" | "tagger";
+  } | null>(null);
   const [deleteLoading, setDeleteLoading] = React.useState(false);
 
   const handleDelete = React.useCallback((e: React.MouseEvent, optimizationId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setDeleteConfirm(optimizationId);
+    setDeleteConfirm({ id: optimizationId, kind: "optimization" });
+  }, []);
+
+  const handleDeleteTagger = React.useCallback((e: React.MouseEvent, sessionId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDeleteConfirm({ id: sessionId, kind: "tagger" });
   }, []);
 
   const confirmDelete = async () => {
-    const optimizationId = deleteConfirm;
-    if (!optimizationId) return;
+    if (!deleteConfirm) return;
+    const { id, kind } = deleteConfirm;
     setDeleteLoading(true);
-    setJobs((prev) => prev.filter((j) => j.optimization_id !== optimizationId));
+    if (kind === "tagger") {
+      setTaggerItems((prev) => prev.filter((t) => t.optimization_id !== id));
+      try {
+        await deleteTaggerSession(id);
+        toast.success(msg("sidebar.delete.success"));
+        window.dispatchEvent(new Event(TAGGER_SESSIONS_CHANGED));
+        if (pathname === `/tagger/${id}`) router.push("/tagger");
+      } catch {
+        toast.error(msg("sidebar.delete.failed"));
+        void fetchTaggerSessions();
+      } finally {
+        setDeleteLoading(false);
+        setDeleteConfirm(null);
+      }
+      return;
+    }
+    setJobs((prev) => prev.filter((j) => j.optimization_id !== id));
     try {
-      await deleteJob(optimizationId);
+      await deleteJob(id);
       toast.success(msg("sidebar.delete.success"));
       window.dispatchEvent(new Event("optimizations-changed"));
-      if (pathname === `/optimizations/${optimizationId}`) router.push("/");
+      if (pathname === `/optimizations/${id}`) router.push("/");
     } catch {
       toast.error(msg("sidebar.delete.failed"));
       void fetchData();
@@ -329,18 +410,30 @@ export function Sidebar() {
     [tab],
   );
 
-  const groupedJobs = React.useMemo(() => groupJobsByRecency(jobs), [jobs]);
+  // Merge saved tagger sessions into the optimization list for display (mine tab
+  // only), interleaved newest-first; the recency grouping then buckets pinned and
+  // per-date as usual. The optimization ``jobs`` state — and its pagination — is
+  // never mutated by this.
+  const mergedJobs = React.useMemo(() => {
+    if (renderedTab !== "mine" || taggerItems.length === 0) return jobs;
+    return [...jobs, ...taggerItems].sort(
+      (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime(),
+    );
+  }, [jobs, taggerItems, renderedTab]);
+
+  const groupedJobs = React.useMemo(() => groupJobsByRecency(mergedJobs), [mergedJobs]);
 
   const deleteJobInfo = React.useMemo(() => {
     if (!deleteConfirm) return null;
-    const job = jobs.find((j) => j.optimization_id === deleteConfirm);
-    if (!job) return { name: deleteConfirm, id: deleteConfirm };
+    const pool = deleteConfirm.kind === "tagger" ? taggerItems : jobs;
+    const job = pool.find((j) => j.optimization_id === deleteConfirm.id);
+    if (!job) return { name: deleteConfirm.id, id: deleteConfirm.id };
     const name =
       job.name ||
       [job.module_name, job.optimizer_name].filter(Boolean).join(" · ") ||
       job.optimization_id.slice(0, 8);
     return { name, id: job.optimization_id };
-  }, [deleteConfirm, jobs]);
+  }, [deleteConfirm, jobs, taggerItems]);
 
   // The sidebar is position:fixed on desktop (a locked rail), so it's out of the
   // shell's flow and can't reserve its own width. Publish the live width as a CSS
@@ -438,21 +531,31 @@ export function Sidebar() {
                         {group.jobs.length}
                       </span>
                     </p>
-                    {group.jobs.map((job) => (
-                      <JobRow
-                        key={job.optimization_id}
-                        job={job}
-                        isShared={renderedTab === "shared"}
-                        isActive={pathname === `/optimizations/${job.optimization_id}`}
-                        activePair={
-                          pathname === `/optimizations/${job.optimization_id}`
-                            ? activePairIndex
-                            : null
-                        }
-                        onDelete={handleDelete}
-                        onRefresh={fetchData}
-                      />
-                    ))}
+                    {group.jobs.map((job) =>
+                      job.kind === "tagger" ? (
+                        <TaggerSessionRow
+                          key={job.optimization_id}
+                          item={job}
+                          isActive={pathname === `/tagger/${job.optimization_id}`}
+                          onDelete={handleDeleteTagger}
+                          onRefresh={fetchTaggerSessions}
+                        />
+                      ) : (
+                        <JobRow
+                          key={job.optimization_id}
+                          job={job}
+                          isShared={renderedTab === "shared"}
+                          isActive={pathname === `/optimizations/${job.optimization_id}`}
+                          activePair={
+                            pathname === `/optimizations/${job.optimization_id}`
+                              ? activePairIndex
+                              : null
+                          }
+                          onDelete={handleDelete}
+                          onRefresh={fetchData}
+                        />
+                      ),
+                    )}
                   </div>
                 ))}
                 {loadedAll && groupedJobs.length === 0 && (
@@ -497,12 +600,14 @@ export function Sidebar() {
         <DialogContent className="max-w-md sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>
-              {msg("auto.features.sidebar.components.sidebar.3")}
-              {TERMS.optimization}
+              {deleteConfirm?.kind === "tagger"
+                ? msg("tagger.session.delete_title")
+                : `${msg("auto.features.sidebar.components.sidebar.3")}${TERMS.optimization}`}
             </DialogTitle>
             <DialogDescription>
-              {msg("auto.features.sidebar.components.sidebar.4")}
-              {TERMS.optimization}{" "}
+              {deleteConfirm?.kind === "tagger"
+                ? msg("tagger.session.delete_body")
+                : `${msg("auto.features.sidebar.components.sidebar.4")}${TERMS.optimization}`}{" "}
               <span className="font-semibold text-foreground break-words" dir="auto">
                 {deleteJobInfo?.name}
               </span>

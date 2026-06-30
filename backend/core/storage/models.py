@@ -762,6 +762,47 @@ class AgentStagedDatasetModel(Base):
     __table_args__ = (Index("ix_agent_staged_datasets_user_created", "username", "created_at"),)
 
 
+class TaggingSessionModel(Base):
+    """Persisted text-labeling (tagger) session — one row per saved session.
+
+    Mirrors the in-memory ``useTagger`` hook so a user can resume annotating
+    across refreshes and devices, the way optimizations persist. ``config``,
+    ``columns`` and ``data`` are captured once when annotating begins and are
+    immutable thereafter; ``annotations``, ``current_index`` and ``phase`` (with
+    the denormalized ``tagged_count``) advance as rows are labeled and are the
+    only columns the autosave PUT rewrites, so the large ``data`` TOAST is not
+    re-written on every keystroke. ``row_count``/``tagged_count`` are
+    denormalized so the sidebar list never loads the heavy JSON columns.
+    Ownership is by ``username`` (compared in application code, not a DB FK).
+    """
+
+    __tablename__ = "tagging_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    phase: Mapped[str] = mapped_column(String(20), nullable=False, default="annotating")
+    config: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, nullable=False, default=dict)
+    columns: Mapped[list[str]] = mapped_column(JSON_STORE, nullable=False, default=list)
+    data: Mapped[list[dict[str, Any]]] = mapped_column(JSON_STORE, nullable=False, default=list)
+    annotations: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, nullable=False, default=dict)
+    current_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tagged_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("ix_tagging_sessions_user_updated", "username", "updated_at"),
+        Index("ix_tagging_sessions_user_pinned", "username", "pinned"),
+    )
+
+
 class DatasetModel(Base):
     """One saved dataset in a user's personal library — a single file reference.
 

@@ -2491,6 +2491,10 @@ export type MessageKey =
   | "tagger.library.save"
   | "tagger.library.save_failed"
   | "tagger.library.saved"
+  | "tagger.session.delete_body"
+  | "tagger.session.delete_title"
+  | "tagger.session.notfound"
+  | "tagger.session.untitled"
   | "tagger.upload.parse_failed"
   | "trajectory.a11y.node_label"
   | "trajectory.a11y.tree_label"
@@ -5087,6 +5091,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.library.save": "שמירה לספרייה",
   "tagger.library.save_failed": "שגיאה בשמירת הדאטאסט לספרייה",
   "tagger.library.saved": "«{name}» נשמר לספרייה",
+  "tagger.session.delete_body": "האם למחוק את סשן התיוג",
+  "tagger.session.delete_title": "מחיקת סשן תיוג",
+  "tagger.session.notfound": "סשן התיוג לא נמצא.",
+  "tagger.session.untitled": "תיוג ללא שם",
   "tagger.upload.parse_failed": "טעינת הקובץ נכשלה",
   "trajectory.a11y.node_label": "מועמד {id}, דור {gen}, ציון {score}",
   "trajectory.a11y.tree_label": "עץ המועמדים של האופטימיזציה",
@@ -12882,6 +12890,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.library.save": "Save to library",
   "tagger.library.save_failed": "Failed to save the dataset to the library",
   "tagger.library.saved": "“{name}” saved to the library",
+  "tagger.session.delete_body": "Delete this labeling session",
+  "tagger.session.delete_title": "Delete labeling session",
+  "tagger.session.notfound": "This labeling session could not be found.",
+  "tagger.session.untitled": "Untitled labeling",
   "tagger.upload.parse_failed": "Failed to load the file",
   "trajectory.a11y.node_label": "Candidate {id}, generation {gen}, score {score}",
   "trajectory.a11y.tree_label": "The optimization's candidate tree",

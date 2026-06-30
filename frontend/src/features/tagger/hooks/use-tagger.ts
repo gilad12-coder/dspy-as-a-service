@@ -1,7 +1,18 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
+import {
+  createTaggerSession,
+  updateTaggerSession,
+  type TaggerSessionDetail,
+} from "@/shared/lib/api";
+import { msg } from "@/shared/lib/messages";
 import type { DataRow, Annotation, TaggerConfig, AnnotationMode } from "../lib/types";
+
+/** Window event the sidebar listens for to refresh its saved-session list. */
+export const TAGGER_SESSIONS_CHANGED = "tagger-sessions-changed";
+
+const AUTOSAVE_DEBOUNCE_MS = 1000;
 
 function isTagged(ann: Annotation, mode: AnnotationMode): boolean {
   if (ann === undefined || ann === null) return false;
@@ -9,13 +20,42 @@ function isTagged(ann: Annotation, mode: AnnotationMode): boolean {
   return typeof ann === "string" && ann !== "";
 }
 
-export function useTagger() {
-  const [phase, setPhase] = useState<"setup" | "annotating">("setup");
-  const [config, setConfig] = useState<TaggerConfig | null>(null);
-  const [data, setData] = useState<DataRow[]>([]);
-  const [columns, setColumns] = useState<string[]>([]);
-  const [annotations, setAnnotations] = useState<Record<string, Annotation>>({});
-  const [currentIndex, setCurrentIndex] = useState(0);
+/** Default name for a freshly-created session, derived from its config. */
+function deriveSessionName(config: TaggerConfig): string {
+  if (config.mode === "binary" && config.question?.trim()) {
+    return config.question.trim().slice(0, 80);
+  }
+  if (config.mode === "freetext" && config.prompt?.trim()) {
+    return config.prompt.trim().slice(0, 80);
+  }
+  return msg("tagger.session.untitled");
+}
+
+/**
+ * Tagger annotation state with server-side persistence.
+ *
+ * Pass ``initialSession`` to rehydrate a saved session (the ``/tagger/[id]``
+ * restore route); omit it to start fresh at the setup wizard. Once annotating
+ * begins the session is created server-side and annotation progress is
+ * autosaved (debounced) so it survives reloads and follows the user across
+ * devices, the way optimizations persist.
+ */
+export function useTagger(initialSession?: TaggerSessionDetail | null) {
+  const [phase, setPhase] = useState<"setup" | "annotating">(
+    (initialSession?.phase as "setup" | "annotating" | undefined) ?? "setup",
+  );
+  const [config, setConfig] = useState<TaggerConfig | null>(
+    (initialSession?.config as TaggerConfig | undefined) ?? null,
+  );
+  const [data, setData] = useState<DataRow[]>(
+    (initialSession?.data as DataRow[] | undefined) ?? [],
+  );
+  const [columns, setColumns] = useState<string[]>(initialSession?.columns ?? []);
+  const [annotations, setAnnotations] = useState<Record<string, Annotation>>(
+    (initialSession?.annotations as Record<string, Annotation> | undefined) ?? {},
+  );
+  const [currentIndex, setCurrentIndex] = useState(initialSession?.current_index ?? 0);
+  const [sessionId, setSessionId] = useState<string | null>(initialSession?.id ?? null);
 
   const startAnnotating = useCallback((cfg: TaggerConfig, rows: DataRow[], cols: string[]) => {
     setConfig(cfg);
@@ -24,6 +64,27 @@ export function useTagger() {
     setCurrentIndex(0);
     setAnnotations({});
     setPhase("annotating");
+    setSessionId(null);
+    // Persist immediately so the session shows up in the sidebar and survives a
+    // reload; the returned id then drives the debounced progress autosaves. The
+    // dataset is uploaded once here, not on every subsequent annotation.
+    void createTaggerSession({
+      name: deriveSessionName(cfg),
+      phase: "annotating",
+      config: cfg as unknown as Record<string, unknown>,
+      columns: cols,
+      data: rows as unknown as Array<Record<string, unknown>>,
+      annotations: {},
+      current_index: 0,
+    })
+      .then((detail) => {
+        setSessionId(detail.id);
+        window.dispatchEvent(new Event(TAGGER_SESSIONS_CHANGED));
+      })
+      .catch(() => {
+        // Best-effort: a storage-quota 409 opens the shared modal centrally and
+        // the session simply isn't persisted — annotation still works in memory.
+      });
   }, []);
 
   const backToSetup = useCallback(() => {
@@ -33,7 +94,26 @@ export function useTagger() {
     setAnnotations({});
     setCurrentIndex(0);
     setPhase("setup");
+    // Detach from the saved session — it stays in the sidebar to resume later;
+    // the next ``startAnnotating`` creates a new one.
+    setSessionId(null);
   }, []);
+
+  // Debounced autosave of annotation progress. Only the mutable fields are sent
+  // (annotations / cursor / phase) — never the dataset — so saves stay cheap.
+  useEffect(() => {
+    if (!sessionId || phase !== "annotating") return;
+    const handle = window.setTimeout(() => {
+      void updateTaggerSession(sessionId, {
+        annotations: annotations as unknown as Record<string, unknown>,
+        current_index: currentIndex,
+        phase,
+      }).catch(() => {
+        // Autosave is best-effort; the next change retries with the full state.
+      });
+    }, AUTOSAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [sessionId, annotations, currentIndex, phase]);
 
   const navigate = useCallback(
     (dir: 1 | -1) => {

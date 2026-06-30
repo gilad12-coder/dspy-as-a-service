@@ -1,0 +1,63 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { Loader2, XCircle } from "lucide-react";
+
+import { getTaggerSession, setApiAuthToken, type TaggerSessionDetail } from "@/shared/lib/api";
+import { msg } from "@/shared/lib/messages";
+import { TaggerView } from "./TaggerView";
+
+type GateState =
+  | { mode: "loading" }
+  | { mode: "ready"; session: TaggerSessionDetail }
+  | { mode: "notfound" };
+
+/**
+ * Resolves ``/tagger/[id]``: fetches the caller's saved session and hands its
+ * full state to {@link TaggerView} to resume annotating, or shows a not-found
+ * state when the id is unknown or owned by someone else. Mirrors
+ * ``OptimizationDetailGate`` — the bearer is attached before the probe because
+ * effects run child-before-parent and the root token bridge may not have synced.
+ */
+export function TaggerSessionGate() {
+  const { id } = useParams<{ id: string }>();
+  const { data: session, status } = useSession();
+  const [state, setState] = useState<GateState>({ mode: "loading" });
+
+  useEffect(() => {
+    if (status === "loading") return;
+    let cancelled = false;
+    setState({ mode: "loading" });
+    if (session?.backendAccessToken) setApiAuthToken(session.backendAccessToken);
+    getTaggerSession(id)
+      .then((detail) => {
+        if (!cancelled) setState({ mode: "ready", session: detail });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ mode: "notfound" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, status, session?.backendAccessToken]);
+
+  if (state.mode === "loading") {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="size-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+  if (state.mode === "notfound") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <XCircle className="size-12 text-destructive" />
+        <p className="text-lg text-muted-foreground">{msg("tagger.session.notfound")}</p>
+      </div>
+    );
+  }
+  // Remount on id change so the hook re-seeds from the new session's state.
+  return <TaggerView key={state.session.id} initialSession={state.session} />;
+}

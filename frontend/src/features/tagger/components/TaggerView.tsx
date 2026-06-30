@@ -1,11 +1,12 @@
 "use client";
 
+import type { TaggerSessionDetail } from "@/shared/lib/api";
 import { useTagger } from "../hooks/use-tagger";
 import { TaggerSetup } from "./TaggerSetup";
 import { TaggerAnnotation } from "./TaggerAnnotation";
 
-export function TaggerView() {
-  const tagger = useTagger();
+export function TaggerView({ initialSession }: { initialSession?: TaggerSessionDetail | null }) {
+  const tagger = useTagger(initialSession);
 
   if (tagger.phase === "setup") {
     return <TaggerSetup onStart={tagger.startAnnotating} />;

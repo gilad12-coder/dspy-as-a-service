@@ -1032,6 +1032,110 @@ export function cloneDataset(datasetId: string) {
 }
 
 /**
+ * Sidebar/list projection of a saved text-labeling (tagger) session — the
+ * lightweight row, without the heavy dataset/annotation payload.
+ */
+export interface TaggerSessionSummary {
+  id: string;
+  name: string;
+  phase: string;
+  row_count: number;
+  tagged_count: number;
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Full tagger session — everything needed to rehydrate the annotator. */
+export interface TaggerSessionDetail extends TaggerSessionSummary {
+  config: Record<string, unknown>;
+  columns: string[];
+  data: Array<Record<string, unknown>>;
+  annotations: Record<string, unknown>;
+  current_index: number;
+}
+
+/** List the caller's saved tagger sessions (pinned first, then newest). */
+export function listTaggerSessions(params?: { limit?: number; offset?: number }) {
+  const q = new URLSearchParams();
+  if (params?.limit) q.set("limit", String(params.limit));
+  if (params?.offset) q.set("offset", String(params.offset));
+  const qs = q.toString();
+  return cachedGet<{ items: TaggerSessionSummary[]; total: number }>(
+    `/tagging-sessions${qs ? `?${qs}` : ""}`,
+    SIDEBAR_CACHE_MS,
+  );
+}
+
+/** Fetch one saved session's full state to resume annotating. */
+export function getTaggerSession(sessionId: string) {
+  return request<TaggerSessionDetail>(`/tagging-sessions/${sessionId}`);
+}
+
+/** Persist a new session (uploads the dataset once); returns it with its new id. */
+export async function createTaggerSession(body: {
+  name: string;
+  phase?: string;
+  config: Record<string, unknown>;
+  columns: string[];
+  data: Array<Record<string, unknown>>;
+  annotations?: Record<string, unknown>;
+  current_index?: number;
+}) {
+  const res = await request<TaggerSessionDetail>("/tagging-sessions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  invalidateCache("/tagging-sessions");
+  return res;
+}
+
+/**
+ * Autosave annotation progress (annotations + cursor + phase) without
+ * re-shipping the dataset. The 3s sidebar cache is intentionally left intact —
+ * the heavy list invalidation only fires for create / rename / pin / delete.
+ */
+export function updateTaggerSession(
+  sessionId: string,
+  body: { annotations: Record<string, unknown>; current_index: number; phase?: string },
+) {
+  return request<TaggerSessionSummary>(`/tagging-sessions/${sessionId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Rename a saved session. */
+export async function renameTaggerSession(sessionId: string, name: string) {
+  const res = await request<TaggerSessionSummary>(`/tagging-sessions/${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+  invalidateCache("/tagging-sessions");
+  return res;
+}
+
+/** Pin or unpin a saved session (``pinned`` is the desired next state). */
+export async function setTaggerSessionPinned(sessionId: string, pinned: boolean) {
+  const res = await request<TaggerSessionSummary>(`/tagging-sessions/${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ pinned }),
+  });
+  invalidateCache("/tagging-sessions");
+  return res;
+}
+
+/** Delete a saved session. */
+export async function deleteTaggerSession(sessionId: string) {
+  const res = await request<{ id: string; deleted: boolean }>(
+    `/tagging-sessions/${sessionId}`,
+    { method: "DELETE" },
+  );
+  invalidateCache("/tagging-sessions");
+  return res;
+}
+
+/**
  * The caller's account-wide storage usage against their budget. ``breakdown``
  * maps each storage category to its byte contribution; ``used_bytes`` is their
  * sum and the same total the save/run gate enforces.
@@ -1471,6 +1575,19 @@ export interface SidebarJobItem {
   resumable?: boolean;
   /** Caller's share role on a "shared with me" item; absent on own optimizations. */
   role?: ShareRole | null;
+  /**
+   * Discriminates the item kind in the unified sidebar list. Absent / "optimization"
+   * for runs; "tagger" for a saved text-labeling session, which the row renderer
+   * branches on (links to /tagger/[id], tagger-only actions). The fields below are
+   * populated only for tagger items.
+   */
+  kind?: "optimization" | "tagger";
+  /** Tagger session: rows labeled so far (sidebar progress badge). */
+  tagged_count?: number;
+  /** Tagger session: total rows in the dataset. */
+  row_count?: number;
+  /** Tagger session: "setup" | "annotating". */
+  phase?: string;
 }
 
 export function listJobsSidebar(params?: { username?: string; limit?: number; offset?: number }) {
