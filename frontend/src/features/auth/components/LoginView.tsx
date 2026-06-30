@@ -55,7 +55,7 @@ function postLoginTarget(): string {
 function LoginHeader() {
   return (
     <div className="w-[min(90vw,520px)]">
-      <AnimatedWordmark fluid autoMorph morphSpeed={250} />
+      <AnimatedWordmark fluid autoMorph autoMorphDuration={10000} morphSpeed={250} />
     </div>
   );
 }

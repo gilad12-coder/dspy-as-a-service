@@ -178,6 +178,7 @@ export function AnimatedWordmark({
   size = 28,
   className,
   autoMorph = false,
+  autoMorphDuration,
   morphSpeed = 250,
   fluid = false,
 }: {
@@ -185,6 +186,11 @@ export function AnimatedWordmark({
   className?: string;
   /** Morph continuously from mount, independent of hover (for splash/idle states) */
   autoMorph?: boolean;
+  /** When set (ms), an auto-morphing wordmark settles back to its default
+   *  variant after this many ms instead of morphing forever — for persistent
+   *  surfaces (navbar, landing) where perpetual motion gets distracting.
+   *  Ignored unless `autoMorph` is on. */
+  autoMorphDuration?: number;
   /** Interval in ms between morph ticks (default 250) */
   morphSpeed?: number;
   /** Fill the parent's width (height derives from the viewBox) instead of using `size`. */
@@ -194,6 +200,7 @@ export function AnimatedWordmark({
     LETTERS.map(() => "default"),
   );
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reducedMotionRef = useRef(false);
   // Lite mode is signalled by LiteModeProvider via a data-lite attribute on
   // <html>. Read it straight from the DOM rather than the settings hook so this
@@ -274,14 +281,21 @@ export function AnimatedWordmark({
         intervalRef.current = null;
       }
       startMorph();
+      if (autoMorphDuration != null) {
+        stopTimeoutRef.current = setTimeout(stopMorph, autoMorphDuration);
+      }
     }
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
+      if (stopTimeoutRef.current) {
+        clearTimeout(stopTimeoutRef.current);
+        stopTimeoutRef.current = null;
+      }
     };
-  }, [autoMorph, lite, startMorph, stopMorph]);
+  }, [autoMorph, autoMorphDuration, lite, startMorph, stopMorph]);
 
   const aspectRatio = TOTAL_WIDTH / 92;
   const svgWidth = size * aspectRatio;

@@ -432,7 +432,7 @@ export function UpgradeView() {
   }, [beginSync]);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-10 sm:py-14">
+    <div className="@container mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-10 sm:py-14">
       <header className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-[clamp(1.75rem,4vw,2.25rem)] font-semibold tracking-tight text-foreground">
           {msg("billing.plans.heading")}
@@ -442,7 +442,12 @@ export function UpgradeView() {
         </p>
       </header>
 
-      <div className="grid items-stretch gap-5 md:grid-cols-2 min-[60rem]:grid-cols-3">
+      {/* Container-, not viewport-relative: the page lives inside the shell's
+          sidebar-narrowed <main>, so a viewport breakpoint forced 3 columns into
+          the smaller content area (cramped on non-HD laptops with the rail open).
+          Querying the grid's own width drops to 2-up, then 1-up, as the available
+          space shrinks — and reflows correctly when the sidebar collapses too. */}
+      <div className="grid items-stretch gap-5 @xl:grid-cols-2 @4xl:grid-cols-3">
         <FreeCard premiumActive={wallet.premiumActive} index={0} />
         <PremiumCard founders={founders} premiumActive={wallet.premiumActive} index={1} />
         <CreditsCard index={2} />

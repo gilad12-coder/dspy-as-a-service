@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Menu, GraduationCap, Lightbulb, Feather, Sparkles } from "lucide-react";
 import { useTutorialContext, ConceptsGuide, registerTutorialHook } from "@/features/tutorial";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
+import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { LanguageSwitcher } from "@/shared/ui/language-switcher";
 import { useLocale } from "@/shared/providers";
 import { dirForLocale } from "@/shared/lib/locale";
@@ -134,10 +135,13 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         }}
       >
         <div className="flex items-center gap-1.5 cursor-default">
-          {/* Brand sits in the header only below md — at md+ the morphing wordmark
-              lives in the sidebar rail's collapse row (which is itself md:flex). */}
+          {/* The morphing wordmark anchors the header at sm+; below sm it collapses
+              to a plain SKYNET wordmark where the full SVG would crowd the row. */}
+          <div className="hidden sm:block">
+            <AnimatedWordmark size={16} autoMorph autoMorphDuration={10000} morphSpeed={250} />
+          </div>
           <span
-            className="md:hidden text-sm font-bold tracking-[0.14em] uppercase text-foreground cursor-default"
+            className="sm:hidden text-sm font-bold tracking-[0.14em] uppercase text-foreground cursor-default"
             style={{ fontFamily: '"Inter Variable", system-ui, sans-serif' }}
           >
             SKYNET
