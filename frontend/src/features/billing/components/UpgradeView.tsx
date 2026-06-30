@@ -5,7 +5,7 @@ import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { Check, Loader2, Zap } from "lucide-react";
 import { toast } from "react-toastify";
-import { msg } from "@/shared/lib/messages";
+import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
 import {
@@ -27,6 +27,13 @@ const PILL_TRANSITION = { type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1
 // Monthly price of the Founder's Rate, in USD. Mirrors the Stripe price; the
 // Premium column shows it as the big number above "/ month".
 const FOUNDERS_USD_PER_MONTH = 20;
+
+// Monthly credit allotment per tier, mirroring the backend constants
+// (FREE_GRANT_CREDITS / PREMIUM_GRANT_CREDITS in core/billing/service.py). The
+// Free and Premium columns surface these as the concrete grant size; a Premium
+// month replaces, not stacks on, the free grant.
+const FREE_GRANT_CREDITS = 200;
+const PREMIUM_MONTHLY_CREDITS = 2500;
 
 /** Whole-dollar USD (no cents) for the big price number — "$20", not "$20.00". */
 function formatUsdWhole(usd: number, locale: string): string {
@@ -167,8 +174,9 @@ const DISABLED_CTA =
 
 /** Free column — the always-on baseline. Its CTA is the inert "current plan" marker. */
 function FreeCard({ premiumActive, index }: { premiumActive: boolean; index: number }) {
+  const { locale } = useLocale();
   const features: Feature[] = [
-    { label: msg("billing.plans.free.f1") },
+    { label: formatMsg("billing.plans.free.f1", { p1: formatCredits(FREE_GRANT_CREDITS, locale) }) },
     { label: msg("billing.plans.free.f2") },
     { label: msg("billing.plans.free.f3") },
     { label: msg("billing.plans.free.f4") },
@@ -227,7 +235,11 @@ function PremiumCard({
     { label: msg("billing.plans.premium.f1") },
     { label: msg("billing.founders.stack_guarantee") },
     { label: msg("billing.founders.stack_serving") },
-    { label: msg("billing.founders.stack_credits") },
+    {
+      label: formatMsg("billing.founders.stack_credits", {
+        p1: formatCredits(PREMIUM_MONTHLY_CREDITS, locale),
+      }),
+    },
     { label: msg("billing.founders.stack_lock") },
   ];
 
