@@ -78,8 +78,8 @@ export function useSubmitWizard() {
   const { data: session } = useSession();
   const { prefs } = useUserPrefs();
   // The active token-source mode (managed credits vs the user's own key). Sent
-  // on every submit so frontier-locking and the guarantee are enforced
-  // server-side, not just shown in the wizard.
+  // on every submit so the guarantee is enforced server-side, not just shown in
+  // the wizard.
   const { wallet } = useCredits();
 
   const [step, setStep] = useState(0);

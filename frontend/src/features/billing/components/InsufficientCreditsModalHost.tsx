@@ -22,8 +22,8 @@ import { INSUFFICIENT_CREDITS_EVENT } from "@/shared/lib/api";
  * (submit producers suppress their own toast via `isInsufficientCreditsError`).
  *
  * The body copy is the backend's own gate message — it already names both ways
- * out (buy credits, or wait for the free grant to renew) — so there is nothing
- * to fetch; the modal is purely presentational.
+ * out (buy credits, or start Premium) — so there is nothing to fetch; the modal
+ * is purely presentational.
  */
 export function InsufficientCreditsModalHost() {
   const [open, setOpen] = React.useState(false);

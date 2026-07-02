@@ -68,7 +68,6 @@
     "winningCandidate": "candidato vincente"
   },
   "messages": {
-    "billing.frontier_locked": "{model} è un modello frontier. Aggiungi crediti o attiva Premium per eseguirlo su risorse gestite, oppure passa a una chiave personale.",
     "billing.insufficient_credits": "Il tuo saldo è esaurito. Aggiungi crediti o attendi il rinnovo del piano gratuito per eseguire su risorse gestite.",
     "accounts.email_taken": "Questo indirizzo email è già registrato.",
     "accounts.invalid_credentials": "Email o password non corretti.",

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { Coins, KeyRound, Plus } from "lucide-react";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -155,21 +154,13 @@ export function CreditBalanceChip({ className }: { className?: string }) {
           )}
 
           <div className="flex items-center gap-2 border-t border-border/40 p-3">
-            <Link
-              href="/upgrade"
-              onClick={() => setOpen(false)}
-              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#3D2E22] px-3 py-1.5 text-xs font-semibold text-[#FAF8F5] transition-colors duration-200 hover:bg-[#2A1F17] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
-            >
-              <Plus className="size-3.5" aria-hidden="true" />
-              {msg("billing.action.add_credits")}
-            </Link>
             <button
               type="button"
               onClick={() => {
                 setOpen(false);
                 openTo("billing");
               }}
-              className="inline-flex flex-1 items-center justify-center rounded-lg border border-border/70 px-3 py-1.5 text-xs font-medium text-foreground transition-colors duration-200 cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+              className="inline-flex w-full items-center justify-center rounded-lg border border-border/70 px-3 py-1.5 text-xs font-medium text-foreground transition-colors duration-200 cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
             >
               {msg("billing.action.view_wallet")}
             </button>

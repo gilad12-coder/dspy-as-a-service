@@ -26,7 +26,6 @@ class I18nKey(StrEnum):
     AUTH_INVALID_TOKEN = 'auth.invalid_token'
     AUTH_MISSING_TOKEN = 'auth.missing_token'
     AUTH_NOT_CONFIGURED = 'auth.not_configured'
-    BILLING_FRONTIER_LOCKED = 'billing.frontier_locked'
     BILLING_INSUFFICIENT_CREDITS = 'billing.insufficient_credits'
     CODE_AGENT_UPSTREAM_FAILED = 'code_agent.upstream_failed'
     DATASET_COLUMN_ROLES_INVALID = 'dataset.column_roles_invalid'

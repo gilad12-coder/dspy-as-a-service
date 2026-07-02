@@ -68,7 +68,6 @@
     "winningCandidate": "胜出候选项"
   },
   "messages": {
-    "billing.frontier_locked": "{model} 是前沿模型。请充值或开通高级版，以使用托管算力运行，或切换为使用您自己的密钥。",
     "billing.insufficient_credits": "您的余额已用完。请充值或等待免费额度刷新，以使用托管算力运行。",
     "accounts.email_taken": "该电子邮件地址已被注册。",
     "accounts.invalid_credentials": "电子邮件或密码不正确。",

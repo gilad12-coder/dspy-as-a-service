@@ -68,7 +68,6 @@
     "winningCandidate": "kazanan aday"
   },
   "messages": {
-    "billing.frontier_locked": "{model} bir öncü modeldir. Yönetilen işlem gücünde çalıştırmak için kredi ekleyin ya da Premium'a geçin veya kendi anahtarınızı kullanın.",
     "billing.insufficient_credits": "Bakiyeniz boş. Yönetilen işlem gücünde çalıştırmak için kredi ekleyin ya da ücretsiz hakkınızın yenilenmesini bekleyin.",
     "accounts.email_taken": "Bu e-posta adresi zaten kayıtlı.",
     "accounts.invalid_credentials": "E-posta veya parola hatalı.",

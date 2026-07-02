@@ -44,31 +44,29 @@ from .pricing import ModelUsage, credits_for_usage
 # the dollar price lives in Stripe (the price id), the credits granted live here.
 PACK_CREDITS: dict[str, int] = {"starter": 500, "plus": 2200, "pro": 6500}
 
-# Renewing allowance that keeps the free tier usable on mini models. Under
-# per-model pricing a credit is real marked-up provider cost, so 200 credits is
-# ~$1.3 of mini inference (~3-4 light runs) — trial-tight, never a frontier loss.
-FREE_GRANT_CREDITS = 200
+# One-time lifetime allowance every new account gets to try the platform on mini
+# models. Granted once (lazily, on the first wallet read or run) and never renewed
+# — unlike the Premium allotment below, which recurs. Under per-model pricing a
+# credit is real marked-up provider cost, so 500 credits is ~$3.3 of mini
+# inference; beyond it the account buys credit packs or subscribes.
+FREE_GRANT_CREDITS = 500
 
 # Renewing allowance for an active Premium subscriber — the monthly credit
 # allotment the subscription buys, replacing (not stacking on) the free grant.
 # Re-priceable here: the margin lever is the token→credit markup, not this count.
 PREMIUM_GRANT_CREDITS = 2500
 
-# The free grant rolls on a per-user 30-day window rather than a calendar month,
-# so resets scatter across the month instead of all landing on the 1st. The
-# window is non-cumulative: a reset tops back up to a flat FREE_GRANT_CREDITS and
-# any leftover expires (no banking). Evaluated lazily on wallet read / debit.
+# The Premium allotment renews on a per-subscriber 30-day window (anchored to the
+# Stripe billing period on activation) rather than a calendar month, so renewals
+# scatter instead of all landing on the 1st. Non-cumulative: a renewal tops back
+# up to PREMIUM_GRANT_CREDITS and any leftover expires. The free grant does NOT
+# use this — it is one-time. Evaluated lazily on wallet read / debit.
 GRANT_WINDOW_DAYS = 30
 
 # Prefix on the placeholder ``stripe_customer_id`` of a billing row created by a
 # local debit for an account that never reached Stripe. ``get_or_create_customer``
 # treats such a row as having no real Stripe customer yet and provisions one.
 LOCAL_CUSTOMER_PREFIX = "local:"
-
-# Credits charged per this many run tokens. One credit is $0.01; the markup that
-# protects margin lives in this mapping (and the Stripe per-unit price), not in
-# the catalog, so it is re-priceable without touching credit counts elsewhere.
-TOKENS_PER_CREDIT = 1000
 
 # Share of a run's credit cost that is Skynet's platform fee (vs. pass-through
 # compute). On a no-lift BYOK run the provider tokens are already spent on the
@@ -129,7 +127,7 @@ class WalletSnapshot:
     paid_balance_credits: int
     free_grant_remaining: int
     free_grant_total: int
-    free_grant_resets_at: str
+    free_grant_resets_at: str | None
     premium_active: bool
     subscription_status: str | None
     subscription_current_period_end: str | None
@@ -176,50 +174,10 @@ class UsageSnapshot:
     entries: list[LedgerRow] = field(default_factory=list)
 
 
-def credits_for_tokens(total_tokens: int) -> int:
-    """Convert a run's token total to the credits it costs, rounding up.
-
-    A partial credit's worth of tokens still costs a whole credit, so a run that
-    consumed any tokens at all is never billed zero. The rate
-    (:data:`TOKENS_PER_CREDIT`) carries the markup and is re-priceable here.
-
-    Args:
-        total_tokens: Tokens the run consumed; non-positive yields ``0``.
-
-    Returns:
-        The non-negative credit cost of the run.
-    """
-    if total_tokens <= 0:
-        return 0
-    return -(-total_tokens // TOKENS_PER_CREDIT)
-
-
-def platform_fee_credits(total_tokens: int) -> int:
-    """Return the platform-fee portion of a run's credit cost, rounding up.
-
-    The refundable amount on a no-lift **BYOK** run: the provider tokens were
-    spent on the user's own key, so only Skynet's fee
-    (:data:`PLATFORM_FEE_FRACTION` of the full cost) can be returned. Always at
-    least one credit when the run cost anything, so a covered run is never
-    refunded zero.
-
-    Args:
-        total_tokens: Tokens the run consumed.
-
-    Returns:
-        The non-negative platform-fee credits (``0`` when the run cost nothing).
-    """
-    cost = credits_for_tokens(total_tokens)
-    if cost <= 0:
-        return 0
-    return max(1, math.ceil(cost * PLATFORM_FEE_FRACTION))
-
-
 def platform_fee_credits_for_usage(usages: Iterable[ModelUsage]) -> int:
     """Return the platform-fee portion of a run's per-model credit cost, rounding up.
 
-    The per-model analogue of :func:`platform_fee_credits`: the
-    :data:`PLATFORM_FEE_FRACTION` share of the run's full per-model cost
+    The :data:`PLATFORM_FEE_FRACTION` share of the run's full per-model cost
     (:func:`core.billing.pricing.credits_for_usage`). The only amount a **BYOK**
     run is charged or refunded, since the provider tokens were paid on the user's
     own key. At least one credit when the run cost anything.
@@ -289,11 +247,11 @@ def cost_ceiling_budget(spendable: int, token_source: str) -> int:
 
 
 def _grant_allotment(customer: BillingCustomerModel | None) -> int:
-    """Return the account's monthly grant size — larger for an active Premium sub.
+    """Return the account's grant size — the Premium allotment or the free grant.
 
-    The renewing allowance the grant tops up to: :data:`PREMIUM_GRANT_CREDITS` for
-    an account whose subscription is in an active state, else the free-tier
-    :data:`FREE_GRANT_CREDITS`. A missing row (``None``) is a free account.
+    The size a grant is seeded/renewed to: :data:`PREMIUM_GRANT_CREDITS` (renewing)
+    for an account whose subscription is in an active state, else the one-time
+    free-tier :data:`FREE_GRANT_CREDITS`. A missing row (``None``) is a free account.
 
     Args:
         customer: The account's billing row, or ``None`` when it has none yet.
@@ -334,38 +292,49 @@ class StripeBillingService:
         self._engine = engine
 
     def _resolve_grant(self, customer: BillingCustomerModel | None, now: datetime) -> int:
-        """Apply the lazy rolling free-grant reset and return the current remaining.
+        """Seed the one-time free grant / renew the Premium allotment; return remaining.
 
-        Seeds an unseeded row (NULL window — a new account or one created before
-        these columns existed) to a full grant anchored ``GRANT_WINDOW_DAYS`` out.
-        When the window has elapsed, tops the grant back up to a flat
-        :data:`FREE_GRANT_CREDITS` (leftover expires — non-cumulative) and advances
-        the anchor. Mutates ``customer`` in place; the caller commits. A missing
-        row (``None``) is treated as a full grant without persisting anything — the
-        row is created on the first real mutation (debit / top-up).
+        Seeds an unseeded row (NULL ``grant_remaining`` — a new account) to a full
+        grant: the one-time :data:`FREE_GRANT_CREDITS` for a free account (with no
+        reset anchor, since it never renews), or the :data:`PREMIUM_GRANT_CREDITS`
+        allotment for an active subscriber (anchored ``GRANT_WINDOW_DAYS`` out). The
+        free grant is lifetime — once seeded it only ever draws down. Only an active
+        Premium allotment renews: when its window has elapsed it tops back up to the
+        allotment (leftover expires — non-cumulative) and the anchor advances.
+        Mutates ``customer`` in place; the caller commits. A missing row (``None``)
+        reads a full free grant without persisting — the row is created on the first
+        real mutation (debit / top-up).
 
         Args:
             customer: The account's billing row, or ``None`` when it has none yet.
-            now: Reference instant for the window comparison.
+            now: Reference instant for the renewal-window comparison.
 
         Returns:
-            Credits remaining in the account's current free grant.
+            Credits remaining in the account's current grant.
         """
         if customer is None:
             return FREE_GRANT_CREDITS
         allotment = _grant_allotment(customer)
-        if customer.grant_reset_at is None or customer.grant_remaining is None:
+        is_premium = customer.subscription_status in _ACTIVE_SUBSCRIPTION_STATUSES
+        if customer.grant_remaining is None:
+            # ``grant_remaining`` (not ``grant_reset_at``) is the unseeded sentinel:
+            # a seeded free account intentionally has a NULL reset anchor, so keying
+            # off the anchor would re-seed — and re-grant — the free credits on every
+            # read.
             customer.grant_remaining = allotment
-            customer.grant_reset_at = _grant_window_end(now)
+            customer.grant_reset_at = _grant_window_end(now) if is_premium else None
             customer.updated_at = now
             return allotment
-        reset_at = customer.grant_reset_at
-        if reset_at.tzinfo is None:
-            reset_at = reset_at.replace(tzinfo=UTC)
-        if now > reset_at:
-            customer.grant_remaining = allotment
-            customer.grant_reset_at = _grant_window_end(now)
-            customer.updated_at = now
+        # Only the Premium allotment renews; the free grant is one-time and stays
+        # put (draws down to zero) until the account subscribes or buys credits.
+        if is_premium and customer.grant_reset_at is not None:
+            reset_at = customer.grant_reset_at
+            if reset_at.tzinfo is None:
+                reset_at = reset_at.replace(tzinfo=UTC)
+            if now > reset_at:
+                customer.grant_remaining = allotment
+                customer.grant_reset_at = _grant_window_end(now)
+                customer.updated_at = now
         return int(customer.grant_remaining)
 
     def _stripe(self) -> Any:
@@ -610,13 +579,13 @@ class StripeBillingService:
 
         A pure DB read — no Stripe call — so it serves even when Stripe is
         unconfigured (balance 0, no subscription). The free grant reflects real
-        spend: run completions debit it via :meth:`debit_run`, and the rolling,
-        non-cumulative reset is lazy-evaluated here — if the window has elapsed
-        the grant tops back up to a flat allowance and the anchor advances (any
-        leftover expires). Paid (Premium) accounts anchor the reset to the Stripe
-        subscription period instead of the rolling window. A read that mutates an
-        existing row (seed or reset) is persisted; a brand-new account reads a
-        full grant without creating a row until its first real mutation.
+        spend: run completions debit it via :meth:`debit_run`. The free grant is
+        one-time (seeded once, never renewed), so ``free_grant_resets_at`` is
+        ``None`` for a free account; only an active Premium allotment renews, and
+        its reset instant is the Stripe subscription period end. A read that
+        mutates an existing row (seed, or a Premium renewal) is persisted; a
+        brand-new account reads a full grant without creating a row until its
+        first real mutation.
 
         Args:
             username: Account to summarize.
@@ -658,21 +627,22 @@ class StripeBillingService:
                 else None
             )
             premium_active = status in _ACTIVE_SUBSCRIPTION_STATUSES if status else False
-            # Paid accounts anchor the grant top-up to their subscription period;
-            # everyone else to the rolling per-user window (``grant_reset_at``).
-            if premium_active and period_end is not None:
-                resets_at = period_end
-            elif customer is not None and customer.grant_reset_at is not None:
-                resets_at = customer.grant_reset_at
-            else:
-                resets_at = _grant_window_end(now)
+            # Only a Premium allotment renews — anchored to the subscription period
+            # (falling back to the stored window). The free grant is one-time, so a
+            # non-premium account reports no reset instant.
+            resets_at: datetime | None = None
+            if premium_active:
+                if period_end is not None:
+                    resets_at = period_end
+                elif customer is not None and customer.grant_reset_at is not None:
+                    resets_at = customer.grant_reset_at
             if grant_dirty:
                 session.commit()
             return WalletSnapshot(
                 paid_balance_credits=customer.credit_balance if customer else 0,
                 free_grant_remaining=grant_remaining,
                 free_grant_total=_grant_allotment(customer),
-                free_grant_resets_at=resets_at.isoformat(),
+                free_grant_resets_at=resets_at.isoformat() if resets_at is not None else None,
                 premium_active=premium_active,
                 subscription_status=status,
                 subscription_current_period_end=period_end.isoformat() if period_end else None,
@@ -764,9 +734,9 @@ class StripeBillingService:
     def spendable_credits(self, username: str) -> int:
         """Return the account's total spendable credits (free grant + paid balance).
 
-        Applies the lazy rolling grant reset first, so an account whose window
-        elapsed reads its topped-up grant rather than a stale figure. A mutated
-        row (seed or reset) is persisted. This is the figure the submit gate
+        Resolves the grant first (seeding a new account's one-time free grant, or
+        applying a due Premium renewal), so the figure is never stale. A mutated
+        row (seed or renewal) is persisted. This is the figure the submit gate
         checks: ``> 0`` means a managed run may start. A brand-new account reads a
         full grant without a row being created.
 
@@ -802,9 +772,9 @@ class StripeBillingService:
         run is charged its full per-model token cost; a **BYOK** run is charged only
         Skynet's platform fee (:func:`run_cost_credits`), since the provider tokens
         were already paid on the user's own key — so credits still meter the
-        platform on a BYOK run without double-charging for inference. The rolling
-        grant reset is applied first so a run that completes after the window
-        elapsed bills against the topped-up grant. Idempotency is the caller's
+        platform on a BYOK run without double-charging for inference. The grant is
+        resolved first (seeding a new account, or applying a due Premium renewal)
+        so the debit lands against a current grant. Idempotency is the caller's
         responsibility: the worker debits inside its once-only completion claim, so
         a redelivered/re-run job never double-charges. A run costing zero credits
         writes nothing.

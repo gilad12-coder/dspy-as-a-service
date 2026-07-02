@@ -51,11 +51,14 @@ def _parse_instant(value: str | None, default: datetime) -> datetime:
 
 
 class FreeGrantResponse(BaseModel):
-    """The renewing monthly mini-model allowance."""
+    """The account's credit grant: one-time for free, monthly for Premium."""
 
-    credits_remaining: int = Field(description="Credits left in the current monthly grant.")
-    credits_total: int = Field(description="Full monthly grant size.")
-    resets_at: str = Field(description="ISO-8601 instant the grant tops back up.")
+    credits_remaining: int = Field(description="Credits left in the grant.")
+    credits_total: int = Field(description="Full grant size (500 free, or the Premium allotment).")
+    resets_at: str | None = Field(
+        default=None,
+        description="ISO-8601 instant a Premium allotment next renews; null for the one-time free grant.",
+    )
 
 
 class UsageEntryResponse(BaseModel):
@@ -72,7 +75,7 @@ class UsageEntryResponse(BaseModel):
 class WalletResponse(BaseModel):
     """The caller's wallet: purchased balance, free grant, subscription, recent ledger."""
 
-    paid_balance_credits: int = Field(description="Purchased credits — the frontier-access gate.")
+    paid_balance_credits: int = Field(description="Purchased credit balance, on top of the free grant.")
     free_grant: FreeGrantResponse
     premium_active: bool = Field(description="Whether an active Premium subscription is in effect.")
     subscription_status: str | None = Field(

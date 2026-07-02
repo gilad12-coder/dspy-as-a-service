@@ -103,8 +103,8 @@ class _OptimizationRequestBase(BaseModel):
             "User-set per-job spend ceiling, in credits. A DSPy optimizer's token use is not "
             "linear (bootstrapping, compile steps, validation loops), so the wizard shows a "
             "projected bracket rather than a tight estimate and lets the user cap the run here. "
-            "The run is hard-stopped server-side once accumulated token usage exceeds the budget "
-            "this cap buys (TOKENS_PER_CREDIT each); a stopped run fails and is never billed. "
+            "The run is hard-stopped server-side once its accumulated credit cost reaches this "
+            "cap; a stopped run fails and is never billed. "
             "Omit (null) for no ceiling."
         ),
     )

@@ -28,11 +28,11 @@ const PILL_TRANSITION = { type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1
 // Premium column shows it as the big number above "/ month".
 const FOUNDERS_USD_PER_MONTH = 20;
 
-// Monthly credit allotment per tier, mirroring the backend constants
-// (FREE_GRANT_CREDITS / PREMIUM_GRANT_CREDITS in core/billing/service.py). The
-// Free and Premium columns surface these as the concrete grant size; a Premium
-// month replaces, not stacks on, the free grant.
-const FREE_GRANT_CREDITS = 200;
+// Credit allotment per tier, mirroring the backend constants (FREE_GRANT_CREDITS
+// / PREMIUM_GRANT_CREDITS in core/billing/service.py). The Free column surfaces
+// the one-time lifetime grant a new account gets; the Premium column surfaces the
+// monthly allotment a subscription buys, which replaces (not stacks on) it.
+const FREE_GRANT_CREDITS = 500;
 const PREMIUM_MONTHLY_CREDITS = 2500;
 
 /** Whole-dollar USD (no cents) for the big price number — "$20", not "$20.00". */
@@ -178,7 +178,6 @@ function FreeCard({ premiumActive, index }: { premiumActive: boolean; index: num
   const features: Feature[] = [
     { label: formatMsg("billing.plans.free.f1", { p1: formatCredits(FREE_GRANT_CREDITS, locale) }) },
     { label: msg("billing.plans.free.f2") },
-    { label: msg("billing.plans.free.f3") },
     { label: msg("billing.plans.free.f5") },
     { label: msg("billing.plans.free.f4") },
   ];
@@ -367,7 +366,6 @@ function CreditsCard({ index }: { index: number }) {
   const features: Feature[] = [
     { label: msg("billing.plans.credits.f1") },
     { label: msg("billing.plans.credits.f2") },
-    { label: msg("billing.plans.credits.f3") },
   ];
 
   return (

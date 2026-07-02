@@ -7,9 +7,8 @@ function prices a projected token volume (the pre-run estimate) and a measured
 token volume (the post-run charge), so the two reconcile by construction — only
 their inputs differ.
 
-This is the per-model successor to the flat ``TOKENS_PER_CREDIT`` rate for
-*runs*: model choice now moves the price, and :data:`MARKUP` is the single
-re-priceable margin lever (mirrored by the Stripe per-unit price). The module is
+Model choice moves a run's price, and :data:`MARKUP` is the single re-priceable
+margin lever (mirrored by the Stripe per-unit price). The module is
 a leaf — it depends only on LiteLLM's static price table — so both the billing
 service and any estimator can import it without cycles.
 """
@@ -30,8 +29,9 @@ CREDIT_USD_VALUE = 0.01
 # This is the single re-priceable margin lever for runs (it replaces the markup
 # that used to be implicit in the flat token→credit rate). Tune here; keep it in
 # step with the Stripe metered per-unit price so ledger and invoice agree.
-# 1.5× nets ~42% gross margin after OpenRouter's 5.5% deposit fee.
-MARKUP = 1.5
+# 1.72× nets ~42% gross margin at list price (~39% after OpenRouter's 5.5%
+# deposit fee).
+MARKUP = 1.72
 
 # Fallback per-token cost (USD) for a model LiteLLM does not price — a mid-tier
 # standard rate so an unknown model estimates and charges sanely rather than at

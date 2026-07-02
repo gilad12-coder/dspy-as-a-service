@@ -459,7 +459,8 @@ export async function revokeApiToken(): Promise<void> {
 export interface BillingFreeGrant {
   credits_remaining: number;
   credits_total: number;
-  resets_at: string;
+  /** ISO-8601 instant a Premium allotment renews; `null` for the one-time free grant. */
+  resets_at: string | null;
 }
 
 export interface BillingUsageEntry {

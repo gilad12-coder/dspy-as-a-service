@@ -43,8 +43,8 @@ PAYLOAD_OVERVIEW_OPTIMIZER_KWARGS = "optimizer_kwargs"
 PAYLOAD_OVERVIEW_COMPILE_KWARGS = "compile_kwargs"
 PAYLOAD_OVERVIEW_TASK_FINGERPRINT = "task_fingerprint"
 # Token source the run bills against: "managed" (Skynet credits) or "byok"
-# (the user's own provider key). Threaded from the wizard so frontier-locking
-# and the "No lift, no charge" guarantee are enforced server-side, not advisory.
+# (the user's own provider key). Threaded from the wizard so the "No lift, no
+# charge" guarantee is enforced server-side, not advisory.
 PAYLOAD_OVERVIEW_TOKEN_SOURCE = "token_source"
 # Low/high ends of the projected credit bracket the wizard showed at submit.
 # Persisted so the post-run proof moment can reconcile the estimate against the
@@ -98,8 +98,8 @@ PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE = "optimization_type"
 OPTIMIZATION_TYPE_RUN = "run"
 OPTIMIZATION_TYPE_GRID_SEARCH = "grid_search"
 
-# Token source modes. "managed" bills Skynet credits and gates frontier models;
-# "byok" runs on the user's own provider key and never locks the catalog.
+# Token source modes. "managed" bills Skynet credits; "byok" runs on the user's
+# own provider key and is never billed.
 TOKEN_SOURCE_MANAGED = "managed"
 TOKEN_SOURCE_BYOK = "byok"
 

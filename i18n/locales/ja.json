@@ -68,7 +68,6 @@
     "winningCandidate": "最良候補"
   },
   "messages": {
-    "billing.frontier_locked": "{model} はフロンティアモデルです。マネージドコンピュートで実行するにはクレジットを追加するか Premium を開始してください。または独自のキーに切り替えてください。",
     "billing.insufficient_credits": "残高がありません。マネージドコンピュートで実行するには、クレジットを追加するか、無料付与枠が更新されるまでお待ちください。",
     "accounts.email_taken": "そのメールアドレスはすでに登録されています。",
     "accounts.invalid_credentials": "メールアドレスまたはパスワードが正しくありません。",

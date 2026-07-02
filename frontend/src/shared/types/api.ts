@@ -89,10 +89,9 @@ interface OptimizationRequestBase {
   shuffle?: boolean;
   seed?: number | null;
   is_private?: boolean;
-  // How the run's tokens are billed: "managed" (Skynet credits, frontier models
-  // gated until paid/Premium) or "byok" (the user's own key — nothing locked).
-  // Threaded from the wizard's token-source toggle so frontier-locking and the
-  // guarantee are enforced server-side, not advisory. Defaults to "managed".
+  // How the run's tokens are billed: "managed" (Skynet credits) or "byok" (the
+  // user's own key — not billed). Threaded from the wizard's token-source toggle
+  // so the guarantee is enforced server-side, not advisory. Defaults to "managed".
   token_source?: "managed" | "byok";
   // User-set Max Cost Ceiling in credits [FG-1]. A DSPy job's token use isn't
   // linear, so the wizard shows a projected bracket instead of a tight estimate
