@@ -22,6 +22,7 @@ from ..config import settings
 from ..constants import STRUCTURAL_PROGRESS_EVENTS, TQDM_KEY_PREFIX
 from .base import JobRecord, LogEntryRecord, ProgressEventRecord
 from .checkpoint_store import GepaCheckpoint, PostgresCheckpointBlobStore, PostgresGridPairResultStore
+from .migrate import sync_migration_head
 from .models import (
     EMBEDDING_DIM,
     AgentStagedDatasetModel,
@@ -181,6 +182,11 @@ class RemoteDBJobStore:
                     conn if conn is not None else self._engine,
                     tables=non_embedding_tables,
                 )
+        # Now that the tables exist, bring Alembic in step: adopt an unstamped
+        # database at head, or apply migrations pending on an adopted one. This
+        # is how column-adding migrations land — create_all never ALTERs a table
+        # an earlier boot already created.
+        sync_migration_head(self._engine)
         # Lexical search ranking. Independent of pgvector/embeddings: BM25
         # serves the default (embeddings-off) explore search when pg_search is
         # installed, otherwise the ILIKE fallback handles it.

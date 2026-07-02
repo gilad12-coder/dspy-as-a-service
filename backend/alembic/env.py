@@ -51,7 +51,20 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations against a live database."""
+    """Run migrations against a live database.
+
+    The application boot path shares its advisory-locked connection through
+    ``config.attributes['connection']`` so migrations run inside the same
+    transaction as ``create_all`` and never open a second, unserialized session;
+    that connection already owns the transaction, so no ``begin_transaction`` is
+    started here. A bare ``alembic`` CLI invocation has no such attribute and
+    builds its own engine from ``REMOTE_DB_URL`` instead.
+    """
+    shared = config.attributes.get("connection")
+    if shared is not None:
+        context.configure(connection=shared, target_metadata=target_metadata)
+        context.run_migrations()
+        return
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
