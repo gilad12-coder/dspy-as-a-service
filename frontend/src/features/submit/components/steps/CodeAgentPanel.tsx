@@ -22,8 +22,6 @@ interface Props {
   className?: string;
 }
 
-const COMPOSER_PLACEHOLDER = msg("auto.features.submit.components.steps.codeagentpanel.literal.1");
-
 export function CodeAgentPanel({ agent, disabled, disabledReason, className }: Props) {
   const [draft, setDraft] = React.useState("");
 
@@ -152,7 +150,7 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
           disabled
             ? disabledReason ||
               msg("auto.features.submit.components.steps.codeagentpanel.literal.4")
-            : COMPOSER_PLACEHOLDER
+            : msg("auto.features.submit.components.steps.codeagentpanel.literal.1")
         }
         disabled={disabled}
         streaming={streaming}

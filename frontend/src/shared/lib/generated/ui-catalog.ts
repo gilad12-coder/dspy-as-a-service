@@ -2494,6 +2494,10 @@ export type MessageKey =
   | "tagger.session.delete_body"
   | "tagger.session.delete_title"
   | "tagger.session.notfound"
+  | "tagger.session.pin"
+  | "tagger.session.rename_title"
+  | "tagger.session.section_title"
+  | "tagger.session.unpin"
   | "tagger.session.untitled"
   | "tagger.upload.parse_failed"
   | "trajectory.a11y.node_label"
@@ -5094,6 +5098,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.session.delete_body": "האם למחוק את סשן התיוג",
   "tagger.session.delete_title": "מחיקת סשן תיוג",
   "tagger.session.notfound": "סשן התיוג לא נמצא.",
+  "tagger.session.pin": "הצמדה",
+  "tagger.session.rename_title": "שינוי שם סשן",
+  "tagger.session.section_title": "סשני תיוג",
+  "tagger.session.unpin": "ביטול הצמדה",
   "tagger.session.untitled": "תיוג ללא שם",
   "tagger.upload.parse_failed": "טעינת הקובץ נכשלה",
   "trajectory.a11y.node_label": "מועמד {id}, דור {gen}, ציון {score}",
@@ -12893,6 +12901,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.session.delete_body": "Delete this labeling session",
   "tagger.session.delete_title": "Delete labeling session",
   "tagger.session.notfound": "This labeling session could not be found.",
+  "tagger.session.pin": "Pin",
+  "tagger.session.rename_title": "Rename session",
+  "tagger.session.section_title": "Labeling sessions",
+  "tagger.session.unpin": "Unpin",
   "tagger.session.untitled": "Untitled labeling",
   "tagger.upload.parse_failed": "Failed to load the file",
   "trajectory.a11y.node_label": "Candidate {id}, generation {gen}, score {score}",

@@ -46,11 +46,6 @@ const ROLE_OPTIONS: MemberRole[] = ["viewer", "editor"];
 // (not a real role — selecting it opens the transfer confirmation instead).
 const TRANSFER_VALUE = "__transfer__";
 
-// Split the confirm copy around the {name} token so the target username can
-// render emphasized below in an isolated <bdi>, matching the optimization dialog.
-const [TRANSFER_BODY_BEFORE, TRANSFER_BODY_AFTER] =
-  msg("share.transfer.confirm_body").split("{name}");
-
 /** Localised label for a member tier role. */
 function roleLabel(role: ShareRole): string {
   if (role === "editor") return msg("share.role.editor");
@@ -80,6 +75,11 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
   const [savingAccess, setSavingAccess] = useState(false);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
   const [transferring, setTransferring] = useState(false);
+  // Split the confirm copy around the {name} token so the target username can
+  // render emphasized below in an isolated <bdi>, matching the optimization dialog.
+  // Resolved per-render (not at module scope) so it can't capture a raw key before
+  // the message shim has loaded.
+  const [transferBodyBefore, transferBodyAfter] = msg("share.transfer.confirm_body").split("{name}");
 
   const isOwner = !!state?.owner && state.owner.toLowerCase() === me;
 
@@ -422,9 +422,9 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
             title={msg("share.transfer.confirm_title")}
             description={
               <>
-                {TRANSFER_BODY_BEFORE}
+                {transferBodyBefore}
                 <bdi className="font-mono font-medium text-foreground">{transferTarget}</bdi>
-                {TRANSFER_BODY_AFTER}
+                {transferBodyAfter}
               </>
             }
           />

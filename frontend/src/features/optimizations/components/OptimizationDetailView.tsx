@@ -31,6 +31,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
 import { PingDot } from "@/shared/ui/ping-dot";
+import { markRecentSession } from "@/shared/lib/recent-session";
 import { FadeIn } from "@/shared/ui/motion";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import {
@@ -268,6 +269,15 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
   const [payload, setPayload] = useState<OptimizationPayloadResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Stamp this run as recent only while it's actually in progress, so the
+  // sidebar's Optimize button resumes ongoing work — never a finished run the
+  // user merely opened to look at. Share/demo views aren't the caller's to resume.
+  useEffect(() => {
+    if (skipNetwork || !id || !job || !ACTIVE_STATUSES.has(job.status)) return;
+    markRecentSession("optimization", id);
+    return () => markRecentSession("optimization", id);
+  }, [id, skipNetwork, job?.status]);
   // Re-run mints a brand-new run per call, so guard against a double-click
   // firing two retries (and creating two duplicate runs).
   const [retrying, setRetrying] = useState(false);

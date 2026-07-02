@@ -47,15 +47,6 @@ const ROLE_OPTIONS: MemberRole[] = ["viewer", "editor"];
 // (not a real role — selecting it opens the transfer confirmation instead).
 const TRANSFER_VALUE = "__transfer__";
 
-// Split the confirm copy around the {name} token so the target username can
-// render emphasized (matching the delete dialog) instead of as plain inline
-// text. The username goes in a <bdi> below so its directionality stays
-// isolated inside the Hebrew sentence — the same protection formatTemplate's
-// FSI/PDI wrapping would have provided.
-const [TRANSFER_BODY_BEFORE, TRANSFER_BODY_AFTER] = msg("share.transfer.confirm_body").split(
-  "{name}",
-);
-
 /** Localised label for a member tier role. */
 function roleLabel(role: ShareRole): string {
   if (role === "editor") return msg("share.role.editor");
@@ -106,6 +97,13 @@ export function ShareDialog({
   const [savingVisibility, setSavingVisibility] = useState(false);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
   const [transferring, setTransferring] = useState(false);
+  // Split the confirm copy around the {name} token so the target username can
+  // render emphasized (matching the delete dialog) instead of as plain inline
+  // text. The username goes in a <bdi> below so its directionality stays
+  // isolated inside the Hebrew sentence — the same protection formatTemplate's
+  // FSI/PDI wrapping would have provided. Resolved per-render (not at module
+  // scope) so it can't capture a raw key before the message shim has loaded.
+  const [transferBodyBefore, transferBodyAfter] = msg("share.transfer.confirm_body").split("{name}");
 
   // Only the current owner may hand ownership off (admins manage via other
   // tools); a member never sees the option. ``state.owner`` is the structural
@@ -511,9 +509,9 @@ export function ShareDialog({
             title={msg("share.transfer.confirm_title")}
             description={
               <>
-                {TRANSFER_BODY_BEFORE}
+                {transferBodyBefore}
                 <bdi className="font-mono font-medium text-foreground">{transferTarget}</bdi>
-                {TRANSFER_BODY_AFTER}
+                {transferBodyAfter}
               </>
             }
           />

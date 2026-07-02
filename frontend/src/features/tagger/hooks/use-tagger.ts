@@ -1,18 +1,21 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   createTaggerSession,
   updateTaggerSession,
+  stashTaggerSession,
   type TaggerSessionDetail,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { markRecentSession } from "@/shared/lib/recent-session";
 import type { DataRow, Annotation, TaggerConfig, AnnotationMode } from "../lib/types";
 
 /** Window event the sidebar listens for to refresh its saved-session list. */
 export const TAGGER_SESSIONS_CHANGED = "tagger-sessions-changed";
 
-const AUTOSAVE_DEBOUNCE_MS = 1000;
+const AUTOSAVE_INTERVAL_MS = 60_000;
 
 function isTagged(ann: Annotation, mode: AnnotationMode): boolean {
   if (ann === undefined || ann === null) return false;
@@ -37,10 +40,12 @@ function deriveSessionName(config: TaggerConfig): string {
  * Pass ``initialSession`` to rehydrate a saved session (the ``/tagger/[id]``
  * restore route); omit it to start fresh at the setup wizard. Once annotating
  * begins the session is created server-side and annotation progress is
- * autosaved (debounced) so it survives reloads and follows the user across
- * devices, the way optimizations persist.
+ * autosaved on a 60-second loop — plus an immediate flush whenever you leave
+ * the page — so it survives reloads and follows the user across devices, the
+ * way optimizations persist.
  */
 export function useTagger(initialSession?: TaggerSessionDetail | null) {
+  const router = useRouter();
   const [phase, setPhase] = useState<"setup" | "annotating">(
     (initialSession?.phase as "setup" | "annotating" | undefined) ?? "setup",
   );
@@ -57,6 +62,24 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   const [currentIndex, setCurrentIndex] = useState(initialSession?.current_index ?? 0);
   const [sessionId, setSessionId] = useState<string | null>(initialSession?.id ?? null);
 
+  // Latest annotation progress not yet written to the server, or null when the
+  // server is up to date. Buffered here so the 60s autosave loop (and the
+  // leave-the-page flush) can batch many edits into one cheap PUT.
+  const pendingRef = useRef<{
+    annotations: Record<string, unknown>;
+    current_index: number;
+    phase: "setup" | "annotating";
+  } | null>(null);
+
+  // Always-current mirrors so the post-create handoff captures any rows tagged
+  // while the dataset was still uploading (before the session id existed).
+  const annotationsRef = useRef(annotations);
+  const currentIndexRef = useRef(currentIndex);
+  useEffect(() => {
+    annotationsRef.current = annotations;
+    currentIndexRef.current = currentIndex;
+  }, [annotations, currentIndex]);
+
   const startAnnotating = useCallback((cfg: TaggerConfig, rows: DataRow[], cols: string[]) => {
     setConfig(cfg);
     setData(rows);
@@ -66,8 +89,8 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     setPhase("annotating");
     setSessionId(null);
     // Persist immediately so the session shows up in the sidebar and survives a
-    // reload; the returned id then drives the debounced progress autosaves. The
-    // dataset is uploaded once here, not on every subsequent annotation.
+    // reload; the returned id then drives the progress autosaves. The dataset is
+    // uploaded once here, not on every subsequent annotation.
     void createTaggerSession({
       name: deriveSessionName(cfg),
       phase: "annotating",
@@ -80,12 +103,26 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       .then((detail) => {
         setSessionId(detail.id);
         window.dispatchEvent(new Event(TAGGER_SESSIONS_CHANGED));
+        // Move to the session's own URL so leaving and returning (control panel,
+        // browser back) rehydrates from the server instead of dropping back to
+        // the wizard. Hand off the freshest local state — including any rows
+        // tagged while the dataset uploaded — so the gate resumes without a
+        // refetch. Skip the redirect if the user already navigated away.
+        stashTaggerSession({
+          ...detail,
+          annotations: annotationsRef.current as Record<string, unknown>,
+          current_index: currentIndexRef.current,
+        });
+        const path = window.location.pathname;
+        if (path === "/tagger" || path.startsWith("/tagger/")) {
+          router.replace(`/tagger/${detail.id}`);
+        }
       })
       .catch(() => {
         // Best-effort: a storage-quota 409 opens the shared modal centrally and
         // the session simply isn't persisted — annotation still works in memory.
       });
-  }, []);
+  }, [router]);
 
   const backToSetup = useCallback(() => {
     setConfig(null);
@@ -99,21 +136,59 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     setSessionId(null);
   }, []);
 
-  // Debounced autosave of annotation progress. Only the mutable fields are sent
-  // (annotations / cursor / phase) — never the dataset — so saves stay cheap.
+  // Buffer each edit as pending rather than writing on every keystroke; the
+  // autosave loop and the leave-the-page handler drain it. Only the mutable
+  // fields are tracked (annotations / cursor / phase) — never the dataset.
   useEffect(() => {
     if (!sessionId || phase !== "annotating") return;
-    const handle = window.setTimeout(() => {
-      void updateTaggerSession(sessionId, {
-        annotations: annotations as unknown as Record<string, unknown>,
-        current_index: currentIndex,
-        phase,
-      }).catch(() => {
-        // Autosave is best-effort; the next change retries with the full state.
-      });
-    }, AUTOSAVE_DEBOUNCE_MS);
-    return () => window.clearTimeout(handle);
+    pendingRef.current = {
+      annotations: annotations as unknown as Record<string, unknown>,
+      current_index: currentIndex,
+      phase,
+    };
   }, [sessionId, annotations, currentIndex, phase]);
+
+  // Write any buffered progress to the server. Best-effort: on failure the
+  // payload is re-armed (unless a newer edit already replaced it) so the next
+  // tick retries. Reads the ref, so it always sends the freshest state.
+  const flush = useCallback(() => {
+    if (!sessionId || !pendingRef.current) return;
+    const payload = pendingRef.current;
+    pendingRef.current = null;
+    void updateTaggerSession(sessionId, payload).catch(() => {
+      pendingRef.current = pendingRef.current ?? payload;
+    });
+  }, [sessionId]);
+
+  // Autosave progress every 60 seconds — and immediately whenever the user
+  // leaves (tab hidden, page unload, or navigating back to the control panel,
+  // which unmounts this hook) — so a returning user resumes where they left off
+  // without a write on every annotation. At each of those points we also stamp
+  // this session as recently visited, so the sidebar's Text-tagging button can
+  // resume it when the user returns within the resume window.
+  useEffect(() => {
+    if (!sessionId) return;
+    markRecentSession("tagger", sessionId);
+    const interval = window.setInterval(() => {
+      markRecentSession("tagger", sessionId);
+      flush();
+    }, AUTOSAVE_INTERVAL_MS);
+    const onLeave = () => {
+      markRecentSession("tagger", sessionId);
+      flush();
+    };
+    const onHide = () => {
+      if (document.visibilityState === "hidden") onLeave();
+    };
+    window.addEventListener("pagehide", onLeave);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("pagehide", onLeave);
+      document.removeEventListener("visibilitychange", onHide);
+      onLeave();
+    };
+  }, [sessionId, flush]);
 
   const navigate = useCallback(
     (dir: 1 | -1) => {

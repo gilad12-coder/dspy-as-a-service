@@ -5,7 +5,12 @@ import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Loader2, XCircle } from "lucide-react";
 
-import { getTaggerSession, setApiAuthToken, type TaggerSessionDetail } from "@/shared/lib/api";
+import {
+  getTaggerSession,
+  takeTaggerSession,
+  setApiAuthToken,
+  type TaggerSessionDetail,
+} from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
 import { TaggerView } from "./TaggerView";
 
@@ -28,6 +33,13 @@ export function TaggerSessionGate() {
 
   useEffect(() => {
     if (status === "loading") return;
+    // Resume instantly from the wizard's same-tab handoff when present; a genuine
+    // reload or a return from elsewhere finds none and fetches from the server.
+    const handed = takeTaggerSession(id);
+    if (handed) {
+      setState({ mode: "ready", session: handed });
+      return;
+    }
     let cancelled = false;
     setState({ mode: "loading" });
     if (session?.backendAccessToken) setApiAuthToken(session.backendAccessToken);

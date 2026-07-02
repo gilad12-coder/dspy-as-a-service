@@ -58,10 +58,14 @@ const MAX_AUTO_FIX = 2;
 // Synthetic opener shown as a user bubble before the seed reply. It gives
 // the conversation a natural starting point — the AI's first message reads
 // as a response to a real request, not a monologue — and lets the user
-// revise it via the edit pencil to steer the initial generation.
-const SEED_USER_MESSAGE = formatMsg("auto.features.submit.hooks.use.code.agent.template.1", {
-  p1: TERMS.dataset,
-});
+// revise it via the edit pencil to steer the initial generation. Resolved on
+// call (not at module scope) so it can't capture a raw key before the message
+// shim has loaded.
+function seedUserMessage(): string {
+  return formatMsg("auto.features.submit.hooks.use.code.agent.template.1", {
+    p1: TERMS.dataset,
+  });
+}
 
 interface AgentMessage {
   role: "assistant" | "user";
@@ -327,7 +331,7 @@ export function useCodeAgent(args: UseCodeAgentArgs): CodeAgentState {
       } else {
         setMessages((m) => [
           ...m,
-          { role: "user", content: SEED_USER_MESSAGE },
+          { role: "user", content: seedUserMessage() },
           { role: "assistant", content: "", toolCalls: [] },
         ]);
       }

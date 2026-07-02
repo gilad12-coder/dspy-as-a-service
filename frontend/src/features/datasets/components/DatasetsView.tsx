@@ -11,6 +11,7 @@ import { isStorageQuotaError, saveDataset, type DatasetSummary } from "@/shared/
 import { msg } from "@/shared/lib/messages";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
 import { cn } from "@/shared/lib/utils";
+import { TaggingSessionsPanel } from "@/features/tagger";
 import { useDatasets } from "../hooks/use-datasets";
 import { DatasetCard } from "./DatasetCard";
 import { DatasetDetailDialog } from "./DatasetDetailDialog";
@@ -123,6 +124,8 @@ export function DatasetsView() {
           </Button>
         )}
       </div>
+
+      <TaggingSessionsPanel />
 
       <div
         onDragOver={(e) => {

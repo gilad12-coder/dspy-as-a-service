@@ -9,9 +9,10 @@
  * each fed from a single per-request catalog the root layout builds:
  *
  * - **Browser**: the `window.__SKYNET_MESSAGES__` shim the layout injects before
- *   hydration, so even module-scope `msg()` calls (resolved while the bundle
- *   evaluates, ahead of any React render) find their strings. Read lazily on the
- *   first `msg()` and cached in a module global.
+ *   hydration, so module-scope `msg()` calls (resolved while the bundle evaluates,
+ *   ahead of any React render) can find their strings. Cached in a module global on
+ *   the first `msg()` that observes a populated shim; a call made before the shim
+ *   runs degrades transiently rather than freezing `{}` (see `getActiveMessages`).
  * - **Server Components** (RSC graph): a per-request slot held by React's
  *   `cache()`, pinned once at the top of the root layout — race-free across
  *   concurrent requests.
@@ -81,7 +82,16 @@ export function getActiveMessages(): UiCatalog {
     if (slot !== null) return slot;
     return globalThis.__SKYNET_REQUEST_MESSAGES__ ?? {};
   }
-  clientMessages = window.__SKYNET_MESSAGES__ ?? {};
+  // The beforeInteractive shim can execute *after* a module chunk has already
+  // run a module-scope msg() — the webpack prod build orders some chunk <script>s
+  // ahead of the inline shim, so window.__SKYNET_MESSAGES__ is still undefined at
+  // that first call. Caching {} here would then freeze every later lookup to its
+  // raw key across the whole app. Only cache once the shim has populated the
+  // global; until then degrade transiently so the first post-hydration read
+  // recovers the real catalog.
+  const injected = window.__SKYNET_MESSAGES__;
+  if (injected === undefined) return {};
+  clientMessages = injected;
   return clientMessages;
 }
 

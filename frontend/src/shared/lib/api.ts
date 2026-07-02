@@ -1072,6 +1072,25 @@ export function getTaggerSession(sessionId: string) {
   return request<TaggerSessionDetail>(`/tagging-sessions/${sessionId}`);
 }
 
+// Same-tab handoff from the setup wizard to the /tagger/[id] gate. The wizard
+// creates a session then navigates to its URL; stashing the freshest local
+// state here lets the gate resume instantly without a refetch (and without
+// racing the autosave). A genuine reload finds an empty map and falls back to
+// getTaggerSession.
+const taggerHandoff = new Map<string, TaggerSessionDetail>();
+
+/** Stash a just-created session so the gate can resume it after navigation. */
+export function stashTaggerSession(detail: TaggerSessionDetail) {
+  taggerHandoff.set(detail.id, detail);
+}
+
+/** Consume a stashed session (one-shot); null when nothing was handed off. */
+export function takeTaggerSession(sessionId: string): TaggerSessionDetail | null {
+  const detail = taggerHandoff.get(sessionId) ?? null;
+  taggerHandoff.delete(sessionId);
+  return detail;
+}
+
 /** Persist a new session (uploads the dataset once); returns it with its new id. */
 export async function createTaggerSession(body: {
   name: string;
@@ -1575,19 +1594,6 @@ export interface SidebarJobItem {
   resumable?: boolean;
   /** Caller's share role on a "shared with me" item; absent on own optimizations. */
   role?: ShareRole | null;
-  /**
-   * Discriminates the item kind in the unified sidebar list. Absent / "optimization"
-   * for runs; "tagger" for a saved text-labeling session, which the row renderer
-   * branches on (links to /tagger/[id], tagger-only actions). The fields below are
-   * populated only for tagger items.
-   */
-  kind?: "optimization" | "tagger";
-  /** Tagger session: rows labeled so far (sidebar progress badge). */
-  tagged_count?: number;
-  /** Tagger session: total rows in the dataset. */
-  row_count?: number;
-  /** Tagger session: "setup" | "annotating". */
-  phase?: string;
 }
 
 export function listJobsSidebar(params?: { username?: string; limit?: number; offset?: number }) {
