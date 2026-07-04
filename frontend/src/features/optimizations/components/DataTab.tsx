@@ -25,7 +25,10 @@ import type {
   OptimizationStatusResponse,
   EvalExampleResult,
 } from "@/shared/types/api";
-import { DEMO_OPTIMIZATION_ID } from "@/features/tutorial";
+// Leaf import on purpose — the tutorial barrel deliberately does not re-export
+// the demo fixtures (see features/tutorial/index.ts).
+// eslint-disable-next-line no-restricted-imports -- deliberate leaf import; see above
+import { DEMO_OPTIMIZATION_ID } from "@/features/tutorial/lib/demo-data";
 
 type Split = "all" | "train" | "val" | "test";
 type ProgramType = "optimized" | "baseline";

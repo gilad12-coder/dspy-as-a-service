@@ -454,6 +454,9 @@ class JobModel(Base):
 
     __table_args__ = (
         Index("ix_jobs_status_created_at", "status", "created_at"),
+        # "my optimizations, newest first" — the dominant list/sidebar query —
+        # becomes a single backward index range scan instead of filter + sort.
+        Index("ix_jobs_username_created_at", "username", "created_at"),
         Index("ix_jobs_lease_expires_at", "lease_expires_at"),
         # Lookup index for idempotency dedup; the corresponding PG-only
         # uniqueness guard (partial on idempotency_key IS NOT NULL) lives in

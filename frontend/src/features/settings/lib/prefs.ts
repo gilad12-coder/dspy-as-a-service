@@ -11,7 +11,9 @@ export interface AgentShortcut {
 }
 
 export interface UserPrefs {
-  advancedMode: boolean;
+  // Layout preference, not a capability gate: advanced sections are always
+  // reachable; this only pre-expands them everywhere.
+  expandAdvanced: boolean;
   // Lightweight mode for low-resource machines: kills motion/blur and swaps the
   // heavy visualizations (charts, SVG trajectory tree, code editor) for static
   // equivalents. See LiteModeProvider.
@@ -23,7 +25,7 @@ export interface UserPrefs {
 }
 
 export const PREF_KEYS: Record<keyof UserPrefs, string> = {
-  advancedMode: "skynet.prefs.advanced-mode",
+  expandAdvanced: "skynet.prefs.expand-advanced",
   liteMode: "skynet.prefs.lite-mode",
   wizardCodeAssist: "skynet.prefs.wizard.code-assist",
   wizardSplitMode: "skynet.prefs.wizard.split-mode",
@@ -40,13 +42,31 @@ export const DEFAULT_AGENT_SHORTCUT: AgentShortcut = {
 };
 
 export const DEFAULT_PREFS: UserPrefs = {
-  advancedMode: false,
+  expandAdvanced: false,
   liteMode: false,
   wizardCodeAssist: "auto",
   wizardSplitMode: "auto",
   agentTrustMode: "ask",
   agentShortcut: DEFAULT_AGENT_SHORTCUT,
 };
+
+// The retired global "advanced mode" toggle. Users who had it on expect the
+// advanced sections open, so it seeds expandAdvanced once and is then removed.
+const LEGACY_ADVANCED_MODE_KEY = "skynet.prefs.advanced-mode";
+
+export function migrateLegacyPrefs(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const legacy = window.localStorage.getItem(LEGACY_ADVANCED_MODE_KEY);
+    if (legacy === null) return;
+    if (legacy === "true" && window.localStorage.getItem(PREF_KEYS.expandAdvanced) === null) {
+      window.localStorage.setItem(PREF_KEYS.expandAdvanced, "true");
+    }
+    window.localStorage.removeItem(LEGACY_ADVANCED_MODE_KEY);
+  } catch {
+    /* noop */
+  }
+}
 
 export function readPref<K extends keyof UserPrefs>(key: K): UserPrefs[K] {
   if (typeof window === "undefined") return DEFAULT_PREFS[key];

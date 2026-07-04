@@ -671,8 +671,18 @@ class StripeBillingService:
             the most recent ledger rows.
         """
         with Session(self._engine) as session:
+            # Project only the columns the fold below reads — the full entity
+            # (with description text on every row) is materialized for
+            # thousands of rows on a wide window, only to be reduced to sums.
             rows = (
-                session.query(CreditLedgerModel)
+                session.query(
+                    CreditLedgerModel.id,
+                    CreditLedgerModel.created_at,
+                    CreditLedgerModel.kind,
+                    CreditLedgerModel.model,
+                    CreditLedgerModel.delta_credits,
+                    CreditLedgerModel.description,
+                )
                 .filter(
                     CreditLedgerModel.username == username,
                     CreditLedgerModel.created_at >= start,

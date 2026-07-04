@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { ChevronDown } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -14,7 +14,6 @@ import { Separator } from "@/shared/ui/primitives/separator";
 import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
-import { useUserPrefs } from "@/features/settings";
 
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 
@@ -28,13 +27,9 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
     setOptimizationType,
     isPrivate,
     setIsPrivate,
+    optimizationTypeOpen,
+    setOptimizationTypeOpen,
   } = w;
-  const { prefs } = useUserPrefs();
-  const advancedMode = prefs.advancedMode;
-
-  useEffect(() => {
-    if (!advancedMode && jobType !== "run") setOptimizationType("run");
-  }, [advancedMode, jobType, setOptimizationType]);
 
   return (
     <Card
@@ -136,14 +131,34 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
             ))}
           </div>
         </div>
-        {advancedMode && (
-          <>
-            <Separator />
-            <div className="space-y-3">
-              <Label>
+        <Separator />
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setOptimizationTypeOpen(!optimizationTypeOpen)}
+            aria-expanded={optimizationTypeOpen}
+            className="flex w-full cursor-pointer items-center justify-between gap-2"
+          >
+            <span className="flex items-baseline gap-2">
+              <span className="text-sm leading-none font-medium">
                 {msg("auto.features.submit.components.steps.basicsstep.6")}
                 {TERMS.optimization}
-              </Label>
+              </span>
+              {!optimizationTypeOpen && (
+                <span className="text-xs text-muted-foreground">
+                  {jobType === "run" ? TERMS.optimizationTypeRun : TERMS.optimizationTypeGrid}
+                </span>
+              )}
+            </span>
+            <ChevronDown
+              className={cn(
+                "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
+                optimizationTypeOpen && "rotate-180",
+              )}
+            />
+          </button>
+          {optimizationTypeOpen && (
+            <div className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200">
               <div className="relative inline-flex w-full rounded-lg bg-muted p-1 gap-1">
                 <div
                   className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-100 ease-out"
@@ -192,8 +207,8 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
                 ))}
               </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
       </CardContent>
     </Card>
   );

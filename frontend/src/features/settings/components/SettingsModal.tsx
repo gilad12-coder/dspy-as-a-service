@@ -198,10 +198,13 @@ function AccountTab() {
 
       <SettingsRow
         icon={Sparkles}
-        label={msg("settings.account.advanced.label")}
-        description={msg("settings.account.advanced.description")}
+        label={msg("settings.account.expand_advanced.label")}
+        description={msg("settings.account.expand_advanced.description")}
       >
-        <Switch checked={prefs.advancedMode} onCheckedChange={(v) => setPref("advancedMode", v)} />
+        <Switch
+          checked={prefs.expandAdvanced}
+          onCheckedChange={(v) => setPref("expandAdvanced", v)}
+        />
       </SettingsRow>
 
       <SettingsRow
@@ -1268,12 +1271,17 @@ export function SettingsModal() {
                       className="absolute inset-0 rounded-lg bg-primary/[0.08] ring-1 ring-primary/10"
                       style={{ borderInlineStart: "3px solid var(--primary)" }}
                       transition={
-                        prefersReduced ? { duration: 0 } : { type: "spring", stiffness: 350, damping: 28 }
+                        prefersReduced
+                          ? { duration: 0 }
+                          : { type: "spring", stiffness: 350, damping: 28 }
                       }
                     />
                   )}
                   <span className="relative z-10 flex flex-1 items-center gap-2.5 min-w-0">
-                    <Icon aria-hidden="true" className="size-4 shrink-0 transition-colors duration-200" />
+                    <Icon
+                      aria-hidden="true"
+                      className="size-4 shrink-0 transition-colors duration-200"
+                    />
                     <span className="truncate flex-1">{msg(labelKey)}</span>
                   </span>
                 </TabsTrigger>

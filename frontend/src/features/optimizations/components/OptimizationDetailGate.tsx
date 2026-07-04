@@ -13,7 +13,10 @@ import {
 } from "@/shared/lib/api";
 import { formatMsg } from "@/shared/lib/messages";
 import { TERMS } from "@/shared/lib/terms";
-import { DEMO_OPTIMIZATION_ID, DEMO_GRID_OPTIMIZATION_ID } from "@/features/tutorial";
+// Leaf import on purpose — the tutorial barrel deliberately does not re-export
+// the demo fixtures (see features/tutorial/index.ts).
+// eslint-disable-next-line no-restricted-imports -- deliberate leaf import; see above
+import { DEMO_OPTIMIZATION_ID, DEMO_GRID_OPTIMIZATION_ID } from "@/features/tutorial/lib/demo-data";
 import { OptimizationDetailView } from "./OptimizationDetailView";
 import { OptimizationDetailSkeleton } from "./OptimizationDetailSkeleton";
 

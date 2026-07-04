@@ -49,6 +49,9 @@ import {
   serveSharedOptimization,
 } from "@/shared/lib/api";
 import type { LMActivity, ServeInfoResponse, WorkflowNodeTrace } from "@/shared/types/api";
+// Leaf import on purpose — the tutorial barrel deliberately does not re-export
+// the demo fixtures (see features/tutorial/index.ts).
+// eslint-disable-next-line no-restricted-imports -- deliberate leaf import; see above
 import {
   DEMO_OPTIMIZATION_ID,
   DEMO_GRID_OPTIMIZATION_ID,
@@ -56,7 +59,7 @@ import {
   buildGridDemoJob,
   resetDemoSimulation,
   startDemoSimulation,
-} from "@/features/tutorial";
+} from "@/features/tutorial/lib/demo-data";
 import { OptimizationDetailSkeleton } from "./OptimizationDetailSkeleton";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { formatBytes } from "@/shared/lib/formatters";
@@ -126,8 +129,7 @@ function mergeJobDelta(
     po > 0 && prev?.progress_events
       ? [...prev.progress_events.slice(0, po), ...next.progress_events]
       : next.progress_events;
-  const logs =
-    lo > 0 && prev?.logs ? [...prev.logs.slice(0, lo), ...next.logs] : next.logs;
+  const logs = lo > 0 && prev?.logs ? [...prev.logs.slice(0, lo), ...next.logs] : next.logs;
   return { ...next, progress_events, logs };
 }
 
@@ -224,11 +226,7 @@ function FailureCopyButton({ text }: { text: string }) {
         }}
         className="-me-1 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-[#B04030]/70 transition-colors hover:bg-[#B04030]/10 hover:text-[#B04030] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B04030]/30"
       >
-        {copied ? (
-          <Check className="size-3.5 text-[#B04030]" />
-        ) : (
-          <Copy className="size-3.5" />
-        )}
+        {copied ? <Check className="size-3.5 text-[#B04030]" /> : <Copy className="size-3.5" />}
       </button>
     </TooltipButton>
   );
@@ -302,10 +300,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
   useEffect(() => {
     if (!isDemoMode) return;
     const fromTrajectory = demoReplayKey > 0;
-    return startDemoSimulation(
-      { setJob: (fn) => setJob(fn), setLoading },
-      { fromTrajectory },
-    );
+    return startDemoSimulation({ setJob: (fn) => setJob(fn), setLoading }, { fromTrajectory });
   }, [isDemoMode, demoReplayKey]);
 
   useEffect(() => {
@@ -491,8 +486,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
     closeOnEvents: ["done"],
     poll: () => void fetchJob(),
     pollIntervalMs: 5000,
-    shouldStopPolling: () =>
-      !!jobRef.current && TERMINAL_STATUSES.has(jobRef.current.status),
+    shouldStopPolling: () => !!jobRef.current && TERMINAL_STATUSES.has(jobRef.current.status),
     // Stream auth failed even after a token refresh — re-fetch through the
     // self-healing request() path so a still-bad token surfaces the existing
     // error banner instead of the page silently freezing on stale data.
@@ -630,9 +624,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
     };
     const isGrid = job.optimization_type === "grid_search";
     const loader =
-      isGrid && activePairIndex != null
-        ? getPairServeInfo(id, activePairIndex)
-        : getServeInfo(id);
+      isGrid && activePairIndex != null ? getPairServeInfo(id, activePairIndex) : getServeInfo(id);
     loader
       .then((info) => {
         setServeInfo(info);
@@ -826,8 +818,8 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
   const optimizedPrompt = isPairContext
     ? (activePair.program_artifact?.optimized_prompt ?? null)
     : (job?.result?.program_artifact?.optimized_prompt ??
-       job?.grid_result?.best_pair?.program_artifact?.optimized_prompt ??
-       null);
+      job?.grid_result?.best_pair?.program_artifact?.optimized_prompt ??
+      null);
 
   // The real optimized artifact for a react run lives in react_overlay (tuned
   // tool descriptions / display names), not the reasoning-predictor prompt.
@@ -839,8 +831,8 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
   const playgroundDemos = isPairContext
     ? (activePair.program_artifact?.optimized_prompt?.demos ?? [])
     : (job?.result?.program_artifact?.optimized_prompt?.demos ??
-       job?.grid_result?.best_pair?.program_artifact?.optimized_prompt?.demos ??
-       []);
+      job?.grid_result?.best_pair?.program_artifact?.optimized_prompt?.demos ??
+      []);
 
   // LM activity is pair-scoped in pair view, otherwise the run's.
   const viewLmActivity: LMActivity | null = isPairContext
@@ -909,12 +901,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
   // maps to the viewer tier, "editor" to the editor tier. null / "owner" is the
   // owner's own view (or admin/co-owner) and gets no banner.
   const callerRole = isShare ? shareRole : effectiveRole;
-  const sharedTier =
-    callerRole === "editor"
-      ? "editor"
-      : callerRole === "viewer"
-        ? "viewer"
-        : null;
+  const sharedTier = callerRole === "editor" ? "editor" : callerRole === "viewer" ? "viewer" : null;
   const sharedByOwner = isShare ? shareData?.owner : job.username;
   // Split "מאת {name}" so the emphasis (semibold/foreground) lands only on the
   // owner name; the "by" prefix stays muted meta text.
@@ -924,7 +911,11 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
   // standalone job's "isTerminal" gate so the data/export surfaces appear
   // identically in both contexts.
   const isPairTerminal = isPairContext
-    ? !!(activePair.error || activePair.program_artifact || activePair.optimized_test_metric != null)
+    ? !!(
+        activePair.error ||
+        activePair.program_artifact ||
+        activePair.optimized_test_metric != null
+      )
     : false;
 
   // Tab gating uniform across run and pair contexts.
@@ -933,8 +924,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
   // needs a seeded serveInfo (the backend nulls serve_info below editor).
   const showPlaygroundTab = isShare
     ? shareCanServe && job.status === "success" && !!serveInfo
-    : job.status === "success" &&
-      (job.optimization_type === "grid_search" || !!serveInfo);
+    : job.status === "success" && (job.optimization_type === "grid_search" || !!serveInfo);
   const showDataTab = isShare
     ? !!shareData?.dataset
     : isPairContext
@@ -959,8 +949,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
 
   const pairCount = effectiveJob?.grid_result?.pair_results.length ?? 0;
   const isBestPair =
-    isPairContext &&
-    effectiveJob?.grid_result?.best_pair?.pair_index === activePair.pair_index;
+    isPairContext && effectiveJob?.grid_result?.best_pair?.pair_index === activePair.pair_index;
 
   return (
     <div className="space-y-6 pb-12">
@@ -1079,87 +1068,89 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
               </div>
             </div>
             {!isShare && (
-            <div className="flex items-center gap-2">
-              {canManageShare && <ShareDialog optimizationId={job.optimization_id} />}
-              <TooltipButton tooltip={msg("auto.app.optimizations.id.page.4")}>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  onClick={() => router.push(`/submit?clone=${job.optimization_id}`)}
-                  aria-label={msg("auto.app.optimizations.id.page.literal.4")}
-                >
-                  <CopyPlus className="size-4" />
-                </Button>
-              </TooltipButton>
-              {canEditRun &&
-                (job.status === "failed" || job.status === "cancelled" || job.status === "paused") &&
-                (job.resumable ? (
-                  <TooltipButton tooltip={msg("optimization.resume_tooltip")}>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      onClick={handleResume}
-                      disabled={resuming}
-                      aria-label={msg("optimization.resume")}
-                    >
-                      {/* Mirror the triangle to point in the reading direction — left in RTL, right in LTR. */}
-                      <Play
-                        className={`size-4${getActiveDir() === "rtl" ? " -scale-x-100" : ""}${
-                          resuming ? " animate-spin" : ""
-                        }`}
-                      />
-                    </Button>
-                  </TooltipButton>
-                ) : (
-                  <TooltipButton tooltip={msg("optimization.rerun_tooltip")}>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      onClick={handleRetry}
-                      disabled={retrying}
-                      aria-label={msg("optimization.rerun")}
-                    >
-                      <RotateCcw className={`size-4${retrying ? " animate-spin" : ""}`} />
-                    </Button>
-                  </TooltipButton>
-                ))}
-              {canEditRun && isActive && job.pausable && (
-                <TooltipButton tooltip={msg("optimization.pause_tooltip")}>
+              <div className="flex items-center gap-2">
+                {canManageShare && <ShareDialog optimizationId={job.optimization_id} />}
+                <TooltipButton tooltip={msg("auto.app.optimizations.id.page.4")}>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="size-8"
-                    onClick={handlePause}
-                    disabled={pausing}
-                    aria-label={msg("optimization.pause")}
+                    onClick={() => router.push(`/submit?clone=${job.optimization_id}`)}
+                    aria-label={msg("auto.app.optimizations.id.page.literal.4")}
                   >
-                    <Pause className={`size-4${pausing ? " animate-pulse" : ""}`} />
+                    <CopyPlus className="size-4" />
                   </Button>
                 </TooltipButton>
-              )}
-              {canEditRun && isActive && (
-                <TooltipButton tooltip={msg("auto.app.optimizations.id.page.5")}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-0 focus-visible:border-0"
-                    onClick={handleCancel}
-                    aria-label={msg("auto.app.optimizations.id.page.literal.5")}
-                  >
-                    <XCircle className="size-4" />
-                  </Button>
-                </TooltipButton>
-              )}
-              {canDeleteRun && isTerminal && (
-                <DeleteJobDialog
-                  optimizationId={job.optimization_id}
-                  onDeleted={() => router.push("/")}
-                />
-              )}
-            </div>
+                {canEditRun &&
+                  (job.status === "failed" ||
+                    job.status === "cancelled" ||
+                    job.status === "paused") &&
+                  (job.resumable ? (
+                    <TooltipButton tooltip={msg("optimization.resume_tooltip")}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        onClick={handleResume}
+                        disabled={resuming}
+                        aria-label={msg("optimization.resume")}
+                      >
+                        {/* Mirror the triangle to point in the reading direction — left in RTL, right in LTR. */}
+                        <Play
+                          className={`size-4${getActiveDir() === "rtl" ? " -scale-x-100" : ""}${
+                            resuming ? " animate-spin" : ""
+                          }`}
+                        />
+                      </Button>
+                    </TooltipButton>
+                  ) : (
+                    <TooltipButton tooltip={msg("optimization.rerun_tooltip")}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        onClick={handleRetry}
+                        disabled={retrying}
+                        aria-label={msg("optimization.rerun")}
+                      >
+                        <RotateCcw className={`size-4${retrying ? " animate-spin" : ""}`} />
+                      </Button>
+                    </TooltipButton>
+                  ))}
+                {canEditRun && isActive && job.pausable && (
+                  <TooltipButton tooltip={msg("optimization.pause_tooltip")}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      onClick={handlePause}
+                      disabled={pausing}
+                      aria-label={msg("optimization.pause")}
+                    >
+                      <Pause className={`size-4${pausing ? " animate-pulse" : ""}`} />
+                    </Button>
+                  </TooltipButton>
+                )}
+                {canEditRun && isActive && (
+                  <TooltipButton tooltip={msg("auto.app.optimizations.id.page.5")}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-0 focus-visible:border-0"
+                      onClick={handleCancel}
+                      aria-label={msg("auto.app.optimizations.id.page.literal.5")}
+                    >
+                      <XCircle className="size-4" />
+                    </Button>
+                  </TooltipButton>
+                )}
+                {canDeleteRun && isTerminal && (
+                  <DeleteJobDialog
+                    optimizationId={job.optimization_id}
+                    onDeleted={() => router.push("/")}
+                  />
+                )}
+              </div>
             )}
             {shareCanInteract && (
               <div className="flex items-center gap-2">
@@ -1212,7 +1203,9 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
           onPrev={() => router.push(`/optimizations/${id}?pair=${activePair.pair_index - 1}`)}
           onNext={() => router.push(`/optimizations/${id}?pair=${activePair.pair_index + 1}`)}
           onClone={() =>
-            router.push(`/submit?clone=${effectiveJob.optimization_id}&pair=${activePair.pair_index}`)
+            router.push(
+              `/submit?clone=${effectiveJob.optimization_id}&pair=${activePair.pair_index}`,
+            )
           }
           onCancel={handleCancel}
           onDeleted={() => router.push(`/optimizations/${id}`)}
@@ -1473,9 +1466,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
 
             {showLogsTab && (
               <TabsContent value="logs">
-                <LogsTab
-                  logs={isPairContext ? pairFilteredLogs : (job.logs ?? [])}
-                />
+                <LogsTab logs={isPairContext ? pairFilteredLogs : (job.logs ?? [])} />
               </TabsContent>
             )}
 

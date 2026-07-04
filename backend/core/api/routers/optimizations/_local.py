@@ -39,6 +39,7 @@ from ...sharing_access import ShareRole
 from .._helpers import (
     compute_task_fingerprint,
     filter_ids_at_least,
+    get_job_no_payload,
     stable_seed,
     strip_api_key,
 )
@@ -344,7 +345,7 @@ def bulk_set_flag(
     )
     for oid in allowed:
         try:
-            job_data = job_store.get_job(oid)
+            job_data = get_job_no_payload(job_store, oid)
         except KeyError:
             skipped.append(BulkMetadataSkipped(optimization_id=oid, reason="not_found"))
             continue

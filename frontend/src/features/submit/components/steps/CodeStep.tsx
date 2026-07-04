@@ -13,7 +13,6 @@ import { Skeleton } from "@/shared/ui/skeleton";
 import { tip } from "@/shared/lib/tooltips";
 import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
-import { useUserPrefs } from "@/features/settings";
 
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 import type { ArtifactStatus } from "@/shared/hooks/use-code-agent";
@@ -77,8 +76,6 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
     columnRoles,
     agent,
   } = w;
-  const { prefs } = useUserPrefs();
-
   const hasContext = React.useMemo(() => {
     if (!parsedDataset || parsedDataset.rowCount === 0) return false;
     const hasInput = Object.values(columnRoles).some((r) => r === "input");
@@ -94,16 +91,13 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
         })
     : undefined;
 
-  const moduleChip = prefs.advancedMode
-    ? {
-        label: MODULE_META.find((m) => m.value === moduleName.toLowerCase())?.label ?? moduleName,
-        onChangeModule: reopenModulePicker,
-      }
-    : null;
+  const moduleChip = {
+    label: MODULE_META.find((m) => m.value === moduleName.toLowerCase())?.label ?? moduleName,
+    onChangeModule: reopenModulePicker,
+  };
 
-  // Advanced mode: the step opens as a module picker; once a module is
-  // committed the step re-renders as that module's editor, with a chip in
-  // the header to go back and switch. The three views share one
+  // The step opens as the default module's editor; the chip in the header
+  // reopens the picker to switch modules. The three views share one
   // AnimatePresence so picking or switching a module cross-fades instead of
   // hard-swapping the card.
   const view = moduleSelectionRequired ? "picker" : isWorkflow ? "workflow" : "code";
@@ -416,8 +410,7 @@ interface ModeToggleProps {
   value: "auto" | "manual";
   onChange: (mode: "auto" | "manual") => void;
   disabledReason?: string;
-  // Chip showing the chosen module with a click-to-switch affordance;
-  // null in simple mode, where the module is always predict.
+  // Chip showing the chosen module with a click-to-switch affordance.
   module?: { label: string; onChangeModule: () => void } | null;
 }
 
@@ -431,13 +424,15 @@ function ModeToggle({ value, onChange, disabledReason, module }: ModeToggleProps
           <button
             type="button"
             onClick={module.onChangeModule}
-            title={msg("submit.module.change")}
-            aria-label={msg("submit.module.change")}
             data-tutorial="module-selector"
-            className="group inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border/60 bg-background px-2 py-1 text-xs font-semibold text-foreground shadow-xs transition-colors hover:border-[#C8A882]"
+            className="group inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border/60 bg-background px-2 py-1 text-xs shadow-xs transition-colors hover:border-[#C8A882]"
           >
-            {module.label}
-            <Repeat2 className="size-3 text-muted-foreground transition-colors group-hover:text-foreground" />
+            <span className="font-semibold text-foreground">{module.label}</span>
+            <span aria-hidden className="h-3 w-px bg-border/80" />
+            <span className="flex items-center gap-1 font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+              {msg("submit.module.change")}
+              <Repeat2 className="size-3" />
+            </span>
           </button>
         )}
         <div className="flex items-center gap-1.5 text-xs text-[#5C4D40]">

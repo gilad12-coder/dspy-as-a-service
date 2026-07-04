@@ -23,7 +23,7 @@ from typing import Annotated, Literal
 
 import dspy
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from ....config import settings
@@ -153,7 +153,7 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
     """
 
     # ``response_model`` is kept for the OpenAPI schema, but the handler
-    # returns ``JSONResponse`` directly so it can emit a 304 path and attach
+    # returns a ``Response`` directly so it can emit a 304 path and attach
     # ETag / Cache-Control headers. FastAPI skips response_model validation
     # whenever the handler returns a Response instance, so the model class is
     # documentation-only here — every code path still constructs an
@@ -163,7 +163,7 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         response_model=OptimizationStatusResponse,
         summary="Full optimization detail with logs, progress, metrics, and result",
     )
-    def get_job(optimization_id: str, request: Request, current_user: AuthenticatedUserDep) -> JSONResponse:
+    def get_job(optimization_id: str, request: Request, current_user: AuthenticatedUserDep) -> Response:
         """Return full optimization detail with logs, progress, metrics, and result.
 
         Supports conditional GET via ``If-None-Match`` / ``ETag`` (304 when
@@ -181,16 +181,23 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
             current_user: Authenticated caller resolved from the bearer token.
 
         Returns:
-            A :class:`fastapi.responses.JSONResponse` whose body is a
-            serialized :class:`OptimizationStatusResponse` (or a bare 304
-            with no body when ``If-None-Match`` matches the current ETag).
+            A JSON :class:`fastapi.Response` whose body is a serialized
+            :class:`OptimizationStatusResponse` (or a bare 304 with no body
+            when ``If-None-Match`` matches the current ETag).
 
         Raises:
             DomainError: 404 when the optimization id is unknown or
                 inaccessible to the caller.
         """
 
-        job_data, role = load_job_with_role(job_store, optimization_id, current_user)
+        # ``include_payload=False``: this is the endpoint an active-run client
+        # re-polls every 1-2s, and nothing in the response reads the raw
+        # payload (the training dataset) — deferring it skips a multi-MB JSONB
+        # read per poll. Ownership still resolves via ``payload_overview``,
+        # which is denormalized alongside the payload (see _reassign_job_owner).
+        job_data, role = load_job_with_role(
+            job_store, optimization_id, current_user, include_payload=False
+        )
         # Null for the owner's own view (implicitly owner); the grant tier when a
         # member reached this run via sharing, so the UI can gate actions.
         effective_role = None if role == ShareRole.owner else str(role)
@@ -320,8 +327,12 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         else:
             headers["Cache-Control"] = "private, max-age=1"
 
-        return JSONResponse(
-            content=response_data.model_dump(mode="json"),
+        # Single pydantic→JSON pass; ``JSONResponse(model_dump(...))`` would
+        # serialize the (potentially multi-MB, all-logs-and-progress) body
+        # twice — once to a dict tree and once through json.dumps.
+        return Response(
+            content=response_data.model_dump_json(),
+            media_type="application/json",
             headers=headers,
         )
 

@@ -127,7 +127,9 @@ export function DatasetDetailDialog({
     });
     if (sortKey) {
       result = [...result].sort((a, b) => {
-        const cmp = cellText(a[sortKey]).localeCompare(cellText(b[sortKey]), "he", { numeric: true });
+        const cmp = cellText(a[sortKey]).localeCompare(cellText(b[sortKey]), "he", {
+          numeric: true,
+        });
         return sortDir === "asc" ? cmp : -cmp;
       });
     }
@@ -234,7 +236,11 @@ export function DatasetDetailDialog({
                   </div>
                 ) : columns.length === 0 || allRows.length === 0 ? (
                   <div className="py-8">
-                    <EmptyState variant="list" icon={Inbox} title={msg("datasets.detail.rows_empty")} />
+                    <EmptyState
+                      variant="list"
+                      icon={Inbox}
+                      title={msg("datasets.detail.rows_empty")}
+                    />
                   </div>
                 ) : (
                   <FadeIn className="flex min-h-0 flex-1 flex-col">
@@ -254,7 +260,14 @@ export function DatasetDetailDialog({
                       </div>
                     ) : (
                       <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border/50">
-                        <Table className="table-fixed">
+                        {/* Per-column width floor: on narrow viewports the
+                            fixed-layout table scrolls sideways (the Table
+                            container is overflow-x-auto) instead of crushing
+                            every column to an unreadable sliver. */}
+                        <Table
+                          className="table-fixed"
+                          style={{ minWidth: `${columns.length * 6}rem` }}
+                        >
                           <TableHeader>
                             <TableRow>
                               {columns.map((col) => (

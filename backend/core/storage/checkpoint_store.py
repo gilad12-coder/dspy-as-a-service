@@ -172,6 +172,29 @@ class PostgresCheckpointBlobStore:
             )
             return row is not None
 
+    def has_any_batch(self, optimization_ids: list[str]) -> set[str]:
+        """Return the subset of ids that have at least one saved checkpoint.
+
+        One ``IN (...)`` round trip replaces a per-row :meth:`has_any` probe
+        on list pages.
+
+        Args:
+            optimization_ids: Job ids to test.
+
+        Returns:
+            The ids with at least one checkpoint row.
+        """
+        if not optimization_ids:
+            return set()
+        with Session(self._engine) as session:
+            rows = (
+                session.query(GepaCheckpointModel.optimization_id)
+                .filter(GepaCheckpointModel.optimization_id.in_(optimization_ids))
+                .distinct()
+                .all()
+            )
+            return {row[0] for row in rows}
+
     @staticmethod
     def _to_checkpoint(row: GepaCheckpointModel) -> GepaCheckpoint:
         """Project an ORM row onto an immutable :class:`GepaCheckpoint`."""
@@ -265,3 +288,26 @@ class PostgresGridPairResultStore:
                 .first()
             )
             return row is not None
+
+    def has_any_batch(self, optimization_ids: list[str]) -> set[str]:
+        """Return the subset of ids that have at least one stored pair result.
+
+        One ``IN (...)`` round trip replaces a per-row :meth:`has_any` probe
+        on list pages.
+
+        Args:
+            optimization_ids: Grid job ids to test.
+
+        Returns:
+            The ids with at least one pair-result row.
+        """
+        if not optimization_ids:
+            return set()
+        with Session(self._engine) as session:
+            rows = (
+                session.query(GridPairResultModel.optimization_id)
+                .filter(GridPairResultModel.optimization_id.in_(optimization_ids))
+                .distinct()
+                .all()
+            )
+            return {row[0] for row in rows}

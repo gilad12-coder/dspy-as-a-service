@@ -1036,6 +1036,13 @@ header {
     box-shadow: var(--shadow-card);
   }
 
+  /* Hover-revealed controls (copy buttons, chip actions, message actions)
+     have no hover to trigger them on touch devices — without this they
+     occupy space but can never be seen or tapped. Keep them visible. */
+  [class*="group-hover:opacity-100"] {
+    opacity: 1;
+  }
+
   button[data-slot="button"][data-variant="default"]:hover {
     transform: none;
     box-shadow: none;
@@ -1051,6 +1058,12 @@ header {
     transform: scale(0.97);
     transition-duration: 100ms;
   }
+}
+
+/* Keyboard path for hover-revealed controls: tabbing onto one reveals it,
+   matching what hover shows pointer users. */
+[class*="group-hover:opacity-100"]:focus-visible {
+  opacity: 1;
 }
 
 /* ════════════════════════════════════════════

@@ -71,6 +71,7 @@ import {
 
 import { Button } from "@/shared/ui/primitives/button";
 import { cn } from "@/shared/lib/utils";
+import type { WorkflowDryRunStreamHandlers } from "@/shared/lib/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import type { WorkflowDryRunResponse, WorkflowNodeSpec, WorkflowSpec } from "@/shared/types/api";
 
@@ -100,7 +101,7 @@ export interface WorkflowDryRunBinding {
   modelName?: string | null;
   /** Prefill values for the input anchor's fields (first dataset row). */
   sampleInputs: Record<string, string>;
-  run: (inputs: Record<string, unknown>) => Promise<WorkflowDryRunResponse>;
+  run: (inputs: Record<string, unknown>, handlers: WorkflowDryRunStreamHandlers) => Promise<void>;
 }
 
 interface WorkflowCanvasProps {
@@ -749,6 +750,8 @@ function CanvasInner({
   const slideFrom = document.documentElement.dir === "rtl" ? -24 : 24;
   const inputAnchor = spec.nodes.find((n) => n.kind === "input");
   const inputFieldNames = inputAnchor ? nodePorts(inputAnchor).outputs.map((p) => p.name) : [];
+  const outputAnchor = spec.nodes.find((n) => n.kind === "output");
+  const outputFieldNames = outputAnchor ? nodePorts(outputAnchor).inputs.map((p) => p.name) : [];
 
   const menuNode = menu?.target.type === "node" ? menu.target.id : null;
   const menuEdge = menu?.target.type === "edge" ? menu.target.id : null;
@@ -858,7 +861,7 @@ function CanvasInner({
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -slideFrom, opacity: 0 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
-              className="absolute inset-y-0 start-0 z-20 w-[400px] overflow-hidden border-e border-border/40 bg-card shadow-xl"
+              className="absolute inset-y-0 start-0 z-20 w-[min(400px,90vw)] overflow-hidden border-e border-border/40 bg-card shadow-xl"
             >
               {agentPanel}
             </motion.div>
@@ -938,7 +941,7 @@ function CanvasInner({
               transition={{ duration: 0.18, ease: "easeOut" }}
               className={cn(
                 "absolute inset-y-0 end-0 z-20 overflow-hidden border-s border-border/40 bg-card shadow-xl",
-                fullscreen ? "w-[360px]" : "w-[320px]",
+                fullscreen ? "w-[min(360px,88vw)]" : "w-[min(320px,88vw)]",
               )}
             >
               <NodeInspector
@@ -966,6 +969,7 @@ function CanvasInner({
           open={dryRunOpen}
           onOpenChange={setDryRunOpen}
           inputFields={inputFieldNames}
+          outputFields={outputFieldNames}
           sampleInputs={dryRun.sampleInputs}
           modelName={dryRun.modelName ?? null}
           onPickModel={dryRun.pickModel}

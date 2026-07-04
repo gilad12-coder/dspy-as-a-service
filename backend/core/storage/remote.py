@@ -54,6 +54,10 @@ logger = logging.getLogger(__name__)
 MAX_PROGRESS_EVENTS = 5000
 MAX_LOG_ENTRIES = 5000
 PROGRESS_TRIM_SAMPLE_RATE = 100
+# Same sampled-retention idea as progress events: counting rows on every log
+# line doubles the round trips of the worker's hottest write path, and the cap
+# is a soft limit — drifting a batch above it between trims is harmless.
+LOG_TRIM_SAMPLE_RATE = 100
 _IMMUTABLE_JOB_COLUMNS = frozenset({"optimization_id", "notified_at", "idempotency_key"})
 # The JSON columns whose serialized size dominates a job's storage footprint and
 # therefore make up ``jobs.stored_bytes``. ``latest_metrics`` / ``message`` are
@@ -598,11 +602,15 @@ class RemoteDBJobStore:
         finally:
             session.close()
 
-    def get_job(self, optimization_id: str) -> JobRecord:
+    def get_job(self, optimization_id: str, *, include_payload: bool = True) -> JobRecord:
         """Retrieve a job by its ID.
 
         Args:
             optimization_id: ID of the job to fetch.
+            include_payload: When ``False``, the (potentially multi-MB)
+                ``payload`` JSONB is deferred on the query and reported as
+                ``None`` — hot polling paths that never read the training
+                dataset pass ``False`` to skip transferring it.
 
         Returns:
             The matching ``JobRecord``.
@@ -612,10 +620,13 @@ class RemoteDBJobStore:
         """
         session = self._get_session()
         try:
-            job = session.query(JobModel).filter(JobModel.optimization_id == optimization_id).first()
+            q = session.query(JobModel)
+            if not include_payload:
+                q = q.options(defer(JobModel.payload))
+            job = q.filter(JobModel.optimization_id == optimization_id).first()
             if not job:
                 raise KeyError(f"Job '{optimization_id}' not found")
-            return self._job_to_dict(job)
+            return self._job_to_dict(job, include_payload=include_payload)
         finally:
             session.close()
 
@@ -687,6 +698,30 @@ class RemoteDBJobStore:
             session.commit()
         finally:
             session.close()
+        self._evict_job_counters([optimization_id])
+
+    def _evict_job_counters(self, optimization_ids: list[str]) -> None:
+        """Drop the per-job in-memory bookkeeping for deleted jobs.
+
+        The sticky-tqdm map and the sampled trim counters are keyed by
+        optimization id and otherwise live for the process lifetime — without
+        eviction a long-lived store grows one entry per job ever processed.
+
+        Args:
+            optimization_ids: IDs whose in-memory entries should be dropped.
+        """
+        if hasattr(self, "_tqdm_sticky"):
+            with self._tqdm_sticky_lock:
+                for oid in optimization_ids:
+                    self._tqdm_sticky.pop(oid, None)
+        if hasattr(self, "_progress_event_counters"):
+            with self._progress_counter_lock:
+                for oid in optimization_ids:
+                    self._progress_event_counters.pop(oid, None)
+        if hasattr(self, "_log_append_counters"):
+            with self._log_counter_lock:
+                for oid in optimization_ids:
+                    self._log_append_counters.pop(oid, None)
 
     def get_jobs_status_by_ids(self, optimization_ids: list[str]) -> dict[str, str]:
         """Return a ``{id: status}`` map for the requested IDs.
@@ -754,9 +789,10 @@ class RemoteDBJobStore:
                 .delete(synchronize_session=False)
             )
             session.commit()
-            return int(deleted or 0)
         finally:
             session.close()
+        self._evict_job_counters(optimization_ids)
+        return int(deleted or 0)
 
     def save_gepa_checkpoint(self, optimization_id: str, data: bytes, iteration: int, pair_index: int = -1) -> None:
         """Persist (or replace) the latest GEPA state blob for one run or grid pair.
@@ -862,6 +898,28 @@ class RemoteDBJobStore:
             ``True`` when at least one pair result exists.
         """
         return self._grid_pair_results.has_any(optimization_id)
+
+    def resumable_state_ids(self, optimization_ids: list[str]) -> set[str]:
+        """Return the subset of ids holding any resumable state.
+
+        The batch counterpart of :meth:`has_gepa_checkpoint` /
+        :meth:`has_grid_pair_results`: two ``IN (...)`` round trips replace a
+        per-row existence probe when a list page annotates its ``resumable``
+        flags.
+
+        Args:
+            optimization_ids: Job ids to test.
+
+        Returns:
+            The ids with a saved checkpoint or at least one finished grid pair.
+        """
+        if not optimization_ids:
+            return set()
+        found = self._checkpoints.has_any_batch(optimization_ids)
+        remaining = [oid for oid in optimization_ids if oid not in found]
+        if remaining:
+            found |= self._grid_pair_results.has_any_batch(remaining)
+        return found
 
     def requeue_for_resume(self, optimization_id: str, *, bump_attempts: bool = True) -> int | None:
         """Re-queue a terminal job in place so a worker resumes it from its checkpoint.
@@ -1848,9 +1906,11 @@ class RemoteDBJobStore:
         """Append a log entry for a job.
 
         Silently discards the entry if the job no longer exists (a
-        late log from a cleaned-up run is not an error). When the
-        per-job log count reaches the configured retention cap, the oldest
-        entry is evicted before the new one is inserted.
+        late log from a cleaned-up run is not an error). Retention is
+        enforced by a sampled trim (mirroring progress events): every
+        ``LOG_TRIM_SAMPLE_RATE`` appends the oldest excess rows are deleted
+        in one batch, instead of paying a ``COUNT(*)`` on every line of the
+        worker's hottest write path.
 
         Args:
             optimization_id: ID of the job emitting the log.
@@ -1865,23 +1925,12 @@ class RemoteDBJobStore:
         try:
             # An existence probe, not a critical section: appends are independent
             # inserts, so the per-job row lock only serialized writers and starved
-            # the connection pool under concurrent log bursts. The cap eviction
+            # the connection pool under concurrent log bursts. The sampled trim
             # below tolerates a transient over-count without correctness loss.
             exists = session.query(JobModel.optimization_id).filter(JobModel.optimization_id == optimization_id).first()
             if exists is None:
                 logger.warning("Discarding log entry for missing job %s", optimization_id)
                 return
-
-            log_count = session.query(LogEntryModel).filter(LogEntryModel.optimization_id == optimization_id).count()
-            if log_count >= self._log_entries_cap:
-                oldest = (
-                    session.query(LogEntryModel)
-                    .filter(LogEntryModel.optimization_id == optimization_id)
-                    .order_by(LogEntryModel.timestamp.asc())
-                    .first()
-                )
-                if oldest:
-                    session.delete(oldest)
 
             entry = LogEntryModel(
                 optimization_id=optimization_id,
@@ -1893,6 +1942,52 @@ class RemoteDBJobStore:
             )
             session.add(entry)
 
+            session.commit()
+        finally:
+            session.close()
+        if self._should_trim_logs(optimization_id):
+            self._trim_logs(optimization_id)
+
+    def _should_trim_logs(self, optimization_id: str) -> bool:
+        """Return whether this append should trigger a sampled retention trim.
+
+        Args:
+            optimization_id: ID of the job whose in-memory append counter is advanced.
+
+        Returns:
+            ``True`` every ``LOG_TRIM_SAMPLE_RATE`` appends for a job.
+        """
+        if not hasattr(self, "_log_append_counters"):
+            self._log_append_counters = defaultdict(int)
+            self._log_counter_lock = threading.Lock()
+        with self._log_counter_lock:
+            self._log_append_counters[optimization_id] += 1
+            return self._log_append_counters[optimization_id] % LOG_TRIM_SAMPLE_RATE == 0
+
+    def _trim_logs(self, optimization_id: str) -> None:
+        """Delete the oldest excess log entries for a job in one batch.
+
+        Args:
+            optimization_id: ID of the job whose retained log rows should be
+                brought back down to the configured cap.
+        """
+        session = self._get_session()
+        try:
+            log_count = (
+                session.query(LogEntryModel).filter(LogEntryModel.optimization_id == optimization_id).count()
+            )
+            excess = log_count - self._log_entries_cap
+            if excess <= 0:
+                return
+            old_ids = (
+                session.query(LogEntryModel.id)
+                .filter(LogEntryModel.optimization_id == optimization_id)
+                .order_by(LogEntryModel.timestamp.asc(), LogEntryModel.id.asc())
+                .limit(excess)
+            )
+            session.query(LogEntryModel).filter(LogEntryModel.id.in_(old_ids.scalar_subquery())).delete(
+                synchronize_session=False
+            )
             session.commit()
         finally:
             session.close()
@@ -1970,6 +2065,7 @@ class RemoteDBJobStore:
         optimization_type: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        with_counts: bool = True,
     ) -> list[JobRecord]:
         """List jobs with optional filtering and pagination, newest first.
 
@@ -1983,10 +2079,14 @@ class RemoteDBJobStore:
             optimization_type: Restrict to a particular run type when set.
             limit: Maximum number of rows to return.
             offset: Number of rows to skip from the start.
+            with_counts: When ``False``, skip the progress/log/summary
+                aggregate folding entirely — analytics rollups scan up to 10k
+                rows and never read those fields, so the aggregates would run
+                a 10k-element ``IN (...)`` scan for nothing.
 
         Returns:
-            Matching ``JobRecord`` rows in newest-first order with
-            ``progress_count`` and ``log_count`` populated.
+            Matching ``JobRecord`` rows in newest-first order, with
+            ``progress_count`` / ``log_count`` populated when ``with_counts``.
         """
         session = self._get_session()
         try:
@@ -1998,6 +2098,8 @@ class RemoteDBJobStore:
             if optimization_type:
                 q = q.filter(JobModel.optimization_type == optimization_type)
             jobs = q.offset(offset).limit(limit).all()
+            if not with_counts:
+                return [self._job_to_dict(j, include_payload=False) for j in jobs]
             return self._rows_with_counts(session, jobs)
         finally:
             session.close()
@@ -2207,6 +2309,53 @@ class RemoteDBJobStore:
             if optimization_type:
                 q = q.filter(JobModel.optimization_type == optimization_type)
             return q.scalar() or 0
+        finally:
+            session.close()
+
+    def count_jobs_by_status(self, *, username: str | None = None) -> dict[str, int]:
+        """Count jobs per status in a single ``GROUP BY`` query.
+
+        One round trip replaces the per-status ``count_jobs`` fan-out on the
+        dashboard stat-card path; bucket values are identical.
+
+        Args:
+            username: Restrict counts to this owner when set.
+
+        Returns:
+            Mapping of status name to row count (statuses with no rows are
+            simply absent).
+        """
+        session = self._get_session()
+        try:
+            q = session.query(JobModel.status, func.count(JobModel.optimization_id))
+            if username:
+                q = q.filter(JobModel.username == username)
+            return dict(q.group_by(JobModel.status).all())
+        finally:
+            session.close()
+
+    def count_jobs_by_status_visible_to(self, username: str) -> dict[str, int]:
+        """Count jobs per status among rows the caller owns or holds a grant on.
+
+        The single-round-trip union counterpart of :meth:`count_jobs_by_status`;
+        matching rules mirror :meth:`count_jobs_visible_to`.
+
+        Args:
+            username: The caller (owned exact, grants case-insensitive).
+
+        Returns:
+            Mapping of status name to visible-row count.
+        """
+        normalized = username.strip().lower()
+        session = self._get_session()
+        try:
+            grant_ids = session.query(OptimizationShareGrantModel.optimization_id).filter(
+                OptimizationShareGrantModel.grantee_username == normalized
+            )
+            q = session.query(JobModel.status, func.count(JobModel.optimization_id)).filter(
+                or_(JobModel.username == username, JobModel.optimization_id.in_(grant_ids))
+            )
+            return dict(q.group_by(JobModel.status).all())
         finally:
             session.close()
 

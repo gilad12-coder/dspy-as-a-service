@@ -83,12 +83,12 @@ export interface TutorialHooks {
    */
   setSidebarOpen: (open: boolean) => void;
   /**
-   * Toggle the advancedMode user preference. The deep-dive tour uses this
-   * to surface advanced-only features (like /explore) without the user
-   * having to flip the setting first; the prefs page is the canonical
-   * place to revert.
+   * Open (or re-collapse) the submit wizard's advanced disclosure sections
+   * — optimization type on Basics, optimizer settings on Params. Steps that
+   * spotlight content inside a collapsed section call this first so the
+   * target exists when the spotlight lands.
    */
-  setAdvancedMode: (enabled: boolean) => void;
+  setAdvancedSectionsOpen: (open: boolean) => void;
   /**
    * Replay the demo optimization simulation. The deep-dive tour calls this
    * when reaching the trajectory step so the user sees the tree grow live

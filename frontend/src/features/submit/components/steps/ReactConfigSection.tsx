@@ -1,7 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 
 import { Label } from "@/shared/ui/primitives/label";
 import { Input } from "@/shared/ui/primitives/input";
@@ -9,19 +16,22 @@ import { HelpTip } from "@/shared/ui/help-tip";
 import { cn } from "@/shared/lib/utils";
 import { tip } from "@/shared/lib/tooltips";
 import { formatMsg, msg } from "@/shared/lib/messages";
-import { probeMcp } from "@/shared/lib/api";
+import { probeMcp, type McpProbeTool } from "@/shared/lib/api";
 
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 
 type ProbeStatus =
   | { kind: "idle" }
   | { kind: "checking" }
-  | { kind: "ok"; toolCount: number; toolNames: string[] }
+  | { kind: "ok"; toolCount: number; tools: McpProbeTool[] }
   | { kind: "error"; detail: string };
 
 // How long the URL/auth fields must sit still before the connection check
 // fires — long enough to skip mid-typing states, short enough to feel live.
 const PROBE_DEBOUNCE_MS = 700;
+
+const NAV_BUTTON_CLASS =
+  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:border-[#C8A882] hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
 
 export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
   const { reactConfig, updateReactConfig } = w;
@@ -29,6 +39,7 @@ export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
   // Monotonic sequence so a slow response for an old URL can't overwrite the
   // status of the current one.
   const probeSeqRef = React.useRef(0);
+  const [toolIndex, setToolIndex] = React.useState(0);
 
   const runProbe = React.useCallback((url: string, auth: string) => {
     const seq = ++probeSeqRef.current;
@@ -38,7 +49,7 @@ export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
         if (probeSeqRef.current !== seq) return;
         setProbe(
           res.ok
-            ? { kind: "ok", toolCount: res.tool_count, toolNames: res.tool_names }
+            ? { kind: "ok", toolCount: res.tool_count, tools: res.tools }
             : { kind: "error", detail: res.error ?? "" },
         );
       })
@@ -58,6 +69,14 @@ export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
     const t = window.setTimeout(() => runProbe(url, reactConfig.mcpAuthHeader), PROBE_DEBOUNCE_MS);
     return () => window.clearTimeout(t);
   }, [reactConfig.mcpUrl, reactConfig.mcpAuthHeader, runProbe]);
+
+  // Each probe result restarts the tool pager from the first tool.
+  React.useEffect(() => {
+    setToolIndex(0);
+  }, [probe]);
+
+  const tools = probe.kind === "ok" ? probe.tools : [];
+  const activeTool: McpProbeTool | undefined = tools[toolIndex];
 
   return (
     <div
@@ -99,58 +118,88 @@ export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
         </div>
 
         {probe.kind !== "idle" && (
-          <div className="space-y-1.5">
-            <div
-              className={cn(
-                "flex items-center gap-1.5 text-[0.6875rem] font-medium",
-                probe.kind === "checking" && "text-muted-foreground",
-                probe.kind === "ok" && "text-[#5A7247]",
-                probe.kind === "error" && "text-[#A3512B]",
-              )}
-              aria-live="polite"
-            >
-              {probe.kind === "checking" && (
-                <>
-                  <Loader2 className="size-3 shrink-0 animate-spin" />
-                  {msg("submit.react.mcp_checking")}
-                </>
-              )}
-              {probe.kind === "ok" && (
-                <>
-                  <CheckCircle2 className="size-3 shrink-0" />
-                  {formatMsg("submit.react.mcp_connected", { p1: probe.toolCount })}
-                </>
-              )}
-              {probe.kind === "error" && (
-                <>
-                  <AlertTriangle className="size-3 shrink-0" />
-                  {msg("submit.react.mcp_failed")}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div
+                className={cn(
+                  "flex min-w-0 items-center gap-1.5 text-[0.6875rem] font-medium",
+                  probe.kind === "checking" && "text-muted-foreground",
+                  probe.kind === "ok" && "text-[#5A7247]",
+                  probe.kind === "error" && "text-[#A3512B]",
+                )}
+                aria-live="polite"
+              >
+                {probe.kind === "checking" && (
+                  <>
+                    <Loader2 className="size-3 shrink-0 animate-spin" />
+                    {msg("submit.react.mcp_checking")}
+                  </>
+                )}
+                {probe.kind === "ok" && (
+                  <>
+                    <CheckCircle2 className="size-3 shrink-0" />
+                    {formatMsg("submit.react.mcp_connected", { p1: probe.toolCount })}
+                  </>
+                )}
+                {probe.kind === "error" && (
+                  <>
+                    <AlertTriangle className="size-3 shrink-0" />
+                    {msg("submit.react.mcp_failed")}
+                    <button
+                      type="button"
+                      onClick={() => runProbe(reactConfig.mcpUrl.trim(), reactConfig.mcpAuthHeader)}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 py-0.5 text-[0.625rem] font-medium text-foreground transition-colors hover:border-[#C8A882]"
+                    >
+                      <RefreshCw className="size-2.5" />
+                      {msg("submit.react.mcp_retry")}
+                    </button>
+                  </>
+                )}
+              </div>
+              {tools.length > 1 && (
+                <div className="flex shrink-0 items-center gap-1.5" dir="ltr">
                   <button
                     type="button"
-                    onClick={() => runProbe(reactConfig.mcpUrl.trim(), reactConfig.mcpAuthHeader)}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 py-0.5 text-[0.625rem] font-medium text-foreground transition-colors hover:border-[#C8A882]"
+                    aria-label={msg("submit.react.tools_prev")}
+                    disabled={toolIndex === 0}
+                    onClick={() => setToolIndex((i) => Math.max(0, i - 1))}
+                    className={NAV_BUTTON_CLASS}
                   >
-                    <RefreshCw className="size-2.5" />
-                    {msg("submit.react.mcp_retry")}
+                    <ChevronLeft className="size-3.5" />
                   </button>
-                </>
+                  <span className="text-[0.625rem] font-medium text-muted-foreground tabular-nums">
+                    {toolIndex + 1} / {tools.length}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={msg("submit.react.tools_next")}
+                    disabled={toolIndex >= tools.length - 1}
+                    onClick={() => setToolIndex((i) => Math.min(tools.length - 1, i + 1))}
+                    className={NAV_BUTTON_CLASS}
+                  >
+                    <ChevronRight className="size-3.5" />
+                  </button>
+                </div>
               )}
             </div>
-            {probe.kind === "ok" && probe.toolNames.length > 0 && (
-              <div className="flex flex-wrap gap-1" dir="ltr">
-                {probe.toolNames.slice(0, 8).map((name) => (
-                  <span
-                    key={name}
-                    className="rounded-md border border-border/50 bg-background px-1.5 py-0.5 font-mono text-[0.625rem] text-muted-foreground"
-                  >
-                    {name}
-                  </span>
-                ))}
-                {probe.toolNames.length > 8 && (
-                  <span className="px-1 py-0.5 text-[0.625rem] text-muted-foreground">
-                    +{probe.toolNames.length - 8}
-                  </span>
-                )}
+            {activeTool && (
+              <div
+                key={activeTool.name}
+                role="group"
+                aria-label={msg("submit.react.tools_list_label")}
+                dir="ltr"
+                className="space-y-1.5 rounded-lg border border-border/60 bg-background/80 p-3 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200"
+              >
+                <p className="font-mono text-[0.6875rem] leading-tight font-medium break-all text-foreground">
+                  {activeTool.name}
+                </p>
+                <p className="text-[0.6875rem] leading-relaxed break-words whitespace-pre-line text-muted-foreground">
+                  {activeTool.description ?? (
+                    <span className="text-muted-foreground/70 italic">
+                      {msg("submit.react.tool_no_description")}
+                    </span>
+                  )}
+                </p>
               </div>
             )}
             {probe.kind === "error" && probe.detail && (

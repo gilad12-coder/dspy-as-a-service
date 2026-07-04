@@ -3,7 +3,11 @@
 import * as React from "react";
 import { useReducer, useEffect, useCallback, useRef, createContext, useContext } from "react";
 import type { TutorialTrack, TutorialStep } from "../lib/steps";
-import { getTrack, resetTutorialOneShotState } from "../lib/steps";
+import {
+  getLoadedTrack,
+  loadStepsModule,
+  resetLoadedTutorialOneShotState,
+} from "../lib/steps-loader";
 
 interface TutorialState {
   activeTrack: TutorialTrack | null;
@@ -45,7 +49,7 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
       };
     case "NEXT_STEP": {
       if (!state.activeTrack) return state;
-      const track = getTrack(state.activeTrack);
+      const track = getLoadedTrack(state.activeTrack);
       if (!track) return state;
       const nextIndex = state.currentStepIndex + 1;
       if (nextIndex >= track.steps.length) {
@@ -68,7 +72,7 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
         : state;
     case "GO_TO_STEP": {
       if (!state.activeTrack) return state;
-      const t = getTrack(state.activeTrack);
+      const t = getLoadedTrack(state.activeTrack);
       if (!t) return state;
       return {
         ...state,
@@ -171,8 +175,10 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     const params = new URLSearchParams(window.location.search);
     if (params.get("tutorial") === "autoplay") {
       setTimeout(() => {
-        dispatch({ type: "SET_AUTO_PLAY", value: true });
-        dispatch({ type: "START_TRACK", track: "deep-dive" as TutorialTrack });
+        void loadStepsModule().then(() => {
+          dispatch({ type: "SET_AUTO_PLAY", value: true });
+          dispatch({ type: "START_TRACK", track: "deep-dive" as TutorialTrack });
+        });
       }, 1000);
     }
   }, []);
@@ -194,11 +200,17 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   }, [state.completedTracks]);
 
   const startTrack = useCallback((track: TutorialTrack) => {
-    // Clear per-tour ephemeral flags (e.g. dd-detail-header splash one-shot)
-    // so a fresh tour run gets a fresh splash, not the leftover state from
-    // the previous run.
-    resetTutorialOneShotState();
-    dispatch({ type: "START_TRACK", track });
+    // The steps module loads on demand (it is deliberately absent from the
+    // shared first-load chunk); START_TRACK only dispatches once the load
+    // resolves, so every synchronous getLoadedTrack() read that follows
+    // hits a loaded module.
+    void loadStepsModule().then((steps) => {
+      // Clear per-tour ephemeral flags (e.g. dd-detail-header splash
+      // one-shot) so a fresh tour run gets a fresh splash, not the leftover
+      // state from the previous run.
+      steps.resetTutorialOneShotState();
+      dispatch({ type: "START_TRACK", track });
+    });
   }, []);
   const nextStep = useCallback(() => dispatch({ type: "NEXT_STEP" }), []);
   const prevStep = useCallback(() => dispatch({ type: "PREV_STEP" }), []);
@@ -214,7 +226,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   }, [startTrack]);
   const closeMenu = useCallback(() => dispatch({ type: "CLOSE_MENU" }), []);
   const resetAll = useCallback(() => {
-    resetTutorialOneShotState();
+    resetLoadedTutorialOneShotState();
     dispatch({ type: "RESET_ALL" });
     localStorage.removeItem(STORAGE_KEY);
   }, []);
@@ -230,7 +242,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   }, [state.isVisible]);
 
   const currentStep = state.activeTrack
-    ? getTrack(state.activeTrack)?.steps[state.currentStepIndex]
+    ? getLoadedTrack(state.activeTrack)?.steps[state.currentStepIndex]
     : undefined;
 
   return (

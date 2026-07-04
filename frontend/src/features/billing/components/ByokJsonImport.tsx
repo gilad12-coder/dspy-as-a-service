@@ -86,7 +86,12 @@ function validate(raw: string, existing: Set<string>): Validation {
   try {
     data = JSON.parse(raw);
   } catch {
-    return { ok: false, connections: [], errors: [msg("settings.keys.json_err_parse")], warnings: [] };
+    return {
+      ok: false,
+      connections: [],
+      errors: [msg("settings.keys.json_err_parse")],
+      warnings: [],
+    };
   }
 
   const list = Array.isArray(data) ? data : [data];
@@ -117,7 +122,9 @@ function validate(raw: string, existing: Set<string>): Validation {
       itemOk = false;
     }
     if (provider && provider !== "custom" && !OFFERED_SET.has(provider)) {
-      errors.push(formatMsg("settings.keys.json_err_provider", { n, providers: OFFERED.join(", ") }));
+      errors.push(
+        formatMsg("settings.keys.json_err_provider", { n, providers: OFFERED.join(", ") }),
+      );
       itemOk = false;
     }
     if (provider === "custom" && !apiBase) {
@@ -131,11 +138,15 @@ function validate(raw: string, existing: Set<string>): Validation {
 
     if (provider) {
       if (seen.has(provider)) {
-        warnings.push(formatMsg("settings.keys.json_warn_dupe", { n, provider: providerLabel(provider) }));
+        warnings.push(
+          formatMsg("settings.keys.json_warn_dupe", { n, provider: providerLabel(provider) }),
+        );
       }
       seen.add(provider);
       if (itemOk && existing.has(provider)) {
-        warnings.push(formatMsg("settings.keys.json_warn_replace", { provider: providerLabel(provider) }));
+        warnings.push(
+          formatMsg("settings.keys.json_warn_replace", { provider: providerLabel(provider) }),
+        );
       }
     }
 
@@ -291,7 +302,9 @@ export function ByokJsonImport() {
               {result.errors.length > 0 ? (
                 <div className="flex flex-col gap-1.5 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5">
                   <span className="text-xs font-medium text-destructive">
-                    {formatMsg("settings.keys.json_errors_heading", { count: result.errors.length })}
+                    {formatMsg("settings.keys.json_errors_heading", {
+                      count: result.errors.length,
+                    })}
                   </span>
                   <ul className="flex flex-col gap-1">
                     {result.errors.map((err, i) => (
@@ -330,8 +343,8 @@ export function ByokJsonImport() {
                     </ul>
                   )}
 
-                  <div className="overflow-hidden rounded-md border border-border/50">
-                    <div className="grid grid-cols-[1.4fr_1.3fr_1.5fr_0.9fr] items-center gap-2 border-b border-border/50 bg-muted/40 px-3 py-1.5 text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="overflow-x-auto rounded-md border border-border/50">
+                    <div className="grid min-w-[480px] grid-cols-[1.4fr_1.3fr_1.5fr_0.9fr] items-center gap-2 border-b border-border/50 bg-muted/40 px-3 py-1.5 text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
                       <span className="text-start">{msg("settings.keys.json_col_provider")}</span>
                       <span className="text-start">{msg("settings.keys.json_col_label")}</span>
                       <span className="text-start">{msg("settings.keys.json_col_base")}</span>
@@ -340,19 +353,27 @@ export function ByokJsonImport() {
                     {result.connections.map((c, i) => (
                       <div
                         key={i}
-                        className="grid grid-cols-[1.4fr_1.3fr_1.5fr_0.9fr] items-center gap-2 px-3 py-2 text-xs [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border/40"
+                        className="grid min-w-[480px] grid-cols-[1.4fr_1.3fr_1.5fr_0.9fr] items-center gap-2 px-3 py-2 text-xs [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border/40"
                       >
                         <span className="flex min-w-0 items-center gap-1.5">
                           <ProviderLogo slug={c.provider} size={18} />
-                          <span className="truncate text-foreground">{providerLabel(c.provider)}</span>
+                          <span className="truncate text-foreground">
+                            {providerLabel(c.provider)}
+                          </span>
                         </span>
                         <span className="truncate text-muted-foreground" dir="auto">
                           {c.label || "—"}
                         </span>
-                        <span className="truncate font-mono text-[0.6875rem] text-muted-foreground" dir="ltr">
+                        <span
+                          className="truncate font-mono text-[0.6875rem] text-muted-foreground"
+                          dir="ltr"
+                        >
                           {c.api_base || msg("settings.keys.json_base_default")}
                         </span>
-                        <code className="truncate font-mono text-[0.6875rem] text-muted-foreground" dir="ltr">
+                        <code
+                          className="truncate font-mono text-[0.6875rem] text-muted-foreground"
+                          dir="ltr"
+                        >
                           {maskKey(c.api_key)}
                         </code>
                       </div>

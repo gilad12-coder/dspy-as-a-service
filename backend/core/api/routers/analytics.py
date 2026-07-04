@@ -9,7 +9,10 @@ is more reliable than depending on the aggregation shapes we ship today.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from collections import Counter
+from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Any
 
@@ -114,6 +117,15 @@ _TERMINAL_SUCCESS_OR_FAILED = frozenset({"success", "failed"})
 # the aggregation is incomplete.
 _ANALYTICS_JOB_HARD_CAP = 10000
 
+# Analytics KPIs may lag live runs by up to this long. The dashboard fires
+# several of these endpoints per load and re-polls on its own cadence, so a
+# short window collapses the repeated 10k-row scans without visibly stale
+# numbers.
+_ANALYTICS_CACHE_TTL_SECONDS = 30.0
+# Bounded by distinct (scope, filter) combinations seen within one TTL; the
+# cache is wiped rather than evicted piecemeal if it somehow exceeds this.
+_ANALYTICS_SCAN_CACHE_MAX_KEYS = 256
+
 
 def create_analytics_router(*, job_store) -> APIRouter:
     """Build the analytics router.
@@ -125,6 +137,39 @@ def create_analytics_router(*, job_store) -> APIRouter:
         A configured :class:`APIRouter` with the analytics endpoints attached.
     """
     router = APIRouter()
+
+    # Every analytics endpoint starts from the same up-to-10k-row job scan.
+    # Cache the raw rows per (scan kind, resolved scope, status) for a short
+    # TTL so one dashboard load hits the DB once instead of four times. The
+    # cache is per-router (per job_store binding) and the rows are shared
+    # across requests — aggregations must treat them as read-only.
+    scan_cache: dict[tuple[Any, ...], tuple[float, list[dict[str, Any]]]] = {}
+    scan_lock = threading.Lock()
+
+    def cached_scan(
+        key: tuple[Any, ...],
+        run: Callable[[], list[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        """Return the cached job scan for ``key``, re-running it after the TTL.
+
+        Args:
+            key: Scan identity — scan kind, resolved username scope, status.
+            run: Zero-arg callable issuing the store query on a miss.
+
+        Returns:
+            The cached or freshly fetched job rows (treat as read-only).
+        """
+        now = time.monotonic()
+        with scan_lock:
+            hit = scan_cache.get(key)
+            if hit is not None and hit[0] > now:
+                return hit[1]
+        rows = run()
+        with scan_lock:
+            if len(scan_cache) >= _ANALYTICS_SCAN_CACHE_MAX_KEYS:
+                scan_cache.clear()
+            scan_cache[key] = (now + _ANALYTICS_CACHE_TTL_SECONDS, rows)
+        return rows
 
     @router.get(
         "/analytics/summary",
@@ -162,11 +207,18 @@ def create_analytics_router(*, job_store) -> APIRouter:
             A populated :class:`AnalyticsSummaryResponse` envelope.
         """
         username = _scope_analytics_username(current_user, username)
-        all_jobs = job_store.list_jobs(
-            status=status,
-            username=username,
-            limit=_ANALYTICS_JOB_HARD_CAP,
-            offset=0,
+        all_jobs = cached_scan(
+            ("list", username, status),
+            lambda: job_store.list_jobs(
+                status=status,
+                username=username,
+                limit=_ANALYTICS_JOB_HARD_CAP,
+                offset=0,
+                # These rollups read overview/result fields only — skip the
+                # progress/log count-folding, whose IN(...) aggregate scans
+                # cost real time at the 10k-row cap.
+                with_counts=False,
+            ),
         )
         truncated = len(all_jobs) >= _ANALYTICS_JOB_HARD_CAP
 
@@ -295,11 +347,18 @@ def create_analytics_router(*, job_store) -> APIRouter:
             A populated :class:`OptimizerStatsResponse` envelope.
         """
         username = _scope_analytics_username(current_user, username)
-        all_jobs = job_store.list_jobs(
-            status=status,
-            username=username,
-            limit=_ANALYTICS_JOB_HARD_CAP,
-            offset=0,
+        all_jobs = cached_scan(
+            ("list", username, status),
+            lambda: job_store.list_jobs(
+                status=status,
+                username=username,
+                limit=_ANALYTICS_JOB_HARD_CAP,
+                offset=0,
+                # These rollups read overview/result fields only — skip the
+                # progress/log count-folding, whose IN(...) aggregate scans
+                # cost real time at the 10k-row cap.
+                with_counts=False,
+            ),
         )
         truncated = len(all_jobs) >= _ANALYTICS_JOB_HARD_CAP
 
@@ -408,11 +467,18 @@ def create_analytics_router(*, job_store) -> APIRouter:
             A populated :class:`ModelStatsResponse` envelope.
         """
         username = _scope_analytics_username(current_user, username)
-        all_jobs = job_store.list_jobs(
-            status=status,
-            username=username,
-            limit=_ANALYTICS_JOB_HARD_CAP,
-            offset=0,
+        all_jobs = cached_scan(
+            ("list", username, status),
+            lambda: job_store.list_jobs(
+                status=status,
+                username=username,
+                limit=_ANALYTICS_JOB_HARD_CAP,
+                offset=0,
+                # These rollups read overview/result fields only — skip the
+                # progress/log count-folding, whose IN(...) aggregate scans
+                # cost real time at the 10k-row cap.
+                with_counts=False,
+            ),
         )
         truncated = len(all_jobs) >= _ANALYTICS_JOB_HARD_CAP
 
@@ -534,18 +600,24 @@ def create_analytics_router(*, job_store) -> APIRouter:
         """
         username = _scope_analytics_username(current_user, username)
         if include_shared and username and hasattr(job_store, "list_jobs_visible_to"):
-            all_jobs_raw = job_store.list_jobs_visible_to(
-                username,
-                status=status,
-                limit=_ANALYTICS_JOB_HARD_CAP,
-                offset=0,
+            all_jobs_raw = cached_scan(
+                ("visible", username, status),
+                lambda: job_store.list_jobs_visible_to(
+                    username,
+                    status=status,
+                    limit=_ANALYTICS_JOB_HARD_CAP,
+                    offset=0,
+                ),
             )
         else:
-            all_jobs_raw = job_store.list_jobs(
-                status=status,
-                username=username,
-                limit=_ANALYTICS_JOB_HARD_CAP,
-                offset=0,
+            all_jobs_raw = cached_scan(
+                ("list_with_counts", username, status),
+                lambda: job_store.list_jobs(
+                    status=status,
+                    username=username,
+                    limit=_ANALYTICS_JOB_HARD_CAP,
+                    offset=0,
+                ),
             )
         truncated = len(all_jobs_raw) >= _ANALYTICS_JOB_HARD_CAP
 

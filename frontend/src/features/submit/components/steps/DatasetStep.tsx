@@ -186,12 +186,14 @@ export function DatasetStep({ w }: { w: SubmitWizardContext }) {
                         // (100% - 8px)/3 wide and steps by (100% - 2px)/3. The pill must
                         // match that stride or it drifts further off per segment.
                         const pillLeft =
-                          activeIdx >= 0
-                            ? `calc(2px + ${activeIdx} * (100% - 2px) / 3)`
-                            : "2px";
+                          activeIdx >= 0 ? `calc(2px + ${activeIdx} * (100% - 2px) / 3)` : "2px";
                         return (
                           <div
-                            className="relative inline-grid grid-cols-3 shrink-0 rounded-lg bg-muted p-0.5 gap-0.5"
+                            // Arbitrary column syntax on purpose: the literal
+                            // `grid-cols-3` class is force-stacked to one column
+                            // by the global mobile rule in globals.css, which
+                            // would break the sliding pill's horizontal math.
+                            className="relative inline-grid [grid-template-columns:repeat(3,minmax(0,1fr))] shrink-0 rounded-lg bg-muted p-0.5 gap-0.5"
                           >
                             <div
                               className="absolute top-0.5 bottom-0.5 rounded-md bg-stone-500/15 shadow-sm transition-[inset-inline-start] duration-100 ease-out"

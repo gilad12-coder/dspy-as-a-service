@@ -9,7 +9,8 @@ import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import {
   submitRun,
   submitGridSearch,
-  dryRunWorkflow,
+  dryRunWorkflowStream,
+  type WorkflowDryRunStreamHandlers,
   validateCode,
   validateDataset,
   getOptimizationPayload,
@@ -78,6 +79,11 @@ import {
 
 const COLUMN_ROLES = new Set<string>(["input", "output", "ignore"]);
 
+// GEPA field defaults — the optimizer disclosure stays collapsed only while
+// every field still matches them.
+const DEFAULT_REFLECTION_MINIBATCH = "3";
+const DEFAULT_MAX_FULL_EVALS = "6";
+
 /** Type guard for a valid dataset column role (signature I/O). */
 function isColumnRole(value: unknown): value is ColumnRole {
   return typeof value === "string" && COLUMN_ROLES.has(value);
@@ -106,10 +112,11 @@ export function useSubmitWizard() {
   const [jobName, setJobName] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [moduleName, setModuleName] = useState("predict");
-  // In advanced mode the code step opens with a module picker; the editors
-  // (and the agent's seed pass) wait until the user actively commits to a
-  // module. Simple mode skips the picker and always runs predict.
-  const [moduleChosen, setModuleChosen] = useState(false);
+  // The code step opens straight into the default module's editor; the
+  // header chip reopens the picker on demand. While the picker is open
+  // (moduleChosen=false) the editors and the agent's seed pass wait until
+  // the user commits to a module.
+  const [moduleChosen, setModuleChosen] = useState(true);
   const [optimizerName, setOptimizerName] = useState("gepa");
 
   // React (ReAct-agent) tool roster. Only sent when moduleName is "react".
@@ -122,7 +129,7 @@ export function useSubmitWizard() {
   );
   const isReact = moduleName.toLowerCase() === "react";
   const isWorkflow = moduleName.toLowerCase() === "workflow";
-  const moduleSelectionRequired = prefs.advancedMode && !moduleChosen;
+  const moduleSelectionRequired = !moduleChosen;
   // Bound after the agent hook is created below; chooseModule only runs on
   // user clicks, so the ref is always populated by then.
   const agentResetRef = useRef<(() => void) | null>(null);
@@ -130,14 +137,17 @@ export function useSubmitWizard() {
     (name: string) => {
       // Switching to a different module starts a fresh agent conversation —
       // the old module's transcript and seeded artifacts no longer apply.
-      // Re-picking the same module keeps the conversation.
-      if (moduleChosen && name.toLowerCase() !== moduleName.toLowerCase()) {
+      // Re-picking the same module keeps the conversation. No moduleChosen
+      // guard here: the switch-module chip reopens the picker (clearing
+      // moduleChosen) before the new pick lands, and on a first pick the
+      // reset is a no-op on an empty conversation.
+      if (name.toLowerCase() !== moduleName.toLowerCase()) {
         agentResetRef.current?.();
       }
       setModuleName(name);
       setModuleChosen(true);
     },
-    [moduleChosen, moduleName],
+    [moduleName],
   );
   const reopenModulePicker = useCallback(() => setModuleChosen(false), []);
 
@@ -298,9 +308,37 @@ export function useSubmitWizard() {
   const [datasetValidation, setDatasetValidation] = useState<ValidateDatasetResponse | null>(null);
 
   const [autoLevel, setAutoLevel] = useState<string>("light");
-  const [reflectionMinibatchSize, setReflectionMinibatchSize] = useState<string>("3");
-  const [maxFullEvals, setMaxFullEvals] = useState<string>("6");
+  const [reflectionMinibatchSize, setReflectionMinibatchSize] = useState<string>(
+    DEFAULT_REFLECTION_MINIBATCH,
+  );
+  const [maxFullEvals, setMaxFullEvals] = useState<string>(DEFAULT_MAX_FULL_EVALS);
   const [useMerge, setUseMerge] = useState(true);
+
+  // Disclosure state for the advanced wizard sections (Basics: optimization
+  // type, Params: optimizer settings). Held here rather than in the step
+  // components so the deep-dive tour can open the sections through the
+  // bridge, and so a restored non-default value surfaces itself instead of
+  // hiding behind a collapsed row. Opening is one-way: nothing auto-closes.
+  const [optimizationTypeOpen, setOptimizationTypeOpen] = useState(false);
+  const [optimizerSettingsOpen, setOptimizerSettingsOpen] = useState(false);
+  useEffect(() => {
+    if (prefs.expandAdvanced) {
+      setOptimizationTypeOpen(true);
+      setOptimizerSettingsOpen(true);
+    }
+  }, [prefs.expandAdvanced]);
+  useEffect(() => {
+    if (jobType !== "run") setOptimizationTypeOpen(true);
+  }, [jobType]);
+  useEffect(() => {
+    if (
+      reflectionMinibatchSize !== DEFAULT_REFLECTION_MINIBATCH ||
+      maxFullEvals !== DEFAULT_MAX_FULL_EVALS ||
+      !useMerge
+    ) {
+      setOptimizerSettingsOpen(true);
+    }
+  }, [reflectionMinibatchSize, maxFullEvals, useMerge]);
   const [shuffle, setShuffle] = useState(true);
   // User-set Max Cost Ceiling, in credits — null until the user opts into a cap.
   // The run is hard-stopped server-side once spend exceeds it (Phase 2 [FG-1]),
@@ -336,6 +374,10 @@ export function useSubmitWizard() {
       registerTutorialHook("setSignatureCode", setSignatureCode),
       registerTutorialHook("setMetricCode", setMetricCode),
       registerTutorialHook("setOptimizerName", setOptimizerName),
+      registerTutorialHook("setAdvancedSectionsOpen", (open) => {
+        setOptimizationTypeOpen(open);
+        setOptimizerSettingsOpen(open);
+      }),
     ];
     return () => unregister.forEach((fn) => fn());
   }, []);
@@ -1995,7 +2037,7 @@ export function useSubmitWizard() {
   }, [modelConfig]);
 
   const runWorkflowDryRun = useCallback(
-    async (inputs: Record<string, unknown>) => {
+    async (inputs: Record<string, unknown>, handlers: WorkflowDryRunStreamHandlers) => {
       if (!workflowSpec) throw new Error(msg("submit.validation.workflow_invalid"));
       const mc = { ...modelConfig };
       if (globalBaseUrl && !mc.base_url) mc.base_url = globalBaseUrl;
@@ -2009,12 +2051,15 @@ export function useSubmitWizard() {
               : {}),
           }
         : undefined;
-      return dryRunWorkflow({
-        workflow: workflowSpec,
-        inputs,
-        model_config: mc,
-        ...(tool_source ? { tool_source } : {}),
-      });
+      return dryRunWorkflowStream(
+        {
+          workflow: workflowSpec,
+          inputs,
+          model_config: mc,
+          ...(tool_source ? { tool_source } : {}),
+        },
+        handlers,
+      );
     },
     [workflowSpec, modelConfig, globalBaseUrl, globalApiKey, reactConfig],
   );
@@ -2106,6 +2151,10 @@ export function useSubmitWizard() {
     updateReactConfig,
     optimizerName,
     setOptimizerName,
+    optimizationTypeOpen,
+    setOptimizationTypeOpen,
+    optimizerSettingsOpen,
+    setOptimizerSettingsOpen,
     signatureCode,
     setSignatureCode,
     setSignatureManuallyEdited,

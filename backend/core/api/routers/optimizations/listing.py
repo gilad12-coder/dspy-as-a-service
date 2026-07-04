@@ -36,7 +36,7 @@ from ...auth import AuthenticatedUser, get_authenticated_user, is_admin
 from ...converters import parse_overview, parse_timestamp, status_to_job_status
 from ...errors import DomainError
 from ...response_limits import AGENT_DEFAULT_LIST, AGENT_MAX_LIST, clamp_limit
-from .._helpers import build_summary, grant_roles_for, is_resumable, job_owner
+from .._helpers import build_summary, grant_roles_for, job_owner, resumable_id_flags
 from ..constants import VALID_OPTIMIZATION_TYPES, VALID_STATUSES
 from .schemas import (
     CompareJobSnapshot,
@@ -190,8 +190,9 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
                 offset=offset,
             )
         items = [build_summary(job_data) for job_data in rows]
-        for summary, job_data in zip(items, rows, strict=True):
-            summary.resumable = is_resumable(job_store, job_data)
+        resumable_ids = resumable_id_flags(job_store, rows)
+        for summary in items:
+            summary.resumable = summary.optimization_id in resumable_ids
         if use_shared:
             caller_norm = current_user.username.strip().lower()
             roles = grant_roles_for(job_store, [s.optimization_id for s in items], caller_norm)
@@ -238,6 +239,21 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
         )
         if use_shared:
             caller = current_user.username
+            # Single GROUP BY round trip when the store supports it; the
+            # per-status fan-out (7 COUNT queries) remains as the fallback for
+            # stores that don't.
+            if hasattr(job_store, "count_jobs_by_status_visible_to"):
+                buckets = job_store.count_jobs_by_status_visible_to(caller)
+                return OptimizationCountsResponse(
+                    total=sum(buckets.values()),
+                    pending=buckets.get("pending", 0),
+                    validating=buckets.get("validating", 0),
+                    running=buckets.get("running", 0),
+                    success=buckets.get("success", 0),
+                    failed=buckets.get("failed", 0),
+                    cancelled=buckets.get("cancelled", 0),
+                    shared=job_store.count_jobs_shared_with(caller),
+                )
             return OptimizationCountsResponse(
                 total=job_store.count_jobs_visible_to(caller),
                 pending=job_store.count_jobs_visible_to(caller, status="pending"),
@@ -249,6 +265,17 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
                 shared=job_store.count_jobs_shared_with(caller),
             )
         scoped_username = _scope_username(current_user, username)
+        if hasattr(job_store, "count_jobs_by_status"):
+            buckets = job_store.count_jobs_by_status(username=scoped_username)
+            return OptimizationCountsResponse(
+                total=sum(buckets.values()),
+                pending=buckets.get("pending", 0),
+                validating=buckets.get("validating", 0),
+                running=buckets.get("running", 0),
+                success=buckets.get("success", 0),
+                failed=buckets.get("failed", 0),
+                cancelled=buckets.get("cancelled", 0),
+            )
         total = job_store.count_jobs(username=scoped_username)
         return OptimizationCountsResponse(
             total=total,
@@ -294,6 +321,7 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
         scoped_username = _scope_username(current_user, username)
         total = job_store.count_jobs(username=scoped_username)
         rows = job_store.list_jobs(username=scoped_username, limit=limit, offset=offset)
+        resumable_ids = resumable_id_flags(job_store, rows)
         items = []
         for row in rows:
             overview = parse_overview(row)
@@ -310,7 +338,7 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
                     pinned=bool(overview.get("pinned", False)),
                     optimization_type=overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE),
                     total_pairs=overview.get(PAYLOAD_OVERVIEW_TOTAL_PAIRS),
-                    resumable=is_resumable(job_store, row),
+                    resumable=row["optimization_id"] in resumable_ids,
                 )
             )
         return SidebarJobsResponse(items=items, total=total)
@@ -351,6 +379,7 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
         total = job_store.count_jobs_shared_with(username)
         rows = job_store.list_jobs_shared_with(username, limit=limit, offset=offset)
         roles = grant_roles_for(job_store, [row["optimization_id"] for row in rows], username)
+        resumable_ids = resumable_id_flags(job_store, rows)
         items = []
         for row in rows:
             overview = parse_overview(row)
@@ -367,7 +396,7 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
                     pinned=bool(overview.get("pinned", False)),
                     optimization_type=overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE),
                     total_pairs=overview.get(PAYLOAD_OVERVIEW_TOTAL_PAIRS),
-                    resumable=is_resumable(job_store, row),
+                    resumable=row["optimization_id"] in resumable_ids,
                     role=roles.get(row["optimization_id"]),
                 )
             )

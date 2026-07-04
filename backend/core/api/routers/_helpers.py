@@ -51,7 +51,6 @@ from ...models import (
 from ...models.serve import WorkflowNodeTrace
 from ...registry import ResolverError, resolve_module_factory
 from ...service_gateway.optimization.data import load_signature_from_code
-from ...service_gateway.optimization.workflow import build_workflow_program, workflow_tool_users
 from ...service_gateway.optimization.retrying_react import RetryingReActV2
 from ...service_gateway.optimization.tool_overlay import (
     ToolSchemaDriftError,
@@ -62,6 +61,7 @@ from ...service_gateway.optimization.tool_overlay import (
 from ...service_gateway.optimization.training_ground.run_react import (
     resolve_react_tools,
 )
+from ...service_gateway.optimization.workflow import build_workflow_program, workflow_tool_users
 from ..auth import AuthenticatedUser, is_admin
 from ..converters import (
     compute_elapsed,
@@ -306,6 +306,8 @@ def load_job_with_role(
     job_store,
     optimization_id: str,
     user: AuthenticatedUser,
+    *,
+    include_payload: bool = True,
 ) -> tuple[dict[str, Any], ShareRole]:
     """Load a job row and resolve the caller's effective role on it.
 
@@ -318,6 +320,9 @@ def load_job_with_role(
         job_store: Job-store the row is read from.
         optimization_id: Optimization id to load.
         user: Authenticated caller.
+        include_payload: When ``False``, the row's ``payload`` JSONB is never
+            materialized — the status-poll endpoint passes ``False`` because
+            its response carries no raw payload.
 
     Returns:
         ``(job_row, effective_role)`` where ``effective_role`` is
@@ -327,7 +332,12 @@ def load_job_with_role(
         DomainError: 404 when the id is unknown or the caller has no access.
     """
     try:
-        job_data = job_store.get_job(optimization_id)
+        # Narrow through get_job_no_payload so store doubles that predate the
+        # kwarg fall back to the full read instead of a TypeError.
+        if include_payload:
+            job_data = job_store.get_job(optimization_id)
+        else:
+            job_data = get_job_no_payload(job_store, optimization_id)
     except KeyError:
         raise DomainError("optimization.not_found", status=404, optimization_id=optimization_id) from None
     if is_admin(user):
@@ -429,6 +439,29 @@ def grant_roles_for(
         return list_grants_for_user(session, optimization_ids, username)
 
 
+def get_job_no_payload(job_store, optimization_id: str) -> dict[str, Any]:
+    """Read a job row without materializing its payload when the store can.
+
+    Bulk ownership/metadata paths only read the overview and owner, so the
+    (potentially multi-MB) payload JSONB is skipped on stores that support the
+    narrowing kwarg; older store doubles fall back to the full read.
+
+    Args:
+        job_store: Job-store to read from.
+        optimization_id: Row to fetch.
+
+    Returns:
+        The job row (``payload`` reported as ``None`` when deferred).
+
+    Raises:
+        KeyError: When the job does not exist.
+    """
+    try:
+        return job_store.get_job(optimization_id, include_payload=False)
+    except TypeError:
+        return job_store.get_job(optimization_id)
+
+
 def filter_ids_at_least(
     job_store,
     optimization_ids: list[str],
@@ -460,7 +493,7 @@ def filter_ids_at_least(
     denied: list[str] = []
     for oid in optimization_ids:
         try:
-            job_data = job_store.get_job(oid)
+            job_data = get_job_no_payload(job_store, oid)
         except KeyError:
             denied.append(oid)
             continue
@@ -551,21 +584,61 @@ def is_resumable(job_store: Any, job_data: dict) -> bool:
     Returns:
         ``True`` when the run should offer Resume rather than Restart.
     """
-    status = status_to_job_status(job_data.get("status", "pending"))
-    if status not in {OptimizationStatus.failed, OptimizationStatus.cancelled, OptimizationStatus.paused}:
-        return False
-    # A grid is resumed per pair (in its results), not via a whole-job button, so
-    # the top-level flag stays False for grids — see ``grid_resumable_pairs``.
-    if parse_overview(job_data).get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE) == OPTIMIZATION_TYPE_GRID_SEARCH:
-        return False
-    # A manual pause is user-driven, not failure recovery, so it is exempt from the
-    # attempt cap; only failed/cancelled (auto-recovery) runs are bounded by it.
-    if status != OptimizationStatus.paused and int(job_data.get("attempts") or 0) >= settings.job_max_attempts:
-        return False
-    optimization_id = job_data.get("optimization_id")
+    optimization_id = _resume_candidate_id(job_data)
     if not optimization_id:
         return False
     return _has_resumable_state(job_store, optimization_id)
+
+
+def _resume_candidate_id(job_data: dict) -> str | None:
+    """Apply the cheap (no-query) resume gates and return the job id when they pass.
+
+    Shared by :func:`is_resumable` (per-row) and :func:`resumable_id_flags`
+    (batched) so both paths gate identically before the checkpoint lookup.
+
+    Args:
+        job_data: Raw job row from the store.
+
+    Returns:
+        The optimization id when the row is a resume candidate, else ``None``.
+    """
+    status = status_to_job_status(job_data.get("status", "pending"))
+    if status not in {OptimizationStatus.failed, OptimizationStatus.cancelled, OptimizationStatus.paused}:
+        return None
+    # A grid is resumed per pair (in its results), not via a whole-job button, so
+    # the top-level flag stays False for grids — see ``grid_resumable_pairs``.
+    if parse_overview(job_data).get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE) == OPTIMIZATION_TYPE_GRID_SEARCH:
+        return None
+    # A manual pause is user-driven, not failure recovery, so it is exempt from the
+    # attempt cap; only failed/cancelled (auto-recovery) runs are bounded by it.
+    if status != OptimizationStatus.paused and int(job_data.get("attempts") or 0) >= settings.job_max_attempts:
+        return None
+    return job_data.get("optimization_id") or None
+
+
+def resumable_id_flags(job_store: Any, rows: list[dict]) -> set[str]:
+    """Return the ids in ``rows`` whose runs can offer Resume, in one batch.
+
+    The batched counterpart of :func:`is_resumable` for list pages: the cheap
+    gates run in Python, then a single ``IN (...)`` existence query covers all
+    candidates instead of one probe per row (up to page-size round trips).
+    Stores without the batch method fall back to the per-row probe with
+    identical results.
+
+    Args:
+        job_store: The job store used to test for saved checkpoints.
+        rows: Raw job rows from the store.
+
+    Returns:
+        The set of resumable optimization ids.
+    """
+    candidates = [oid for row in rows if (oid := _resume_candidate_id(row))]
+    if not candidates:
+        return set()
+    batch = getattr(job_store, "resumable_state_ids", None)
+    if callable(batch):
+        return set(batch(candidates))
+    return {oid for oid in candidates if _has_resumable_state(job_store, oid)}
 
 
 def is_pausable(job_store: Any, job_data: dict) -> bool:

@@ -1,14 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import {
-  AlignLeft,
-  ChevronRight,
-  GitCompare,
-  Hash,
-  XCircle,
-  type LucideIcon,
-} from "lucide-react";
+import { AlignLeft, ChevronRight, GitCompare, Hash, XCircle, type LucideIcon } from "lucide-react";
 import {
   createContext,
   useContext,
@@ -68,6 +61,10 @@ const ToolDescriptionsContext = createContext<Record<string, string>>({});
 // ReactToolCard. Empty by default, so without a provider ToolHeader falls back
 // to its catalog severity unchanged and never fabricates one.
 const ToolSeveritiesContext = createContext<Record<string, string>>({});
+
+// Stable fallback for the provider value — an inline `?? {}` would hand the
+// context a fresh identity every render and re-render all consumers.
+const EMPTY_SEVERITIES: Record<string, string> = {};
 
 export type DrawerSelection =
   | { kind: "candidate"; node: TrajectoryNode; parent: TrajectoryNode | null }
@@ -233,102 +230,106 @@ function NodeBody({
   });
 
   return (
-    <ToolSeveritiesContext.Provider value={toolSeverities ?? {}}>
-    <ToolDescriptionsContext.Provider value={toolDescriptions}>
-      <SheetHeader className="border-b border-border/30">
-        <SheetTitle className="flex items-center gap-2 text-base">
-          {view.kind === "rejected" ? (
-            <XCircle className="size-4 text-[#a85a3b]" aria-hidden="true" />
+    <ToolSeveritiesContext.Provider value={toolSeverities ?? EMPTY_SEVERITIES}>
+      <ToolDescriptionsContext.Provider value={toolDescriptions}>
+        <SheetHeader className="border-b border-border/30">
+          <SheetTitle className="flex items-center gap-2 text-base">
+            {view.kind === "rejected" ? (
+              <XCircle className="size-4 text-[#a85a3b]" aria-hidden="true" />
+            ) : null}
+            <span>{headerTitle}</span>
+          </SheetTitle>
+          <SheetDescription asChild>
+            <div className="mt-1.5 flex items-stretch rounded-md border border-border/40 bg-background/50 overflow-hidden">
+              {view.iteration !== null ? (
+                <StatTile
+                  label={msg("trajectory.node.header.label.iteration")}
+                  value={String(view.iteration)}
+                  icon={Hash}
+                />
+              ) : null}
+              <StatTile
+                label={scoreLabel}
+                value={view.score.toFixed(2)}
+                sub={examplesSub}
+                tone={view.kind === "rejected" ? "rejected" : "accepted"}
+                emphasis
+              />
+              {view.parentScoreOnMinibatch !== null ? (
+                <StatTile
+                  label={msg("trajectory.node.header.label.parent_score")}
+                  value={view.parentScoreOnMinibatch.toFixed(2)}
+                  tone="muted"
+                />
+              ) : null}
+            </div>
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-5">
+          {view.kind === "accepted" && view.perExample.length > 0 ? (
+            <Section
+              title={msg("trajectory.node.section.score_detail.valset")}
+              info={msg("trajectory.detail.pareto_title.explain")}
+            >
+              <ParetoGridSection
+                examples={view.perExample}
+                pinnedId={pinnedExampleId}
+                onPin={(id) => setPinnedExampleId((prev) => (prev === id ? null : id))}
+                valsetById={valsetById}
+                predictionsForCandidate={predictionsForView}
+              />
+            </Section>
           ) : null}
-          <span>{headerTitle}</span>
-        </SheetTitle>
-        <SheetDescription asChild>
-          <div className="mt-1.5 flex items-stretch rounded-md border border-border/40 bg-background/50 overflow-hidden">
-            {view.iteration !== null ? (
-              <StatTile
-                label={msg("trajectory.node.header.label.iteration")}
-                value={String(view.iteration)}
-                icon={Hash}
-              />
-            ) : null}
-            <StatTile
-              label={scoreLabel}
-              value={view.score.toFixed(2)}
-              sub={examplesSub}
-              tone={view.kind === "rejected" ? "rejected" : "accepted"}
-              emphasis
-            />
-            {view.parentScoreOnMinibatch !== null ? (
-              <StatTile
-                label={msg("trajectory.node.header.label.parent_score")}
-                value={view.parentScoreOnMinibatch.toFixed(2)}
-                tone="muted"
-              />
-            ) : null}
-          </div>
-        </SheetDescription>
-      </SheetHeader>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-5">
-        {view.kind === "accepted" && view.perExample.length > 0 ? (
+          {view.kind === "rejected" || promptEntries.length > 0 ? (
+            <Section
+              title={
+                view.kind === "rejected"
+                  ? msg("trajectory.drawer.rejected.prompt_title")
+                  : msg("trajectory.node.section.prompt")
+              }
+              info={
+                view.kind === "rejected"
+                  ? msg("trajectory.drawer.rejected.prompt_title.explain")
+                  : msg("trajectory.node.section.prompt.explain")
+              }
+              action={
+                promptEntries.length > 0 && Object.keys(view.parentPrompt).length > 0 ? (
+                  <PromptViewToggle view={promptViewMode} onChange={setPromptViewMode} />
+                ) : undefined
+              }
+            >
+              {promptEntries.length === 0 ? (
+                <EmptyHint text={msg("trajectory.drawer.rejected.prompt_unavailable")} />
+              ) : (
+                <div className="space-y-2">
+                  {promptEntries.map(([predictor, prompt]) => (
+                    <PromptEntry
+                      key={predictor}
+                      prompt={prompt}
+                      parentPrompt={view.parentPrompt[predictor] ?? ""}
+                      mode={promptViewMode}
+                      hasParent={Object.keys(view.parentPrompt).length > 0}
+                    />
+                  ))}
+                </div>
+              )}
+            </Section>
+          ) : null}
+
           <Section
-            title={msg("trajectory.node.section.score_detail.valset")}
-            info={msg("trajectory.detail.pareto_title.explain")}
+            title={msg("trajectory.drawer.section.minibatch")}
+            info={msg("trajectory.drawer.section.minibatch.explain")}
           >
-            <ParetoGridSection
-              examples={view.perExample}
-              pinnedId={pinnedExampleId}
-              onPin={(id) => setPinnedExampleId((prev) => (prev === id ? null : id))}
-              valsetById={valsetById}
-              predictionsForCandidate={predictionsForView}
+            <MinibatchPanel
+              entries={minibatch}
+              valsetRows={valsetRows}
+              iteration={view.iteration}
             />
           </Section>
-        ) : null}
-
-        {view.kind === "rejected" || promptEntries.length > 0 ? (
-          <Section
-            title={
-              view.kind === "rejected"
-                ? msg("trajectory.drawer.rejected.prompt_title")
-                : msg("trajectory.node.section.prompt")
-            }
-            info={
-              view.kind === "rejected"
-                ? msg("trajectory.drawer.rejected.prompt_title.explain")
-                : msg("trajectory.node.section.prompt.explain")
-            }
-            action={
-              promptEntries.length > 0 && Object.keys(view.parentPrompt).length > 0 ? (
-                <PromptViewToggle view={promptViewMode} onChange={setPromptViewMode} />
-              ) : undefined
-            }
-          >
-            {promptEntries.length === 0 ? (
-              <EmptyHint text={msg("trajectory.drawer.rejected.prompt_unavailable")} />
-            ) : (
-              <div className="space-y-2">
-                {promptEntries.map(([predictor, prompt]) => (
-                  <PromptEntry
-                    key={predictor}
-                    prompt={prompt}
-                    parentPrompt={view.parentPrompt[predictor] ?? ""}
-                    mode={promptViewMode}
-                    hasParent={Object.keys(view.parentPrompt).length > 0}
-                  />
-                ))}
-              </div>
-            )}
-          </Section>
-        ) : null}
-
-        <Section
-          title={msg("trajectory.drawer.section.minibatch")}
-          info={msg("trajectory.drawer.section.minibatch.explain")}
-        >
-          <MinibatchPanel entries={minibatch} valsetRows={valsetRows} iteration={view.iteration} />
-        </Section>
-      </div>
-    </ToolDescriptionsContext.Provider>
+        </div>
+      </ToolDescriptionsContext.Provider>
     </ToolSeveritiesContext.Provider>
   );
 }
@@ -395,7 +396,6 @@ function StatTile({
     </div>
   );
 }
-
 
 function MinibatchPanel({
   entries,
@@ -874,9 +874,10 @@ function parseHistoryTrace(value: string): HistoryTrace | null {
   for (const m of messages) {
     if (m === null || typeof m !== "object" || Array.isArray(m)) return null;
     turns.push(
-      Object.entries(m as Record<string, unknown>).map(
-        ([k, v]): [string, string] => [k, typeof v === "string" ? v : safeJsonString(v)],
-      ),
+      Object.entries(m as Record<string, unknown>).map(([k, v]): [string, string] => [
+        k,
+        typeof v === "string" ? v : safeJsonString(v),
+      ]),
     );
   }
   return { kind: "turns", turns };
@@ -1827,7 +1828,13 @@ function SegmentedToggle<T extends string>({
   );
 }
 
-function ToolsViewToggle({ view, onChange }: { view: ToolsView; onChange: (v: ToolsView) => void }) {
+function ToolsViewToggle({
+  view,
+  onChange,
+}: {
+  view: ToolsView;
+  onChange: (v: ToolsView) => void;
+}) {
   return (
     <SegmentedToggle
       value={view}

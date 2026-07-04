@@ -67,8 +67,17 @@ export function ToolCallRow({
 
   React.useEffect(() => {
     if (call.status !== "running") return;
-    const id = setInterval(() => setNowTs(Date.now()), 200);
-    return () => clearInterval(id);
+    // Skip ticks in background tabs and catch up on return (mirrors the
+    // visibility-gated ticking in LiveElapsed).
+    const tick = () => {
+      if (document.visibilityState === "visible") setNowTs(Date.now());
+    };
+    const id = setInterval(tick, 200);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, [call.status]);
 
   const elapsedMs =

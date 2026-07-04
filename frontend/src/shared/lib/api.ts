@@ -353,6 +353,62 @@ export function dryRunWorkflow(payload: WorkflowDryRunRequest) {
   });
 }
 
+export interface WorkflowDryRunStreamHandlers {
+  onToken: (field: string, chunk: string) => void;
+  onFinal: (result: WorkflowDryRunResponse) => void;
+  onError: (message: string) => void;
+  signal?: AbortSignal;
+}
+
+/** Stream a workflow dry run via SSE. Calls handlers as the answer forms. */
+export async function dryRunWorkflowStream(
+  payload: WorkflowDryRunRequest,
+  handlers: WorkflowDryRunStreamHandlers,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetchWithAuthRetry(`${apiBase()}/workflows/dry-run/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify(payload),
+      signal: handlers.signal,
+    });
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") return;
+    handlers.onError(msg("auto.shared.lib.api.literal.4"));
+    return;
+  }
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    handlers.onError(
+      parseErrorMessage(text) ?? formatMsg("auto.shared.lib.api.template.3", { p1: res.status }),
+    );
+    return;
+  }
+  const processEvent = ({ event, data }: ServerSentEvent) => {
+    if (event === "token") {
+      handlers.onToken(String(data.field ?? ""), String(data.chunk ?? ""));
+    } else if (event === "final") {
+      handlers.onFinal({
+        outputs: (data.outputs as Record<string, unknown> | null) ?? null,
+        node_traces: (data.node_traces as WorkflowDryRunResponse["node_traces"]) ?? [],
+        model_used: String(data.model_used ?? ""),
+        error: (data.error as string | null) ?? null,
+        failed_node_id: (data.failed_node_id as string | null) ?? null,
+      });
+    } else if (event === "error") {
+      handlers.onError(String(data.error ?? msg("auto.shared.lib.api.literal.5")));
+    }
+  };
+  try {
+    await readServerSentEvents(res.body, processEvent);
+  } catch (err) {
+    if ((err as Error)?.name !== "AbortError") {
+      handlers.onError(err instanceof Error ? err.message : msg("auto.shared.lib.api.literal.6"));
+    }
+  }
+}
+
 export function submitGridSearch(payload: GridSearchRequest) {
   return request<OptimizationSubmissionResponse>("/grid-search", {
     method: "POST",
@@ -1585,10 +1641,15 @@ export function validateDataset(payload: ValidateDatasetRequest) {
   });
 }
 
+export interface McpProbeTool {
+  name: string;
+  description: string | null;
+}
+
 export interface McpProbeResponse {
   ok: boolean;
   tool_count: number;
-  tool_names: string[];
+  tools: McpProbeTool[];
   error: string | null;
 }
 

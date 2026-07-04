@@ -2,16 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import {
-  X,
-  BookOpen,
-  Sparkles,
-  Cog,
-  Boxes,
-  ListTree,
-  Lightbulb,
-  Compass,
-} from "lucide-react";
+import { X, BookOpen, Sparkles, Cog, Boxes, ListTree, Lightbulb, Compass } from "lucide-react";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 
@@ -166,18 +157,11 @@ export function ConceptsGuide({ open, onClose }: ConceptsGuideProps) {
         dir={getActiveDir()}
         className="relative w-full max-w-5xl h-[min(88vh,920px)] rounded-2xl border border-[#E5DDD4] bg-[#FAF8F5] shadow-[0_24px_64px_rgba(28,22,18,0.22)] overflow-hidden flex flex-col"
       >
-        <GuideHeader
-          titleId={titleId}
-          onClose={onClose}
-          closeBtnRef={closeBtnRef}
-        />
+        <GuideHeader titleId={titleId} onClose={onClose} closeBtnRef={closeBtnRef} />
 
         <div className="grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] flex-1 min-h-0">
           <GuideSidebar activeId={activeId} onJump={jumpTo} />
-          <div
-            ref={scrollRef}
-            className="min-w-0 overflow-y-auto px-5 sm:px-8 py-6 scroll-smooth"
-          >
+          <div ref={scrollRef} className="min-w-0 overflow-y-auto px-5 sm:px-8 py-6 scroll-smooth">
             <SectionBackground />
             <SectionGepa />
             <SectionParameters />
@@ -340,24 +324,14 @@ function GuideCodeEditor({
 }) {
   return (
     <div className="my-3">
-      <CodeEditor
-        value={code}
-        onChange={() => undefined}
-        height={height}
-        readOnly
-        label={label}
-      />
+      <CodeEditor value={code} onChange={() => undefined} height={height} readOnly label={label} />
     </div>
   );
 }
 
-function ParamTable({
-  rows,
-}: {
-  rows: Array<{ name: string; desc: React.ReactNode }>;
-}) {
+function ParamTable({ rows }: { rows: Array<{ name: string; desc: React.ReactNode }> }) {
   return (
-    <div className="my-3 overflow-hidden rounded-lg border border-[#E5DDD4] bg-white shadow-[0_1px_2px_rgba(28,22,18,0.05)]">
+    <div className="my-3 overflow-x-auto rounded-lg border border-[#E5DDD4] bg-white shadow-[0_1px_2px_rgba(28,22,18,0.05)]">
       <table className="w-full text-[13.5px] guide-table">
         <thead>
           <tr className="bg-[#F0EBE4] text-[#3D2E22]">
@@ -389,9 +363,7 @@ function ParamTable({
                   {r.name}
                 </span>
               </td>
-              <td className="px-3 py-2 align-top text-[#3D2E22]">
-                {r.desc}
-              </td>
+              <td className="px-3 py-2 align-top text-[#3D2E22]">{r.desc}</td>
             </tr>
           ))}
         </tbody>
@@ -428,15 +400,11 @@ function SectionBackground() {
       <p>{msg("auto.features.tutorial.components.concepts.guide.literal.21")}</p>
       <ul className="list-disc ps-5 space-y-1.5">
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.22")}
-          </strong>{" "}
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.22")}</strong>{" "}
           {msg("auto.features.tutorial.components.concepts.guide.literal.23")}
         </li>
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.24")}
-          </strong>{" "}
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.24")}</strong>{" "}
           {msg("auto.features.tutorial.components.concepts.guide.literal.25")}
         </li>
       </ul>
@@ -514,10 +482,20 @@ function GepaLoopDiagram() {
     { i: 5, name: msg("auto.features.tutorial.components.concepts.guide.literal.61") },
   ];
   return (
-    <figure className="my-4 rounded-lg border border-[#E5DDD4] bg-white p-4 shadow-[0_1px_2px_rgba(28,22,18,0.05)]" dir={getActiveDir()}>
+    <figure
+      className="my-4 rounded-lg border border-[#E5DDD4] bg-white p-4 shadow-[0_1px_2px_rgba(28,22,18,0.05)]"
+      dir={getActiveDir()}
+    >
       <svg viewBox="0 0 700 130" xmlns="http://www.w3.org/2000/svg" className="w-full h-auto">
         <defs>
-          <marker id="gepa-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+          <marker
+            id="gepa-arrow"
+            markerWidth="9"
+            markerHeight="9"
+            refX="8"
+            refY="4.5"
+            orient="auto"
+          >
             <path d="M0,0 L9,4.5 L0,9 z" fill="#5C4D40" />
           </marker>
           <marker id="gepa-loop" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
@@ -735,9 +713,7 @@ function SectionParameters() {
       title={msg("auto.features.tutorial.components.concepts.guide.literal.3")}
       kicker={msg("auto.features.tutorial.components.concepts.guide.literal.100")}
     >
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.101")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.101")}</SubHeading>
       <p>{msg("auto.features.tutorial.components.concepts.guide.literal.102")}</p>
       <ParamTable
         rows={[
@@ -780,9 +756,7 @@ function SectionParameters() {
         ]}
       />
 
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.113")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.113")}</SubHeading>
       <ParamTable
         rows={[
           {
@@ -810,9 +784,7 @@ function SectionParameters() {
         ]}
       />
 
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.116")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.116")}</SubHeading>
       <ParamTable
         rows={[
           {
@@ -852,13 +824,9 @@ function SectionParameters() {
         ]}
       />
 
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.122")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.122")}</SubHeading>
       <p>
-        <strong>
-          {msg("auto.features.tutorial.components.concepts.guide.literal.123")}
-        </strong>
+        <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.123")}</strong>
         {msg("auto.features.tutorial.components.concepts.guide.literal.124")}
       </p>
       <ul className="list-disc ps-5 space-y-1">
@@ -884,27 +852,19 @@ function SectionTaskDefinition() {
       title={msg("auto.features.tutorial.components.concepts.guide.literal.4")}
       kicker={msg("auto.features.tutorial.components.concepts.guide.literal.128")}
     >
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.129")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.129")}</SubHeading>
       <p>{msg("auto.features.tutorial.components.concepts.guide.literal.130")}</p>
       <ul className="list-disc ps-5 space-y-1">
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.131")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.131")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.132")}
         </li>
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.133")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.133")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.134")}
         </li>
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.135")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.135")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.136")}
         </li>
       </ul>
@@ -920,17 +880,13 @@ class AnswerQuestion(dspy.Signature):
 `}
       />
 
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.137")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.137")}</SubHeading>
       <p>{msg("auto.features.tutorial.components.concepts.guide.literal.138")}</p>
       <p>
-        <strong>
-          {msg("auto.features.tutorial.components.concepts.guide.literal.139")}
-        </strong>
+        <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.139")}</strong>
         {msg("auto.features.tutorial.components.concepts.guide.literal.140")}
       </p>
-      <div className="my-3 overflow-hidden rounded-lg border border-[#E5DDD4] bg-white shadow-[0_1px_2px_rgba(28,22,18,0.05)]">
+      <div className="my-3 overflow-x-auto rounded-lg border border-[#E5DDD4] bg-white shadow-[0_1px_2px_rgba(28,22,18,0.05)]">
         <table className="w-full text-[13.5px] guide-table">
           <thead>
             <tr className="bg-[#F0EBE4] text-[#3D2E22]">
@@ -986,13 +942,9 @@ class AnswerQuestion(dspy.Signature):
         </table>
       </div>
 
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.149")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.149")}</SubHeading>
       <p>
-        <strong>
-          {msg("auto.features.tutorial.components.concepts.guide.literal.150")}
-        </strong>
+        <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.150")}</strong>
         {msg("auto.features.tutorial.components.concepts.guide.literal.151")}
         <InlineCode>
           {msg("auto.features.tutorial.components.concepts.guide.literal.284")}
@@ -1014,25 +966,19 @@ class AnswerQuestion(dspy.Signature):
       <p>{msg("auto.features.tutorial.components.concepts.guide.literal.154")}</p>
       <ul className="list-disc ps-5 space-y-1">
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.155")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.155")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.156")}
           <InlineCode>1.0</InlineCode>
           {msg("auto.features.tutorial.components.concepts.guide.literal.157")}
         </li>
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.158")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.158")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.156")}
           <InlineCode>0.5</InlineCode>
           {msg("auto.features.tutorial.components.concepts.guide.literal.159")}
         </li>
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.160")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.160")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.156")}
           <InlineCode>0.0</InlineCode>
           {msg("auto.features.tutorial.components.concepts.guide.literal.161")}
@@ -1084,7 +1030,9 @@ function WorkflowFlow() {
                 {groupIdx + 1}
               </span>
               <div className="min-w-0">
-                <h5 className="text-[14px] font-bold leading-tight text-[#3D2E22]">{group.title}</h5>
+                <h5 className="text-[14px] font-bold leading-tight text-[#3D2E22]">
+                  {group.title}
+                </h5>
                 <p className="mt-1 text-[12.5px] leading-relaxed text-[#6D5B4B]">{group.desc}</p>
               </div>
             </div>
@@ -1101,7 +1049,9 @@ function WorkflowFlow() {
                   >
                     <span
                       className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-[#EDE7DD] text-[10px] font-bold text-[#5C4D40]"
-                      style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+                      style={{
+                        fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif',
+                      }}
                     >
                       {stepIndex}
                     </span>
@@ -1162,10 +1112,7 @@ function SectionWorkflow() {
       "POST /optimizations/{id}/retry",
       msg("auto.features.tutorial.components.concepts.guide.literal.208"),
     ],
-    [
-      "GET /serve/{id}/info",
-      msg("auto.features.tutorial.components.concepts.guide.literal.209"),
-    ],
+    ["GET /serve/{id}/info", msg("auto.features.tutorial.components.concepts.guide.literal.209")],
     ["POST /serve/{id}", msg("auto.features.tutorial.components.concepts.guide.literal.210")],
     ["GET /health", msg("auto.features.tutorial.components.concepts.guide.literal.211")],
     ["GET /queue", msg("auto.features.tutorial.components.concepts.guide.literal.212")],
@@ -1177,14 +1124,10 @@ function SectionWorkflow() {
       title={msg("auto.features.tutorial.components.concepts.guide.literal.5")}
       kicker={msg("auto.features.tutorial.components.concepts.guide.literal.170")}
     >
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.171")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.171")}</SubHeading>
       <WorkflowFlow />
 
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.172")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.172")}</SubHeading>
       <p>{msg("auto.features.tutorial.components.concepts.guide.literal.173")}</p>
       <ParamTable
         rows={[
@@ -1296,11 +1239,9 @@ function SectionWorkflow() {
         ]}
       />
 
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.194")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.194")}</SubHeading>
       <p>{msg("auto.features.tutorial.components.concepts.guide.literal.195")}</p>
-      <div className="my-3 overflow-hidden rounded-lg border border-[#E5DDD4] bg-white shadow-[0_1px_2px_rgba(28,22,18,0.05)]">
+      <div className="my-3 overflow-x-auto rounded-lg border border-[#E5DDD4] bg-white shadow-[0_1px_2px_rgba(28,22,18,0.05)]">
         <table className="w-full text-[13.5px] guide-table">
           <thead>
             <tr className="bg-[#F0EBE4] text-[#3D2E22]">
@@ -1324,18 +1265,14 @@ function SectionWorkflow() {
                 <td className="px-3 py-2 align-top" dir="ltr">
                   <InlineCode>{endpoint}</InlineCode>
                 </td>
-                <td className="px-3 py-2 align-top text-[#3D2E22]">
-                  {purpose}
-                </td>
+                <td className="px-3 py-2 align-top text-[#3D2E22]">{purpose}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.213")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.213")}</SubHeading>
       <p>{msg("auto.features.tutorial.components.concepts.guide.literal.214")}</p>
       <ul className="list-disc ps-5 space-y-1">
         <li>
@@ -1376,9 +1313,7 @@ function SectionWorkflow() {
         </li>
       </ul>
 
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.347")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.347")}</SubHeading>
       <p>{msg("auto.features.tutorial.components.concepts.guide.literal.348")}</p>
       <p>{msg("auto.features.tutorial.components.concepts.guide.literal.349")}</p>
     </GuideSection>
@@ -1425,62 +1360,42 @@ function SectionTips() {
       title={msg("auto.features.tutorial.components.concepts.guide.literal.6")}
       kicker={msg("auto.features.tutorial.components.concepts.guide.literal.220")}
     >
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.221")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.221")}</SubHeading>
       <ul className="list-disc ps-5 space-y-1">
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.222")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.222")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.223")}
         </li>
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.224")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.224")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.225")}
         </li>
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.226")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.226")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.227")}
         </li>
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.228")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.228")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.229")}
         </li>
       </ul>
 
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.230")}
-      </SubHeading>
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.230")}</SubHeading>
       <ul className="list-disc ps-5 space-y-1">
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.231")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.231")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.232")}
         </li>
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.233")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.233")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.234")}
         </li>
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.235")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.235")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.236")}
         </li>
         <li>
-          <strong>
-            {msg("auto.features.tutorial.components.concepts.guide.literal.32")}
-          </strong>
+          <strong>{msg("auto.features.tutorial.components.concepts.guide.literal.32")}</strong>
           {msg("auto.features.tutorial.components.concepts.guide.literal.237")}
           <InlineCode>
             {msg("auto.features.tutorial.components.concepts.guide.literal.274")}
@@ -1489,10 +1404,8 @@ function SectionTips() {
         </li>
       </ul>
 
-      <SubHeading>
-        {msg("auto.features.tutorial.components.concepts.guide.literal.238")}
-      </SubHeading>
-      <div className="my-3 overflow-hidden rounded-lg border border-[#E5DDD4] bg-white shadow-[0_1px_2px_rgba(28,22,18,0.05)]">
+      <SubHeading>{msg("auto.features.tutorial.components.concepts.guide.literal.238")}</SubHeading>
+      <div className="my-3 overflow-x-auto rounded-lg border border-[#E5DDD4] bg-white shadow-[0_1px_2px_rgba(28,22,18,0.05)]">
         <table className="w-full text-[13.5px] guide-table">
           <thead>
             <tr className="bg-[#F0EBE4] text-[#3D2E22]">
@@ -1513,12 +1426,8 @@ function SectionTips() {
           <tbody>
             {problems.map(([problem, solution], i) => (
               <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-[#FAF8F5]"}>
-                <td className="px-3 py-2 align-top text-[#3D2E22] font-medium">
-                  {problem}
-                </td>
-                <td className="px-3 py-2 align-top text-[#3D2E22]">
-                  {solution}
-                </td>
+                <td className="px-3 py-2 align-top text-[#3D2E22] font-medium">{problem}</td>
+                <td className="px-3 py-2 align-top text-[#3D2E22]">{solution}</td>
               </tr>
             ))}
           </tbody>
@@ -1600,7 +1509,7 @@ function SectionGlossary() {
       title={msg("auto.features.tutorial.components.concepts.guide.literal.7")}
       kicker={msg("auto.features.tutorial.components.concepts.guide.literal.252")}
     >
-      <div className="my-3 overflow-hidden rounded-lg border border-[#E5DDD4] bg-white shadow-[0_1px_2px_rgba(28,22,18,0.05)]">
+      <div className="my-3 overflow-x-auto rounded-lg border border-[#E5DDD4] bg-white shadow-[0_1px_2px_rgba(28,22,18,0.05)]">
         <table className="w-full text-[13.5px] guide-table">
           <thead>
             <tr className="bg-[#F0EBE4] text-[#3D2E22]">
@@ -1621,12 +1530,8 @@ function SectionGlossary() {
           <tbody>
             {rows.map(([term, explanation], i) => (
               <tr key={term} className={i % 2 === 0 ? "bg-white" : "bg-[#FAF8F5]"}>
-                <td className="px-3 py-2 align-top text-[#3D2E22] font-medium">
-                  {term}
-                </td>
-                <td className="px-3 py-2 align-top text-[#3D2E22]">
-                  {explanation}
-                </td>
+                <td className="px-3 py-2 align-top text-[#3D2E22] font-medium">{term}</td>
+                <td className="px-3 py-2 align-top text-[#3D2E22]">{explanation}</td>
               </tr>
             ))}
           </tbody>

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTutorialContext } from "./tutorial-provider";
-import { getTrack } from "../lib/steps";
+import { getLoadedTrack } from "../lib/steps-loader";
 import { SpotlightMask } from "./spotlight-mask";
 import { TutorialPopover } from "./tutorial-popover";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
@@ -13,15 +13,8 @@ import { isTutorialNavigating, registerTutorialHook } from "../lib/bridge";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 export function TutorialOverlay() {
-  const {
-    state,
-    currentStep,
-    nextStep,
-    prevStep,
-    exitTutorial,
-    completeTrack,
-    toggleAutoPlay,
-  } = useTutorialContext();
+  const { state, currentStep, nextStep, prevStep, exitTutorial, completeTrack, toggleAutoPlay } =
+    useTutorialContext();
   const pathname = usePathname();
 
   const [targetRect, setTargetRect] = React.useState<DOMRect | null>(null);
@@ -263,7 +256,9 @@ export function TutorialOverlay() {
       if (waitRaf) cancelAnimationFrame(waitRaf);
       if (trackRaf) cancelAnimationFrame(trackRaf);
       if (resizeObserver) resizeObserver.disconnect();
-      window.removeEventListener("scroll", onWindowChange, { capture: true } as EventListenerOptions);
+      window.removeEventListener("scroll", onWindowChange, {
+        capture: true,
+      } as EventListenerOptions);
       window.removeEventListener("resize", onWindowChange);
       // Best-effort per-step cleanup. Closure captures the OLD step, which
       // is what we want — clean up the step we're leaving before the next
@@ -272,14 +267,7 @@ export function TutorialOverlay() {
         void currentStep.afterHide();
       }
     };
-  }, [
-    state.isVisible,
-    state.lastDirection,
-    currentStep,
-    updatePositions,
-    nextStep,
-    prevStep,
-  ]);
+  }, [state.isVisible, state.lastDirection, currentStep, updatePositions, nextStep, prevStep]);
 
   // Detect manual navigation away from the active step's expected route
   // and exit the tour — the spotlight would otherwise point at a missing
@@ -309,7 +297,7 @@ export function TutorialOverlay() {
     }
 
     if (!stepReady || !state.isAutoPlaying || !currentStep) return;
-    const track = state.activeTrack ? getTrack(state.activeTrack) : null;
+    const track = state.activeTrack ? (getLoadedTrack(state.activeTrack) ?? null) : null;
     if (!track) return;
 
     const isLast = state.currentStepIndex >= track.steps.length - 1;
@@ -359,12 +347,7 @@ export function TutorialOverlay() {
       const tgt = e.target as HTMLElement | null;
       if (tgt) {
         const tag = tgt.tagName;
-        if (
-          tag === "INPUT" ||
-          tag === "TEXTAREA" ||
-          tag === "SELECT" ||
-          tgt.isContentEditable
-        ) {
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tgt.isContentEditable) {
           return;
         }
       }
@@ -416,7 +399,7 @@ export function TutorialOverlay() {
   if (!state.isVisible || !currentStep) return splashPortal;
   if (isTutorialNavigating()) return splashPortal;
 
-  const track = state.activeTrack ? getTrack(state.activeTrack) : null;
+  const track = state.activeTrack ? (getLoadedTrack(state.activeTrack) ?? null) : null;
   if (!track) return splashPortal;
 
   const stepNumber = state.currentStepIndex + 1;

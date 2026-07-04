@@ -49,7 +49,6 @@ import { useJobsStream } from "@/shared/hooks/use-jobs-stream";
 import { toast } from "react-toastify";
 import { useSession } from "next-auth/react";
 import { groupJobsByRecency } from "@/features/sidebar";
-import { useUserPrefs } from "@/features/settings";
 import { AccountMenu } from "@/shared/layout/account-menu";
 import { ShareDialog } from "@/features/optimizations";
 import { StorageMeter } from "@/features/storage";
@@ -502,7 +501,7 @@ export function Sidebar() {
           if (!open) setDeleteConfirm(null);
         }}
       >
-        <DialogContent className="max-w-md sm:max-w-md" showCloseButton={false}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>
               {`${msg("auto.features.sidebar.components.sidebar.3")}${TERMS.optimization}`}
@@ -633,7 +632,6 @@ function JobRow({
   onRefresh: () => void;
 }) {
   const router = useRouter();
-  const { prefs } = useUserPrefs();
   const isRtl = getActiveDir() === "rtl";
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [renaming, setRenaming] = React.useState(false);
@@ -643,8 +641,7 @@ function JobRow({
   const menuRef = React.useRef<HTMLDivElement>(null);
   const btnRef = React.useRef<HTMLButtonElement>(null);
   const renameRef = React.useRef<HTMLInputElement>(null);
-  const isGridSearch =
-    prefs.advancedMode && job.optimization_type === "grid_search" && (job.total_pairs ?? 0) > 0;
+  const isGridSearch = job.optimization_type === "grid_search" && (job.total_pairs ?? 0) > 0;
   const displayName =
     job.name ||
     [job.module_name, job.optimizer_name].filter(Boolean).join(" · ") ||

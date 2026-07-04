@@ -48,6 +48,7 @@ const nextConfig: NextConfig = {
       "@uiw/react-codemirror",
       "@codemirror/lang-python",
       "xlsx",
+      "@lobehub/icons",
     ],
   },
 };

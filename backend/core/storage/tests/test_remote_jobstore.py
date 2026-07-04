@@ -835,6 +835,7 @@ def test_log_eviction_oldest_entry_removed_when_cap_reached(
 ) -> None:
     """Log eviction oldest entry removed when cap reached."""
     monkeypatch.setattr(remote_mod, "MAX_LOG_ENTRIES", 3)
+    monkeypatch.setattr(remote_mod, "LOG_TRIM_SAMPLE_RATE", 1)
 
     store.create_job("evict-log-1")
     for i in range(3):
@@ -852,12 +853,25 @@ def test_log_eviction_oldest_entry_removed_when_cap_reached(
 def test_log_eviction_count_stays_at_cap(store: SQLiteJobStore, monkeypatch: pytest.MonkeyPatch) -> None:
     """Log eviction count stays at cap."""
     monkeypatch.setattr(remote_mod, "MAX_LOG_ENTRIES", 3)
+    monkeypatch.setattr(remote_mod, "LOG_TRIM_SAMPLE_RATE", 1)
 
     store.create_job("evict-log-2")
     for i in range(5):
         store.append_log("evict-log-2", level="INFO", logger_name="lg", message=f"msg-{i}")
 
     assert store.get_log_count("evict-log-2") == 3
+
+
+def test_log_trim_is_sampled_and_batched(store: SQLiteJobStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sampled log trimming allows a small overshoot but keeps rows near the cap."""
+    monkeypatch.setattr(remote_mod, "MAX_LOG_ENTRIES", 200)
+    monkeypatch.setattr(remote_mod, "LOG_TRIM_SAMPLE_RATE", 50)
+
+    store.create_job("sampled-log-trim")
+    for i in range(320):
+        store.append_log("sampled-log-trim", level="INFO", logger_name="lg", message=f"msg-{i}")
+
+    assert 200 <= store.get_log_count("sampled-log-trim") <= 250
 
 
 def test_progress_eviction_oldest_entry_removed_when_cap_reached(

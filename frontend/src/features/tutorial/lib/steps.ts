@@ -60,7 +60,6 @@ import {
   waitForHook,
 } from "./bridge";
 import { isGeneralistAgentEnabled } from "@/features/agent-panel";
-import { readPref } from "@/features/settings";
 
 function navigateTo(path: string) {
   // Prefer in-app client navigation via the tutorial-overlay hook.
@@ -621,6 +620,8 @@ const tutorialSteps: TutorialStep[] = [
     beforeShow: async () => {
       await ensureSubmit();
       setOptimizerName("gepa");
+      // The GEPA grid lives inside the collapsed optimizer disclosure.
+      callTutorialHook("setAdvancedSectionsOpen", true);
       setWizardStep(2);
     },
     track: "deep-dive",
@@ -1041,40 +1042,11 @@ const tutorialSteps: TutorialStep[] = [
 ];
 
 const AGENT_PANEL_STEP_IDS = new Set(["dd-agent-pill", "dd-agent-panel"]);
-// Steps that only run in advanced mode. A few of these have targets that
-// are physically only mounted in advanced (explore canvas, grid pair list,
-// signature/metric editors, deeper compare/detail tabs). The rest are
-// kept advanced-only to keep the basic tour focused on the essentials —
-// "click these few things to ship your first run" — while advanced gets
-// the full feature tour including grid search and power-user controls.
-const ADVANCED_ONLY_STEP_IDS = new Set([
-  "dd-compare-scores",
-  "dd-compare-config",
-  "dd-compare-prompts",
-  "dd-compare-examples",
-  "dd-splits",
-  "dd-auto-level",
-  "dd-score-chart",
-  "dd-trajectory",
-  "dd-playground",
-  "dd-logs",
-  "dd-lm-activity",
-  "dd-config",
-  "dd-grid-overview",
-  "dd-grid-pair",
-  "dd-tagger-modes",
-  "dd-module",
-  "dd-gepa",
-]);
-const BASIC_ONLY_STEP_IDS = new Set<string>();
 
 function getVisibleSteps(): TutorialStep[] {
-  const advanced = readPref("advancedMode");
   const generalist = isGeneralistAgentEnabled();
   return tutorialSteps.filter((s) => {
     if (!generalist && AGENT_PANEL_STEP_IDS.has(s.id)) return false;
-    if (advanced && BASIC_ONLY_STEP_IDS.has(s.id)) return false;
-    if (!advanced && ADVANCED_ONLY_STEP_IDS.has(s.id)) return false;
     return true;
   });
 }
@@ -1091,4 +1063,3 @@ export function getTrack(trackId: TutorialTrack): TutorialTrackDefinition | unde
     steps,
   };
 }
-

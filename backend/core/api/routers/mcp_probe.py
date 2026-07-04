@@ -24,6 +24,10 @@ from ..response_limits import AGENT_MAX_ERROR, truncate_text
 # inline status never looks hung.
 _PROBE_TIMEOUT_S = 8.0
 
+# The wizard shows tool descriptions in full; the cap only guards the payload
+# against pathological servers, not normal docstrings.
+_TOOL_DESCRIPTION_MAX = 4000
+
 
 class McpProbeRequest(BaseModel):
     """Request body for ``POST /mcp/probe``."""
@@ -32,17 +36,39 @@ class McpProbeRequest(BaseModel):
     auth_header: str | None = Field(default=None, max_length=4000)
 
 
+class McpProbeTool(BaseModel):
+    """One tool exposed by the probed server: name plus display summary."""
+
+    name: str
+    description: str | None = None
+
+
 class McpProbeResponse(BaseModel):
     """Response body for ``POST /mcp/probe``: reachability plus tool roster."""
 
     ok: bool
     tool_count: int = 0
-    tool_names: list[str] = Field(default_factory=list)
+    tools: list[McpProbeTool] = Field(default_factory=list)
     error: str | None = None
 
 
-async def _list_tool_names(mcp_url: str, auth_header: str | None) -> list[str]:
-    """Open one MCP session and return the server's tool names.
+def _clean_description(description: str | None) -> str | None:
+    """Bound a raw tool description for transport, keeping its text intact.
+
+    Args:
+        description: Raw description from the MCP tool listing.
+
+    Returns:
+        The full description, stripped and capped at the payload guard, or
+        ``None`` when the tool carries no description.
+    """
+    if not description:
+        return None
+    return truncate_text(description.strip(), _TOOL_DESCRIPTION_MAX) or None
+
+
+async def _list_tools(mcp_url: str, auth_header: str | None) -> list[McpProbeTool]:
+    """Open one MCP session and return the server's tools.
 
     Mirrors the session bootstrap used by the react training path
     (``run_react._list_live_tools``) minus the dspy wrapping — the probe only
@@ -53,7 +79,7 @@ async def _list_tool_names(mcp_url: str, auth_header: str | None) -> list[str]:
         auth_header: Optional ``Authorization`` header to forward.
 
     Returns:
-        The names of every tool the server exposes.
+        Every tool the server exposes, descriptions trimmed for display.
     """
     headers = {"Authorization": auth_header} if auth_header else None
     async with (
@@ -62,7 +88,10 @@ async def _list_tool_names(mcp_url: str, auth_header: str | None) -> list[str]:
     ):
         await session.initialize()
         listing = await session.list_tools()
-        return [tool.name for tool in listing.tools]
+        return [
+            McpProbeTool(name=tool.name, description=_clean_description(tool.description))
+            for tool in listing.tools
+        ]
 
 
 def create_mcp_probe_router() -> APIRouter:
@@ -97,8 +126,8 @@ def create_mcp_probe_router() -> APIRouter:
             connection error.
         """
         try:
-            names = await asyncio.wait_for(
-                _list_tool_names(payload.mcp_url.strip(), payload.auth_header or None),
+            tools = await asyncio.wait_for(
+                _list_tools(payload.mcp_url.strip(), payload.auth_header or None),
                 timeout=_PROBE_TIMEOUT_S,
             )
         except TimeoutError:
@@ -109,6 +138,6 @@ def create_mcp_probe_router() -> APIRouter:
         except Exception as exc:
             detail = truncate_text(str(exc), AGENT_MAX_ERROR) or type(exc).__name__
             return McpProbeResponse(ok=False, error=detail)
-        return McpProbeResponse(ok=True, tool_count=len(names), tool_names=names)
+        return McpProbeResponse(ok=True, tool_count=len(tools), tools=tools)
 
     return router

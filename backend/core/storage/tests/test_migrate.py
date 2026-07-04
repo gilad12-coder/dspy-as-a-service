@@ -31,8 +31,8 @@ from core.storage.models import (
     JobEmbeddingModel,
 )
 
-_HEAD = "b3c4d5e6f7a8"
-# ``_HEAD``'s down_revision — the schema state just before the one-time-500 grant.
+_HEAD = "c7d8e9f0a1b2"
+# The schema state just before the one-time-500 grant migration.
 _PRE_500 = "f2b3c4d5e6a7"
 _BACKEND_DIR = Path(__file__).resolve().parents[3]
 REMOTE_DB_URL = os.environ.get("REMOTE_DB_URL")
