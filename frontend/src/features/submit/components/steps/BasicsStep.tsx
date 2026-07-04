@@ -27,6 +27,7 @@ const MODULE_OPTIONS = [
   ["predict", "Predict", "module.predict"],
   ["cot", "CoT", "module.cot"],
   ["react", "ReAct", "module.react"],
+  ["workflow", "Workflow", "module.workflow"],
 ] as const;
 
 export function BasicsStep({ w }: { w: SubmitWizardContext }) {

@@ -1,11 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Loader2, MessageSquare, Pencil } from "lucide-react";
+import { Check, Loader2, MessageSquare, Pencil, X } from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { InlineErrorRow } from "@/shared/ui/inline-error-row";
-import type { ServeInfoResponse } from "@/shared/types/api";
+import type { ServeInfoResponse, WorkflowNodeTrace } from "@/shared/types/api";
 import { autoResizeTextarea, MessageActions } from "@/shared/ui/agent";
 import { formatOutput } from "@/shared/lib";
 import { msg } from "@/shared/lib/messages";
@@ -18,6 +18,8 @@ export interface ServeChatProps {
     outputs: Record<string, unknown>;
     model: string;
     ts: number;
+    // Per-node execution trace — present only for workflow runs.
+    nodeTraces?: WorkflowNodeTrace[] | null;
   }>;
   setRunHistory: React.Dispatch<React.SetStateAction<ServeChatProps["runHistory"]>>;
   streamingRun: { inputs: Record<string, string>; partial: Record<string, string> } | null;
@@ -198,6 +200,9 @@ export function ServeChat({
                       </span>
                     </div>
                   ))}
+                  {run.nodeTraces && run.nodeTraces.length > 0 && (
+                    <NodeTraceStrip traces={run.nodeTraces} />
+                  )}
                   <div className="mt-1">
                     <MessageActions
                       text={serveInfo.output_fields
@@ -365,6 +370,41 @@ export function ServeChat({
             </div>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Compact per-node execution trace under a workflow run's outputs: one row
+ * per node with status, latency, and a hoverable error. The graph itself
+ * lives in the wizard canvas; here a linear replay keeps the chat readable.
+ */
+function NodeTraceStrip({ traces }: { traces: WorkflowNodeTrace[] }) {
+  return (
+    <div className="mt-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2" dir="ltr">
+      <p className="mb-1 text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">
+        {msg("workflow.playground.trace_title")}
+      </p>
+      <div className="space-y-0.5">
+        {traces.map((trace) => (
+          <div
+            key={trace.node_id}
+            className="flex items-center gap-2 text-xs"
+            title={trace.error ?? undefined}
+          >
+            {trace.error ? (
+              <X className="size-3 shrink-0 text-destructive" />
+            ) : (
+              <Check className="size-3 shrink-0 text-[#5A7247]" />
+            )}
+            <span className="truncate font-mono text-foreground">{trace.name}</span>
+            <span className="text-[0.625rem] uppercase text-muted-foreground/70">{trace.kind}</span>
+            <span className="ms-auto tabular-nums text-muted-foreground">
+              {Math.round(trace.elapsed_ms)} {msg("workflow.trace.ms")}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );

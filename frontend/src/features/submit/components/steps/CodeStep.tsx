@@ -22,8 +22,21 @@ const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m
   loading: () => <Skeleton height={200} borderRadius={8} />,
 });
 
+// React Flow ships ~100KB of canvas code; only workflow runs pay for it.
+const WorkflowCanvas = dynamic(
+  () => import("../../workflow/WorkflowCanvas").then((m) => m.WorkflowCanvas),
+  { ssr: false, loading: () => <Skeleton height={480} borderRadius={8} /> },
+);
+
 export function CodeStep({ w }: { w: SubmitWizardContext }) {
   const {
+    isWorkflow,
+    workflowSpec,
+    setWorkflowSpec,
+    workflowRevision,
+    workflowSampleInputs,
+    workflowDryRunDisabledReason,
+    runWorkflowDryRun,
     signatureCode,
     setSignatureCode,
     setSignatureManuallyEdited,
@@ -57,6 +70,54 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
           p1: TERMS.dataset,
         })
     : undefined;
+
+  if (isWorkflow) {
+    return (
+      <div data-tutorial="wizard-step-4">
+        <div className="overflow-hidden rounded-2xl border border-border/50 bg-card/80 backdrop-blur-xl shadow-lg">
+          <div className="border-b border-border/30 px-6 py-3">
+            <h3 className="inline-flex text-lg font-semibold tracking-tight text-foreground">
+              <HelpTip text={tip("module.workflow")}>{msg("workflow.step.title")}</HelpTip>
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {msg("workflow.step.subtitle")}
+            </p>
+          </div>
+          {workflowSpec && (
+            <WorkflowCanvas
+              spec={workflowSpec}
+              specRevision={workflowRevision}
+              onSpecChange={setWorkflowSpec}
+              dryRun={{
+                disabledReason: workflowDryRunDisabledReason,
+                sampleInputs: workflowSampleInputs,
+                run: runWorkflowDryRun,
+              }}
+            />
+          )}
+          <div className="space-y-2 border-t border-border/30 px-6 py-4" data-tutorial="metric-editor">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <HelpTip text={tip("code.metric")}>{msg("workflow.step.metric_title")}</HelpTip>
+            </Label>
+            <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
+              {msg("workflow.step.metric_hint")}
+            </p>
+            <CodeEditor
+              value={metricCode}
+              onChange={(v) => {
+                setMetricCode(v);
+                setMetricManuallyEdited(true);
+                setMetricValidation(null);
+              }}
+              height="180px"
+              onRun={runMetricValidation}
+              validationResult={metricValidation}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div data-tutorial="wizard-step-4">

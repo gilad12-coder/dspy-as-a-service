@@ -1307,3 +1307,49 @@ def test_submit_grid_search_idempotent_retry_returns_same_optimization_id(
     assert second.status_code == 201
     assert first.json()["optimization_id"] == second.json()["optimization_id"]
     assert len(store.created_ids()) == 1
+
+
+def _workflow_run_payload() -> dict:
+    """Build a minimal valid workflow run payload (no top-level signature).
+
+    Returns:
+        A dict matching the run submission schema with a workflow graph.
+    """
+    payload = _run_payload()
+    payload.pop("signature_code")
+    payload["module_name"] = "workflow"
+    payload["workflow"] = {
+        "nodes": [
+            {"id": "inp", "kind": "input", "fields": [{"name": "q"}]},
+            {
+                "id": "step",
+                "kind": "signature",
+                "signature_code": (
+                    "class Sig(dspy.Signature):\n"
+                    "    q: str = dspy.InputField()\n"
+                    "    a: str = dspy.OutputField()\n"
+                ),
+            },
+            {"id": "out", "kind": "output", "fields": [{"name": "a"}]},
+        ],
+        "edges": [
+            {"source": "inp", "source_port": "q", "target": "step", "target_port": "q"},
+            {"source": "step", "source_port": "a", "target": "out", "target_port": "a"},
+        ],
+    }
+    return payload
+
+
+def test_submit_workflow_run_returns_201_and_persists_spec(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A workflow submission succeeds without signature_code and stores the graph on the overview."""
+    store = _FakeJobStore()
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_workflow_run_payload())
+
+    assert resp.status_code == 201
+    opt_id = resp.json()["optimization_id"]
+    overview = store._jobs[opt_id]["overview"]
+    assert overview["module_name"] == "workflow"
+    assert overview["workflow"]["nodes"][1]["kind"] == "signature"
+    assert overview["signature_code"] is None

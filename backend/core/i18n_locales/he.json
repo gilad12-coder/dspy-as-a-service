@@ -181,6 +181,7 @@
     "wizard.split_fractions_not_number": "ערכי split_fractions חייבים להיות מספרים: {error}",
     "wizard.split_fractions_negative": "split_fractions חייב להיות לא שלילי.",
     "wizard.split_fractions_sum": "split_fractions חייב להסתכם ל-1.0, התקבל {total}",
+    "workflow.validation_failed": "אימות תהליך העבודה נכשל: {error}",
     "serve.no_model_config": "לא נמצאו הגדרות {term.model} לריצה. ספק/י model_config_override.",
     "serve.no_declared_inputs": "לתוצר אין שדות קלט מוצהרים; לא ניתן לאמת בבטחה את הקלטים.",
     "serve.missing_inputs": "חסרים שדות קלט נדרשים: {missing}. השדות הצפויים: {input_fields}",

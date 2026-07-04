@@ -153,6 +153,7 @@ export function formatId(id: string): string {
 export function moduleLabel(raw: string | null | undefined): string {
   if (!raw) return "—";
   const v = raw.toLowerCase();
+  if (v === "workflow") return "Workflow";
   if (v.includes("react")) return "ReAct";
   if (v.includes("chain") || v === "cot") return "CoT";
   if (v.includes("predict")) return "Predict";

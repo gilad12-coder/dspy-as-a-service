@@ -59,13 +59,119 @@ export interface SplitCounts {
   test: number;
 }
 
+// ---------------------------------------------------------------------------
+// Workflow graph wire model — mirrors backend `core/models/workflow.py`.
+// A workflow run (`module_name === "workflow"`) carries this spec instead of a
+// top-level `signature_code`; per-node signatures live inside the nodes.
+
+export interface WorkflowNodePosition {
+  x: number;
+  y: number;
+}
+
+export interface WorkflowFieldSpec {
+  name: string;
+  // Python type expression ("str", "list[str]", ...). Opaque server-side;
+  // the canvas uses it for port coloring.
+  annotation?: string;
+  description?: string | null;
+}
+
+interface WorkflowNodeSpecBase {
+  id: string;
+  name?: string | null;
+  position?: WorkflowNodePosition | null;
+}
+
+export interface WorkflowInputNodeSpec extends WorkflowNodeSpecBase {
+  kind: "input";
+  fields: WorkflowFieldSpec[];
+}
+
+export interface WorkflowOutputNodeSpec extends WorkflowNodeSpecBase {
+  kind: "output";
+  fields: WorkflowFieldSpec[];
+}
+
+export interface WorkflowSignatureNodeSpec extends WorkflowNodeSpecBase {
+  kind: "signature";
+  module_name: "predict" | "cot" | "react";
+  signature_code: string;
+  tool_filter?: string[] | null;
+}
+
+export interface WorkflowTransformNodeSpec extends WorkflowNodeSpecBase {
+  kind: "transform";
+  transform_code: string;
+  input_fields: WorkflowFieldSpec[];
+  output_fields: WorkflowFieldSpec[];
+}
+
+export interface WorkflowMcpNodeSpec extends WorkflowNodeSpecBase {
+  kind: "mcp";
+  tool_name: string;
+  input_fields: WorkflowFieldSpec[];
+  output_field: WorkflowFieldSpec;
+}
+
+export type WorkflowNodeSpec =
+  | WorkflowInputNodeSpec
+  | WorkflowOutputNodeSpec
+  | WorkflowSignatureNodeSpec
+  | WorkflowTransformNodeSpec
+  | WorkflowMcpNodeSpec;
+
+export interface WorkflowEdgeSpec {
+  source: string;
+  source_port: string;
+  target: string;
+  target_port: string;
+}
+
+export interface WorkflowSpec {
+  nodes: WorkflowNodeSpec[];
+  edges: WorkflowEdgeSpec[];
+}
+
+// One node's execution record from a workflow inference or dry run.
+export interface WorkflowNodeTrace {
+  node_id: string;
+  kind: string;
+  name: string;
+  inputs: Record<string, unknown>;
+  outputs?: Record<string, unknown> | null;
+  elapsed_ms: number;
+  error?: string | null;
+}
+
+export interface WorkflowDryRunRequest {
+  workflow: WorkflowSpec;
+  inputs: Record<string, unknown>;
+  model_config: ModelConfig;
+  tool_source?: ToolSource | null;
+}
+
+// A node failure is an expected, renderable outcome (200): `error` and
+// `failed_node_id` are set and `outputs` is null.
+export interface WorkflowDryRunResponse {
+  outputs?: Record<string, unknown> | null;
+  node_traces: WorkflowNodeTrace[];
+  model_used: string;
+  error?: string | null;
+  failed_node_id?: string | null;
+}
+
 interface OptimizationRequestBase {
   name?: string | null;
   description?: string | null;
   username: string;
   module_name: string;
   module_kwargs?: Record<string, unknown>;
-  signature_code: string;
+  // Required for every module except "workflow", whose per-node signatures
+  // live inside the workflow spec instead.
+  signature_code?: string;
+  // Workflow graph spec — required iff `module_name === "workflow"`.
+  workflow?: WorkflowSpec;
   // Optional at the base level (grid-search shares this shape); the run path
   // requires it, react included — react is scored by the same standard metric.
   metric_code?: string;
@@ -439,6 +545,8 @@ export interface ServeResponse {
   input_fields: string[];
   output_fields: string[];
   model_used: string;
+  // Per-node execution trace, present only for workflow runs.
+  node_traces?: WorkflowNodeTrace[] | null;
 }
 
 export interface CatalogModel {

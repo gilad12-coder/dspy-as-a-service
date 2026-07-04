@@ -9,6 +9,7 @@ import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import {
   submitRun,
   submitGridSearch,
+  dryRunWorkflow,
   validateCode,
   validateDataset,
   getOptimizationPayload,
@@ -31,6 +32,7 @@ import type {
   SplitPlan,
   RunRequest,
   ToolSource,
+  WorkflowSpec,
 } from "@/shared/types/api";
 import { parseDatasetFile, type ParsedDataset } from "@/shared/lib/parse-dataset";
 import type { ValidationResult as EditorValidationResult } from "@/shared/ui/code-editor";
@@ -58,6 +60,12 @@ import {
   type WizardDraftData,
 } from "../lib/wizard-draft";
 import { useCodeAgent } from "@/shared/hooks/use-code-agent";
+import {
+  defaultWorkflowSpec,
+  validateWorkflowSpec,
+  workflowUsesTools,
+} from "../workflow/model";
+import { workflowIssueText } from "../workflow/issue-text";
 import {
   buildColumnMapping,
   useDatasetProfiling,
@@ -106,6 +114,33 @@ export function useSubmitWizard() {
     [],
   );
   const isReact = moduleName.toLowerCase() === "react";
+  const isWorkflow = moduleName.toLowerCase() === "workflow";
+
+  // Workflow graph spec — the canvas's single source of truth. `null` until
+  // the user first picks the workflow module (the starter graph is seeded
+  // from the dataset's column roles at that moment). `workflowRevision`
+  // bumps only on external replacements (init, draft restore, clone) so the
+  // canvas can remount without looping on its own edits.
+  const [workflowSpec, setWorkflowSpec] = useState<WorkflowSpec | null>(null);
+  const [workflowRevision, setWorkflowRevision] = useState(0);
+  const workflowSpecRef = useRef<WorkflowSpec | null>(null);
+  useEffect(() => {
+    workflowSpecRef.current = workflowSpec;
+  }, [workflowSpec]);
+  // True until the user (or a restored draft/clone) touches the graph; a
+  // pristine starter graph re-seeds when the dataset's column roles change,
+  // an edited one is never clobbered.
+  const workflowPristineRef = useRef(true);
+  const replaceWorkflowSpec = useCallback((spec: WorkflowSpec | null) => {
+    workflowSpecRef.current = spec;
+    setWorkflowSpec(spec);
+    setWorkflowRevision((r) => r + 1);
+  }, []);
+  const updateWorkflowSpec = useCallback((spec: WorkflowSpec) => {
+    workflowPristineRef.current = false;
+    workflowSpecRef.current = spec;
+    setWorkflowSpec(spec);
+  }, []);
 
   const [signatureCode, setSignatureCode] = useState(() => buildSignatureTemplate({}));
   const [metricCode, setMetricCode] = useState(() => buildMetricTemplate({}));
@@ -130,6 +165,21 @@ export function useSubmitWizard() {
   const [codeAssistMode, setCodeAssistMode] = useState<"auto" | "manual">(() =>
     readPref("wizardCodeAssist"),
   );
+
+  // Seed the starter graph when the workflow module is selected, and keep
+  // re-seeding from the dataset's column roles for as long as the graph is
+  // pristine (the module is often picked on the Basics step, before the
+  // dataset exists). An edited graph is never clobbered.
+  useEffect(() => {
+    if (!isWorkflow) return;
+    if (workflowSpecRef.current !== null && !workflowPristineRef.current) return;
+    replaceWorkflowSpec(defaultWorkflowSpec(columnRoles, columnKinds));
+  }, [isWorkflow, columnRoles, columnKinds, replaceWorkflowSpec]);
+
+  // Grid search doesn't support workflow modules (backend rejects it too).
+  useEffect(() => {
+    if (isWorkflow && jobType !== "run") setOptimizationType("run");
+  }, [isWorkflow, jobType]);
 
   const [globalBaseUrl, setGlobalBaseUrl] = useState("");
   const [globalApiKey, setGlobalApiKey] = useState("");
@@ -285,6 +335,7 @@ export function useSubmitWizard() {
       moduleName,
       optimizerName,
       reactConfig,
+      workflowSpec,
       signatureCode,
       metricCode,
       signatureManuallyEdited,
@@ -333,6 +384,10 @@ export function useSubmitWizard() {
     setModuleName(d.moduleName);
     setOptimizerName(d.optimizerName);
     setReactConfig(d.reactConfig);
+    if (d.workflowSpec) {
+      replaceWorkflowSpec(d.workflowSpec);
+      workflowPristineRef.current = false;
+    }
     setSignatureCode(d.signatureCode);
     setMetricCode(d.metricCode);
     setSignatureManuallyEdited(d.signatureManuallyEdited);
@@ -1260,10 +1315,12 @@ export function useSubmitWizard() {
         }
         return true;
       }
-      case 2:
-        // React live-MCP runs need a tool endpoint; gate it here so the empty
-        // URL is caught when leaving the params step instead of only at submit.
-        if (isReact && reactConfig.toolSourceKind === "live_mcp" && !reactConfig.mcpUrl.trim()) {
+      case 2: {
+        // Tool-using runs (react, or a workflow with react/mcp nodes) need a
+        // live tool endpoint; gate it here so the empty URL is caught when
+        // leaving the params step instead of only at submit.
+        const needsTools = isReact || (isWorkflow && !!workflowSpec && workflowUsesTools(workflowSpec));
+        if (needsTools && reactConfig.toolSourceKind === "live_mcp" && !reactConfig.mcpUrl.trim()) {
           if (showToast) toast.error(msg("submit.validation.mcp_url_required"));
           return false;
         }
@@ -1272,13 +1329,22 @@ export function useSubmitWizard() {
           return false;
         }
         return true;
+      }
       case 3:
-        if (!signatureCode.trim()) {
-          if (showToast) toast.error(msg("submit.validation.signature_required"));
-          return false;
-        }
-        if (!signatureValidation || signatureValidation.errors.length > 0) {
-          return false;
+        if (isWorkflow) {
+          if (!workflowSpec) return false;
+          if (validateWorkflowSpec(workflowSpec, workflowIssueText).length > 0) {
+            if (showToast) toast.error(msg("submit.validation.workflow_invalid"));
+            return false;
+          }
+        } else {
+          if (!signatureCode.trim()) {
+            if (showToast) toast.error(msg("submit.validation.signature_required"));
+            return false;
+          }
+          if (!signatureValidation || signatureValidation.errors.length > 0) {
+            return false;
+          }
         }
         if (!metricCode.trim()) {
           if (showToast) toast.error(msg("submit.validation.metric_required"));
@@ -1602,7 +1668,13 @@ export function useSubmitWizard() {
       goTo(1);
       return;
     }
-    if (!signatureCode.trim()) {
+    if (isWorkflow) {
+      if (!workflowSpec || validateWorkflowSpec(workflowSpec, workflowIssueText).length > 0) {
+        toast.error(msg("submit.validation.workflow_invalid"));
+        goTo(3);
+        return;
+      }
+    } else if (!signatureCode.trim()) {
       toast.error(msg("submit.validation.signature_required"));
       goTo(3);
       return;
@@ -1612,7 +1684,8 @@ export function useSubmitWizard() {
       goTo(3);
       return;
     }
-    if (isReact && reactConfig.toolSourceKind === "live_mcp" && !reactConfig.mcpUrl.trim()) {
+    const needsToolSource = isReact || (isWorkflow && !!workflowSpec && workflowUsesTools(workflowSpec));
+    if (needsToolSource && reactConfig.toolSourceKind === "live_mcp" && !reactConfig.mcpUrl.trim()) {
       toast.error(msg("submit.validation.mcp_url_required"));
       goTo(2);
       return;
@@ -1656,7 +1729,11 @@ export function useSubmitWizard() {
         description: jobDescription.trim() || undefined,
         username: username.trim(),
         module_name: moduleName,
-        signature_code: signatureCode,
+        // A workflow run carries its per-node signatures inside the graph
+        // spec; every other module wraps the single top-level signature.
+        ...(isWorkflow && workflowSpec
+          ? { workflow: workflowSpec }
+          : { signature_code: signatureCode }),
         metric_code: metricCode,
         optimizer_name: optimizerName,
         ...(librarySourceId
@@ -1724,7 +1801,7 @@ export function useSubmitWizard() {
           ...base,
           model_config: applyGlobals(modelConfig),
           ...(secondApplied ? { reflection_model_config: secondApplied } : {}),
-          ...(isReact ? buildReactFields() : {}),
+          ...(needsToolSource ? buildReactFields() : {}),
         };
         result = await submitRun(runPayload);
         track(TelemetryEvent.RunSubmitted, {
@@ -1810,6 +1887,65 @@ export function useSubmitWizard() {
     }
   };
 
+  // Dry-run binding for the workflow canvas: sample values come from the
+  // first dataset row (keyed by the sanitized input-anchor field names the
+  // starter graph derived from the same columns), and the billed test call
+  // reuses the run's model + tool source exactly as submit would send them.
+  const workflowSampleInputs = useMemo(() => {
+    const samples: Record<string, string> = {};
+    const firstRow = parsedDataset?.rows?.[0];
+    if (!firstRow) return samples;
+    for (const [column, role] of Object.entries(columnRoles)) {
+      if (role !== "input") continue;
+      const field = column.replace(/[^a-zA-Z0-9_]/g, "_").replace(/^(\d)/, "_$1");
+      const value = (firstRow as Record<string, unknown>)[column];
+      if (value != null) samples[field] = String(value);
+    }
+    return samples;
+  }, [parsedDataset, columnRoles]);
+
+  const workflowDryRunDisabledReason = !modelConfig.name.trim()
+    ? msg("workflow.dryrun.need_model")
+    : isWorkflow &&
+        workflowSpec &&
+        workflowUsesTools(workflowSpec) &&
+        reactConfig.toolSourceKind === "live_mcp" &&
+        !reactConfig.mcpUrl.trim()
+      ? msg("submit.validation.mcp_url_required")
+      : null;
+
+  const runWorkflowDryRun = useCallback(
+    async (inputs: Record<string, unknown>) => {
+      if (!workflowSpec) throw new Error(msg("submit.validation.workflow_invalid"));
+      const mc = { ...modelConfig };
+      if (globalBaseUrl && !mc.base_url) mc.base_url = globalBaseUrl;
+      if (globalApiKey && !mc.extra?.api_key) mc.extra = { ...mc.extra, api_key: globalApiKey };
+      const filter = reactConfig.toolFilter
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const tool_source: ToolSource | undefined = workflowUsesTools(workflowSpec)
+        ? {
+            kind: reactConfig.toolSourceKind,
+            ...(reactConfig.toolSourceKind === "live_mcp" && reactConfig.mcpUrl.trim()
+              ? { mcp_url: reactConfig.mcpUrl.trim() }
+              : {}),
+            ...(reactConfig.mcpAuthHeader.trim()
+              ? { mcp_auth_header: reactConfig.mcpAuthHeader.trim() }
+              : {}),
+            ...(filter.length > 0 ? { tool_filter: filter } : {}),
+          }
+        : undefined;
+      return dryRunWorkflow({
+        workflow: workflowSpec,
+        inputs,
+        model_config: mc,
+        ...(tool_source ? { tool_source } : {}),
+      });
+    },
+    [workflowSpec, modelConfig, globalBaseUrl, globalApiKey, reactConfig],
+  );
+
   // Hoisted to wizard scope so the seed pass fires as soon as the user
   // has a dataset + I/O roles — by the time they reach the code step,
   // the Signature + metric are already filled (or streaming in).
@@ -1864,6 +2000,14 @@ export function useSubmitWizard() {
     moduleName,
     setModuleName,
     isReact,
+    isWorkflow,
+    workflowSpec,
+    setWorkflowSpec: updateWorkflowSpec,
+    replaceWorkflowSpec,
+    workflowRevision,
+    workflowSampleInputs,
+    workflowDryRunDisabledReason,
+    runWorkflowDryRun,
     reactConfig,
     updateReactConfig,
     optimizerName,

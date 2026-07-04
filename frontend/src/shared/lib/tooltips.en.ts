@@ -48,6 +48,8 @@ export const TOOLTIPS_EN: Record<TooltipKey, string> = {
     "Chain of Thought — adds a reasoning field that leads the model to think step-by-step before the final answer; usually improves accuracy on complex tasks",
   "module.react":
     "ReAct — an agent that combines thinking with calling tools in a loop, until it produces the output in the signature",
+  "module.workflow":
+    "Workflow — a graph of several steps: Signatures, Python code, and tools wired together on a visual canvas. Optimization improves the instructions of all steps together, against one metric on the final output",
   "optimizer.choice": "The method that tries to improve the prompt and find a version with a higher score",
 
   "react.tool_source": "Where the tool list is loaded from: a live MCP server, or a snapshot of tools from the dataset",

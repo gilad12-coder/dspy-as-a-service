@@ -43,11 +43,12 @@ import {
   getOptimizationPayload,
   getServeInfo,
   getPairServeInfo,
+  serveProgram,
   serveProgramStream,
   servePairProgramStream,
   serveSharedOptimization,
 } from "@/shared/lib/api";
-import type { LMActivity, ServeInfoResponse } from "@/shared/types/api";
+import type { LMActivity, ServeInfoResponse, WorkflowNodeTrace } from "@/shared/types/api";
 import {
   DEMO_OPTIMIZATION_ID,
   DEMO_GRID_OPTIMIZATION_ID,
@@ -333,6 +334,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
       outputs: Record<string, unknown>;
       model: string;
       ts: number;
+      nodeTraces?: WorkflowNodeTrace[] | null;
     }>
   >([]);
   const [streamingRun, setStreamingRun] = useState<{
@@ -719,6 +721,36 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
         setRunHistory((prev) => {
           const next = [
             { inputs: { ...inputs }, outputs: res.outputs, model: res.model_used, ts: Date.now() },
+            ...prev,
+          ];
+          return next.length > 50 ? next.slice(0, 50) : next;
+        });
+        setStreamingRun(null);
+      } catch (err) {
+        if (isStale()) return;
+        setServeError(err instanceof Error ? err.message : msg("share.inference_failed"));
+        setStreamingRun(null);
+      } finally {
+        if (!isStale()) setServeLoading(false);
+      }
+      return;
+    }
+    // Workflow runs serve through the blocking endpoint: the response carries
+    // the per-node trace the playground replays, which the SSE final event
+    // does not.
+    if ((job?.module_name ?? "").toLowerCase() === "workflow" && activePairIndex == null) {
+      try {
+        const res = await serveProgram(id, inputs);
+        if (isStale()) return;
+        setRunHistory((prev) => {
+          const next = [
+            {
+              inputs: { ...inputs },
+              outputs: res.outputs,
+              model: res.model_used,
+              ts: Date.now(),
+              nodeTraces: res.node_traces ?? null,
+            },
             ...prev,
           ];
           return next.length > 50 ? next.slice(0, 50) : next;

@@ -1,4 +1,4 @@
-import type { ModelConfig, SplitFractions } from "@/shared/types/api";
+import type { ModelConfig, SplitFractions, WorkflowSpec } from "@/shared/types/api";
 import type { ParsedDataset } from "@/shared/lib/parse-dataset";
 import type { ReactConfig, ColumnRole } from "../constants";
 
@@ -25,6 +25,7 @@ export interface WizardDraftData {
   moduleName: string;
   optimizerName: string;
   reactConfig: ReactConfig;
+  workflowSpec?: WorkflowSpec | null;
   signatureCode: string;
   metricCode: string;
   signatureManuallyEdited: boolean;

@@ -9,6 +9,7 @@ Both endpoints are part of the public dev surface and are listed in
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Annotated, cast
@@ -531,10 +532,13 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             logger.warning("Payload validation failed: %s", exc)
             raise DomainError("submission.validation_failed", status=400) from exc
 
-        _enforce_vision_capability(
-            signature_code=payload.signature_code,
-            candidate_models=[payload.model_settings],
-        )
+        # Workflow runs have no top-level signature; per-node image fields are
+        # rejected by the workflow deep-validation pass instead.
+        if payload.signature_code is not None:
+            _enforce_vision_capability(
+                signature_code=payload.signature_code,
+                candidate_models=[payload.model_settings],
+            )
 
         enforce_storage_quota(
             job_store,
@@ -552,7 +556,14 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         _enforce_byok_connections(job_store, payload.username, payload.token_source, _run_model_values)
 
         optimization_id = str(uuid4())
-        task_fingerprint = compute_task_fingerprint(payload.signature_code, payload.metric_code, payload.dataset)
+        # Workflow runs fingerprint the whole graph spec in place of the
+        # single signature source — same identity semantics, different carrier.
+        program_source = payload.signature_code or json.dumps(
+            payload.workflow.model_dump() if payload.workflow else None,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        task_fingerprint = compute_task_fingerprint(program_source, payload.metric_code, payload.dataset)
         # Derive the default seed from the task fingerprint (not the optimization id)
         # so submissions of the same task share train/val/test splits — a prerequisite
         # for the compare flow to line up per-row test results across deduplicated runs.

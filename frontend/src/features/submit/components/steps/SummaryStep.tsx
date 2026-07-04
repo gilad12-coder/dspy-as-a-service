@@ -112,9 +112,15 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
     useMerge,
     signatureCode,
     metricCode,
+    isWorkflow,
+    workflowSpec,
     costBracket,
     maxCostCredits,
   } = w;
+
+  // A workflow run has no single top-level signature — the graph carries the
+  // per-node code, so the code tab shows only the metric plus a graph line.
+  const displaySignatureCode = isWorkflow ? "" : signatureCode;
 
   // Read-only echo of the pre-run estimate the user set on the model step, so the
   // final review restates what this run is expected to cost (and any hard cap)
@@ -466,12 +472,20 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
 
               {summaryTab === 4 && (
                 <Tabs
-                  defaultValue={signatureCode ? "signature" : "metric"}
+                  defaultValue={displaySignatureCode ? "signature" : "metric"}
                   dir="ltr"
                   onValueChange={setSummaryCodeTab}
                 >
+                  {isWorkflow && workflowSpec && (
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      {formatMsg("workflow.summary.graph", {
+                        p1: workflowSpec.nodes.length,
+                        p2: workflowSpec.edges.length,
+                      })}
+                    </p>
+                  )}
                   <TabsList className="relative inline-flex w-full rounded-lg bg-muted p-1 gap-1 border-none shadow-none h-auto">
-                    {signatureCode && metricCode && (
+                    {displaySignatureCode && metricCode && (
                       <div
                         className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-md bg-[#3D2E22] shadow-sm transition-[inset-inline-start] duration-200 ease-out"
                         style={{
@@ -479,7 +493,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                         }}
                       />
                     )}
-                    {signatureCode && (
+                    {displaySignatureCode && (
                       <TabsTrigger
                         value="signature"
                         className="relative z-10 rounded-md px-4 py-2 text-sm font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5"
@@ -496,12 +510,12 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                       </TabsTrigger>
                     )}
                   </TabsList>
-                  {signatureCode && (
+                  {displaySignatureCode && (
                     <TabsContent value="signature">
                       <CodeEditor
-                        value={signatureCode}
+                        value={displaySignatureCode}
                         onChange={() => {}}
-                        height={`${Math.min(signatureCode.split("\n").length + 1, 10) * 19.6 + 8}px`}
+                        height={`${Math.min(displaySignatureCode.split("\n").length + 1, 10) * 19.6 + 8}px`}
                         readOnly
                       />
                     </TabsContent>

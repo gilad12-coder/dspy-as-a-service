@@ -207,6 +207,7 @@ export const I18N_MESSAGES = {
   "wizard.split_fractions_not_number": "ערכי split_fractions חייבים להיות מספרים: {error}",
   "wizard.split_fractions_not_object": "split_fractions חייב להיות אובייקט עם המפתחות train/val/test.",
   "wizard.split_fractions_sum": "split_fractions חייב להסתכם ל-1.0, התקבל {total}",
+  "workflow.validation_failed": "אימות תהליך העבודה נכשל: {error}",
 } as const;
 
 export type TermKey = keyof typeof TERMS;
@@ -840,6 +841,7 @@ export const I18N_MESSAGES_EN: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "split_fractions values must be numbers: {error}",
   "wizard.split_fractions_not_object": "split_fractions must be an object with train/val/test keys.",
   "wizard.split_fractions_sum": "split_fractions must sum to 1.0, got {total}",
+  "workflow.validation_failed": "Workflow validation failed: {error}",
 };
 
 const terms_en_GB: Partial<Record<TermKey, string>> = {
@@ -3650,6 +3652,7 @@ export const I18N_KEY = {
   WIZARD_SPLIT_FRACTIONS_NOT_NUMBER: "wizard.split_fractions_not_number",
   WIZARD_SPLIT_FRACTIONS_NOT_OBJECT: "wizard.split_fractions_not_object",
   WIZARD_SPLIT_FRACTIONS_SUM: "wizard.split_fractions_sum",
+  WORKFLOW_VALIDATION_FAILED: "workflow.validation_failed",
 } as const;
 
 export const TERM_KEY = {

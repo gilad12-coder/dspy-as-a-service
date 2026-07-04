@@ -17,6 +17,8 @@ import type {
   ValidateCodeResponse,
   ValidateDatasetRequest,
   ValidateDatasetResponse,
+  WorkflowDryRunRequest,
+  WorkflowDryRunResponse,
 } from "@/shared/types/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { I18N_KEY, tI18n } from "@/shared/lib/i18n";
@@ -338,6 +340,13 @@ export function postTelemetry(body: unknown): void {
 
 export function submitRun(payload: RunRequest) {
   return request<OptimizationSubmissionResponse>("/run", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function dryRunWorkflow(payload: WorkflowDryRunRequest) {
+  return request<WorkflowDryRunResponse>("/workflows/dry-run", {
     method: "POST",
     body: JSON.stringify(payload),
   });

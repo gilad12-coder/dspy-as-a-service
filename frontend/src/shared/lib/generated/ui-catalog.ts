@@ -2482,6 +2482,7 @@ export type MessageKey =
   | "submit.validation.split_too_small"
   | "submit.validation.username_required"
   | "submit.validation.vision_required"
+  | "submit.validation.workflow_invalid"
   | "tagger.library.name_cancel"
   | "tagger.library.name_label"
   | "tagger.library.name_save"
@@ -2600,7 +2601,65 @@ export type MessageKey =
   | "usage.stat.per_run"
   | "usage.stat.refunded"
   | "usage.stat.runs"
-  | "usage.stat.spent";
+  | "usage.stat.spent"
+  | "workflow.dryrun.cancel"
+  | "workflow.dryrun.description"
+  | "workflow.dryrun.dismiss"
+  | "workflow.dryrun.failed"
+  | "workflow.dryrun.need_model"
+  | "workflow.dryrun.run"
+  | "workflow.dryrun.running"
+  | "workflow.dryrun.succeeded"
+  | "workflow.dryrun.title"
+  | "workflow.inspector.add_field"
+  | "workflow.inspector.delete"
+  | "workflow.inspector.display_name"
+  | "workflow.inspector.input_fields"
+  | "workflow.inspector.kind.input"
+  | "workflow.inspector.kind.mcp"
+  | "workflow.inspector.kind.output"
+  | "workflow.inspector.kind.signature"
+  | "workflow.inspector.kind.transform"
+  | "workflow.inspector.module"
+  | "workflow.inspector.output_fields"
+  | "workflow.inspector.remove_field"
+  | "workflow.inspector.result_field"
+  | "workflow.inspector.signature_code"
+  | "workflow.inspector.tool_filter"
+  | "workflow.inspector.tool_filter_placeholder"
+  | "workflow.inspector.tool_name"
+  | "workflow.inspector.tool_name_placeholder"
+  | "workflow.inspector.transform_code"
+  | "workflow.issue.bad_field_name"
+  | "workflow.issue.cycle"
+  | "workflow.issue.duplicate_field"
+  | "workflow.issue.missing_port"
+  | "workflow.issue.multi_producer"
+  | "workflow.issue.no_path_to_output"
+  | "workflow.issue.signature_empty"
+  | "workflow.issue.tool_name_missing"
+  | "workflow.issue.transform_params_mismatch"
+  | "workflow.issue.unconnected_input"
+  | "workflow.issue.unreachable"
+  | "workflow.node.input"
+  | "workflow.node.mcp"
+  | "workflow.node.output"
+  | "workflow.node.transform"
+  | "workflow.playground.trace_title"
+  | "workflow.step.metric_hint"
+  | "workflow.step.metric_title"
+  | "workflow.step.subtitle"
+  | "workflow.step.title"
+  | "workflow.summary.graph"
+  | "workflow.toolbar.add_signature"
+  | "workflow.toolbar.add_tool"
+  | "workflow.toolbar.add_transform"
+  | "workflow.toolbar.dry_run"
+  | "workflow.toolbar.exit_fullscreen"
+  | "workflow.toolbar.fullscreen"
+  | "workflow.toolbar.issues"
+  | "workflow.toolbar.tidy"
+  | "workflow.trace.ms";
 
 export const UI_MESSAGES: Record<MessageKey, string> = {
   "app.meta.description": "מערכת לאופטימיזציית פרומפטים עם DSPy — שיפור ביצועים של מודלי שפה באופן אוטומטי",
@@ -5084,6 +5143,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.validation.split_too_small": "ה{term.dataset} קטן מדי כדי להריץ {term.optimization} — נדרשות לפחות דוגמאות ל{term.splitVal} או ל{term.splitTest}",
   "submit.validation.username_required": "הזן/הזיני שם משתמש",
   "submit.validation.vision_required": "העמודות {fields} מוגדרות כתמונה, אבל ה{term.model} '{model}' לא תומך בקלט תמונות",
+  "submit.validation.workflow_invalid": "יש בעיות בגרף תהליך העבודה — פתחו את שלב הקוד לפרטים",
   "tagger.library.name_cancel": "ביטול",
   "tagger.library.name_label": "שם הדאטאסט",
   "tagger.library.name_save": "שמירה",
@@ -5203,6 +5263,64 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "usage.stat.refunded": "קרדיטים שהוחזרו",
   "usage.stat.runs": "ריצות",
   "usage.stat.spent": "קרדיטים שנוצלו",
+  "workflow.dryrun.cancel": "ביטול",
+  "workflow.dryrun.description": "הרצה אחת של הגרף הלא-מאופטם על קלט לדוגמה, כדי לוודא שהחיווט תקין לפני שמוציאים קרדיטים על אופטימיזציה",
+  "workflow.dryrun.dismiss": "סגירת תוצאת ההרצה",
+  "workflow.dryrun.failed": "ההרצה נכשלה",
+  "workflow.dryrun.need_model": "בחרו מודל בשלב המודל כדי להריץ ניסיון",
+  "workflow.dryrun.run": "הרצה",
+  "workflow.dryrun.running": "מריץ…",
+  "workflow.dryrun.succeeded": "ההרצה הצליחה",
+  "workflow.dryrun.title": "הרצת ניסיון",
+  "workflow.inspector.add_field": "הוספת שדה",
+  "workflow.inspector.delete": "מחיקת הצומת",
+  "workflow.inspector.display_name": "שם תצוגה",
+  "workflow.inspector.input_fields": "שדות קלט",
+  "workflow.inspector.kind.input": "צומת קלט — שדות המקור של הגרף",
+  "workflow.inspector.kind.mcp": "קריאה ישירה לכלי MCP",
+  "workflow.inspector.kind.output": "צומת פלט — התוצאות הסופיות שהמדד בוחן",
+  "workflow.inspector.kind.signature": "צעד מודל שפה (Signature)",
+  "workflow.inspector.kind.transform": "צעד Python — עיבוד בין צמתים",
+  "workflow.inspector.module": "מודול",
+  "workflow.inspector.output_fields": "שדות פלט",
+  "workflow.inspector.remove_field": "הסרת שדה",
+  "workflow.inspector.result_field": "שדה התוצאה",
+  "workflow.inspector.signature_code": "Signature",
+  "workflow.inspector.tool_filter": "הגבלת כלים",
+  "workflow.inspector.tool_filter_placeholder": "search, fetch (ריק = כל הכלים)",
+  "workflow.inspector.tool_name": "שם הכלי",
+  "workflow.inspector.tool_name_placeholder": "שם הכלי בשרת ה-MCP",
+  "workflow.inspector.transform_code": "קוד Python (פונקציית transform)",
+  "workflow.issue.bad_field_name": "שם שדה לא חוקי: {p1} (אותיות לטיניות, ספרות וקו תחתון בלבד)",
+  "workflow.issue.cycle": "הגרף מכיל מעגל — תהליך עבודה חייב לזרום קדימה בלבד",
+  "workflow.issue.duplicate_field": "שם שדה כפול: {p1}",
+  "workflow.issue.missing_port": "חיבור מפנה לשדה שלא קיים: {p1}",
+  "workflow.issue.multi_producer": "היציאה {p1} מחוברת ליותר ממקור אחד",
+  "workflow.issue.no_path_to_output": "אין מסלול מהצומת אל צומת הפלט",
+  "workflow.issue.signature_empty": "ל-Signature אין שדות קלט/פלט — בדקו את הקוד",
+  "workflow.issue.tool_name_missing": "לא הוגדר שם כלי",
+  "workflow.issue.transform_params_mismatch": "הפרמטרים של transform ({p1}) לא תואמים לשדות הקלט המוצהרים ({p2})",
+  "workflow.issue.unconnected_input": "שדה הקלט {p1} לא מחובר",
+  "workflow.issue.unreachable": "הצומת לא מחובר לצומת הקלט",
+  "workflow.node.input": "קלט",
+  "workflow.node.mcp": "כלי",
+  "workflow.node.output": "פלט",
+  "workflow.node.transform": "עיבוד",
+  "workflow.playground.trace_title": "מסלול הריצה בגרף",
+  "workflow.step.metric_hint": "המדד מקבל את הפלט הסופי של הגרף (שדות צומת הפלט) ומחזיר ציון — האופטימיזציה מכוונת את כל הצמתים לפיו",
+  "workflow.step.metric_title": "Metric — מדד סוף-לסוף",
+  "workflow.step.subtitle": "חברו צמתים של Signatures, קוד Python וכלים לגרף אחד — האופטימיזציה משפרת את כל הצמתים יחד מול מדד אחד",
+  "workflow.step.title": "בניית תהליך העבודה",
+  "workflow.summary.graph": "גרף עם {p1} צמתים ו-{p2} חיבורים; ה-Signatures של כל צעד מוגדרים בקנבס שבשלב הקוד",
+  "workflow.toolbar.add_signature": "Signature",
+  "workflow.toolbar.add_tool": "כלי",
+  "workflow.toolbar.add_transform": "עיבוד",
+  "workflow.toolbar.dry_run": "הרצת ניסיון",
+  "workflow.toolbar.exit_fullscreen": "יציאה ממסך מלא",
+  "workflow.toolbar.fullscreen": "מסך מלא",
+  "workflow.toolbar.issues": "{p1} בעיות בגרף",
+  "workflow.toolbar.tidy": "סידור אוטומטי",
+  "workflow.trace.ms": "מ\"ש",
 } as Record<MessageKey, string>;
 
 const ui_ar: Partial<Record<MessageKey, string>> = {
@@ -12881,6 +12999,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.validation.split_too_small": "The dataset is too small to run an optimization — at least a few examples are needed for val or test",
   "submit.validation.username_required": "Enter a username",
   "submit.validation.vision_required": "Columns {fields} are set as image, but the model '{model}' doesn't support image inputs",
+  "submit.validation.workflow_invalid": "The workflow graph has issues — open the code step for details",
   "tagger.library.name_cancel": "Cancel",
   "tagger.library.name_label": "Dataset name",
   "tagger.library.name_save": "Save",
@@ -13000,6 +13119,64 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "usage.stat.refunded": "Credits refunded",
   "usage.stat.runs": "Runs",
   "usage.stat.spent": "Credits spent",
+  "workflow.dryrun.cancel": "Cancel",
+  "workflow.dryrun.description": "One execution of the unoptimized graph on a sample input, to verify the wiring before spending optimization credits",
+  "workflow.dryrun.dismiss": "Dismiss dry-run result",
+  "workflow.dryrun.failed": "Dry run failed",
+  "workflow.dryrun.need_model": "Pick a model on the model step to dry-run",
+  "workflow.dryrun.run": "Run",
+  "workflow.dryrun.running": "Running…",
+  "workflow.dryrun.succeeded": "Dry run succeeded",
+  "workflow.dryrun.title": "Dry run",
+  "workflow.inspector.add_field": "Add field",
+  "workflow.inspector.delete": "Delete node",
+  "workflow.inspector.display_name": "Display name",
+  "workflow.inspector.input_fields": "Input fields",
+  "workflow.inspector.kind.input": "Input node — the graph's source fields",
+  "workflow.inspector.kind.mcp": "Direct MCP tool call",
+  "workflow.inspector.kind.output": "Output node — the final results the metric scores",
+  "workflow.inspector.kind.signature": "LLM step (Signature)",
+  "workflow.inspector.kind.transform": "Python step — reshaping between nodes",
+  "workflow.inspector.module": "Module",
+  "workflow.inspector.output_fields": "Output fields",
+  "workflow.inspector.remove_field": "Remove field",
+  "workflow.inspector.result_field": "Result field",
+  "workflow.inspector.signature_code": "Signature",
+  "workflow.inspector.tool_filter": "Tool filter",
+  "workflow.inspector.tool_filter_placeholder": "search, fetch (empty = all tools)",
+  "workflow.inspector.tool_name": "Tool name",
+  "workflow.inspector.tool_name_placeholder": "Tool name on the MCP server",
+  "workflow.inspector.transform_code": "Python code (transform function)",
+  "workflow.issue.bad_field_name": "Invalid field name: {p1} (Latin letters, digits, and underscore only)",
+  "workflow.issue.cycle": "The graph contains a cycle — a workflow must only flow forward",
+  "workflow.issue.duplicate_field": "Duplicate field name: {p1}",
+  "workflow.issue.missing_port": "An edge references a missing field: {p1}",
+  "workflow.issue.multi_producer": "Port {p1} is fed by more than one source",
+  "workflow.issue.no_path_to_output": "No path from this node to the output node",
+  "workflow.issue.signature_empty": "The Signature has no input/output fields — check the code",
+  "workflow.issue.tool_name_missing": "No tool name set",
+  "workflow.issue.transform_params_mismatch": "The transform parameters ({p1}) do not match the declared input fields ({p2})",
+  "workflow.issue.unconnected_input": "Input field {p1} is not connected",
+  "workflow.issue.unreachable": "This node is not connected to the input node",
+  "workflow.node.input": "Input",
+  "workflow.node.mcp": "Tool",
+  "workflow.node.output": "Output",
+  "workflow.node.transform": "Transform",
+  "workflow.playground.trace_title": "Graph execution trace",
+  "workflow.step.metric_hint": "The metric receives the graph's final output (the output node's fields) and returns a score — optimization tunes every node against it",
+  "workflow.step.metric_title": "Metric — end-to-end score",
+  "workflow.step.subtitle": "Wire Signatures, Python steps, and tools into one graph — optimization improves all nodes together against a single metric",
+  "workflow.step.title": "Build the workflow",
+  "workflow.summary.graph": "Graph with {p1} nodes and {p2} connections; each step's Signature is defined on the canvas in the code step",
+  "workflow.toolbar.add_signature": "Signature",
+  "workflow.toolbar.add_tool": "Tool",
+  "workflow.toolbar.add_transform": "Transform",
+  "workflow.toolbar.dry_run": "Dry run",
+  "workflow.toolbar.exit_fullscreen": "Exit fullscreen",
+  "workflow.toolbar.fullscreen": "Fullscreen",
+  "workflow.toolbar.issues": "{p1} graph issues",
+  "workflow.toolbar.tidy": "Tidy up",
+  "workflow.trace.ms": "ms",
 };
 
 const ui_en_GB: Partial<Record<MessageKey, string>> = {
