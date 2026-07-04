@@ -28,6 +28,11 @@ PAYLOAD_OVERVIEW_MODULE_KWARGS = "module_kwargs"
 # Stored so the load path can reconstruct the optimized program from a
 # state-only JSON artifact (no pickle deserialization required).
 PAYLOAD_OVERVIEW_SIGNATURE_CODE = "signature_code"
+# Workflow runs: the full graph spec (the workflow-mode analogue of
+# signature_code) and a scrubbed tool_source ({kind, mcp_url, tool_filter} —
+# never the auth header), both needed to rebuild the program shell at serve.
+PAYLOAD_OVERVIEW_WORKFLOW = "workflow"
+PAYLOAD_OVERVIEW_TOOL_SOURCE = "tool_source"
 PAYLOAD_OVERVIEW_OPTIMIZER_NAME = "optimizer_name"
 PAYLOAD_OVERVIEW_MODEL_NAME = "model_name"
 PAYLOAD_OVERVIEW_MODEL_SETTINGS = "model_settings"

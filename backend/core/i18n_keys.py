@@ -151,6 +151,7 @@ class I18nKey(StrEnum):
     WIZARD_SPLIT_FRACTIONS_NOT_NUMBER = 'wizard.split_fractions_not_number'
     WIZARD_SPLIT_FRACTIONS_NOT_OBJECT = 'wizard.split_fractions_not_object'
     WIZARD_SPLIT_FRACTIONS_SUM = 'wizard.split_fractions_sum'
+    WORKFLOW_VALIDATION_FAILED = 'workflow.validation_failed'
 
 
 class TermKey(StrEnum):

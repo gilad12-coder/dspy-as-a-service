@@ -361,6 +361,45 @@ def load_metric_from_code(code: str) -> Callable[..., Any]:
     return metric
 
 
+def load_transform_from_code(code: str) -> Callable[..., Any]:
+    """Execute user-provided code and return the transform callable it defines.
+
+    Transforms are the non-LLM steps of a workflow graph: plain functions
+    taking the node's input ports as keyword arguments and returning a dict
+    keyed by the node's declared output ports. Same trust boundary as
+    :func:`load_metric_from_code` — isolated behind the per-job subprocess
+    for optimization runs, exec'd in-process on validation paths.
+
+    Args:
+        code: User-authored transform source code.
+
+    Returns:
+        The transform callable extracted from the namespace.
+
+    Raises:
+        ServiceError: When the code has a syntax error or defines no callable.
+    """
+
+    namespace: dict[str, Any] = {"dspy": dspy}
+    try:
+        # dont_inherit=True for the same reason as load_signature_from_code:
+        # keep this module's PEP 563 future-import from stringizing the
+        # user function's annotations.
+        exec(compile(code, "<transform_code>", "exec", dont_inherit=True), namespace)
+    except SyntaxError as exc:
+        raise ServiceError(f"transform_code has a syntax error: {exc}") from exc
+    transform = namespace.get("transform")
+    if not callable(transform):
+        callables = [
+            obj for obj in namespace.values() if callable(obj) and not isinstance(obj, type) and obj is not dspy
+        ]
+        if len(callables) == 1:
+            transform = callables[0]
+    if not callable(transform):
+        raise ServiceError("transform_code must define a callable named 'transform'.")
+    return transform
+
+
 def split_examples(
     examples: list[Any],
     fractions: SplitFractions,

@@ -1,0 +1,367 @@
+"""Tests for workflow program compilation, execution, and deep validation."""
+
+from __future__ import annotations
+
+import dspy
+import pytest
+
+from core.exceptions import ServiceError
+from core.models import WorkflowSpec
+from core.service_gateway.optimization.workflow import (
+    WORKFLOW_NODE_ATTR_PREFIX,
+    WorkflowNodeExecutionError,
+    WorkflowProgram,
+    build_workflow_program,
+    capture_node_traces,
+    validate_workflow,
+)
+
+_SIG = (
+    "import dspy\n"
+    "class Summarize(dspy.Signature):\n"
+    "    text: str = dspy.InputField()\n"
+    "    summary: str = dspy.OutputField()\n"
+)
+
+_TRANSFORM = "def transform(text):\n    return {'shout': text.upper()}\n"
+
+
+class _FakeModule(dspy.Module):
+    """A stand-in signature module returning canned prediction fields."""
+
+    def __init__(self, fn):
+        """Store the fabrication function.
+
+        Args:
+            fn: Callable mapping input kwargs to an output-field dict.
+        """
+        super().__init__()
+        self._fn = fn
+
+    def forward(self, **kwargs):
+        """Fabricate a prediction from the stored function."""
+        return dspy.Prediction(**self._fn(**kwargs))
+
+
+def _spec(nodes: list[dict], edges: list[dict]) -> WorkflowSpec:
+    """Parse a spec from node/edge dicts.
+
+    Args:
+        nodes: Node dicts.
+        edges: Edge dicts.
+
+    Returns:
+        The validated ``WorkflowSpec``.
+    """
+    return WorkflowSpec.model_validate({"nodes": nodes, "edges": edges})
+
+
+def _branch_merge_program() -> WorkflowProgram:
+    """Build a branch+merge program from fake signature modules."""
+    spec = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "text"}]},
+            {"id": "left", "kind": "signature", "signature_code": _SIG},
+            {"id": "right", "kind": "signature", "signature_code": _SIG},
+            {"id": "out", "kind": "output", "fields": [{"name": "a"}, {"name": "b"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "text", "target": "left", "target_port": "text"},
+            {"source": "inp", "source_port": "text", "target": "right", "target_port": "text"},
+            {"source": "left", "source_port": "summary", "target": "out", "target_port": "a"},
+            {"source": "right", "source_port": "summary", "target": "out", "target_port": "b"},
+        ],
+    )
+    return WorkflowProgram(
+        spec,
+        signature_modules={
+            "left": _FakeModule(lambda text: {"summary": f"L:{text}"}),
+            "right": _FakeModule(lambda text: {"summary": f"R:{text}"}),
+        },
+        signature_outputs={"left": ["summary"], "right": ["summary"]},
+        transforms={},
+        tools={},
+    )
+
+
+def test_branch_merge_execution_and_traces():
+    """Branches both see the input; the output anchor gathers both; traces replay it."""
+    program = _branch_merge_program()
+    with capture_node_traces() as traces:
+        prediction = program(text="hi")
+    assert prediction.a == "L:hi"
+    assert prediction.b == "R:hi"
+    assert [t["node_id"] for t in traces] == ["inp", "left", "right", "out"]
+    assert traces[1]["inputs"] == {"text": "hi"}
+    assert traces[3]["outputs"] == {"a": "L:hi", "b": "R:hi"}
+    assert all(t["error"] is None for t in traces)
+
+
+def test_no_trace_recording_without_sink():
+    """Execution outside capture_node_traces records nothing (optimization path)."""
+    program = _branch_merge_program()
+    prediction = program(text="hi")
+    assert prediction.a == "L:hi"
+
+
+def test_missing_workflow_input_raises_with_node_id():
+    """Omitting a workflow input names the input anchor."""
+    program = _branch_merge_program()
+    with pytest.raises(WorkflowNodeExecutionError, match="missing workflow inputs"):
+        program()
+
+
+def test_failing_node_is_named_and_traced():
+    """A raising node surfaces its id and leaves an error trace entry."""
+    spec = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "text"}]},
+            {"id": "boom", "kind": "signature", "signature_code": _SIG},
+            {"id": "out", "kind": "output", "fields": [{"name": "summary"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "text", "target": "boom", "target_port": "text"},
+            {"source": "boom", "source_port": "summary", "target": "out", "target_port": "summary"},
+        ],
+    )
+
+    def _explode(**_kwargs):
+        raise ValueError("kaput")
+
+    program = WorkflowProgram(
+        spec,
+        signature_modules={"boom": _FakeModule(_explode)},
+        signature_outputs={"boom": ["summary"]},
+        transforms={},
+        tools={},
+    )
+    with capture_node_traces() as traces:
+        with pytest.raises(WorkflowNodeExecutionError, match="'boom' failed"):
+            program(text="x")
+    assert traces[-1]["node_id"] == "boom"
+    assert "kaput" in traces[-1]["error"]
+
+
+def test_transform_workflow_builds_and_executes():
+    """build_workflow_program loads real transform code and executes it end to end."""
+    spec = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "text"}]},
+            {
+                "id": "shout",
+                "kind": "transform",
+                "transform_code": _TRANSFORM,
+                "input_fields": [{"name": "text"}],
+                "output_fields": [{"name": "shout"}],
+            },
+            {"id": "out", "kind": "output", "fields": [{"name": "shout"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "text", "target": "shout", "target_port": "text"},
+            {"source": "shout", "source_port": "shout", "target": "out", "target_port": "shout"},
+        ],
+    )
+    program, schema_hashes = build_workflow_program(spec)
+    assert schema_hashes == {}
+    prediction = program(text="quiet")
+    assert prediction.shout == "QUIET"
+
+
+def test_transform_missing_output_field_raises():
+    """A transform omitting a declared output field names the node."""
+    spec = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "text"}]},
+            {
+                "id": "bad",
+                "kind": "transform",
+                "transform_code": "def transform(text):\n    return {'wrong': text}\n",
+                "input_fields": [{"name": "text"}],
+                "output_fields": [{"name": "expected"}],
+            },
+            {"id": "out", "kind": "output", "fields": [{"name": "expected"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "text", "target": "bad", "target_port": "text"},
+            {"source": "bad", "source_port": "expected", "target": "out", "target_port": "expected"},
+        ],
+    )
+    program, _ = build_workflow_program(spec)
+    with pytest.raises(WorkflowNodeExecutionError, match="missing output fields"):
+        program(text="x")
+
+
+def test_mcp_node_calls_tool():
+    """An mcp node feeds its inputs to the tool and stores the result on its port."""
+    spec = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "q"}]},
+            {
+                "id": "lookup",
+                "kind": "mcp",
+                "tool_name": "search",
+                "input_fields": [{"name": "q"}],
+                "output_field": {"name": "result"},
+            },
+            {"id": "out", "kind": "output", "fields": [{"name": "result"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "q", "target": "lookup", "target_port": "q"},
+            {"source": "lookup", "source_port": "result", "target": "out", "target_port": "result"},
+        ],
+    )
+    tool = dspy.Tool(lambda q: f"found:{q}", name="search", desc="find things")
+    program = WorkflowProgram(
+        spec,
+        signature_modules={},
+        signature_outputs={},
+        transforms={},
+        tools={"lookup": tool},
+    )
+    prediction = program(q="cats")
+    assert prediction.result == "found:cats"
+
+
+def test_build_workflow_program_registers_predictors():
+    """Signature nodes become named sub-modules so GEPA can discover them."""
+    spec = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "text"}]},
+            {"id": "summarize", "kind": "signature", "signature_code": _SIG},
+            {"id": "polish", "kind": "signature", "signature_code": _SIG, "module_name": "cot"},
+            {"id": "out", "kind": "output", "fields": [{"name": "summary"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "text", "target": "summarize", "target_port": "text"},
+            {"source": "summarize", "source_port": "summary", "target": "polish", "target_port": "text"},
+            {"source": "polish", "source_port": "summary", "target": "out", "target_port": "summary"},
+        ],
+    )
+    program, _ = build_workflow_program(spec)
+    predictor_names = [name for name, _pred in program.named_predictors()]
+    assert any(name.startswith(f"{WORKFLOW_NODE_ATTR_PREFIX}summarize") for name in predictor_names)
+    assert any(name.startswith(f"{WORKFLOW_NODE_ATTR_PREFIX}polish") for name in predictor_names)
+    assert len(predictor_names) == 2
+
+
+def test_state_roundtrip_reconstructs_identically():
+    """dump_state on one build loads cleanly onto a fresh build (serve reconstruction)."""
+    spec = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "text"}]},
+            {"id": "summarize", "kind": "signature", "signature_code": _SIG},
+            {"id": "out", "kind": "output", "fields": [{"name": "summary"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "text", "target": "summarize", "target_port": "text"},
+            {"source": "summarize", "source_port": "summary", "target": "out", "target_port": "summary"},
+        ],
+    )
+    first, _ = build_workflow_program(spec)
+    state = first.dump_state()
+    second, _ = build_workflow_program(spec)
+    second.load_state(state)
+    assert second.dump_state() == state
+
+
+def test_build_rejects_tool_nodes_without_tool_source():
+    """A tool-using graph cannot be built without a run-level tool_source."""
+    spec = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "q"}]},
+            {
+                "id": "lookup",
+                "kind": "mcp",
+                "tool_name": "search",
+                "input_fields": [{"name": "q"}],
+                "output_field": {"name": "result"},
+            },
+            {"id": "out", "kind": "output", "fields": [{"name": "result"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "q", "target": "lookup", "target_port": "q"},
+            {"source": "lookup", "source_port": "result", "target": "out", "target_port": "result"},
+        ],
+    )
+    with pytest.raises(ServiceError, match="tool_source is required"):
+        build_workflow_program(spec)
+
+
+def test_validate_workflow_checks_signature_ports():
+    """Deep validation introspects signature code and rejects a bad edge port."""
+    good = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "text"}]},
+            {"id": "summarize", "kind": "signature", "signature_code": _SIG},
+            {"id": "out", "kind": "output", "fields": [{"name": "summary"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "text", "target": "summarize", "target_port": "text"},
+            {"source": "summarize", "source_port": "summary", "target": "out", "target_port": "summary"},
+        ],
+    )
+    introspection = validate_workflow(good)
+    assert introspection.signature_fields["summarize"] == (["text"], ["summary"])
+    assert introspection.input_fields == ["text"]
+    assert introspection.output_fields == ["summary"]
+
+    bad = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "text"}]},
+            {"id": "summarize", "kind": "signature", "signature_code": _SIG},
+            {"id": "out", "kind": "output", "fields": [{"name": "summary"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "text", "target": "summarize", "target_port": "wrong_port"},
+            {"source": "summarize", "source_port": "summary", "target": "out", "target_port": "summary"},
+        ],
+    )
+    with pytest.raises(ServiceError, match="no input field 'wrong_port'"):
+        validate_workflow(bad)
+
+
+def test_validate_workflow_rejects_unconnected_signature_input():
+    """Deep validation catches a signature input no edge feeds."""
+    two_input_sig = (
+        "import dspy\n"
+        "class Compose(dspy.Signature):\n"
+        "    text: str = dspy.InputField()\n"
+        "    tone: str = dspy.InputField()\n"
+        "    summary: str = dspy.OutputField()\n"
+    )
+    spec = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "text"}]},
+            {"id": "compose", "kind": "signature", "signature_code": two_input_sig},
+            {"id": "out", "kind": "output", "fields": [{"name": "summary"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "text", "target": "compose", "target_port": "text"},
+            {"source": "compose", "source_port": "summary", "target": "out", "target_port": "summary"},
+        ],
+    )
+    with pytest.raises(ServiceError, match="unconnected input fields: \\['tone'\\]"):
+        validate_workflow(spec)
+
+
+def test_validate_workflow_checks_transform_params():
+    """Deep validation rejects a transform whose params disagree with declared inputs."""
+    spec = _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "text"}]},
+            {
+                "id": "shout",
+                "kind": "transform",
+                "transform_code": "def transform(other_name):\n    return {'shout': other_name}\n",
+                "input_fields": [{"name": "text"}],
+                "output_fields": [{"name": "shout"}],
+            },
+            {"id": "out", "kind": "output", "fields": [{"name": "shout"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "text", "target": "shout", "target_port": "text"},
+            {"source": "shout", "source_port": "shout", "target": "out", "target_port": "shout"},
+        ],
+    )
+    with pytest.raises(ServiceError, match="do not match the declared input fields"):
+        validate_workflow(spec)

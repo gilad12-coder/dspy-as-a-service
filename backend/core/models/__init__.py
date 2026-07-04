@@ -62,15 +62,31 @@ from .optimizations import (
     ProgramArtifactResponse,
 )
 from .results import GridSearchResponse, LMActivity, LMStageStats, PairResult, RunResponse
-from .serve import ServeInfoResponse, ServeRequest, ServeResponse
+from .serve import ServeInfoResponse, ServeRequest, ServeResponse, WorkflowNodeTrace
 from .submissions import (
     GridSearchRequest,
     OptimizationSubmissionResponse,
     RunRequest,
     ToolSource,
+    WorkflowDryRunRequest,
+    WorkflowDryRunResponse,
 )
 from .telemetry import JobLogEntry, ProgressEvent
 from .validation import ValidateCodeRequest, ValidateCodeResponse
+from .workflow import (
+    WORKFLOW_MODULE_NAME,
+    WorkflowEdge,
+    WorkflowField,
+    WorkflowInputNode,
+    WorkflowMcpNode,
+    WorkflowNode,
+    WorkflowNodePosition,
+    WorkflowOutputNode,
+    WorkflowSignatureNode,
+    WorkflowSpec,
+    WorkflowTransformNode,
+    workflow_topological_order,
+)
 
 __all__ = [
     "HEALTH_STATUS_OK",
@@ -138,4 +154,19 @@ __all__ = [
     "ValidateCodeResponse",
     "ValidateDatasetRequest",
     "ValidateDatasetResponse",
+    "WORKFLOW_MODULE_NAME",
+    "WorkflowDryRunRequest",
+    "WorkflowDryRunResponse",
+    "WorkflowEdge",
+    "WorkflowField",
+    "WorkflowInputNode",
+    "WorkflowMcpNode",
+    "WorkflowNode",
+    "WorkflowNodePosition",
+    "WorkflowNodeTrace",
+    "WorkflowOutputNode",
+    "WorkflowSignatureNode",
+    "WorkflowSpec",
+    "WorkflowTransformNode",
+    "workflow_topological_order",
 ]

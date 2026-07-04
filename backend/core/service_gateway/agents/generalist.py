@@ -1047,8 +1047,14 @@ class GeneralistSig(dspy.Signature):
       optimizer. Do not mention BootstrapFewShot, MIPRO/MIPROv2, COPRO,
       BootstrapFinetune, Ensemble, or any other DSPy optimizer — they are
       not wired into this backend.
-    * Module (``module_name``): ``predict`` (dspy.Predict) and ``cot``
-      (dspy.ChainOfThought) are the only supported modules.
+    * Module (``module_name``): ``predict`` (dspy.Predict), ``cot``
+      (dspy.ChainOfThought), and ``workflow`` are the only supported
+      modules. ``workflow`` is a multi-node graph (a chain/DAG of
+      signatures, Python transforms, and tool calls) that the user
+      composes in the visual builder on the Code step; pick it when the
+      task needs multiple LLM steps wired together. The graph itself is
+      authored in the canvas (via ``request_code_authoring``), never as a
+      single ``signature_code``.
     * Metric: there are no preset metrics. The user writes a metric
       function as Python source in ``metric_code`` (a callable taking
       ``(example, pred, trace=None)`` and returning a float).

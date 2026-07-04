@@ -23,6 +23,7 @@ from typing import Any, Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
+from ...models import WORKFLOW_MODULE_NAME
 from ...registry import ResolverError, resolve_module_factory, resolve_optimizer_factory
 from ..errors import DomainError
 
@@ -295,12 +296,18 @@ def create_wizard_router() -> APIRouter:
             )
 
         if "module_name" in supplied and supplied["module_name"] is not None:
-            patch["module_name"] = _validate_resolvable_name(
-                supplied["module_name"],
-                field="module_name",
-                resolver=resolve_module_factory,
-                error_key="wizard.module_unknown",
-            )
+            raw_module = supplied["module_name"]
+            # "workflow" is a composite-run marker, not a resolvable DSPy
+            # dotted path — the graph itself is validated at submission.
+            if isinstance(raw_module, str) and raw_module.strip().lower() == WORKFLOW_MODULE_NAME:
+                patch["module_name"] = WORKFLOW_MODULE_NAME
+            else:
+                patch["module_name"] = _validate_resolvable_name(
+                    raw_module,
+                    field="module_name",
+                    resolver=resolve_module_factory,
+                    error_key="wizard.module_unknown",
+                )
 
         if "job_type" in supplied and supplied["job_type"] is not None:
             patch["job_type"] = supplied["job_type"]

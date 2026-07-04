@@ -38,6 +38,7 @@ from .optimization.data import (
     image_input_field_names,
     load_metric_from_code,
     load_signature_from_code,
+    load_transform_from_code,
 )
 
 _DEFAULT_PARSE_TIMEOUT_SECONDS = 30.0
@@ -54,6 +55,7 @@ _QUEUE_READ_SECONDS = 5.0
 # only the locks dict, not the heavy validation itself.
 _signature_cache: dict[str, SignatureIntrospection] = {}
 _metric_cache: dict[str, MetricIntrospection] = {}
+_transform_cache: dict[str, TransformIntrospection] = {}
 _dogpile_locks: dict[str, threading.Lock] = {}
 _locks_mutex = threading.Lock()
 
@@ -89,6 +91,14 @@ class SignatureIntrospection:
 @dataclass(frozen=True)
 class MetricIntrospection:
     """Metadata extracted from a user-authored metric callable."""
+
+    callable_name: str
+    param_names: list[str]
+
+
+@dataclass(frozen=True)
+class TransformIntrospection:
+    """Metadata extracted from a user-authored workflow transform callable."""
 
     callable_name: str
     param_names: list[str]
@@ -332,6 +342,70 @@ def validate_metric_code(
             param_names=list(result["param_names"]),
         )
         _metric_cache[code] = introspection
+        return introspection
+
+
+def _transform_worker(code: str, queue: Any) -> None:
+    """Child-side entry point for ``validate_transform_code``.
+
+    Args:
+        code: User-authored transform callable source.
+        queue: Multiprocessing queue used to return a result dict.
+    """
+    try:
+        transform = load_transform_from_code(code)
+        sig = inspect.signature(transform)
+        param_names = [p.name for p in sig.parameters.values()]
+        queue.put(
+            {
+                "ok": True,
+                "callable_name": getattr(transform, "__name__", "transform"),
+                "param_names": param_names,
+            }
+        )
+    except BaseException as exc:  # user code is arbitrary — any failure is reported, not raised
+        queue.put(_error_payload(exc))
+
+
+def validate_transform_code(
+    code: str,
+    *,
+    timeout_seconds: float = _DEFAULT_PARSE_TIMEOUT_SECONDS,
+) -> TransformIntrospection:
+    """Parse user-authored transform code in a subprocess and return its shape.
+
+    Memoized per-process like the signature/metric validators: concurrent
+    submissions of the same transform share one subprocess spawn.
+
+    Args:
+        code: User-authored transform callable source.
+        timeout_seconds: Maximum time to wait for the child to finish.
+
+    Returns:
+        Callable name plus parameter names extracted via ``inspect``.
+
+    Raises:
+        ServiceError: When the user code fails to load or the child errors.
+    """
+    cached = _transform_cache.get(code)
+    if cached is not None:
+        return cached
+    with _dogpile_lock(f"tra:{code}"):
+        cached = _transform_cache.get(code)
+        if cached is not None:
+            return cached
+        result = _run_in_subprocess(
+            _transform_worker,
+            (code,),
+            timeout_seconds=timeout_seconds,
+        )
+        if not result.get("ok"):
+            _raise_child_error(result)
+        introspection = TransformIntrospection(
+            callable_name=result["callable_name"],
+            param_names=list(result["param_names"]),
+        )
+        _transform_cache[code] = introspection
         return introspection
 
 

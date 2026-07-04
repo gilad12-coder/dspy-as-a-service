@@ -32,6 +32,7 @@ from ...models import ModelConfig, ServeInfoResponse, ServeRequest, ServeRespons
 from ...service_gateway.agents.generalist import TrustMode, get_approval_registry
 from ...service_gateway.agents.react_serve import run_react_chat
 from ...service_gateway.language_models import build_language_model
+from ...service_gateway.optimization.workflow import capture_node_traces
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..response_limits import AGENT_MAX_INSTRUCTIONS, AGENT_MAX_TEXT, truncate_text
@@ -42,7 +43,9 @@ from ._helpers import (
     load_program,
     load_react_chat_inputs,
     require_role_at_least,
+    sanitize_node_traces,
     sse_from_events,
+    workflow_spec_from_overview,
 )
 
 logger = logging.getLogger(__name__)
@@ -378,6 +381,12 @@ def create_serve_router(*, job_store) -> APIRouter:
         _, result, overview = load_program(job_store, optimization_id, current_user)
         artifact = result.program_artifact
         input_fields, output_fields, instructions, demo_count = _artifact_prompt_fields(artifact)
+        workflow_spec = workflow_spec_from_overview(overview)
+        if workflow_spec is not None:
+            # The artifact prompt reflects a single predictor; a workflow's
+            # servable surface is its anchor fields.
+            input_fields = workflow_spec.input_field_names()
+            output_fields = workflow_spec.output_field_names()
 
         return ServeInfoResponse(
             optimization_id=optimization_id,
@@ -479,6 +488,10 @@ def create_serve_router(*, job_store) -> APIRouter:
                 raise DomainError("serve.no_model_config", status=400)
 
         input_fields, output_fields, _instructions, _demo_count = _artifact_prompt_fields(artifact)
+        workflow_spec = workflow_spec_from_overview(overview)
+        if workflow_spec is not None:
+            input_fields = workflow_spec.input_field_names()
+            output_fields = workflow_spec.output_field_names()
 
         if not input_fields:
             raise DomainError("serve.no_declared_inputs", status=400)
@@ -494,8 +507,14 @@ def create_serve_router(*, job_store) -> APIRouter:
 
         lm = build_language_model(model_config)
 
+        node_traces = None
         with dspy.context(lm=lm):
-            prediction = program(**filtered_inputs)
+            if workflow_spec is not None:
+                with capture_node_traces() as raw_traces:
+                    prediction = program(**filtered_inputs)
+                node_traces = sanitize_node_traces(raw_traces)
+            else:
+                prediction = program(**filtered_inputs)
 
         outputs: dict[str, Any] = {}
         if output_fields:
@@ -510,6 +529,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             input_fields=input_fields,
             output_fields=output_fields,
             model_used=model_config.normalized_identifier(),
+            node_traces=node_traces,
         )
 
     @router.post(
@@ -560,6 +580,14 @@ def create_serve_router(*, job_store) -> APIRouter:
                 raise DomainError("serve.no_model_config", status=400)
 
         input_fields, output_fields, _instructions, _demo_count = _artifact_prompt_fields(artifact)
+        workflow_spec = workflow_spec_from_overview(overview)
+        if workflow_spec is not None:
+            # Workflows serve their anchor fields. Per-output-field token
+            # listeners still attach; if streamify can't wire them onto the
+            # composed program the generator's fallback runs blocking
+            # inference and emits a single final event.
+            input_fields = workflow_spec.input_field_names()
+            output_fields = workflow_spec.output_field_names()
 
         if not input_fields:
             raise DomainError("serve.no_declared_inputs", status=400)

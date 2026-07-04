@@ -34,7 +34,10 @@ from ...constants import (
     PAYLOAD_OVERVIEW_SIGNATURE_CODE,
     PAYLOAD_OVERVIEW_SPLIT_FRACTIONS,
     PAYLOAD_OVERVIEW_TASK_FINGERPRINT,
+    PAYLOAD_OVERVIEW_TOOL_SOURCE,
+    PAYLOAD_OVERVIEW_WORKFLOW,
 )
+from ...exceptions import ServiceError
 from ...models import (
     GridSearchResponse,
     OptimizationStatus,
@@ -43,9 +46,12 @@ from ...models import (
     ProgramArtifact,
     ReactOverlay,
     RunResponse,
+    WorkflowSpec,
 )
+from ...models.serve import WorkflowNodeTrace
 from ...registry import ResolverError, resolve_module_factory
 from ...service_gateway.optimization.data import load_signature_from_code
+from ...service_gateway.optimization.workflow import build_workflow_program, workflow_tool_users
 from ...service_gateway.optimization.retrying_react import RetryingReActV2
 from ...service_gateway.optimization.tool_overlay import (
     ToolSchemaDriftError,
@@ -67,6 +73,7 @@ from ..converters import (
     status_to_job_status,
 )
 from ..errors import DomainError
+from ..response_limits import AGENT_MAX_TEXT, truncate_text
 from ..sharing_access import (
     MEMBER_ROLES,
     ShareRole,
@@ -764,6 +771,10 @@ def _materialize_program(artifact: ProgramArtifact, overview: dict) -> Any:
             ``signature_code`` is missing from the overview for a JSON
             artifact, or when module reconstruction fails.
     """
+    workflow_spec = workflow_spec_from_overview(overview)
+    if workflow_spec is not None:
+        return _materialize_workflow_program(artifact, overview, workflow_spec)
+
     if artifact.react_overlay is not None:
         return _materialize_react_program(artifact, overview)
 
@@ -794,6 +805,117 @@ def _materialize_program(artifact: ProgramArtifact, overview: dict) -> Any:
         return program
 
     return _legacy_pickle_load(artifact.program_pickle_base64)
+
+
+def workflow_spec_from_overview(overview: dict) -> WorkflowSpec | None:
+    """Parse the persisted workflow spec off a payload overview, if any.
+
+    Args:
+        overview: Parsed payload-overview dict from the job row.
+
+    Returns:
+        The parsed ``WorkflowSpec``, or ``None`` for non-workflow runs.
+    """
+    payload = overview.get(PAYLOAD_OVERVIEW_WORKFLOW)
+    if not payload:
+        return None
+    return WorkflowSpec.model_validate(payload)
+
+
+def sanitize_node_traces(raw_traces: list[dict[str, Any]]) -> list[WorkflowNodeTrace]:
+    """Convert raw workflow trace dicts into response-safe trace models.
+
+    Node port values are arbitrary Python objects produced by user code;
+    anything that is not JSON-native is stringified so the response always
+    serializes, and long strings are capped like serve outputs.
+
+    Args:
+        raw_traces: Trace dicts collected by ``capture_node_traces``.
+
+    Returns:
+        Response-ready ``WorkflowNodeTrace`` models in execution order.
+    """
+    return [
+        WorkflowNodeTrace(
+            node_id=trace["node_id"],
+            kind=trace["kind"],
+            name=trace["name"],
+            inputs=sanitize_port_values(trace.get("inputs") or {}),
+            outputs=sanitize_port_values(trace["outputs"]) if trace.get("outputs") is not None else None,
+            elapsed_ms=trace.get("elapsed_ms", 0.0),
+            error=trace.get("error"),
+        )
+        for trace in raw_traces
+    ]
+
+
+def sanitize_port_values(values: dict[str, Any]) -> dict[str, Any]:
+    """Make one trace value dict JSON-safe and size-capped.
+
+    Args:
+        values: Raw port-name to value mapping from a node trace.
+
+    Returns:
+        A new dict with non-JSON-native values stringified and long
+        strings truncated.
+    """
+    sanitized: dict[str, Any] = {}
+    for key, value in values.items():
+        if isinstance(value, str):
+            sanitized[key] = truncate_text(value, AGENT_MAX_TEXT)
+        elif value is None or isinstance(value, (bool, int, float)):
+            sanitized[key] = value
+        else:
+            sanitized[key] = truncate_text(str(value), AGENT_MAX_TEXT)
+    return sanitized
+
+
+def _materialize_workflow_program(
+    artifact: ProgramArtifact, overview: dict, workflow_spec: WorkflowSpec
+) -> Any:
+    """Rebuild a served workflow program from its spec and state JSON.
+
+    The shell is reconstructed with the same deterministic builder the run
+    path used, so the saved per-node predictor state keys line up 1:1.
+    Tool-using graphs re-source their roster from the overview's scrubbed
+    ``tool_source``; a ``dataset_snapshot`` source cannot be re-sourced
+    without the original dataset and is rejected until snapshot specs are
+    persisted for workflows.
+
+    Args:
+        artifact: The artifact carrying ``program_state_json``.
+        overview: Parsed payload-overview dict.
+        workflow_spec: The workflow spec parsed from the overview.
+
+    Returns:
+        A live ``WorkflowProgram`` ready for inference.
+
+    Raises:
+        DomainError: 409 when the artifact lacks state JSON, the graph needs
+            tools it cannot re-source, or reconstruction fails.
+    """
+    if artifact.program_state_json is None:
+        raise DomainError("optimization.no_program_artifact_scoped", status=409)
+    tool_source = overview.get(PAYLOAD_OVERVIEW_TOOL_SOURCE)
+    if workflow_tool_users(workflow_spec):
+        if not tool_source:
+            raise DomainError(
+                "optimization.module_reconstruction_failed",
+                status=409,
+                error="workflow uses tools but no tool_source was persisted.",
+            )
+        if tool_source.get("kind") == "dataset_snapshot":
+            raise DomainError(
+                "optimization.module_reconstruction_failed",
+                status=409,
+                error="serving a workflow with dataset_snapshot tools is not supported yet.",
+            )
+    try:
+        program, _schema_hashes = build_workflow_program(workflow_spec, tool_source=tool_source)
+    except (ServiceError, ValueError) as exc:
+        raise DomainError("optimization.module_reconstruction_failed", status=409, error=str(exc)) from exc
+    program.load_state(artifact.program_state_json)
+    return program
 
 
 def _materialize_react_program(artifact: ProgramArtifact, overview: dict) -> Any:

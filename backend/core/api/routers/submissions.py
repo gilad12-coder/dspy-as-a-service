@@ -54,8 +54,10 @@ from ...constants import (
     PAYLOAD_OVERVIEW_TASK_FINGERPRINT,
     PAYLOAD_OVERVIEW_TASK_MODEL,
     PAYLOAD_OVERVIEW_TOKEN_SOURCE,
+    PAYLOAD_OVERVIEW_TOOL_SOURCE,
     PAYLOAD_OVERVIEW_TOTAL_PAIRS,
     PAYLOAD_OVERVIEW_USERNAME,
+    PAYLOAD_OVERVIEW_WORKFLOW,
     TOKEN_SOURCE_BYOK,
 )
 from ...i18n import t
@@ -432,6 +434,30 @@ def _enforce_byok_connections(
         raise DomainError("billing.byok_missing_connection", status=400, provider=", ".join(missing))
 
 
+def _scrubbed_tool_source(tool_source) -> dict | None:
+    """Return the overview-safe projection of a tool source.
+
+    Persists only what serve-time reconstruction needs (``kind``,
+    ``mcp_url``, ``tool_filter``) — never ``mcp_auth_header``, which is a
+    secret; serve re-sources live MCP rosters with no auth header, matching
+    the react overlay behavior.
+
+    Args:
+        tool_source: The submitted ``ToolSource``, or ``None``.
+
+    Returns:
+        The scrubbed dict, or ``None`` when no tool source was supplied.
+    """
+    if tool_source is None:
+        return None
+    scrubbed: dict = {"kind": tool_source.kind}
+    if tool_source.mcp_url is not None:
+        scrubbed["mcp_url"] = tool_source.mcp_url
+    if tool_source.tool_filter is not None:
+        scrubbed["tool_filter"] = list(tool_source.tool_filter)
+    return scrubbed
+
+
 def create_submissions_router(*, service, job_store) -> APIRouter:
     """Build the submissions router.
 
@@ -569,6 +595,8 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 PAYLOAD_OVERVIEW_ESTIMATED_HIGH: payload.estimated_credits_high,
                 PAYLOAD_OVERVIEW_IS_PRIVATE: payload.is_private,
                 PAYLOAD_OVERVIEW_SOURCE_DATASET_ID: source_dataset_id,
+                PAYLOAD_OVERVIEW_WORKFLOW: payload.workflow.model_dump() if payload.workflow else None,
+                PAYLOAD_OVERVIEW_TOOL_SOURCE: _scrubbed_tool_source(payload.tool_source),
             },
         )
         _evict_staged_dataset(job_store, staged_id, payload.username)

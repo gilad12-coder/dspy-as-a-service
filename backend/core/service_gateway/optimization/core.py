@@ -47,6 +47,7 @@ from ...constants import (
 )
 from ...exceptions import ServiceError
 from ...models import (
+    WORKFLOW_MODULE_NAME,
     GridSearchRequest,
     GridSearchResponse,
     LMActivity,
@@ -94,6 +95,7 @@ from .optimizers import (
     validate_optimizer_signature,
 )
 from .progress import capture_tqdm
+from .workflow import build_workflow_program, validate_workflow
 from .timing import (
     STAGE_BASELINE,
     STAGE_EVALUATION,
@@ -733,14 +735,32 @@ class DspyService:
             len(payload.dataset),
         )
 
-        signature_cls = load_signature_from_code(payload.signature_code)
-        signature_inputs, signature_outputs = extract_signature_fields(signature_cls)
-        logger.info(
-            "Loaded signature %s with inputs=%s outputs=%s",
-            signature_cls.__name__,
-            signature_inputs,
-            signature_outputs,
-        )
+        workflow_mode = payload.module_name.lower() == WORKFLOW_MODULE_NAME
+        if workflow_mode:
+            signature_cls = None
+            signature_inputs = payload.workflow.input_field_names()
+            signature_outputs = payload.workflow.output_field_names()
+            program, _workflow_tool_hashes = build_workflow_program(
+                payload.workflow,
+                tool_source=payload.tool_source,
+                dataset=payload.dataset,
+            )
+            logger.info(
+                "Built workflow program: nodes=%d edges=%d inputs=%s outputs=%s",
+                len(payload.workflow.nodes),
+                len(payload.workflow.edges),
+                signature_inputs,
+                signature_outputs,
+            )
+        else:
+            signature_cls = load_signature_from_code(payload.signature_code)
+            signature_inputs, signature_outputs = extract_signature_fields(signature_cls)
+            logger.info(
+                "Loaded signature %s with inputs=%s outputs=%s",
+                signature_cls.__name__,
+                signature_inputs,
+                signature_outputs,
+            )
         require_mapping_matches_signature(payload.column_mapping, signature_inputs, signature_outputs)
         if payload.module_name.lower() == "react":
             return self._run_react(
@@ -751,21 +771,22 @@ class DspyService:
                 progress_callback=progress_callback,
                 gepa_log_dir_path=gepa_log_dir_path,
             )
-        module_factory, auto_signature = self._get_module_factory(payload.module_name)
-        module_kwargs = dict(payload.module_kwargs)
-        if auto_signature or "signature" not in module_kwargs:
-            module_kwargs["signature"] = signature_cls
-        program = module_factory(**module_kwargs)
-        # Breadcrumb for the dspy.* escape hatch: a non-aliased path gets
-        # auto_signature=False and trusts a user-supplied signature, so an
-        # opaque constructor error is otherwise indistinguishable from an
-        # aliased-module failure in job_logs.
-        logger.info(
-            "Instantiated module %s (auto_signature=%s signature_injected=%s)",
-            payload.module_name,
-            auto_signature,
-            "signature" in module_kwargs,
-        )
+        if not workflow_mode:
+            module_factory, auto_signature = self._get_module_factory(payload.module_name)
+            module_kwargs = dict(payload.module_kwargs)
+            if auto_signature or "signature" not in module_kwargs:
+                module_kwargs["signature"] = signature_cls
+            program = module_factory(**module_kwargs)
+            # Breadcrumb for the dspy.* escape hatch: a non-aliased path gets
+            # auto_signature=False and trusts a user-supplied signature, so an
+            # opaque constructor error is otherwise indistinguishable from an
+            # aliased-module failure in job_logs.
+            logger.info(
+                "Instantiated module %s (auto_signature=%s signature_injected=%s)",
+                payload.module_name,
+                auto_signature,
+                "signature" in module_kwargs,
+            )
 
         metric = load_metric_from_code(payload.metric_code)
         metric_identifier = getattr(metric, "__name__", "inline_metric")
@@ -790,7 +811,7 @@ class DspyService:
         examples = rows_to_examples(
             payload.dataset,
             payload.column_mapping,
-            image_input_fields=image_input_field_names(signature_cls),
+            image_input_fields=image_input_field_names(signature_cls) if signature_cls is not None else frozenset(),
         )
         logger.info("Converted dataset to %d DSPy examples", len(examples))
 
@@ -1557,15 +1578,24 @@ class DspyService:
             len(payload.dataset),
         )
 
-        intro = validate_signature_code(payload.signature_code)
-        require_mapping_matches_signature(payload.column_mapping, intro.input_fields, intro.output_fields)
-        require_mapping_columns_in_dataset(payload.column_mapping, payload.dataset)
-        if payload.module_name.lower() == "react":
-            self._validate_react_payload(payload)
-        else:
+        if payload.module_name.lower() == WORKFLOW_MODULE_NAME:
+            introspection = validate_workflow(payload.workflow)
+            require_mapping_matches_signature(
+                payload.column_mapping, introspection.input_fields, introspection.output_fields
+            )
+            require_mapping_columns_in_dataset(payload.column_mapping, payload.dataset)
             metric_info = validate_metric_code(payload.metric_code)
             _require_metric_compatible_with_optimizer(payload.optimizer_name, metric_info.param_names)
-        self._get_module_factory(payload.module_name)
+        else:
+            intro = validate_signature_code(payload.signature_code)
+            require_mapping_matches_signature(payload.column_mapping, intro.input_fields, intro.output_fields)
+            require_mapping_columns_in_dataset(payload.column_mapping, payload.dataset)
+            if payload.module_name.lower() == "react":
+                self._validate_react_payload(payload)
+            else:
+                metric_info = validate_metric_code(payload.metric_code)
+                _require_metric_compatible_with_optimizer(payload.optimizer_name, metric_info.param_names)
+            self._get_module_factory(payload.module_name)
         optimizer_factory = self._get_optimizer_factory(payload.optimizer_name)
         validate_optimizer_signature(optimizer_factory, payload.optimizer_name)
         validate_optimizer_kwargs(optimizer_factory, payload.optimizer_kwargs, payload.optimizer_name)
