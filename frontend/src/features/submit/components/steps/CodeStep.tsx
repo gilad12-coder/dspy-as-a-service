@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { Sparkles, Check } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Bot, Brain, Check, Repeat2, Sparkles, Workflow, Zap } from "lucide-react";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { Label } from "@/shared/ui/primitives/label";
@@ -12,10 +13,22 @@ import { Skeleton } from "@/shared/ui/skeleton";
 import { tip } from "@/shared/lib/tooltips";
 import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
+import { useUserPrefs } from "@/features/settings";
 
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 import type { ArtifactStatus } from "@/shared/hooks/use-code-agent";
 import { CodeAgentPanel, VersionStepper } from "./CodeAgentPanel";
+import { ReactConfigSection } from "./ReactConfigSection";
+import { workflowUsesTools } from "../../workflow/model";
+
+// The four DSPy module choices offered by the picker. Names are technical
+// terms kept in English; descriptions reuse the localized tooltip copy.
+const MODULE_META = [
+  { value: "predict", label: "Predict", icon: Zap, tipKey: "module.predict" },
+  { value: "cot", label: "Chain of Thought", icon: Brain, tipKey: "module.cot" },
+  { value: "react", label: "ReAct", icon: Bot, tipKey: "module.react" },
+  { value: "workflow", label: "Workflow", icon: Workflow, tipKey: "module.workflow" },
+] as const;
 
 const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
   ssr: false,
@@ -31,11 +44,20 @@ const WorkflowCanvas = dynamic(
 export function CodeStep({ w }: { w: SubmitWizardContext }) {
   const {
     isWorkflow,
+    isReact,
+    moduleName,
+    moduleSelectionRequired,
+    chooseModule,
+    reopenModulePicker,
     workflowSpec,
     setWorkflowSpec,
     workflowRevision,
+    agentPulseNodeId,
     workflowSampleInputs,
     workflowDryRunDisabledReason,
+    workflowDryRunNeedsModel,
+    openDryRunModelPicker,
+    modelConfig,
     runWorkflowDryRun,
     signatureCode,
     setSignatureCode,
@@ -55,6 +77,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
     columnRoles,
     agent,
   } = w;
+  const { prefs } = useUserPrefs();
 
   const hasContext = React.useMemo(() => {
     if (!parsedDataset || parsedDataset.rowCount === 0) return false;
@@ -71,61 +94,123 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
         })
     : undefined;
 
-  if (isWorkflow) {
-    return (
-      <div data-tutorial="wizard-step-4">
-        <div className="overflow-hidden rounded-2xl border border-border/50 bg-card/80 backdrop-blur-xl shadow-lg">
-          <div className="border-b border-border/30 px-6 py-3">
-            <h3 className="inline-flex text-lg font-semibold tracking-tight text-foreground">
-              <HelpTip text={tip("module.workflow")}>{msg("workflow.step.title")}</HelpTip>
-            </h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {msg("workflow.step.subtitle")}
-            </p>
-          </div>
-          {workflowSpec && (
-            <WorkflowCanvas
-              spec={workflowSpec}
-              specRevision={workflowRevision}
-              onSpecChange={setWorkflowSpec}
-              dryRun={{
-                disabledReason: workflowDryRunDisabledReason,
-                sampleInputs: workflowSampleInputs,
-                run: runWorkflowDryRun,
-              }}
-            />
-          )}
-          <div className="space-y-2 border-t border-border/30 px-6 py-4" data-tutorial="metric-editor">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <HelpTip text={tip("code.metric")}>{msg("workflow.step.metric_title")}</HelpTip>
-            </Label>
-            <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
-              {msg("workflow.step.metric_hint")}
-            </p>
-            <CodeEditor
-              value={metricCode}
-              onChange={(v) => {
-                setMetricCode(v);
-                setMetricManuallyEdited(true);
-                setMetricValidation(null);
-              }}
-              height="180px"
-              onRun={runMetricValidation}
-              validationResult={metricValidation}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const moduleChip = prefs.advancedMode
+    ? {
+        label: MODULE_META.find((m) => m.value === moduleName.toLowerCase())?.label ?? moduleName,
+        onChangeModule: reopenModulePicker,
+      }
+    : null;
 
-  return (
-    <div data-tutorial="wizard-step-4">
+  // Advanced mode: the step opens as a module picker; once a module is
+  // committed the step re-renders as that module's editor, with a chip in
+  // the header to go back and switch. The three views share one
+  // AnimatePresence so picking or switching a module cross-fades instead of
+  // hard-swapping the card.
+  const view = moduleSelectionRequired ? "picker" : isWorkflow ? "workflow" : "code";
+
+  let content: React.ReactNode;
+  if (view === "picker") {
+    content = <ModulePicker onChoose={chooseModule} />;
+  } else if (view === "workflow") {
+    content = (
       <div className="overflow-hidden rounded-2xl border border-border/50 bg-card/80 backdrop-blur-xl shadow-lg">
         <ModeToggle
           value={codeAssistMode}
           onChange={setCodeAssistMode}
           disabledReason={disabledReason}
+          module={moduleChip}
+        />
+        <div
+          className={cn(
+            "grid grid-cols-1",
+            codeAssistMode === "auto" && "lg:grid-cols-[400px_minmax(0,1fr)]",
+          )}
+        >
+          {codeAssistMode === "auto" && (
+            <div className="relative min-h-[560px] self-stretch overflow-hidden border-b border-border/40 lg:border-b-0 lg:border-e">
+              <CodeAgentPanel
+                agent={agent}
+                disabled={!hasContext}
+                disabledReason={disabledReason}
+                className="absolute inset-0"
+              />
+            </div>
+          )}
+          <div className="flex min-w-0 flex-col self-stretch">
+            <div className="border-b border-border/30 px-6 py-3">
+              <h3 className="inline-flex text-lg font-semibold tracking-tight text-foreground">
+                <HelpTip text={tip("module.workflow")}>{msg("workflow.step.title")}</HelpTip>
+              </h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {msg("workflow.step.subtitle")}
+              </p>
+            </div>
+            {workflowSpec && (
+              <WorkflowCanvas
+                spec={workflowSpec}
+                specRevision={workflowRevision}
+                onSpecChange={setWorkflowSpec}
+                pulseNodeId={agentPulseNodeId}
+                dryRun={{
+                  disabledReason: workflowDryRunDisabledReason,
+                  needsModel: workflowDryRunNeedsModel,
+                  pickModel: openDryRunModelPicker,
+                  modelName: modelConfig.name || null,
+                  sampleInputs: workflowSampleInputs,
+                  run: runWorkflowDryRun,
+                }}
+                agentPanel={
+                  codeAssistMode === "auto" ? (
+                    <CodeAgentPanel
+                      agent={agent}
+                      disabled={!hasContext}
+                      disabledReason={disabledReason}
+                    />
+                  ) : undefined
+                }
+              />
+            )}
+            <div
+              className="space-y-2 border-t border-border/30 px-6 py-4"
+              data-tutorial="metric-editor"
+            >
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <HelpTip text={tip("code.metric")}>{msg("workflow.step.metric_title")}</HelpTip>
+              </Label>
+              <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
+                {msg("workflow.step.metric_hint")}
+              </p>
+              <CodeEditor
+                value={metricCode}
+                onChange={(v) => {
+                  setMetricCode(v);
+                  setMetricManuallyEdited(true);
+                  setMetricValidation(null);
+                }}
+                height="180px"
+                onRun={runMetricValidation}
+                validationResult={metricValidation}
+                streaming={codeAssistMode === "auto" && agent.metricStatus === "writing"}
+                flashLines={codeAssistMode === "auto" ? agent.metricFlashLines : undefined}
+              />
+            </div>
+            {workflowSpec && workflowUsesTools(workflowSpec) && (
+              <div className="border-t border-border/30 px-6 py-4">
+                <ReactConfigSection w={w} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  } else {
+    content = (
+      <div className="overflow-hidden rounded-2xl border border-border/50 bg-card/80 backdrop-blur-xl shadow-lg">
+        <ModeToggle
+          value={codeAssistMode}
+          onChange={setCodeAssistMode}
+          disabledReason={disabledReason}
+          module={moduleChip}
         />
         <div
           className={cn(
@@ -236,9 +321,66 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
                   flashLines={codeAssistMode === "auto" ? agent.metricFlashLines : undefined}
                 />
               </div>
+              {isReact && (
+                <>
+                  <Separator />
+                  <ReactConfigSection w={w} />
+                </>
+              )}
             </div>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div data-tutorial="wizard-step-4">
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={view}
+          initial={{ opacity: 0, y: 10, scale: 0.99 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -10, scale: 0.99 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+        >
+          {content}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ModulePicker({ onChoose }: { onChoose: (module: string) => void }) {
+  return (
+    <div className="rounded-2xl border border-border/50 bg-card/80 px-6 py-10 shadow-lg backdrop-blur-xl sm:px-10">
+      <div className="mx-auto max-w-2xl text-center">
+        <h3 className="text-lg font-semibold tracking-tight text-foreground">
+          <HelpTip text={tip("module.choice")}>{msg("submit.module.picker_title")}</HelpTip>
+        </h3>
+        <p className="mt-1 text-sm text-muted-foreground">{msg("submit.module.picker_subtitle")}</p>
+      </div>
+      <div
+        className="mx-auto mt-6 grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2"
+        data-tutorial="module-selector"
+      >
+        {MODULE_META.map(({ value, label, icon: Icon, tipKey }, index) => (
+          <motion.button
+            key={value}
+            type="button"
+            onClick={() => onChoose(value)}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: index * 0.05, ease: "easeOut" }}
+            className="group flex cursor-pointer flex-col items-start gap-2 rounded-xl border border-border/60 bg-background/60 p-4 text-start transition-all duration-150 hover:-translate-y-0.5 hover:border-[#C8A882] hover:shadow-md"
+          >
+            <span className="flex size-9 items-center justify-center rounded-lg bg-[#F3EDE3] text-[#3D2E22] transition-colors duration-150 group-hover:bg-[#3D2E22] group-hover:text-[#FAF8F5]">
+              <Icon className="size-4" strokeWidth={2} />
+            </span>
+            <span className="text-sm font-semibold text-foreground">{label}</span>
+            <span className="text-xs leading-relaxed text-muted-foreground">{tip(tipKey)}</span>
+          </motion.button>
+        ))}
       </div>
     </div>
   );
@@ -274,22 +416,40 @@ interface ModeToggleProps {
   value: "auto" | "manual";
   onChange: (mode: "auto" | "manual") => void;
   disabledReason?: string;
+  // Chip showing the chosen module with a click-to-switch affordance;
+  // null in simple mode, where the module is always predict.
+  module?: { label: string; onChangeModule: () => void } | null;
 }
 
-function ModeToggle({ value, onChange, disabledReason }: ModeToggleProps) {
+function ModeToggle({ value, onChange, disabledReason, module }: ModeToggleProps) {
   const autoDisabled = !!disabledReason && value !== "auto";
 
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border/40 bg-[#FAF8F5] px-4 py-2.5">
-      <div className="flex items-center gap-1.5 text-xs text-[#5C4D40]">
-        <Sparkles className="h-3.5 w-3.5 text-[#3D2E22]" />
-        <span className="font-medium">
-          {value === "auto"
-            ? formatMsg("auto.features.submit.components.steps.codestep.template.4", {
-                p1: TERMS.dataset,
-              })
-            : msg("auto.features.submit.components.steps.codestep.literal.2")}
-        </span>
+      <div className="flex min-w-0 items-center gap-2.5">
+        {module && (
+          <button
+            type="button"
+            onClick={module.onChangeModule}
+            title={msg("submit.module.change")}
+            aria-label={msg("submit.module.change")}
+            data-tutorial="module-selector"
+            className="group inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border/60 bg-background px-2 py-1 text-xs font-semibold text-foreground shadow-xs transition-colors hover:border-[#C8A882]"
+          >
+            {module.label}
+            <Repeat2 className="size-3 text-muted-foreground transition-colors group-hover:text-foreground" />
+          </button>
+        )}
+        <div className="flex items-center gap-1.5 text-xs text-[#5C4D40]">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#3D2E22]" />
+          <span className="font-medium">
+            {value === "auto"
+              ? formatMsg("auto.features.submit.components.steps.codestep.template.4", {
+                  p1: TERMS.dataset,
+                })
+              : msg("auto.features.submit.components.steps.codestep.literal.2")}
+          </span>
+        </div>
       </div>
 
       <div className="relative inline-grid grid-cols-2 rounded-lg bg-muted p-1 gap-1">

@@ -423,6 +423,7 @@ const i18n_ar: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "يجب أن تكون قيم split_fractions أعدادًا: {error}",
   "wizard.split_fractions_not_object": "يجب أن يكون split_fractions كائنًا يحوي المفاتيح train/val/test.",
   "wizard.split_fractions_sum": "يجب أن يكون مجموع split_fractions مساويًا 1.0، وكان {total}",
+  "workflow.validation_failed": "فشل التحقق من سير العمل: {error}",
 };
 
 const terms_de: Partial<Record<TermKey, string>> = {
@@ -632,6 +633,7 @@ const i18n_de: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "split_fractions-Werte müssen Zahlen sein: {error}",
   "wizard.split_fractions_not_object": "split_fractions muss ein Objekt mit den Schlüsseln train/val/test sein.",
   "wizard.split_fractions_sum": "split_fractions müssen sich zu 1.0 summieren, ergab {total}",
+  "workflow.validation_failed": "Workflow-Validierung fehlgeschlagen: {error}",
 };
 
 export const TERMS_EN: Partial<Record<TermKey, string>> = {
@@ -1121,6 +1123,7 @@ const i18n_es: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "Los valores de split_fractions deben ser números: {error}",
   "wizard.split_fractions_not_object": "split_fractions debe ser un objeto con claves train/val/test.",
   "wizard.split_fractions_sum": "split_fractions debe sumar 1.0, pero se obtuvo {total}",
+  "workflow.validation_failed": "La validación del flujo de trabajo falló: {error}",
 };
 
 const terms_fa: Partial<Record<TermKey, string>> = {
@@ -1330,6 +1333,7 @@ const i18n_fa: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "مقادیر split_fractions باید عدد باشند: {error}",
   "wizard.split_fractions_not_object": "split_fractions باید شیئی با کلیدهای train/val/test باشد.",
   "wizard.split_fractions_sum": "split_fractions باید جمعاً برابر 1.0 شود، {total} دریافت شد.",
+  "workflow.validation_failed": "اعتبارسنجی گردش کار ناموفق بود: {error}",
 };
 
 const terms_fr: Partial<Record<TermKey, string>> = {
@@ -1539,6 +1543,7 @@ const i18n_fr: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "Les valeurs de split_fractions doivent être des nombres : {error}",
   "wizard.split_fractions_not_object": "split_fractions doit être un objet avec les clés train/val/test.",
   "wizard.split_fractions_sum": "split_fractions doit totaliser 1.0, obtenu {total}",
+  "workflow.validation_failed": "La validation du flux de travail a échoué : {error}",
 };
 
 const terms_fr_CA: Partial<Record<TermKey, string>> = {
@@ -1759,6 +1764,7 @@ const i18n_hi: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "split_fractions मान संख्याएँ होनी चाहिए: {error}",
   "wizard.split_fractions_not_object": "split_fractions एक ऑब्जेक्ट होना चाहिए जिसमें train/val/test कुंजियाँ हों।",
   "wizard.split_fractions_sum": "split_fractions का योग 1.0 होना चाहिए, मिला {total}",
+  "workflow.validation_failed": "वर्कफ़्लो सत्यापन विफल रहा: {error}",
 };
 
 const terms_it: Partial<Record<TermKey, string>> = {
@@ -1968,6 +1974,7 @@ const i18n_it: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "I valori di split_fractions devono essere numeri: {error}",
   "wizard.split_fractions_not_object": "split_fractions deve essere un oggetto con chiavi train/val/test.",
   "wizard.split_fractions_sum": "split_fractions deve sommare a 1.0, ottenuto {total}",
+  "workflow.validation_failed": "Convalida del flusso di lavoro non riuscita: {error}",
 };
 
 const terms_ja: Partial<Record<TermKey, string>> = {
@@ -2177,6 +2184,7 @@ const i18n_ja: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "split_fractions の値は数値である必要があります: {error}",
   "wizard.split_fractions_not_object": "split_fractions は train／val／test のキーを持つオブジェクトである必要があります。",
   "wizard.split_fractions_sum": "split_fractions の合計は 1.0 である必要がありますが、{total} でした。",
+  "workflow.validation_failed": "ワークフローの検証に失敗しました: {error}",
 };
 
 const terms_ko: Partial<Record<TermKey, string>> = {
@@ -2386,6 +2394,7 @@ const i18n_ko: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "split_fractions 값은 숫자여야 합니다: {error}",
   "wizard.split_fractions_not_object": "split_fractions는 train/val/test 키를 가진 객체여야 합니다.",
   "wizard.split_fractions_sum": "split_fractions의 합은 1.0이어야 하는데 {total}입니다.",
+  "workflow.validation_failed": "워크플로 검증에 실패했습니다: {error}",
 };
 
 const terms_pt: Partial<Record<TermKey, string>> = {
@@ -2595,6 +2604,7 @@ const i18n_pt: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "Os valores de split_fractions devem ser números: {error}",
   "wizard.split_fractions_not_object": "split_fractions deve ser um objeto com as chaves train/val/test.",
   "wizard.split_fractions_sum": "split_fractions deve somar 1.0, obteve-se {total}",
+  "workflow.validation_failed": "Falha na validação do fluxo de trabalho: {error}",
 };
 
 const terms_pt_BR: Partial<Record<TermKey, string>> = {
@@ -2821,6 +2831,7 @@ const i18n_ru: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "Значения split_fractions должны быть числами: {error}",
   "wizard.split_fractions_not_object": "split_fractions должен быть объектом с ключами train/val/test.",
   "wizard.split_fractions_sum": "Сумма split_fractions должна быть равна 1.0, получено {total}",
+  "workflow.validation_failed": "Проверка рабочего процесса не пройдена: {error}",
 };
 
 const terms_tr: Partial<Record<TermKey, string>> = {
@@ -3030,6 +3041,7 @@ const i18n_tr: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "split_fractions değerleri sayı olmalıdır: {error}",
   "wizard.split_fractions_not_object": "split_fractions, train/val/test anahtarları olan bir nesne olmalıdır.",
   "wizard.split_fractions_sum": "split_fractions toplamı 1.0 olmalıdır, {total} alındı.",
+  "workflow.validation_failed": "İş akışı doğrulaması başarısız oldu: {error}",
 };
 
 const terms_uk: Partial<Record<TermKey, string>> = {
@@ -3239,6 +3251,7 @@ const i18n_uk: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "Значення split_fractions мають бути числами: {error}",
   "wizard.split_fractions_not_object": "split_fractions має бути об'єктом із ключами train/val/test.",
   "wizard.split_fractions_sum": "split_fractions мають у сумі давати 1.0, отримано {total}",
+  "workflow.validation_failed": "Перевірка робочого процесу не пройдена: {error}",
 };
 
 const terms_yue: Partial<Record<TermKey, string>> = {
@@ -3462,6 +3475,7 @@ const i18n_zh_Hans: Partial<Record<I18nMessageKey, string>> = {
   "wizard.split_fractions_not_number": "split_fractions 的取值必须是数字：{error}",
   "wizard.split_fractions_not_object": "split_fractions 必须是一个包含 train/val/test 键的对象。",
   "wizard.split_fractions_sum": "split_fractions 之和必须为 1.0，实际得到 {total}。",
+  "workflow.validation_failed": "工作流验证失败：{error}",
 };
 
 export const TERMS_BY_LOCALE: Record<string, Record<string, string>> = {

@@ -57,10 +57,13 @@ import {
   saveWizardDraft,
   readWizardDraft,
   clearWizardDraft,
+  stashWizardDraftForReload,
   type WizardDraftData,
 } from "../lib/wizard-draft";
+import { LOCALE_RELOAD_EVENT } from "@/shared/lib/locale";
 import { useCodeAgent } from "@/shared/hooks/use-code-agent";
 import {
+  autoLayoutSpec,
   defaultWorkflowSpec,
   validateWorkflowSpec,
   workflowUsesTools,
@@ -103,6 +106,10 @@ export function useSubmitWizard() {
   const [jobName, setJobName] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [moduleName, setModuleName] = useState("predict");
+  // In advanced mode the code step opens with a module picker; the editors
+  // (and the agent's seed pass) wait until the user actively commits to a
+  // module. Simple mode skips the picker and always runs predict.
+  const [moduleChosen, setModuleChosen] = useState(false);
   const [optimizerName, setOptimizerName] = useState("gepa");
 
   // React (ReAct-agent) tool roster. Only sent when moduleName is "react".
@@ -115,6 +122,24 @@ export function useSubmitWizard() {
   );
   const isReact = moduleName.toLowerCase() === "react";
   const isWorkflow = moduleName.toLowerCase() === "workflow";
+  const moduleSelectionRequired = prefs.advancedMode && !moduleChosen;
+  // Bound after the agent hook is created below; chooseModule only runs on
+  // user clicks, so the ref is always populated by then.
+  const agentResetRef = useRef<(() => void) | null>(null);
+  const chooseModule = useCallback(
+    (name: string) => {
+      // Switching to a different module starts a fresh agent conversation —
+      // the old module's transcript and seeded artifacts no longer apply.
+      // Re-picking the same module keeps the conversation.
+      if (moduleChosen && name.toLowerCase() !== moduleName.toLowerCase()) {
+        agentResetRef.current?.();
+      }
+      setModuleName(name);
+      setModuleChosen(true);
+    },
+    [moduleChosen, moduleName],
+  );
+  const reopenModulePicker = useCallback(() => setModuleChosen(false), []);
 
   // Workflow graph spec — the canvas's single source of truth. `null` until
   // the user first picks the workflow module (the starter graph is seeded
@@ -131,6 +156,13 @@ export function useSubmitWizard() {
   // pristine starter graph re-seeds when the dataset's column roles change,
   // an edited one is never clobbered.
   const workflowPristineRef = useRef(true);
+  // Mirrors "manually edited" for the graph: gates the code agent's
+  // auto-seed so it never overwrites canvas work. Agent-authored graphs do
+  // NOT set it (the agent may keep iterating), but they do clear pristine.
+  const [workflowTouched, setWorkflowTouched] = useState(false);
+  // Node the agent just changed — the canvas pulses it briefly.
+  const [agentPulseNodeId, setAgentPulseNodeId] = useState<string | null>(null);
+  const pulseClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const replaceWorkflowSpec = useCallback((spec: WorkflowSpec | null) => {
     workflowSpecRef.current = spec;
     setWorkflowSpec(spec);
@@ -138,8 +170,23 @@ export function useSubmitWizard() {
   }, []);
   const updateWorkflowSpec = useCallback((spec: WorkflowSpec) => {
     workflowPristineRef.current = false;
+    setWorkflowTouched(true);
     workflowSpecRef.current = spec;
     setWorkflowSpec(spec);
+  }, []);
+  const applyAgentWorkflow = useCallback((spec: WorkflowSpec, changedNodeId: string | null) => {
+    // Agent-authored nodes arrive without canvas positions; lay the whole
+    // graph out so they never pile on top of each other.
+    const laid = spec.nodes.some((n) => !n.position) ? autoLayoutSpec(spec) : spec;
+    workflowPristineRef.current = false;
+    workflowSpecRef.current = laid;
+    setWorkflowSpec(laid);
+    setWorkflowRevision((r) => r + 1);
+    setAgentPulseNodeId(changedNodeId);
+    if (pulseClearRef.current) clearTimeout(pulseClearRef.current);
+    if (changedNodeId) {
+      pulseClearRef.current = setTimeout(() => setAgentPulseNodeId(null), 1600);
+    }
   }, []);
 
   const [signatureCode, setSignatureCode] = useState(() => buildSignatureTemplate({}));
@@ -333,6 +380,7 @@ export function useSubmitWizard() {
       jobName,
       jobDescription,
       moduleName,
+      moduleChosen,
       optimizerName,
       reactConfig,
       workflowSpec,
@@ -363,6 +411,26 @@ export function useSubmitWizard() {
     };
   });
 
+  // A locale switch reloads the page (see LocaleProvider), which would lose
+  // this in-memory form. Stash the live snapshot for that one hop so the user
+  // comes back to the same step in the new language instead of a blank wizard.
+  useEffect(() => {
+    const onLocaleReload = () => {
+      const d = draftRef.current;
+      if (
+        d &&
+        (d.step > 0 ||
+          d.parsedDataset !== null ||
+          d.datasetFileName !== null ||
+          d.jobName.trim() !== "")
+      ) {
+        stashWizardDraftForReload(d);
+      }
+    };
+    window.addEventListener(LOCALE_RELOAD_EVENT, onLocaleReload);
+    return () => window.removeEventListener(LOCALE_RELOAD_EVENT, onLocaleReload);
+  }, []);
+
   // Restore a parked draft on mount so switching to another sidebar tab and
   // coming back lands the user on the same step with inputs intact. Skipped when
   // a clone/share URL owns hydration — that flow populates the form itself.
@@ -382,11 +450,13 @@ export function useSubmitWizard() {
     setJobName(d.jobName);
     setJobDescription(d.jobDescription);
     setModuleName(d.moduleName);
+    setModuleChosen(d.moduleChosen);
     setOptimizerName(d.optimizerName);
     setReactConfig(d.reactConfig);
     if (d.workflowSpec) {
       replaceWorkflowSpec(d.workflowSpec);
       workflowPristineRef.current = false;
+      setWorkflowTouched(true);
     }
     setSignatureCode(d.signatureCode);
     setMetricCode(d.metricCode);
@@ -457,18 +527,12 @@ export function useSubmitWizard() {
         setOptimizerName(sharedState.optimizer_name);
       } else if (key === "module_name" && typeof sharedState.module_name === "string") {
         setModuleName(sharedState.module_name);
+        setModuleChosen(true);
       } else if (key === "react_config" && sharedState.react_config) {
         const rc = sharedState.react_config as Record<string, unknown>;
-        setReactConfig((prev) => {
-          const next = { ...prev };
-          if (rc.toolSourceKind === "live_mcp" || rc.toolSourceKind === "dataset_snapshot") {
-            next.toolSourceKind = rc.toolSourceKind;
-          }
-          for (const field of ["mcpUrl", "toolFilter"] as const) {
-            if (typeof rc[field] === "string") next[field] = rc[field] as string;
-          }
-          return next;
-        });
+        setReactConfig((prev) =>
+          typeof rc.mcpUrl === "string" ? { ...prev, mcpUrl: rc.mcpUrl } : prev,
+        );
       } else if (key === "signature_code" && typeof sharedState.signature_code === "string") {
         setSignatureCode(sharedState.signature_code);
         setSignatureManuallyEdited(true);
@@ -1056,6 +1120,9 @@ export function useSubmitWizard() {
       if (displayName) setJobName(String(displayName));
       if (payload.description) setJobDescription(String(payload.description));
       if (payload.module_name) setModuleName(String(payload.module_name));
+      // A clone is a complete prior submission — its module (absent = the
+      // predict default) is already decided, so the picker never reopens.
+      setModuleChosen(true);
       if (payload.optimizer_name) setOptimizerName(String(payload.optimizer_name));
       if (payload.signature_code) {
         setSignatureCode(String(payload.signature_code));
@@ -1183,15 +1250,14 @@ export function useSubmitWizard() {
       // React run config — hydrate tool source from the wire model. Scoring is
       // owned by metric_code (hydrated above), so there is no reward to restore.
       // mcp_auth_header is scrubbed from cloned/shared payloads, never present.
+      // The wire `kind` and `tool_filter` are ignored: the wizard only submits
+      // unfiltered live MCP now, so a clone of an old dataset-snapshot or
+      // filtered run re-runs against the live server's full roster.
       const ts = payload.tool_source as Record<string, unknown> | undefined;
       if (ts) {
-        setReactConfig((prev) => {
-          const next = { ...prev };
-          if (ts.kind) next.toolSourceKind = String(ts.kind) as ReactConfig["toolSourceKind"];
-          if (ts.mcp_url != null) next.mcpUrl = String(ts.mcp_url);
-          if (Array.isArray(ts.tool_filter)) next.toolFilter = ts.tool_filter.join(", ");
-          return next;
-        });
+        setReactConfig((prev) =>
+          ts.mcp_url != null ? { ...prev, mcpUrl: String(ts.mcp_url) } : prev,
+        );
       }
       toast.success(msg("submit.clone.success"));
     };
@@ -1316,21 +1382,26 @@ export function useSubmitWizard() {
         return true;
       }
       case 2: {
-        // Tool-using runs (react, or a workflow with react/mcp nodes) need a
-        // live tool endpoint; gate it here so the empty URL is caught when
-        // leaving the params step instead of only at submit.
-        const needsTools = isReact || (isWorkflow && !!workflowSpec && workflowUsesTools(workflowSpec));
-        if (needsTools && reactConfig.toolSourceKind === "live_mcp" && !reactConfig.mcpUrl.trim()) {
-          if (showToast) toast.error(msg("submit.validation.mcp_url_required"));
-          return false;
-        }
         if (datasetValidation && datasetValidation.errors.length > 0) {
           if (showToast) toast.error(msg("submit.validation.split_too_small"));
           return false;
         }
         return true;
       }
-      case 3:
+      case 3: {
+        if (moduleSelectionRequired) {
+          if (showToast) toast.error(msg("submit.validation.module_required"));
+          return false;
+        }
+        // Tool-using runs (react, or a workflow with react/mcp nodes) need a
+        // live tool endpoint; the tool config lives on this step now that the
+        // module is only decided here.
+        const needsTools =
+          isReact || (isWorkflow && !!workflowSpec && workflowUsesTools(workflowSpec));
+        if (needsTools && !reactConfig.mcpUrl.trim()) {
+          if (showToast) toast.error(msg("submit.validation.mcp_url_required"));
+          return false;
+        }
         if (isWorkflow) {
           if (!workflowSpec) return false;
           if (validateWorkflowSpec(workflowSpec, workflowIssueText).length > 0) {
@@ -1354,6 +1425,7 @@ export function useSubmitWizard() {
           return false;
         }
         return true;
+      }
       case 4: {
         if (jobType === "run") {
           if (!modelConfig.name.trim()) {
@@ -1539,7 +1611,13 @@ export function useSubmitWizard() {
         const passed = await handleValidateDataset();
         if (!passed) return;
       }
-      if (step === 3 && signatureCode.trim() && parsedDataset && metricCode.trim()) {
+      if (
+        step === 3 &&
+        !moduleSelectionRequired &&
+        signatureCode.trim() &&
+        parsedDataset &&
+        metricCode.trim()
+      ) {
         const passed = await handleValidateCode();
         if (!passed) return;
       }
@@ -1684,10 +1762,13 @@ export function useSubmitWizard() {
       goTo(3);
       return;
     }
-    const needsToolSource = isReact || (isWorkflow && !!workflowSpec && workflowUsesTools(workflowSpec));
-    if (needsToolSource && reactConfig.toolSourceKind === "live_mcp" && !reactConfig.mcpUrl.trim()) {
+    const needsToolSource =
+      isReact || (isWorkflow && !!workflowSpec && workflowUsesTools(workflowSpec));
+    if (needsToolSource && !reactConfig.mcpUrl.trim()) {
       toast.error(msg("submit.validation.mcp_url_required"));
-      goTo(2);
+      // The tool-source config lives on the code step (it appears once the
+      // module choice reveals a tool-using run).
+      goTo(3);
       return;
     }
 
@@ -1759,19 +1840,12 @@ export function useSubmitWizard() {
       // model. mcp_auth_header is forwarded once on the wire but never persisted
       // (backend) or mirrored into shared agent state.
       const buildReactFields = (): { tool_source: ToolSource } => {
-        const filter = reactConfig.toolFilter
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
         const tool_source: ToolSource = {
-          kind: reactConfig.toolSourceKind,
-          ...(reactConfig.toolSourceKind === "live_mcp" && reactConfig.mcpUrl.trim()
-            ? { mcp_url: reactConfig.mcpUrl.trim() }
-            : {}),
+          kind: "live_mcp",
+          ...(reactConfig.mcpUrl.trim() ? { mcp_url: reactConfig.mcpUrl.trim() } : {}),
           ...(reactConfig.mcpAuthHeader.trim()
             ? { mcp_auth_header: reactConfig.mcpAuthHeader.trim() }
             : {}),
-          ...(filter.length > 0 ? { tool_filter: filter } : {}),
         };
         return { tool_source };
       };
@@ -1904,15 +1978,21 @@ export function useSubmitWizard() {
     return samples;
   }, [parsedDataset, columnRoles]);
 
-  const workflowDryRunDisabledReason = !modelConfig.name.trim()
-    ? msg("workflow.dryrun.need_model")
-    : isWorkflow &&
-        workflowSpec &&
-        workflowUsesTools(workflowSpec) &&
-        reactConfig.toolSourceKind === "live_mcp" &&
-        !reactConfig.mcpUrl.trim()
+  const workflowDryRunDisabledReason =
+    isWorkflow && workflowSpec && workflowUsesTools(workflowSpec) && !reactConfig.mcpUrl.trim()
       ? msg("submit.validation.mcp_url_required")
       : null;
+  // A dry run needs a model, but the model step comes after the code step —
+  // instead of a "pick a model first" dead end, the canvas opens the shared
+  // model-config modal in place and the pick carries into the model step.
+  const workflowDryRunNeedsModel = !modelConfig.name.trim();
+  const openDryRunModelPicker = useCallback(() => {
+    setEditingModel({
+      config: modelConfig,
+      onSave: setModelConfig,
+      label: msg("model.generation.label"),
+    });
+  }, [modelConfig]);
 
   const runWorkflowDryRun = useCallback(
     async (inputs: Record<string, unknown>) => {
@@ -1920,20 +2000,13 @@ export function useSubmitWizard() {
       const mc = { ...modelConfig };
       if (globalBaseUrl && !mc.base_url) mc.base_url = globalBaseUrl;
       if (globalApiKey && !mc.extra?.api_key) mc.extra = { ...mc.extra, api_key: globalApiKey };
-      const filter = reactConfig.toolFilter
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
       const tool_source: ToolSource | undefined = workflowUsesTools(workflowSpec)
         ? {
-            kind: reactConfig.toolSourceKind,
-            ...(reactConfig.toolSourceKind === "live_mcp" && reactConfig.mcpUrl.trim()
-              ? { mcp_url: reactConfig.mcpUrl.trim() }
-              : {}),
+            kind: "live_mcp",
+            ...(reactConfig.mcpUrl.trim() ? { mcp_url: reactConfig.mcpUrl.trim() } : {}),
             ...(reactConfig.mcpAuthHeader.trim()
               ? { mcp_auth_header: reactConfig.mcpAuthHeader.trim() }
               : {}),
-            ...(filter.length > 0 ? { tool_filter: filter } : {}),
           }
         : undefined;
       return dryRunWorkflow({
@@ -1970,7 +2043,21 @@ export function useSubmitWizard() {
     metricValidation,
     runSignatureValidation,
     runMetricValidation,
+    isWorkflow,
+    workflowSpec,
+    workflowTouched,
+    applyAgentWorkflow,
+    // Hold the seed pass while the module picker is still open — seeding for
+    // the default module would be wasted (and visibly wrong) if the user then
+    // picks another one.
+    seedEnabled: !moduleSelectionRequired,
+    // The conversation rides through the locale-switch reload alongside the
+    // wizard draft (see wizard-draft.ts).
+    reloadPersistKey: "submit-code-agent",
   });
+  useEffect(() => {
+    agentResetRef.current = agent.reset;
+  }, [agent.reset]);
 
   return {
     step,
@@ -1999,14 +2086,21 @@ export function useSubmitWizard() {
     setJobDescription,
     moduleName,
     setModuleName,
+    moduleChosen,
+    chooseModule,
+    reopenModulePicker,
+    moduleSelectionRequired,
     isReact,
     isWorkflow,
     workflowSpec,
     setWorkflowSpec: updateWorkflowSpec,
     replaceWorkflowSpec,
     workflowRevision,
+    agentPulseNodeId,
     workflowSampleInputs,
     workflowDryRunDisabledReason,
+    workflowDryRunNeedsModel,
+    openDryRunModelPicker,
     runWorkflowDryRun,
     reactConfig,
     updateReactConfig,

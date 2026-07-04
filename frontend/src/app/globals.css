@@ -1387,3 +1387,50 @@ table {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
+
+/* Workflow canvas — React Flow state styling. Base edge styles are inline
+   (per-edge, set in deriveEdges); hover/selected need !important to win
+   over those inline values. */
+.react-flow__edge-path {
+  transition:
+    stroke 120ms ease,
+    stroke-width 120ms ease;
+}
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: #6e5843 !important;
+}
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #3d2e22 !important;
+  stroke-width: 2.5 !important;
+}
+.react-flow__handle {
+  transition:
+    box-shadow 120ms ease,
+    background-color 120ms ease;
+}
+.react-flow__handle:hover,
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto {
+  box-shadow: 0 0 0 3px rgba(200, 168, 130, 0.45);
+}
+.react-flow__selection {
+  background: rgba(200, 168, 130, 0.08) !important;
+  border: 1px dashed #c8a882 !important;
+}
+
+/* Node cards scale in on mount — new nodes, pastes, and agent rewrites all
+   announce themselves. Animates the inner card, not the React Flow wrapper,
+   whose transform carries the node's canvas position. */
+@keyframes wf-node-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.wf-node-enter {
+  animation: wf-node-enter 0.18s ease-out;
+}

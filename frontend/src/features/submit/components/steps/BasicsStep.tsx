@@ -11,24 +11,12 @@ import {
 import { Input } from "@/shared/ui/primitives/input";
 import { Label } from "@/shared/ui/primitives/label";
 import { Separator } from "@/shared/ui/primitives/separator";
-import { HelpTip } from "@/shared/ui/help-tip";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
-import { tip } from "@/shared/lib/tooltips";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { useUserPrefs } from "@/features/settings";
 
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
-
-// Each module carries its own hover tooltip explaining the technique; the
-// section label's tooltip stays generic about DSPy modules.
-const MODULE_OPTIONS = [
-  ["predict", "Predict", "module.predict"],
-  ["cot", "CoT", "module.cot"],
-  ["react", "ReAct", "module.react"],
-  ["workflow", "Workflow", "module.workflow"],
-] as const;
 
 export function BasicsStep({ w }: { w: SubmitWizardContext }) {
   const {
@@ -40,8 +28,6 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
     setOptimizationType,
     isPrivate,
     setIsPrivate,
-    moduleName,
-    setModuleName,
   } = w;
   const { prefs } = useUserPrefs();
   const advancedMode = prefs.advancedMode;
@@ -150,52 +136,6 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
             ))}
           </div>
         </div>
-        {advancedMode && (
-          <>
-            <Separator />
-            <div className="space-y-3" data-tutorial="module-selector">
-              <Label>
-                <HelpTip text={tip("module.choice")}>{TERMS.module}</HelpTip>
-              </Label>
-              <div className="relative inline-flex w-full rounded-lg bg-muted p-1 gap-1">
-                <div
-                  className="absolute top-1 bottom-1 rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-100 ease-out pointer-events-none"
-                  style={{
-                    width: `calc((100% - 8px) / ${MODULE_OPTIONS.length})`,
-                    insetInlineStart: `calc(${Math.max(
-                      0,
-                      MODULE_OPTIONS.findIndex(([val]) => val === moduleName),
-                    )} * (100% / ${MODULE_OPTIONS.length}) + 4px)`,
-                  }}
-                />
-                {MODULE_OPTIONS.map(([val, label, tipKey]) => (
-                  <Tooltip key={val}>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => setModuleName(val)}
-                        className={cn(
-                          "relative z-10 flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors duration-200 text-center cursor-pointer",
-                          moduleName === val
-                            ? "text-foreground"
-                            : "text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        {label}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="bottom"
-                      className="max-w-64 text-center leading-relaxed"
-                    >
-                      {tip(tipKey)}
-                    </TooltipContent>
-                  </Tooltip>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
         {advancedMode && (
           <>
             <Separator />

@@ -1205,23 +1205,10 @@ export function SettingsModal() {
   const isAdmin = session?.user?.role === "admin";
   const prefersReduced = useReducedMotion();
   const [activeTab, setActiveTab] = React.useState<SettingsTab>("wizard");
-  // Single switch path shared by a rail click and a rail hover, so both move the
-  // tab and emit the same telemetry — they can't drift.
   const selectTab = React.useCallback((tab: SettingsTab) => {
     setActiveTab(tab);
     track(TelemetryEvent.SettingsTabChanged, { tab });
   }, []);
-  // Hover-to-switch on the rail, gated behind a short intent delay: the content
-  // panel remounts on every switch, so activating instantly would thrash it as
-  // the cursor merely passes over tabs en route to its target. Only a deliberate
-  // ~120ms rest commits the switch; mouse-leave cancels a pending one.
-  const hoverTabTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  React.useEffect(
-    () => () => {
-      if (hoverTabTimer.current) clearTimeout(hoverTabTimer.current);
-    },
-    [],
-  );
   const tabs = React.useMemo(
     () => SETTINGS_TAB_ORDER.filter((tab) => isAdmin || tab !== "admin"),
     [isAdmin],
@@ -1271,22 +1258,7 @@ export function SettingsModal() {
             {tabs.map((tab) => {
               const { icon: Icon, labelKey } = SETTINGS_TAB_META[tab];
               return (
-                <TabsTrigger
-                  key={tab}
-                  value={tab}
-                  className={SETTINGS_RAIL_ITEM_CLASS}
-                  onMouseEnter={() => {
-                    if (hoverTabTimer.current) clearTimeout(hoverTabTimer.current);
-                    if (tab === activeTab) return;
-                    hoverTabTimer.current = setTimeout(() => selectTab(tab), 120);
-                  }}
-                  onMouseLeave={() => {
-                    if (hoverTabTimer.current) {
-                      clearTimeout(hoverTabTimer.current);
-                      hoverTabTimer.current = null;
-                    }
-                  }}
-                >
+                <TabsTrigger key={tab} value={tab} className={SETTINGS_RAIL_ITEM_CLASS}>
                   {/* Shared-layoutId overlay: the same id on every active trigger lets
                       Framer slide this highlight from the old tab to the new one,
                       exactly like the sidebar's `sidebar-active` pill. */}

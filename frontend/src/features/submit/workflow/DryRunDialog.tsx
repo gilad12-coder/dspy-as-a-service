@@ -8,7 +8,7 @@
  */
 
 import * as React from "react";
-import { Loader2, Play } from "lucide-react";
+import { Cpu, Loader2, Play } from "lucide-react";
 
 import {
   Dialog,
@@ -28,6 +28,10 @@ interface DryRunDialogProps {
   onOpenChange: (open: boolean) => void;
   inputFields: string[];
   sampleInputs: Record<string, string>;
+  /** Selected model, surfaced as a chip so the pick made from the canvas is
+      visible — and changeable via `onPickModel` — without leaving the dialog. */
+  modelName?: string | null;
+  onPickModel?: () => void;
   run: (inputs: Record<string, unknown>) => Promise<WorkflowDryRunResponse>;
   onResult: (result: WorkflowDryRunResponse) => void;
 }
@@ -37,6 +41,8 @@ export function DryRunDialog({
   onOpenChange,
   inputFields,
   sampleInputs,
+  modelName,
+  onPickModel,
   run,
   onResult,
 }: DryRunDialogProps) {
@@ -77,6 +83,25 @@ export function DryRunDialog({
           <DialogTitle>{msg("workflow.dryrun.title")}</DialogTitle>
           <DialogDescription>{msg("workflow.dryrun.description")}</DialogDescription>
         </DialogHeader>
+        {modelName && onPickModel && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/40 px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <Cpu className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate font-mono text-xs text-foreground" dir="ltr">
+                {modelName}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+              disabled={running}
+              onClick={onPickModel}
+            >
+              {msg("workflow.dryrun.change_model")}
+            </Button>
+          </div>
+        )}
         <div className="max-h-80 space-y-3 overflow-y-auto py-1">
           {inputFields.map((field) => (
             <div key={field} className="space-y-1.5">
@@ -99,11 +124,20 @@ export function DryRunDialog({
           </p>
         )}
         <DialogFooter>
-          <Button variant="outline" size="sm" disabled={running} onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={running}
+            onClick={() => onOpenChange(false)}
+          >
             {msg("workflow.dryrun.cancel")}
           </Button>
           <Button size="sm" className="gap-1.5" disabled={running} onClick={handleRun}>
-            {running ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+            {running ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Play className="size-3.5" />
+            )}
             {msg(running ? "workflow.dryrun.running" : "workflow.dryrun.run")}
           </Button>
         </DialogFooter>

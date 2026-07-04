@@ -12,7 +12,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
 
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
@@ -39,9 +39,10 @@ interface NodeInspectorProps {
   issues: string[];
   onChange: (next: WorkflowNodeSpec) => void;
   onDelete?: () => void;
+  onClose?: () => void;
 }
 
-export function NodeInspector({ spec, issues, onChange, onDelete }: NodeInspectorProps) {
+export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: NodeInspectorProps) {
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-card">
       <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
@@ -53,17 +54,30 @@ export function NodeInspector({ spec, issues, onChange, onDelete }: NodeInspecto
             {msg(`workflow.inspector.kind.${spec.kind}`)}
           </div>
         </div>
-        {onDelete && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onDelete}
-            className="text-muted-foreground hover:text-destructive"
-            aria-label={msg("workflow.inspector.delete")}
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center">
+          {onDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onDelete}
+              className="text-muted-foreground hover:text-destructive"
+              aria-label={msg("workflow.inspector.delete")}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          )}
+          {onClose && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label={msg("workflow.inspector.close")}
+            >
+              <X className="size-3.5" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {issues.length > 0 && (
@@ -131,25 +145,6 @@ export function NodeInspector({ spec, issues, onChange, onDelete }: NodeInspecto
                 ))}
               </div>
             </div>
-            {spec.module_name === "react" && (
-              <div className="space-y-1.5">
-                <Label className="text-[0.6875rem] uppercase tracking-wide text-muted-foreground">
-                  {msg("workflow.inspector.tool_filter")}
-                </Label>
-                <Input
-                  dir="ltr"
-                  value={(spec.tool_filter ?? []).join(", ")}
-                  placeholder={msg("workflow.inspector.tool_filter_placeholder")}
-                  onChange={(e) => {
-                    const names = e.target.value
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean);
-                    onChange({ ...spec, tool_filter: names.length ? names : null });
-                  }}
-                />
-              </div>
-            )}
             <div className="space-y-1.5">
               <Label className="text-[0.6875rem] uppercase tracking-wide text-muted-foreground">
                 {msg("workflow.inspector.signature_code")}
@@ -217,7 +212,10 @@ export function NodeInspector({ spec, issues, onChange, onDelete }: NodeInspecto
                 dir="ltr"
                 value={spec.output_field.name}
                 onChange={(e) =>
-                  onChange({ ...spec, output_field: { ...spec.output_field, name: e.target.value } })
+                  onChange({
+                    ...spec,
+                    output_field: { ...spec.output_field, name: e.target.value },
+                  })
                 }
               />
             </div>

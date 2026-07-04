@@ -16,7 +16,6 @@ import { formatMsg, msg } from "@/shared/lib/messages";
 import { TERMS } from "@/shared/lib/terms";
 import { ModelChip, AddModelButton } from "@/shared/ui/model-chip";
 import { TokenSourceToggle, useCredits } from "@/features/billing";
-import { ModelConfigModal } from "../ModelConfigModal";
 import { CostCeilingCard } from "../CostCeilingCard";
 
 import { emptyModelConfig } from "../../constants";
@@ -86,11 +85,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
     setUseAllGenerationModels,
     useAllReflectionModels,
     setUseAllReflectionModels,
-    editingModel,
     setEditingModel,
-    saveToRecent,
-    recentConfigs,
-    removeRecentConfig,
     catalog,
   } = w;
 
@@ -280,33 +275,6 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
             managed displays the full per-model credit cost, BYOK the platform fee
             (the provider key absorbs the model cost, but credits still meter it). */}
         <CostCeilingCard w={w} mode={wallet.mode} />
-        {/* Model config modal — shared across all model chips */}
-        <ModelConfigModal
-          open={!!editingModel}
-          onOpenChange={(open) => {
-            if (!open) setEditingModel(null);
-          }}
-          config={editingModel?.config ?? emptyModelConfig()}
-          onSave={(c) => {
-            editingModel?.onSave(c);
-            saveToRecent(c);
-            setEditingModel(null);
-          }}
-          roleLabel={
-            editingModel?.label ?? msg("auto.features.submit.components.steps.modelstep.literal.9")
-          }
-          catalogModels={catalog?.models}
-          recentConfigs={recentConfigs}
-          onRemoveRecent={removeRecentConfig}
-          onSelectAllAvailable={
-            editingModel?.onSelectAllAvailable
-              ? () => {
-                  editingModel.onSelectAllAvailable?.();
-                  setEditingModel(null);
-                }
-              : undefined
-          }
-        />
       </CardContent>
     </Card>
   );

@@ -568,7 +568,8 @@ const tutorialSteps: TutorialStep[] = [
     placement: "auto",
     beforeShow: async () => {
       await ensureSubmit();
-      setWizardStep(0);
+      injectSampleDataset();
+      setWizardStep(3);
     },
     track: "deep-dive",
     readingTimeSec: 9,

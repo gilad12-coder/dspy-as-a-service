@@ -19,6 +19,7 @@ import type {
   ValidateDatasetResponse,
   WorkflowDryRunRequest,
   WorkflowDryRunResponse,
+  WorkflowSpec,
 } from "@/shared/types/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { I18N_KEY, tI18n } from "@/shared/lib/i18n";
@@ -756,9 +757,12 @@ export function getTestResults(optimizationId: string) {
  * and reads the body as a Blob rather than JSON.
  */
 export async function downloadProgramExport(optimizationId: string): Promise<void> {
-  const res = await fetchWithAuthRetry(`${apiBase()}/optimizations/${optimizationId}/program-export`, {
-    method: "GET",
-  });
+  const res = await fetchWithAuthRetry(
+    `${apiBase()}/optimizations/${optimizationId}/program-export`,
+    {
+      method: "GET",
+    },
+  );
   if (!res.ok) {
     const parsed = parseError(await res.text().catch(() => ""));
     throw new ApiError(
@@ -1156,10 +1160,9 @@ export async function setTaggerSessionPinned(sessionId: string, pinned: boolean)
 
 /** Delete a saved session. */
 export async function deleteTaggerSession(sessionId: string) {
-  const res = await request<{ id: string; deleted: boolean }>(
-    `/tagging-sessions/${sessionId}`,
-    { method: "DELETE" },
-  );
+  const res = await request<{ id: string; deleted: boolean }>(`/tagging-sessions/${sessionId}`, {
+    method: "DELETE",
+  });
   invalidateCache("/tagging-sessions");
   return res;
 }
@@ -1582,6 +1585,21 @@ export function validateDataset(payload: ValidateDatasetRequest) {
   });
 }
 
+export interface McpProbeResponse {
+  ok: boolean;
+  tool_count: number;
+  tool_names: string[];
+  error: string | null;
+}
+
+/** Check that a live MCP server answers and list its tools (wizard preflight). */
+export function probeMcp(payload: { mcp_url: string; auth_header?: string }) {
+  return request<McpProbeResponse>("/mcp/probe", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getQueueStatus() {
   return cachedGet<QueueStatusResponse>("/queue", QUEUE_CACHE_MS);
 }
@@ -1786,9 +1804,34 @@ export interface CodeAgentRequest {
   prior_metric_validation?: string;
   initial_signature?: string;
   initial_metric?: string;
+  // Workflow graph currently on the canvas. Non-null switches both agent
+  // modes to their graph-aware paths (seed drafts the DAG, chat gets graph
+  // tools).
+  prior_workflow?: WorkflowSpec | null;
+  initial_workflow?: WorkflowSpec | null;
+  // Active UI locale code; the backend derives the agent's reply language
+  // from it (fallback: Hebrew).
+  locale?: string;
 }
 
-export type CodeAgentToolName = "edit_signature" | "edit_metric";
+export type CodeAgentToolName =
+  | "edit_signature"
+  | "edit_metric"
+  | "add_node"
+  | "update_node"
+  | "remove_node"
+  | "connect"
+  | "disconnect";
+
+const CODE_AGENT_TOOLS = new Set<CodeAgentToolName>([
+  "edit_signature",
+  "edit_metric",
+  "add_node",
+  "update_node",
+  "remove_node",
+  "connect",
+  "disconnect",
+]);
 
 export interface CodeAgentToolStart {
   id: string;
@@ -1805,10 +1848,15 @@ export interface CodeAgentToolEnd {
 export interface CodeAgentHandlers {
   onSignaturePatch: (chunk: string) => void;
   onMetricPatch: (chunk: string) => void;
-  onReasoningPatch?: (chunk: string) => void;
+  // `source` names the emitting stream ("signature" | "metric" | "workflow" |
+  // "agent") — seed mode runs two authors in parallel over one SSE stream.
+  onReasoningPatch?: (chunk: string, source: string) => void;
   onMessagePatch?: (chunk: string) => void;
   onSignatureReplace?: (code: string) => void;
   onMetricReplace?: (code: string) => void;
+  // Full-graph snapshot after a seed draft or a successful graph tool op;
+  // changedNodeId (null for seed/removals) drives the canvas pulse.
+  onWorkflowReplace?: (workflow: WorkflowSpec, changedNodeId: string | null) => void;
   onToolStart?: (ev: CodeAgentToolStart) => void;
   onToolEnd?: (ev: CodeAgentToolEnd) => void;
   onDone: (result: {
@@ -1816,6 +1864,8 @@ export interface CodeAgentHandlers {
     metric_code: string;
     assistant_message: string;
     model: string | null;
+    workflow?: WorkflowSpec | null;
+    workflowValid?: boolean;
     /**
      * Seed-path validation outcome. The seed runner validates (and repairs)
      * the generated code; these flags are absent on the chat path (where
@@ -1861,16 +1911,26 @@ export async function streamCodeAgent(
     } else if (event === "metric_patch") {
       handlers.onMetricPatch(String(data.chunk ?? ""));
     } else if (event === "reasoning_patch") {
-      handlers.onReasoningPatch?.(String(data.chunk ?? ""));
+      handlers.onReasoningPatch?.(
+        String(data.chunk ?? ""),
+        typeof data.source === "string" && data.source ? data.source : "agent",
+      );
     } else if (event === "message_patch") {
       handlers.onMessagePatch?.(String(data.chunk ?? ""));
     } else if (event === "signature_replace") {
       handlers.onSignatureReplace?.(String(data.code ?? ""));
     } else if (event === "metric_replace") {
       handlers.onMetricReplace?.(String(data.code ?? ""));
+    } else if (event === "workflow_replace") {
+      if (data.workflow && typeof data.workflow === "object") {
+        handlers.onWorkflowReplace?.(
+          data.workflow as WorkflowSpec,
+          typeof data.changed_node_id === "string" ? data.changed_node_id : null,
+        );
+      }
     } else if (event === "tool_start") {
-      const tool = String(data.tool ?? "");
-      if (tool === "edit_signature" || tool === "edit_metric") {
+      const tool = String(data.tool ?? "") as CodeAgentToolName;
+      if (CODE_AGENT_TOOLS.has(tool)) {
         handlers.onToolStart?.({
           id: String(data.id ?? ""),
           tool,
@@ -1878,8 +1938,8 @@ export async function streamCodeAgent(
         });
       }
     } else if (event === "tool_end") {
-      const tool = String(data.tool ?? "");
-      if (tool === "edit_signature" || tool === "edit_metric") {
+      const tool = String(data.tool ?? "") as CodeAgentToolName;
+      if (CODE_AGENT_TOOLS.has(tool)) {
         handlers.onToolEnd?.({
           id: String(data.id ?? ""),
           tool,
@@ -1893,6 +1953,11 @@ export async function streamCodeAgent(
         metric_code: String(data.metric_code ?? ""),
         assistant_message: String(data.assistant_message ?? ""),
         model: typeof rawModel === "string" && rawModel.length > 0 ? rawModel : null,
+        workflow:
+          data.workflow && typeof data.workflow === "object"
+            ? (data.workflow as WorkflowSpec)
+            : null,
+        workflowValid: data.workflow_valid !== false,
         // Absent on the chat path → treat as valid; the seed path sends
         // explicit booleans after its validate-and-repair pass.
         signatureValid: data.signature_valid !== false,

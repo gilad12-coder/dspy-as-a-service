@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   LOCALE_COOKIE,
   LOCALE_COOKIE_MAX_AGE,
+  LOCALE_RELOAD_EVENT,
   isLocale,
   type Locale,
 } from "@/shared/lib/locale";
@@ -79,6 +80,7 @@ export function LocaleProvider({
       // the same pick still pins the choice (writes the cookie), so don't skip it.
       if (!isLocale(next) || (!isAuto && next === initialLocale)) return;
       document.cookie = `${LOCALE_COOKIE}=${next};path=/;max-age=${LOCALE_COOKIE_MAX_AGE};samesite=lax`;
+      window.dispatchEvent(new Event(LOCALE_RELOAD_EVENT));
       window.location.reload();
     },
     [initialLocale, isAuto],
@@ -86,6 +88,7 @@ export function LocaleProvider({
 
   const resetToAuto = React.useCallback(() => {
     document.cookie = `${LOCALE_COOKIE}=;path=/;max-age=0;samesite=lax`;
+    window.dispatchEvent(new Event(LOCALE_RELOAD_EVENT));
     window.location.reload();
   }, []);
 

@@ -68,6 +68,7 @@
     "winningCandidate": "candidato vincente"
   },
   "messages": {
+    "workflow.validation_failed": "Convalida del flusso di lavoro non riuscita: {error}",
     "billing.insufficient_credits": "Il tuo saldo è esaurito. Aggiungi crediti o attendi il rinnovo del piano gratuito per eseguire su risorse gestite.",
     "accounts.email_taken": "Questo indirizzo email è già registrato.",
     "accounts.invalid_credentials": "Email o password non corretti.",

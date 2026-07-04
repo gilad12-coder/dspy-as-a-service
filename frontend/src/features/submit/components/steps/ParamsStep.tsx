@@ -21,16 +21,11 @@ import { msg } from "@/shared/lib/messages";
 
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 import { SplitRecommendationCard } from "../SplitRecommendationCard";
-import { ReactConfigSection } from "./ReactConfigSection";
-import { workflowUsesTools } from "../../workflow/model";
 
 export function ParamsStep({ w }: { w: SubmitWizardContext }) {
   const { prefs } = useUserPrefs();
   const advancedMode = prefs.advancedMode;
   const {
-    isReact,
-    isWorkflow,
-    workflowSpec,
     split,
     updateSplit,
     splitSum,
@@ -61,13 +56,6 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        {(isReact || (isWorkflow && !!workflowSpec && workflowUsesTools(workflowSpec))) && (
-          <>
-            <ReactConfigSection w={w} />
-            <Separator />
-          </>
-        )}
-
         <div className="space-y-3" data-tutorial="data-splits">
           <div className="flex items-center justify-between">
             <Label className="font-semibold">

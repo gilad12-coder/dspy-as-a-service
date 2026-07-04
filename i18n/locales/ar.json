@@ -68,6 +68,7 @@
     "winningCandidate": "المرشّح الفائز"
   },
   "messages": {
+    "workflow.validation_failed": "فشل التحقق من سير العمل: {error}",
     "billing.insufficient_credits": "رصيدك فارغ. أضِف رصيدًا أو انتظر تجديد المنحة المجانية للتشغيل على الحوسبة المُدارة.",
     "accounts.email_taken": "عنوان البريد الإلكتروني هذا مُسجّل بالفعل.",
     "accounts.invalid_credentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",

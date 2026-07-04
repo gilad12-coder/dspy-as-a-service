@@ -30,30 +30,70 @@ export type Direction = "rtl" | "ltr";
  * structurally by `fallbackChain` (a typo'd target fails to compile there).
  */
 export const LOCALE_REGISTRY = {
-  en:        { dir: "ltr", nativeName: "English",                  englishName: "English",                fallback: "he" },
-  he:        { dir: "rtl", nativeName: "עברית",                    englishName: "Hebrew",                 fallback: null },
-  ar:        { dir: "rtl", nativeName: "العربية",                  englishName: "Arabic",                 fallback: "en" },
-  fa:        { dir: "rtl", nativeName: "فارسی",                    englishName: "Persian",                fallback: "en" },
-  "en-GB":   { dir: "ltr", nativeName: "British English",          englishName: "English (UK)",           fallback: "en" },
-  "en-IN":   { dir: "ltr", nativeName: "Indian English",           englishName: "English (India)",        fallback: "en" },
-  "zh-Hans": { dir: "ltr", nativeName: "简体中文",                  englishName: "Chinese (Simplified)",   fallback: "en" },
-  yue:       { dir: "ltr", nativeName: "粵語",                      englishName: "Cantonese",              fallback: "zh-Hans" },
-  fr:        { dir: "ltr", nativeName: "français",                 englishName: "French",                 fallback: "en" },
-  "fr-CA":   { dir: "ltr", nativeName: "français canadien",        englishName: "French (Canada)",        fallback: "fr" },
-  de:        { dir: "ltr", nativeName: "Deutsch",                  englishName: "German",                 fallback: "en" },
-  "de-AT":   { dir: "ltr", nativeName: "Österreichisches Deutsch", englishName: "German (Austria)",       fallback: "de" },
-  hi:        { dir: "ltr", nativeName: "हिन्दी",                     englishName: "Hindi",                  fallback: "en" },
-  it:        { dir: "ltr", nativeName: "italiano",                 englishName: "Italian",                fallback: "en" },
-  ja:        { dir: "ltr", nativeName: "日本語",                    englishName: "Japanese",               fallback: "en" },
-  ko:        { dir: "ltr", nativeName: "한국어",                    englishName: "Korean",                 fallback: "en" },
-  pt:        { dir: "ltr", nativeName: "português",                englishName: "Portuguese",             fallback: "en" },
-  "pt-BR":   { dir: "ltr", nativeName: "português (Brasil)",       englishName: "Portuguese (Brazil)",    fallback: "pt" },
-  "pt-PT":   { dir: "ltr", nativeName: "português (Portugal)",     englishName: "Portuguese (Portugal)",  fallback: "pt" },
-  ru:        { dir: "ltr", nativeName: "русский",                  englishName: "Russian",                fallback: "en" },
-  es:        { dir: "ltr", nativeName: "español",                  englishName: "Spanish",                fallback: "en" },
-  "es-419":  { dir: "ltr", nativeName: "español (Latinoamérica)",  englishName: "Spanish (Latin America)", fallback: "es" },
-  tr:        { dir: "ltr", nativeName: "Türkçe",                   englishName: "Turkish",                fallback: "en" },
-  uk:        { dir: "ltr", nativeName: "українська",               englishName: "Ukrainian",              fallback: "en" },
+  en: { dir: "ltr", nativeName: "English", englishName: "English", fallback: "he" },
+  he: { dir: "rtl", nativeName: "עברית", englishName: "Hebrew", fallback: null },
+  ar: { dir: "rtl", nativeName: "العربية", englishName: "Arabic", fallback: "en" },
+  fa: { dir: "rtl", nativeName: "فارسی", englishName: "Persian", fallback: "en" },
+  "en-GB": {
+    dir: "ltr",
+    nativeName: "British English",
+    englishName: "English (UK)",
+    fallback: "en",
+  },
+  "en-IN": {
+    dir: "ltr",
+    nativeName: "Indian English",
+    englishName: "English (India)",
+    fallback: "en",
+  },
+  "zh-Hans": {
+    dir: "ltr",
+    nativeName: "简体中文",
+    englishName: "Chinese (Simplified)",
+    fallback: "en",
+  },
+  yue: { dir: "ltr", nativeName: "粵語", englishName: "Cantonese", fallback: "zh-Hans" },
+  fr: { dir: "ltr", nativeName: "français", englishName: "French", fallback: "en" },
+  "fr-CA": {
+    dir: "ltr",
+    nativeName: "français canadien",
+    englishName: "French (Canada)",
+    fallback: "fr",
+  },
+  de: { dir: "ltr", nativeName: "Deutsch", englishName: "German", fallback: "en" },
+  "de-AT": {
+    dir: "ltr",
+    nativeName: "Österreichisches Deutsch",
+    englishName: "German (Austria)",
+    fallback: "de",
+  },
+  hi: { dir: "ltr", nativeName: "हिन्दी", englishName: "Hindi", fallback: "en" },
+  it: { dir: "ltr", nativeName: "italiano", englishName: "Italian", fallback: "en" },
+  ja: { dir: "ltr", nativeName: "日本語", englishName: "Japanese", fallback: "en" },
+  ko: { dir: "ltr", nativeName: "한국어", englishName: "Korean", fallback: "en" },
+  pt: { dir: "ltr", nativeName: "português", englishName: "Portuguese", fallback: "en" },
+  "pt-BR": {
+    dir: "ltr",
+    nativeName: "português (Brasil)",
+    englishName: "Portuguese (Brazil)",
+    fallback: "pt",
+  },
+  "pt-PT": {
+    dir: "ltr",
+    nativeName: "português (Portugal)",
+    englishName: "Portuguese (Portugal)",
+    fallback: "pt",
+  },
+  ru: { dir: "ltr", nativeName: "русский", englishName: "Russian", fallback: "en" },
+  es: { dir: "ltr", nativeName: "español", englishName: "Spanish", fallback: "en" },
+  "es-419": {
+    dir: "ltr",
+    nativeName: "español (Latinoamérica)",
+    englishName: "Spanish (Latin America)",
+    fallback: "es",
+  },
+  tr: { dir: "ltr", nativeName: "Türkçe", englishName: "Turkish", fallback: "en" },
+  uk: { dir: "ltr", nativeName: "українська", englishName: "Ukrainian", fallback: "en" },
 } as const satisfies Record<
   string,
   { dir: Direction; nativeName: string; englishName: string; fallback: string | null }
@@ -75,6 +115,13 @@ export const LOCALE_COOKIE = "skynet_locale";
 
 /** One year — a language choice is sticky until the user changes it again. */
 export const LOCALE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
+/**
+ * Window event fired synchronously right before a locale switch reloads the
+ * page, so in-memory state that should survive the switch (e.g. the submit
+ * wizard draft) can stash itself for the hop.
+ */
+export const LOCALE_RELOAD_EVENT = "skynet:locale-will-reload";
 
 /** Narrow an arbitrary value to a supported `Locale`. */
 export function isLocale(value: unknown): value is Locale {

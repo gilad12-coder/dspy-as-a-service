@@ -67,8 +67,8 @@ export const TOOLTIPS = {
 
   "react.tool_source": "מהיכן נטענת רשימת הכלים: שרת MCP חי, או תצלום כלים מתוך הדאטאסט",
   "react.mcp_url": "כתובת שרת ה-MCP שממנו נטענים הכלים של הסוכן",
-  "react.auth": "כותרת אימות (Authorization header) לשרת ה-MCP. לא נשמרת בשרת ולא נחשפת לסוכן הצ'אט",
-  "react.tool_filter": "הגבלת רשימת הכלים לשמות שצוינו בלבד, מופרדים בפסיקים",
+  "react.auth":
+    "כותרת אימות (Authorization header) לשרת ה-MCP. לא נשמרת בשרת ולא נחשפת לסוכן הצ'אט",
   "react.optimized_tools": `הכלים שהסוכן (ReAct) מפעיל בלולאה, עם התיאורים והארגומנטים שה${TERMS.optimizer} חידד במהלך ה${TERMS.optimization}`,
 
   "config.section.summary": `ה${TERMS.module}, ה${TERMS.optimizer}, והפרמטרים שנבחרו ל${TERMS.optimizationTypeRun} זו`,
@@ -81,8 +81,7 @@ export const TOOLTIPS = {
   "grid.quality_speed_combined":
     "איכות ומהירות לכל זוג מודלים, זה לצד זה. ככל שהאיכות והמהירות גבוהות יותר, כך הזוג טוב יותר.",
   "grid.avg_response_time_per_pair": "משך זמן ממוצע לכל קריאה למודל שפה, לפי זוג מודלים",
-  "grid.best_pair_default":
-    "ברירת מחדל: הזוג עם ציון האיכות הגבוה ביותר. ניתן להחליף לכל זוג אחר.",
+  "grid.best_pair_default": "ברירת מחדל: הזוג עם ציון האיכות הגבוה ביותר. ניתן להחליף לכל זוג אחר.",
 
   "pair.runtime": `משך ${TERMS.optimizationTypeRun} ה${TERMS.optimization} עבור ${TERMS.pair} המודלים הזה`,
 
@@ -116,9 +115,9 @@ export const TOOLTIPS = {
   "tagger.upload_file": "העלה/העלי קובץ CSV, JSON או Excel. כל שורה תהפוך לפריט לתיוג",
   "tagger.text_column": "בחר/י את העמודה שמכילה את הטקסט לתיוג. שאר העמודות יישמרו בייצוא",
   "tagger.mode": "בחר/י את סוג התיוג שמתאים למשימה: כן/לא, בחירה מרשימה או טקסט חופשי",
-  "tagger.binary_question":
-    "השאלה שתוצג מעל כפתורי כן/לא. כדאי לנסח שאלה שאפשר לענות עליה בבירור",
-  "tagger.multiclass_categories": "הגדר/הגדירי את הקטגוריות הזמינות לבחירה בזמן התיוג — לפחות שתיים",
+  "tagger.binary_question": "השאלה שתוצג מעל כפתורי כן/לא. כדאי לנסח שאלה שאפשר לענות עליה בבירור",
+  "tagger.multiclass_categories":
+    "הגדר/הגדירי את הקטגוריות הזמינות לבחירה בזמן התיוג — לפחות שתיים",
   "tagger.freetext_instruction": "ההנחיה שתוצג מעל שדה הטקסט. הסבר/הסבירי בקצרה מה צריך לכתוב",
 
   "compare.winner_improvement": `אחוז ה${TERMS.scoreImprovement} של ה${TERMS.optimizationTypeRun} הזוכה — ההפרש בין ה${TERMS.optimizedScore} ל${TERMS.baselineScore}`,

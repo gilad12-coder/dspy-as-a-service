@@ -34,7 +34,10 @@ export interface WorkflowIssue {
   message: string;
 }
 
-const SIGNATURE_FIELD_RE = /^\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^=]+?)\s*=\s*dspy\.(InputField|OutputField)\s*\(/;
+// The `: type` annotation is optional — DSPy defaults untyped fields to str,
+// and agent-authored signatures routinely omit it.
+const SIGNATURE_FIELD_RE =
+  /^\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*([^=]+?))?\s*=\s*dspy\.(InputField|OutputField)\s*\(/;
 
 /**
  * Parse a dspy.Signature source into its input/output ports.
@@ -50,8 +53,8 @@ export function parseSignaturePorts(code: string): NodePorts {
     const m = SIGNATURE_FIELD_RE.exec(line);
     if (!m) continue;
     const [, name, annotation, kind] = m;
-    if (!name || !annotation || !kind) continue;
-    const port = { name, annotation: annotation.trim() };
+    if (!name || !kind) continue;
+    const port = { name, annotation: annotation?.trim() ?? "str" };
     if (kind === "InputField") inputs.push(port);
     else outputs.push(port);
   }
@@ -219,6 +222,41 @@ export function newNodeSpec(
         position,
       };
   }
+}
+
+/**
+ * Layered auto-layout: column = longest-path depth from the input anchor,
+ * row = order within the column. Deterministic and dependency-free; used by
+ * the canvas tidy-up button and to place agent-authored nodes (which arrive
+ * without positions).
+ */
+export function autoLayoutSpec(spec: WorkflowSpec): WorkflowSpec {
+  const depth = new Map<string, number>(spec.nodes.map((n) => [n.id, 0]));
+  for (let pass = 0; pass < spec.nodes.length; pass += 1) {
+    let changed = false;
+    for (const e of spec.edges) {
+      const next = (depth.get(e.source) ?? 0) + 1;
+      if (next > (depth.get(e.target) ?? 0)) {
+        depth.set(e.target, next);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  const output = spec.nodes.find((n) => n.kind === "output");
+  if (output && depth.size > 0) {
+    depth.set(output.id, Math.max(...depth.values()));
+  }
+  const rows = new Map<number, number>();
+  return {
+    ...spec,
+    nodes: spec.nodes.map((n) => {
+      const d = depth.get(n.id) ?? 0;
+      const row = rows.get(d) ?? 0;
+      rows.set(d, row + 1);
+      return { ...n, position: { x: d * 300, y: row * 160 + (d % 2) * 40 } };
+    }),
+  };
 }
 
 /**

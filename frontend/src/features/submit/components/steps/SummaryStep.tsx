@@ -405,27 +405,19 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
               {summaryTab === 3 && (
                 <div className="space-y-0">
                   {isReact && (
-                    <>
-                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
-                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Boxes className="size-3.5" />
-                          {msg("submit.react.tool_source_label")}
-                        </span>
-                        <span
-                          className="text-sm font-medium font-mono truncate max-w-[60%]"
-                          dir="ltr"
-                          title={
-                            reactConfig.toolSourceKind === "live_mcp"
-                              ? reactConfig.mcpUrl
-                              : undefined
-                          }
-                        >
-                          {reactConfig.toolSourceKind === "live_mcp"
-                            ? reactConfig.mcpUrl || "live_mcp"
-                            : "dataset_snapshot"}
-                        </span>
-                      </div>
-                    </>
+                    <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Boxes className="size-3.5" />
+                        {msg("submit.react.mcp_url_label")}
+                      </span>
+                      <span
+                        className="text-sm font-medium font-mono truncate max-w-[60%]"
+                        dir="ltr"
+                        title={reactConfig.mcpUrl}
+                      >
+                        {reactConfig.mcpUrl || "—"}
+                      </span>
+                    </div>
                   )}
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">

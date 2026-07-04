@@ -203,7 +203,6 @@
   "submit.dataset.file_error": "Erro ao carregar o arquivo",
   "submit.nav.validating": "Validando…",
   "submit.probe.details.logs": "Registro da execução",
-  "submit.react.tool_source_live_mcp": "MCP ao vivo",
   "submit.validation.api_key_required": "Insira uma chave de API — não está definida no ambiente nem foi inserida manualmente",
   "submit.validation.dataset_required": "Carregue um arquivo de conjunto de dados",
   "submit.validation.mcp_url_required": "Insira um URL do MCP para a fonte das ferramentas",

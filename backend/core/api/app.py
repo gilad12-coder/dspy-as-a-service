@@ -93,6 +93,7 @@ from .routers.dataset_library import create_dataset_library_router
 from .routers.dataset_share import create_dataset_share_router
 from .routers.datasets import create_datasets_router
 from .routers.generalist_agent import create_generalist_agent_router
+from .routers.mcp_probe import create_mcp_probe_router
 from .routers.models import create_models_router
 from .routers.optimizations import create_optimizations_router
 from .routers.optimizations_meta import create_optimizations_meta_router
@@ -1206,6 +1207,7 @@ def create_app(
     )
     app.include_router(create_registry_router(registry=registry), tags=["Registry"])
     app.include_router(create_code_validation_router(), tags=["Code Validation"])
+    app.include_router(create_mcp_probe_router(), tags=["Code Validation"])
     app.include_router(create_code_agent_router(), tags=["Code Validation"])
     app.include_router(create_generalist_agent_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_agent_history_router(job_store=job_store), tags=["Optimizations"])

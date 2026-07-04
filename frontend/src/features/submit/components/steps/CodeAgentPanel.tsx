@@ -1,7 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { Bot, XCircle, RotateCcw, Ruler, FileCode2, MessageSquarePlus } from "lucide-react";
+import {
+  Bot,
+  XCircle,
+  RotateCcw,
+  Ruler,
+  FileCode2,
+  MessageSquarePlus,
+  Waypoints,
+} from "lucide-react";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
@@ -241,10 +249,13 @@ function computeLineDiff(oldText: string, newText: string): DiffLine[] {
 function ToolCallCard({ call, isRetry = false }: { call: SharedAgentToolCall; isRetry?: boolean }) {
   const codeCall = call as AgentToolCall;
   const isSignature = codeCall.tool === "edit_signature";
-  const Icon = isSignature ? FileCode2 : Ruler;
+  const isMetric = codeCall.tool === "edit_metric";
+  const Icon = isSignature ? FileCode2 : isMetric ? Ruler : Waypoints;
   const title = isSignature
     ? msg("submit.code.agent.tool.signature.title")
-    : msg("submit.code.agent.tool.metric.title");
+    : isMetric
+      ? msg("submit.code.agent.tool.metric.title")
+      : msg(`workflow.agent.tool.${codeCall.tool}` as Parameters<typeof msg>[0]);
 
   const diff = React.useMemo<DiffLine[]>(() => {
     if (!codeCall.newCode) return [];
@@ -333,8 +344,7 @@ function EmptyState({ disabled, disabledReason }: { disabled?: boolean; disabled
       }
       description={
         disabled
-          ? disabledReason ||
-            msg("auto.features.submit.components.steps.codeagentpanel.literal.16")
+          ? disabledReason || msg("auto.features.submit.components.steps.codeagentpanel.literal.16")
           : formatMsg("auto.features.submit.components.steps.codeagentpanel.template.2", {
               p1: TERMS.dataset,
               p2: TERMS.signature,
