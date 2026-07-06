@@ -581,13 +581,16 @@ class Settings(BaseSettings):
         port whenever the API runs on a non-default PORT, surfacing a raw network
         error instead of a config diagnostic. Deriving the default keeps the
         agent pointed at this app's own ``/mcp`` mount; a bind-all ``0.0.0.0``
-        host is dialled as ``localhost``.
+        host is dialled as ``127.0.0.1`` — the IPv4 literal, not ``localhost``,
+        because some container runtimes (e.g. Railway) resolve ``localhost`` to
+        ``::1`` while Uvicorn listens on IPv4 only, turning the self-dial into
+        a raw ``ConnectError``.
 
         Returns:
             The settings instance with ``generalist_agent_mcp_url`` populated.
         """
         if not self.generalist_agent_mcp_url:
-            host = "localhost" if self.host in ("0.0.0.0", "") else self.host
+            host = "127.0.0.1" if self.host in ("0.0.0.0", "") else self.host
             self.generalist_agent_mcp_url = f"http://{host}:{self.port}/mcp/"
         return self
 

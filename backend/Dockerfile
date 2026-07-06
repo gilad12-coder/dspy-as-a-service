@@ -96,4 +96,8 @@ ENV LITELLM_LOCAL_MODEL_COST_MAP=True
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Bind the platform-provided PORT when present (Railway/Heroku-style runtimes
+# inject it and route edge traffic to it) so the bound port always matches
+# settings.port and the generalist agent's derived MCP self-dial URL. The
+# sh -c + exec keeps uvicorn as PID 1 for clean SIGTERM handling.
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
