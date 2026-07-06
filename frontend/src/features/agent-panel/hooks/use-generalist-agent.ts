@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveLocale } from "@/shared/lib/runtime-locale";
 
 import type { AgentMessage, AgentStatus, AgentToolCall } from "@/shared/ui/agent/types";
 
@@ -231,6 +232,7 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
           wizard_state: ws,
           trust_mode: tm,
           conversation_id: conversationIdRef.current,
+          locale: getActiveLocale(),
         },
         {
           signal: controller.signal,

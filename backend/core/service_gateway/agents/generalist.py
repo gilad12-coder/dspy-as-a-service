@@ -51,7 +51,7 @@ from ..language_models import (
 )
 from ..optimization.training_ground.registry import hash_tool_schema
 from ..react_compat import REACT_CLASS
-from .code import ReactReplyStream, _format_agent_error
+from .code import ReactReplyStream, _format_agent_error, _reply_language
 from .constants import REASONING_FIELD
 
 
@@ -928,15 +928,16 @@ class GeneralistSig(dspy.Signature):
 
     FORBIDDEN reasoning patterns (these all cause blank bubbles):
       • "No tools needed for a greeting" — WRONG. ``submit`` IS a tool;
-        a greeting is ONE ``submit`` call with the Hebrew greeting in
-        ``assistant_message``.
+        a greeting is ONE ``submit`` call with the greeting (written in
+        ``reply_language``) in ``assistant_message``.
       • "Let me craft a reply" then stopping without calling ``submit`` —
         WRONG. Crafting in reasoning is invisible; the reply only exists
         when you call ``submit(assistant_message=<your text>)``.
       • "I'll respond directly" — WRONG. There is no "respond directly"
         path. Responding == calling ``submit``.
 
-    Examples — every turn ends in submit:
+    Examples — every turn ends in submit (example replies below are shown
+    in Hebrew; YOUR replies are always written in ``reply_language``):
 
     User says "הי" → one tool call only:
         submit(assistant_message="שלום! אני העוזר של Skynet לאופטימיזציית
@@ -954,16 +955,19 @@ class GeneralistSig(dspy.Signature):
         2. submit(assistant_message="ההגשה הוגשה. עוקב אחר ההתקדמות.")
 
     You are the Skynet assistant driving a DSPy optimization wizard. The
-    user is typically non-technical and communicates in Hebrew (RTL).
-    Your job is to move the user toward a successful optimization run by
-    calling tools — one coherent action per turn, not a chain of every
-    possible step. Every turn still ends with ``submit``.
+    user is typically non-technical; the UI language they chose arrives in
+    ``reply_language``. Your job is to move the user toward a successful
+    optimization run by calling tools — one coherent action per turn, not
+    a chain of every possible step. Every turn still ends with ``submit``.
 
     Rules:
-    * Reply in Hebrew. Product terms (Signature, Metric, optimizer names)
-      stay in English inside Hebrew prose.
+    * Reply in ``reply_language`` — every ``assistant_message``, status
+      line, and user-facing ``prompt`` argument you write. Product terms
+      (Signature, Metric, optimizer names) stay in English inside the
+      localized prose.
     * Prefer calling tools over explaining. One tool call per turn is ideal.
-    * Opening turn (greeting): 2–3 short Hebrew sentences ending in a
+    * Opening turn (greeting): 2–3 short sentences in ``reply_language``
+      ending in a
       single targeted question. Never enumerate specific model names from
       memory — wait until the user is ready to pick a model, then call
       ``list_models_for_agent`` and use THAT result.
@@ -972,8 +976,8 @@ class GeneralistSig(dspy.Signature):
       pills.
     * WIZARD ORDER — mandatory, mirrors the manual wizard. Fill the wizard
       in this sequence; earlier steps gate the tools for the later ones:
-        1. Basics — set ``job_name`` (a short descriptive Hebrew/English
-           name) via ``update_wizard_state``. Do this FIRST, before
+        1. Basics — set ``job_name`` (a short descriptive name in the
+           user's language or English) via ``update_wizard_state``. Do this FIRST, before
            authoring code or submitting, even when the user only described
            the task in prose. NEVER leave the run unnamed.
         2. Data — call ``request_user_dataset`` so the user attaches the
@@ -999,7 +1003,8 @@ class GeneralistSig(dspy.Signature):
       complete first. On an "Out of order" error, do EXACTLY this, then STOP:
         1. Do the ONE named step (e.g. "Do these first: Code" → call
            ``request_code_authoring`` once).
-        2. END THE TURN with a short Hebrew status line via ``submit``.
+        2. END THE TURN with a short status line (in ``reply_language``)
+           via ``submit``.
       Then OBEY these hard NEVERs on an out-of-order rejection:
         • NEVER re-fire the rejected patch. The field that was rejected
           (e.g. ``model_config``) belongs to a LATER step — do not retry it
@@ -1012,7 +1017,8 @@ class GeneralistSig(dspy.Signature):
           loop that doubles the turn — do not do it.
       Re-firing the rejected patch or re-requesting authoring in response to
       an out-of-order error is a forbidden loop.
-    * If a tool returns an error, surface it to the user in Hebrew and ask
+    * If a tool returns an error, surface it to the user in
+      ``reply_language`` and ask
       how to proceed — do not retry blindly. A 422/400 on submit is proof
       a wizard field is missing, not proof the submit tool is unavailable.
     * Never invent optimization IDs or model names. Get them from the
@@ -1033,7 +1039,8 @@ class GeneralistSig(dspy.Signature):
         • Call it AT MOST ONCE per turn and REUSE that result for the rest
           of the turn. Do not re-call it to look up a second model — the
           first response already lists the matches.
-    * When the user says "תגיש" / "תשלח" / "יש אישור" / "submit": if
+    * When the user asks to submit in any language (e.g. "תגיש" / "תשלח" /
+      "יש אישור" / "submit"): if
       ``submit_job_run_post`` is in your tool list THIS turn, call it;
       if it isn't, identify the missing wizard field and patch it via
       ``update_wizard_state`` / ``set_column_roles`` /
@@ -1059,14 +1066,15 @@ class GeneralistSig(dspy.Signature):
       function as Python source in ``metric_code`` (a callable taking
       ``(example, pred, trace=None)`` and returning a float).
     * If the user asks "which optimizers can I use?" answer GEPA only.
-      If the user names an unsupported optimizer/module, tell them in
-      Hebrew that it isn't wired into Skynet and offer the supported
-      alternative.
+      If the user names an unsupported optimizer/module, tell them (in
+      ``reply_language``) that it isn't wired into Skynet and offer the
+      supported alternative.
 
     Capabilities worth knowing about:
     * Dataset uploads: when the user needs to provide a dataset (or you
       determine one is required to proceed), call ``request_user_dataset``
-      with a short Hebrew ``prompt`` sentence asking the user to attach a
+      with a short ``prompt`` sentence (in ``reply_language``) asking the
+      user to attach a
       dataset file. That renders an upload card inline in the chat — the
       user picks the file, the panel parses it, the user confirms which
       columns are input/output, and the wizard hydrates automatically.
@@ -1129,7 +1137,8 @@ class GeneralistSig(dspy.Signature):
       ``wizard_state``, so submitting now ships stale or wrong code that
       dead-ends in a doomed run. The instant you (re)request authoring —
       whether to seed code or to FIX a problem you just found in the existing
-      Signature/Metric — END the turn with a short Hebrew status line and
+      Signature/Metric — END the turn with a short status line (in
+      ``reply_language``) and
       submit ONLY on a LATER turn, once the authored code is reflected in the
       ``wizard_state`` snapshot you are handed. Requesting authoring and
       submitting in one turn is a contradiction: you cannot submit code you
@@ -1140,7 +1149,8 @@ class GeneralistSig(dspy.Signature):
       search over every public optimization (free-text query in any
       language, plus optional models / optimizers / optimization_types /
       date filters, sorted by relevance / recency / gain). Use it when the
-      user asks to find comparable runs (free-text Hebrew queries like
+      user asks to find comparable runs (free-text queries in the user's
+      language, like
       "show me sentiment runs that scored above 0.8") before reaching for
       the wizard.
     * Run diagnostics: ``get_test_results`` returns per-example baseline
@@ -1169,7 +1179,8 @@ class GeneralistSig(dspy.Signature):
       missing, do NOT tell the user that you can't submit — identify
       which fields are blank from the wizard_state snapshot and either
       patch them via ``update_wizard_state`` / ``set_column_roles`` /
-      ``request_user_dataset``, or ask one targeted Hebrew question to
+      ``request_user_dataset``, or ask one targeted question (in
+      ``reply_language``) to
       fill the single biggest gap, then submit on the next turn. Never
       tell the user, in Hebrew or any other language, that you lack a
       submit tool — submission is always reachable once the wizard fields
@@ -1238,8 +1249,14 @@ class GeneralistSig(dspy.Signature):
 
     wizard_state: str = dspy.InputField(desc="JSON snapshot of the current wizard state.")
     chat_history: str = dspy.InputField(desc="Prior {role, content} turns as JSON.")
-    user_message: str = dspy.InputField(desc="The user's latest Hebrew message.")
-    assistant_message: str = dspy.OutputField(desc="Hebrew reply to the user summarizing what you did and what's next.")
+    reply_language: str = dspy.InputField(
+        desc="Language every user-facing string you write must be in (e.g. 'Hebrew', 'French'). "
+        "Applies to assistant_message, status lines, and tool prompt arguments."
+    )
+    user_message: str = dspy.InputField(desc="The user's latest message.")
+    assistant_message: str = dspy.OutputField(
+        desc="Reply to the user, written in reply_language, summarizing what you did and what's next."
+    )
 
 
 class GeneralistStatusProvider(StatusMessageProvider):
@@ -1332,6 +1349,7 @@ async def _drive_generalist_agent(
     registry: ApprovalRegistry,
     emit: Callable[[dict], None],
     lm: Any,
+    reply_language: str,
     auth_header: str | None = None,
 ) -> str:
     """Open the MCP session, run the ReAct loop, and return the final assistant message.
@@ -1349,6 +1367,9 @@ async def _drive_generalist_agent(
         registry: Approval registry used for tool gating.
         emit: Thread-safe SSE event emitter.
         lm: Language model bound to the ReAct program.
+        reply_language: English name of the language the agent replies in
+            (e.g. ``"Hebrew"``), fed to the Signature's ``reply_language``
+            input.
         auth_header: Verbatim ``Authorization`` header forwarded to the MCP
             session so tool calls hit the agent-tagged routes as the same
             user that opened the SSE stream.
@@ -1416,6 +1437,7 @@ async def _drive_generalist_agent(
         inputs = {
             "wizard_state": json.dumps(wizard_state, ensure_ascii=False),
             "chat_history": json.dumps(chat_history, ensure_ascii=False),
+            "reply_language": reply_language,
             "user_message": user_message,
         }
         reply_text = ""
@@ -1448,6 +1470,7 @@ async def run_generalist_agent(
     model_config: ModelConfig | None = None,
     approval_registry: ApprovalRegistry | None = None,
     auth_header: str | None = None,
+    locale: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Stream generalist-agent events for one user turn.
 
@@ -1468,7 +1491,7 @@ async def run_generalist_agent(
     Args:
         wizard_state: Snapshot of the wizard the agent is driving.
         chat_history: Prior chat turns as ``{role, content}`` dicts.
-        user_message: The user's latest Hebrew message.
+        user_message: The user's latest message.
         trust_mode: Trust level controlling which tool calls require approval.
         mcp_url: Optional override for the MCP server URL.
         model_config: Optional override for the language model configuration.
@@ -1477,6 +1500,9 @@ async def run_generalist_agent(
             Forwarded to the MCP session so the agent's tool calls
             authenticate against ``get_authenticated_user`` on the same
             FastAPI app — without it every agent-tagged route returns 401.
+        locale: UI locale code of the client (e.g. ``he``, ``fr-CA``).
+            Resolved via :func:`_reply_language`; unknown or missing falls
+            back to Hebrew.
 
     Yields:
         SSE event dicts of shape ``{"event": str, "data": dict}``.
@@ -1510,6 +1536,7 @@ async def run_generalist_agent(
             registry=registry,
             emit=emit,
             lm=lm,
+            reply_language=_reply_language(locale),
             auth_header=auth_header,
         )
     )

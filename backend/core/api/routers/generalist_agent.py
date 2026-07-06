@@ -58,7 +58,7 @@ class ChatTurn(BaseModel):
 class GeneralistAgentRequest(BaseModel):
     """Input for a single generalist-agent turn."""
 
-    user_message: str = Field(..., description="The user's latest Hebrew message.")
+    user_message: str = Field(..., description="The user's latest message.")
     chat_history: list[ChatTurn] = Field(default_factory=list, description="Prior {role, content} turns.")
     wizard_state: dict = Field(
         default_factory=dict,
@@ -77,6 +77,14 @@ class GeneralistAgentRequest(BaseModel):
             "Optional id of an existing thread to append to. When absent the "
             "server creates a new conversation and emits its id via the "
             "``conversation_meta`` SSE event before any other event."
+        ),
+    )
+    locale: str | None = Field(
+        default=None,
+        description=(
+            "UI locale code of the client (e.g. 'he', 'en', 'fr-CA'). Sets "
+            "the language of the agent's replies; unknown or missing falls "
+            "back to Hebrew."
         ),
     )
 
@@ -480,6 +488,7 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
             user_message=req.user_message,
             trust_mode=req.trust_mode,
             auth_header=authorization,
+            locale=req.locale,
         )
         wrapped = _wrap_with_persistence(
             source,

@@ -22,6 +22,7 @@ export interface GeneralistAgentRequest {
   wizard_state: WizardState;
   trust_mode: TrustMode;
   conversation_id?: string | null;
+  locale?: string;
 }
 
 export interface ConversationMetaPayload {
