@@ -4,7 +4,9 @@ import { useState, useCallback, useEffect } from "react";
 import {
   Upload,
   Binary,
+  Database,
   ListChecks,
+  Loader2,
   TextCursorInput,
   Plus,
   Trash2,
@@ -26,8 +28,10 @@ import { cn } from "@/shared/lib/utils";
 import { HelpTip } from "@/shared/ui/help-tip";
 import { tip } from "@/shared/lib/tooltips";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
+import { getDatasetRows, type DatasetSummary } from "@/shared/lib/api";
 import { registerTutorialHook, registerTutorialQuery } from "@/features/tutorial";
 import { useUserPrefs } from "@/features/settings";
+import { DatasetPickerDialog } from "@/features/datasets";
 import type {
   AnnotationMode,
   TaggerAssistMode,
@@ -37,7 +41,7 @@ import type {
 } from "../lib/types";
 import { isTaggerAssistEnabled } from "../lib/feature-flag";
 import { REVIEW_BATCH_SIZE, calibrationTarget } from "../lib/assist";
-import { msg } from "@/shared/lib/messages";
+import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 interface TaggerSetupProps {
@@ -133,6 +137,9 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<AnnotationMode | null>(null);
   const [assistMode, setAssistMode] = useState<TaggerAssistMode>("copilot");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [libraryName, setLibraryName] = useState<string | null>(null);
+  const [libraryLoading, setLibraryLoading] = useState(false);
 
   const { prefs } = useUserPrefs();
   const assistAvailable = isTaggerAssistEnabled() && prefs.taggerAssist;
@@ -174,6 +181,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const handleFile = useCallback(async (f: File) => {
     setError(null);
     setFile(f);
+    setLibraryName(null);
     try {
       const { columns, rows } = await parseDatasetFile(f);
       setParsedRows(rows as DataRow[]);
@@ -182,6 +190,34 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
       setInputCols(guessText ? [guessText] : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : msg("tagger.upload.parse_failed"));
+    }
+  }, []);
+
+  // Library alternative to the file drop: rows come by reference and the saved
+  // column roles pre-select the input columns (a tagger-saved dataset marks its
+  // own label/provenance columns output/ignore, so they stay unselected).
+  const handlePickDataset = useCallback(async (summary: DatasetSummary) => {
+    setError(null);
+    setLibraryLoading(true);
+    try {
+      const detail = await getDatasetRows(summary.id);
+      setParsedRows(detail.rows as DataRow[]);
+      setParsedCols(detail.columns);
+      setFile(null);
+      setLibraryName(summary.name);
+      const roles = detail.column_schema?.column_roles ?? {};
+      const inputs = detail.columns.filter((c) => roles[c] === "input");
+      if (inputs.length > 0) {
+        setInputCols(inputs);
+      } else {
+        const guessText =
+          detail.columns.find((c) => c.toLowerCase() === "text") ?? detail.columns[0];
+        setInputCols(guessText ? [guessText] : []);
+      }
+    } catch {
+      setError(msg("tagger.setup.library_error"));
+    } finally {
+      setLibraryLoading(false);
     }
   }, []);
 
@@ -316,6 +352,15 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                 {msg("auto.features.tagger.components.taggersetup.2")}
               </p>
             </div>
+          ) : libraryName ? (
+            <div className="text-center">
+              <p className="font-medium text-foreground" dir="auto">
+                {libraryName}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {formatMsg("datasets.count.rows", { count: parsedRows.length })}
+              </p>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">
               {msg("auto.features.tagger.components.taggersetup.3")}
@@ -331,6 +376,32 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
             }}
           />
         </label>
+
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-border/60" />
+          <span className="text-xs text-muted-foreground">
+            {msg("tagger.setup.library_or")}
+          </span>
+          <div className="h-px flex-1 bg-border/60" />
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => setPickerOpen(true)}
+          disabled={libraryLoading}
+          className="w-full gap-2"
+        >
+          {libraryLoading ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Database className="size-4" />
+          )}
+          {msg("tagger.setup.library_pick")}
+        </Button>
+        <DatasetPickerDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          onPick={(dataset) => void handlePickDataset(dataset)}
+        />
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {parsedCols.length > 0 && (

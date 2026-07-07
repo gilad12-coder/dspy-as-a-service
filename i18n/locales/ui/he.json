@@ -2772,5 +2772,8 @@
   "tagger.assist.complete.flagged_cta": "בדיקת {count} שורות שה-AI התלבט בהן",
   "tagger.assist.complete.browse": "עיון וייצוא",
   "tagger.assist.calibration.done": "סט הכיול הושלם.",
-  "tagger.assist.calibration.continue": "המשך"
+  "tagger.assist.calibration.continue": "המשך",
+  "tagger.setup.library_pick": "בחירה מהספרייה שלכם",
+  "tagger.setup.library_or": "או",
+  "tagger.setup.library_error": "טעינת הדאטהסט מהספרייה נכשלה."
 }

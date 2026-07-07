@@ -2597,6 +2597,9 @@ export type MessageKey =
   | "tagger.session.section_title"
   | "tagger.session.unpin"
   | "tagger.session.untitled"
+  | "tagger.setup.library_error"
+  | "tagger.setup.library_or"
+  | "tagger.setup.library_pick"
   | "tagger.upload.parse_failed"
   | "trajectory.a11y.node_label"
   | "trajectory.a11y.tree_label"
@@ -5373,6 +5376,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.session.section_title": "סשני תיוג",
   "tagger.session.unpin": "ביטול הצמדה",
   "tagger.session.untitled": "תיוג ללא שם",
+  "tagger.setup.library_error": "טעינת הדאטהסט מהספרייה נכשלה.",
+  "tagger.setup.library_or": "או",
+  "tagger.setup.library_pick": "בחירה מהספרייה שלכם",
   "tagger.upload.parse_failed": "טעינת הקובץ נכשלה",
   "trajectory.a11y.node_label": "מועמד {id}, דור {gen}, ציון {score}",
   "trajectory.a11y.tree_label": "עץ המועמדים של האופטימיזציה",
@@ -13520,6 +13526,9 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.session.section_title": "Labeling sessions",
   "tagger.session.unpin": "Unpin",
   "tagger.session.untitled": "Untitled labeling",
+  "tagger.setup.library_error": "Couldn't load the dataset from the library.",
+  "tagger.setup.library_or": "or",
+  "tagger.setup.library_pick": "Choose from your library",
   "tagger.upload.parse_failed": "Failed to load the file",
   "trajectory.a11y.node_label": "Candidate {id}, generation {gen}, score {score}",
   "trajectory.a11y.tree_label": "The optimization's candidate tree",

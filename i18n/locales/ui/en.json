@@ -2772,5 +2772,8 @@
   "tagger.assist.complete.flagged_cta": "Review {count} rows the AI wasn't sure about",
   "tagger.assist.complete.browse": "Browse & export",
   "tagger.assist.calibration.done": "Calibration set complete.",
-  "tagger.assist.calibration.continue": "Continue"
+  "tagger.assist.calibration.continue": "Continue",
+  "tagger.setup.library_pick": "Choose from your library",
+  "tagger.setup.library_or": "or",
+  "tagger.setup.library_error": "Couldn't load the dataset from the library."
 }
