@@ -1,6 +1,6 @@
 """add tagging_sessions.assist column for AI co-tagging state
 
-Revision ID: b9c0d1e2f3a4
+Revision ID: d9e0f1a2b3c4
 Revises: c7d8e9f0a1b2
 Create Date: 2026-07-07 12:00:00.000000
 
@@ -18,7 +18,7 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "b9c0d1e2f3a4"
+revision: str = "d9e0f1a2b3c4"
 down_revision: str | Sequence[str] | None = "c7d8e9f0a1b2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
