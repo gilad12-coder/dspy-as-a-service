@@ -5,13 +5,14 @@ the dataset interview (rubric distillation), batched label predictions for
 calibration and review rounds, reflective rubric refinement ("deep
 optimize"), pre-run credit estimates, and the bulk auto-tag job.
 
-The bulk job runs as an in-process background thread that persists its
-progress onto the session row itself (``assist.autotag``), so the client
-simply polls the status route; the job only ever processes rows that have no
-final label yet, which makes a restart after a crash or cancel a plain
-resume. Single-pod semantics: liveness is tracked in a module-level registry,
-and a row that claims ``running`` without a live local thread is reported
-with ``live=false`` so the client can offer a resume.
+The bulk job is a ``tagging_autotag`` row in the shared jobs table, claimed
+by the DB-lease background worker (any pod) and executed by
+:mod:`core.worker.tagging_job`, which persists progress onto the session row
+itself (``assist.autotag``); the client simply polls the status route. The
+job only ever processes rows that have no final label yet, which makes a
+rerun after cancel, crash or orphan recovery a plain resume. The status
+route reconciles the session-row mirror against the job row, so a job that
+died between mirror writes still reports honestly.
 
 Ownership is enforced on every route by comparing the authenticated principal
 to the row's ``username``. Hidden from the public Scalar reference.
@@ -20,19 +21,26 @@ to the row's ``username``. Hidden from the public Scalar reference.
 from __future__ import annotations
 
 import logging
-import threading
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ...constants import (
+    OPTIMIZATION_TYPE_TAGGING,
+    PAYLOAD_OVERVIEW_NAME,
+    PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
+    PAYLOAD_OVERVIEW_USERNAME,
+)
 from ...service_gateway import tagging
 from ...storage.models import TaggingSessionModel
+from ...worker.tagging_job import TaggingAutotagPayload, untagged_rows
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
-from .tagging_sessions import _count_tagged
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +49,8 @@ AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_us
 MAX_PREDICT_ROWS = 50
 MAX_INTERVIEW_TURNS = 40
 
-# Cancel events for bulk jobs running in this process, keyed by session id.
-# Presence means a live local thread; the event is the cooperative kill switch.
-_AUTOTAG_JOBS: dict[str, threading.Event] = {}
-_AUTOTAG_LOCK = threading.Lock()
+# Job-row statuses that mean the worker fleet still owns the job.
+_ACTIVE_JOB_STATUSES = ("pending", "validating", "running")
 
 
 class InterviewRequest(BaseModel):
@@ -117,24 +123,9 @@ class AutotagStatusResponse(BaseModel):
     done: int
     credits_spent: int = 0
     live: bool = Field(
-        description="False when the row claims 'running' but no local thread exists "
-        "(e.g. after a server restart) — the client should offer a resume."
+        description="False when the session claims 'running' but the worker fleet "
+        "no longer owns an active job for it — the client should offer a resume."
     )
-
-
-def _is_labeled(value: Any) -> bool:
-    """Return True when an annotation value counts as a final label.
-
-    Args:
-        value: One entry of the ``{row_id: annotation}`` map.
-    """
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    if isinstance(value, (list, tuple, dict)):
-        return bool(value)
-    return True
 
 
 def _load_owned(session: Session, session_id: str, username: str) -> TaggingSessionModel:
@@ -159,110 +150,30 @@ def _load_owned(session: Session, session_id: str, username: str) -> TaggingSess
     return row
 
 
-def _untagged_rows(data: list[dict[str, Any]], annotations: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return the rows that carry no final label yet.
+def _job_status(job_store: Any, job_id: str) -> str | None:
+    """Read a job row's status, tolerating a missing row or store hiccup.
 
     Args:
-        data: The session's full row payload.
-        annotations: The ``{row_id: value}`` final-label map.
-    """
-    return [row for row in data if not _is_labeled(annotations.get(str(row.get("id"))))]
+        job_store: Job store to read from.
+        job_id: The job row's id.
 
-
-def _run_autotag(engine: Any, session_id: str, cancel: threading.Event) -> None:
-    """Bulk-tag every unlabeled row, persisting progress onto the session row.
-
-    Runs on a background thread. Each completed batch is merged into the row
-    under a ``FOR UPDATE`` read so concurrent batch writers never lose
-    updates. Terminal states: ``done`` (phase flips to ``complete``),
-    ``canceled`` (labels written so far are kept), ``failed``.
-
-    Args:
-        engine: SQLAlchemy engine of the job store.
-        session_id: UUID of the tagger session being tagged.
-        cancel: Cooperative cancellation event set by the DELETE route.
+    Returns:
+        The status string, or ``None`` when it cannot be read.
     """
     try:
-        with Session(engine) as db:
-            row = db.get(TaggingSessionModel, session_id)
-            if row is None:
-                return
-            config = cast("dict[str, Any]", row.config)
-            data = cast("list[dict[str, Any]]", row.data)
-            annotations = dict(cast("dict[str, Any]", row.annotations))
-            assist = dict(cast("dict[str, Any]", row.assist) or {})
-        rubric = [str(r) for r in assist.get("rubric") or []]
-        examples = tagging.select_examples(config, data, annotations, assist)
-        instructions = tagging.compile_instructions(config, rubric, examples)
-        pending = _untagged_rows(data, annotations)
-
-        def persist_batch(batch: dict[str, dict[str, Any]]) -> None:
-            """Merge one completed batch into the session row."""
-            with Session(engine) as db:
-                fresh = (
-                    db.query(TaggingSessionModel)
-                    .filter(TaggingSessionModel.id == session_id)
-                    .with_for_update()
-                    .one_or_none()
-                )
-                if fresh is None:
-                    return
-                anns = dict(cast("dict[str, Any]", fresh.annotations))
-                state = dict(cast("dict[str, Any]", fresh.assist) or {})
-                predictions = dict(state.get("predictions") or {})
-                provenance = dict(state.get("provenance") or {})
-                autotag = dict(state.get("autotag") or {})
-                for row_id, pred in batch.items():
-                    # A label the human placed while the job ran wins.
-                    if _is_labeled(anns.get(row_id)):
-                        continue
-                    anns[row_id] = pred["value"]
-                    predictions[row_id] = pred
-                    provenance[row_id] = "ai_auto"
-                autotag["done"] = int(autotag.get("done", 0)) + len(batch)
-                state.update(
-                    {"predictions": predictions, "provenance": provenance, "autotag": autotag}
-                )
-                fresh.annotations = cast(Any, anns)
-                fresh.assist = cast(Any, state)
-                fresh.tagged_count = cast(Any, _count_tagged(anns))
-                fresh.updated_at = cast(Any, datetime.now(UTC))
-                db.commit()
-
-        _, credits = tagging.predict_rows(
-            config, instructions, pending, on_batch=persist_batch, cancel=cancel
-        )
-        final_status = "canceled" if cancel.is_set() else "done"
+        return job_store.get_job_status_fields(job_id).get("status")
     except Exception:
-        logger.exception("auto-tag job failed for session %s", session_id)
-        final_status = "failed"
-        credits = 0
-    with _AUTOTAG_LOCK:
-        _AUTOTAG_JOBS.pop(session_id, None)
-    try:
-        with Session(engine) as db:
-            row = db.get(TaggingSessionModel, session_id)
-            if row is None:
-                return
-            state = dict(cast("dict[str, Any]", row.assist) or {})
-            autotag = dict(state.get("autotag") or {})
-            autotag["status"] = final_status
-            autotag["credits_spent"] = int(autotag.get("credits_spent", 0)) + credits
-            state["autotag"] = autotag
-            row.assist = cast(Any, state)
-            if final_status == "done":
-                row.phase = cast(Any, "complete")
-            row.updated_at = cast(Any, datetime.now(UTC))
-            db.commit()
-    except Exception:
-        logger.exception("failed to persist auto-tag terminal state for %s", session_id)
+        return None
 
 
-def create_tagger_assist_router(*, job_store) -> APIRouter:
+def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any]) -> APIRouter:
     """Build the AI co-tagging router.
 
     Args:
         job_store: Job-store instance whose ORM engine backs the routes.
+        get_worker_ref: Zero-arg callable returning the background worker (or
+            ``None`` before startup completes) — bulk auto-tag jobs are
+            submitted through it.
 
     Returns:
         A FastAPI ``APIRouter`` exposing the interview / predict / optimize /
@@ -403,7 +314,7 @@ def create_tagger_assist_router(*, job_store) -> APIRouter:
         rubric = [str(r) for r in assist.get("rubric") or []]
         examples = tagging.select_examples(config, data, annotations, assist)
         instructions = tagging.compile_instructions(config, rubric, examples)
-        pending = _untagged_rows(data, annotations)
+        pending = untagged_rows(data, annotations)
         return EstimateResponse(**tagging.estimate_credits_for_rows(instructions, pending))
 
     @router.post(
@@ -415,7 +326,7 @@ def create_tagger_assist_router(*, job_store) -> APIRouter:
     def assist_autotag_start(
         session_id: str, user: AuthenticatedUserDep
     ) -> AutotagStartResponse:
-        """Spawn the background bulk-tagging thread for this session.
+        """Submit the bulk auto-tag job to the background worker fleet.
 
         Only rows without a final label are processed, so calling this after
         a cancel, failure or restart simply resumes where the job stopped.
@@ -428,40 +339,56 @@ def create_tagger_assist_router(*, job_store) -> APIRouter:
             The number of rows the job will tag.
 
         Raises:
-            DomainError: 409 when a job is already running for this session,
-                422 when every row is already labeled.
+            DomainError: 409 when a job is already active for this session,
+                422 when every row is already labeled, 503 when the worker is
+                not available yet.
         """
+        worker = get_worker_ref()
+        if worker is None:
+            raise DomainError("tagger.assist.worker_unavailable", status=503)
+        job_id = str(uuid4())
         with Session(job_store.engine) as db:
             row = _load_owned(db, session_id, user.username)
             data = cast("list[dict[str, Any]]", row.data)
             annotations = cast("dict[str, Any]", row.annotations)
-            pending = _untagged_rows(data, annotations)
+            pending = untagged_rows(data, annotations)
             if not pending:
                 raise DomainError("tagger.assist.nothing_to_tag", status=422)
-            with _AUTOTAG_LOCK:
-                if session_id in _AUTOTAG_JOBS:
-                    raise DomainError("tagger.assist.autotag_running", status=409)
-                cancel = threading.Event()
-                _AUTOTAG_JOBS[session_id] = cancel
             state = dict(cast("dict[str, Any]", row.assist) or {})
             prior = dict(state.get("autotag") or {})
+            prior_job = str(prior.get("job_id") or "")
+            if (
+                prior.get("status") == "running"
+                and prior_job
+                and _job_status(job_store, prior_job) in _ACTIVE_JOB_STATUSES
+            ):
+                raise DomainError("tagger.assist.autotag_running", status=409)
             state["autotag"] = {
                 "status": "running",
                 "total": len(pending),
                 "done": 0,
                 "credits_spent": int(prior.get("credits_spent", 0)),
+                "job_id": job_id,
             }
             row.assist = cast(Any, state)
             row.phase = cast(Any, "autotagging")
             row.updated_at = cast(Any, datetime.now(UTC))
+            session_name = cast(str, row.name)
             db.commit()
-        thread = threading.Thread(
-            target=_run_autotag,
-            args=(job_store.engine, session_id, cancel),
-            name=f"tagger-autotag-{session_id[:8]}",
-            daemon=True,
+        # The session row must show "running" before the job can be claimed:
+        # the worker reads it as its first act.
+        job_store.create_job(job_id, username=user.username)
+        job_store.set_payload_overview(
+            job_id,
+            {
+                PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE: OPTIMIZATION_TYPE_TAGGING,
+                PAYLOAD_OVERVIEW_USERNAME: user.username,
+                PAYLOAD_OVERVIEW_NAME: f"Auto-tagging · {session_name}"[:200],
+            },
         )
-        thread.start()
+        worker.submit_job(
+            job_id, TaggingAutotagPayload(session_id=session_id, username=user.username)
+        )
         return AutotagStartResponse(total=len(pending))
 
     @router.get(
@@ -472,23 +399,35 @@ def create_tagger_assist_router(*, job_store) -> APIRouter:
     def assist_autotag_status(
         session_id: str, user: AuthenticatedUserDep
     ) -> AutotagStatusResponse:
-        """Report the bulk job's persisted progress plus local liveness.
+        """Report the bulk job's progress, reconciled against the job row.
+
+        The session row's ``assist.autotag`` mirror is the primary source;
+        when it claims ``running``, the job row decides ``live`` — and a job
+        that reached a terminal state without updating the mirror (e.g. it
+        exhausted its orphan-recovery attempts) is reported with that
+        terminal state instead of a phantom ``running``.
 
         Args:
             session_id: UUID of the tagger session.
             user: Authenticated caller; must own the session.
 
         Returns:
-            Status, done/total counters, credits spent, and ``live`` (false
-            when the row claims running but no local thread exists).
+            Status, done/total counters, credits spent, and ``live``.
         """
         with Session(job_store.engine) as db:
             row = _load_owned(db, session_id, user.username)
             state = cast("dict[str, Any]", row.assist) or {}
         autotag = state.get("autotag") or {}
         status = str(autotag.get("status", "done"))
-        with _AUTOTAG_LOCK:
-            live = session_id in _AUTOTAG_JOBS
+        live = False
+        job_id = str(autotag.get("job_id") or "")
+        if status == "running" and job_id:
+            job_status = _job_status(job_store, job_id)
+            live = job_status in _ACTIVE_JOB_STATUSES
+            if job_status == "failed":
+                status = "failed"
+            elif job_status in ("cancelled", "paused"):
+                status = "canceled"
         return AutotagStatusResponse(
             status=status,
             total=int(autotag.get("total", 0)),
@@ -504,23 +443,41 @@ def create_tagger_assist_router(*, job_store) -> APIRouter:
     def assist_autotag_cancel(session_id: str, user: AuthenticatedUserDep) -> dict[str, Any]:
         """Request cooperative cancellation of the running bulk job.
 
-        Labels written so far are kept; the job flips its status to
-        ``canceled`` at the next batch boundary.
+        Labels written so far are kept; the job stops at the next batch
+        boundary. The job-row status is flipped to ``cancelled`` with a CAS so
+        a pod other than the one running the job observes it through its
+        status poll (cross-pod cancel), and the local worker — when it is the
+        one processing — is signalled directly.
 
         Args:
             session_id: UUID of the tagger session.
             user: Authenticated caller; must own the session.
 
         Returns:
-            ``{"cancelled": bool}`` — false when no local job was running.
+            ``{"cancelled": bool}`` — false when no active job was found.
         """
         with Session(job_store.engine) as db:
-            _load_owned(db, session_id, user.username)
-        with _AUTOTAG_LOCK:
-            cancel = _AUTOTAG_JOBS.get(session_id)
-        if cancel is None:
+            row = _load_owned(db, session_id, user.username)
+            state = cast("dict[str, Any]", row.assist) or {}
+        job_id = str((state.get("autotag") or {}).get("job_id") or "")
+        if not job_id:
             return {"cancelled": False}
-        cancel.set()
-        return {"cancelled": True}
+        worker = get_worker_ref()
+        locally_cancelled = bool(worker.cancel_job(job_id)) if worker is not None else False
+        cas = getattr(job_store, "update_job_if_status", None)
+        store_cancelled = False
+        if cas is not None:
+            try:
+                store_cancelled = bool(
+                    cas(
+                        job_id,
+                        _ACTIVE_JOB_STATUSES,
+                        status="cancelled",
+                        completed_at=datetime.now(UTC).isoformat(),
+                    )
+                )
+            except KeyError:
+                store_cancelled = False
+        return {"cancelled": locally_cancelled or store_cancelled}
 
     return router

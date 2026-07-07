@@ -102,6 +102,9 @@ STRUCTURAL_PROGRESS_EVENTS = frozenset(
 PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE = "optimization_type"
 OPTIMIZATION_TYPE_RUN = "run"
 OPTIMIZATION_TYPE_GRID_SEARCH = "grid_search"
+# Tagger bulk auto-tag jobs: claimed by the same worker fleet but run in the
+# worker thread (no subprocess) — see core.worker.tagging_job.
+OPTIMIZATION_TYPE_TAGGING = "tagging_autotag"
 
 # Token source modes. "managed" bills Skynet credits; "byok" runs on the user's
 # own provider key and is never billed.

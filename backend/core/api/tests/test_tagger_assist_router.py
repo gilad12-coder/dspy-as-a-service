@@ -2,15 +2,17 @@
 
 Mounts the assist router (plus the session router for setup) on an in-memory
 SQLite store, mirroring ``test_tagging_sessions_router``. LLM entry points on
-the engine module are monkeypatched so no network is touched. Covers the
-interview turn, prediction with exclusion semantics, the bulk auto-tag job's
-full lifecycle (progress persistence, provenance, phase flip, resume guard),
+the engine module are monkeypatched so no network is touched, and the
+background worker is a recording fake — the job loop itself is covered in
+``core.worker.tests.test_tagging_job``. Covers the interview turn, prediction
+with exclusion semantics, bulk-job submission mechanics (job row + overview +
+payload + session mirror), status reconciliation against the job row, cancel,
 the autosave 409 while a job runs, and the ownership guard.
 """
 
 from __future__ import annotations
 
-import time
+import threading
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -19,9 +21,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from ...constants import OPTIMIZATION_TYPE_TAGGING
 from ...service_gateway import tagging
 from ...storage.models import Base, TaggingSessionModel
 from ...storage.remote import RemoteDBJobStore
+from ...worker.tagging_job import TaggingAutotagPayload, run_autotag_job
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..routers.tagger_assist import create_tagger_assist_router
@@ -57,7 +61,12 @@ _SESSION_BODY = {
 
 
 class _MemStore(RemoteDBJobStore):
-    """In-memory SQLite job store for assist-router tests (no pgvector)."""
+    """In-memory SQLite job store for assist-router tests (no pgvector).
+
+    Beyond the tagging-session tables this one also services the job-row
+    methods (``create_job`` / ``set_payload_overview`` / status reads), so the
+    instance attributes those methods touch are seeded here.
+    """
 
     def __init__(self) -> None:
         """Build an in-memory SQLite engine and create the ORM tables."""
@@ -68,24 +77,52 @@ class _MemStore(RemoteDBJobStore):
         )
         Base.metadata.create_all(self._engine)
         self._session_factory = sessionmaker(bind=self._engine)
+        self._code_version = "test"
+        self._max_progress_events = 100
+        self._max_log_entries = 100
+        self._progress_counter_lock = threading.Lock()
+
+
+class _FakeWorker:
+    """Recording stand-in for the background worker."""
+
+    def __init__(self) -> None:
+        """Start with empty submission/cancellation logs."""
+        self.submitted: list[tuple[str, TaggingAutotagPayload]] = []
+        self.cancelled: list[str] = []
+
+    def submit_job(self, job_id: str, payload: TaggingAutotagPayload) -> None:
+        """Record the submission instead of enqueueing it."""
+        self.submitted.append((job_id, payload))
+
+    def cancel_job(self, job_id: str) -> bool:
+        """Record the cancel request and report it was found locally."""
+        self.cancelled.append(job_id)
+        return True
 
 
 def _client(
-    user: AuthenticatedUser, store: _MemStore | None = None
+    user: AuthenticatedUser,
+    store: _MemStore | None = None,
+    worker: _FakeWorker | None = None,
 ) -> tuple[TestClient, _MemStore]:
     """Mount the session + assist routers on a shared store, authed as ``user``.
 
     Args:
         user: Identity the auth dependency resolves to for every request.
         store: Existing store to reuse (so two users can share one DB).
+        worker: Fake worker the assist router submits bulk jobs to.
 
     Returns:
         A ``(client, store)`` pair sharing one in-memory store.
     """
     store = store or _MemStore()
+    worker = worker or _FakeWorker()
     app = FastAPI()
     app.include_router(create_tagging_session_router(job_store=store))
-    app.include_router(create_tagger_assist_router(job_store=store))
+    app.include_router(
+        create_tagger_assist_router(job_store=store, get_worker_ref=lambda: worker)
+    )
     app.dependency_overrides[get_authenticated_user] = lambda: user
 
     @app.exception_handler(DomainError)
@@ -111,26 +148,6 @@ def _create(client: TestClient) -> str:
     resp = client.post("/tagging-sessions", json=_SESSION_BODY)
     assert resp.status_code == 201, resp.text
     return resp.json()["id"]
-
-
-def _wait_terminal(client: TestClient, session_id: str, timeout: float = 5.0) -> dict:
-    """Poll the autotag status route until the job leaves ``running``.
-
-    Args:
-        client: The mounted test client.
-        session_id: The session whose job is polled.
-        timeout: Seconds before the poll gives up.
-
-    Returns:
-        The final status payload.
-    """
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        body = client.get(f"/tagging-sessions/{session_id}/assist/autotag").json()
-        if body["status"] != "running":
-            return body
-        time.sleep(0.02)
-    raise AssertionError("autotag job never reached a terminal status")
 
 
 def test_create_roundtrips_assist_state() -> None:
@@ -234,9 +251,37 @@ def test_estimate_counts_untagged_rows() -> None:
     assert body["credits_high"] >= body["credits_low"] >= 0
 
 
-def test_autotag_lifecycle_tags_writes_provenance_and_flips_phase(monkeypatch) -> None:
-    """The bulk job labels untagged rows, persists progress, and completes."""
+def test_autotag_start_submits_worker_job(monkeypatch) -> None:
+    """Start creates the job row, submits to the worker, and mirrors state."""
+    worker = _FakeWorker()
+    client, store = _client(_ALICE, worker=worker)
+    session_id = _create(client)
+    resp = client.post(f"/tagging-sessions/{session_id}/assist/autotag")
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["total"] == 3
 
+    (job_id, payload) = worker.submitted[0]
+    assert payload.session_id == session_id
+    assert payload.username == "alice"
+    job = store.get_job(job_id)
+    assert job["status"] == "pending"
+    assert job["optimization_type"] == OPTIMIZATION_TYPE_TAGGING
+    assert job["username"] == "alice"
+
+    detail = client.get(f"/tagging-sessions/{session_id}").json()
+    assert detail["phase"] == "autotagging"
+    assert detail["assist"]["autotag"]["status"] == "running"
+    assert detail["assist"]["autotag"]["job_id"] == job_id
+    status = client.get(f"/tagging-sessions/{session_id}/assist/autotag").json()
+    assert status["status"] == "running"
+    assert status["live"] is True
+
+    # A second start while the job row is still active is rejected.
+    resp = client.post(f"/tagging-sessions/{session_id}/assist/autotag")
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "tagger.assist.autotag_running"
+
+    # Run the job body the worker would execute; the session row completes.
     def fake_predict(config, instructions, rows, on_batch=None, cancel=None):
         """Emit one canned batch through on_batch, like the real engine."""
         batch = {
@@ -247,17 +292,10 @@ def test_autotag_lifecycle_tags_writes_provenance_and_flips_phase(monkeypatch) -
         return batch, 5
 
     monkeypatch.setattr(tagging, "predict_rows", fake_predict)
-    client, _store = _client(_ALICE)
-    session_id = _create(client)
-    resp = client.post(f"/tagging-sessions/{session_id}/assist/autotag")
-    assert resp.status_code == 202, resp.text
-    assert resp.json()["total"] == 3
-
-    final = _wait_terminal(client, session_id)
-    assert final["status"] == "done"
-    assert final["done"] == 3
-    assert final["credits_spent"] == 5
-    assert final["live"] is False
+    outcome = run_autotag_job(
+        store, job_id, session_id, cancel_event=threading.Event(), heartbeat=lambda: None
+    )
+    assert outcome == {"status": "done", "rows_tagged": 3, "credits_spent": 5}
 
     detail = client.get(f"/tagging-sessions/{session_id}").json()
     assert detail["phase"] == "complete"
@@ -271,6 +309,25 @@ def test_autotag_lifecycle_tags_writes_provenance_and_flips_phase(monkeypatch) -
     resp = client.post(f"/tagging-sessions/{session_id}/assist/autotag")
     assert resp.status_code == 422
     assert resp.json()["code"] == "tagger.assist.nothing_to_tag"
+
+
+def test_autotag_cancel_flips_job_row_and_reconciles_status() -> None:
+    """Cancel signals the worker, CAS-cancels the job row, and status maps it."""
+    worker = _FakeWorker()
+    client, store = _client(_ALICE, worker=worker)
+    session_id = _create(client)
+    client.post(f"/tagging-sessions/{session_id}/assist/autotag")
+    (job_id, _) = worker.submitted[0]
+
+    resp = client.delete(f"/tagging-sessions/{session_id}/assist/autotag")
+    assert resp.json()["cancelled"] is True
+    assert worker.cancelled == [job_id]
+    assert store.get_job_status_fields(job_id)["status"] == "cancelled"
+
+    # The session mirror still says running; the status route reconciles.
+    status = client.get(f"/tagging-sessions/{session_id}/assist/autotag").json()
+    assert status["status"] == "canceled"
+    assert status["live"] is False
 
 
 def test_autosave_blocked_while_autotag_running() -> None:
@@ -289,16 +346,31 @@ def test_autosave_blocked_while_autotag_running() -> None:
     assert resp.json()["code"] == "tagger.assist.autotag_running"
 
 
-def test_stale_running_job_reports_not_live() -> None:
-    """A row claiming 'running' with no local thread reports live=false."""
+def test_stale_running_mirror_reports_not_live_or_failed() -> None:
+    """A 'running' mirror without an active job reconciles honestly."""
     client, store = _client(_ALICE)
     session_id = _create(client)
+    # No job_id at all (e.g. legacy in-process session): running but dead.
     with Session(store.engine) as db:
         row = db.get(TaggingSessionModel, session_id)
         row.assist = {**row.assist, "autotag": {"status": "running", "total": 3, "done": 1}}
         db.commit()
     body = client.get(f"/tagging-sessions/{session_id}/assist/autotag").json()
     assert body["status"] == "running"
+    assert body["live"] is False
+
+    # A job row that failed (e.g. exhausted orphan-recovery attempts) surfaces.
+    store.create_job("job-dead", username="alice")
+    store.update_job("job-dead", status="failed")
+    with Session(store.engine) as db:
+        row = db.get(TaggingSessionModel, session_id)
+        row.assist = {
+            **row.assist,
+            "autotag": {"status": "running", "total": 3, "done": 1, "job_id": "job-dead"},
+        }
+        db.commit()
+    body = client.get(f"/tagging-sessions/{session_id}/assist/autotag").json()
+    assert body["status"] == "failed"
     assert body["live"] is False
 
 

@@ -32,6 +32,7 @@ from ..config import settings
 from ..constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
+    OPTIMIZATION_TYPE_TAGGING,
     PAYLOAD_OVERVIEW_ESTIMATED_HIGH,
     PAYLOAD_OVERVIEW_ESTIMATED_LOW,
     PAYLOAD_OVERVIEW_MODEL_NAME,
@@ -53,6 +54,7 @@ from ..service_gateway.optimization.trajectory import GEPA_STATE_FILENAME, GRID_
 from ..storage import JobStore
 from .constants import EVENT_ERROR, EVENT_LOG, EVENT_PROGRESS, EVENT_RESULT
 from .subprocess_runner import run_service_in_subprocess, set_fork_service
+from .tagging_job import TaggingAutotagPayload, run_autotag_job
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +248,9 @@ class BackgroundWorker:
                 self._pending_jobs.append(optimization_id)
                 logger.info("Optimization %s enqueued (local hint)", optimization_id)
 
-    def submit_job(self, optimization_id: str, payload: RunRequest | GridSearchRequest) -> None:
+    def submit_job(
+        self, optimization_id: str, payload: RunRequest | GridSearchRequest | TaggingAutotagPayload
+    ) -> None:
         """Persist payload to the job store; rely on DB claim for pickup.
 
         Writes the payload onto the existing ``pending`` row and registers a
@@ -430,6 +434,10 @@ class BackgroundWorker:
             if not isinstance(overview, dict):
                 overview = {}
             optimization_type = overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE, OPTIMIZATION_TYPE_RUN)
+
+            if optimization_type == OPTIMIZATION_TYPE_TAGGING:
+                self._process_tagging_job(optimization_id, worker_id, cancel_event, payload_dict)
+                return
 
             if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
                 grid_payload = GridSearchRequest.model_validate(payload_dict)
@@ -792,6 +800,62 @@ class BackgroundWorker:
                     )
             if is_shutdown:
                 raise
+
+    def _process_tagging_job(
+        self,
+        optimization_id: str,
+        worker_id: int,
+        cancel_event: threading.Event | None,
+        payload_dict: dict[str, Any],
+    ) -> None:
+        """Run a bulk auto-tag job in the worker thread (no subprocess).
+
+        The batch loop lives in :mod:`core.worker.tagging_job`; this wrapper
+        owns the job-row lifecycle: the ``running`` transition, the heartbeat
+        the loop's monitor thread calls to renew the claim lease, and the
+        terminal write. A user cancel is observed cooperatively (the route
+        wrote the terminal ``cancelled`` status already, so no write happens
+        here); a lease lost to a peer pod abandons silently. Failures
+        propagate to ``_process_job``'s generic handler.
+
+        Args:
+            optimization_id: ID of the claimed job.
+            worker_id: Index of the calling worker thread (lease renewal).
+            cancel_event: The job's cooperative cancel flag.
+            payload_dict: The stored ``TaggingAutotagPayload`` dict.
+        """
+        payload = TaggingAutotagPayload.model_validate(payload_dict)
+        self._job_store.update_job(
+            optimization_id,
+            status="running",
+            message="Auto-tagging dataset rows",
+            started_at=datetime.now(UTC).isoformat(),
+        )
+        self._touch_activity(worker_id)
+        outcome = run_autotag_job(
+            self._job_store,
+            optimization_id,
+            payload.session_id,
+            cancel_event=cancel_event or threading.Event(),
+            heartbeat=lambda: self._touch_activity(worker_id),
+        )
+        if outcome.get("status") != "done":
+            logger.info("Tagging job %s ended without completion: %s", optimization_id, outcome)
+            return
+        completion_fields: dict[str, Any] = {
+            "status": "success",
+            "message": f"Tagged {outcome.get('rows_tagged', 0)} rows",
+            "completed_at": datetime.now(UTC).isoformat(),
+            "result": outcome,
+        }
+        cas = getattr(self._job_store, "update_job_if_status", None)
+        if cas is not None:
+            if not cas(optimization_id, ("running", "validating"), **completion_fields):
+                # A cancel raced the finish; its terminal status stands.
+                return
+        else:
+            self._job_store.update_job(optimization_id, **completion_fields)
+        logger.info("Tagging job %s completed", optimization_id)
 
     def start(self) -> None:
         """Start the background worker threads and begin polling.
