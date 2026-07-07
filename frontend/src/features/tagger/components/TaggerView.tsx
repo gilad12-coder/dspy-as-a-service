@@ -56,6 +56,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
         rowCount={tagger.data.length}
         onFlaggedPass={tagger.startFlaggedPass}
         onBrowse={tagger.browseAll}
+        onDeepOptimize={() => void tagger.startDeepOptimize()}
       />
     );
   }

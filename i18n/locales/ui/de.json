@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "Optimierung aus Ihren Labels erstellen",
+  "tagger.assist.complete.optimization_description": "Mit Ihren Labels lässt sich ein echter optimierter Klassifikator trainieren – gespeichert mit Ihren Optimierungen, bereit für Inferenz und Export.",
+  "tagger.assist.complete.optimization_title": "Ihr Tagger als Optimierung",
+  "tagger.assist.complete.optimization_too_few": "Benötigt mindestens {minimum} von Ihnen gesetzte oder bestätigte Labels.",
+  "tagger.assist.optimize.lift_label": "Held-out-Score:",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "Optimierung öffnen",
   "settings.tagger.assist.description": "Interview, gemeinsames und automatisches Taggen im Tagger. Aus bedeutet vollständig manuelles Taggen.",
   "settings.tagger.assist.label": "KI-gestütztes Taggen",
   "settings.tagger.calibration.assisted": "KI schlägt zuerst vor",

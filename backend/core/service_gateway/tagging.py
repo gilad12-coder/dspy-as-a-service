@@ -794,7 +794,8 @@ def build_deep_optimize_request(
 
     A single-signature ``text → label`` classifier seeded with the rubric,
     trained on the session's human-vetted labels, on the cheapest GEPA budget
-    (``auto="light"``). The run is private and managed-billed like any other.
+    (``auto="light"``). Deliberately a first-class run — same visibility,
+    billing and reuse (inference, program export) as a wizard submission.
 
     Args:
         config: The session's ``TaggerConfig`` payload.
@@ -810,7 +811,11 @@ def build_deep_optimize_request(
     return RunRequest(
         name=name,
         username=username,
-        description="Tagger deep-optimize: evolve the labeling guide with GEPA.",
+        description=(
+            "Optimized classifier evolved by GEPA from a tagging session's "
+            "human-vetted labels. Reusable like any run: open it for "
+            "inference or export the program."
+        ),
         module_name="predict",
         signature_code=_deep_optimize_signature_code(config, rubric),
         metric_code=_deep_optimize_metric_code(config),
@@ -825,5 +830,4 @@ def build_deep_optimize_request(
         reflection_model_settings=ModelConfig(
             name=deep_optimize_reflection_model_name(), base_url=base_url
         ),
-        is_private=True,
     )

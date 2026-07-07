@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "ラベルから最適化を作成",
+  "tagger.assist.complete.optimization_description": "ラベルをもとに実際に最適化された分類器をトレーニングできます。最適化と一緒に保存され、推論やエクスポートにすぐ使えます。",
+  "tagger.assist.complete.optimization_title": "タガーを最適化として活用",
+  "tagger.assist.complete.optimization_too_few": "自分で付けたか確認したラベルが最低 {minimum} 件必要です。",
+  "tagger.assist.optimize.lift_label": "ホールドアウトスコア:",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "最適化を開く",
   "settings.tagger.assist.description": "タガーでのインタビュー、共同タグ付け、自動タグ付け。オフにすると完全手動のタガーになります。",
   "settings.tagger.assist.label": "AI支援タグ付け",
   "settings.tagger.calibration.assisted": "AIが先に提案",

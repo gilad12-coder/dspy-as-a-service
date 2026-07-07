@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "Створіть оптимізацію на основі ваших міток",
+  "tagger.assist.complete.optimization_description": "Ваші мітки можуть навчити справжній оптимізований класифікатор — він зберігається разом з вашими оптимізаціями та готовий до інференсу й експорту.",
+  "tagger.assist.complete.optimization_title": "Ваш теґер як оптимізація",
+  "tagger.assist.complete.optimization_too_few": "Потрібно щонайменше {minimum} міток, які ви поставили або підтвердили.",
+  "tagger.assist.optimize.lift_label": "Оцінка на відкладеній вибірці:",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "Відкрити оптимізацію",
   "settings.tagger.assist.description": "Інтерв'ю, спільне та автоматичне тегування в тегері. «Вимкнено» означає повністю ручний тегер.",
   "settings.tagger.assist.label": "Тегування за допомогою ШІ",
   "settings.tagger.calibration.assisted": "ШІ пропонує першим",

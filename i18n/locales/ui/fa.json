@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "ساخت یک بهینه‌سازی از برچسب‌های شما",
+  "tagger.assist.complete.optimization_description": "برچسب‌های شما می‌توانند یک طبقه‌بند بهینه‌سازی‌شده واقعی را آموزش دهند — همراه با بهینه‌سازی‌هایتان ذخیره می‌شود و برای استنتاج و خروجی‌گرفتن آماده است.",
+  "tagger.assist.complete.optimization_title": "برچسب‌گذار شما در قالب یک بهینه‌سازی",
+  "tagger.assist.complete.optimization_too_few": "به دست‌کم {minimum} برچسب که قرار داده یا تأیید کرده‌اید نیاز دارد.",
+  "tagger.assist.optimize.lift_label": "امتیاز روی داده‌های کنارگذاشته‌شده:",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "باز کردن بهینه‌سازی",
   "settings.tagger.assist.description": "مصاحبه، برچسب‌گذاری مشترک و برچسب‌گذاری خودکار در برچسب‌گذار. خاموش یعنی برچسب‌گذار کاملاً دستی.",
   "settings.tagger.assist.label": "برچسب‌گذاری با کمک هوش مصنوعی",
   "settings.tagger.calibration.assisted": "هوش مصنوعی اول پیشنهاد می‌دهد",

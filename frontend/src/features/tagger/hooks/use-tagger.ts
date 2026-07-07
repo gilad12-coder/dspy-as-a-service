@@ -803,7 +803,12 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
               ? {
                   ...prev,
                   ...(instructions ? { rubric: [instructions] } : {}),
-                  deepOptimize: { jobId: deepOptimizeJobId, status: "success" },
+                  deepOptimize: {
+                    jobId: deepOptimizeJobId,
+                    status: "success",
+                    baseline: summary.baseline_test_metric,
+                    optimized: summary.optimized_test_metric,
+                  },
                 }
               : prev,
           );

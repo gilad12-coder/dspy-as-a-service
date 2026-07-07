@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "根据标签创建优化",
+  "tagger.assist.complete.optimization_description": "你的标签可以训练出真正经过优化的分类器——随优化一并保存，可直接用于推理和导出。",
+  "tagger.assist.complete.optimization_title": "将标注器转化为优化",
+  "tagger.assist.complete.optimization_too_few": "至少需要 {minimum} 个由你添加或确认的标签。",
+  "tagger.assist.optimize.lift_label": "留出集得分：",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "打开优化",
   "settings.tagger.assist.description": "在标注器中启用访谈、协同标注和自动标注。关闭后即为纯手动标注器。",
   "settings.tagger.assist.label": "AI 辅助标注",
   "settings.tagger.calibration.assisted": "AI 先给出建议",

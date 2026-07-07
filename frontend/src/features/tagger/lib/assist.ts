@@ -14,6 +14,8 @@ export const REVIEW_BATCH_SIZE = 20;
 export const FLAG_CONFIDENCE = 0.75;
 /** Freetext agreement threshold on the token-overlap similarity. */
 const FREETEXT_MATCH = 0.85;
+/** Minimum human-vetted labels a deep-optimize run trains on (backend-enforced). */
+export const MIN_DEEP_OPTIMIZE_EXAMPLES = 10;
 /** Consecutive below-gate rounds before the deep-optimize offer appears. */
 export const STALL_ROUNDS = 2;
 

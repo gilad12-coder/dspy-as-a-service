@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "Crie uma otimização a partir dos seus rótulos",
+  "tagger.assist.complete.optimization_description": "Os seus rótulos podem treinar um classificador otimizado de verdade — guardado com as suas otimizações, pronto para inferência e exportação.",
+  "tagger.assist.complete.optimization_title": "O seu tagger como uma otimização",
+  "tagger.assist.complete.optimization_too_few": "Precisa de pelo menos {minimum} rótulos que você atribuiu ou confirmou.",
+  "tagger.assist.optimize.lift_label": "Pontuação em dados reservados:",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "Abrir a otimização",
   "settings.tagger.assist.description": "Entrevista, marcação colaborativa e marcação automática no marcador. Desativado significa o marcador totalmente manual.",
   "settings.tagger.assist.label": "Marcação assistida por IA",
   "settings.tagger.calibration.assisted": "A IA sugere primeiro",

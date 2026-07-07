@@ -383,9 +383,13 @@ def test_deep_optimize_gates_and_submits_run(monkeypatch) -> None:
     captured: dict = {}
 
     def fake_enqueue(job_store, new_id, payload, *, optimization_type):
-        """Capture the submission instead of enqueueing a real run."""
+        """Capture the submission and create the job row like the real path."""
         captured["payload"] = payload
         captured["type"] = optimization_type
+        job_store.create_job(new_id, username=payload.username)
+        job_store.set_payload_overview(
+            new_id, {"optimization_type": optimization_type, "username": payload.username}
+        )
         return SimpleNamespace(optimization_id=new_id)
 
     monkeypatch.setattr(assist_module, "persist_and_enqueue", fake_enqueue)
@@ -417,7 +421,9 @@ def test_deep_optimize_gates_and_submits_run(monkeypatch) -> None:
     assert payload.name.startswith("Deep optimize · ")
     assert payload.optimizer_name == "gepa"
     assert len(payload.dataset) == 12
-    assert payload.is_private is True
+    run_id = resp.json()["optimization_id"]
+    overview = store.get_job(run_id)["payload_overview"]
+    assert overview["tagger_session_id"] == session_id
 
 
 def test_ownership_enforced_on_assist_routes() -> None:

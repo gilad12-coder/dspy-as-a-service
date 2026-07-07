@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "Создать оптимизацию из ваших меток",
+  "tagger.assist.complete.optimization_description": "Ваши метки могут обучить настоящий оптимизированный классификатор — он сохраняется вместе с вашими оптимизациями и готов к инференсу и экспорту.",
+  "tagger.assist.complete.optimization_title": "Ваш теггер как оптимизация",
+  "tagger.assist.complete.optimization_too_few": "Требуется не менее {minimum} меток, которые вы поставили или подтвердили.",
+  "tagger.assist.optimize.lift_label": "Оценка на отложенной выборке:",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "Открыть оптимизацию",
   "settings.tagger.assist.description": "Интервью, совместная и автоматическая разметка в теггере. «Выкл.» — полностью ручной теггер.",
   "settings.tagger.assist.label": "Разметка с помощью ИИ",
   "settings.tagger.calibration.assisted": "ИИ подсказывает первым",

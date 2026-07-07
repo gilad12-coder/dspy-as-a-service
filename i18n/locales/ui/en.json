@@ -2780,5 +2780,12 @@
   "tagger.assist.optimize.full_cta": "Run full optimization",
   "tagger.assist.optimize.running": "Optimization running — you can keep reviewing meanwhile.",
   "tagger.assist.optimize.success": "The labeling guide was updated from the optimization run.",
-  "tagger.assist.optimize.failed": "The optimization run didn't finish — the guide is unchanged."
+  "tagger.assist.optimize.failed": "The optimization run didn't finish — the guide is unchanged.",
+  "tagger.assist.optimize.lift_label": "Held-out score:",
+  "tagger.assist.optimize.open_run": "Open the optimization",
+  "tagger.assist.complete.optimization_title": "Your tagger as an optimization",
+  "tagger.assist.complete.optimization_description": "Your labels can train a real optimized classifier — saved with your optimizations, ready for inference and export.",
+  "tagger.assist.complete.optimization_cta": "Create an optimization from your labels",
+  "tagger.assist.complete.optimization_too_few": "Needs at least {minimum} labels you placed or confirmed.",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%"
 }

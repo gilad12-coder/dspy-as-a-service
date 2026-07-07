@@ -82,6 +82,9 @@ export interface AutotagProgress {
 export interface DeepOptimizeState {
   jobId: string;
   status: "running" | "success" | "failed";
+  /** Held-out scores from the finished run (the lift the user earned). */
+  baseline?: number | null;
+  optimized?: number | null;
 }
 
 /**

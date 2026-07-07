@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "Crea una optimización a partir de tus etiquetas",
+  "tagger.assist.complete.optimization_description": "Tus etiquetas pueden entrenar un clasificador optimizado real, guardado con tus optimizaciones y listo para inferencia y exportación.",
+  "tagger.assist.complete.optimization_title": "Tu etiquetador como una optimización",
+  "tagger.assist.complete.optimization_too_few": "Necesita al menos {minimum} etiquetas que hayas colocado o confirmado.",
+  "tagger.assist.optimize.lift_label": "Puntuación reservada:",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "Abrir la optimización",
   "settings.tagger.assist.description": "Entrevista, etiquetado colaborativo y etiquetado automático en el etiquetador. Desactivado significa el etiquetador totalmente manual.",
   "settings.tagger.assist.label": "Etiquetado asistido por IA",
   "settings.tagger.calibration.assisted": "La IA sugiere primero",

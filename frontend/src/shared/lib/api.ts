@@ -1311,9 +1311,12 @@ export function taggerAssistDeepOptimize(sessionId: string) {
 
 /** Lightweight status of one optimization run (deep-optimize tracking). */
 export function getOptimizationStatusLite(optimizationId: string) {
-  return request<{ status: string; message?: string | null }>(
-    `/optimizations/${optimizationId}/summary`,
-  );
+  return request<{
+    status: string;
+    message?: string | null;
+    baseline_test_metric?: number | null;
+    optimized_test_metric?: number | null;
+  }>(`/optimizations/${optimizationId}/summary`);
 }
 
 /** The optimized program's prompt from a finished run (success only). */

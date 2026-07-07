@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "Crea un'ottimizzazione dalle tue etichette",
+  "tagger.assist.complete.optimization_description": "Le tue etichette possono addestrare un vero classificatore ottimizzato, salvato con le tue ottimizzazioni e pronto per l'inferenza e l'esportazione.",
+  "tagger.assist.complete.optimization_title": "Il tuo tagger come ottimizzazione",
+  "tagger.assist.complete.optimization_too_few": "Richiede almeno {minimum} etichette che hai assegnato o confermato.",
+  "tagger.assist.optimize.lift_label": "Punteggio held-out:",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "Apri l'ottimizzazione",
   "settings.tagger.assist.description": "Intervista, co-etichettatura ed etichettatura automatica nel tagger. Off significa il tagger completamente manuale.",
   "settings.tagger.assist.label": "Etichettatura assistita dall'IA",
   "settings.tagger.calibration.assisted": "L'IA suggerisce per prima",

@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "أنشئ تحسينًا من تسمياتك",
+  "tagger.assist.complete.optimization_description": "يمكن لتسمياتك تدريب مُصنِّف مُحسَّن حقيقي — يُحفَظ مع تحسيناتك، وجاهز للاستدلال والتصدير.",
+  "tagger.assist.complete.optimization_title": "أداة الوسم لديك بصفتها تحسينًا",
+  "tagger.assist.complete.optimization_too_few": "يتطلب {minimum} تسمية على الأقل قمت بوضعها أو تأكيدها.",
+  "tagger.assist.optimize.lift_label": "درجة البيانات المحتجزة:",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "افتح التحسين",
   "settings.tagger.assist.description": "المقابلة والوسم المشترك والوسم التلقائي في أداة الوسم. الإيقاف يعني أداة الوسم اليدوية بالكامل.",
   "settings.tagger.assist.label": "وسم بمساعدة الذكاء الاصطناعي",
   "settings.tagger.calibration.assisted": "الذكاء الاصطناعي يقترح أولاً",

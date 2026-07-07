@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "अपने लेबल से एक ऑप्टिमाइज़ेशन बनाएँ",
+  "tagger.assist.complete.optimization_description": "आपके लेबल एक वास्तविक ऑप्टिमाइज़्ड क्लासिफ़ायर को प्रशिक्षित कर सकते हैं — आपके ऑप्टिमाइज़ेशन के साथ सहेजा गया, अनुमान और निर्यात के लिए तैयार।",
+  "tagger.assist.complete.optimization_title": "ऑप्टिमाइज़ेशन के रूप में आपका टैगर",
+  "tagger.assist.complete.optimization_too_few": "आपके द्वारा रखे या पुष्टि किए गए कम से कम {minimum} लेबल चाहिए।",
+  "tagger.assist.optimize.lift_label": "होल्ड-आउट स्कोर:",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "ऑप्टिमाइज़ेशन खोलें",
   "settings.tagger.assist.description": "टैगर में इंटरव्यू, सह-टैगिंग और ऑटो-टैगिंग। बंद करने पर टैगर पूरी तरह मैन्युअल रहता है।",
   "settings.tagger.assist.label": "AI-सहायता वाली टैगिंग",
   "settings.tagger.calibration.assisted": "AI पहले सुझाव देता है",

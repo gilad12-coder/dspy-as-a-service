@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "Créer une optimisation à partir de vos étiquettes",
+  "tagger.assist.complete.optimization_description": "Vos étiquettes peuvent entraîner un véritable classificateur optimisé — enregistré avec vos optimisations, prêt pour l'inférence et l'export.",
+  "tagger.assist.complete.optimization_title": "Votre étiqueteur sous forme d'optimisation",
+  "tagger.assist.complete.optimization_too_few": "Nécessite au moins {minimum} étiquettes que vous avez placées ou confirmées.",
+  "tagger.assist.optimize.lift_label": "Score sur données réservées :",
+  "tagger.assist.optimize.lift_value": "{baseline} % → {optimized} %",
+  "tagger.assist.optimize.open_run": "Ouvrir l'optimisation",
   "settings.tagger.assist.description": "Entretien, co-étiquetage et étiquetage automatique dans l'outil d'étiquetage. Désactivé signifie l'étiquetage entièrement manuel.",
   "settings.tagger.assist.label": "Étiquetage assisté par IA",
   "settings.tagger.calibration.assisted": "L'IA propose en premier",

@@ -188,7 +188,8 @@ def test_deep_optimize_request_builds_valid_payload() -> None:
     assert payload.reflection_model_settings is not None
     assert payload.column_mapping.inputs == {"text": "text"}
     assert payload.column_mapping.outputs == {"label": "label"}
-    assert payload.is_private is True
+    # Parity with wizard submissions: no forced privacy, default visibility.
+    assert payload.is_private is False
     assert len(payload.dataset) == 12
     assert "Sarcasm counts." in payload.signature_code
 

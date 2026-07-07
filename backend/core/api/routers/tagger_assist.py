@@ -354,6 +354,18 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         submission = persist_and_enqueue(
             job_store, str(uuid4()), payload, optimization_type=OPTIMIZATION_TYPE_RUN
         )
+        # Best-effort provenance: stamp the source session onto the run's
+        # overview so future surfaces can link the optimization back to the
+        # tagging session it was trained from.
+        try:
+            job = job_store.get_job(submission.optimization_id)
+            overview = dict(job.get("payload_overview") or {})
+            overview["tagger_session_id"] = session_id
+            job_store.set_payload_overview(submission.optimization_id, overview)
+        except Exception:
+            logger.exception(
+                "failed to stamp tagger session onto run %s", submission.optimization_id
+            )
         return DeepOptimizeStartResponse(optimization_id=submission.optimization_id)
 
     @router.post(

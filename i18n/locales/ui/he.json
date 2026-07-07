@@ -2780,5 +2780,12 @@
   "tagger.assist.optimize.full_cta": "הרצת אופטימיזציה מלאה",
   "tagger.assist.optimize.running": "האופטימיזציה רצה — אפשר להמשיך לבדוק בינתיים.",
   "tagger.assist.optimize.success": "מדריך התיוג עודכן מריצת האופטימיזציה.",
-  "tagger.assist.optimize.failed": "ריצת האופטימיזציה לא הסתיימה — המדריך לא השתנה."
+  "tagger.assist.optimize.failed": "ריצת האופטימיזציה לא הסתיימה — המדריך לא השתנה.",
+  "tagger.assist.optimize.lift_label": "ציון על סט נסתר:",
+  "tagger.assist.optimize.open_run": "פתיחת האופטימיזציה",
+  "tagger.assist.complete.optimization_title": "המתייג שלכם כאופטימיזציה",
+  "tagger.assist.complete.optimization_description": "התיוגים שלכם יכולים לאמן מסווג ממוטב אמיתי — נשמר עם האופטימיזציות שלכם, מוכן להסקה ולייצוא.",
+  "tagger.assist.complete.optimization_cta": "יצירת אופטימיזציה מהתיוגים שלכם",
+  "tagger.assist.complete.optimization_too_few": "נדרשים לפחות {minimum} תיוגים שהצבתם או אישרתם.",
+  "tagger.assist.optimize.lift_value": "‎{baseline}% → {optimized}%"
 }

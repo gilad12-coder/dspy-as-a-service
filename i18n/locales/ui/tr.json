@@ -1,4 +1,11 @@
 {
+  "tagger.assist.complete.optimization_cta": "Etiketlerinizden bir optimizasyon oluşturun",
+  "tagger.assist.complete.optimization_description": "Etiketleriniz gerçek, optimize edilmiş bir sınıflandırıcıyı eğitebilir — optimizasyonlarınızla birlikte kaydedilir, çıkarım ve dışa aktarma için hazırdır.",
+  "tagger.assist.complete.optimization_title": "Bir optimizasyon olarak etiketleyiciniz",
+  "tagger.assist.complete.optimization_too_few": "Yerleştirdiğiniz veya onayladığınız en az {minimum} etiket gerekir.",
+  "tagger.assist.optimize.lift_label": "Ayrılmış küme puanı:",
+  "tagger.assist.optimize.lift_value": "{baseline}% → {optimized}%",
+  "tagger.assist.optimize.open_run": "Optimizasyonu aç",
   "settings.tagger.assist.description": "Etiketleyicide görüşme, birlikte etiketleme ve otomatik etiketleme. Kapalıyken tamamen manuel etiketleyici kullanılır.",
   "settings.tagger.assist.label": "Yapay zeka destekli etiketleme",
   "settings.tagger.calibration.assisted": "Önce yapay zeka önerir",
