@@ -4,9 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import {
   Upload,
   Binary,
-  Database,
   ListChecks,
-  Loader2,
   TextCursorInput,
   Plus,
   Trash2,
@@ -28,10 +26,9 @@ import { cn } from "@/shared/lib/utils";
 import { HelpTip } from "@/shared/ui/help-tip";
 import { tip } from "@/shared/lib/tooltips";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
-import { getDatasetRows, type DatasetSummary } from "@/shared/lib/api";
+import { getDatasetRows } from "@/shared/lib/api";
 import { registerTutorialHook, registerTutorialQuery } from "@/features/tutorial";
 import { useUserPrefs } from "@/features/settings";
-import { DatasetPickerDialog } from "@/features/datasets";
 import type {
   AnnotationMode,
   TaggerAssistMode,
@@ -137,7 +134,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<AnnotationMode | null>(null);
   const [assistMode, setAssistMode] = useState<TaggerAssistMode>("copilot");
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [libraryName, setLibraryName] = useState<string | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(false);
 
@@ -193,18 +189,19 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     }
   }, []);
 
-  // Library alternative to the file drop: rows come by reference and the saved
-  // column roles pre-select the input columns (a tagger-saved dataset marks its
-  // own label/provenance columns output/ignore, so they stay unselected).
-  const handlePickDataset = useCallback(async (summary: DatasetSummary) => {
+  // Deep link from the dataset editor ("Tag with AI"): /tagger?dataset={id}
+  // loads the library dataset by reference; the saved column roles pre-select
+  // the input columns (a tagger-saved dataset marks its own label/provenance
+  // columns output/ignore, so they stay unselected).
+  const loadLibraryDataset = useCallback(async (datasetId: string, name: string | null) => {
     setError(null);
     setLibraryLoading(true);
     try {
-      const detail = await getDatasetRows(summary.id);
+      const detail = await getDatasetRows(datasetId);
       setParsedRows(detail.rows as DataRow[]);
       setParsedCols(detail.columns);
       setFile(null);
-      setLibraryName(summary.name);
+      setLibraryName(name || msg("tagger.setup.library_fallback_name"));
       const roles = detail.column_schema?.column_roles ?? {};
       const inputs = detail.columns.filter((c) => roles[c] === "input");
       if (inputs.length > 0) {
@@ -220,6 +217,13 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
       setLibraryLoading(false);
     }
   }, []);
+
+  // window.location (not useSearchParams) keeps the page statically renderable.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const datasetId = params.get("dataset");
+    if (datasetId) void loadLibraryDataset(datasetId, params.get("name"));
+  }, [loadLibraryDataset]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -376,32 +380,11 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
             }}
           />
         </label>
-
-        <div className="flex items-center gap-3">
-          <div className="h-px flex-1 bg-border/60" />
-          <span className="text-xs text-muted-foreground">
-            {msg("tagger.setup.library_or")}
-          </span>
-          <div className="h-px flex-1 bg-border/60" />
-        </div>
-        <Button
-          variant="outline"
-          onClick={() => setPickerOpen(true)}
-          disabled={libraryLoading}
-          className="w-full gap-2"
-        >
-          {libraryLoading ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Database className="size-4" />
-          )}
-          {msg("tagger.setup.library_pick")}
-        </Button>
-        <DatasetPickerDialog
-          open={pickerOpen}
-          onOpenChange={setPickerOpen}
-          onPick={(dataset) => void handlePickDataset(dataset)}
-        />
+        {libraryLoading && (
+          <p className="text-sm text-muted-foreground">
+            {msg("tagger.setup.library_loading")}
+          </p>
+        )}
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {parsedCols.length > 0 && (

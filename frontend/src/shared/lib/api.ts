@@ -1094,6 +1094,18 @@ export function saveDataset(body: {
   });
 }
 
+/** Replace a saved dataset's rows in place, keeping its identity (editor+). */
+export function editDatasetRows(
+  datasetId: string,
+  rows: Array<Record<string, unknown>>,
+  columnSchema?: DatasetColumnSchema,
+) {
+  return request<DatasetSummary>(`/datasets/library/${datasetId}/rows`, {
+    method: "PUT",
+    body: JSON.stringify({ rows, column_schema: columnSchema }),
+  });
+}
+
 /** Clone a dataset shared with the caller into their own library (viewer+). */
 export function cloneDataset(datasetId: string) {
   return request<SaveDatasetResponse>(`/datasets/library/${datasetId}/clone`, {

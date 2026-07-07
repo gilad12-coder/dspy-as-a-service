@@ -228,8 +228,13 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         />
 
         <main className="app-main flex-1 overflow-auto min-w-0 page-gradient grid-pattern">
+          {/* The tagger is a working surface (annotation + AI rail), not a
+              reading page — it gets the whole viewport; narrow phases (setup,
+              interview, summaries) center themselves with their own max-w. */}
           <div
-            className="relative z-[1] mx-auto max-w-7xl py-6 md:py-8"
+            className={`relative z-[1] mx-auto py-6 md:py-8 ${
+              pathname.startsWith("/tagger") ? "max-w-none" : "max-w-7xl"
+            }`}
             style={{ paddingInline: "clamp(1rem, 5vw - 0.5rem, 2rem)" }}
           >
             {children}
