@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { ArrowRight, Loader2, Sparkles, Wand2 } from "lucide-react";
+import { ArrowRight, Check, CircleAlert, Loader2, Rocket, Sparkles, Wand2 } from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { formatMsg, msg } from "@/shared/lib/messages";
@@ -21,6 +21,7 @@ interface Props {
   onStartRound: () => void;
   onStartAutotag: () => void;
   onOptimize: () => void;
+  onDeepOptimize: () => void;
   onFetchEstimate: () => void;
 }
 
@@ -42,6 +43,7 @@ export function TaggerReviewGate({
   onStartRound,
   onStartAutotag,
   onOptimize,
+  onDeepOptimize,
   onFetchEstimate,
 }: Props) {
   const gate = agreementGate(config.mode);
@@ -149,29 +151,60 @@ export function TaggerReviewGate({
         </CardContent>
       </Card>
 
-      {stalled && !unlocked && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">{msg("tagger.assist.optimize.title")}</CardTitle>
-            <CardDescription>{msg("tagger.assist.optimize.description")}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              variant="secondary"
-              onClick={onOptimize}
-              disabled={optimizeBusy}
-              className="w-full gap-2"
-            >
-              {optimizeBusy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Wand2 className="size-4" />
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">
+            {stalled && !unlocked
+              ? msg("tagger.assist.optimize.title")
+              : msg("tagger.assist.optimize.title_optional")}
+          </CardTitle>
+          <CardDescription>{msg("tagger.assist.optimize.description")}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {assist.deepOptimize?.status === "running" ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              {msg("tagger.assist.optimize.running")}
+            </p>
+          ) : (
+            <>
+              {assist.deepOptimize?.status === "success" && (
+                <p className="flex items-center gap-2 text-sm text-foreground">
+                  <Check className="size-4 text-emerald-700" />
+                  {msg("tagger.assist.optimize.success")}
+                </p>
               )}
-              {msg("tagger.assist.optimize.cta")}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+              {assist.deepOptimize?.status === "failed" && (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CircleAlert className="size-4" />
+                  {msg("tagger.assist.optimize.failed")}
+                </p>
+              )}
+              <Button
+                variant={stalled && !unlocked ? "secondary" : "outline"}
+                onClick={onDeepOptimize}
+                className="w-full gap-2"
+              >
+                <Rocket className="size-4" />
+                {msg("tagger.assist.optimize.full_cta")}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={onOptimize}
+                disabled={optimizeBusy}
+                className="w-full gap-2"
+              >
+                {optimizeBusy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Wand2 className="size-4" />
+                )}
+                {msg("tagger.assist.optimize.cta")}
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

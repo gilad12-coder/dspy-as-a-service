@@ -78,6 +78,12 @@ export interface AutotagProgress {
   credits_spent?: number;
 }
 
+/** A submitted deep-optimize GEPA run being tracked from the tagger. */
+export interface DeepOptimizeState {
+  jobId: string;
+  status: "running" | "success" | "failed";
+}
+
 /**
  * AI co-tagging state, persisted as the session's ``assist`` JSON. Final
  * labels always live in ``annotations``; this only carries how they came to be
@@ -95,4 +101,5 @@ export interface AssistState {
   provenance: Record<string, AnnotationProvenance>;
   rounds: ReviewRound[];
   autotag?: AutotagProgress;
+  deepOptimize?: DeepOptimizeState;
 }

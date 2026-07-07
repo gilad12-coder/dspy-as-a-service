@@ -2775,5 +2775,10 @@
   "tagger.assist.calibration.continue": "המשך",
   "tagger.setup.library_pick": "בחירה מהספרייה שלכם",
   "tagger.setup.library_or": "או",
-  "tagger.setup.library_error": "טעינת הדאטהסט מהספרייה נכשלה."
+  "tagger.setup.library_error": "טעינת הדאטהסט מהספרייה נכשלה.",
+  "tagger.assist.optimize.title_optional": "רוצים מתייג חזק יותר?",
+  "tagger.assist.optimize.full_cta": "הרצת אופטימיזציה מלאה",
+  "tagger.assist.optimize.running": "האופטימיזציה רצה — אפשר להמשיך לבדוק בינתיים.",
+  "tagger.assist.optimize.success": "מדריך התיוג עודכן מריצת האופטימיזציה.",
+  "tagger.assist.optimize.failed": "ריצת האופטימיזציה לא הסתיימה — המדריך לא השתנה."
 }

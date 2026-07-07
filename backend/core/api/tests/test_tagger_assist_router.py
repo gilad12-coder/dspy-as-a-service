@@ -374,6 +374,52 @@ def test_stale_running_mirror_reports_not_live_or_failed() -> None:
     assert body["live"] is False
 
 
+def test_deep_optimize_gates_and_submits_run(monkeypatch) -> None:
+    """Deep optimize 422s on thin labels, then submits a private GEPA run."""
+    from types import SimpleNamespace
+
+    from ..routers import tagger_assist as assist_module
+
+    captured: dict = {}
+
+    def fake_enqueue(job_store, new_id, payload, *, optimization_type):
+        """Capture the submission instead of enqueueing a real run."""
+        captured["payload"] = payload
+        captured["type"] = optimization_type
+        return SimpleNamespace(optimization_id=new_id)
+
+    monkeypatch.setattr(assist_module, "persist_and_enqueue", fake_enqueue)
+    monkeypatch.setattr(assist_module, "_enforce_credit_balance", lambda *args: None)
+    client, store = _client(_ALICE)
+    session_id = _create(client)
+
+    # Only one labeled row — not enough signal to train on.
+    resp = client.post(f"/tagging-sessions/{session_id}/assist/deep-optimize")
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "tagger.assist.too_few_examples"
+
+    with Session(store.engine) as db:
+        row = db.get(TaggingSessionModel, session_id)
+        row.data = [{"id": i, "text": f"row {i}"} for i in range(1, 15)]
+        row.annotations = {str(i): "yes" if i % 2 else "no" for i in range(1, 13)}
+        row.assist = {
+            **row.assist,
+            "provenance": {str(i): "human" for i in range(1, 13)},
+        }
+        db.commit()
+
+    resp = client.post(f"/tagging-sessions/{session_id}/assist/deep-optimize")
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["optimization_id"]
+    payload = captured["payload"]
+    assert captured["type"] == "run"
+    assert payload.username == "alice"
+    assert payload.name.startswith("Deep optimize · ")
+    assert payload.optimizer_name == "gepa"
+    assert len(payload.dataset) == 12
+    assert payload.is_private is True
+
+
 def test_ownership_enforced_on_assist_routes() -> None:
     """Another user gets 403 on every assist surface."""
     alice_client, store = _client(_ALICE)

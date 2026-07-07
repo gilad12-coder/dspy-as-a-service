@@ -74,6 +74,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
         onStartRound={() => void tagger.startReviewRound()}
         onStartAutotag={() => void tagger.startAutotag()}
         onOptimize={() => void tagger.runOptimize()}
+        onDeepOptimize={() => void tagger.startDeepOptimize()}
         onFetchEstimate={() => void tagger.fetchEstimate()}
       />
     );

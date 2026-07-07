@@ -14,6 +14,9 @@ import {
   taggerAssistAutotagStart,
   taggerAssistAutotagStatus,
   taggerAssistAutotagCancel,
+  taggerAssistDeepOptimize,
+  getOptimizationStatusLite,
+  getOptimizationOptimizedPrompt,
   type TaggerSessionDetail,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
@@ -45,6 +48,9 @@ export const TAGGER_SESSIONS_CHANGED = "tagger-sessions-changed";
 
 const AUTOSAVE_INTERVAL_MS = 60_000;
 const AUTOTAG_POLL_MS = 2_500;
+/** GEPA runs take minutes; a slow poll on the run's summary is plenty. */
+const DEEP_OPTIMIZE_POLL_MS = 5_000;
+const TERMINAL_RUN_STATUSES = new Set(["success", "failed", "cancelled", "paused"]);
 /** Calibration predictions are prefetched this many rows ahead of the cursor. */
 const PREDICT_AHEAD = 6;
 
@@ -744,7 +750,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     if (last.flaggedPass) setPhase("complete");
   }, [config]);
 
-  /** Deep optimize: reflectively rewrite the rubric from all labels so far. */
+  /** Instant optimize: reflectively rewrite the rubric from all labels so far. */
   const runOptimize = useCallback(async () => {
     if (!sessionId || optimizeBusy) return;
     setOptimizeBusy(true);
@@ -759,6 +765,62 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       setOptimizeBusy(false);
     }
   }, [sessionId, optimizeBusy, flushNow, patchAssist]);
+
+  /** Deep optimize: submit a real GEPA run trained on the labels so far. */
+  const startDeepOptimize = useCallback(async () => {
+    const state = assistRef.current;
+    if (!sessionId || state?.deepOptimize?.status === "running") return;
+    setAssistError(null);
+    try {
+      await flushNow();
+      const res = await taggerAssistDeepOptimize(sessionId);
+      patchAssist({
+        deepOptimize: { jobId: res.optimization_id, status: "running" },
+      });
+    } catch {
+      setAssistError("deep_optimize");
+    }
+  }, [sessionId, flushNow, patchAssist]);
+
+  // Track a running deep-optimize job; on success, pull the evolved
+  // instructions out of the run artifact and make them the labeling guide.
+  const deepOptimizeJobId = assist?.deepOptimize?.jobId;
+  const deepOptimizeRunning = assist?.deepOptimize?.status === "running";
+  useEffect(() => {
+    if (!deepOptimizeRunning || !deepOptimizeJobId) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const summary = await getOptimizationStatusLite(deepOptimizeJobId);
+        if (cancelled || !TERMINAL_RUN_STATUSES.has(summary.status)) return;
+        if (summary.status === "success") {
+          const artifact = await getOptimizationOptimizedPrompt(deepOptimizeJobId);
+          if (cancelled) return;
+          const instructions =
+            artifact.program_artifact?.optimized_prompt?.instructions?.trim();
+          setAssist((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  ...(instructions ? { rubric: [instructions] } : {}),
+                  deepOptimize: { jobId: deepOptimizeJobId, status: "success" },
+                }
+              : prev,
+          );
+        } else {
+          patchAssist({ deepOptimize: { jobId: deepOptimizeJobId, status: "failed" } });
+        }
+      } catch {
+        // Transient poll failures are retried on the next tick.
+      }
+    };
+    void tick();
+    const interval = window.setInterval(() => void tick(), DEEP_OPTIMIZE_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [deepOptimizeRunning, deepOptimizeJobId, patchAssist]);
 
   /** Fetch the credit estimate for tagging everything that is still unlabeled. */
   const fetchEstimate = useCallback(async () => {
@@ -906,6 +968,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     startReviewRound,
     finishRound,
     runOptimize,
+    startDeepOptimize,
     fetchEstimate,
     startAutotag,
     cancelAutotag,

@@ -24,7 +24,7 @@ import dspy
 
 from ..billing.pricing import ModelUsage, credits_for_usage
 from ..config import settings
-from ..models import ModelConfig
+from ..models import ColumnMapping, ModelConfig, RunRequest
 from .agents.code import _reply_language
 from .language_models import (
     apply_model_reasoning_config,
@@ -43,6 +43,9 @@ MAX_ROW_CHARS = 1200
 # chars-per-token heuristic for the pre-run estimate; JSON label output per row.
 CHARS_PER_TOKEN = 4
 OUTPUT_TOKENS_PER_ROW = 30
+# GEPA needs enough labeled rows to split into train/val/test and still learn.
+MIN_DEEP_OPTIMIZE_EXAMPLES = 10
+DEEP_OPTIMIZE_MAX_EXAMPLES = 200
 
 
 def assist_model_name() -> str:
@@ -311,11 +314,12 @@ def select_examples(
     annotations: dict[str, Any],
     assist: dict[str, Any],
     exclude_ids: set[str] | None = None,
+    cap: int = MAX_EXAMPLES,
 ) -> list[dict[str, Any]]:
     """Pick the few-shot examples the tagging prompt is compiled from.
 
     Corrections (rows where the human overrode the AI's prediction) carry the
-    most signal, so they are kept first when capping to ``MAX_EXAMPLES``.
+    most signal, so they are kept first when capping to ``cap``.
 
     Args:
         config: The session's ``TaggerConfig`` payload.
@@ -323,6 +327,7 @@ def select_examples(
         annotations: The ``{row_id: value}`` final-label map.
         assist: The session's assist state (predictions + provenance).
         exclude_ids: Row ids to leave out (e.g. the rows about to be predicted).
+        cap: Maximum number of examples returned.
 
     Returns:
         A list of ``{text, label, corrected_from?}`` example dicts.
@@ -350,7 +355,7 @@ def select_examples(
             corrections.append(example)
         else:
             plain.append(example)
-    return (corrections + plain)[:MAX_EXAMPLES]
+    return (corrections + plain)[:cap]
 
 
 def compile_instructions(
@@ -605,3 +610,220 @@ def estimate_credits_for_rows(instructions: str, rows: list[dict[str, Any]]) -> 
         "credits_low": base,
         "credits_high": max(base, int(base * 1.8)),
     }
+
+
+def deep_optimize_reflection_model_name() -> str:
+    """Return the LiteLLM model id GEPA reflects with during deep optimize."""
+    return settings.tagger_deep_optimize_reflection_model or assist_model_name()
+
+
+def _label_as_text(config: dict[str, Any], value: Any) -> str:
+    """Flatten a stored annotation into the single-string label GEPA trains on.
+
+    Args:
+        config: The session's ``TaggerConfig`` payload.
+        value: The stored annotation value.
+
+    Returns:
+        Binary answers and extractions verbatim; multiclass as the category
+        names joined with ``"; "``.
+    """
+    display = _annotation_to_display(config, value)
+    if isinstance(display, list):
+        return "; ".join(str(d) for d in display)
+    return str(display)
+
+
+def build_deep_optimize_dataset(
+    config: dict[str, Any],
+    data: list[dict[str, Any]],
+    annotations: dict[str, Any],
+    assist: dict[str, Any],
+) -> list[dict[str, str]]:
+    """Build the ``{text, label}`` trainset for a deep-optimize run.
+
+    Every human-vetted label (human and ai_confirmed provenance) qualifies,
+    corrections first, capped at ``DEEP_OPTIMIZE_MAX_EXAMPLES``.
+
+    Args:
+        config: The session's ``TaggerConfig`` payload.
+        data: The full row payload.
+        annotations: The ``{row_id: value}`` final-label map.
+        assist: The session's assist state (predictions + provenance).
+
+    Returns:
+        Dataset rows shaped for the run payload's ``text``/``label`` columns.
+    """
+    examples = select_examples(
+        config, data, annotations, assist, cap=DEEP_OPTIMIZE_MAX_EXAMPLES
+    )
+    rows: list[dict[str, str]] = []
+    for example in examples:
+        label = example["label"]
+        rows.append(
+            {
+                "text": str(example["text"]),
+                "label": "; ".join(str(v) for v in label) if isinstance(label, list) else str(label),
+            }
+        )
+    return rows
+
+
+def _deep_optimize_signature_code(config: dict[str, Any], rubric: list[str]) -> str:
+    """Generate the single-signature classifier source for a deep-optimize run.
+
+    The task description and rubric become the signature docstring — the seed
+    instructions GEPA evolves. User text is sanitized so it cannot terminate
+    the docstring literal.
+
+    Args:
+        config: The session's ``TaggerConfig`` payload.
+        rubric: The current labeling rubric.
+
+    Returns:
+        Python source defining exactly one ``dspy.Signature`` subclass.
+    """
+    parts = [task_description(config)]
+    if rubric:
+        parts.append("Labeling rubric:\n" + "\n".join(f"- {r}" for r in rubric))
+    doc = "\n\n".join(parts).replace("\\", "\\\\").replace('"""', "'''")
+    mode = config.get("mode")
+    label_desc = (
+        "Exactly 'yes' or 'no'."
+        if mode == "binary"
+        else "Every applying category name, joined with '; '."
+        if mode == "multiclass"
+        else "The extracted text."
+    )
+    return (
+        "class TaggerLabelSignature(dspy.Signature):\n"
+        f'    """{doc}"""\n\n'
+        '    text: str = dspy.InputField(desc="The row to label.")\n'
+        f'    label: str = dspy.OutputField(desc="{label_desc}")\n'
+    )
+
+
+_BINARY_METRIC = '''\
+def metric(example, pred, trace=None, pred_name=None, pred_trace=None):
+    """Exact match on the normalized yes/no answer, with GEPA feedback."""
+    def norm(value):
+        text = str(value or "").strip().lower()
+        if text in ("yes", "y", "true", "1"):
+            return "yes"
+        if text in ("no", "n", "false", "0"):
+            return "no"
+        return text
+    gold = norm(getattr(example, "label", ""))
+    guess = norm(getattr(pred, "label", ""))
+    if gold == guess:
+        return dspy.Prediction(score=1.0, feedback="Correct.")
+    return dspy.Prediction(
+        score=0.0,
+        feedback=f"Expected '{gold}' but got '{guess}'. Answer exactly 'yes' or 'no'.",
+    )
+'''
+
+_MULTICLASS_METRIC = '''\
+def metric(example, pred, trace=None, pred_name=None, pred_trace=None):
+    """Set equality over the '; '-separated category names, with GEPA feedback."""
+    def parts(value):
+        return {p.strip().casefold() for p in str(value or "").split(";") if p.strip()}
+    gold = parts(getattr(example, "label", ""))
+    guess = parts(getattr(pred, "label", ""))
+    if gold == guess:
+        return dspy.Prediction(score=1.0, feedback="Correct.")
+    missing = "; ".join(sorted(gold - guess)) or "none"
+    extra = "; ".join(sorted(guess - gold)) or "none"
+    return dspy.Prediction(
+        score=0.0,
+        feedback=f"Wrong categories. Missing: {missing}. Extra: {extra}. "
+        "Answer with every applying category name, joined by '; '.",
+    )
+'''
+
+_FREETEXT_METRIC = '''\
+def metric(example, pred, trace=None, pred_name=None, pred_trace=None):
+    """Token-overlap (Dice) similarity of the extraction, with GEPA feedback."""
+    def tokens(value):
+        out = set()
+        for raw in str(value or "").lower().split():
+            word = "".join(ch for ch in raw if ch.isalnum())
+            if word:
+                out.add(word)
+        return out
+    gold = tokens(getattr(example, "label", ""))
+    guess = tokens(getattr(pred, "label", ""))
+    if not gold and not guess:
+        return dspy.Prediction(score=1.0, feedback="Correct (both empty).")
+    overlap = len(gold & guess)
+    denom = len(gold) + len(guess)
+    score = (2.0 * overlap / denom) if denom else 0.0
+    if score >= 0.85:
+        return dspy.Prediction(score=1.0, feedback="Correct.")
+    return dspy.Prediction(
+        score=score,
+        feedback=f"Extraction differs from the expected text: "
+        f"'{getattr(example, 'label', '')}'. Extract only the requested text.",
+    )
+'''
+
+
+def _deep_optimize_metric_code(config: dict[str, Any]) -> str:
+    """Return the mode-appropriate metric source for a deep-optimize run.
+
+    Args:
+        config: The session's ``TaggerConfig`` payload.
+    """
+    mode = config.get("mode")
+    if mode == "binary":
+        return _BINARY_METRIC
+    if mode == "multiclass":
+        return _MULTICLASS_METRIC
+    return _FREETEXT_METRIC
+
+
+def build_deep_optimize_request(
+    config: dict[str, Any],
+    rubric: list[str],
+    dataset: list[dict[str, str]],
+    *,
+    name: str,
+    username: str,
+) -> RunRequest:
+    """Assemble the GEPA run payload for a tagger deep-optimize.
+
+    A single-signature ``text → label`` classifier seeded with the rubric,
+    trained on the session's human-vetted labels, on the cheapest GEPA budget
+    (``auto="light"``). The run is private and managed-billed like any other.
+
+    Args:
+        config: The session's ``TaggerConfig`` payload.
+        rubric: The current labeling rubric (becomes the seed instructions).
+        dataset: ``{text, label}`` rows from :func:`build_deep_optimize_dataset`.
+        name: Display name of the run (shows in the jobs dashboard).
+        username: Owner of the run.
+
+    Returns:
+        A fully-populated ``RunRequest`` ready for the submission pipeline.
+    """
+    base_url = settings.tagger_assist_base_url or settings.generalist_agent_base_url or None
+    return RunRequest(
+        name=name,
+        username=username,
+        description="Tagger deep-optimize: evolve the labeling guide with GEPA.",
+        module_name="predict",
+        signature_code=_deep_optimize_signature_code(config, rubric),
+        metric_code=_deep_optimize_metric_code(config),
+        optimizer_name="gepa",
+        optimizer_kwargs={"auto": "light"},
+        dataset=dataset,
+        column_mapping=ColumnMapping(inputs={"text": "text"}, outputs={"label": "label"}),
+        shuffle=True,
+        seed=42,
+        dataset_filename="tagger-labels.json",
+        model_settings=ModelConfig(name=assist_model_name(), base_url=base_url),
+        reflection_model_settings=ModelConfig(
+            name=deep_optimize_reflection_model_name(), base_url=base_url
+        ),
+        is_private=True,
+    )

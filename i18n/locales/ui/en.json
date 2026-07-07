@@ -2775,5 +2775,10 @@
   "tagger.assist.calibration.continue": "Continue",
   "tagger.setup.library_pick": "Choose from your library",
   "tagger.setup.library_or": "or",
-  "tagger.setup.library_error": "Couldn't load the dataset from the library."
+  "tagger.setup.library_error": "Couldn't load the dataset from the library.",
+  "tagger.assist.optimize.title_optional": "Want a stronger tagger?",
+  "tagger.assist.optimize.full_cta": "Run full optimization",
+  "tagger.assist.optimize.running": "Optimization running — you can keep reviewing meanwhile.",
+  "tagger.assist.optimize.success": "The labeling guide was updated from the optimization run.",
+  "tagger.assist.optimize.failed": "The optimization run didn't finish — the guide is unchanged."
 }

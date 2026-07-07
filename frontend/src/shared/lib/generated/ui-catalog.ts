@@ -2543,7 +2543,12 @@ export type MessageKey =
   | "tagger.assist.label.yes"
   | "tagger.assist.optimize.cta"
   | "tagger.assist.optimize.description"
+  | "tagger.assist.optimize.failed"
+  | "tagger.assist.optimize.full_cta"
+  | "tagger.assist.optimize.running"
+  | "tagger.assist.optimize.success"
   | "tagger.assist.optimize.title"
+  | "tagger.assist.optimize.title_optional"
   | "tagger.assist.rail.agree"
   | "tagger.assist.rail.agreement"
   | "tagger.assist.rail.confirm"
@@ -5322,7 +5327,12 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.assist.label.yes": "כן",
   "tagger.assist.optimize.cta": "אופטימיזציה עמוקה",
   "tagger.assist.optimize.description": "אופטימיזציה עמוקה כותבת מחדש את מדריך התיוג מכל תיוג ותיקון שעשיתם עד כה.",
+  "tagger.assist.optimize.failed": "ריצת האופטימיזציה לא הסתיימה — המדריך לא השתנה.",
+  "tagger.assist.optimize.full_cta": "הרצת אופטימיזציה מלאה",
+  "tagger.assist.optimize.running": "האופטימיזציה רצה — אפשר להמשיך לבדוק בינתיים.",
+  "tagger.assist.optimize.success": "מדריך התיוג עודכן מריצת האופטימיזציה.",
   "tagger.assist.optimize.title": "ההסכמה נתקעה?",
+  "tagger.assist.optimize.title_optional": "רוצים מתייג חזק יותר?",
   "tagger.assist.rail.agree": "אני מסכים עם התיוג שלכם.",
   "tagger.assist.rail.agreement": "הסכמה",
   "tagger.assist.rail.confirm": "אישור (Enter)",
@@ -13472,7 +13482,12 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.assist.label.yes": "Yes",
   "tagger.assist.optimize.cta": "Deep optimize",
   "tagger.assist.optimize.description": "Deep optimize rewrites the labeling guide from every label and correction you've made so far.",
+  "tagger.assist.optimize.failed": "The optimization run didn't finish — the guide is unchanged.",
+  "tagger.assist.optimize.full_cta": "Run full optimization",
+  "tagger.assist.optimize.running": "Optimization running — you can keep reviewing meanwhile.",
+  "tagger.assist.optimize.success": "The labeling guide was updated from the optimization run.",
   "tagger.assist.optimize.title": "Agreement is stuck?",
+  "tagger.assist.optimize.title_optional": "Want a stronger tagger?",
   "tagger.assist.rail.agree": "I agree with your label.",
   "tagger.assist.rail.agreement": "Agreement",
   "tagger.assist.rail.confirm": "Confirm (Enter)",

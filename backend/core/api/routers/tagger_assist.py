@@ -31,16 +31,20 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ...constants import (
+    OPTIMIZATION_TYPE_RUN,
     OPTIMIZATION_TYPE_TAGGING,
     PAYLOAD_OVERVIEW_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_USERNAME,
+    TOKEN_SOURCE_MANAGED,
 )
 from ...service_gateway import tagging
 from ...storage.models import TaggingSessionModel
 from ...worker.tagging_job import TaggingAutotagPayload, untagged_rows
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
+from .optimizations._local import persist_and_enqueue
+from .submissions import _enforce_credit_balance
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +102,12 @@ class OptimizeResponse(BaseModel):
     """The improved rubric."""
 
     rubric: list[str]
+
+
+class DeepOptimizeStartResponse(BaseModel):
+    """Ack that the deep-optimize GEPA run was submitted."""
+
+    optimization_id: str
 
 
 class EstimateResponse(BaseModel):
@@ -289,6 +299,62 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             logger.exception("rubric optimize failed for session %s", session_id)
             raise DomainError("tagger.assist.llm_failed", status=502) from exc
         return OptimizeResponse(rubric=improved)
+
+    @router.post(
+        "/tagging-sessions/{session_id}/assist/deep-optimize",
+        response_model=DeepOptimizeStartResponse,
+        status_code=202,
+        summary="Submit a GEPA run that evolves the labeling guide",
+    )
+    def assist_deep_optimize(
+        session_id: str, user: AuthenticatedUserDep
+    ) -> DeepOptimizeStartResponse:
+        """Submit a real optimization run trained on the session's labels.
+
+        A single-signature ``text → label`` classifier seeded with the current
+        rubric, trained on every human-vetted label (corrections first), on
+        GEPA's cheapest budget. The run is a normal private optimization the
+        client tracks through the existing ``/optimizations/{id}`` surfaces;
+        on success it applies the evolved instructions back to the rubric.
+
+        Args:
+            session_id: UUID of the tagger session.
+            user: Authenticated caller; must own the session.
+
+        Returns:
+            The submitted run's optimization id.
+
+        Raises:
+            DomainError: 422 when there are too few labeled rows to train on,
+                402 when the caller has no spendable credits.
+        """
+        with Session(job_store.engine) as db:
+            row = _load_owned(db, session_id, user.username)
+            config = cast("dict[str, Any]", row.config)
+            data = cast("list[dict[str, Any]]", row.data)
+            annotations = cast("dict[str, Any]", row.annotations)
+            assist = cast("dict[str, Any]", row.assist) or {}
+            session_name = cast(str, row.name)
+        dataset = tagging.build_deep_optimize_dataset(config, data, annotations, assist)
+        if len(dataset) < tagging.MIN_DEEP_OPTIMIZE_EXAMPLES:
+            raise DomainError(
+                "tagger.assist.too_few_examples",
+                status=422,
+                minimum=tagging.MIN_DEEP_OPTIMIZE_EXAMPLES,
+            )
+        _enforce_credit_balance(job_store, user.username, TOKEN_SOURCE_MANAGED)
+        rubric = [str(r) for r in assist.get("rubric") or []]
+        payload = tagging.build_deep_optimize_request(
+            config,
+            rubric,
+            dataset,
+            name=f"Deep optimize · {session_name}"[:200],
+            username=user.username,
+        )
+        submission = persist_and_enqueue(
+            job_store, str(uuid4()), payload, optimization_type=OPTIMIZATION_TYPE_RUN
+        )
+        return DeepOptimizeStartResponse(optimization_id=submission.optimization_id)
 
     @router.post(
         "/tagging-sessions/{session_id}/assist/estimate",

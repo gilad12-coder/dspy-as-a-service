@@ -400,6 +400,14 @@ class Settings(BaseSettings):
             "back to generalist_agent_base_url."
         ),
     )
+    tagger_deep_optimize_reflection_model: str = Field(
+        default="",
+        description=(
+            "LiteLLM model id GEPA reflects with during the tagger's deep "
+            "optimize runs (ideally a frontier model). Empty falls back to "
+            "the tagging-assist model."
+        ),
+    )
 
     # TODO: On-prem / air-gap — point this at an internal OpenAI-compatible
     # embeddings endpoint (usually the same gateway family as CODE_AGENT_BASE_URL).

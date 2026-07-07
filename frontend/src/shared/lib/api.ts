@@ -1301,6 +1301,30 @@ export function taggerAssistAutotagCancel(sessionId: string) {
   });
 }
 
+/** Submit a deep-optimize GEPA run trained on the session's labels. */
+export function taggerAssistDeepOptimize(sessionId: string) {
+  return request<{ optimization_id: string }>(
+    `/tagging-sessions/${sessionId}/assist/deep-optimize`,
+    { method: "POST" },
+  );
+}
+
+/** Lightweight status of one optimization run (deep-optimize tracking). */
+export function getOptimizationStatusLite(optimizationId: string) {
+  return request<{ status: string; message?: string | null }>(
+    `/optimizations/${optimizationId}/summary`,
+  );
+}
+
+/** The optimized program's prompt from a finished run (success only). */
+export function getOptimizationOptimizedPrompt(optimizationId: string) {
+  return request<{
+    program_artifact?: {
+      optimized_prompt?: { instructions?: string | null } | null;
+    } | null;
+  }>(`/optimizations/${optimizationId}/artifact`);
+}
+
 /**
  * The caller's account-wide storage usage against their budget. ``breakdown``
  * maps each storage category to its byte contribution; ``used_bytes`` is their
