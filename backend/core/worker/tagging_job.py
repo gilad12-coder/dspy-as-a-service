@@ -163,10 +163,16 @@ def run_autotag_job(
             row = db.get(TaggingSessionModel, session_id)
             if row is None:
                 raise ValueError(f"tagging session {session_id} not found")
-            config = cast("dict[str, Any]", row.config)
+            config = dict(cast("dict[str, Any]", row.config))
             data = cast("list[dict[str, Any]]", row.data)
             annotations = dict(cast("dict[str, Any]", row.annotations))
             assist = dict(cast("dict[str, Any]", row.assist) or {})
+        # The interview's task refinements live beside the immutable config.
+        override = assist.get("taskOverride") or {}
+        for key in ("question", "prompt"):
+            value = str(override.get(key) or "").strip()
+            if value:
+                config[key] = value
         rubric = [str(r) for r in assist.get("rubric") or []]
         examples = tagging.select_examples(config, data, annotations, assist)
         instructions = tagging.compile_instructions(config, rubric, examples)

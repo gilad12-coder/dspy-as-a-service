@@ -57,6 +57,8 @@ export interface AssistPrediction {
 export interface InterviewTurn {
   role: "assistant" | "user";
   content: string;
+  /** LiteLLM model id that produced an assistant turn (the reply's chip). */
+  model?: string | null;
 }
 
 /** One AI-tags-human-audits batch (review rounds and the flagged pass alike). */
@@ -105,4 +107,6 @@ export interface AssistState {
   rounds: ReviewRound[];
   autotag?: AutotagProgress;
   deepOptimize?: DeepOptimizeState;
+  /** Interview refinements to the task text; config itself stays immutable. */
+  taskOverride?: { question?: string; prompt?: string };
 }

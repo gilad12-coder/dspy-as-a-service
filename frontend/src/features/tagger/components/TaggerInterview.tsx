@@ -5,36 +5,49 @@ import { Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { AgentThread, ChatTranscript, Composer } from "@/shared/ui/agent";
-import type { AgentMessage } from "@/shared/ui/agent";
+import type { AgentMessage, AgentThinking } from "@/shared/ui/agent";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
-import type { AssistState } from "../lib/types";
+import type { AssistState, TaggerConfig } from "../lib/types";
 
 interface Props {
+  config: TaggerConfig;
   assist: AssistState;
   busy: boolean;
+  streamText: string;
+  thinking: AgentThinking | null;
   quickReplies: string[];
   error: string | null;
   onSend: (content: string) => void;
+  onEditResend: (index: number, content: string) => void;
+  onStop: () => void;
   onRetry: () => void;
   onSkip: () => void;
+  onTaskOverrideChange: (override: { question?: string; prompt?: string }) => void;
   onConfirmRubric: (rubric: string[]) => void;
 }
 
 /**
- * The dataset interview: a focused chat column where the AI asks a handful of
- * grounded questions and distills the answers into an editable labeling
- * rubric. Human-first by design — nothing is tagged until the user confirms
- * the rubric.
+ * The dataset interview: the same live chat experience as the generalist
+ * agent — streamed reply tokens, a collapsible thinking section, stop, and
+ * edit-and-resend on any earlier answer — driving a purpose-built
+ * interviewer. It ends in an editable labeling guide that also carries the
+ * task's own prompt, so the whole task definition is confirmable in one place.
  */
 export function TaggerInterview({
+  config,
   assist,
   busy,
+  streamText,
+  thinking,
   quickReplies,
   error,
   onSend,
+  onEditResend,
+  onStop,
   onRetry,
   onSkip,
+  onTaskOverrideChange,
   onConfirmRubric,
 }: Props) {
   const [draft, setDraft] = useState("");
@@ -42,7 +55,13 @@ export function TaggerInterview({
   const messages: AgentMessage[] = assist.interview.turns.map((turn) => ({
     role: turn.role,
     content: turn.content,
+    model: turn.model ?? null,
   }));
+  // The in-flight assistant reply streams into a trailing synthetic message,
+  // exactly how the agent panel renders its live turn.
+  if (busy && (streamText || thinking)) {
+    messages.push({ role: "assistant", content: streamText });
+  }
 
   const submit = () => {
     const content = draft.trim();
@@ -52,7 +71,7 @@ export function TaggerInterview({
   };
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-var(--header-height,53px)-3rem)] max-w-2xl flex-col md:h-[calc(100dvh-var(--header-height,53px)-4rem)]">
+    <div className="flex h-[calc(100dvh-var(--header-height,53px)-3rem)] w-full flex-col md:h-[calc(100dvh-var(--header-height,53px)-4rem)]">
       <div className="px-1 pb-3">
         <h2 className="text-base font-semibold text-foreground">
           {msg("tagger.assist.interview.title")}
@@ -63,11 +82,16 @@ export function TaggerInterview({
       </div>
 
       {done ? (
-        <RubricCard assist={assist} onConfirm={onConfirmRubric} />
+        <RubricCard
+          config={config}
+          assist={assist}
+          onTaskOverrideChange={onTaskOverrideChange}
+          onConfirm={onConfirmRubric}
+        />
       ) : (
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden py-0 gap-0">
           <AgentThread
-            scrollDeps={[messages.length, busy]}
+            scrollDeps={[messages.length, streamText, thinking?.reasoning]}
             isEmpty={messages.length === 0}
             emptyState={
               <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
@@ -79,15 +103,9 @@ export function TaggerInterview({
             <ChatTranscript
               messages={messages}
               streaming={busy}
-              editAndResend={() => {}}
-              trailing={() =>
-                busy && messages.length > 0 ? (
-                  <div className="flex items-center gap-2 px-1 py-2 text-muted-foreground">
-                    <Loader2 className="size-3.5 animate-spin" />
-                    <span className="text-xs">{msg("tagger.assist.interview.thinking")}</span>
-                  </div>
-                ) : null
-              }
+              editAndResend={onEditResend}
+              thinking={thinking ?? undefined}
+              animatePairs
             />
           </AgentThread>
 
@@ -123,7 +141,8 @@ export function TaggerInterview({
             value={draft}
             onChange={setDraft}
             onSubmit={submit}
-            disabled={busy || messages.length === 0}
+            onStop={onStop}
+            disabled={!busy && messages.length === 0}
             streaming={busy}
             placeholder={msg("tagger.assist.interview.placeholder")}
           />
@@ -142,19 +161,26 @@ export function TaggerInterview({
 }
 
 /**
- * The distilled labeling rubric, editable in place before anything runs. The
- * rubric is the shared memory of the whole session — confirming it is the
- * moment the user takes ownership of what the AI believes.
+ * The distilled labeling guide, editable in place before anything runs —
+ * including the task's own prompt/question, so refinements from the interview
+ * land on the tagging prompt itself. Confirming it is the moment the user
+ * takes ownership of what the AI believes.
  */
 function RubricCard({
+  config,
   assist,
+  onTaskOverrideChange,
   onConfirm,
 }: {
+  config: TaggerConfig;
   assist: AssistState;
+  onTaskOverrideChange: (override: { question?: string; prompt?: string }) => void;
   onConfirm: (rubric: string[]) => void;
 }) {
   const [rules, setRules] = useState<string[]>(assist.rubric);
   useEffect(() => setRules(assist.rubric), [assist.rubric]);
+  const taskKey = config.mode === "binary" ? "question" : config.mode === "freetext" ? "prompt" : null;
+  const taskValue = taskKey ? String(config[taskKey] ?? "") : "";
 
   const update = (idx: number, value: string) =>
     setRules((prev) => prev.map((r, i) => (i === idx ? value : r)));
@@ -168,6 +194,35 @@ function RubricCard({
         <CardDescription>{msg("tagger.assist.rubric.description")}</CardDescription>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+        {taskKey && (
+          <div className="mb-2 flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">
+              {config.mode === "binary"
+                ? msg("tagger.assist.rubric.task_question")
+                : msg("tagger.assist.rubric.task_prompt")}
+            </label>
+            <input
+              type="text"
+              value={taskValue}
+              onChange={(e) => onTaskOverrideChange({ [taskKey]: e.target.value })}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              dir="auto"
+            />
+          </div>
+        )}
+        {config.mode === "multiclass" && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {(config.categories ?? []).map((cat) => (
+              <span
+                key={cat.id}
+                className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground"
+                dir="auto"
+              >
+                {cat.label}
+              </span>
+            ))}
+          </div>
+        )}
         {rules.length === 0 && (
           <p className="text-sm text-muted-foreground">{msg("tagger.assist.rubric.empty")}</p>
         )}

@@ -25,7 +25,8 @@ import dspy
 from ..billing.pricing import ModelUsage, credits_for_usage
 from ..config import settings
 from ..models import ColumnMapping, ModelConfig, RunRequest
-from .agents.code import _reply_language
+from .agents.code import ReasoningStreamListener, _reply_language
+from .agents.constants import REASONING_FIELD
 from .language_models import (
     apply_model_reasoning_config,
     build_language_model,
@@ -384,6 +385,64 @@ def compile_instructions(
     return "\n\n".join(parts)
 
 
+def _interview_inputs(
+    config: dict[str, Any],
+    columns: list[str],
+    data: list[dict[str, Any]],
+    turns: list[dict[str, str]],
+    locale: str | None,
+) -> dict[str, str]:
+    """Assemble the ``InterviewTurnSig`` inputs for one turn.
+
+    Args:
+        config: The session's ``TaggerConfig`` payload.
+        columns: All dataset column names.
+        data: The full row payload (sampled for the summary).
+        turns: Prior ``{role, content}`` turns, oldest first.
+        locale: UI locale code; replies are written in that language.
+    """
+    asked = sum(1 for t in turns if t.get("role") == "assistant")
+    return {
+        "task_description": task_description(config)
+        + (
+            f"\nQuestions asked so far: {asked} of at most {MAX_INTERVIEW_QUESTIONS}."
+            " If the limit is reached you MUST finish now."
+            if asked
+            else ""
+        ),
+        "dataset_summary": summarize_dataset(config, columns, data),
+        "transcript_json": json.dumps(turns, ensure_ascii=False),
+        "reply_language": _reply_language(locale),
+    }
+
+
+def _parse_interview_prediction(pred: Any, asked: int) -> dict[str, Any]:
+    """Turn a raw ``InterviewTurnSig`` prediction into the client turn payload.
+
+    Args:
+        pred: The prediction (or ``None`` when the stream produced nothing).
+        asked: Assistant questions asked before this turn (limit enforcement).
+
+    Returns:
+        ``{"message", "quick_replies", "rubric", "done"}`` — ``rubric`` is
+        empty until ``done`` is true.
+    """
+    done = str(getattr(pred, "done", "")).strip().lower() in {"true", "yes", "1"}
+    rubric = _parse_json(getattr(pred, "rubric_json", "[]"), [])
+    rubric = [str(r).strip() for r in rubric if str(r).strip()] if isinstance(rubric, list) else []
+    if asked >= MAX_INTERVIEW_QUESTIONS and not done:
+        done = True
+    quick = _parse_json(getattr(pred, "quick_replies_json", "[]"), [])
+    quick = [str(q).strip() for q in quick if str(q).strip()][:4] if isinstance(quick, list) else []
+    return {
+        "message": str(getattr(pred, "message", "")).strip(),
+        "quick_replies": [] if done else quick,
+        "rubric": rubric if done else [],
+        "done": done,
+        "model": assist_model_name(),
+    }
+
+
 def interview_turn(
     config: dict[str, Any],
     columns: list[str],
@@ -391,7 +450,7 @@ def interview_turn(
     turns: list[dict[str, str]],
     locale: str | None,
 ) -> dict[str, Any]:
-    """Run one interview turn and return the assistant's reply.
+    """Run one interview turn and return the assistant's reply (non-streaming).
 
     Args:
         config: The session's ``TaggerConfig`` payload.
@@ -408,30 +467,54 @@ def interview_turn(
     lm = _build_assist_lm()
     with dspy.context(lm=lm):
         pred = dspy.Predict(InterviewTurnSig)(
-            task_description=task_description(config)
-            + (
-                f"\nQuestions asked so far: {asked} of at most {MAX_INTERVIEW_QUESTIONS}."
-                " If the limit is reached you MUST finish now."
-                if asked
-                else ""
-            ),
-            dataset_summary=summarize_dataset(config, columns, data),
-            transcript_json=json.dumps(turns, ensure_ascii=False),
-            reply_language=_reply_language(locale),
+            **_interview_inputs(config, columns, data, turns, locale)
         )
-    done = str(getattr(pred, "done", "")).strip().lower() in {"true", "yes", "1"}
-    rubric = _parse_json(getattr(pred, "rubric_json", "[]"), [])
-    rubric = [str(r).strip() for r in rubric if str(r).strip()] if isinstance(rubric, list) else []
-    if asked >= MAX_INTERVIEW_QUESTIONS and not done:
-        done = True
-    quick = _parse_json(getattr(pred, "quick_replies_json", "[]"), [])
-    quick = [str(q).strip() for q in quick if str(q).strip()][:4] if isinstance(quick, list) else []
-    return {
-        "message": str(getattr(pred, "message", "")).strip(),
-        "quick_replies": [] if done else quick,
-        "rubric": rubric if done else [],
-        "done": done,
-    }
+    return _parse_interview_prediction(pred, asked)
+
+
+async def interview_turn_stream(
+    config: dict[str, Any],
+    columns: list[str],
+    data: list[dict[str, Any]],
+    turns: list[dict[str, str]],
+    locale: str | None,
+) -> Any:
+    """Run one interview turn, streaming it the way the generalist agent does.
+
+    Yields ``{"event", "data"}`` mappings ready for ``sse_from_events``:
+    ``reasoning_patch`` for provider thinking tokens (same synthetic channel
+    the agents use), ``message_patch`` for reply deltas, and a terminal
+    ``interview_done`` carrying the parsed turn.
+
+    Args:
+        config: The session's ``TaggerConfig`` payload.
+        columns: All dataset column names.
+        data: The full row payload (sampled for the summary).
+        turns: Prior ``{role, content}`` turns, oldest first.
+        locale: UI locale code; replies are written in that language.
+    """
+    asked = sum(1 for t in turns if t.get("role") == "assistant")
+    predict = dspy.Predict(InterviewTurnSig)
+    program = dspy.streamify(
+        predict,
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="message"),
+            ReasoningStreamListener(predict=predict),
+        ],
+        async_streaming=True,
+    )
+    lm = _build_assist_lm()
+    prediction: Any = None
+    with dspy.context(lm=lm):
+        async for chunk in program(**_interview_inputs(config, columns, data, turns, locale)):
+            if isinstance(chunk, dspy.streaming.StreamResponse):
+                if chunk.signature_field_name == REASONING_FIELD:
+                    yield {"event": "reasoning_patch", "data": {"chunk": chunk.chunk}}
+                elif chunk.signature_field_name == "message":
+                    yield {"event": "message_patch", "data": {"chunk": chunk.chunk}}
+            elif isinstance(chunk, dspy.Prediction):
+                prediction = chunk
+    yield {"event": "interview_done", "data": _parse_interview_prediction(prediction, asked)}
 
 
 def refine_rubric(

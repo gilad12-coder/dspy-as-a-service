@@ -2603,6 +2603,8 @@ export type MessageKey =
   | "tagger.assist.rubric.description"
   | "tagger.assist.rubric.empty"
   | "tagger.assist.rubric.remove"
+  | "tagger.assist.rubric.task_prompt"
+  | "tagger.assist.rubric.task_question"
   | "tagger.assist.rubric.title"
   | "tagger.assist.setup.autopilot_desc"
   | "tagger.assist.setup.autopilot_label"
@@ -5417,6 +5419,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.assist.rubric.description": "זוקק מהתשובות שלכם. אפשר לערוך הכול — ה-AI מתייג לפי הכללים האלה.",
   "tagger.assist.rubric.empty": "אין עדיין כללים.",
   "tagger.assist.rubric.remove": "הסרת כלל",
+  "tagger.assist.rubric.task_prompt": "הנחיית החילוץ שהמתייג פועל לפיה",
+  "tagger.assist.rubric.task_question": "שאלת הכן/לא שהמתייג עונה עליה",
   "tagger.assist.rubric.title": "מדריך התיוג",
   "tagger.assist.setup.autopilot_desc": "ראיון קצר, ואז ה-AI מתייג הכול לבד ומסמן שורות שבהן התלבט.",
   "tagger.assist.setup.autopilot_label": "אוטופיילוט",
@@ -13866,6 +13870,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.assist.rubric.description": "Distilled from your answers. Edit anything — the AI labels by these rules.",
   "tagger.assist.rubric.empty": "No rules yet.",
   "tagger.assist.rubric.remove": "Remove rule",
+  "tagger.assist.rubric.task_prompt": "The extraction prompt the tagger follows",
+  "tagger.assist.rubric.task_question": "The yes/no question the tagger answers",
   "tagger.assist.rubric.title": "Labeling guide",
   "tagger.assist.setup.autopilot_desc": "A short interview, then the AI tags everything on its own and flags rows it wasn't sure about.",
   "tagger.assist.setup.autopilot_label": "Autopilot",

@@ -2810,5 +2810,7 @@
   "datasets.editor.prev_page": "Previous rows",
   "datasets.editor.next_page": "Next rows",
   "tagger.setup.library_loading": "Loading the dataset from your library…",
-  "tagger.setup.library_fallback_name": "Dataset from your library"
+  "tagger.setup.library_fallback_name": "Dataset from your library",
+  "tagger.assist.rubric.task_question": "The yes/no question the tagger answers",
+  "tagger.assist.rubric.task_prompt": "The extraction prompt the tagger follows"
 }

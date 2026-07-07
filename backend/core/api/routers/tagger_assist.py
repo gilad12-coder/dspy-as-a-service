@@ -27,6 +27,7 @@ from typing import Annotated, Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -43,6 +44,7 @@ from ...storage.models import TaggingSessionModel
 from ...worker.tagging_job import TaggingAutotagPayload, untagged_rows
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
+from ._helpers import sse_from_events
 from .optimizations._local import persist_and_enqueue
 from .submissions import _enforce_credit_balance
 
@@ -74,6 +76,7 @@ class InterviewResponse(BaseModel):
     quick_replies: list[str] = Field(default_factory=list)
     rubric: list[str] = Field(default_factory=list)
     done: bool
+    model: str | None = None
 
 
 class PredictRequest(BaseModel):
@@ -160,6 +163,26 @@ def _load_owned(session: Session, session_id: str, username: str) -> TaggingSess
     return row
 
 
+def _effective_config(row: TaggingSessionModel) -> dict[str, Any]:
+    """Return the session config with the interview's task refinements applied.
+
+    The ``config`` column is immutable by design; the interview stores its
+    refined question/prompt in ``assist.taskOverride`` and every LLM surface
+    reads through this merge.
+
+    Args:
+        row: The loaded session row.
+    """
+    config = dict(cast("dict[str, Any]", row.config))
+    assist = cast("dict[str, Any]", row.assist) or {}
+    override = assist.get("taskOverride") or {}
+    for key in ("question", "prompt"):
+        value = str(override.get(key) or "").strip()
+        if value:
+            config[key] = value
+    return config
+
+
 def _job_status(job_store: Any, job_id: str) -> str | None:
     """Read a job row's status, tolerating a missing row or store hiccup.
 
@@ -211,7 +234,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         """
         with Session(job_store.engine) as db:
             row = _load_owned(db, session_id, user.username)
-            config = cast("dict[str, Any]", row.config)
+            config = _effective_config(row)
             columns = cast("list[str]", row.columns)
             data = cast("list[dict[str, Any]]", row.data)
         try:
@@ -220,6 +243,54 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             logger.exception("interview turn failed for session %s", session_id)
             raise DomainError("tagger.assist.llm_failed", status=502) from exc
         return InterviewResponse(**turn)
+
+    @router.post(
+        "/tagging-sessions/{session_id}/assist/interview/stream",
+        summary="Run one dataset-interview turn as an SSE stream",
+    )
+    async def assist_interview_stream(
+        session_id: str, req: InterviewRequest, user: AuthenticatedUserDep
+    ) -> StreamingResponse:
+        """Stream one interview turn with the generalist agent's event shape.
+
+        Events: ``reasoning_patch`` (provider thinking tokens),
+        ``message_patch`` (reply deltas), a terminal ``interview_done``
+        carrying the parsed turn, and ``error`` on failure.
+
+        Args:
+            session_id: UUID of the tagger session.
+            req: Transcript so far plus the caller's UI locale.
+            user: Authenticated caller; must own the session.
+
+        Returns:
+            A ``text/event-stream`` response.
+        """
+        with Session(job_store.engine) as db:
+            row = _load_owned(db, session_id, user.username)
+            config = _effective_config(row)
+            columns = cast("list[str]", row.columns)
+            data = cast("list[dict[str, Any]]", row.data)
+
+        async def source() -> Any:
+            """Relay engine events, translating failures into an error event."""
+            try:
+                async for event in tagging.interview_turn_stream(
+                    config, columns, data, req.turns, req.locale
+                ):
+                    yield event
+            except Exception:
+                logger.exception("interview stream failed for session %s", session_id)
+                yield {"event": "error", "data": {"code": "tagger.assist.llm_failed"}}
+
+        return StreamingResponse(
+            sse_from_events(source()),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @router.post(
         "/tagging-sessions/{session_id}/assist/predict",
@@ -246,7 +317,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         """
         with Session(job_store.engine) as db:
             row = _load_owned(db, session_id, user.username)
-            config = cast("dict[str, Any]", row.config)
+            config = _effective_config(row)
             data = cast("list[dict[str, Any]]", row.data)
             annotations = cast("dict[str, Any]", row.annotations)
             assist = cast("dict[str, Any]", row.assist) or {}
@@ -285,7 +356,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         """
         with Session(job_store.engine) as db:
             row = _load_owned(db, session_id, user.username)
-            config = cast("dict[str, Any]", row.config)
+            config = _effective_config(row)
             data = cast("list[dict[str, Any]]", row.data)
             annotations = cast("dict[str, Any]", row.annotations)
             assist = cast("dict[str, Any]", row.assist) or {}
@@ -330,7 +401,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         """
         with Session(job_store.engine) as db:
             row = _load_owned(db, session_id, user.username)
-            config = cast("dict[str, Any]", row.config)
+            config = _effective_config(row)
             data = cast("list[dict[str, Any]]", row.data)
             annotations = cast("dict[str, Any]", row.annotations)
             assist = cast("dict[str, Any]", row.assist) or {}
@@ -385,7 +456,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         """
         with Session(job_store.engine) as db:
             row = _load_owned(db, session_id, user.username)
-            config = cast("dict[str, Any]", row.config)
+            config = _effective_config(row)
             data = cast("list[dict[str, Any]]", row.data)
             annotations = cast("dict[str, Any]", row.annotations)
             assist = cast("dict[str, Any]", row.assist) or {}

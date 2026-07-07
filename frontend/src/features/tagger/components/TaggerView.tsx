@@ -25,13 +25,19 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
   if (tagger.phase === "interview" && tagger.assist) {
     return (
       <TaggerInterview
+        config={tagger.config}
         assist={tagger.assist}
         busy={tagger.interviewBusy}
+        streamText={tagger.interviewStreamText}
+        thinking={tagger.interviewThinking}
         quickReplies={tagger.quickReplies}
         error={tagger.assistError}
         onSend={(content) => void tagger.sendInterviewMessage(content)}
+        onEditResend={(index, content) => void tagger.sendInterviewMessage(content, index)}
+        onStop={tagger.stopInterview}
         onRetry={() => void tagger.sendInterviewMessage(null)}
         onSkip={() => tagger.confirmRubric(tagger.assist?.rubric ?? [])}
+        onTaskOverrideChange={tagger.setTaskOverride}
         onConfirmRubric={tagger.confirmRubric}
       />
     );

@@ -7,7 +7,6 @@ import {
   updateTaggerSession,
   stashTaggerSession,
   getTaggerSession,
-  taggerAssistInterview,
   taggerAssistPredict,
   taggerAssistOptimize,
   taggerAssistEstimate,
@@ -22,6 +21,8 @@ import {
 import { msg } from "@/shared/lib/messages";
 import { markRecentSession } from "@/shared/lib/recent-session";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
+import type { AgentThinking } from "@/shared/ui/agent";
+import { streamInterviewTurn } from "../lib/assist-stream";
 import type {
   DataRow,
   Annotation,
@@ -118,6 +119,9 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
 
   // Transient AI-call states — never persisted.
   const [interviewBusy, setInterviewBusy] = useState(false);
+  const [interviewStreamText, setInterviewStreamText] = useState("");
+  const [interviewThinking, setInterviewThinking] = useState<AgentThinking | null>(null);
+  const interviewAbortRef = useRef<AbortController | null>(null);
   const [assistError, setAssistError] = useState<string | null>(null);
   const [roundLoading, setRoundLoading] = useState(false);
   const [optimizeBusy, setOptimizeBusy] = useState(false);
@@ -511,41 +515,93 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
 
   const [quickReplies, setQuickReplies] = useState<string[]>([]);
 
+  // Streams the turn over SSE with the generalist agent's event shapes, so
+  // the interview gets the same live reply + thinking treatment as the agent
+  // panel. ``truncateTo`` supports edit-and-resend: the transcript is cut to
+  // that many turns before the new user message is appended.
   const sendInterviewMessage = useCallback(
-    async (content: string | null) => {
+    async (content: string | null, truncateTo?: number) => {
       const state = assistRef.current;
       if (!sessionId || !state || interviewBusy) return;
-      const turns =
-        content === null
+      const base =
+        truncateTo === undefined
           ? state.interview.turns
-          : [...state.interview.turns, { role: "user" as const, content }];
-      if (content !== null) {
-        patchAssist({ interview: { ...state.interview, turns } });
+          : state.interview.turns.slice(0, truncateTo);
+      const turns =
+        content === null ? base : [...base, { role: "user" as const, content }];
+      if (content !== null || truncateTo !== undefined) {
+        patchAssist({ interview: { turns, done: false } });
       }
       setInterviewBusy(true);
       setAssistError(null);
+      setInterviewStreamText("");
+      setInterviewThinking(null);
+      const controller = new AbortController();
+      interviewAbortRef.current = controller;
       try {
-        const reply = await taggerAssistInterview(sessionId, {
-          turns,
-          locale: getActiveLocale(),
-        });
-        const current = assistRef.current;
-        if (!current) return;
-        patchAssist({
-          interview: {
-            turns: [...turns, { role: "assistant" as const, content: reply.message }],
-            done: reply.done,
+        await streamInterviewTurn(
+          sessionId,
+          { turns, locale: getActiveLocale() },
+          {
+            signal: controller.signal,
+            onReasoningPatch: (chunk) =>
+              setInterviewThinking((prev) => ({
+                reasoning: (prev?.reasoning ?? "") + chunk,
+                startedAt: prev?.startedAt ?? Date.now(),
+                endedAt: null,
+                streaming: true,
+              })),
+            onMessagePatch: (chunk) => {
+              setInterviewThinking((prev) =>
+                prev && prev.streaming
+                  ? { ...prev, streaming: false, endedAt: Date.now() }
+                  : prev,
+              );
+              setInterviewStreamText((text) => text + chunk);
+            },
+            onDone: (turn) => {
+              patchAssist({
+                interview: {
+                  turns: [
+                    ...turns,
+                    {
+                      role: "assistant" as const,
+                      content: turn.message,
+                      model: turn.model ?? null,
+                    },
+                  ],
+                  done: turn.done,
+                },
+                ...(turn.done && turn.rubric.length > 0 ? { rubric: turn.rubric } : {}),
+              });
+              setQuickReplies(turn.done ? [] : turn.quick_replies);
+            },
+            onError: () => setAssistError("interview"),
           },
-          ...(reply.done && reply.rubric.length > 0 ? { rubric: reply.rubric } : {}),
-        });
-        setQuickReplies(reply.done ? [] : reply.quick_replies);
-      } catch {
-        setAssistError("interview");
+        );
       } finally {
+        interviewAbortRef.current = null;
         setInterviewBusy(false);
+        setInterviewStreamText("");
+        setInterviewThinking((prev) =>
+          prev ? { ...prev, streaming: false, endedAt: prev.endedAt ?? Date.now() } : prev,
+        );
       }
     },
     [sessionId, interviewBusy, patchAssist],
+  );
+
+  /** Abort the in-flight interview turn (the composer's stop button). */
+  const stopInterview = useCallback(() => {
+    interviewAbortRef.current?.abort();
+  }, []);
+
+  /** Persist the interview's refined task text (question/prompt). */
+  const setTaskOverride = useCallback(
+    (override: { question?: string; prompt?: string }) => {
+      setAssist((prev) => (prev ? { ...prev, taskOverride: override } : prev));
+    },
+    [],
   );
 
   // Fire the opening interview question once the session exists server-side.
@@ -916,6 +972,18 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     setPhase("annotating");
   }, []);
 
+  // Every consumer sees the interview's task refinements merged over the
+  // immutable stored config (the server applies the same merge on its side).
+  const effectiveConfig = useMemo(() => {
+    if (!config) return null;
+    const override = assist?.taskOverride ?? {};
+    return {
+      ...config,
+      ...(override.question?.trim() ? { question: override.question.trim() } : {}),
+      ...(override.prompt?.trim() ? { prompt: override.prompt.trim() } : {}),
+    };
+  }, [config, assist?.taskOverride]);
+
   const taggedCount = useMemo(
     () =>
       config ? data.filter((d) => isTagged(annotations[String(d.id)], config.mode)).length : 0,
@@ -932,7 +1000,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
 
   return {
     phase,
-    config,
+    config: effectiveConfig,
     data,
     columns,
     annotations,
@@ -956,6 +1024,8 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     setFreetext,
     // Assist flow.
     interviewBusy,
+    interviewStreamText,
+    interviewThinking,
     quickReplies,
     assistError,
     roundLoading,
@@ -963,6 +1033,8 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     estimate,
     autotagStatus,
     sendInterviewMessage,
+    stopInterview,
+    setTaskOverride,
     confirmRubric,
     setRubric,
     assistToggleBinary,

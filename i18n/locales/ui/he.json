@@ -2810,5 +2810,7 @@
   "datasets.editor.prev_page": "השורות הקודמות",
   "datasets.editor.next_page": "השורות הבאות",
   "tagger.setup.library_loading": "טוען את הדאטהסט מהספרייה…",
-  "tagger.setup.library_fallback_name": "דאטהסט מהספרייה שלכם"
+  "tagger.setup.library_fallback_name": "דאטהסט מהספרייה שלכם",
+  "tagger.assist.rubric.task_question": "שאלת הכן/לא שהמתייג עונה עליה",
+  "tagger.assist.rubric.task_prompt": "הנחיית החילוץ שהמתייג פועל לפיה"
 }
