@@ -790,6 +790,11 @@ class TaggingSessionModel(Base):
     columns: Mapped[list[str]] = mapped_column(JSON_STORE, nullable=False, default=list)
     data: Mapped[list[dict[str, Any]]] = mapped_column(JSON_STORE, nullable=False, default=list)
     annotations: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, nullable=False, default=dict)
+    # AI co-tagging state (assist mode, interview, rubric, predictions with
+    # provenance/confidence, review rounds, auto-tag job bookkeeping). NULL for
+    # plain manual sessions; ``annotations`` stays the single source of truth
+    # for final labels regardless of who produced them.
+    assist: Mapped[dict[str, Any] | None] = mapped_column(JSON_STORE, nullable=True, default=None)
     current_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tagged_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

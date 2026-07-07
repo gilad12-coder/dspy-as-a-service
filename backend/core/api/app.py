@@ -101,6 +101,7 @@ from .routers.registry import create_registry_router
 from .routers.serve import create_serve_router
 from .routers.share import create_share_router
 from .routers.submissions import create_submissions_router
+from .routers.tagger_assist import create_tagger_assist_router
 from .routers.tagging_sessions import create_tagging_session_router
 from .routers.telemetry import create_telemetry_router
 from .routers.usage import create_usage_router
@@ -1218,6 +1219,7 @@ def create_app(
     app.include_router(create_dataset_library_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_dataset_share_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_tagging_session_router(job_store=job_store), tags=["Optimizations"])
+    app.include_router(create_tagger_assist_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_usage_router(job_store=job_store), tags=["Settings"])
     app.include_router(create_telemetry_router(job_store=job_store), tags=["Telemetry"])
     app.include_router(create_wizard_router(), tags=["Wizard"])

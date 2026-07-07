@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   Sparkles,
   Table as TableIcon,
+  Tags,
   Trash2,
   User,
   Info,
@@ -135,6 +136,42 @@ function WizardTab() {
           </SelectContent>
         </Select>
       </SettingsRow>
+
+      <SettingsRow
+        icon={Tags}
+        label={msg("settings.tagger.assist.label")}
+        description={msg("settings.tagger.assist.description")}
+      >
+        <Switch
+          checked={prefs.taggerAssist}
+          onCheckedChange={(v) => setPref("taggerAssist", v)}
+        />
+      </SettingsRow>
+
+      {prefs.taggerAssist && (
+        <SettingsRow
+          icon={Sparkles}
+          label={msg("settings.tagger.calibration.label")}
+          description={msg("settings.tagger.calibration.description")}
+        >
+          <Select
+            value={prefs.taggerCalibrationStyle}
+            onValueChange={(v) =>
+              setPref("taggerCalibrationStyle", v as typeof prefs.taggerCalibrationStyle)
+            }
+          >
+            <SelectTrigger className="min-w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="blind">{msg("settings.tagger.calibration.blind")}</SelectItem>
+              <SelectItem value="assisted">
+                {msg("settings.tagger.calibration.assisted")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+      )}
     </div>
   );
 }

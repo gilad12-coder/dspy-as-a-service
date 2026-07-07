@@ -30,7 +30,13 @@ import {
 import { Popover as PopoverPrimitive } from "radix-ui";
 import { cn } from "@/shared/lib/utils";
 import { exportAnnotations, buildLibraryRows } from "../lib/export-csv";
-import type { DataField, DataRow, Annotation, TaggerConfig } from "../lib/types";
+import type {
+  AnnotationProvenance,
+  DataField,
+  DataRow,
+  Annotation,
+  TaggerConfig,
+} from "../lib/types";
 import { isStorageQuotaError, saveDataset } from "@/shared/lib/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
@@ -40,6 +46,9 @@ interface Props {
   data: DataRow[];
   columns: string[];
   annotations: Record<string, Annotation>;
+  // Who produced each final label (assist sessions only); exported alongside
+  // the labels so downstream consumers can filter by trust level.
+  provenance?: Record<string, AnnotationProvenance>;
   currentIndex: number;
   taggedCount: number;
   onNavigate: (dir: 1 | -1) => void;
@@ -56,6 +65,7 @@ export function TaggerAnnotation({
   data,
   columns,
   annotations,
+  provenance,
   currentIndex,
   taggedCount,
   onNavigate,
@@ -106,11 +116,11 @@ export function TaggerAnnotation({
 
   const doExport = useCallback(
     (format: "csv" | "json" | "xlsx" | "xls") => {
-      void exportAnnotations(data, columns, annotations, config, format).then(
+      void exportAnnotations(data, columns, annotations, config, format, provenance).then(
         showConfettiBriefly,
       );
     },
-    [data, columns, annotations, config, showConfettiBriefly],
+    [data, columns, annotations, config, provenance, showConfettiBriefly],
   );
 
   const handleExport = useCallback(
@@ -144,6 +154,7 @@ export function TaggerAnnotation({
         columns,
         annotations,
         config,
+        provenance,
       );
       const res = await saveDataset({
         name,

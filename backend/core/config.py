@@ -385,6 +385,22 @@ class Settings(BaseSettings):
         description="Optional custom base URL for the generalist agent LM (e.g. internal OpenAI-compatible gateway)",
     )
 
+    tagger_assist_model: str = Field(
+        default="",
+        description=(
+            "LiteLLM model id used by the tagger's AI co-tagging assist "
+            "(interview, calibration predictions, auto-tagging). Empty falls "
+            "back to generalist_agent_model."
+        ),
+    )
+    tagger_assist_base_url: str = Field(
+        default="",
+        description=(
+            "Optional custom base URL for the tagging-assist LM. Empty falls "
+            "back to generalist_agent_base_url."
+        ),
+    )
+
     # TODO: On-prem / air-gap — point this at an internal OpenAI-compatible
     # embeddings endpoint (usually the same gateway family as CODE_AGENT_BASE_URL).
     # The backend sends POST {base_url}/embeddings with {model, input}; no model

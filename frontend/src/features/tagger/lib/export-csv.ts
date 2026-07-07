@@ -1,4 +1,4 @@
-import type { DataRow, Annotation, TaggerConfig } from "./types";
+import type { AnnotationProvenance, DataRow, Annotation, TaggerConfig } from "./types";
 
 type ExportFormat = "csv" | "json" | "xlsx" | "xls";
 
@@ -11,15 +11,19 @@ function annotationColumn(config: TaggerConfig): string {
       : "extracted_text";
 }
 
+const PROVENANCE_COL = "label_source";
+
 function buildRows(
   data: DataRow[],
   columns: string[],
   annotations: Record<string, Annotation>,
   config: TaggerConfig,
+  provenance?: Record<string, AnnotationProvenance>,
 ): { allCols: string[]; rows: Array<Record<string, string>> } {
   const annotCol = annotationColumn(config);
 
-  const allCols = [...columns, annotCol];
+  const withProvenance = provenance !== undefined && Object.keys(provenance).length > 0;
+  const allCols = withProvenance ? [...columns, annotCol, PROVENANCE_COL] : [...columns, annotCol];
   const rows: Array<Record<string, string>> = [];
 
   for (const item of data) {
@@ -38,6 +42,9 @@ function buildRows(
       annStr = ann;
     }
     row[annotCol] = annStr;
+    if (withProvenance) {
+      row[PROVENANCE_COL] = annStr ? (provenance[String(item.id)] ?? "human") : "";
+    }
     rows.push(row);
   }
 
@@ -107,15 +114,19 @@ export function buildLibraryRows(
   columns: string[],
   annotations: Record<string, Annotation>,
   config: TaggerConfig,
+  provenance?: Record<string, AnnotationProvenance>,
 ): {
   rows: Array<Record<string, string>>;
   columnOrder: string[];
   columnRoles: Record<string, "input" | "output" | "ignore">;
 } {
-  const { allCols, rows } = buildRows(data, columns, annotations, config);
+  const { allCols, rows } = buildRows(data, columns, annotations, config, provenance);
   const annotCol = annotationColumn(config);
   const columnRoles: Record<string, "input" | "output" | "ignore"> = {};
-  for (const col of allCols) columnRoles[col] = col === annotCol ? "output" : "input";
+  for (const col of allCols) {
+    columnRoles[col] =
+      col === annotCol ? "output" : col === PROVENANCE_COL ? "ignore" : "input";
+  }
   return { rows, columnOrder: allCols, columnRoles };
 }
 
@@ -125,8 +136,9 @@ export async function exportAnnotations(
   annotations: Record<string, Annotation>,
   config: TaggerConfig,
   format: ExportFormat,
+  provenance?: Record<string, AnnotationProvenance>,
 ) {
-  const { allCols, rows } = buildRows(data, columns, annotations, config);
+  const { allCols, rows } = buildRows(data, columns, annotations, config, provenance);
   const base = `tagging_${config.mode}_${new Date().toISOString().slice(0, 10)}`;
 
   switch (format) {

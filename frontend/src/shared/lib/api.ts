@@ -1122,6 +1122,7 @@ export interface TaggerSessionDetail extends TaggerSessionSummary {
   columns: string[];
   data: Array<Record<string, unknown>>;
   annotations: Record<string, unknown>;
+  assist?: Record<string, unknown> | null;
   current_index: number;
 }
 
@@ -1169,6 +1170,7 @@ export async function createTaggerSession(body: {
   columns: string[];
   data: Array<Record<string, unknown>>;
   annotations?: Record<string, unknown>;
+  assist?: Record<string, unknown> | null;
   current_index?: number;
 }) {
   const res = await request<TaggerSessionDetail>("/tagging-sessions", {
@@ -1186,7 +1188,12 @@ export async function createTaggerSession(body: {
  */
 export function updateTaggerSession(
   sessionId: string,
-  body: { annotations: Record<string, unknown>; current_index: number; phase?: string },
+  body: {
+    annotations: Record<string, unknown>;
+    assist?: Record<string, unknown>;
+    current_index: number;
+    phase?: string;
+  },
 ) {
   return request<TaggerSessionSummary>(`/tagging-sessions/${sessionId}`, {
     method: "PUT",
@@ -1221,6 +1228,77 @@ export async function deleteTaggerSession(sessionId: string) {
   });
   invalidateCache("/tagging-sessions");
   return res;
+}
+
+/** One AI turn of the tagger's dataset interview. */
+export interface TaggerAssistInterviewReply {
+  message: string;
+  quick_replies: string[];
+  rubric: string[];
+  done: boolean;
+}
+
+/** Run one dataset-interview turn against the session's stored dataset. */
+export function taggerAssistInterview(
+  sessionId: string,
+  body: { turns: Array<{ role: string; content: string }>; locale?: string },
+) {
+  return request<TaggerAssistInterviewReply>(`/tagging-sessions/${sessionId}/assist/interview`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Predict labels for specific rows (calibration / review batches). */
+export function taggerAssistPredict(sessionId: string, rowIds: string[]) {
+  return request<{
+    predictions: Record<string, { value: string | string[]; confidence: number; reason?: string }>;
+    credits: number;
+  }>(`/tagging-sessions/${sessionId}/assist/predict`, {
+    method: "POST",
+    body: JSON.stringify({ row_ids: rowIds }),
+  });
+}
+
+/** Reflectively rewrite the labeling rubric from the labels so far. */
+export function taggerAssistOptimize(sessionId: string, locale?: string) {
+  return request<{ rubric: string[] }>(`/tagging-sessions/${sessionId}/assist/optimize`, {
+    method: "POST",
+    body: JSON.stringify({ locale }),
+  });
+}
+
+/** Credit estimate for auto-tagging every currently-unlabeled row. */
+export function taggerAssistEstimate(sessionId: string) {
+  return request<{ rows: number; model: string; credits_low: number; credits_high: number }>(
+    `/tagging-sessions/${sessionId}/assist/estimate`,
+    { method: "POST" },
+  );
+}
+
+/** Start (or resume) the bulk auto-tag job. */
+export function taggerAssistAutotagStart(sessionId: string) {
+  return request<{ total: number }>(`/tagging-sessions/${sessionId}/assist/autotag`, {
+    method: "POST",
+  });
+}
+
+/** Poll the bulk auto-tag job's progress. */
+export function taggerAssistAutotagStatus(sessionId: string) {
+  return request<{
+    status: string;
+    total: number;
+    done: number;
+    credits_spent: number;
+    live: boolean;
+  }>(`/tagging-sessions/${sessionId}/assist/autotag`);
+}
+
+/** Cancel the running bulk auto-tag job (labels written so far are kept). */
+export function taggerAssistAutotagCancel(sessionId: string) {
+  return request<{ cancelled: boolean }>(`/tagging-sessions/${sessionId}/assist/autotag`, {
+    method: "DELETE",
+  });
 }
 
 /**

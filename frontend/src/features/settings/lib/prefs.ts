@@ -1,6 +1,7 @@
 export type CodeAssistDefault = "auto" | "manual";
 export type SplitModeDefault = "auto" | "manual";
 export type TrustModeDefault = "ask" | "auto_safe" | "yolo";
+export type CalibrationStyle = "blind" | "assisted";
 
 export interface AgentShortcut {
   key: string;
@@ -22,6 +23,12 @@ export interface UserPrefs {
   wizardSplitMode: SplitModeDefault;
   agentTrustMode: TrustModeDefault;
   agentShortcut: AgentShortcut;
+  // AI co-tagging in the tagger: the master toggle (off = today's fully
+  // manual tagger) and the calibration interaction style. "blind" reveals the
+  // AI's guess only after the human commits (the research-backed default);
+  // "assisted" shows it upfront for speed at the cost of anchoring.
+  taggerAssist: boolean;
+  taggerCalibrationStyle: CalibrationStyle;
 }
 
 export const PREF_KEYS: Record<keyof UserPrefs, string> = {
@@ -31,6 +38,8 @@ export const PREF_KEYS: Record<keyof UserPrefs, string> = {
   wizardSplitMode: "skynet.prefs.wizard.split-mode",
   agentTrustMode: "skynet.prefs.agent.trust-mode",
   agentShortcut: "skynet.prefs.agent.shortcut",
+  taggerAssist: "skynet.prefs.tagger.assist",
+  taggerCalibrationStyle: "skynet.prefs.tagger.calibration-style",
 };
 
 export const DEFAULT_AGENT_SHORTCUT: AgentShortcut = {
@@ -48,6 +57,8 @@ export const DEFAULT_PREFS: UserPrefs = {
   wizardSplitMode: "auto",
   agentTrustMode: "ask",
   agentShortcut: DEFAULT_AGENT_SHORTCUT,
+  taggerAssist: true,
+  taggerCalibrationStyle: "blind",
 };
 
 // The retired global "advanced mode" toggle. Users who had it on expect the

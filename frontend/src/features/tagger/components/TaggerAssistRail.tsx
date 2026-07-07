@@ -1,0 +1,394 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Check, ChevronDown, Loader2, Sparkles } from "lucide-react";
+import { Button } from "@/shared/ui/primitives/button";
+import { Badge } from "@/shared/ui/primitives/badge";
+import { cn } from "@/shared/lib/utils";
+import { formatMsg, msg } from "@/shared/lib/messages";
+import type {
+  Annotation,
+  AssistPrediction,
+  AssistState,
+  DataRow,
+  ReviewRound,
+  TaggerConfig,
+} from "../lib/types";
+import { agreementGate, agreementOver, labelsAgree } from "../lib/assist";
+
+interface Props {
+  phase: "calibration" | "review";
+  config: TaggerConfig;
+  assist: AssistState;
+  annotations: Record<string, Annotation>;
+  frameData: DataRow[];
+  currentIndex: number;
+  openRound: ReviewRound | null;
+  onAccept: (id: string) => void;
+  onGoTo: (idx: number) => void;
+  onFinishRound: () => void;
+  onRubricChange: (rubric: string[]) => void;
+  predictError: boolean;
+}
+
+function isCommitted(ann: Annotation, mode: TaggerConfig["mode"]): boolean {
+  if (ann === undefined || ann === null) return false;
+  if (mode === "multiclass") return Array.isArray(ann) && ann.length > 0;
+  return typeof ann === "string" && ann !== "";
+}
+
+/** Human-readable form of a label value for the rail's small displays. */
+function displayLabel(config: TaggerConfig, value: Annotation | AssistPrediction["value"]): string {
+  if (value === undefined) return "";
+  if (config.mode === "multiclass" && Array.isArray(value)) {
+    const byId = new Map((config.categories ?? []).map((c) => [c.id, c.label]));
+    return value.map((id) => byId.get(id) ?? id).join(" · ");
+  }
+  if (config.mode === "binary") {
+    return value === "yes" ? msg("tagger.assist.label.yes") : msg("tagger.assist.label.no");
+  }
+  return String(value);
+}
+
+/**
+ * The co-pilot companion rail beside the annotation surface.
+ *
+ * Calibration is human-first (a cognitive forcing function): the AI predicts
+ * silently and its guess is revealed only after the human commits — instant
+ * agreement feedback without anchoring the labels the tagger is trained on.
+ * Review is AI-first: the suggestion is the object under audit, confirmation
+ * and correction both cost one keystroke. The rail is display-only chrome —
+ * it never takes keyboard focus away from the annotator.
+ */
+export function TaggerAssistRail({
+  phase,
+  config,
+  assist,
+  annotations,
+  frameData,
+  currentIndex,
+  openRound,
+  onAccept,
+  onGoTo,
+  onFinishRound,
+  onRubricChange,
+  predictError,
+}: Props) {
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [freetextRevealed, setFreetextRevealed] = useState<Set<string>>(new Set());
+  const [rubricOpen, setRubricOpen] = useState(false);
+
+  const row = frameData[currentIndex];
+  const rowId = row ? String(row.id) : "";
+  const prediction = rowId ? assist.predictions[rowId] : undefined;
+  const committed = isCommitted(annotations[rowId], config.mode);
+  const gate = agreementGate(config.mode);
+
+  const frameIds = useMemo(() => frameData.map((r) => String(r.id)), [frameData]);
+  const agreement = agreementOver(config.mode, frameIds, annotations, assist.predictions);
+
+  const decidedCount = openRound
+    ? openRound.rowIds.filter((id) => openRound.decided[id] !== undefined).length
+    : 0;
+
+  // Review: Enter confirms the AI's suggestion for the current row and moves
+  // to the next unaudited one. Registered at the window so the annotator's own
+  // shortcuts keep working untouched; inputs and textareas keep their Enter.
+  useEffect(() => {
+    if (phase !== "review" || config.mode === "freetext") return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "TEXTAREA" || tag === "INPUT") return;
+      if (!rowId || !assist.predictions[rowId]) return;
+      if (openRound?.decided[rowId] !== undefined) return;
+      e.preventDefault();
+      onAccept(rowId);
+      const nextIdx = frameData.findIndex(
+        (r, i) => i > currentIndex && openRound?.decided[String(r.id)] === undefined,
+      );
+      if (nextIdx >= 0) onGoTo(nextIdx);
+      else if (currentIndex < frameData.length - 1) onGoTo(currentIndex + 1);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [phase, config.mode, rowId, assist.predictions, openRound, frameData, currentIndex, onAccept, onGoTo]);
+
+  const calibrationReveal = (() => {
+    if (phase !== "calibration" || !committed) return null;
+    if (!prediction) return "pending" as const;
+    if (config.mode === "freetext" && assist.calibrationStyle === "blind" && !freetextRevealed.has(rowId)) {
+      return "offer" as const;
+    }
+    return labelsAgree(config.mode, annotations[rowId], prediction.value as Annotation)
+      ? ("agree" as const)
+      : ("disagree" as const);
+  })();
+
+  return (
+    <aside
+      className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto lg:w-[300px]"
+      aria-label={msg("tagger.assist.rail.title")}
+    >
+      <div className="rounded-xl border border-border/60 bg-card p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <Sparkles className="size-3.5 text-primary/70" />
+            {msg("tagger.assist.rail.title")}
+          </span>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {phase === "calibration"
+              ? formatMsg("tagger.assist.rail.progress", {
+                  done: frameIds.filter((id) => isCommitted(annotations[id], config.mode)).length,
+                  total: frameIds.length,
+                })
+              : formatMsg("tagger.assist.rail.reviewed", {
+                  done: decidedCount,
+                  total: openRound?.rowIds.length ?? 0,
+                })}
+          </span>
+        </div>
+
+        {/* Agreement meter — the one gold element in this view. */}
+        <div className="mb-1 flex items-baseline justify-between">
+          <span className="text-xs text-muted-foreground">
+            {msg("tagger.assist.rail.agreement")}
+          </span>
+          <span className="text-sm font-semibold tabular-nums" style={{ color: "#a68b6b" }}>
+            {agreement === null ? "—" : `${Math.round(agreement * 100)}%`}
+          </span>
+        </div>
+        <div className="relative h-1.5 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${Math.round((agreement ?? 0) * 100)}%`,
+              background: "var(--gradient-progress)",
+            }}
+          />
+          <div
+            className="absolute top-0 h-full w-px bg-foreground/30"
+            style={{ insetInlineStart: `${gate * 100}%` }}
+          />
+        </div>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {formatMsg("tagger.assist.rail.gate", { gate: Math.round(gate * 100) })}
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-border/60 bg-card p-4">
+        {predictError ? (
+          <p className="text-sm text-muted-foreground">{msg("tagger.assist.rail.predict_error")}</p>
+        ) : phase === "calibration" ? (
+          <CalibrationPanel
+            reveal={calibrationReveal}
+            config={config}
+            prediction={prediction}
+            assisted={assist.calibrationStyle === "assisted"}
+            dismissed={dismissed.has(rowId)}
+            onSwitch={() => onAccept(rowId)}
+            onKeep={() => setDismissed((prev) => new Set(prev).add(rowId))}
+            onReveal={() => setFreetextRevealed((prev) => new Set(prev).add(rowId))}
+          />
+        ) : (
+          <ReviewPanel
+            config={config}
+            prediction={prediction}
+            decided={openRound?.decided[rowId]}
+            allDecided={openRound !== null && decidedCount === openRound.rowIds.length}
+            isFreetext={config.mode === "freetext"}
+            isFlaggedPass={openRound?.flaggedPass === true}
+            onConfirm={() => onAccept(rowId)}
+            onFinishRound={onFinishRound}
+          />
+        )}
+      </div>
+
+      <div className="rounded-xl border border-border/60 bg-card">
+        <button
+          type="button"
+          onClick={() => setRubricOpen((v) => !v)}
+          className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-foreground cursor-pointer"
+        >
+          {msg("tagger.assist.rail.rubric")}
+          <ChevronDown
+            className={cn("size-4 text-muted-foreground transition-transform", rubricOpen && "rotate-180")}
+          />
+        </button>
+        {rubricOpen && (
+          <div className="flex flex-col gap-2 px-4 pb-4">
+            {assist.rubric.length === 0 && (
+              <p className="text-xs text-muted-foreground">{msg("tagger.assist.rubric.empty")}</p>
+            )}
+            {assist.rubric.map((rule, idx) => (
+              <textarea
+                key={idx}
+                value={rule}
+                onChange={(e) =>
+                  onRubricChange(assist.rubric.map((r, i) => (i === idx ? e.target.value : r)))
+                }
+                rows={2}
+                className="resize-none rounded-md border border-input bg-background px-2.5 py-1.5 text-xs leading-relaxed outline-none focus-visible:border-ring"
+                dir="auto"
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function CalibrationPanel({
+  reveal,
+  config,
+  prediction,
+  assisted,
+  dismissed,
+  onSwitch,
+  onKeep,
+  onReveal,
+}: {
+  reveal: "pending" | "offer" | "agree" | "disagree" | null;
+  config: TaggerConfig;
+  prediction: AssistPrediction | undefined;
+  assisted: boolean;
+  dismissed: boolean;
+  onSwitch: () => void;
+  onKeep: () => void;
+  onReveal: () => void;
+}) {
+  // Assisted style (opt-in pref): the suggestion is visible before commit.
+  if (reveal === null) {
+    if (assisted && prediction) {
+      return <Suggestion config={config} prediction={prediction} />;
+    }
+    return (
+      <p className="text-sm text-muted-foreground">{msg("tagger.assist.rail.waiting")}</p>
+    );
+  }
+  if (reveal === "pending") {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" />
+        {msg("tagger.assist.rail.predicting")}
+      </p>
+    );
+  }
+  if (reveal === "offer") {
+    return (
+      <Button variant="outline" size="sm" onClick={onReveal} className="w-full">
+        {msg("tagger.assist.rail.reveal")}
+      </Button>
+    );
+  }
+  if (reveal === "agree") {
+    return (
+      <p className="flex items-center gap-2 text-sm text-foreground">
+        <Check className="size-4 text-emerald-700" />
+        {msg("tagger.assist.rail.agree")}
+      </p>
+    );
+  }
+  if (dismissed) {
+    return (
+      <p className="text-sm text-muted-foreground">{msg("tagger.assist.rail.kept")}</p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2.5">
+      <p className="text-sm text-foreground">{msg("tagger.assist.rail.disagree")}</p>
+      {prediction && <Suggestion config={config} prediction={prediction} />}
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={onKeep} className="flex-1">
+          {msg("tagger.assist.rail.keep")}
+        </Button>
+        <Button variant="secondary" size="sm" onClick={onSwitch} className="flex-1">
+          {msg("tagger.assist.rail.switch")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ReviewPanel({
+  config,
+  prediction,
+  decided,
+  allDecided,
+  isFreetext,
+  isFlaggedPass,
+  onConfirm,
+  onFinishRound,
+}: {
+  config: TaggerConfig;
+  prediction: AssistPrediction | undefined;
+  decided: "confirmed" | "corrected" | undefined;
+  allDecided: boolean;
+  isFreetext: boolean;
+  isFlaggedPass: boolean;
+  onConfirm: () => void;
+  onFinishRound: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      {prediction ? (
+        <Suggestion config={config} prediction={prediction} />
+      ) : (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          {msg("tagger.assist.rail.predicting")}
+        </p>
+      )}
+      {!isFreetext && decided === undefined && prediction && (
+        <Button variant="secondary" size="sm" onClick={onConfirm} className="w-full">
+          {msg("tagger.assist.rail.confirm")}
+        </Button>
+      )}
+      {!isFreetext && decided !== undefined && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Check className="size-3.5" />
+          {decided === "confirmed"
+            ? msg("tagger.assist.rail.decided_confirmed")
+            : msg("tagger.assist.rail.decided_corrected")}
+        </p>
+      )}
+      {(isFreetext || isFlaggedPass) && (
+        <Button
+          variant={allDecided || isFreetext ? "secondary" : "outline"}
+          size="sm"
+          onClick={onFinishRound}
+          className="w-full"
+        >
+          {msg("tagger.assist.rail.finish_round")}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function Suggestion({
+  config,
+  prediction,
+}: {
+  config: TaggerConfig;
+  prediction: AssistPrediction;
+}) {
+  return (
+    <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-foreground" dir="auto">
+          {displayLabel(config, prediction.value)}
+        </span>
+        <Badge variant="ghost" size="sm" className="shrink-0 font-mono tabular-nums opacity-60">
+          {Math.round(prediction.confidence * 100)}%
+        </Badge>
+      </div>
+      {prediction.reason && (
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground" dir="auto">
+          {prediction.reason}
+        </p>
+      )}
+    </div>
+  );
+}

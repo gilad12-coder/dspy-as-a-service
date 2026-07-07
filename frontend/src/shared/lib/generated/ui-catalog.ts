@@ -2206,6 +2206,12 @@ export type MessageKey =
   | "settings.tab.providers"
   | "settings.tab.usage"
   | "settings.tab.wizard"
+  | "settings.tagger.assist.description"
+  | "settings.tagger.assist.label"
+  | "settings.tagger.calibration.assisted"
+  | "settings.tagger.calibration.blind"
+  | "settings.tagger.calibration.description"
+  | "settings.tagger.calibration.label"
   | "settings.title"
   | "settings.wizard.code_assist.auto"
   | "settings.wizard.code_assist.label"
@@ -2488,6 +2494,94 @@ export type MessageKey =
   | "submit.validation.username_required"
   | "submit.validation.vision_required"
   | "submit.validation.workflow_invalid"
+  | "tagger.assist.autotag.browse"
+  | "tagger.assist.autotag.cancel"
+  | "tagger.assist.autotag.canceled_title"
+  | "tagger.assist.autotag.failed_title"
+  | "tagger.assist.autotag.interrupted_title"
+  | "tagger.assist.autotag.progress_count"
+  | "tagger.assist.autotag.progress_label"
+  | "tagger.assist.autotag.recover_subtitle"
+  | "tagger.assist.autotag.resume"
+  | "tagger.assist.autotag.running_subtitle"
+  | "tagger.assist.autotag.running_title"
+  | "tagger.assist.autotag.starting_subtitle"
+  | "tagger.assist.autotag.starting_title"
+  | "tagger.assist.calibration.continue"
+  | "tagger.assist.calibration.done"
+  | "tagger.assist.complete.ai_auto"
+  | "tagger.assist.complete.ai_confirmed"
+  | "tagger.assist.complete.browse"
+  | "tagger.assist.complete.credits"
+  | "tagger.assist.complete.flagged_cta"
+  | "tagger.assist.complete.human"
+  | "tagger.assist.complete.subtitle"
+  | "tagger.assist.complete.title"
+  | "tagger.assist.gate.another_round"
+  | "tagger.assist.gate.autopilot_subtitle"
+  | "tagger.assist.gate.autopilot_title"
+  | "tagger.assist.gate.calibration_subtitle"
+  | "tagger.assist.gate.calibration_subtitle_blind"
+  | "tagger.assist.gate.calibration_title"
+  | "tagger.assist.gate.error"
+  | "tagger.assist.gate.first_round"
+  | "tagger.assist.gate.next_round"
+  | "tagger.assist.gate.preparing"
+  | "tagger.assist.gate.round_chip"
+  | "tagger.assist.gate.round_subtitle"
+  | "tagger.assist.gate.round_title"
+  | "tagger.assist.gate.tag_rest"
+  | "tagger.assist.gate.tag_rest_estimate"
+  | "tagger.assist.interview.error"
+  | "tagger.assist.interview.placeholder"
+  | "tagger.assist.interview.reading"
+  | "tagger.assist.interview.skip"
+  | "tagger.assist.interview.subtitle"
+  | "tagger.assist.interview.thinking"
+  | "tagger.assist.interview.title"
+  | "tagger.assist.label.no"
+  | "tagger.assist.label.yes"
+  | "tagger.assist.optimize.cta"
+  | "tagger.assist.optimize.description"
+  | "tagger.assist.optimize.title"
+  | "tagger.assist.rail.agree"
+  | "tagger.assist.rail.agreement"
+  | "tagger.assist.rail.confirm"
+  | "tagger.assist.rail.decided_confirmed"
+  | "tagger.assist.rail.decided_corrected"
+  | "tagger.assist.rail.disagree"
+  | "tagger.assist.rail.finish_round"
+  | "tagger.assist.rail.gate"
+  | "tagger.assist.rail.keep"
+  | "tagger.assist.rail.kept"
+  | "tagger.assist.rail.predict_error"
+  | "tagger.assist.rail.predicting"
+  | "tagger.assist.rail.progress"
+  | "tagger.assist.rail.reveal"
+  | "tagger.assist.rail.reviewed"
+  | "tagger.assist.rail.rubric"
+  | "tagger.assist.rail.switch"
+  | "tagger.assist.rail.title"
+  | "tagger.assist.rail.waiting"
+  | "tagger.assist.retry"
+  | "tagger.assist.rubric.add"
+  | "tagger.assist.rubric.confirm_autopilot"
+  | "tagger.assist.rubric.confirm_copilot"
+  | "tagger.assist.rubric.description"
+  | "tagger.assist.rubric.empty"
+  | "tagger.assist.rubric.remove"
+  | "tagger.assist.rubric.title"
+  | "tagger.assist.setup.autopilot_desc"
+  | "tagger.assist.setup.autopilot_label"
+  | "tagger.assist.setup.copilot_desc"
+  | "tagger.assist.setup.copilot_label"
+  | "tagger.assist.setup.description"
+  | "tagger.assist.setup.manual_desc"
+  | "tagger.assist.setup.manual_label"
+  | "tagger.assist.setup.recommended"
+  | "tagger.assist.setup.step_label"
+  | "tagger.assist.setup.tiny_dataset"
+  | "tagger.assist.setup.title"
   | "tagger.library.name_cancel"
   | "tagger.library.name_label"
   | "tagger.library.name_save"
@@ -4888,6 +4982,12 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.tab.providers": "ספקים",
   "settings.tab.usage": "שימוש",
   "settings.tab.wizard": "{term.optimization}",
+  "settings.tagger.assist.description": "ראיון, תיוג משותף ותיוג אוטומטי במתייג. כבוי = המתייג הידני המלא.",
+  "settings.tagger.assist.label": "תיוג בסיוע AI",
+  "settings.tagger.calibration.assisted": "ה-AI מציע קודם",
+  "settings.tagger.calibration.blind": "עיוור (מומלץ)",
+  "settings.tagger.calibration.description": "עיוור חושף את ניחוש ה-AI רק אחרי שתייגתם — ומאמן מתייג טוב יותר. מסייע מציג אותו מראש.",
+  "settings.tagger.calibration.label": "סגנון כיול",
   "settings.title": "הגדרות",
   "settings.wizard.code_assist.auto": "הסוכן כותב",
   "settings.wizard.code_assist.label": "אופן כתיבת הקוד ב{term.optimization} חדשה",
@@ -5170,6 +5270,94 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.validation.username_required": "הזן/הזיני שם משתמש",
   "submit.validation.vision_required": "העמודות {fields} מוגדרות כתמונה, אבל ה{term.model} '{model}' לא תומך בקלט תמונות",
   "submit.validation.workflow_invalid": "יש בעיות בגרף תהליך העבודה — פתחו את שלב הקוד לפרטים",
+  "tagger.assist.autotag.browse": "מעבר לשורות",
+  "tagger.assist.autotag.cancel": "ביטול — לשמור את מה שתויג",
+  "tagger.assist.autotag.canceled_title": "התיוג בוטל",
+  "tagger.assist.autotag.failed_title": "התיוג נכשל",
+  "tagger.assist.autotag.interrupted_title": "התיוג נקטע",
+  "tagger.assist.autotag.progress_count": "{done} / {total}",
+  "tagger.assist.autotag.progress_label": "שורות שתויגו",
+  "tagger.assist.autotag.recover_subtitle": "כל מה שתויג עד כה נשמר. המשיכו כדי להשלים את השורות שנותרו.",
+  "tagger.assist.autotag.resume": "המשך תיוג",
+  "tagger.assist.autotag.running_subtitle": "רץ על השרת — אפשר לעזוב את הדף ולחזור.",
+  "tagger.assist.autotag.running_title": "מתייג את הדאטה",
+  "tagger.assist.autotag.starting_subtitle": "מכין את הריצה.",
+  "tagger.assist.autotag.starting_title": "מתחיל…",
+  "tagger.assist.calibration.continue": "המשך",
+  "tagger.assist.calibration.done": "סט הכיול הושלם.",
+  "tagger.assist.complete.ai_auto": "תויגו אוטומטית",
+  "tagger.assist.complete.ai_confirmed": "תיוגי AI שאישרתם",
+  "tagger.assist.complete.browse": "עיון וייצוא",
+  "tagger.assist.complete.credits": "התיוג האוטומטי עלה בערך {credits} קרדיטים.",
+  "tagger.assist.complete.flagged_cta": "בדיקת {count} שורות שה-AI התלבט בהן",
+  "tagger.assist.complete.human": "תויגו על ידיכם",
+  "tagger.assist.complete.subtitle": "כל {total} השורות מתויגות. הנה מי עשה מה.",
+  "tagger.assist.complete.title": "הדאטה תויג",
+  "tagger.assist.gate.another_round": "עוד סבב בדיקה",
+  "tagger.assist.gate.autopilot_subtitle": "ה-AI יתייג כל שורה לפי המדריך ויסמן כל שורה שבה יתלבט.",
+  "tagger.assist.gate.autopilot_title": "מוכן לתייג הכול",
+  "tagger.assist.gate.calibration_subtitle": "ה-AI ניחש לצידכם וקלע לתיוגים שלכם ב-{agreement}% מהמקרים.",
+  "tagger.assist.gate.calibration_subtitle_blind": "עכשיו ה-AI מתייג סבב קטן ואתם בודקים אותו.",
+  "tagger.assist.gate.calibration_title": "הכיול הסתיים",
+  "tagger.assist.gate.error": "זה לא עבד — נסו שוב.",
+  "tagger.assist.gate.first_round": "התחלת סבב הבדיקה הראשון",
+  "tagger.assist.gate.next_round": "סבב הבדיקה הבא",
+  "tagger.assist.gate.preparing": "מכין את הסבב הבא…",
+  "tagger.assist.gate.round_chip": "סבב {n}: {pct}%",
+  "tagger.assist.gate.round_subtitle": "הסכמתם עם ה-AI על {agreement}% מהסבב — השער נפתח ב-{gate}%.",
+  "tagger.assist.gate.round_title": "הסבב הסתיים",
+  "tagger.assist.gate.tag_rest": "תיוג {rows} השורות שנותרו",
+  "tagger.assist.gate.tag_rest_estimate": "תיוג {rows} השורות שנותרו (‎~{low}–{high} קרדיטים)",
+  "tagger.assist.interview.error": "העוזר לא הצליח לענות.",
+  "tagger.assist.interview.placeholder": "כתבו תשובה…",
+  "tagger.assist.interview.reading": "קורא את הדאטה…",
+  "tagger.assist.interview.skip": "דילוג על הראיון",
+  "tagger.assist.interview.subtitle": "כמה שאלות כדי להבין איך אתם חושבים על הדאטה — התשובות הופכות למדריך תיוג.",
+  "tagger.assist.interview.thinking": "חושב…",
+  "tagger.assist.interview.title": "ראיון על הדאטה",
+  "tagger.assist.label.no": "לא",
+  "tagger.assist.label.yes": "כן",
+  "tagger.assist.optimize.cta": "אופטימיזציה עמוקה",
+  "tagger.assist.optimize.description": "אופטימיזציה עמוקה כותבת מחדש את מדריך התיוג מכל תיוג ותיקון שעשיתם עד כה.",
+  "tagger.assist.optimize.title": "ההסכמה נתקעה?",
+  "tagger.assist.rail.agree": "אני מסכים עם התיוג שלכם.",
+  "tagger.assist.rail.agreement": "הסכמה",
+  "tagger.assist.rail.confirm": "אישור (Enter)",
+  "tagger.assist.rail.decided_confirmed": "אושר",
+  "tagger.assist.rail.decided_corrected": "תוקן — ה-AI ילמד מזה",
+  "tagger.assist.rail.disagree": "אני הייתי מתייג אחרת:",
+  "tagger.assist.rail.finish_round": "סיום הסבב",
+  "tagger.assist.rail.gate": "השער נפתח ב-{gate}%",
+  "tagger.assist.rail.keep": "להשאיר את שלי",
+  "tagger.assist.rail.kept": "נרשם — התיוג שלכם נשאר.",
+  "tagger.assist.rail.predict_error": "החיזויים לא זמינים כרגע — התיוג ממשיך לעבוד.",
+  "tagger.assist.rail.predicting": "קורא את השורה…",
+  "tagger.assist.rail.progress": "{done} מתוך {total} כוילו",
+  "tagger.assist.rail.reveal": "השוואה לניחוש שלי",
+  "tagger.assist.rail.reviewed": "{done} מתוך {total} נבדקו",
+  "tagger.assist.rail.rubric": "מדריך התיוג",
+  "tagger.assist.rail.switch": "לקחת את של ה-AI",
+  "tagger.assist.rail.title": "קו-פיילוט",
+  "tagger.assist.rail.waiting": "תייגו את השורה — אני מנחש בשקט ברקע.",
+  "tagger.assist.retry": "נסו שוב",
+  "tagger.assist.rubric.add": "הוספת כלל",
+  "tagger.assist.rubric.confirm_autopilot": "המשך",
+  "tagger.assist.rubric.confirm_copilot": "התחלת כיול",
+  "tagger.assist.rubric.description": "זוקק מהתשובות שלכם. אפשר לערוך הכול — ה-AI מתייג לפי הכללים האלה.",
+  "tagger.assist.rubric.empty": "אין עדיין כללים.",
+  "tagger.assist.rubric.remove": "הסרת כלל",
+  "tagger.assist.rubric.title": "מדריך התיוג",
+  "tagger.assist.setup.autopilot_desc": "ראיון קצר, ואז ה-AI מתייג הכול לבד ומסמן שורות שבהן התלבט.",
+  "tagger.assist.setup.autopilot_label": "אוטופיילוט",
+  "tagger.assist.setup.copilot_desc": "ראיון קצר, ואז מתייגים יחד סט כיול קטן. ה-AI מרוויח את האמון שלכם בסבבי בדיקה לפני שהוא מתייג את השאר.",
+  "tagger.assist.setup.copilot_label": "קו-פיילוט",
+  "tagger.assist.setup.description": "המתייג יכול ללמוד את התיוגים שלכם ולתייג את השאר בעצמו.",
+  "tagger.assist.setup.manual_desc": "מתייגים כל שורה לבד, בדיוק כמו קודם.",
+  "tagger.assist.setup.manual_label": "ידני",
+  "tagger.assist.setup.recommended": "מומלץ",
+  "tagger.assist.setup.step_label": "סיוע",
+  "tagger.assist.setup.tiny_dataset": "בגודל כזה ממילא תעברו כמעט על כל שורה — ידני או אוטופיילוט יתאימו יותר.",
+  "tagger.assist.setup.title": "איך ה-AI יעזור?",
   "tagger.library.name_cancel": "ביטול",
   "tagger.library.name_label": "שם הדאטאסט",
   "tagger.library.name_save": "שמירה",
@@ -12941,6 +13129,12 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "settings.tab.providers": "Providers",
   "settings.tab.usage": "Usage",
   "settings.tab.wizard": "Optimization",
+  "settings.tagger.assist.description": "Interview, co-tagging and auto-tagging in the tagger. Off means the fully manual tagger.",
+  "settings.tagger.assist.label": "AI-assisted tagging",
+  "settings.tagger.calibration.assisted": "AI suggests first",
+  "settings.tagger.calibration.blind": "Blind (recommended)",
+  "settings.tagger.calibration.description": "Blind reveals the AI's guess only after you commit — it trains a better tagger. Assisted shows it upfront.",
+  "settings.tagger.calibration.label": "Calibration style",
   "settings.title": "Settings",
   "settings.wizard.code_assist.auto": "Agent writes it",
   "settings.wizard.code_assist.label": "How code is written in a new optimization",
@@ -13223,6 +13417,94 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.validation.username_required": "Enter a username",
   "submit.validation.vision_required": "Columns {fields} are set as image, but the model '{model}' doesn't support image inputs",
   "submit.validation.workflow_invalid": "The workflow graph has issues — open the code step for details",
+  "tagger.assist.autotag.browse": "Browse the rows",
+  "tagger.assist.autotag.cancel": "Cancel — keep what's tagged",
+  "tagger.assist.autotag.canceled_title": "Tagging canceled",
+  "tagger.assist.autotag.failed_title": "Tagging failed",
+  "tagger.assist.autotag.interrupted_title": "Tagging was interrupted",
+  "tagger.assist.autotag.progress_count": "{done} / {total}",
+  "tagger.assist.autotag.progress_label": "Rows tagged",
+  "tagger.assist.autotag.recover_subtitle": "Everything tagged so far is saved. Resume to finish the remaining rows.",
+  "tagger.assist.autotag.resume": "Resume tagging",
+  "tagger.assist.autotag.running_subtitle": "Runs on the server — you can safely leave this page and come back.",
+  "tagger.assist.autotag.running_title": "Tagging your dataset",
+  "tagger.assist.autotag.starting_subtitle": "Setting up the run.",
+  "tagger.assist.autotag.starting_title": "Starting…",
+  "tagger.assist.calibration.continue": "Continue",
+  "tagger.assist.calibration.done": "Calibration set complete.",
+  "tagger.assist.complete.ai_auto": "Labeled automatically",
+  "tagger.assist.complete.ai_confirmed": "AI labels you confirmed",
+  "tagger.assist.complete.browse": "Browse & export",
+  "tagger.assist.complete.credits": "Auto-tagging used about {credits} credits.",
+  "tagger.assist.complete.flagged_cta": "Review {count} rows the AI wasn't sure about",
+  "tagger.assist.complete.human": "Labeled by you",
+  "tagger.assist.complete.subtitle": "All {total} rows carry a label. Here's who did what.",
+  "tagger.assist.complete.title": "Dataset tagged",
+  "tagger.assist.gate.another_round": "One more review round",
+  "tagger.assist.gate.autopilot_subtitle": "The AI will label every row by your guide and flag anything it's unsure about.",
+  "tagger.assist.gate.autopilot_title": "Ready to tag everything",
+  "tagger.assist.gate.calibration_subtitle": "The AI guessed alongside you and matched your labels {agreement}% of the time.",
+  "tagger.assist.gate.calibration_subtitle_blind": "Now the AI tags a small batch and you check its work.",
+  "tagger.assist.gate.calibration_title": "Calibration complete",
+  "tagger.assist.gate.error": "That didn't work — try again.",
+  "tagger.assist.gate.first_round": "Start the first review round",
+  "tagger.assist.gate.next_round": "Next review round",
+  "tagger.assist.gate.preparing": "Preparing the next batch…",
+  "tagger.assist.gate.round_chip": "Round {n}: {pct}%",
+  "tagger.assist.gate.round_subtitle": "You agreed with the AI on {agreement}% of this batch — the gate opens at {gate}%.",
+  "tagger.assist.gate.round_title": "Round complete",
+  "tagger.assist.gate.tag_rest": "Tag the remaining {rows} rows",
+  "tagger.assist.gate.tag_rest_estimate": "Tag the remaining {rows} rows (~{low}–{high} credits)",
+  "tagger.assist.interview.error": "The assistant couldn't respond.",
+  "tagger.assist.interview.placeholder": "Type your answer…",
+  "tagger.assist.interview.reading": "Reading your dataset…",
+  "tagger.assist.interview.skip": "Skip the interview",
+  "tagger.assist.interview.subtitle": "A few questions to learn how you think about this data — the answers become your labeling guide.",
+  "tagger.assist.interview.thinking": "Thinking…",
+  "tagger.assist.interview.title": "Dataset interview",
+  "tagger.assist.label.no": "No",
+  "tagger.assist.label.yes": "Yes",
+  "tagger.assist.optimize.cta": "Deep optimize",
+  "tagger.assist.optimize.description": "Deep optimize rewrites the labeling guide from every label and correction you've made so far.",
+  "tagger.assist.optimize.title": "Agreement is stuck?",
+  "tagger.assist.rail.agree": "I agree with your label.",
+  "tagger.assist.rail.agreement": "Agreement",
+  "tagger.assist.rail.confirm": "Confirm (Enter)",
+  "tagger.assist.rail.decided_confirmed": "Confirmed",
+  "tagger.assist.rail.decided_corrected": "Corrected — the AI will learn from this",
+  "tagger.assist.rail.disagree": "I'd have tagged this differently:",
+  "tagger.assist.rail.finish_round": "Finish this round",
+  "tagger.assist.rail.gate": "Gate opens at {gate}%",
+  "tagger.assist.rail.keep": "Keep mine",
+  "tagger.assist.rail.kept": "Noted — your label stands.",
+  "tagger.assist.rail.predict_error": "Predictions are unavailable right now — labeling still works.",
+  "tagger.assist.rail.predicting": "Reading this row…",
+  "tagger.assist.rail.progress": "{done} of {total} calibrated",
+  "tagger.assist.rail.reveal": "Compare with my guess",
+  "tagger.assist.rail.reviewed": "{done} of {total} reviewed",
+  "tagger.assist.rail.rubric": "Labeling guide",
+  "tagger.assist.rail.switch": "Use the AI's",
+  "tagger.assist.rail.title": "Co-pilot",
+  "tagger.assist.rail.waiting": "Label this row — I'm guessing silently in the background.",
+  "tagger.assist.retry": "Retry",
+  "tagger.assist.rubric.add": "Add a rule",
+  "tagger.assist.rubric.confirm_autopilot": "Continue",
+  "tagger.assist.rubric.confirm_copilot": "Start calibration",
+  "tagger.assist.rubric.description": "Distilled from your answers. Edit anything — the AI labels by these rules.",
+  "tagger.assist.rubric.empty": "No rules yet.",
+  "tagger.assist.rubric.remove": "Remove rule",
+  "tagger.assist.rubric.title": "Labeling guide",
+  "tagger.assist.setup.autopilot_desc": "A short interview, then the AI tags everything on its own and flags rows it wasn't sure about.",
+  "tagger.assist.setup.autopilot_label": "Autopilot",
+  "tagger.assist.setup.copilot_desc": "A short interview, then you tag a small calibration set together. The AI earns your trust in review rounds before tagging the rest.",
+  "tagger.assist.setup.copilot_label": "Co-pilot",
+  "tagger.assist.setup.description": "The tagger can learn your labels and tag the rest for you.",
+  "tagger.assist.setup.manual_desc": "You tag every row yourself, exactly as before.",
+  "tagger.assist.setup.manual_label": "Manual",
+  "tagger.assist.setup.recommended": "Recommended",
+  "tagger.assist.setup.step_label": "Assist",
+  "tagger.assist.setup.tiny_dataset": "At this size you would review nearly every row anyway — Manual or Autopilot will serve you better.",
+  "tagger.assist.setup.title": "How should the AI help?",
   "tagger.library.name_cancel": "Cancel",
   "tagger.library.name_label": "Dataset name",
   "tagger.library.name_save": "Save",

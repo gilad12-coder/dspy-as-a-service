@@ -27,12 +27,27 @@ import { HelpTip } from "@/shared/ui/help-tip";
 import { tip } from "@/shared/lib/tooltips";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
 import { registerTutorialHook, registerTutorialQuery } from "@/features/tutorial";
-import type { AnnotationMode, TaggerConfig, DataRow, Category } from "../lib/types";
+import { useUserPrefs } from "@/features/settings";
+import type {
+  AnnotationMode,
+  TaggerAssistMode,
+  TaggerConfig,
+  DataRow,
+  Category,
+} from "../lib/types";
+import { isTaggerAssistEnabled } from "../lib/feature-flag";
+import { REVIEW_BATCH_SIZE, calibrationTarget } from "../lib/assist";
 import { msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 interface TaggerSetupProps {
-  onStart: (config: TaggerConfig, rows: DataRow[], columns: string[]) => void;
+  onStart: (
+    config: TaggerConfig,
+    rows: DataRow[],
+    columns: string[],
+    assistMode?: TaggerAssistMode,
+    calibrationStyle?: "blind" | "assisted",
+  ) => void;
 }
 
 const TAGGER_STEPS = [
@@ -40,6 +55,32 @@ const TAGGER_STEPS = [
   { id: "mode", label: msg("auto.features.tagger.components.taggersetup.literal.2") },
   { id: "config", label: msg("auto.features.tagger.components.taggersetup.literal.3") },
 ] as const;
+
+const ASSIST_STEP = { id: "assist", label: msg("tagger.assist.setup.step_label") } as const;
+
+const ASSIST_OPTIONS: Array<{
+  mode: TaggerAssistMode;
+  label: string;
+  desc: string;
+  recommended?: boolean;
+}> = [
+  {
+    mode: "manual",
+    label: msg("tagger.assist.setup.manual_label"),
+    desc: msg("tagger.assist.setup.manual_desc"),
+  },
+  {
+    mode: "copilot",
+    label: msg("tagger.assist.setup.copilot_label"),
+    desc: msg("tagger.assist.setup.copilot_desc"),
+    recommended: true,
+  },
+  {
+    mode: "autopilot",
+    label: msg("tagger.assist.setup.autopilot_label"),
+    desc: msg("tagger.assist.setup.autopilot_desc"),
+  },
+];
 
 const slideVariants = {
   enter: (direction: number) => ({
@@ -91,6 +132,11 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const [inputCols, setInputCols] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<AnnotationMode | null>(null);
+  const [assistMode, setAssistMode] = useState<TaggerAssistMode>("copilot");
+
+  const { prefs } = useUserPrefs();
+  const assistAvailable = isTaggerAssistEnabled() && prefs.taggerAssist;
+  const activeSteps = assistAvailable ? [...TAGGER_STEPS, ASSIST_STEP] : [...TAGGER_STEPS];
 
   const [question, setQuestion] = useState(
     msg("auto.features.tagger.components.taggersetup.literal.10"),
@@ -174,14 +220,15 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
       if (mode === "multiclass") return categories.filter((c) => c.label.trim()).length >= 2;
       return true;
     }
+    if (s === 3) return assistAvailable;
     return false;
   };
 
   const maxReachableStep = (() => {
-    for (let i = 0; i < TAGGER_STEPS.length; i++) {
+    for (let i = 0; i < activeSteps.length; i++) {
       if (!validateStep(i)) return i;
     }
-    return TAGGER_STEPS.length - 1;
+    return activeSteps.length - 1;
   })();
 
   const goTo = (idx: number) => {
@@ -190,7 +237,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   };
 
   const handleNext = () => {
-    if (step < TAGGER_STEPS.length - 1 && validateStep(step)) {
+    if (step < activeSteps.length - 1 && validateStep(step)) {
       setDirection(1);
       setStep(step + 1);
     }
@@ -233,7 +280,13 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     if (mode === "freetext") {
       config.prompt = prompt || msg("auto.features.tagger.components.taggersetup.literal.13");
     }
-    onStart(config, mapped, parsedCols);
+    onStart(
+      config,
+      mapped,
+      parsedCols,
+      assistAvailable ? assistMode : "manual",
+      prefs.taggerCalibrationStyle,
+    );
   };
 
   const steps = [
@@ -454,7 +507,66 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     </Card>,
   ];
 
-  const isLastStep = step === TAGGER_STEPS.length - 1;
+  if (assistAvailable) {
+    const target = mode
+      ? calibrationTarget({
+          mode,
+          inputColumns: inputCols,
+          categories: categories.filter((c) => c.label.trim()),
+        })
+      : 30;
+    const tinyDataset = parsedRows.length > 0 && parsedRows.length <= target + REVIEW_BATCH_SIZE;
+    steps.push(
+      <Card key="assist">
+        <CardHeader>
+          <CardTitle className="text-base">{msg("tagger.assist.setup.title")}</CardTitle>
+          <CardDescription>{msg("tagger.assist.setup.description")}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {ASSIST_OPTIONS.map((opt) => {
+            const selected = assistMode === opt.mode;
+            const discouraged = tinyDataset && opt.mode === "copilot";
+            return (
+              <button
+                key={opt.mode}
+                type="button"
+                onClick={() => setAssistMode(opt.mode)}
+                className={cn(
+                  "flex min-w-0 flex-col gap-0.5 rounded-xl border p-3.5 text-start transition-all cursor-pointer",
+                  "hover:border-primary/40 hover:bg-primary/5",
+                  selected ? "border-primary bg-primary/10 shadow-sm" : "border-border/50",
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "text-sm font-medium",
+                      selected ? "text-primary" : "text-foreground",
+                    )}
+                  >
+                    {opt.label}
+                  </span>
+                  {opt.recommended && !discouraged && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                      {msg("tagger.assist.setup.recommended")}
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs text-muted-foreground">{opt.desc}</span>
+              </button>
+            );
+          })}
+          {tinyDataset && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {msg("tagger.assist.setup.tiny_dataset")}
+            </p>
+          )}
+        </CardContent>
+      </Card>,
+    );
+  }
+
+  const isLastStep = step === activeSteps.length - 1;
 
   const rtl = getActiveDir() === "rtl";
   const BackIcon = rtl ? ChevronRight : ChevronLeft;
@@ -464,7 +576,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     <div className="space-y-6 max-w-2xl mx-auto pb-8 -mt-2 md:-mt-4" data-tutorial="tagger-setup">
       <div className="relative">
         <div className="flex items-center justify-between">
-          {TAGGER_STEPS.map((s, i) => {
+          {activeSteps.map((s, i) => {
             const reachable = i <= maxReachableStep;
             const completed = i < step && validateStep(i);
             const active = i === step;
@@ -516,7 +628,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
             className="h-full rounded-full"
             style={{ background: "var(--gradient-progress)" }}
             initial={{ width: 0 }}
-            animate={{ width: `${(step / (TAGGER_STEPS.length - 1)) * 100}%` }}
+            animate={{ width: `${(step / (activeSteps.length - 1)) * 100}%` }}
             transition={{ duration: 0.5, ease: [0.2, 0.8, 0.2, 1] }}
           />
         </div>
@@ -545,7 +657,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
             {msg("auto.features.tagger.components.taggersetup.13")}
           </Button>
           <span className="text-xs text-muted-foreground tabular-nums">
-            {step + 1} / {TAGGER_STEPS.length}
+            {step + 1} / {activeSteps.length}
           </span>
           <Button onClick={handleNext} disabled={!validateStep(step)} className="gap-2">
             {msg("auto.features.tagger.components.taggersetup.14")}

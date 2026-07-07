@@ -60,6 +60,7 @@ class TaggingSessionDetail(BaseModel):
     columns: list[str]
     data: list[dict[str, Any]]
     annotations: dict[str, Any]
+    assist: dict[str, Any] | None = None
     current_index: int
     row_count: int
     tagged_count: int
@@ -77,6 +78,7 @@ class TaggingSessionCreateRequest(BaseModel):
     columns: list[str] = Field(default_factory=list)
     data: list[dict[str, Any]] = Field(default_factory=list)
     annotations: dict[str, Any] = Field(default_factory=dict)
+    assist: dict[str, Any] | None = None
     current_index: int = Field(default=0, ge=0)
 
 
@@ -84,6 +86,9 @@ class TaggingSessionProgressRequest(BaseModel):
     """Autosave the mutable annotation progress without re-uploading the dataset."""
 
     annotations: dict[str, Any] = Field(default_factory=dict)
+    # AI co-tagging state; ``None`` (absent) leaves the stored value untouched
+    # so plain manual autosaves never clobber assist progress written elsewhere.
+    assist: dict[str, Any] | None = None
     current_index: int = Field(default=0, ge=0)
     phase: str | None = None
 
@@ -163,6 +168,7 @@ def _row_to_detail(row: TaggingSessionModel) -> TaggingSessionDetail:
         columns=cast("list[str]", row.columns),
         data=cast("list[dict[str, Any]]", row.data),
         annotations=cast("dict[str, Any]", row.annotations),
+        assist=cast("dict[str, Any] | None", row.assist),
         current_index=cast(int, row.current_index),
         row_count=cast(int, row.row_count),
         tagged_count=cast(int, row.tagged_count),
@@ -275,6 +281,7 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
             columns=req.columns,
             data=req.data,
             annotations=req.annotations,
+            assist=req.assist,
             current_index=req.current_index,
             row_count=len(req.data),
             tagged_count=_count_tagged(req.annotations),
@@ -341,7 +348,8 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
             The updated row projected as ``TaggingSessionSummary``.
 
         Raises:
-            DomainError: 404 when unknown, 403 when the caller does not own it.
+            DomainError: 404 when unknown, 403 when the caller does not own
+                it, 409 while the bulk auto-tag job is writing the row.
         """
         with Session(job_store.engine) as session:
             row = session.get(TaggingSessionModel, session_id)
@@ -349,7 +357,14 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
                 raise DomainError("tagger.session.not_found", status=404)
             if row.username != user.username:
                 raise DomainError("tagger.session.forbidden", status=403)
+            # The bulk auto-tag job owns the row while it runs — a stale tab's
+            # autosave would otherwise overwrite the labels it already wrote.
+            autotag = (cast("dict[str, Any]", row.assist) or {}).get("autotag") or {}
+            if autotag.get("status") == "running":
+                raise DomainError("tagger.assist.autotag_running", status=409)
             row.annotations = cast(Any, req.annotations)
+            if req.assist is not None:
+                row.assist = cast(Any, req.assist)
             row.current_index = cast(Any, req.current_index)
             row.tagged_count = cast(Any, _count_tagged(req.annotations))
             if req.phase is not None:

@@ -29,3 +29,70 @@ export interface DataRow {
 }
 
 export type Annotation = string | string[] | undefined;
+
+/** Assist level chosen at setup. Manual sessions carry no assist state at all. */
+export type TaggerAssistMode = "manual" | "copilot" | "autopilot";
+
+/** Session phases. Manual sessions only ever use "setup" | "annotating". */
+export type TaggerPhase =
+  | "setup"
+  | "interview"
+  | "calibration"
+  | "review"
+  | "autotagging"
+  | "complete"
+  | "annotating";
+
+/** Who produced a row's final label. */
+export type AnnotationProvenance = "human" | "ai_confirmed" | "ai_auto";
+
+export interface AssistPrediction {
+  value: string | string[];
+  /** Model-reported confidence in [0, 1]. */
+  confidence: number;
+  /** One-sentence rationale, shown in disagreement/review moments. */
+  reason?: string;
+}
+
+export interface InterviewTurn {
+  role: "assistant" | "user";
+  content: string;
+}
+
+/** One AI-tags-human-audits batch (review rounds and the flagged pass alike). */
+export interface ReviewRound {
+  rowIds: string[];
+  /** Per-row outcome; a row absent here is not yet audited. */
+  decided: Record<string, "confirmed" | "corrected">;
+  /** Fraction of audited rows confirmed, fixed when the round closes. */
+  agreement?: number;
+  /** Marks the optional post-autotag pass over low-confidence rows. */
+  flaggedPass?: boolean;
+}
+
+export interface AutotagProgress {
+  status: "running" | "done" | "failed" | "canceled";
+  total: number;
+  done: number;
+  /** Credits the bulk job actually spent (server-written, snake_case). */
+  credits_spent?: number;
+}
+
+/**
+ * AI co-tagging state, persisted as the session's ``assist`` JSON. Final
+ * labels always live in ``annotations``; this only carries how they came to be
+ * (predictions, provenance) and the collaboration bookkeeping.
+ */
+export interface AssistState {
+  mode: Exclude<TaggerAssistMode, "manual">;
+  calibrationStyle: "blind" | "assisted";
+  interview: { turns: InterviewTurn[]; done: boolean };
+  /** The labeling rubric distilled from the interview; grows with corrections. */
+  rubric: string[];
+  /** Row ids (String(row.id)) sampled for the calibration set. */
+  calibrationIds: string[];
+  predictions: Record<string, AssistPrediction>;
+  provenance: Record<string, AnnotationProvenance>;
+  rounds: ReviewRound[];
+  autotag?: AutotagProgress;
+}
