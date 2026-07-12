@@ -11,7 +11,6 @@ stands up an in-memory SQLite engine with the billing tables and patches the
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -29,7 +28,6 @@ from core.billing.service import (
     FOUNDERS_LOCK_DAYS,
     FREE_GRANT_CREDITS,
     GRANT_WINDOW_DAYS,
-    PLATFORM_FEE_FRACTION,
     PREMIUM_GRANT_CREDITS,
     StripeBillingService,
     cost_ceiling_budget,
@@ -481,7 +479,7 @@ def test_guarantee_refunds_full_run_on_no_lift_managed(engine: object) -> None:
 
 
 def test_guarantee_refunds_only_platform_fee_on_byok_no_lift(engine: object) -> None:
-    """A BYOK no-lift run refunds only Skynet's platform fee, not provider tokens."""
+    """A BYOK no-lift run refunds only Skynet's platform fee — zero at-cost pricing."""
     service = StripeBillingService(engine=engine)
     _seed_premium(engine, "u@x.com")
     usages = _usages(200_000)
@@ -496,7 +494,8 @@ def test_guarantee_refunds_only_platform_fee_on_byok_no_lift(engine: object) -> 
         description="No lift — refunded",
     )
     assert refunded == platform_fee_credits_for_usage(usages)
-    assert 0 < refunded < credits_for_usage(usages)  # only the platform fee, not the full cost
+    # At-cost pricing: a BYOK run was never charged, so nothing is refunded.
+    assert refunded == 0
 
 
 def test_guarantee_no_refund_when_run_has_lift(engine: object) -> None:
@@ -638,7 +637,7 @@ def test_guarantee_covers_premium_account_on_each_new_task(engine: object) -> No
 
 
 def test_debit_run_byok_charges_only_platform_fee(engine: object) -> None:
-    """A BYOK run debits only Skynet's platform fee, not the full per-token cost."""
+    """A BYOK run debits only Skynet's platform fee — zero at-cost pricing."""
     _seed_customer(engine, "u@x.com")
     service = StripeBillingService(engine=engine)
     usages = _usages(200_000)
@@ -650,9 +649,11 @@ def test_debit_run_byok_charges_only_platform_fee(engine: object) -> None:
         token_source=TOKEN_SOURCE_BYOK,
     )
     assert cost == platform_fee_credits_for_usage(usages)
-    assert 0 < cost < credits_for_usage(usages)  # only a fraction of the full cost
+    # At-cost pricing: the provider tokens ran on the user's own key and the
+    # platform takes no cut, so the run is free and the balance untouched.
+    assert cost == 0
     snapshot = service.get_wallet("u@x.com")
-    assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS - cost
+    assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS
 
 
 def test_debit_run_managed_still_charges_full_cost(engine: object) -> None:
@@ -671,15 +672,14 @@ def test_cost_ceiling_budget_managed_is_the_balance(engine: object) -> None:
 
 
 def test_cost_ceiling_budget_byok_is_fee_aware_and_larger(engine: object) -> None:
-    """A BYOK ceiling is the largest full-cost budget whose platform fee fits the balance."""
+    """A fee-less BYOK run gets an effectively unlimited ceiling from any balance."""
     assert cost_ceiling_budget(0, TOKEN_SOURCE_BYOK) == 0
     budget = cost_ceiling_budget(100, TOKEN_SOURCE_BYOK)
-    # Proportionally larger than the raw balance (a BYOK run spends only the fee)...
+    # At-cost pricing: the run can never touch the balance, so the ceiling is
+    # far beyond any real run while a drained account still gets nothing.
     assert budget > 100
-    # ...and the fee of a run that exhausts the budget never exceeds the balance,
-    # while one credit more would (the cap is tight, erring conservative on floats).
-    assert max(1, math.ceil(budget * PLATFORM_FEE_FRACTION)) <= 100
-    assert max(1, math.ceil((budget + 1) * PLATFORM_FEE_FRACTION)) > 100
+    assert budget >= 10**9
+    assert platform_fee_credits_for_usage(_usages(10_000_000)) == 0
 
 
 def test_wallet_reports_premium_grant_total_for_subscriber(engine: object) -> None:

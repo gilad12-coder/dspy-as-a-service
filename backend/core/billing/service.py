@@ -72,8 +72,13 @@ LOCAL_CUSTOMER_PREFIX = "local:"
 # compute). On a no-lift BYOK run the provider tokens are already spent on the
 # user's own key, so only this fee is refundable; a managed no-lift run refunds
 # the whole cost. Lives here so the fee is re-priceable without touching the
-# guarantee logic.
-PLATFORM_FEE_FRACTION = 0.20
+# guarantee logic. 0.0 = at-cost pricing: BYOK runs are free (the user already
+# pays their provider directly; the platform takes no cut).
+PLATFORM_FEE_FRACTION = 0.0
+
+# Ceiling handed to fee-less BYOK runs: far above any real run's full cost,
+# small enough to stay a safe int everywhere credits are summed.
+_BYOK_UNCAPPED_CEILING = 10**9
 
 # Stripe subscription statuses that count an account as having active Premium.
 _ACTIVE_SUBSCRIPTION_STATUSES = frozenset({"active", "trialing", "past_due"})
@@ -189,9 +194,10 @@ def platform_fee_credits_for_usage(usages: Iterable[ModelUsage]) -> int:
         The non-negative platform-fee credits (``0`` when the run cost nothing).
     """
     full = credits_for_usage(usages)
-    if full <= 0:
+    fee = full * PLATFORM_FEE_FRACTION
+    if fee <= 0:
         return 0
-    return max(1, math.ceil(full * PLATFORM_FEE_FRACTION))
+    return max(1, math.ceil(fee))
 
 
 def run_cost_credits(usages: Iterable[ModelUsage], token_source: str) -> int:
@@ -240,6 +246,10 @@ def cost_ceiling_budget(spendable: int, token_source: str) -> int:
         return 0
     if token_source != TOKEN_SOURCE_BYOK:
         return spendable
+    if PLATFORM_FEE_FRACTION <= 0:
+        # A fee-less BYOK run can never touch the balance, so any positive
+        # balance backs an effectively unlimited ceiling.
+        return _BYOK_UNCAPPED_CEILING
     budget = math.ceil(spendable / PLATFORM_FEE_FRACTION)
     while budget > 1 and max(1, math.ceil(budget * PLATFORM_FEE_FRACTION)) > spendable:
         budget -= 1

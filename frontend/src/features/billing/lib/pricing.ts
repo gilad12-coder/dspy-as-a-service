@@ -14,15 +14,19 @@
 import type { CatalogModel } from "@/shared/types/api";
 import { CREDIT_USD_VALUE } from "./credit";
 
-/** Margin multiplier on raw provider cost — mirrors backend `pricing.MARKUP`. */
-export const MARKUP = 1.5;
+/** Margin multiplier on raw provider cost — mirrors backend `pricing.MARKUP`.
+ * 1.09 = break-even pricing: raw provider cost plus just the payment-processing
+ * fees (OpenRouter deposit + Stripe), no profit margin. */
+export const MARKUP = 1.09;
 
 /** Fallback per-token costs (USD) for a model the catalog doesn't price. */
 export const DEFAULT_INPUT_COST_PER_TOKEN = 1e-6;
 export const DEFAULT_OUTPUT_COST_PER_TOKEN = 3e-6;
 
-/** Share of a run's full credit cost charged as the platform fee on a BYOK run — mirrors the backend. */
-export const PLATFORM_FEE_FRACTION = 0.2;
+/** Share of a run's full credit cost charged as the platform fee on a BYOK run —
+ * mirrors the backend. 0 = at-cost pricing: BYOK runs are free (the user already
+ * pays their provider directly). */
+export const PLATFORM_FEE_FRACTION = 0;
 
 /** Projected or measured token usage attributed to one model. */
 export interface ModelTokenUsage {
@@ -71,6 +75,7 @@ export function creditsForUsage(usages: ModelTokenUsage[]): number {
  * paid on the user's own key, so only this fraction is charged in credits.
  */
 export function platformFeeCredits(fullCredits: number): number {
-  if (fullCredits <= 0) return 0;
-  return Math.max(1, Math.ceil(fullCredits * PLATFORM_FEE_FRACTION));
+  const fee = fullCredits * PLATFORM_FEE_FRACTION;
+  if (fee <= 0) return 0;
+  return Math.max(1, Math.ceil(fee));
 }
