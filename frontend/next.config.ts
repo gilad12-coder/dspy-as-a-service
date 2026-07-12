@@ -43,7 +43,7 @@ const nextConfig: NextConfig = {
       "tailwind-merge",
       "recharts",
       "@fontsource-variable/heebo",
-      "@fontsource-variable/inter",
+      "@fontsource-variable/geist",
       "@fontsource-variable/jetbrains-mono",
       "@uiw/react-codemirror",
       "@codemirror/lang-python",

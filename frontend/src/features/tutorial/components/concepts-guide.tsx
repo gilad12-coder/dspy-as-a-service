@@ -197,7 +197,7 @@ function GuideHeader({
         <h2
           id={titleId}
           className="text-lg sm:text-xl font-bold text-[#3D2E22] leading-tight"
-          style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+          style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
         >
           {msg("auto.features.tutorial.components.concepts.guide.literal.9")}
         </h2>
@@ -277,7 +277,7 @@ function GuideSection({
       </div>
       <h3
         className="text-xl sm:text-2xl font-bold text-[#3D2E22] mb-3 leading-tight"
-        style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+        style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
       >
         {title}
       </h3>
@@ -292,7 +292,7 @@ function SubHeading({ children }: { children: React.ReactNode }) {
   return (
     <h4
       className="text-[15px] font-bold text-[#3D2E22] mt-5 mb-1"
-      style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+      style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
     >
       {children}
     </h4>
@@ -337,13 +337,13 @@ function ParamTable({ rows }: { rows: Array<{ name: string; desc: React.ReactNod
           <tr className="bg-[#F0EBE4] text-[#3D2E22]">
             <th
               className="text-start font-semibold px-3 py-2 w-[34%]"
-              style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+              style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
             >
               {msg("auto.features.tutorial.components.concepts.guide.literal.14")}
             </th>
             <th
               className="text-start font-semibold px-3 py-2"
-              style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+              style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
             >
               {msg("auto.features.tutorial.components.concepts.guide.literal.15")}
             </th>
@@ -892,13 +892,13 @@ class AnswerQuestion(dspy.Signature):
             <tr className="bg-[#F0EBE4] text-[#3D2E22]">
               <th
                 className="text-start font-semibold px-3 py-2 w-[24%]"
-                style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+                style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
               >
                 {msg("auto.features.tutorial.components.concepts.guide.literal.141")}
               </th>
               <th
                 className="text-start font-semibold px-3 py-2"
-                style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+                style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
               >
                 {msg("auto.features.tutorial.components.concepts.guide.literal.142")}
               </th>
@@ -1025,7 +1025,7 @@ function WorkflowFlow() {
             <div className="mb-3 flex items-center gap-2.5">
               <span
                 className="inline-flex size-12 shrink-0 items-center justify-center rounded-full border border-[#D8C7AD] bg-white text-[14px] font-bold text-[#3D2E22] shadow-[0_1px_2px_rgba(28,22,18,0.04)]"
-                style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+                style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
               >
                 {groupIdx + 1}
               </span>
@@ -1050,7 +1050,7 @@ function WorkflowFlow() {
                     <span
                       className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-[#EDE7DD] text-[10px] font-bold text-[#5C4D40]"
                       style={{
-                        fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif',
+                        fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif',
                       }}
                     >
                       {stepIndex}
@@ -1247,13 +1247,13 @@ function SectionWorkflow() {
             <tr className="bg-[#F0EBE4] text-[#3D2E22]">
               <th
                 className="text-start font-semibold px-3 py-2 w-[40%]"
-                style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+                style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
               >
                 {msg("auto.features.tutorial.components.concepts.guide.literal.196")}
               </th>
               <th
                 className="text-start font-semibold px-3 py-2"
-                style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+                style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
               >
                 {msg("auto.features.tutorial.components.concepts.guide.literal.142")}
               </th>
@@ -1411,13 +1411,13 @@ function SectionTips() {
             <tr className="bg-[#F0EBE4] text-[#3D2E22]">
               <th
                 className="text-start font-semibold px-3 py-2 w-[36%]"
-                style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+                style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
               >
                 {msg("auto.features.tutorial.components.concepts.guide.literal.239")}
               </th>
               <th
                 className="text-start font-semibold px-3 py-2"
-                style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+                style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
               >
                 {msg("auto.features.tutorial.components.concepts.guide.literal.240")}
               </th>
@@ -1515,13 +1515,13 @@ function SectionGlossary() {
             <tr className="bg-[#F0EBE4] text-[#3D2E22]">
               <th
                 className="text-start font-semibold px-3 py-2 w-[34%]"
-                style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+                style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
               >
                 {msg("auto.features.tutorial.components.concepts.guide.literal.253")}
               </th>
               <th
                 className="text-start font-semibold px-3 py-2"
-                style={{ fontFamily: '"Inter Variable", "Heebo Variable", system-ui, sans-serif' }}
+                style={{ fontFamily: '"Geist Variable", "Heebo Variable", system-ui, sans-serif' }}
               >
                 {msg("auto.features.tutorial.components.concepts.guide.literal.254")}
               </th>

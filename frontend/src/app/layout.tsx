@@ -46,7 +46,7 @@ import {
 import { buildActiveCatalog } from "@/shared/lib/messages.server";
 import { getSiteUrl } from "@/shared/lib/site-config";
 import "@fontsource-variable/heebo/index.css";
-import "@fontsource-variable/inter/index.css";
+import "@fontsource-variable/geist/index.css";
 import "@fontsource-variable/jetbrains-mono/index.css";
 import "react-toastify/dist/ReactToastify.css";
 import "./globals.css";
@@ -163,7 +163,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const fontPreload = { as: "font", type: "font/woff2", crossOrigin: "anonymous" } as const;
   preload("/fonts/heebo-hebrew-wght-normal.woff2", fontPreload);
   preload("/fonts/heebo-latin-wght-normal.woff2", fontPreload);
-  preload("/fonts/inter-latin-wght-normal.woff2", fontPreload);
+  preload("/fonts/geist-latin-wght-normal.woff2", fontPreload);
   const runtimeEnv = getServerRuntimeEnv();
   // dns-prefetch only helps when the API is on a different origin than the
   // document; on same-origin deploys the browser already resolved the host.

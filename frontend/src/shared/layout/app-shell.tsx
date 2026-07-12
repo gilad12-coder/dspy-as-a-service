@@ -142,7 +142,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
           </div>
           <span
             className="sm:hidden text-sm font-bold tracking-[0.14em] uppercase text-foreground cursor-default"
-            style={{ fontFamily: '"Inter Variable", system-ui, sans-serif' }}
+            style={{ fontFamily: '"Geist Variable", system-ui, sans-serif' }}
           >
             SKYNET
           </span>
