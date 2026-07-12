@@ -23,7 +23,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.23",
     "pydantic>=2.5",
-    "pydantic-settings>=2.0",
+    "pydantic-settings>=2.14.2",
     # Dual-line support: classic ReAct (3.2.x stable) and ReActV2 (3.3 preview)
     # are both bridged in core.service_gateway.react_compat. Air-gap builds vendor
     # one line — see requirements.stable.txt / requirements.preview.txt.
