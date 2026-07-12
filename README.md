@@ -89,9 +89,8 @@ See `backend/.env.example` for the full annotated list (agents' models, tagger a
 NEXT_PUBLIC_API_URL=http://localhost:8000
 AUTH_SECRET=generate-with-openssl-rand-base64-32
 
-# Dev login is active when no SSO is configured: any username, password "skynet".
-# Set DEV_AUTH=false to disable login entirely (open access).
-# ADFS/OIDC SSO: see frontend/.env.example.
+# Without SSO configured, the login page offers email/password signup.
+# ADFS/OIDC SSO and Google/GitHub OAuth: see frontend/.env.example.
 ```
 
 ## Serving optimized programs
