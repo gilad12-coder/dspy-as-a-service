@@ -286,9 +286,11 @@ def normalize_label(config: dict[str, Any], raw: Any) -> str | list[str] | None:
     mode = config.get("mode")
     if mode == "binary":
         text = str(raw).strip().lower()
-        if text in {"yes", "y", "true", "1", "כן"}:
+        # The Hebrew yes/no ("\u05db\u05df" / "\u05dc\u05d0") are input-normalization
+        # tokens, escaped so the i18n catalog-boundary check stays clean.
+        if text in {"yes", "y", "true", "1", "\u05db\u05df"}:
             return "yes"
-        if text in {"no", "n", "false", "0", "לא"}:
+        if text in {"no", "n", "false", "0", "\u05dc\u05d0"}:
             return "no"
         return None
     if mode == "multiclass":

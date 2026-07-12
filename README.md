@@ -1,112 +1,63 @@
-# Skynet
+<p align="center">
+  <img src="docs/assets/skynet-wordmark.gif" width="480" alt="SKYNET" />
+</p>
 
-DSPy prompt optimization as a service. Submit datasets + signature/metric code, run GEPA optimizations, serve optimized programs — all through a web UI or REST API.
+**A self-hostable platform for building, optimizing, and serving LLM programs — with prompt optimization (GEPA) at its core, priced at break-even.**
 
-## Quick Start
+Skynet turns "I have a dataset and a task" into an optimized, deployable LLM program. Upload data, describe the task, and the platform compiles a [DSPy](https://github.com/stanfordnlp/dspy) program, evolves its prompts with GEPA against your own metric, shows you the held-out lift it earned, and serves the result for inference — all through a web UI a non-engineer can drive, or a REST API.
 
-### 1. Prerequisites
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
-- Python 3.10+ (3.11 recommended)
-- Node.js 18+ and npm
-- PostgreSQL 14+
-- An LLM API key (OpenAI, Anthropic, etc.)
+## Features
 
-### 2. Clone and Setup
+- **Optimization runs** — a guided wizard (or an agent) builds the signature, metric, and column mapping; GEPA evolves the prompt with live streaming progress, resumable checkpoints, and a baseline-vs-optimized held-out score. Grid search compares model pairs side by side.
+- **AI co-tagging** — the tagger interviews you about your dataset, distills an editable labeling guide, calibrates against ~30 of your own labels (the AI guesses blind and reveals only after you commit), then earns the right to tag the rest through agreement-gated review rounds. Every label carries provenance (`human` / `ai_confirmed` / `ai_auto`), and one click turns your labels into a real optimized classifier.
+- **Dataset library** — save, share, clone, and edit datasets in place with a spreadsheet editor; hand any dataset to the tagger or the wizard by reference.
+- **Agents** — a generalist assistant (Cmd/Ctrl+J) that operates the whole wizard through tools with configurable trust modes, and a code agent that authors signatures, metrics, and multi-step workflow graphs on a visual canvas.
+- **Serving** — every successful run yields a program artifact: inspect the evolved instructions and demos, run inference against it, or export a runnable program.
+- **24 locales, RTL-first** — Hebrew is the base language; Arabic and Persian are first-class; the rest overlay with graceful fallback.
+- **Break-even pricing** — credits map to raw provider cost plus payment-processing fees only (markup 1.09, zero profit). Bring your own API key and runs are **free**. A "no lift, no charge" guarantee refunds runs that don't beat their baseline. Without Stripe keys, billing is simply off.
+
+## Quick Start (local)
+
+Prerequisites: Python 3.11, Node 20+, PostgreSQL 15+, [`just`](https://github.com/casey/just), [`uv`](https://github.com/astral-sh/uv) (or pip), Docker (for the LiteLLM model gateway).
 
 ```bash
-git clone https://github.com/hexdrift/skynet.git
-cd skynet
-```
+git clone https://github.com/gilad12-coder/skynet.git && cd skynet
 
-### 3. Database
-
-```bash
-# Create the database
+# 1. Database
 createdb skynet
 
-# (Optional) Create a test database for running tests
-createdb skynet_test
+# 2. Configure
+cp backend/.env.example backend/.env        # set REMOTE_DB_URL + model keys
+cp frontend/.env.example frontend/.env.local
+
+# 3. Model gateway (routes all LLM traffic; holds provider keys)
+cd deploy/litellm && docker compose up -d && cd ../..
+
+# 4. Install + run
+just install
+just backend    # FastAPI on :8000 — migrations apply automatically at boot
+just frontend   # Next.js on :3000
 ```
 
-### 4. Backend
+Open http://localhost:3000. The API reference lives at http://localhost:8000/scalar.
 
-```bash
-cd backend
+Useful recipes: `just test`, `just lint`, `just check-i18n`, `just --list` for everything.
 
-# Create environment
-python -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-
-# Configure
-cp .env.example .env
-# Edit .env — set at minimum:
-#   OPENAI_API_KEY=sk-...
-#   REMOTE_DB_URL=postgresql://youruser@localhost:5432/skynet
-
-# Start
-python main.py
-```
-
-Backend runs at http://localhost:8000.
-
-### 5. Frontend
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Configure
-cp .env.example .env.local
-# Edit .env.local — defaults work for local development
-
-# Start
-npm run dev
-```
-
-Frontend runs at http://localhost:3001.
-
-### 6. Open the App
-
-Navigate to http://localhost:3001. If authentication is enabled you'll see a login page, otherwise you'll land directly on the dashboard.
-
----
-
-## Project Structure
+## Architecture
 
 ```
-skynet/
-├── backend/                    Python API + worker
-│   ├── main.py                 Entry point
-│   ├── .env.example            Configuration template
-│   ├── Dockerfile
-│   ├── docker-compose.yml      API + PostgreSQL
-│   ├── pyproject.toml
-│   ├── core/
-│   │   ├── api/                FastAPI routes
-│   │   ├── storage/            PostgreSQL persistence
-│   │   ├── worker/             Background job processing
-│   │   ├── registry/           Module & optimizer resolution
-│   │   ├── service_gateway/    DSPy orchestration pipeline
-│   │   ├── notifications/      Internal comms (Rocket.Chat, Slack, etc.)
-│   │   └── models.py           Pydantic models
-│   ├── tests/
-│   │   ├── test_llm_integration.py   34 real-API tests
-│   │   ├── test_load.py              9 load/stress tests
-│   │   └── locustfile.py             Sustained load dashboard
-│   └── usage_guide/            Notebooks + API client examples
-└── frontend/                   Next.js + shadcn/ui
-    ├── .env.example            Configuration template
-    ├── package.json
-    └── src/
-        ├── app/                Pages (dashboard, submit wizard, job detail)
-        ├── components/         UI components
-        └── lib/                API client, types, auth
+frontend/   Next.js (App Router) · Tailwind v4 · shadcn/radix · SSE streaming UI
+backend/    FastAPI · SQLAlchemy + Alembic (boot-time migrations) · DSPy 3.2
+            └─ worker: multi-pod job fleet over Postgres (SELECT … FOR UPDATE
+               SKIP LOCKED leases, orphan recovery, resumable GEPA checkpoints)
+deploy/     litellm proxy (compose) · helm chart for Kubernetes
+i18n/       Hebrew base catalog + 23 overlay locales → generated typed catalogs
+docs/       operator guides (Stripe setup, design briefs)
 ```
 
----
+All model traffic flows through a LiteLLM proxy, so any OpenAI-compatible provider works and keys live in one place. Billing (optional) is Stripe: prepaid credit packs, metered usage at $0.01/credit, and a per-user encrypted BYOK vault.
 
 ## Configuration
 
@@ -114,112 +65,39 @@ skynet/
 
 ```bash
 # ── Required ──
-OPENAI_API_KEY=sk-your-key          # Or any LiteLLM-supported provider
 REMOTE_DB_URL=postgresql://user@localhost:5432/skynet
+LITELLM_PROXY_URL=http://localhost:4000/v1     # the model gateway
+LITELLM_PROXY_API_KEY=...                      # its master key
 
 # ── Server ──
 API_HOST=0.0.0.0
 API_PORT=8000
-LOG_LEVEL=INFO
-
-# ── CORS ──
-# Comma-separated allowed origins (defaults to localhost:3000,3001)
-ALLOWED_ORIGINS=http://localhost:3001,https://yourdomain.com
+ALLOWED_ORIGINS=http://localhost:3000          # comma-separated CORS origins
 
 # ── Worker ──
-WORKER_CONCURRENCY=2                # Parallel optimization jobs
-WORKER_POLL_INTERVAL=2.0            # Queue poll interval (seconds)
-WORKER_STALE_THRESHOLD=600          # Health check threshold (seconds)
+WORKER_CONCURRENCY=4                           # parallel background jobs
 
-# ── Notifications (optional) ──
-# COMMS_WEBHOOK_URL=https://chat.yourcompany.com/hooks/webhook-id
-# COMMS_CHANNEL=#skynet-notifications
-# FRONTEND_URL=https://skynet.yourcompany.com
+# ── Billing (optional — omit to disable charging entirely) ──
+# STRIPE_SECRET_KEY=...                        # see docs/stripe-setup.md
 ```
+
+See `backend/.env.example` for the full annotated list (agents' models, tagger assist models, notifications, air-gap gateways, and more).
 
 ### Frontend (`frontend/.env.local`)
 
 ```bash
-# ── API ──
 NEXT_PUBLIC_API_URL=http://localhost:8000
-
-# ── Auth (NextAuth) ──
 AUTH_SECRET=generate-with-openssl-rand-base64-32
 
-# ── ADFS Login (optional — uncomment to enable) ──
-# AUTH_ADFS_ISSUER=https://adfs.yourcompany.com/adfs
-# AUTH_ADFS_CLIENT_ID=your-client-id
-# AUTH_ADFS_CLIENT_SECRET=your-client-secret
-
-# ── Dev Login (active when ADFS is not configured) ──
-# Login with any username and password "skynet"
-# Set DEV_AUTH=false to disable login entirely
+# Dev login is active when no SSO is configured: any username, password "skynet".
+# Set DEV_AUTH=false to disable login entirely (open access).
+# ADFS/OIDC SSO: see frontend/.env.example.
 ```
 
----
-
-## Authentication
-
-### Development Mode (default)
-
-When ADFS is not configured, a local credentials login is active:
-- **Username**: any value (becomes your display name)
-- **Password**: `skynet`
-
-### ADFS (Production)
-
-1. On your ADFS server, register a new Web Application (OpenID Connect)
-2. Set redirect URI: `https://your-app/api/auth/callback/adfs`
-3. Enable scopes: `openid`, `profile`, `email`
-4. Copy Client ID and Secret to `frontend/.env.local`
-
-When authenticated, the username auto-fills in the submit form from the ADFS session.
-
-### No Authentication
-
-Set `DEV_AUTH=false` in `frontend/.env.local` (with ADFS env vars unset) to disable login entirely.
-
----
-
-## Notifications
-
-Skynet sends Hebrew notifications to your internal messaging platform when jobs are submitted or completed.
-
-### Setup
-
-1. Create an incoming webhook in your messaging platform (Rocket.Chat, Slack, Teams, etc.)
-2. Set `COMMS_WEBHOOK_URL` in `backend/.env`
-3. Optionally set `COMMS_CHANNEL` and `FRONTEND_URL`
-
-### Messages
-
-| Event | Message |
-|-------|---------|
-| Job submitted | 🚀 אופטימיזציה חדשה — user, optimizer, model, [link to monitor] |
-| Job succeeded | ✅ אופטימיזציה הושלמה — user, scores, [link to results] |
-| Job failed | ❌ אופטימיזציה נכשלה — user, error, [link to details] |
-| Job cancelled | ⚠️ אופטימיזציה בוטלה — user, [link to details] |
-
-When `COMMS_WEBHOOK_URL` is not set, notifications are silently skipped.
-
-### Adapting to Your Platform
-
-Edit `backend/core/notifications/comms.py` — the `send_message()` function sends a JSON payload to the webhook URL. Adjust the payload format for your platform:
-
-```python
-# Rocket.Chat / Slack:  {"text": "...", "channel": "#room"}
-# Teams:                {"text": "..."}
-# Custom:               adapt as needed
-```
-
----
-
-## Serving Optimized Programs
-
-After a successful optimization, you can run inference on the optimized program:
+## Serving optimized programs
 
 ```bash
-# Check what fields the program expects
+# What inputs does the program expect?
 curl http://localhost:8000/serve/{optimization_id}/info
 
 # Run inference
@@ -228,106 +106,14 @@ curl -X POST http://localhost:8000/serve/{optimization_id} \
   -d '{"inputs": {"question": "What is 7+3?"}}'
 ```
 
-The frontend provides a built-in playground on the job detail page — fill in the input fields and click "הרץ תוכנית".
+The job detail page includes a built-in inference playground and a program export (runnable zip).
 
----
+## Deployment
 
-## Supported Optimization Configurations
-
-| Module | Optimizer | Job Type | Notes |
-|--------|-----------|----------|-------|
-| predict | gepa | run | Requires `reflection_model_config` and 5-arg metric |
-| cot | gepa | run | Same as above with CoT |
-| predict | gepa | grid_search | GEPA grid search over model pairs |
-| cot | gepa | grid_search | GEPA grid search with CoT |
-
-### Model Config Options
-
-| Field | Description |
-|-------|-------------|
-| `name` | Model identifier (e.g., `gpt-4o-mini`, `o3-mini`, `claude-sonnet-4-20250514`) |
-| `base_url` | Custom endpoint (Azure, vLLM, local LLMs) |
-| `temperature` | 0.0–2.0 |
-| `max_tokens` | Max output tokens |
-| `top_p` | Nucleus sampling |
-| `extra.api_key` | Per-request API key (not stored in DB) |
-| `extra.reasoning_effort` | For o-series models: `low`, `medium`, `high` |
-
----
-
-## Docker
-
-```bash
-cd backend
-docker compose up --build
-```
-
-This starts the API + PostgreSQL. The frontend must be deployed separately (Vercel, Docker, etc.).
-
----
-
-## Testing
-
-### Backend Integration Tests (real API calls)
-
-```bash
-cd backend
-
-# Start the server first
-python main.py &
-
-# Run all 34 integration tests (requires OPENAI_API_KEY)
-python -m pytest tests/test_llm_integration.py -v
-
-# Run load tests (9 tests)
-python -m pytest tests/test_load.py -v
-
-# Sustained load testing dashboard
-locust -f tests/locustfile.py --host=http://localhost:8000
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm run build    # Type check + build
-```
-
----
-
-## API Reference
-
-### Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/run` | Submit optimization run |
-| `POST` | `/grid-search` | Submit grid search |
-| `GET` | `/optimizations` | List optimizations (filterable, paginated) |
-| `GET` | `/optimizations/{id}` | Full optimization detail |
-| `GET` | `/optimizations/{id}/summary` | Dashboard-friendly summary |
-| `GET` | `/optimizations/{id}/logs` | Optimization logs (filterable by level) |
-| `GET` | `/optimizations/{id}/payload` | Original submission payload |
-| `GET` | `/optimizations/{id}/artifact` | Download optimized program |
-| `GET` | `/optimizations/{id}/grid-result` | Grid search results |
-| `GET` | `/optimizations/{id}/stream` | SSE real-time updates |
-| `POST` | `/optimizations/{id}/cancel` | Cancel active optimization |
-| `DELETE` | `/optimizations/{id}` | Delete terminal optimization |
-| `POST` | `/optimizations/{id}/clone` | Clone an optimization |
-| `POST` | `/optimizations/{id}/retry` | Retry a failed or cancelled optimization |
-| `GET` | `/serve/{id}/info` | Program signature info |
-| `POST` | `/serve/{id}` | Run inference on optimized program |
-| `GET` | `/health` | Health check |
-| `GET` | `/queue` | Queue status |
-
-### Error Format
-
-All errors return:
-```json
-{"error": "<type>", "detail": "Human-readable message"}
-```
-
----
+- **Anywhere with Postgres** — the backend migrates its own schema at boot and the worker fleet scales horizontally via DB-lease job claims (no external queue).
+- **Kubernetes** — Helm chart in `deploy/helm`.
+- **Docker** — `cd backend && docker compose up --build` starts API + Postgres.
+- **Billing** — optional; follow `docs/stripe-setup.md` to enable credit packs and metered usage.
 
 ## Extensibility
 
@@ -343,8 +129,10 @@ registry.register_optimizer("my_optimizer", my_optimizer_factory)
 app = create_app(registry=registry)
 ```
 
----
+## Contributing
 
-## Client Usage Guide
+See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, the test-suite layout, i18n rules, and the migration discipline. PRs welcome.
 
-See [`backend/usage_guide/index.html`](backend/usage_guide/index.html) for notebook examples and API client classes.
+## License
+
+[AGPL-3.0](LICENSE). Run it, fork it, self-host it — and if you offer a modified Skynet as a service, share your modifications back.
