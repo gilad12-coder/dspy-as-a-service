@@ -1690,8 +1690,12 @@ export function useSubmitWizard() {
       setParsedDataset(parsed);
       setDatasetFileName(file.name);
       const roles: Record<string, "input" | "output" | "ignore"> = {};
+      // Start every column as "ignore" so the mapping opens empty and the user
+      // deliberately marks the input(s) and output(s). Defaulting to "input"
+      // means a wide dataset opens with every column wrongly selected and has to
+      // be un-marked one by one.
       parsed.columns.forEach((col) => {
-        roles[col] = "input";
+        roles[col] = "ignore";
       });
       setColumnRoles(roles);
       // Drop any prior modality overrides — the profiler effect will re-seed
@@ -1738,12 +1742,12 @@ export function useSubmitWizard() {
       librarySourceRef.current = { id: dataset.id, parsed };
       setParsedDataset(parsed);
       setDatasetFileName(dataset.name);
-      // Restore the saved roles; default any column the schema didn't cover to
-      // input so the column step opens fully populated.
+      // Restore the saved roles; any column the schema didn't cover defaults to
+      // "ignore" so the user marks input/output deliberately (see handleFileUpload).
       const savedRoles = res.column_schema.column_roles ?? {};
       const roles: Record<string, "input" | "output" | "ignore"> = {};
       columns.forEach((col) => {
-        roles[col] = savedRoles[col] ?? "input";
+        roles[col] = savedRoles[col] ?? "ignore";
       });
       setColumnRoles(roles);
       // Seed saved modality kinds; the profiler effect only fills gaps, so these
