@@ -37,7 +37,7 @@ dependencies = [
     # a loud resolver error. Supported installs (uv.lock / requirements*.txt)
     # already carry gepa 0.1.1.
     "gepa>=0.1.1",
-    "litellm>=1.40",
+    "litellm>=1.84.0",
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "psycopg2-binary>=2.9",
