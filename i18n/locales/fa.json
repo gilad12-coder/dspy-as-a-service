@@ -185,7 +185,7 @@
     "serve.no_model_config": "هیچ پیکربندی مدلی برای این اجرا یافت نشد. model_config_override را ارائه کنید.",
     "submission.module_resolve_failed": "بارگذاری ماژول ناموفق بود: {error}",
     "submission.staged_dataset_not_found": "staged_dataset_id '{staged_dataset_id}' برای این کاربر یافت نشد — مجموعه‌داده را دوباره بارگذاری کرده و تلاش کنید.",
-    "submission.validation_failed": "اعتبارسنجی بار ناموفق بود. بهینه‌ساز، ماژول و نگاشت ستون را بررسی کنید.",
+    "submission.validation_failed": "اعتبارسنجی داده‌های ارسالی ناموفق بود. بهینه‌ساز، ماژول و نگاشت ستون را بررسی کنید.",
     "submission.vision_required": "مجموعه‌داده شامل ستون‌های تصویر است ({fields}) اما مدل انتخاب‌شده ('{model}') از ورودی‌های تصویری پشتیبانی نمی‌کند. یک مدل دارای قابلیت بینایی انتخاب کنید.",
     "submit.no_models_available": "هیچ مدلی در فهرست در دسترس نیست — ابتدا یک کلید API ارائه‌دهنده را پیکربندی کنید.",
     "user.storage.quota_exceeded": "سهمیه‌ی ذخیره‌سازی از حد گذشت ({used_mb} مگابایت از {quota_mb} مگابایت استفاده شد). فضا آزاد کرده و دوباره تلاش کنید.",

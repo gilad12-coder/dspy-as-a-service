@@ -1743,7 +1743,7 @@
   "auto.features.tutorial.components.concepts.guide.literal.267": "比較スコアを計算するのに十分な幅のサンプルセットでの候補の実行です。",
   "auto.features.tutorial.components.concepts.guide.literal.268": "ある試行の、入力、実行ステップ、予測、スコア、フィードバックの記録です。",
   "auto.features.tutorial.components.concepts.guide.literal.269": "出力の前に推論フィールドを追加するDSPyモジュールであり、条件チェック、説明、または複数ステップの解決を必要とするタスクに適しています。",
-  "auto.features.tutorial.components.concepts.guide.literal.27": "単一のサンプルでは良く見えるプロンプトも、実際のデータセットに接続すると、静かに失敗することがあります。問題は通常、言葉遣いの創造性の欠如ではなく、何が機能し、どこで失敗し、なぜかを示す秩序立ったプロセスの欠如です。ほぼすべてのプロジェクトで繰り返される4つの課題があります。",
+  "auto.features.tutorial.components.concepts.guide.literal.27": "単一のサンプルでは良く見えるプロンプトも、実際のデータセットに接続すると、気づかないうちに失敗していることがあります。問題は通常、言葉遣いの創造性の欠如ではなく、何が機能し、どこで失敗し、なぜかを示す秩序立ったプロセスの欠如です。ほぼすべてのプロジェクトで繰り返される4つの課題があります。",
   "auto.features.tutorial.components.concepts.guide.literal.270": "軌跡とフィードバックを分析し、プロンプトの改善を提案する言語モデルです。",
   "auto.features.tutorial.components.concepts.guide.literal.271": "DSPy",
   "auto.features.tutorial.components.concepts.guide.literal.272": "GEPA",

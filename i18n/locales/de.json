@@ -69,7 +69,7 @@
   },
   "messages": {
     "workflow.validation_failed": "Workflow-Validierung fehlgeschlagen: {error}",
-    "billing.insufficient_credits": "Dein Guthaben ist aufgebraucht. Füge Guthaben hinzu oder warte auf die Erneuerung des kostenlosen Kontingents, um auf verwalteter Infrastruktur auszuführen.",
+    "billing.insufficient_credits": "Ihr Guthaben ist aufgebraucht. Fügen Sie Guthaben hinzu oder warten Sie auf die Erneuerung des kostenlosen Kontingents, um auf verwalteter Infrastruktur auszuführen.",
     "accounts.email_taken": "Diese E-Mail-Adresse ist bereits registriert.",
     "accounts.invalid_credentials": "E-Mail oder Passwort ist falsch.",
     "accounts.invalid_email": "Ungültige E-Mail-Adresse.",

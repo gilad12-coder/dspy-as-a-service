@@ -847,7 +847,7 @@
   "auto.features.optimizations.constants.template.4": "The rows are shuffled randomly with a fixed seed to ensure identical results on every {p1}. They're then split by the configured ratios. The test set is held out and doesn't take part in the {p2} process.",
   "auto.features.optimizations.constants.template.5": "Measuring {p1}",
   "auto.features.optimizations.constants.template.6": "Run the {p1} without {p2} on the test set.",
-  "auto.features.optimizations.constants.template.7": "The {p1} runs as-is — without prompt engineering or examples — on every {p2} in the test set. {p3} computes {p4} for each {p5}, and the average is the {p6}. This score serves as the reference point for the {p7} that the {p8} delivers.",
+  "auto.features.optimizations.constants.template.7": "The {p1} runs as-is — without prompt engineering or examples — on every {p2} in the test set. {p3} computes {p4} for each {p5}, and the average is the {p6}. This score is the reference point for the {p7} that the {p8} delivers.",
   "auto.features.optimizations.constants.template.8": "The {p1} improves the {p2} using the training set.",
   "auto.features.optimizations.constants.template.9": "The {p1} tries different combinations of prompt phrasing, selected examples, and answer rules to maximize the metric score on the validation set. Each attempt runs the {p2} with a different configuration and measures the result. The best version is chosen at the end.",
   "auto.features.sidebar.components.sidebar.1": "Skynet",
