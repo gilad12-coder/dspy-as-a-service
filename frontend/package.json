@@ -13,7 +13,7 @@
     "format:check": "prettier --check ."
   },
   "engines": {
-    "node": ">=20 <21"
+    "node": ">=20"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",

@@ -20,7 +20,7 @@ Skynet turns "I have a dataset and a task" into an optimized, deployable LLM pro
 
 ## Quick Start (local)
 
-Prerequisites: Python 3.11, Node 20+, PostgreSQL 15+, [`just`](https://github.com/casey/just), [`uv`](https://github.com/astral-sh/uv) (or pip), Docker (for the LiteLLM model gateway).
+Prerequisites: Python 3.11, Node 20+ (22.6+ to run the frontend unit tests), PostgreSQL 15+, [`just`](https://github.com/casey/just), [`uv`](https://github.com/astral-sh/uv) (or pip), Docker (for the LiteLLM model gateway).
 
 ```bash
 git clone https://github.com/gilad12-coder/skynet.git && cd skynet

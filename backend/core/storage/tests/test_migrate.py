@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
@@ -31,10 +32,12 @@ from core.storage.models import (
     JobEmbeddingModel,
 )
 
-_HEAD = "c7d8e9f0a1b2"
+_BACKEND_DIR = Path(__file__).resolve().parents[3]
+# Resolved from the migration scripts, not pinned: every new migration moves the
+# head, and a stale pin fails all live-DB cases (which plain CI never runs).
+_HEAD = ScriptDirectory.from_config(Config(str(_BACKEND_DIR / "alembic.ini"))).get_current_head()
 # The schema state just before the one-time-500 grant migration.
 _PRE_500 = "f2b3c4d5e6a7"
-_BACKEND_DIR = Path(__file__).resolve().parents[3]
 REMOTE_DB_URL = os.environ.get("REMOTE_DB_URL")
 
 _needs_pg = pytest.mark.skipif(
