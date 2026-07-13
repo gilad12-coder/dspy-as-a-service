@@ -50,7 +50,7 @@
     "recharts": "^3.8.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.5.0",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "xlsx": "npm:@e965/xlsx@0.20.3"
   },
   "overrides": {
     "postcss": "^8.5.10"
