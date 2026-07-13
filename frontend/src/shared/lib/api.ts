@@ -346,13 +346,6 @@ export function submitRun(payload: RunRequest) {
   });
 }
 
-export function dryRunWorkflow(payload: WorkflowDryRunRequest) {
-  return request<WorkflowDryRunResponse>("/workflows/dry-run", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
 export interface WorkflowDryRunStreamHandlers {
   onToken: (field: string, chunk: string) => void;
   onFinal: (result: WorkflowDryRunResponse) => void;
@@ -597,11 +590,6 @@ export function createCheckoutSession(packId: string) {
     method: "POST",
     body: JSON.stringify({ pack_id: packId }),
   });
-}
-
-/** Start a Stripe Checkout session for the Premium subscription; redirect to `.url`. */
-export function createSubscriptionCheckout() {
-  return request<{ url: string }>("/billing/subscribe", { method: "POST" });
 }
 
 /** The Founder's Rate availability: the deadline gate and the 12-month price-lock window. */
@@ -1242,25 +1230,6 @@ export async function deleteTaggerSession(sessionId: string) {
   return res;
 }
 
-/** One AI turn of the tagger's dataset interview. */
-export interface TaggerAssistInterviewReply {
-  message: string;
-  quick_replies: string[];
-  rubric: string[];
-  done: boolean;
-}
-
-/** Run one dataset-interview turn against the session's stored dataset. */
-export function taggerAssistInterview(
-  sessionId: string,
-  body: { turns: Array<{ role: string; content: string }>; locale?: string },
-) {
-  return request<TaggerAssistInterviewReply>(`/tagging-sessions/${sessionId}/assist/interview`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
 /** Predict labels for specific rows (calibration / review batches). */
 export function taggerAssistPredict(sessionId: string, rowIds: string[]) {
   return request<{
@@ -1544,20 +1513,10 @@ export async function pauseJob(optimizationId: string) {
   return res;
 }
 
-// Re-runs a failed/cancelled optimization. The response's optimization_id is the
-// NEW run, so callers navigate to it after success.
-export async function retryJob(optimizationId: string) {
-  const res = await request<OptimizationSubmissionResponse>(
-    `/optimizations/${optimizationId}/retry`,
-    { method: "POST" },
-  );
-  invalidateCache("/optimizations");
-  return res;
-}
 // Restart re-runs the SAME run from scratch in place: status flips to pending,
 // the prior attempt's logs/progress/results are cleared, and the id is unchanged.
-// Like resumeJob (and unlike retryJob) callers refresh the current view rather
-// than navigating to a new run.
+// Like resumeJob, callers refresh the current view rather than navigating to a
+// new run.
 export async function restartJob(optimizationId: string) {
   const res = await request<{ optimization_id: string; status: string }>(
     `/optimizations/${optimizationId}/restart`,
@@ -1567,7 +1526,7 @@ export async function restartJob(optimizationId: string) {
   return res;
 }
 // Resume continues the SAME run from its checkpoint (no new id), so callers
-// refresh the current view rather than navigating, unlike retryJob.
+// refresh the current view rather than navigating.
 export async function resumeJob(optimizationId: string) {
   const res = await request<{ optimization_id: string; status: string }>(
     `/optimizations/${optimizationId}/resume`,
