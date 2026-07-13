@@ -322,23 +322,41 @@ body {
   overflow-x: hidden; /* Prevent decorative orbs and wide content from causing horizontal scroll */
 }
 
+/* Per-locale UI font, keyed off <html lang>. Geist (Latin + Cyrillic) and Heebo
+   (Hebrew) cover most locales; scripts Geist can't draw get a script-matched
+   variable face prepended, with Geist kept after it so embedded English/code in
+   a non-Latin UI still renders in Geist. Switching the locale switches the font
+   automatically — no JS. Latin/Cyrillic locales (incl. ru, uk) use the base. */
+:root {
+  --font-ui:
+    "Geist Variable", "Heebo Variable", system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+html[lang="ar"] {
+  --font-ui: "Noto Sans Arabic Variable", "Geist Variable", system-ui, sans-serif;
+}
+html[lang="fa"] {
+  --font-ui: "Vazirmatn Variable", "Geist Variable", system-ui, sans-serif;
+}
+html[lang="hi"] {
+  --font-ui: "Noto Sans Devanagari Variable", "Geist Variable", system-ui, sans-serif;
+}
+html[lang="ja"] {
+  --font-ui: "Noto Sans JP Variable", "Geist Variable", system-ui, sans-serif;
+}
+html[lang="ko"] {
+  --font-ui: "Noto Sans KR Variable", "Geist Variable", system-ui, sans-serif;
+}
+html[lang="zh-Hans"],
+html[lang="yue"] {
+  --font-ui: "Noto Sans SC Variable", "Geist Variable", system-ui, sans-serif;
+}
+
 body {
   min-height: 100vh;
   color: var(--text-1);
   background: var(--bg);
-  /* Geist (Latin) first, Heebo second: Latin glyphs resolve to Geist, and any
-     Hebrew character — which Geist doesn't cover — falls through to Heebo. This
-     is what makes English render in Geist app-wide while Hebrew stays Heebo. */
-  font-family:
-    "Geist Variable",
-    "Heebo Variable",
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    Arial,
-    sans-serif;
+  font-family: var(--font-ui);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -348,17 +366,13 @@ body {
 h1,
 h2,
 h3 {
-  font-family: "Geist Variable", "Heebo Variable", system-ui, sans-serif;
+  font-family: var(--font-ui);
   font-weight: 700;
 }
 
 /* Toast overrides — portaled outside the React tree */
 .Toastify__toast {
-  font-family:
-    "Heebo Variable",
-    system-ui,
-    -apple-system,
-    sans-serif !important;
+  font-family: var(--font-ui) !important;
   background: var(--card) !important;
   color: var(--foreground) !important;
   border: 1px solid var(--border) !important;

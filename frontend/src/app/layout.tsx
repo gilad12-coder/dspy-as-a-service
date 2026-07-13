@@ -48,6 +48,15 @@ import { getSiteUrl } from "@/shared/lib/site-config";
 import "@fontsource-variable/heebo/index.css";
 import "@fontsource-variable/geist/index.css";
 import "@fontsource-variable/jetbrains-mono/index.css";
+// Script-matched faces for locales Geist/Heebo don't cover. Each ships
+// unicode-range subsets, so a font's glyphs download only when that script is
+// actually on screen — an English visitor never fetches the CJK/Arabic bytes.
+import "@fontsource-variable/noto-sans-arabic/index.css";
+import "@fontsource-variable/vazirmatn/index.css";
+import "@fontsource-variable/noto-sans-devanagari/index.css";
+import "@fontsource-variable/noto-sans-jp/index.css";
+import "@fontsource-variable/noto-sans-kr/index.css";
+import "@fontsource-variable/noto-sans-sc/index.css";
 import "react-toastify/dist/ReactToastify.css";
 import "./globals.css";
 
