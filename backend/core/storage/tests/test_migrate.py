@@ -1,10 +1,14 @@
 """Tests for boot-time Alembic version sync (:func:`sync_migration_head`).
 
 The non-Postgres no-op guard runs in ordinary (SQLite) CI. The adopt-vs-upgrade
-behaviour needs a real Postgres and is gated on ``REMOTE_DB_URL`` — point it at a
-throwaway ``postgresql://`` database to exercise it::
+behaviour needs a real Postgres and is gated on ``SKYNET_TEST_DB_URL`` — a
+dedicated opt-in, **never** ``REMOTE_DB_URL``, because these cases wipe the
+target (``DROP SCHEMA public CASCADE``) and ``tests/conftest.py`` loads
+``backend/.env`` into the environment: a developer's ordinary config must not
+be able to unlock a wipe of their local database. Point it at a throwaway
+database to exercise the live cases::
 
-    REMOTE_DB_URL=postgresql://postgres:test@localhost:5432/testdb \
+    SKYNET_TEST_DB_URL=postgresql://postgres:test@localhost:5432/testdb \
         pytest backend/core/storage/tests/test_migrate.py
 
 Without that env var the live-DB cases are skipped, so unit-test CI is unaffected.
@@ -38,11 +42,11 @@ _BACKEND_DIR = Path(__file__).resolve().parents[3]
 _HEAD = ScriptDirectory.from_config(Config(str(_BACKEND_DIR / "alembic.ini"))).get_current_head()
 # The schema state just before the one-time-500 grant migration.
 _PRE_500 = "f2b3c4d5e6a7"
-REMOTE_DB_URL = os.environ.get("REMOTE_DB_URL")
+TEST_DB_URL = os.environ.get("SKYNET_TEST_DB_URL")
 
 _needs_pg = pytest.mark.skipif(
-    not REMOTE_DB_URL or not REMOTE_DB_URL.startswith("postgresql"),
-    reason="REMOTE_DB_URL not set to a postgresql:// URL — skipping live-DB migration tests.",
+    not TEST_DB_URL or not TEST_DB_URL.startswith("postgresql"),
+    reason="SKYNET_TEST_DB_URL not set to a postgresql:// URL — skipping live-DB migration tests.",
 )
 
 
@@ -104,13 +108,13 @@ def fresh_pg() -> Iterator[Engine]:
     """Yield an engine over a freshly wiped ``public`` schema of the live target.
 
     Guards against catastrophe: this fixture ``DROP SCHEMA public CASCADE``s, so it
-    refuses any non-local host — a stray ``REMOTE_DB_URL`` pointing at a managed
+    refuses any non-local host — a stray ``SKYNET_TEST_DB_URL`` pointing at a managed
     Postgres (e.g. a proxy domain) skips instead of wiping real data.
     """
-    host = make_url(REMOTE_DB_URL or "").host
+    host = make_url(TEST_DB_URL or "").host
     if host not in ("localhost", "127.0.0.1"):
         pytest.skip(f"refusing to wipe a non-local database (host={host!r})")
-    engine = create_engine(REMOTE_DB_URL or "")
+    engine = create_engine(TEST_DB_URL or "")
     with engine.begin() as conn:
         conn.execute(text("DROP SCHEMA public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))

@@ -2,11 +2,13 @@
 
 These tests verify that ``FOR UPDATE SKIP LOCKED`` actually serializes
 concurrent claimers — something SQLite cannot exercise because it lacks
-row-level locking. They are gated on ``REMOTE_DB_URL`` so they only run
-when an operator deliberately points the suite at a real Postgres
-instance::
+row-level locking. They are gated on ``SKYNET_TEST_DB_URL`` — a dedicated
+opt-in, **never** ``REMOTE_DB_URL``, because setup can drop a legacy schema
+and the tests mutate job rows, while ``tests/conftest.py`` loads
+``backend/.env`` into the environment: a developer's ordinary config must
+not point these tests at their local database. Use a throwaway::
 
-    REMOTE_DB_URL=postgresql://skynet:skynet@localhost:5432/skynet \
+    SKYNET_TEST_DB_URL=postgresql://skynet:skynet@localhost:5432/testdb \
         pytest backend/core/storage/tests/test_remote_jobstore_postgres.py
 
 Without that env var the entire module is skipped, so unit-test CI is
@@ -29,12 +31,12 @@ from sqlalchemy import create_engine, text
 from alembic import command
 from core.storage.remote import RemoteDBJobStore
 
-REMOTE_DB_URL = os.environ.get("REMOTE_DB_URL")
+TEST_DB_URL = os.environ.get("SKYNET_TEST_DB_URL")
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 
 pytestmark = pytest.mark.skipif(
-    not REMOTE_DB_URL or not REMOTE_DB_URL.startswith("postgresql"),
-    reason="REMOTE_DB_URL not set to a postgresql:// URL — skipping live-DB tests.",
+    not TEST_DB_URL or not TEST_DB_URL.startswith("postgresql"),
+    reason="SKYNET_TEST_DB_URL not set to a postgresql:// URL — skipping live-DB tests.",
 )
 
 
@@ -84,14 +86,14 @@ def store() -> Iterator[RemoteDBJobStore]:
     such as new indexed columns are present before rows are inserted.
     The store is reused across tests to avoid repeating that setup work.
     """
-    _reset_legacy_schema(REMOTE_DB_URL or "")
+    _reset_legacy_schema(TEST_DB_URL or "")
 
     alembic_cfg = Config(str(BACKEND_DIR / "alembic.ini"))
     alembic_cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
-    alembic_cfg.set_main_option("sqlalchemy.url", REMOTE_DB_URL or "")
+    alembic_cfg.set_main_option("sqlalchemy.url", TEST_DB_URL or "")
     command.upgrade(alembic_cfg, "head")
 
-    s = RemoteDBJobStore(REMOTE_DB_URL)
+    s = RemoteDBJobStore(TEST_DB_URL)
     try:
         yield s
     finally:
