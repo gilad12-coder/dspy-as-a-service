@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: backend · ruff + core tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install dependencies (runtime + dev)
+        run: uv sync --extra dev --frozen
+      - name: Ruff lint
+        run: uv run ruff check .
+      # The credential-free `core/` tier runs without Postgres, an LLM, or a live
+      # server; the `tests/` integration tier (DB + paid LLM) is a separate,
+      # nightly concern and is intentionally not gated here.
+      - name: Core test suite
+        run: uv run pytest core/ -q
+
+  frontend:
+    name: frontend · typecheck + lint + unit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22: the unit runner uses --experimental-strip-types (Node >= 22.6).
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm run test:unit

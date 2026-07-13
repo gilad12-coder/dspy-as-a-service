@@ -90,6 +90,7 @@ from .workflow import (
 
 __all__ = [
     "HEALTH_STATUS_OK",
+    "WORKFLOW_MODULE_NAME",
     "AnalyticsSummaryResponse",
     "BulkCancelRequest",
     "BulkCancelResponse",
@@ -154,7 +155,6 @@ __all__ = [
     "ValidateCodeResponse",
     "ValidateDatasetRequest",
     "ValidateDatasetResponse",
-    "WORKFLOW_MODULE_NAME",
     "WorkflowDryRunRequest",
     "WorkflowDryRunResponse",
     "WorkflowEdge",

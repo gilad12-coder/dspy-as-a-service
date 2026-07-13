@@ -135,9 +135,8 @@ def test_failing_node_is_named_and_traced():
         transforms={},
         tools={},
     )
-    with capture_node_traces() as traces:
-        with pytest.raises(WorkflowNodeExecutionError, match="'boom' failed"):
-            program(text="x")
+    with capture_node_traces() as traces, pytest.raises(WorkflowNodeExecutionError, match="'boom' failed"):
+        program(text="x")
     assert traces[-1]["node_id"] == "boom"
     assert "kaput" in traces[-1]["error"]
 

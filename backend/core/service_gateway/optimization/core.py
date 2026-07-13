@@ -95,7 +95,6 @@ from .optimizers import (
     validate_optimizer_signature,
 )
 from .progress import capture_tqdm
-from .workflow import build_workflow_program, validate_workflow
 from .timing import (
     STAGE_BASELINE,
     STAGE_EVALUATION,
@@ -118,6 +117,7 @@ from .validators import (
     require_mapping_columns_in_dataset,
     require_mapping_matches_signature,
 )
+from .workflow import build_workflow_program, validate_workflow
 
 logger = logging.getLogger(__name__)
 

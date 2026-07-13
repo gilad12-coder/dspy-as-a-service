@@ -86,14 +86,14 @@ def test_branch_merge_spec_parses_with_stable_topo_order():
 
 def test_duplicate_node_ids_rejected():
     """Two nodes sharing an id fail structural validation."""
-    nodes = _linear_nodes() + [{"id": "summarize", "kind": "signature", "signature_code": _SIG}]
+    nodes = [*_linear_nodes(), {"id": "summarize", "kind": "signature", "signature_code": _SIG}]
     with pytest.raises(ValidationError, match="Duplicate node id"):
         _spec(nodes)
 
 
 def test_exactly_one_input_and_output_required():
     """Zero or multiple anchors are rejected."""
-    extra_input = _linear_nodes() + [{"id": "inp2", "kind": "input", "fields": [{"name": "text"}]}]
+    extra_input = [*_linear_nodes(), {"id": "inp2", "kind": "input", "fields": [{"name": "text"}]}]
     with pytest.raises(ValidationError, match="exactly one input node"):
         _spec(extra_input)
     no_output = [node for node in _linear_nodes() if node["id"] != "out"]
@@ -123,9 +123,7 @@ def test_cycle_rejected():
 
 def test_unknown_edge_endpoint_rejected():
     """An edge naming a nonexistent node fails validation."""
-    edges = _linear_edges() + [
-        {"source": "ghost", "source_port": "x", "target": "out", "target_port": "summary"}
-    ]
+    edges = [*_linear_edges(), {"source": "ghost", "source_port": "x", "target": "out", "target_port": "summary"}]
     with pytest.raises(ValidationError, match="unknown source node"):
         _spec(edges=edges)
 
@@ -134,10 +132,7 @@ def test_multiple_producers_for_one_port_rejected():
     """Two edges feeding the same input port fail validation."""
     nodes = _linear_nodes()
     nodes.insert(2, {"id": "second", "kind": "signature", "signature_code": _SIG})
-    edges = _linear_edges() + [
-        {"source": "inp", "source_port": "text", "target": "second", "target_port": "text"},
-        {"source": "second", "source_port": "summary", "target": "out", "target_port": "summary"},
-    ]
+    edges = [*_linear_edges(), {"source": "inp", "source_port": "text", "target": "second", "target_port": "text"}, {"source": "second", "source_port": "summary", "target": "out", "target_port": "summary"}]
     with pytest.raises(ValidationError, match="fed by more than one edge"):
         _spec(nodes, edges)
 
@@ -152,7 +147,7 @@ def test_unfed_output_field_rejected():
 
 def test_unreachable_node_rejected():
     """A node disconnected from the input anchor fails validation."""
-    nodes = _linear_nodes() + [{"id": "island", "kind": "signature", "signature_code": _SIG}]
+    nodes = [*_linear_nodes(), {"id": "island", "kind": "signature", "signature_code": _SIG}]
     with pytest.raises(ValidationError, match="not reachable from the input node"):
         _spec(nodes)
 
@@ -167,9 +162,7 @@ def test_declared_port_existence_checked():
 
 def test_anchor_direction_enforced():
     """Edges into the input anchor or out of the output anchor fail."""
-    edges = _linear_edges() + [
-        {"source": "summarize", "source_port": "summary", "target": "inp", "target_port": "text"}
-    ]
+    edges = [*_linear_edges(), {"source": "summarize", "source_port": "summary", "target": "inp", "target_port": "text"}]
     with pytest.raises(ValidationError, match="input node cannot be an edge target"):
         _spec(edges=edges)
 
@@ -242,9 +235,7 @@ def test_run_request_requires_tool_source_for_tool_nodes():
             "output_field": {"name": "result"},
         },
     )
-    edges = _linear_edges() + [
-        {"source": "inp", "source_port": "text", "target": "lookup", "target_port": "query"},
-    ]
+    edges = [*_linear_edges(), {"source": "inp", "source_port": "text", "target": "lookup", "target_port": "query"}]
     # Keep the mcp node on a path to the output.
     nodes[-1]["fields"].append({"name": "extra"})
     edges.append({"source": "lookup", "source_port": "result", "target": "out", "target_port": "extra"})

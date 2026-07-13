@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import heapq
 from collections import deque
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -179,13 +179,7 @@ class WorkflowMcpNode(_WorkflowNodeBase):
 
 
 WorkflowNode = Annotated[
-    Union[
-        WorkflowInputNode,
-        WorkflowOutputNode,
-        WorkflowSignatureNode,
-        WorkflowTransformNode,
-        WorkflowMcpNode,
-    ],
+    WorkflowInputNode | WorkflowOutputNode | WorkflowSignatureNode | WorkflowTransformNode | WorkflowMcpNode,
     Field(discriminator="kind"),
 ]
 

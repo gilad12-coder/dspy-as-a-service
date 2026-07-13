@@ -42,13 +42,13 @@ def _linear_spec() -> dict:
     }
 
 
-@pytest.fixture()
+@pytest.fixture
 def events() -> list[dict]:
     """Collect the SSE events a session emits during a test."""
     return []
 
 
-@pytest.fixture()
+@pytest.fixture
 def session(events: list[dict]) -> _WorkflowEditSession:
     """Build a session over the linear starter graph with a capturing emitter."""
     return _WorkflowEditSession(

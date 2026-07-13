@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Annotated, Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Annotated, Any
 
 import dspy
 from dspy.streaming import StreamListener, StreamResponse
