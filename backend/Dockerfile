@@ -2,7 +2,10 @@
 # REGISTRY_PREFIX / DEBIAN_MIRROR / PIP_INDEX_URL / PIP_TRUSTED_HOST build-args.
 # With those set nothing in this file fetches from public mirrors.
 ARG REGISTRY_PREFIX=docker.io
-FROM ${REGISTRY_PREFIX}/python:3.11-slim
+# 3.12 for PEP 683 immortal objects: core interpreter objects stop taking
+# refcount writes, so job children fork()ed from the fat parent dirty far
+# fewer copy-on-write pages. Full test suite verified green on 3.12.
+FROM ${REGISTRY_PREFIX}/python:3.12-slim
 
 WORKDIR /app
 

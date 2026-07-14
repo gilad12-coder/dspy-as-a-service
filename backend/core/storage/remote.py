@@ -19,7 +19,15 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, defer, sessionmaker
 
 from ..config import settings
-from ..constants import STRUCTURAL_PROGRESS_EVENTS, TQDM_KEY_PREFIX
+from ..constants import (
+    PAYLOAD_OVERVIEW_DATASET_ROWS,
+    PAYLOAD_OVERVIEW_MODEL_NAME,
+    PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
+    PAYLOAD_OVERVIEW_OPTIMIZER_NAME,
+    PAYLOAD_OVERVIEW_TOTAL_PAIRS,
+    STRUCTURAL_PROGRESS_EVENTS,
+    TQDM_KEY_PREFIX,
+)
 from .base import JobRecord, LogEntryRecord, ProgressEventRecord
 from .checkpoint_store import GepaCheckpoint, PostgresCheckpointBlobStore, PostgresGridPairResultStore
 from .migrate import sync_migration_head
@@ -115,6 +123,93 @@ def _build_engine_kwargs(db_url: str) -> dict[str, Any]:
         "pool_timeout": settings.db_pool_timeout_seconds,
         "connect_args": _build_connect_args(db_url),
     }
+
+
+def _json_int(value: Any) -> int | None:
+    """Coerce one extracted JSON scalar to ``int``, or ``None`` when it isn't one.
+
+    Extraction returns text on PostgreSQL (``->>``) and native affinity values
+    on SQLite, so both forms must coerce; junk degrades to ``None``, mirroring
+    the ``isinstance`` guards the analytics aggregations always applied.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _json_float(value: Any) -> float | None:
+    """Coerce one extracted JSON scalar to ``float``, or ``None`` when it isn't one."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _assemble_analytics_row(row: Any) -> JobRecord:
+    """Rebuild one skinny analytics job dict from its extracted JSON scalars.
+
+    Keeps the shapes the aggregations rely on: absent overview keys stay
+    absent (``.get`` → ``None``), a NULL ``result`` stays ``None`` (the
+    ``if not result_data`` guard), and ``best_pair`` appears only when at
+    least one of its metrics parsed — matching how a grid row looks.
+
+    Args:
+        row: The SELECT tuple from :meth:`RemoteDBJobStore.scan_jobs_for_analytics`.
+
+    Returns:
+        A ``JobRecord``-shaped dict with pruned ``payload_overview``/``result``.
+    """
+    (
+        optimization_id,
+        job_status,
+        result_null,
+        ov_optimizer,
+        ov_model,
+        ov_type,
+        ov_rows,
+        ov_pairs,
+        r_baseline,
+        r_optimized,
+        r_runtime,
+        r_completed,
+        r_failed,
+        bp_baseline,
+        bp_optimized,
+        bp_runtime,
+    ) = row
+    overview_pairs = (
+        (PAYLOAD_OVERVIEW_OPTIMIZER_NAME, ov_optimizer),
+        (PAYLOAD_OVERVIEW_MODEL_NAME, ov_model),
+        (PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE, ov_type),
+        (PAYLOAD_OVERVIEW_DATASET_ROWS, _json_int(ov_rows)),
+        (PAYLOAD_OVERVIEW_TOTAL_PAIRS, _json_int(ov_pairs)),
+    )
+    job: JobRecord = {
+        "optimization_id": optimization_id,
+        "status": job_status,
+        "payload_overview": {key: value for key, value in overview_pairs if value is not None},
+        "result": None,
+    }
+    if not result_null:
+        result_pairs = (
+            ("baseline_test_metric", _json_float(r_baseline)),
+            ("optimized_test_metric", _json_float(r_optimized)),
+            ("runtime_seconds", _json_float(r_runtime)),
+            ("completed_pairs", _json_int(r_completed)),
+            ("failed_pairs", _json_int(r_failed)),
+        )
+        result: dict[str, Any] = {key: value for key, value in result_pairs if value is not None}
+        best_pair_pairs = (
+            ("baseline_test_metric", _json_float(bp_baseline)),
+            ("optimized_test_metric", _json_float(bp_optimized)),
+            ("runtime_seconds", _json_float(bp_runtime)),
+        )
+        best_pair = {key: value for key, value in best_pair_pairs if value is not None}
+        if best_pair:
+            result["best_pair"] = best_pair
+        job["result"] = result
+    return job
 
 
 class RemoteDBJobStore:
@@ -2056,6 +2151,64 @@ class RemoteDBJobStore:
             return q.count()
         finally:
             session.close()
+
+    def scan_jobs_for_analytics(
+        self,
+        *,
+        status: str | None = None,
+        username: str | None = None,
+        limit: int = 10000,
+    ) -> list[JobRecord]:
+        """Skinny newest-first job scan for the analytics KPI rollups.
+
+        Rows are shaped like :meth:`list_jobs` output but carry only the
+        fields the aggregations read: ``status`` plus pruned
+        ``payload_overview`` and ``result`` dicts. The pruning happens in the
+        SELECT itself — the full ``result`` blob (per-example outputs,
+        multi-MB for grid runs) never leaves the database, which is what
+        keeps a 10k-row scan from spiking the API process. JSON paths are
+        extracted with SQLAlchemy's dialect-portable operators, so the same
+        query runs on PostgreSQL and the SQLite test harness.
+
+        Args:
+            status: Restrict to jobs with this status when set.
+            username: Restrict to jobs owned by this user when set.
+            limit: Maximum number of rows to scan, newest first.
+
+        Returns:
+            Skinny job rows in newest-first order.
+        """
+        overview = JobModel.payload_overview
+        result = JobModel.result
+        best_pair = result["best_pair"]
+        session = self._get_session()
+        try:
+            q = session.query(
+                JobModel.optimization_id,
+                JobModel.status,
+                result.is_(None).label("result_null"),
+                overview[PAYLOAD_OVERVIEW_OPTIMIZER_NAME].as_string(),
+                overview[PAYLOAD_OVERVIEW_MODEL_NAME].as_string(),
+                overview[PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE].as_string(),
+                overview[PAYLOAD_OVERVIEW_DATASET_ROWS].as_string(),
+                overview[PAYLOAD_OVERVIEW_TOTAL_PAIRS].as_string(),
+                result["baseline_test_metric"].as_string(),
+                result["optimized_test_metric"].as_string(),
+                result["runtime_seconds"].as_string(),
+                result["completed_pairs"].as_string(),
+                result["failed_pairs"].as_string(),
+                best_pair["baseline_test_metric"].as_string(),
+                best_pair["optimized_test_metric"].as_string(),
+                best_pair["runtime_seconds"].as_string(),
+            ).order_by(JobModel.created_at.desc())
+            if status:
+                q = q.filter(JobModel.status == status)
+            if username:
+                q = q.filter(JobModel.username == username)
+            rows = q.limit(limit).all()
+        finally:
+            session.close()
+        return [_assemble_analytics_row(row) for row in rows]
 
     def list_jobs(
         self,

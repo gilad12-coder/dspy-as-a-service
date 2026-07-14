@@ -252,7 +252,10 @@ class BackgroundWorker:
                 logger.info("Optimization %s enqueued (local hint)", optimization_id)
 
     def submit_job(
-        self, optimization_id: str, payload: RunRequest | GridSearchRequest | TaggingAutotagPayload
+        self,
+        optimization_id: str,
+        payload: RunRequest | GridSearchRequest | TaggingAutotagPayload,
+        payload_dump: dict[str, Any] | None = None,
     ) -> None:
         """Persist payload to the job store; rely on DB claim for pickup.
 
@@ -264,10 +267,16 @@ class BackgroundWorker:
         Args:
             optimization_id: ID of the job being submitted.
             payload: Pydantic model whose ``model_dump`` is stored on the job.
+            payload_dump: Optional pre-built ``model_dump(mode="json",
+                by_alias=True)`` of ``payload``. The submit routers already
+                serialize it for the storage-quota gate; passing it here
+                avoids a second full copy of the dataset per request.
         """
+        if payload_dump is None:
+            payload_dump = payload.model_dump(mode="json", by_alias=True)
         self._job_store.update_job(
             optimization_id,
-            payload=payload.model_dump(mode="json", by_alias=True),
+            payload=payload_dump,
             code_version=settings.code_version,
         )
         with self._queue_lock:

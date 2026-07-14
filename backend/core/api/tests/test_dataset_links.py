@@ -69,16 +69,17 @@ class _PersistingWorker:
         """
         self._store = store
 
-    def submit_job(self, optimization_id: str, payload: Any) -> None:
+    def submit_job(self, optimization_id: str, payload: Any, payload_dump: dict | None = None) -> None:
         """Write the dumped payload onto the pending job row.
 
         Args:
             optimization_id: Id of the job being submitted.
             payload: The validated request model whose dump is persisted.
+            payload_dump: Optional pre-built dump, mirroring the real worker.
         """
-        self._store.update_job(
-            optimization_id, payload=payload.model_dump(mode="json", by_alias=True)
-        )
+        if payload_dump is None:
+            payload_dump = payload.model_dump(mode="json", by_alias=True)
+        self._store.update_job(optimization_id, payload=payload_dump)
 
 
 class _FakeService:

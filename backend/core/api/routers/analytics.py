@@ -171,6 +171,41 @@ def create_analytics_router(*, job_store) -> APIRouter:
             scan_cache[key] = (now + _ANALYTICS_CACHE_TTL_SECONDS, rows)
         return rows
 
+    def kpi_job_scan(username: str | None, status: str | None) -> list[dict[str, Any]]:
+        """Fetch (cached) the job rows the KPI rollups aggregate over.
+
+        Prefers the store's skinny analytics scan, which prunes ``result``
+        down to its scalar metrics inside the SELECT — the full blob (multi-MB
+        per grid run) never reaches this process, so a 10k-row scan costs KBs
+        instead of the cache holding hundreds of MB. Stores without the method
+        (in-memory/test doubles) keep the plain list scan.
+
+        Args:
+            username: Resolved username scope (None aggregates across users).
+            status: Optional status filter.
+
+        Returns:
+            The cached or freshly fetched job rows (treat as read-only).
+        """
+        skinny = getattr(job_store, "scan_jobs_for_analytics", None)
+
+        def run() -> list[dict[str, Any]]:
+            """Issue the store query on a cache miss."""
+            if skinny is not None:
+                return skinny(status=status, username=username, limit=_ANALYTICS_JOB_HARD_CAP)
+            return job_store.list_jobs(
+                status=status,
+                username=username,
+                limit=_ANALYTICS_JOB_HARD_CAP,
+                offset=0,
+                # These rollups read overview/result fields only — skip the
+                # progress/log count-folding, whose IN(...) aggregate scans
+                # cost real time at the 10k-row cap.
+                with_counts=False,
+            )
+
+        return cached_scan(("list", username, status), run)
+
     @router.get(
         "/analytics/summary",
         response_model=AnalyticsSummaryResponse,
@@ -207,19 +242,7 @@ def create_analytics_router(*, job_store) -> APIRouter:
             A populated :class:`AnalyticsSummaryResponse` envelope.
         """
         username = _scope_analytics_username(current_user, username)
-        all_jobs = cached_scan(
-            ("list", username, status),
-            lambda: job_store.list_jobs(
-                status=status,
-                username=username,
-                limit=_ANALYTICS_JOB_HARD_CAP,
-                offset=0,
-                # These rollups read overview/result fields only — skip the
-                # progress/log count-folding, whose IN(...) aggregate scans
-                # cost real time at the 10k-row cap.
-                with_counts=False,
-            ),
-        )
+        all_jobs = kpi_job_scan(username, status)
         truncated = len(all_jobs) >= _ANALYTICS_JOB_HARD_CAP
 
         filtered_jobs = []
@@ -347,19 +370,7 @@ def create_analytics_router(*, job_store) -> APIRouter:
             A populated :class:`OptimizerStatsResponse` envelope.
         """
         username = _scope_analytics_username(current_user, username)
-        all_jobs = cached_scan(
-            ("list", username, status),
-            lambda: job_store.list_jobs(
-                status=status,
-                username=username,
-                limit=_ANALYTICS_JOB_HARD_CAP,
-                offset=0,
-                # These rollups read overview/result fields only — skip the
-                # progress/log count-folding, whose IN(...) aggregate scans
-                # cost real time at the 10k-row cap.
-                with_counts=False,
-            ),
-        )
+        all_jobs = kpi_job_scan(username, status)
         truncated = len(all_jobs) >= _ANALYTICS_JOB_HARD_CAP
 
         # optimizer_name -> {total, success, improvements, runtimes}
@@ -467,19 +478,7 @@ def create_analytics_router(*, job_store) -> APIRouter:
             A populated :class:`ModelStatsResponse` envelope.
         """
         username = _scope_analytics_username(current_user, username)
-        all_jobs = cached_scan(
-            ("list", username, status),
-            lambda: job_store.list_jobs(
-                status=status,
-                username=username,
-                limit=_ANALYTICS_JOB_HARD_CAP,
-                offset=0,
-                # These rollups read overview/result fields only — skip the
-                # progress/log count-folding, whose IN(...) aggregate scans
-                # cost real time at the 10k-row cap.
-                with_counts=False,
-            ),
-        )
+        all_jobs = kpi_job_scan(username, status)
         truncated = len(all_jobs) >= _ANALYTICS_JOB_HARD_CAP
 
         # model_name -> {total, success, improvements, use_count}

@@ -1191,3 +1191,102 @@ def test_delete_job_removes_grid_pair_results_and_pair_checkpoints(store: SQLite
     store.delete_job("g3")
     assert store.has_gepa_checkpoint("g3") is False
     assert store.has_grid_pair_results("g3") is False
+
+
+def test_scan_jobs_for_analytics_trims_run_result(store: SQLiteJobStore) -> None:
+    """A run row keeps only the scalar metrics; per-example blobs never surface."""
+    store.create_job("an-run", username="alice")
+    store.set_payload_overview(
+        "an-run",
+        {
+            "optimizer_name": "gepa",
+            "model_name": "openai/gpt-4o",
+            "optimization_type": "run",
+            "dataset_rows": 600,
+            "signature_code": "class Sig: ...",
+        },
+    )
+    store.update_job(
+        "an-run",
+        status="success",
+        result={
+            "baseline_test_metric": 0.5,
+            "optimized_test_metric": 0.75,
+            "runtime_seconds": 12.5,
+            "baseline_test_results": [{"index": i, "outputs": {"answer": "x" * 200}} for i in range(50)],
+        },
+    )
+
+    [row] = store.scan_jobs_for_analytics()
+
+    assert row["optimization_id"] == "an-run"
+    assert row["status"] == "success"
+    assert row["payload_overview"] == {
+        "optimizer_name": "gepa",
+        "model_name": "openai/gpt-4o",
+        "optimization_type": "run",
+        "dataset_rows": 600,
+    }
+    assert row["result"] == {
+        "baseline_test_metric": 0.5,
+        "optimized_test_metric": 0.75,
+        "runtime_seconds": 12.5,
+    }
+
+
+def test_scan_jobs_for_analytics_grid_best_pair_subset(store: SQLiteJobStore) -> None:
+    """A grid row carries pair counters plus the trimmed best_pair metrics."""
+    store.create_job("an-grid", username="alice")
+    store.set_payload_overview(
+        "an-grid",
+        {"optimizer_name": "gepa", "optimization_type": "grid_search", "total_pairs": 4},
+    )
+    store.update_job(
+        "an-grid",
+        status="success",
+        result={
+            "completed_pairs": 3,
+            "failed_pairs": 1,
+            "best_pair": {
+                "baseline_test_metric": 0.4,
+                "optimized_test_metric": 0.9,
+                "runtime_seconds": 30.0,
+                "pair_index": 2,
+                "per_example_outputs": ["y" * 500] * 20,
+            },
+        },
+    )
+
+    [row] = store.scan_jobs_for_analytics()
+
+    assert row["payload_overview"]["total_pairs"] == 4
+    assert row["result"] == {
+        "completed_pairs": 3,
+        "failed_pairs": 1,
+        "best_pair": {
+            "baseline_test_metric": 0.4,
+            "optimized_test_metric": 0.9,
+            "runtime_seconds": 30.0,
+        },
+    }
+
+
+def test_scan_jobs_for_analytics_null_result_and_filters(store: SQLiteJobStore) -> None:
+    """Result-less rows read as None, and status/username/limit narrow the scan."""
+    store.create_job("an-pending", username="alice")
+    store.set_payload_overview("an-pending", {"optimizer_name": "gepa"})
+    store.create_job("an-other", username="bob")
+    store.update_job("an-other", status="running")
+
+    rows = store.scan_jobs_for_analytics()
+    by_id = {r["optimization_id"]: r for r in rows}
+    assert by_id["an-pending"]["result"] is None
+    assert by_id["an-pending"]["status"] == "pending"
+
+    alice_rows = store.scan_jobs_for_analytics(username="alice")
+    assert {r["optimization_id"] for r in alice_rows} == {"an-pending"}
+
+    running_rows = store.scan_jobs_for_analytics(status="running")
+    assert {r["optimization_id"] for r in running_rows} == {"an-other"}
+
+    assert len(store.scan_jobs_for_analytics(limit=1)) == 1

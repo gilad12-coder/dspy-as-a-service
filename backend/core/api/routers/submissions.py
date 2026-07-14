@@ -540,12 +540,6 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 candidate_models=[payload.model_settings],
             )
 
-        enforce_storage_quota(
-            job_store,
-            payload.username,
-            incoming_bytes=json_byte_size(payload.model_dump(mode="json", by_alias=True)),
-        )
-
         _spendable = _enforce_credit_balance(job_store, payload.username, payload.token_source)
         _cap_cost_ceiling_to_balance(payload, _spendable, payload.token_source)
         _run_model_values = [
@@ -569,6 +563,14 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         # for the compare flow to line up per-row test results across deduplicated runs.
         if payload.seed is None:
             payload.seed = stable_seed(task_fingerprint)
+
+        # Single serialization, reused by the quota gate here and the submit
+        # persist below — the dump copies the whole dataset, so building it
+        # twice doubled the request's transient footprint. Taken only after
+        # the last payload mutations (cost-ceiling cap, seed) so the counted
+        # bytes are exactly the persisted bytes.
+        payload_dump = payload.model_dump(mode="json", by_alias=True)
+        enforce_storage_quota(job_store, payload.username, incoming_bytes=json_byte_size(payload_dump))
 
         job_store.create_job(optimization_id, username=payload.username, idempotency_key=normalized_key)
         job_store.set_payload_overview(
@@ -613,7 +615,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         _evict_staged_dataset(job_store, staged_id, payload.username)
 
         current_worker = get_worker(job_store, service=service)
-        current_worker.submit_job(optimization_id, payload)
+        current_worker.submit_job(optimization_id, payload, payload_dump=payload_dump)
 
         logger.info(
             "Enqueued job %s for module=%s optimizer=%s",
@@ -709,12 +711,6 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             candidate_models=list(payload.generation_models),
         )
 
-        enforce_storage_quota(
-            job_store,
-            payload.username,
-            incoming_bytes=json_byte_size(payload.model_dump(mode="json", by_alias=True)),
-        )
-
         _spendable = _enforce_credit_balance(job_store, payload.username, payload.token_source)
         _cap_cost_ceiling_to_balance(payload, _spendable, payload.token_source)
         _grid_model_values = [
@@ -729,6 +725,10 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         total_pairs = len(payload.generation_models) * len(payload.reflection_models)
 
         task_fingerprint = compute_task_fingerprint(payload.signature_code, payload.metric_code, payload.dataset)
+
+        # Same single-serialization pattern as /run — see the note there.
+        payload_dump = payload.model_dump(mode="json", by_alias=True)
+        enforce_storage_quota(job_store, payload.username, incoming_bytes=json_byte_size(payload_dump))
 
         job_store.create_job(optimization_id, username=payload.username, idempotency_key=normalized_key)
         job_store.set_payload_overview(
@@ -764,7 +764,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         _evict_staged_dataset(job_store, staged_id, payload.username)
 
         current_worker = get_worker(job_store, service=service)
-        current_worker.submit_job(optimization_id, payload)
+        current_worker.submit_job(optimization_id, payload, payload_dump=payload_dump)
 
         logger.info(
             "Enqueued grid search %s: %d pairs, module=%s optimizer=%s",
