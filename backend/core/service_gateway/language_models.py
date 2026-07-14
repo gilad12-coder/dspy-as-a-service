@@ -4,6 +4,9 @@ Builds ``dspy.LM`` instances from ``ModelConfig`` while filtering out
 ``None`` optional fields so LiteLLM does not reject the call.
 """
 
+import threading
+from dataclasses import dataclass
+
 import dspy
 
 from ..config import settings
@@ -133,6 +136,92 @@ def _apply_managed_gateway(lm_kwargs: dict[str, object]) -> None:
         lm_kwargs["model"] = f"litellm_proxy/{model.removeprefix('openrouter/')}"
 
 
+# One lock for every MeteredLM: ``LM.copy()`` shallow-copies instances, so an
+# instance-level lock would be shared anyway, and contention is a few dozen
+# nanoseconds per LM call against a network round-trip.
+_USAGE_LOCK = threading.Lock()
+
+
+@dataclass
+class LmUsageTotals:
+    """Running usage aggregate for one job LM and every internal copy of it.
+
+    ``total_found``/``split_found`` distinguish "zero usage" from "usage not
+    tracked" (mocked providers), mirroring the ``None`` contract of
+    :func:`total_tokens_from_history` / :func:`usage_by_model_from_history`.
+    """
+
+    calls: int = 0
+    total_tokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_found: bool = False
+    split_found: bool = False
+
+
+class MeteredLM(dspy.LM):
+    """``dspy.LM`` that aggregates usage instead of retaining call history.
+
+    A single optimization makes thousands of LM calls, and stock ``dspy.LM``
+    keeps each one's full prompt + raw response three times over (per-LM
+    ``history``, module-level ``GLOBAL_HISTORY``, per-module history) for up
+    to 10,000 entries — tens to hundreds of MB pinned for the whole run, and
+    permanently in the API process for agent/tagging calls. The repo only
+    ever consumed history as aggregate counts, so ``update_history`` reduces
+    each entry to running totals and drops it.
+
+    Because ``LM.copy()`` is a shallow copy, internal copies dspy makes (e.g.
+    rollout clones) share the same ``usage_totals`` object — their calls are
+    counted too, which plain history misses (``copy()`` resets ``history``).
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        """Construct the LM and attach a fresh usage aggregate."""
+        super().__init__(*args, **kwargs)
+        self.usage_totals = LmUsageTotals()
+
+    def update_history(self, entry: object) -> None:
+        """Fold one call's usage into the running totals and discard the entry.
+
+        Args:
+            entry: The history dict stock dspy would have appended; only its
+                ``usage`` block is read.
+        """
+        usage = entry.get("usage") if isinstance(entry, dict) else None
+        total = _usage_total_tokens(usage)
+        split = _usage_in_out_tokens(usage)
+        with _USAGE_LOCK:
+            totals = self.usage_totals
+            totals.calls += 1
+            if total is not None:
+                totals.total_tokens += total
+                totals.total_found = True
+            if split is not None:
+                totals.input_tokens += split[0]
+                totals.output_tokens += split[1]
+                totals.split_found = True
+
+
+def lm_call_count(language_model: object) -> int | None:
+    """Count the LM calls ``language_model`` has made.
+
+    Prefers the ``MeteredLM`` aggregate; falls back to ``len(history)`` for
+    plain/mocked LMs (and for a dspy line whose LM never invokes the
+    ``update_history`` hook, where history still accumulates).
+
+    Args:
+        language_model: The LM whose calls to count.
+
+    Returns:
+        The call count, or ``None`` when the object tracks neither form.
+    """
+    totals = getattr(language_model, "usage_totals", None)
+    if isinstance(totals, LmUsageTotals) and totals.calls:
+        return totals.calls
+    history = getattr(language_model, "history", None)
+    return len(history) if isinstance(history, list) else None
+
+
 def build_language_model(config: ModelConfig, *, disable_cache: bool = False) -> dspy.LM:
     """Construct a DSPy language model from a ModelConfig.
 
@@ -186,7 +275,7 @@ def build_language_model(config: ModelConfig, *, disable_cache: bool = False) ->
     if disable_cache:
         lm_kwargs["cache"] = False
     try:
-        language_model = dspy.LM(**lm_kwargs)
+        language_model = MeteredLM(**lm_kwargs)
     except ValueError as exc:
         raise ServiceError(f"Failed to build language model '{config.name}': {exc}") from exc
 
@@ -215,16 +304,17 @@ def _usage_total_tokens(usage: object) -> int | None:
 
 
 def total_tokens_from_history(*language_models: object) -> int | None:
-    """Sum the total token usage recorded across one or more LMs' call histories.
+    """Sum the total token usage recorded across one or more LMs.
 
-    Reads the ``usage`` block each ``dspy.LM`` stamps onto every ``history``
-    entry (the same source ``num_lm_calls`` counts), summing ``total_tokens`` —
-    or ``prompt_tokens + completion_tokens`` when a provider omits the total.
-    This is the per-run token figure the billing worker meters to Stripe.
+    Prefers each LM's ``MeteredLM`` running aggregate; otherwise reads the
+    ``usage`` block each stock ``dspy.LM`` stamps onto every ``history`` entry,
+    summing ``total_tokens`` — or ``prompt_tokens + completion_tokens`` when a
+    provider omits the total. This is the per-run token figure the billing
+    worker meters to Stripe.
 
     Args:
-        *language_models: LMs whose histories to total; ``None`` entries and LMs
-            without a ``history`` list are skipped.
+        *language_models: LMs whose usage to total; ``None`` entries and LMs
+            tracking neither form are skipped.
 
     Returns:
         The summed token count, or ``None`` when no usage information is present
@@ -234,6 +324,16 @@ def total_tokens_from_history(*language_models: object) -> int | None:
     total = 0
     found = False
     for language_model in language_models:
+        totals = getattr(language_model, "usage_totals", None)
+        if isinstance(totals, LmUsageTotals):
+            if totals.total_found:
+                total += totals.total_tokens
+                found = True
+            # A metered LM with recorded calls keeps no history; skipping the
+            # fallback also guards against double-counting on a dspy line
+            # that appends history outside the update_history hook.
+            if totals.calls:
+                continue
         history = getattr(language_model, "history", None)
         if not isinstance(history, list):
             continue
@@ -283,12 +383,13 @@ def usage_by_model_from_history(*language_models: object) -> dict[str, tuple[int
     The per-model companion to :func:`total_tokens_from_history`: it keys usage
     by each ``dspy.LM``'s ``model`` id and preserves the input/output split that
     per-model pricing needs, folding several LMs on the same model together.
+    Prefers the ``MeteredLM`` aggregate, falling back to history entries.
     Stays billing-agnostic — it returns plain token counts, leaving the
     cost conversion to :mod:`core.billing.pricing`.
 
     Args:
-        *language_models: LMs whose histories to total; ``None`` entries and LMs
-            without a ``history`` list are skipped. An LM with no ``model``
+        *language_models: LMs whose usage to total; ``None`` entries and LMs
+            tracking neither form are skipped. An LM with no ``model``
             attribute buckets under ``"unknown"``.
 
     Returns:
@@ -300,10 +401,20 @@ def usage_by_model_from_history(*language_models: object) -> dict[str, tuple[int
     by_model: dict[str, list[int]] = {}
     found = False
     for language_model in language_models:
+        model = getattr(language_model, "model", None) or "unknown"
+        totals = getattr(language_model, "usage_totals", None)
+        if isinstance(totals, LmUsageTotals):
+            if totals.split_found:
+                accumulator = by_model.setdefault(model, [0, 0])
+                accumulator[0] += totals.input_tokens
+                accumulator[1] += totals.output_tokens
+                found = True
+            # Same skip rationale as total_tokens_from_history.
+            if totals.calls:
+                continue
         history = getattr(language_model, "history", None)
         if not isinstance(history, list):
             continue
-        model = getattr(language_model, "model", None) or "unknown"
         for entry in history:
             split = _usage_in_out_tokens(entry.get("usage") if isinstance(entry, dict) else None)
             if split is None:

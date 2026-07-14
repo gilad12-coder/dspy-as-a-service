@@ -70,6 +70,7 @@ from ...worker.log_handler import set_current_pair_index
 from ..language_models import (
     apply_model_reasoning_config,
     build_language_model,
+    lm_call_count,
     total_tokens_from_history,
     usage_by_model_from_history,
 )
@@ -584,7 +585,7 @@ def _run_grid_pair(
             improvement = optimized - baseline
 
         pair_runtime = (datetime.now(UTC) - pair_start).total_seconds()
-        pair_lm_calls = len(language_model.history) if hasattr(language_model, "history") else None
+        pair_lm_calls = lm_call_count(language_model)
         _, pair_avg_ms = gen_timing.summary()
         pair_lm_activity = _build_lm_activity(gen_timing, refl_timing)
         result = PairResult(
@@ -988,9 +989,9 @@ class DspyService:
             metric_improvement = optimized_test_metric - baseline_test_metric
 
         runtime_seconds = (datetime.now(UTC) - run_start).total_seconds()
-        # num_lm_calls comes from LM history (preserves counting for mocked LMs);
+        # num_lm_calls prefers the metered aggregate (history stays for mocked LMs);
         # avg is wall-clock time spent inside the generation LM only, via the callback.
-        num_lm_calls = len(language_model.history) if hasattr(language_model, "history") else None
+        num_lm_calls = lm_call_count(language_model)
         _, avg_response_time_ms = gen_timing.summary()
         lm_activity = _build_lm_activity(gen_timing, refl_timing)
         response = RunResponse(
@@ -1198,7 +1199,7 @@ class DspyService:
         }
 
         runtime_seconds = (datetime.now(UTC) - run_start).total_seconds()
-        num_lm_calls = len(student_lm.history) if hasattr(student_lm, "history") else None
+        num_lm_calls = lm_call_count(student_lm)
         _, avg_response_time_ms = gen_timing.summary()
 
         # Map per-example scalars into the standard EvalExampleResult shape so the

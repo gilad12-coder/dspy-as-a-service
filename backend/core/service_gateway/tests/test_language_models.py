@@ -106,7 +106,7 @@ def test_build_language_model_passes_model_name_to_dspy() -> None:
     """The model name is passed through to ``dspy.LM`` and the LM is returned."""
     mock_lm = MagicMock()
 
-    with patch("dspy.LM", return_value=mock_lm) as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM", return_value=mock_lm) as mock_cls:
         result = build_language_model(_cfg(name="openai/gpt-4o-mini"))
 
     mock_cls.assert_called_once()
@@ -117,7 +117,7 @@ def test_build_language_model_passes_model_name_to_dspy() -> None:
 
 def test_build_language_model_strips_leading_slash_from_name() -> None:
     """A leading slash in the model name is stripped before forwarding."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg(name="/openai/gpt-4o-mini"))
 
     call_kwargs = mock_cls.call_args[1]
@@ -126,7 +126,7 @@ def test_build_language_model_strips_leading_slash_from_name() -> None:
 
 def test_build_language_model_includes_temperature() -> None:
     """The ``temperature`` value is forwarded to ``dspy.LM``."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg(temperature=0.7))
 
     call_kwargs = mock_cls.call_args[1]
@@ -135,7 +135,7 @@ def test_build_language_model_includes_temperature() -> None:
 
 def test_build_language_model_omits_base_url_when_none() -> None:
     """``base_url`` is omitted from the call when unset."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg(base_url=None))
 
     call_kwargs = mock_cls.call_args[1]
@@ -144,7 +144,7 @@ def test_build_language_model_omits_base_url_when_none() -> None:
 
 def test_build_language_model_passes_base_url_when_set() -> None:
     """A configured ``base_url`` is forwarded to ``dspy.LM``."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg(base_url="http://localhost:8080"))
 
     call_kwargs = mock_cls.call_args[1]
@@ -153,7 +153,7 @@ def test_build_language_model_passes_base_url_when_set() -> None:
 
 def test_build_language_model_omits_max_tokens_when_none() -> None:
     """``max_tokens`` is omitted when not configured."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg(max_tokens=None))
 
     call_kwargs = mock_cls.call_args[1]
@@ -162,7 +162,7 @@ def test_build_language_model_omits_max_tokens_when_none() -> None:
 
 def test_build_language_model_passes_max_tokens_when_set() -> None:
     """A configured ``max_tokens`` is forwarded to ``dspy.LM``."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg(max_tokens=512))
 
     call_kwargs = mock_cls.call_args[1]
@@ -171,7 +171,7 @@ def test_build_language_model_passes_max_tokens_when_set() -> None:
 
 def test_build_language_model_omits_top_p_when_none() -> None:
     """``top_p`` is omitted when not configured."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg(top_p=None))
 
     call_kwargs = mock_cls.call_args[1]
@@ -180,7 +180,7 @@ def test_build_language_model_omits_top_p_when_none() -> None:
 
 def test_build_language_model_passes_top_p_when_set() -> None:
     """A configured ``top_p`` is forwarded to ``dspy.LM``."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg(top_p=0.9))
 
     call_kwargs = mock_cls.call_args[1]
@@ -189,7 +189,7 @@ def test_build_language_model_passes_top_p_when_set() -> None:
 
 def test_build_language_model_applies_default_request_timeout() -> None:
     """A default ``timeout`` from settings guards against hung provider reads."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg())
 
     call_kwargs = mock_cls.call_args[1]
@@ -200,7 +200,7 @@ def test_build_language_model_caps_num_retries_under_stall_watchdog() -> None:
     """Retries are capped so the worst-case attempt sequence finishes before the
     stall watchdog — otherwise dspy's default num_retries=3 lets a hung call burn
     the whole watchdog budget and fail the run instead of timing out first."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg())
 
     call_kwargs = mock_cls.call_args[1]
@@ -211,7 +211,7 @@ def test_build_language_model_caps_num_retries_under_stall_watchdog() -> None:
 
 def test_build_language_model_extra_overrides_num_retries() -> None:
     """A per-model ``num_retries`` in ``extra`` wins over the watchdog-derived cap."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg(extra={"num_retries": 5}))
 
     call_kwargs = mock_cls.call_args[1]
@@ -220,7 +220,7 @@ def test_build_language_model_extra_overrides_num_retries() -> None:
 
 def test_build_language_model_merges_extra_kwargs() -> None:
     """Entries in the ``extra`` mapping are merged into the call kwargs, overriding the default timeout."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(_cfg(extra={"api_key": "sk-test", "timeout": 30}))
 
     call_kwargs = mock_cls.call_args[1]
@@ -230,7 +230,7 @@ def test_build_language_model_merges_extra_kwargs() -> None:
 
 def test_build_language_model_all_optional_fields_combined() -> None:
     """All optional fields can be combined and are forwarded together."""
-    with patch("dspy.LM") as mock_cls:
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
         build_language_model(
             _cfg(
                 name="openai/gpt-4o",
@@ -254,7 +254,7 @@ def test_build_language_model_all_optional_fields_combined() -> None:
 def test_build_language_model_value_error_from_dspy_raises_service_error() -> None:
     """A ``ValueError`` from ``dspy.LM`` is wrapped into a ``ServiceError``."""
     with (
-        patch("dspy.LM", side_effect=ValueError("unsupported model")),
+        patch("core.service_gateway.language_models.MeteredLM", side_effect=ValueError("unsupported model")),
         pytest.raises(ServiceError, match="Failed to build language model"),
     ):
         build_language_model(_cfg(name="bad/model"))
@@ -262,7 +262,7 @@ def test_build_language_model_value_error_from_dspy_raises_service_error() -> No
 
 def test_build_language_model_service_error_message_contains_model_name() -> None:
     """The wrapped ``ServiceError`` message includes the offending model name."""
-    with patch("dspy.LM", side_effect=ValueError("nope")), pytest.raises(ServiceError, match="my-model-name"):
+    with patch("core.service_gateway.language_models.MeteredLM", side_effect=ValueError("nope")), pytest.raises(ServiceError, match="my-model-name"):
         build_language_model(_cfg(name="my-model-name"))
 
 

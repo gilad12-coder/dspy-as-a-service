@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from functools import partial
 from typing import Any
 
+import dspy
+
 from ..constants import OPTIMIZATION_TYPE_GRID_SEARCH, OPTIMIZATION_TYPE_RUN
 from ..models import GridSearchRequest, RunRequest
 from ..registry import ServiceRegistry
@@ -149,6 +151,17 @@ def run_service_in_subprocess(
         event_queue: Shared multiprocessing queue back to the parent.
         start_method: The active multiprocessing start method (e.g. ``"fork"``).
     """
+    # One run makes thousands of unique LM calls, and dspy's default cache
+    # pins every response in a process-wide in-memory LRU (1M-entry cap —
+    # unbounded in practice) for this child's whole multi-hour lifetime.
+    # Disk-only caching keeps retry/resume dedup at near-zero resident cost.
+    # An unwritable cache dir (sandboxed test runs) must not fail the job:
+    # degrade to no caching at all, the same way dspy's own import does.
+    try:
+        dspy.configure_cache(enable_memory_cache=False)
+    except Exception:
+        with contextlib.suppress(Exception):
+            dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
     service = _FORK_SERVICE if start_method == "fork" and _FORK_SERVICE is not None else DspyService(ServiceRegistry())
     log_handler = SubprocessLogHandler(event_queue)
     log_handler.setLevel(logging.DEBUG)

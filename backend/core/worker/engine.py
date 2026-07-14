@@ -539,6 +539,16 @@ class BackgroundWorker:
                 assert run_process is not None
                 run_process.start()
 
+                # From here the child owns its copy of the payload. The
+                # validated request model is a second full copy of the
+                # dataset that would otherwise sit in this process for the
+                # whole multi-hour run — and be duplicated into every
+                # sibling job's fork image. ``payload_dict`` itself stays
+                # pinned by ``run_process``'s args tuple; only ``attempts``
+                # is read from ``job_data`` after this point.
+                job_data = {"attempts": job_data.get("attempts")}
+                run_payload = grid_payload = None
+
                 # Stall watchdog: the lease heartbeat (_touch_activity) renews
                 # on every tick regardless of progress, so a child wedged on a
                 # timeout-less blocking call (e.g. a hung LLM socket read) would

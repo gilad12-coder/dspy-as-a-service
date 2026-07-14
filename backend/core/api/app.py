@@ -17,6 +17,7 @@ extraction rules.
 
 from __future__ import annotations
 
+import gc
 import logging
 import os
 import signal
@@ -794,6 +795,16 @@ def create_app(
                 signal.SIGTERM,
                 partial(_graceful_shutdown_handler, worker, original_handler),
             )
+
+        # The worker forks a child process per optimization job, and CPython's
+        # GC writes to every tracked object's header during collection —
+        # dirtying copy-on-write pages in the parent AND all live children.
+        # Freezing the fully-initialized startup heap moves it to the
+        # permanent generation neither side ever scans, keeping the
+        # import-heavy base (dspy/litellm, ~hundreds of MB) physically shared
+        # across every fork instead of duplicated per job.
+        gc.collect()
+        gc.freeze()
 
         try:
             yield

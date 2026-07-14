@@ -59,6 +59,23 @@ _transform_cache: dict[str, TransformIntrospection] = {}
 _dogpile_locks: dict[str, threading.Lock] = {}
 _locks_mutex = threading.Lock()
 
+_VALIDATION_CACHE_MAX_ENTRIES = 256
+
+
+def _bounded_cache_put(cache: dict[str, Any], key: str, value: Any) -> None:
+    """Insert ``key`` → ``value``, evicting the oldest entry once at the cap.
+
+    The memo dicts above are keyed by full user source strings, so without a
+    bound they grow with every distinct submission for the life of the
+    process — and the API process is long-lived and fork-parent to every job.
+    FIFO suffices: the caches absorb same-code bursts, not long-tail reuse.
+    Evicting a dogpile lock someone still holds merely lets two concurrent
+    submissions of the same code validate twice.
+    """
+    if key not in cache and len(cache) >= _VALIDATION_CACHE_MAX_ENTRIES:
+        cache.pop(next(iter(cache)))
+    cache[key] = value
+
 
 def _dogpile_lock(key: str) -> threading.Lock:
     """Return the lock for ``key``, creating it under ``_locks_mutex`` if absent.
@@ -74,7 +91,7 @@ def _dogpile_lock(key: str) -> threading.Lock:
         lock = _dogpile_locks.get(key)
         if lock is None:
             lock = threading.Lock()
-            _dogpile_locks[key] = lock
+            _bounded_cache_put(_dogpile_locks, key, lock)
         return lock
 
 
@@ -277,7 +294,7 @@ def validate_signature_code(
             output_fields=list(result["output_fields"]),
             image_input_fields=list(result.get("image_input_fields") or []),
         )
-        _signature_cache[code] = introspection
+        _bounded_cache_put(_signature_cache, code, introspection)
         return introspection
 
 
@@ -341,7 +358,7 @@ def validate_metric_code(
             callable_name=result["callable_name"],
             param_names=list(result["param_names"]),
         )
-        _metric_cache[code] = introspection
+        _bounded_cache_put(_metric_cache, code, introspection)
         return introspection
 
 
@@ -405,7 +422,7 @@ def validate_transform_code(
             callable_name=result["callable_name"],
             param_names=list(result["param_names"]),
         )
-        _transform_cache[code] = introspection
+        _bounded_cache_put(_transform_cache, code, introspection)
         return introspection
 
 

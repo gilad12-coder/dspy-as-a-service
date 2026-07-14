@@ -89,6 +89,10 @@ ENV LOG_LEVEL=INFO
 ENV LOG_FORMAT=json
 # air-gap — litellm uses its bundled cost map instead of fetching model_prices_and_context_window.json from GitHub on import.
 ENV LITELLM_LOCAL_MODEL_COST_MAP=True
+# Bound dspy's on-disk LM response cache to 2GB — the 30GB default would
+# exhaust the container disk. (The in-memory cache layer is disabled per job
+# child in core/worker/subprocess_runner.py.)
+ENV DSPY_CACHE_LIMIT=2000000000
 # Recommendation embeddings are served by an internal OpenAI-compatible API;
 # no model weights are loaded inside the backend container.
 # REMOTE_DB_URL must be set at runtime (e.g., via docker-compose or -e flag)

@@ -64,8 +64,11 @@ class _OptimizationRequestBase(BaseModel):
     optimizer_name: str
     optimizer_kwargs: dict[str, Any] = Field(default_factory=dict)
     compile_kwargs: dict[str, Any] = Field(default_factory=dict)
+    # max_length matches the staging cap (StageDatasetForAgentRequest) — an
+    # uncapped inline list lets a single submit balloon the shared API process.
     dataset: list[dict[str, Any]] | None = Field(
         default=None,
+        max_length=200_000,
         description=(
             "Inline dataset rows. Optional when ``staged_dataset_id`` is provided — the server then loads the rows "
             "from the staged copy. Exactly one of ``dataset`` or ``staged_dataset_id`` must be present."
