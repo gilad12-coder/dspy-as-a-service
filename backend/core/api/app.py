@@ -1141,26 +1141,31 @@ def create_app(
             A :class:`HealthResponse` snapshot of the registered assets.
 
         Raises:
-            DomainError: 503 when workers are dead or stuck longer than
+            DomainError: 503 when the in-process worker is enabled and its
+                threads are dead or stuck longer than
                 ``WORKER_STALE_THRESHOLD`` seconds (default 600).
         """
-        if worker is None or not worker.threads_alive():
-            logger.error("Health check failed: worker threads are not alive")
-            raise DomainError("health.workers_dead", status=503)
+        # An API-only pod (WORKER_ENABLED=0) has no in-process worker by
+        # design — job-execution health belongs to the worker service — so
+        # the thread probes only run where a worker is supposed to exist.
+        if settings.worker_enabled:
+            if worker is None or not worker.threads_alive():
+                logger.error("Health check failed: worker threads are not alive")
+                raise DomainError("health.workers_dead", status=503)
 
-        stale_seconds = worker.seconds_since_last_activity()
-        if stale_seconds is not None and stale_seconds > worker_stale_threshold:
-            stack_dump = worker.dump_thread_stacks()
-            logger.error(
-                "Health check failed: workers stuck for %.0fs. Thread stacks:\n%s",
-                stale_seconds,
-                stack_dump,
-            )
-            raise DomainError(
-                "health.workers_stuck",
-                status=503,
-                seconds=f"{stale_seconds:.0f}",
-            )
+            stale_seconds = worker.seconds_since_last_activity()
+            if stale_seconds is not None and stale_seconds > worker_stale_threshold:
+                stack_dump = worker.dump_thread_stacks()
+                logger.error(
+                    "Health check failed: workers stuck for %.0fs. Thread stacks:\n%s",
+                    stale_seconds,
+                    stack_dump,
+                )
+                raise DomainError(
+                    "health.workers_stuck",
+                    status=503,
+                    seconds=f"{stale_seconds:.0f}",
+                )
 
         snapshot = registry.snapshot()
         logger.debug("Health check requested; registered assets: %s", snapshot)
@@ -1182,14 +1187,41 @@ def create_app(
         summary="Current worker queue depth and health",
     )
     def get_queue_status() -> QueueStatusResponse:
-        """Return pending/active job counts and worker-thread health.
+        """Return pending/active job counts and worker health.
 
-        All counts are zero before the lifespan context starts.
+        All counts are zero before the lifespan context starts. On an
+        API-only pod (``WORKER_ENABLED=0``) the counts come from the shared
+        store and ``workers_alive`` reflects queue liveness instead of local
+        threads.
 
         Returns:
             A :class:`QueueStatusResponse` describing the current worker queue.
         """
         if worker is None:
+            if not settings.worker_enabled:
+                # Job execution lives in the worker service, whose threads
+                # this process can't see. The user-relevant failure is "work
+                # is waiting and nobody claims it", so liveness is inferred
+                # from pending-queue staleness in the shared store — a false
+                # "workers offline" banner on every dashboard would be worse
+                # than the ~stale-threshold detection delay.
+                pending_jobs = 0
+                active_jobs = 0
+                stalled = False
+                get_metrics = getattr(job_store, "get_queue_metrics", None)
+                if get_metrics is not None:
+                    pending_jobs, queue_age_seconds = get_metrics()
+                    stalled = pending_jobs > 0 and queue_age_seconds > worker_stale_threshold
+                count_by_status = getattr(job_store, "count_jobs_by_status", None)
+                if count_by_status is not None:
+                    counts = count_by_status()
+                    active_jobs = int(counts.get("running", 0)) + int(counts.get("validating", 0))
+                return QueueStatusResponse(
+                    pending_jobs=pending_jobs,
+                    active_jobs=active_jobs,
+                    worker_threads=0,
+                    workers_alive=not stalled,
+                )
             return QueueStatusResponse(
                 pending_jobs=0,
                 active_jobs=0,

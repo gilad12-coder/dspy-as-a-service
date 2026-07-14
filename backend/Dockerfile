@@ -103,8 +103,12 @@ ENV DSPY_CACHE_LIMIT=2000000000
 
 EXPOSE 8000
 
+# One image, two roles: the API (default) and the standalone job worker
+# (SERVICE_ROLE=worker, no HTTP). Railway deploys both services from this
+# same Dockerfile; the env var picks the entrypoint so neither service needs
+# a dashboard-only custom start command.
 # Bind the platform-provided PORT when present (Railway/Heroku-style runtimes
 # inject it and route edge traffic to it) so the bound port always matches
 # settings.port and the generalist agent's derived MCP self-dial URL. The
-# sh -c + exec keeps uvicorn as PID 1 for clean SIGTERM handling.
-CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# sh -c + exec keeps the process as PID 1 for clean SIGTERM handling.
+CMD ["sh", "-c", "if [ \"$SERVICE_ROLE\" = \"worker\" ]; then exec python worker_main.py; else exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}; fi"]

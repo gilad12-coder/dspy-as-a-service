@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from ...config import settings as app_settings
 from ...models.constants import HEALTH_STATUS_OK
 from ...registry.core import ServiceRegistry
 from ..app import _SCALAR_PUBLIC_PATHS, create_app
@@ -384,3 +385,54 @@ def test_openapi_public_strips_internal_agent_tag(app_client) -> None:
         for op in methods.values():
             if isinstance(op, dict):
                 assert "agent" not in op.get("tags", [])
+
+
+@pytest.fixture
+def worker_disabled_client(mock_job_store, monkeypatch):
+    """Build a ``TestClient`` for an API-only pod (``WORKER_ENABLED=0``).
+
+    The in-process worker is never constructed, so ``/health`` and ``/queue``
+    must answer from the store alone.
+
+    Yields:
+        A 2-tuple of ``(client, job_store)``.
+    """
+    monkeypatch.setattr(app_settings, "worker_enabled", False)
+    mock_job_store.get_queue_metrics.return_value = (0, 0.0)
+    mock_job_store.count_jobs_by_status.return_value = {}
+    registry = ServiceRegistry()
+    with (
+        patch("core.api.app.get_job_store", return_value=mock_job_store),
+        patch("core.api.app.DspyService"),  # prevent real DSPy init
+    ):
+        application = create_app(registry=registry)
+        with TestClient(application, raise_server_exceptions=False) as client:
+            yield client, mock_job_store
+
+
+def test_health_worker_disabled_returns_200(worker_disabled_client):
+    """An API-only pod is healthy without an in-process worker."""
+    client, _ = worker_disabled_client
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == HEALTH_STATUS_OK
+
+
+def test_queue_worker_disabled_reports_store_counts(worker_disabled_client):
+    """Queue status comes from the shared store, and a fresh queue reads alive."""
+    client, store = worker_disabled_client
+    store.get_queue_metrics.return_value = (2, 30.0)
+    store.count_jobs_by_status.return_value = {"running": 1, "validating": 1, "pending": 2}
+    body = client.get("/queue").json()
+    assert body["pending_jobs"] == 2
+    assert body["active_jobs"] == 2
+    assert body["worker_threads"] == 0
+    assert body["workers_alive"] is True
+
+
+def test_queue_worker_disabled_flags_stalled_queue(worker_disabled_client):
+    """Pending work nobody claims past the stale threshold reads as not alive."""
+    client, store = worker_disabled_client
+    store.get_queue_metrics.return_value = (3, 100_000.0)
+    body = client.get("/queue").json()
+    assert body["workers_alive"] is False
