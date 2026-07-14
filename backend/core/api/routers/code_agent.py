@@ -8,6 +8,7 @@ interactively — not part of the dev integration surface.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
 from ...service_gateway.agents.code import run_code_agent
+from ...service_gateway.agents.code_interview import interview_turn_stream
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ._helpers import sse_from_events
@@ -101,6 +103,48 @@ class CodeAgentRequest(BaseModel):
             "UI locale code of the client (e.g. 'he', 'en', 'fr-CA'). Sets "
             "the language of the agent's replies and edit rationales; "
             "unknown or missing falls back to Hebrew."
+        ),
+    )
+    interview_brief: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Directives confirmed at the end of the Signature & Metric "
+            "interview. The seed authors honor every directive; empty when "
+            "no interview happened."
+        ),
+    )
+
+
+class CodeInterviewRequest(BaseModel):
+    """Input for one streamed Signature & Metric interview turn.
+
+    Stateless like the tagger interview: the client owns the transcript and
+    re-sends it on every turn. The dataset context mirrors
+    :class:`CodeAgentRequest` (columns + roles + a small sample, never the
+    full dataset).
+    """
+
+    dataset_columns: list[str] = Field(..., min_length=1, description="All column names in the dataset.")
+    column_roles: dict[str, str] = Field(..., description="Column → 'input'|'output'|'ignore'.")
+    column_kinds: dict[str, str] = Field(
+        default_factory=dict,
+        description="Input column → 'text'|'image'.",
+    )
+    sample_rows: list[dict] = Field(default_factory=list, description="Up to 5 sample rows.")
+    turns: list[ChatTurn] = Field(
+        default_factory=list,
+        max_length=40,
+        description="Prior {role, content} interview turns, oldest first.",
+    )
+    job_model: str = Field(
+        default="",
+        description="LiteLLM id of the model the optimized program will run on; empty when not chosen yet.",
+    )
+    locale: str | None = Field(
+        default=None,
+        description=(
+            "UI locale code of the client (e.g. 'he', 'en', 'fr-CA'). Sets "
+            "the interview's language; unknown or missing falls back to Hebrew."
         ),
     )
 
@@ -214,10 +258,60 @@ def create_code_agent_router() -> APIRouter:
             initial_metric=req.initial_metric,
             prior_workflow=req.prior_workflow,
             initial_workflow=req.initial_workflow,
+            interview_brief=req.interview_brief,
             locale=req.locale,
         )
         return StreamingResponse(
             sse_from_events(source),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @router.post(
+        "/optimizations/code-interview",
+        summary="Stream one Signature & Metric interview turn",
+    )
+    async def code_interview(req: CodeInterviewRequest, current_user: AuthenticatedUserDep) -> StreamingResponse:
+        """Stream one interview turn as SSE, mirroring the tagger interview.
+
+        Event types:
+
+        * ``reasoning_patch`` — ``{"chunk": "<token>"}`` (provider thinking)
+        * ``message_patch`` — ``{"chunk": "<token>"}`` (reply stream)
+        * ``interview_done`` — ``{"message", "quick_replies", "brief",
+          "done", "model"}`` (terminal; ``brief`` is empty until ``done``)
+        * ``error`` — ``{"error": "<message>"}``
+
+        Args:
+            req: Dataset context, the client-owned transcript, and locale.
+            current_user: The authenticated caller (required; gates LLM spend).
+
+        Returns:
+            A :class:`StreamingResponse` of Server-Sent Events.
+        """
+        async def source() -> AsyncIterator[dict]:
+            """Relay engine events, translating failures into an error event."""
+            try:
+                async for event in interview_turn_stream(
+                    dataset_columns=req.dataset_columns,
+                    column_roles=req.column_roles,
+                    column_kinds=req.column_kinds,
+                    sample_rows=req.sample_rows[:5],
+                    job_model=req.job_model,
+                    turns=[t.model_dump() for t in req.turns],
+                    locale=req.locale,
+                ):
+                    yield event
+            except Exception:
+                logger.exception("code interview stream failed")
+                yield {"event": "error", "data": {"code": "submit.code.interview.llm_failed"}}
+
+        return StreamingResponse(
+            sse_from_events(source()),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

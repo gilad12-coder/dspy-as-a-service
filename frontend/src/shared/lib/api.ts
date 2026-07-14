@@ -1949,6 +1949,9 @@ export interface CodeAgentRequest {
   // Active UI locale code; the backend derives the agent's reply language
   // from it (fallback: Hebrew).
   locale?: string;
+  // Directives confirmed at the end of the Signature & Metric interview;
+  // the seed authors honor every directive. Empty when no interview ran.
+  interview_brief?: string[];
 }
 
 export type CodeAgentToolName =
@@ -2112,6 +2115,96 @@ export async function streamCodeAgent(
       handlers.onError(err instanceof Error ? err.message : msg("auto.shared.lib.api.literal.10"));
     }
   }
+}
+
+export interface CodeInterviewRequest {
+  dataset_columns: string[];
+  column_roles: Record<string, string>;
+  column_kinds?: Record<string, "text" | "image">;
+  sample_rows: Array<Record<string, unknown>>;
+  turns: CodeAgentChatTurn[];
+  // LiteLLM id of the model the optimized program will run on; empty when
+  // the user hasn't reached the model step yet.
+  job_model?: string;
+  locale?: string;
+}
+
+export interface CodeInterviewTurnResult {
+  message: string;
+  quick_replies: string[];
+  brief: string[];
+  done: boolean;
+  model?: string | null;
+}
+
+export interface CodeInterviewHandlers {
+  onReasoningPatch?: (chunk: string) => void;
+  onMessagePatch?: (chunk: string) => void;
+  onDone: (turn: CodeInterviewTurnResult) => void;
+  onError: (message: string) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Stream one Signature & Metric interview turn via SSE. Mirrors the tagger's
+ * `streamInterviewTurn` — same transport, same `reasoning_patch` /
+ * `message_patch` event shapes, terminal `interview_done`.
+ */
+export async function streamCodeInterviewTurn(
+  req: CodeInterviewRequest,
+  handlers: CodeInterviewHandlers,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetchWithAuthRetry(`${apiBase()}/optimizations/code-interview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify(req),
+      signal: handlers.signal,
+    });
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") return;
+    handlers.onError(msg("submit.code.interview.error"));
+    return;
+  }
+  if (!res.ok || !res.body) {
+    handlers.onError(msg("submit.code.interview.error"));
+    return;
+  }
+  let finished = false;
+  try {
+    await readServerSentEvents(res.body, ({ event, data }) => {
+      switch (event) {
+        case "reasoning_patch":
+          handlers.onReasoningPatch?.(String(data.chunk ?? ""));
+          break;
+        case "message_patch":
+          handlers.onMessagePatch?.(String(data.chunk ?? ""));
+          break;
+        case "interview_done":
+          finished = true;
+          handlers.onDone({
+            message: String(data.message ?? ""),
+            quick_replies: Array.isArray(data.quick_replies)
+              ? data.quick_replies.map(String)
+              : [],
+            brief: Array.isArray(data.brief) ? data.brief.map(String) : [],
+            done: data.done === true,
+            model: typeof data.model === "string" && data.model ? data.model : null,
+          });
+          break;
+        case "error":
+          finished = true;
+          handlers.onError(msg("submit.code.interview.error"));
+          break;
+      }
+    });
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") return;
+    if (!finished) handlers.onError(msg("submit.code.interview.error"));
+    return;
+  }
+  if (!finished) handlers.onError(msg("submit.code.interview.error"));
 }
 
 export interface PublicDashboardPoint {

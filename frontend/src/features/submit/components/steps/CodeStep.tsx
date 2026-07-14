@@ -17,6 +17,7 @@ import { TERMS } from "@/shared/lib/terms";
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 import type { ArtifactStatus } from "@/shared/hooks/use-code-agent";
 import { CodeAgentPanel, VersionStepper } from "./CodeAgentPanel";
+import { CodeInterviewPanel } from "./CodeInterviewPanel";
 import { ReactConfigSection } from "./ReactConfigSection";
 import { workflowUsesTools } from "../../workflow/model";
 
@@ -75,6 +76,8 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
     parsedDataset,
     columnRoles,
     agent,
+    interview,
+    interviewEligible,
   } = w;
   const hasContext = React.useMemo(() => {
     if (!parsedDataset || parsedDataset.rowCount === 0) return false;
@@ -82,6 +85,16 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
     const hasOutput = Object.values(columnRoles).some((r) => r === "output");
     return hasInput && hasOutput;
   }, [parsedDataset, columnRoles]);
+
+  // The interview owns the agent-panel slot until it resolves — but never
+  // over an existing conversation (a locale-switch reload restores the
+  // agent transcript; re-interviewing over generated code would be noise).
+  const interviewActive =
+    interviewEligible &&
+    !interview.resolved &&
+    agent.messages.length === 0 &&
+    agent.signatureVersions.length === 0 &&
+    agent.metricVersions.length === 0;
 
   const disabledReason = !hasContext
     ? parsedDataset
@@ -122,12 +135,16 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
         >
           {codeAssistMode === "auto" && (
             <div className="relative min-h-[560px] self-stretch overflow-hidden border-b border-border/40 lg:border-b-0 lg:border-e">
-              <CodeAgentPanel
-                agent={agent}
-                disabled={!hasContext}
-                disabledReason={disabledReason}
-                className="absolute inset-0"
-              />
+              {interviewActive ? (
+                <CodeInterviewPanel interview={interview} className="absolute inset-0" />
+              ) : (
+                <CodeAgentPanel
+                  agent={agent}
+                  disabled={!hasContext}
+                  disabledReason={disabledReason}
+                  className="absolute inset-0"
+                />
+              )}
             </div>
           )}
           <div className="flex min-w-0 flex-col self-stretch">
@@ -155,11 +172,15 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
                 }}
                 agentPanel={
                   codeAssistMode === "auto" ? (
-                    <CodeAgentPanel
-                      agent={agent}
-                      disabled={!hasContext}
-                      disabledReason={disabledReason}
-                    />
+                    interviewActive ? (
+                      <CodeInterviewPanel interview={interview} />
+                    ) : (
+                      <CodeAgentPanel
+                        agent={agent}
+                        disabled={!hasContext}
+                        disabledReason={disabledReason}
+                      />
+                    )
                   ) : undefined
                 }
               />
@@ -214,12 +235,16 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
         >
           {codeAssistMode === "auto" && (
             <div className="relative min-h-[560px] self-stretch overflow-hidden border-b border-border/40 lg:border-b-0 lg:border-e">
-              <CodeAgentPanel
-                agent={agent}
-                disabled={!hasContext}
-                disabledReason={disabledReason}
-                className="absolute inset-0"
-              />
+              {interviewActive ? (
+                <CodeInterviewPanel interview={interview} className="absolute inset-0" />
+              ) : (
+                <CodeAgentPanel
+                  agent={agent}
+                  disabled={!hasContext}
+                  disabledReason={disabledReason}
+                  className="absolute inset-0"
+                />
+              )}
             </div>
           )}
           <div className="flex min-w-0 flex-col self-stretch">

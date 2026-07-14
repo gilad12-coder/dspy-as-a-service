@@ -63,6 +63,7 @@ import {
 } from "../lib/wizard-draft";
 import { LOCALE_RELOAD_EVENT } from "@/shared/lib/locale";
 import { useCodeAgent } from "@/shared/hooks/use-code-agent";
+import { useCodeInterview } from "@/shared/hooks/use-code-interview";
 import {
   autoLayoutSpec,
   defaultWorkflowSpec,
@@ -2077,9 +2078,39 @@ export function useSubmitWizard() {
     [workflowSpec, modelConfig, globalBaseUrl, globalApiKey, reactConfig],
   );
 
-  // Hoisted to wizard scope so the seed pass fires as soon as the user
-  // has a dataset + I/O roles — by the time they reach the code step,
-  // the Signature + metric are already filled (or streaming in).
+  // The Signature & Metric interview: a few grounded questions before the
+  // seed pass, distilled into an authoring brief the seed authors honor.
+  // ``interviewPending`` holds the seed anywhere in the wizard while an
+  // interview could still happen — otherwise the pre-warm seed (which fires
+  // from earlier steps) would generate code before the user ever saw a
+  // question. ``interviewEligible`` additionally requires the user to be
+  // looking at the code step with a role-mapped dataset, because the
+  // opening question costs an LLM call. Pre-existing code work (clone
+  // pre-fill, manual edits, a touched canvas) rules the interview out.
+  const interviewPossible =
+    codeAssistMode === "auto" &&
+    !signatureManuallyEdited &&
+    !metricManuallyEdited &&
+    !(isWorkflow && workflowTouched);
+  const interviewEligible =
+    interviewPossible &&
+    !moduleSelectionRequired &&
+    step === 3 &&
+    !!parsedDataset &&
+    parsedDataset.rowCount > 0 &&
+    Object.values(columnRoles).some((r) => r === "input") &&
+    Object.values(columnRoles).some((r) => r === "output");
+  const interview = useCodeInterview({
+    enabled: interviewEligible,
+    parsedDataset,
+    columnRoles,
+    columnKinds,
+    jobModel: modelConfig.name,
+  });
+
+  // Hoisted to wizard scope. The seed pass now waits for the interview to
+  // resolve (confirmed brief or skip) so the user's answers shape the very
+  // first Signature + metric instead of a post-hoc chat correction.
   const agent = useCodeAgent({
     codeAssistMode,
     setCodeAssistMode,
@@ -2107,8 +2138,11 @@ export function useSubmitWizard() {
     applyAgentWorkflow,
     // Hold the seed pass while the module picker is still open — seeding for
     // the default module would be wasted (and visibly wrong) if the user then
-    // picks another one.
-    seedEnabled: !moduleSelectionRequired,
+    // picks another one — and while an interview could still happen. When
+    // the interview is ruled out (manual mode, pre-existing code work) its
+    // resolution never gates anything.
+    seedEnabled: !moduleSelectionRequired && (!interviewPossible || interview.resolved),
+    interviewBrief: interview.confirmedBrief,
     // The conversation rides through the locale-switch reload alongside the
     // wizard draft (see wizard-draft.ts).
     reloadPersistKey: "submit-code-agent",
@@ -2246,6 +2280,8 @@ export function useSubmitWizard() {
     handleSubmit,
     cloneLoading,
     agent,
+    interview,
+    interviewEligible,
   };
 }
 

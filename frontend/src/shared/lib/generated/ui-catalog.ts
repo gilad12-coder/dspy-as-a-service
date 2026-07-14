@@ -2426,6 +2426,19 @@ export type MessageKey =
   | "submit.clone.success"
   | "submit.code.agent.tool.metric.title"
   | "submit.code.agent.tool.signature.title"
+  | "submit.code.interview.brief.add"
+  | "submit.code.interview.brief.confirm"
+  | "submit.code.interview.brief.description"
+  | "submit.code.interview.brief.empty"
+  | "submit.code.interview.brief.remove"
+  | "submit.code.interview.brief.title"
+  | "submit.code.interview.error"
+  | "submit.code.interview.placeholder"
+  | "submit.code.interview.reading"
+  | "submit.code.interview.retry"
+  | "submit.code.interview.skip"
+  | "submit.code.interview.subtitle"
+  | "submit.code.interview.title"
   | "submit.code_validation_failed"
   | "submit.cost_ceiling.bracket"
   | "submit.cost_ceiling.bracket_byok"
@@ -5242,6 +5255,19 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.clone.success": "הגדרות שוכפלו בהצלחה",
   "submit.code.agent.tool.metric.title": "עריכת {term.metric}",
   "submit.code.agent.tool.signature.title": "עריכת {term.signature}",
+  "submit.code.interview.brief.add": "הוספת הנחיה",
+  "submit.code.interview.brief.confirm": "כתיבת ה-Signature וה-Metric",
+  "submit.code.interview.brief.description": "זוקק מהתשובות שלכם. אפשר לערוך הכול — ה-Signature וה-Metric ייכתבו לפי ההנחיות האלה.",
+  "submit.code.interview.brief.empty": "אין עדיין הנחיות.",
+  "submit.code.interview.brief.remove": "הסרת הנחיה",
+  "submit.code.interview.brief.title": "תקציר ההנחיות",
+  "submit.code.interview.error": "העוזר לא הצליח לענות.",
+  "submit.code.interview.placeholder": "כתבו תשובה…",
+  "submit.code.interview.reading": "קורא את הדאטה…",
+  "submit.code.interview.retry": "ניסיון נוסף",
+  "submit.code.interview.skip": "דילוג על הראיון",
+  "submit.code.interview.subtitle": "כמה שאלות קצרות לפני שנכתוב את ה-Signature וה-Metric — כדי שהקוד ישקף איך אתם חושבים על הדאטה.",
+  "submit.code.interview.title": "ראיון על המשימה",
   "submit.code_validation_failed": "שגיאה באימות הקוד",
   "submit.cost_ceiling.bracket": "טווח צפוי: {low}–{high} קרדיטים",
   "submit.cost_ceiling.bracket_byok": "עמלת פלטפורמה: {low}–{high} קרדיטים — מפתח הספק שלך משלם על המודל",
@@ -13693,6 +13719,19 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.clone.success": "Configuration cloned successfully",
   "submit.code.agent.tool.metric.title": "Edit metric",
   "submit.code.agent.tool.signature.title": "Edit Signature",
+  "submit.code.interview.brief.add": "Add a directive",
+  "submit.code.interview.brief.confirm": "Write the Signature & Metric",
+  "submit.code.interview.brief.description": "Distilled from your answers. Edit anything — the Signature and Metric will be written to follow these directives.",
+  "submit.code.interview.brief.empty": "No directives yet.",
+  "submit.code.interview.brief.remove": "Remove directive",
+  "submit.code.interview.brief.title": "Authoring brief",
+  "submit.code.interview.error": "The assistant couldn't respond.",
+  "submit.code.interview.placeholder": "Type your answer…",
+  "submit.code.interview.reading": "Reading your dataset…",
+  "submit.code.interview.retry": "Retry",
+  "submit.code.interview.skip": "Skip the interview",
+  "submit.code.interview.subtitle": "A few short questions before we write the Signature and Metric — so the code reflects how you think about your data.",
+  "submit.code.interview.title": "Task interview",
   "submit.code_validation_failed": "Code validation failed",
   "submit.cost_ceiling.bracket": "Projected range: {low}–{high} credits",
   "submit.cost_ceiling.bracket_byok": "Platform fee: {low}–{high} credits — your provider key pays the model",

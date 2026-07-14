@@ -200,6 +200,9 @@ export interface UseCodeAgentArgs {
   // Gates the auto-seed while the wizard's module picker is still open; the
   // seed fires as soon as this flips true (i.e. the user picked a module).
   seedEnabled?: boolean;
+  // Directives confirmed at the end of the Signature & Metric interview;
+  // the seed authors honor them. Empty when the interview was skipped.
+  interviewBrief?: string[];
   // When set, the conversation survives the locale-switch reload under this
   // stash key. Leave unset for surfaces that shouldn't persist.
   reloadPersistKey?: string;
@@ -232,6 +235,7 @@ export function useCodeAgent(args: UseCodeAgentArgs): CodeAgentState {
     workflowTouched = false,
     applyAgentWorkflow,
     seedEnabled = true,
+    interviewBrief,
     reloadPersistKey,
   } = args;
 
@@ -547,6 +551,9 @@ export function useCodeAgent(args: UseCodeAgentArgs): CodeAgentState {
           initial_signature: initialSignature,
           initial_metric: initialMetric,
           locale: getActiveLocale(),
+          ...(interviewBrief && interviewBrief.length > 0
+            ? { interview_brief: interviewBrief }
+            : {}),
           ...(isWorkflow
             ? {
                 prior_workflow: priorWorkflow,
@@ -835,6 +842,7 @@ export function useCodeAgent(args: UseCodeAgentArgs): CodeAgentState {
       columnRoles,
       columnKinds,
       isWorkflow,
+      interviewBrief,
       setSignatureCode,
       setMetricCode,
       setSignatureValidation,

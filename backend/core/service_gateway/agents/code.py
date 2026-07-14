@@ -282,6 +282,13 @@ class GenerateSignatureCode(dspy.Signature):
             "appear as URLs or base64 data URIs."
         ),
     )
+    authoring_brief: str = dspy.InputField(
+        desc=(
+            "Directives distilled from an interview with the dataset owner. "
+            "Every directive MUST be honored in the docstring and field "
+            "descs; empty when no interview happened."
+        ),
+    )
 
     signature_code: str = dspy.OutputField(
         desc=(
@@ -431,6 +438,13 @@ class GenerateMetricCode(dspy.Signature):
             "Image cells appear as URLs or base64 data URIs."
         ),
     )
+    authoring_brief: str = dspy.InputField(
+        desc=(
+            "Directives distilled from an interview with the dataset owner. "
+            "Every directive about scoring, strictness or feedback MUST be "
+            "honored; empty when no interview happened."
+        ),
+    )
 
     metric_code: str = dspy.OutputField(
         desc=(
@@ -578,6 +592,13 @@ class GenerateWorkflowGraph(dspy.Signature):
     )
     sample_rows: str = dspy.InputField(
         desc="JSON array of up to 5 representative rows from the dataset.",
+    )
+    authoring_brief: str = dspy.InputField(
+        desc=(
+            "Directives distilled from an interview with the dataset owner. "
+            "Every directive MUST be honored across the graph's steps; "
+            "empty when no interview happened."
+        ),
     )
 
     workflow_json: str = dspy.OutputField(
@@ -1386,6 +1407,7 @@ async def _run_seed(
     column_roles_json: str,
     column_kinds_json: str,
     sample_rows_json: str,
+    authoring_brief: str,
     reply_language: str,
     queue: asyncio.Queue[dict | None],
 ) -> dict[str, Any]:
@@ -1403,6 +1425,8 @@ async def _run_seed(
         column_roles_json: JSON string mapping column → role.
         column_kinds_json: JSON string mapping input column → kind (text/image).
         sample_rows_json: JSON-encoded list of representative sample rows.
+        authoring_brief: Interview directives both authors must honor; empty
+            when no interview happened.
         reply_language: Language name the intro message is written in.
         queue: SSE event queue to push token events onto.
 
@@ -1437,6 +1461,7 @@ async def _run_seed(
         "column_roles": column_roles_json,
         "column_kinds": column_kinds_json,
         "sample_rows": sample_rows_json,
+        "authoring_brief": authoring_brief,
     }
     results: dict[str, Any] = {"signature_code": "", "metric_code": "", "assistant_message": ""}
 
@@ -2286,6 +2311,7 @@ async def _run_workflow_seed(
     column_roles_json: str,
     column_kinds_json: str,
     sample_rows_json: str,
+    authoring_brief: str,
     reply_language: str,
     queue: asyncio.Queue[dict | None],
 ) -> dict[str, Any]:
@@ -2302,6 +2328,8 @@ async def _run_workflow_seed(
         column_roles_json: JSON string mapping column → role.
         column_kinds_json: JSON string mapping input column → kind.
         sample_rows_json: JSON-encoded list of representative sample rows.
+        authoring_brief: Interview directives both authors must honor; empty
+            when no interview happened.
         reply_language: Language name the intro message is written in.
         queue: SSE event queue to push token events onto.
 
@@ -2331,6 +2359,7 @@ async def _run_workflow_seed(
         "column_roles": column_roles_json,
         "column_kinds": column_kinds_json,
         "sample_rows": sample_rows_json,
+        "authoring_brief": authoring_brief,
     }
     results: dict[str, Any] = {"workflow": None, "metric_code": "", "assistant_message": ""}
 
@@ -2555,6 +2584,7 @@ async def _run_code_agent_orchestration(
     column_roles_json: str,
     column_kinds_json: str,
     sample_rows_json: str,
+    authoring_brief: str,
     user_message: str,
     chat_history_json: str,
     prior_signature: str,
@@ -2584,6 +2614,8 @@ async def _run_code_agent_orchestration(
         column_roles_json: JSON string mapping column → role.
         column_kinds_json: JSON string mapping input column → kind.
         sample_rows_json: JSON-encoded list of sample rows.
+        authoring_brief: Interview directives the seed authors must honor;
+            empty when no interview happened (seed paths only).
         user_message: User's latest message (empty in seed mode).
         chat_history_json: JSON-encoded prior chat turns.
         prior_signature: Current Signature source in the editor.
@@ -2602,6 +2634,7 @@ async def _run_code_agent_orchestration(
                 column_roles_json=column_roles_json,
                 column_kinds_json=column_kinds_json,
                 sample_rows_json=sample_rows_json,
+                authoring_brief=authoring_brief,
                 reply_language=reply_language,
                 queue=queue,
             )
@@ -2626,6 +2659,7 @@ async def _run_code_agent_orchestration(
                 column_roles_json=column_roles_json,
                 column_kinds_json=column_kinds_json,
                 sample_rows_json=sample_rows_json,
+                authoring_brief=authoring_brief,
                 reply_language=reply_language,
                 queue=queue,
             )
@@ -2673,6 +2707,7 @@ async def run_code_agent(
     initial_metric: str = "",
     prior_workflow: dict | None = None,
     initial_workflow: dict | None = None,
+    interview_brief: list[str] | None = None,
     locale: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Stream code-agent events to the UI.
@@ -2721,6 +2756,8 @@ async def run_code_agent(
         prior_workflow: Workflow graph currently on the canvas; non-None
             switches to the graph-aware seed/chat paths.
         initial_workflow: Original graph for revert support.
+        interview_brief: Directives from the Signature & Metric interview;
+            honored by the seed authors (seed paths only).
         locale: UI locale code of the client; sets the language of every
             user-facing agent string (replies, intro messages, tool
             rationales). Unknown or missing falls back to Hebrew.
@@ -2733,6 +2770,7 @@ async def run_code_agent(
     column_kinds_json = json.dumps(column_kinds or {}, ensure_ascii=False)
     sample_rows_json = json.dumps(sample_rows[:5], ensure_ascii=False, default=str)
     chat_history_json = json.dumps(chat_history or [], ensure_ascii=False)
+    authoring_brief = "\n".join(f"- {d.strip()}" for d in (interview_brief or []) if d.strip())
     is_seed = not user_message.strip()
 
     queue: asyncio.Queue[dict | None] = asyncio.Queue()
@@ -2746,6 +2784,7 @@ async def run_code_agent(
             column_roles_json=column_roles_json,
             column_kinds_json=column_kinds_json,
             sample_rows_json=sample_rows_json,
+            authoring_brief=authoring_brief,
             user_message=user_message,
             chat_history_json=chat_history_json,
             prior_signature=prior_signature,
