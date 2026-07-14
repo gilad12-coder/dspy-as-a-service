@@ -53,6 +53,7 @@ from ..service_gateway.embedding_pipeline import embed_finished_job
 from ..service_gateway.optimization.trajectory import GEPA_STATE_FILENAME, GRID_PAIR_RESULT_FILENAME
 from ..storage import JobStore
 from .constants import EVENT_ERROR, EVENT_LOG, EVENT_PROGRESS, EVENT_RESULT
+from .memory_guard import memory_usage_fraction
 from .subprocess_runner import run_service_in_subprocess, set_fork_service
 from .tagging_job import TaggingAutotagPayload, run_autotag_job
 
@@ -195,6 +196,8 @@ class BackgroundWorker:
         self._activity_lock = threading.Lock()
         # Per-thread current job for lease heartbeats.
         self._thread_current_job: dict[int, str] = {}
+        # Rate-limits the memory-pressure deferral warning across all threads.
+        self._admission_last_log = 0.0
 
     @staticmethod
     def _resolve_mp_context() -> mp.context.BaseContext:
@@ -316,6 +319,8 @@ class BackgroundWorker:
         Returns:
             The optimization ID to process next, or ``None`` when idle.
         """
+        if self._defer_for_memory_pressure():
+            return None
         with self._queue_lock:
             hinted = self._pending_jobs.pop(0) if self._pending_jobs else None
         if hinted is not None and not hasattr(self._job_store, "claim_next_job"):
@@ -323,6 +328,36 @@ class BackgroundWorker:
                 self._processing_jobs.add(hinted)
             return hinted
         return self._claim_job_from_store()
+
+    def _defer_for_memory_pressure(self) -> bool:
+        """Report whether claiming a new job should wait for memory headroom.
+
+        Running jobs are never touched — this only keeps an idle worker thread
+        from adding one more forked child to a pod already near its cgroup
+        limit. The row waits in the shared queue for this pod (or a peer) to
+        free up, instead of the whole container being OOM-killed mid-run.
+
+        Returns:
+            True when container memory usage exceeds the admission threshold.
+        """
+        threshold = settings.job_admission_max_memory_fraction
+        if threshold <= 0:
+            return False
+        usage = memory_usage_fraction()
+        if usage is None or usage < threshold:
+            return False
+        now = time.monotonic()
+        with self._activity_lock:
+            should_log = now - self._admission_last_log >= 60.0
+            if should_log:
+                self._admission_last_log = now
+        if should_log:
+            logger.warning(
+                "Deferring job claim: container memory at %.0f%% of limit (threshold %.0f%%)",
+                usage * 100,
+                threshold * 100,
+            )
+        return True
 
     def _mark_job_done(self, optimization_id: str) -> None:
         """Release the claim and clean up per-job worker state.

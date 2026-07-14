@@ -50,12 +50,6 @@ from ..config import settings
 from ..exceptions import AppError
 from ..models import HEALTH_STATUS_OK, HealthResponse, QueueStatusResponse
 from ..registry import ServiceRegistry
-from ..registry.resolvers import (
-    MODULE_ALIASES,
-    OPTIMIZER_ALIASES,
-    resolve_module_factory,
-    resolve_optimizer_factory,
-)
 from ..service_gateway import DspyService
 from ..service_gateway.embedding_pipeline import (
     backfill_missing_conversation_embeddings,
@@ -63,6 +57,7 @@ from ..service_gateway.embedding_pipeline import (
     purge_orphan_conversation_embeddings,
     purge_orphan_embeddings,
 )
+from ..service_gateway.service_builder import wire_registry_aliases
 from ..storage import get_job_store
 from ..worker.engine import BackgroundWorker, get_worker
 from .directory_client import build_directory_client
@@ -674,15 +669,9 @@ def create_app(
     registry = registry or ServiceRegistry()
     # Mirror the alias-backed factories from the resolver into the registry
     # so ``get_registry_snapshot`` reflects the actually-supported names
-    # rather than empty lists. Skipped on names already registered so a
-    # pre-built ``registry`` (tests, custom deployments) wins.
-    for _alias in OPTIMIZER_ALIASES:
-        if _alias not in registry.optimizers:
-            registry.register_optimizer(_alias, resolve_optimizer_factory(_alias))
-    for _alias in MODULE_ALIASES:
-        if _alias not in registry.modules:
-            _factory, _ = resolve_module_factory(_alias)
-            registry.register_module(_alias, _factory)
+    # rather than empty lists (shared with the standalone worker entrypoint,
+    # which needs identical wiring).
+    wire_registry_aliases(registry)
     service = service or DspyService(
         registry,
         **(service_kwargs or {}),
@@ -724,8 +713,15 @@ def create_app(
         # any pod can claim a pending row via ``claim_next_job`` on its next
         # tick, but we still pass the IDs as a same-pod hint so a fresh restart
         # resumes work without waiting a full poll interval.
-        pending_ids = job_store.recover_pending_jobs()
-        worker = get_worker(job_store, service=service, pending_optimization_ids=pending_ids)
+        pending_ids = []
+        if settings.worker_enabled:
+            pending_ids = job_store.recover_pending_jobs()
+            worker = get_worker(job_store, service=service, pending_optimization_ids=pending_ids)
+        else:
+            # Split deployment: this pod serves the API only; job execution
+            # runs in dedicated worker replicas (worker_main.py) so request
+            # traffic and job memory can't sink each other.
+            logger.info("In-process worker disabled (WORKER_ENABLED=0); expecting external worker replicas")
         queue_metrics_refresher = start_queue_metrics_refresher(job_store)
         # Without a periodic sweeper, a pod that dies mid-job leaves its
         # leases ticking down with no peer scanning for them — the row is
@@ -739,7 +735,8 @@ def create_app(
             logger.info("Event-loop lag monitor enabled (threshold %.0fms)", settings.event_loop_lag_threshold_ms)
         if pending_ids:
             logger.info("Re-queued %d pending jobs from previous run (local hint)", len(pending_ids))
-        logger.info("Background worker started")
+        if worker is not None:
+            logger.info("Background worker started")
 
         # Probe every provider's /v1/models endpoint in a background thread
         # so the catalog is hot by the time the first agent turn arrives.

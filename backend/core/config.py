@@ -127,8 +127,29 @@ class Settings(BaseSettings):
         description="ISO-8601 instant the Founder's Rate stops accepting new subscriptions. Placeholder default (2099) keeps it open until the real deadline is set.",
     )
 
+    worker_enabled: bool = Field(
+        default=True,
+        alias="WORKER_ENABLED",
+        description=(
+            "Start the in-process job worker alongside the API. Set false on "
+            "API-only pods when job execution runs in dedicated worker "
+            "replicas (worker_main.py)."
+        ),
+    )
     worker_threads: int = Field(
         default=4, ge=1, le=32, description="Number of concurrent worker threads", alias="WORKER_CONCURRENCY"
+    )
+    job_admission_max_memory_fraction: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Container memory usage fraction above which idle workers defer "
+            "claiming new jobs (running jobs are unaffected); the job waits in "
+            "the Postgres queue instead of OOM-killing the pod. 0 disables; "
+            "also inert where no cgroup limit is readable (e.g. bare-metal dev)."
+        ),
+        alias="JOB_ADMISSION_MAX_MEMORY_FRACTION",
     )
     worker_poll_interval: float = Field(
         default=1.0, ge=0.1, le=60.0, description="Seconds between queue polling cycles"
@@ -325,7 +346,10 @@ class Settings(BaseSettings):
         ),
     )
     program_cache_max_entries: int = Field(
-        default=128,
+        # 32 (was 128): each entry is a full deserialized program (MBs), the
+        # cache lives in the fork-parent API process, and beta traffic serves
+        # far fewer distinct programs than 32 at a time.
+        default=32,
         ge=1,
         description=(
             "Maximum number of compiled DSPy programs held in the in-process "
