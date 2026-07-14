@@ -413,10 +413,17 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
       setJob((cur) => mergeJobDelta(cur, data));
       setError(null);
     } catch (err) {
-      // Distinguish auth/network failures from a genuine 404 — the previous
-      // catch lumped 401/403/500/network into "not found" copy.
       console.warn("OptimizationDetailView: getJob failed", err);
-      setError(formatMsg("auto.app.optimizations.id.page.template.1", { p1: TERMS.optimization }));
+      // A transient failure (timeout/blip while the backend is busiest —
+      // e.g. spawning validation subprocesses right after submit) must not
+      // replace an already-loaded run with the "wasn't found" page; the
+      // SSE/poll loop retries within seconds and self-heals. Only a first
+      // load with nothing to show gets the error copy.
+      if (!jobRef.current) {
+        setError(
+          formatMsg("auto.app.optimizations.id.page.template.1", { p1: TERMS.optimization }),
+        );
+      }
     } finally {
       setLoading(false);
       fetchingRef.current = false;

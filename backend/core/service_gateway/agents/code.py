@@ -1220,7 +1220,10 @@ async def _pump_seed_stream(
     Forwards provider reasoning tokens as ``reasoning_patch`` events and the
     target field's own tokens as ``event_name`` (``signature_patch`` or
     ``metric_patch``). On the final ``dspy.Prediction`` the completed text
-    is written to ``results[field]`` for the orchestrator to consume.
+    is written to ``results[field]`` for the orchestrator to consume; when
+    the stream ends without a terminal Prediction (provider truncation),
+    the concatenated streamed tokens are used instead so the artifact isn't
+    silently empty.
 
     Args:
         program: The streamify-wrapped predictor to invoke.
@@ -1233,6 +1236,7 @@ async def _pump_seed_stream(
             the UI can keep parallel seeds' reasoning apart (the signature and
             metric authors run concurrently on one multiplexed queue).
     """
+    streamed: list[str] = []
     async for chunk in program(**inputs):
         if isinstance(chunk, dspy.streaming.StreamResponse):
             if chunk.signature_field_name == REASONING_FIELD:
@@ -1243,9 +1247,12 @@ async def _pump_seed_stream(
                     }
                 )
             elif chunk.signature_field_name == field:
+                streamed.append(chunk.chunk)
                 await queue.put({"event": event_name, "data": {"chunk": chunk.chunk}})
         elif isinstance(chunk, dspy.Prediction):
             results[field] = getattr(chunk, field, "") or ""
+    if not results[field] and streamed:
+        results[field] = "".join(streamed)
 
 
 def _run_code_fixer(
@@ -1642,6 +1649,10 @@ class _CodeEditSession:
                 "turn. STOP editing; call finish and summarize the change "
                 "in reply."
             )
+        # Tool args can carry the same malformed trailing field marker the
+        # seed path strips; unstripped it fails validation and burns a ReAct
+        # iteration on an otherwise-valid edit.
+        new_code = _strip_adapter_debris(new_code)
         if new_code.strip() == self._slots["signature_code"].strip():
             self._emit(
                 {
@@ -1721,6 +1732,8 @@ class _CodeEditSession:
                 "turn. STOP editing; call finish and summarize the change "
                 "in reply."
             )
+        # Same trailing-marker strip as edit_signature — see the note there.
+        new_code = _strip_adapter_debris(new_code)
         if new_code.strip() == self._slots["metric_code"].strip():
             self._emit(
                 {
@@ -2201,15 +2214,16 @@ async def _run_agent(
         emit=emit,
     )
 
-    # Keep max_iters tight. A normal turn is: (1) think → (2) edit_* OR
-    # submit. A validator-driven retry may need one more iteration if the
-    # first edit fails validation: (1) edit fails → (2) edit succeeds →
-    # submit carries reply. max_iters=3 covers the worst case without
-    # room to run away.
+    # Keep max_iters bounded. A normal turn is: (1) think → (2) edit_* OR
+    # submit. The worst legitimate case edits both artifacts with one
+    # validator-driven retry each (edit fails → edit succeeds, twice) plus
+    # the submit that carries the reply — max_iters=5 covers that without
+    # room to run away (the per-artifact success guards reject any further
+    # edits).
     react = REACT_CLASS(
         CodeAssistant,
         tools=[session.edit_signature, session.edit_metric],
-        max_iters=3,
+        max_iters=5,
     )
     # The user's ``reply`` rides a ``submit`` tool call on ReActV2 or a separate
     # ``extract`` predictor on classic ReAct; ``ReactReplyStream`` wires the right

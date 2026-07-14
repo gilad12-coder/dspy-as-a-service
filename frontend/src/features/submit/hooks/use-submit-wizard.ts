@@ -1175,6 +1175,7 @@ export function useSubmitWizard() {
         setMetricManuallyEdited(true);
       }
 
+      let cloneColumns: string[] = [];
       if (Array.isArray(payload.dataset) && payload.dataset.length > 0) {
         const rows = payload.dataset as Array<Record<string, unknown>>;
         const rowKeys = Object.keys(rows[0] ?? {});
@@ -1188,6 +1189,7 @@ export function useSubmitWizard() {
           savedOrder.length > 0
             ? [...savedOrder, ...rowKeys.filter((c) => !savedOrder.includes(c))]
             : rowKeys;
+        cloneColumns = columns;
         setParsedDataset({ columns, rows, rowCount: rows.length });
         setDatasetFileName(
           String(
@@ -1200,7 +1202,14 @@ export function useSubmitWizard() {
         | { inputs?: Record<string, string>; outputs?: Record<string, string> }
         | undefined;
       if (cm) {
+        // column_mapping persists only inputs/outputs — "ignore" is implicit.
+        // Seed every column to ignore and overlay the mapped roles (mirrors
+        // the upload / library-pick paths); a column left without a role
+        // would render as input in the role selector.
         const roles: Record<string, "input" | "output" | "ignore"> = {};
+        cloneColumns.forEach((k) => {
+          roles[k] = "ignore";
+        });
         if (cm.inputs)
           Object.keys(cm.inputs).forEach((k) => {
             roles[k] = "input";

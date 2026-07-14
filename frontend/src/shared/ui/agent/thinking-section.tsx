@@ -9,6 +9,10 @@ import { formatMsg, msg } from "@/shared/lib/messages";
 
 import type { AgentThinking } from "./types";
 
+// Within this many px of the bottom still counts as "at the bottom", so
+// momentum scrolling and fractional positions don't break follow mode.
+const STICKY_BOTTOM_SLACK_PX = 48;
+
 export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
   const { reasoning, startedAt, endedAt, streaming } = thinking;
   const isThinking = streaming && !endedAt && Boolean(startedAt);
@@ -32,10 +36,27 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
     }
   }, [hasFinished]);
 
-  React.useEffect(() => {
-    if (!open) return;
+  // Follow the stream only while the user is at the bottom. Once they scroll
+  // up to read earlier reasoning their position persists — new tokens must
+  // not yank them back down. Scrolling back to the bottom (or collapsing and
+  // reopening) re-engages following. The programmatic pin lands at distance
+  // 0, so it keeps the flag true rather than fighting the user.
+  const stickToBottomRef = React.useRef(true);
+
+  const handleScroll = React.useCallback(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    stickToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < STICKY_BOTTOM_SLACK_PX;
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) {
+      stickToBottomRef.current = true;
+      return;
+    }
+    const el = scrollRef.current;
+    if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [reasoning, open]);
 
   const tail = React.useMemo(() => {
@@ -107,6 +128,7 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
           >
             <div
               ref={scrollRef}
+              onScroll={handleScroll}
               dir="ltr"
               className="max-h-44 overflow-y-auto border-t border-[#3D2E22]/[0.08] px-4 py-3 text-[0.6875rem] leading-[1.65] text-[#5C4D40]/80 font-mono whitespace-pre-wrap break-words"
             >

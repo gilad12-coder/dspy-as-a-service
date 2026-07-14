@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { XCircle } from "lucide-react";
 
 import {
+  ApiError,
   getJob,
   getPublicOptimization,
   setApiAuthToken,
@@ -41,6 +42,13 @@ export function OptimizationDetailGate() {
   const { id } = useParams<{ id: string }>();
   const { data: session, status } = useSession();
   const [state, setState] = useState<GateState>({ mode: "loading" });
+  // The id whose probe already resolved to a stable view. The session token
+  // is re-minted on every refetch (fresh jti/iat every few minutes and on
+  // window refocus), so this effect re-runs constantly; re-probing then would
+  // flash the skeleton and remount the whole detail view, wiping chat, input,
+  // and tab state mid-use. "notfound" is deliberately not latched so a later
+  // sign-in can still upgrade it.
+  const resolvedIdRef = useRef<string | null>(null);
 
   const isDemo = id === DEMO_OPTIMIZATION_ID || id === DEMO_GRID_OPTIMIZATION_ID;
 
@@ -50,26 +58,42 @@ export function OptimizationDetailGate() {
       return;
     }
     if (status === "loading") return;
-    let cancelled = false;
-    setState({ mode: "loading" });
     // Attach the bearer before probing — effects run child-before-parent, so the
     // root ApiAuthTokenBridge may not have synced it yet; without this the
     // owner's getJob could 401 and wrongly fall through to the public view.
     if (session?.backendAccessToken) setApiAuthToken(session.backendAccessToken);
-    getJob(id)
-      .then(() => {
-        if (!cancelled) setState({ mode: "owned" });
-      })
-      .catch(() => {
-        // No access (404) — try the public corpus before giving up.
-        getPublicOptimization(id)
-          .then((data) => {
-            if (!cancelled) setState({ mode: "public", data });
-          })
-          .catch(() => {
-            if (!cancelled) setState({ mode: "notfound" });
-          });
-      });
+    if (resolvedIdRef.current === id) return;
+    let cancelled = false;
+    setState({ mode: "loading" });
+    const probe = async () => {
+      // Only a definitive 404 means "no access — try the public corpus".
+      // Transient failures (network blip, timeout while the backend is busy
+      // right after a submit) get brief retries; without them a private run
+      // gets misrendered as "wasn't found" while it is happily training.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await getJob(id);
+          if (cancelled) return;
+          resolvedIdRef.current = id;
+          setState({ mode: "owned" });
+          return;
+        } catch (err) {
+          const notFound = err instanceof ApiError && err.status === 404;
+          if (notFound || attempt >= 2) break;
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+          if (cancelled) return;
+        }
+      }
+      try {
+        const data = await getPublicOptimization(id);
+        if (cancelled) return;
+        resolvedIdRef.current = id;
+        setState({ mode: "public", data });
+      } catch {
+        if (!cancelled) setState({ mode: "notfound" });
+      }
+    };
+    void probe();
     return () => {
       cancelled = true;
     };

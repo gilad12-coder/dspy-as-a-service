@@ -672,6 +672,11 @@ export function useCodeAgent(args: UseCodeAgentArgs): CodeAgentState {
             });
           },
           onDone: async (result) => {
+            // A superseded/reset run's late completion must not clobber the
+            // fresh session (mirrors the onError guard below). The check at
+            // the auto-fix step still matters — abort can land while the
+            // validations above are awaited.
+            if (controller.signal.aborted) return;
             if (!isChat && isWorkflow) {
               // Workflow seed: the graph landed via workflow_replace (or
               // rides the done payload after a repair); only the metric
