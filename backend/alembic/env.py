@@ -18,12 +18,17 @@ from core.storage.models import Base
 
 config = context.config
 
-if config.config_file_name is not None:
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     # ``disable_existing_loggers=False`` keeps app loggers (e.g.
     # ``core.worker.engine``) usable after Alembic configures its own
     # logging, otherwise Python's ``logging.config.fileConfig`` marks
     # every pre-existing logger as ``disabled=True`` and silently drops
     # their records — breaking ``caplog`` capture in the test suite.
+    # Even so, ``fileConfig`` replaces the root handlers and sets root level
+    # to WARN, which silently killed every app INFO log after boot-time
+    # migration sync — so the programmatic path (core/storage/migrate.py)
+    # opts out via the ``configure_logger`` attribute; only the bare
+    # ``alembic`` CLI still configures logging from the ini file.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 env_url = os.environ.get("REMOTE_DB_URL")

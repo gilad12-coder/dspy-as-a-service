@@ -16,6 +16,7 @@ Without that env var the live-DB cases are skipped, so unit-test CI is unaffecte
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -159,3 +160,24 @@ def test_sync_at_head_is_idempotent(fresh_pg: Engine) -> None:
     sync_migration_head(fresh_pg)
     sync_migration_head(fresh_pg)
     assert _version(fresh_pg) == _HEAD
+
+
+@_needs_pg
+def test_sync_preserves_root_logging_config(fresh_pg: Engine) -> None:
+    """Boot-time sync must not let env.py's fileConfig hijack root logging.
+
+    ``fileConfig(alembic.ini)`` replaces the root handlers and raises the root
+    level to WARN, which silenced every app INFO log (and dropped the JSON
+    format) for the rest of the process lifetime on both API and worker pods.
+    """
+    _build_schema_like_prod(fresh_pg)
+    root = logging.getLogger()
+    sentinel = logging.NullHandler()
+    root.addHandler(sentinel)
+    level_before = root.level
+    try:
+        sync_migration_head(fresh_pg)
+        assert sentinel in root.handlers
+        assert root.level == level_before
+    finally:
+        root.removeHandler(sentinel)

@@ -47,6 +47,10 @@ def sync_migration_head(engine: Any) -> None:
             return
         config = Config(str(_ALEMBIC_INI))
         config.attributes["connection"] = conn
+        # Keep env.py from running fileConfig(alembic.ini): that replaces the
+        # root handlers and raises the root level to WARN, silencing every app
+        # INFO log (JSON format included) for the rest of the process lifetime.
+        config.attributes["configure_logger"] = False
         if _is_adopted(conn):
             command.upgrade(config, "head")
         else:
