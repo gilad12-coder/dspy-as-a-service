@@ -163,7 +163,7 @@ jiter==0.14.0
     # via openai
 joserfc==1.6.8
     # via authlib
-json-repair==0.59.4
+json-repair==0.61.4
     # via dspy
 jsonref==1.1.0
     # via fastmcp
