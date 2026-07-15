@@ -48,7 +48,7 @@ def test_interview_streams_events_and_forwards_args(monkeypatch) -> None:
         yield {"event": "message_patch", "data": {"chunk": "שאלה"}}
         yield {
             "event": "interview_done",
-            "data": {"message": "שאלה", "quick_replies": [], "brief": [], "done": False, "model": "m"},
+            "data": {"message": "שאלה", "options": [], "brief": [], "done": False, "model": "m"},
         }
 
     monkeypatch.setattr(code_agent_router, "interview_turn_stream", fake_stream)

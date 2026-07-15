@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
-import { AgentThread, ChatTranscript, Composer } from "@/shared/ui/agent";
+import { AgentThread, ChatTranscript, Composer, QuestionChoices } from "@/shared/ui/agent";
 import type { AgentMessage, AgentThinking } from "@/shared/ui/agent";
+import type { InterviewOption } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { AssistState, TaggerConfig } from "../lib/types";
@@ -16,7 +17,7 @@ interface Props {
   busy: boolean;
   streamText: string;
   thinking: AgentThinking | null;
-  quickReplies: string[];
+  options: InterviewOption[];
   error: string | null;
   onSend: (content: string) => void;
   onEditResend: (index: number, content: string) => void;
@@ -40,7 +41,7 @@ export function TaggerInterview({
   busy,
   streamText,
   thinking,
-  quickReplies,
+  options,
   error,
   onSend,
   onEditResend,
@@ -119,22 +120,13 @@ export function TaggerInterview({
             </div>
           )}
 
-          {!error && quickReplies.length > 0 && !busy && (
-            <div className="flex flex-wrap gap-1.5 border-t border-border/40 px-4 pt-2.5">
-              {quickReplies.map((reply) => (
-                <button
-                  key={reply}
-                  type="button"
-                  onClick={() => onSend(reply)}
-                  className={cn(
-                    "rounded-full border border-border bg-background px-3 py-1 text-xs",
-                    "text-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 cursor-pointer",
-                  )}
-                >
-                  {reply}
-                </button>
-              ))}
-            </div>
+          {!error && options.length > 0 && !busy && (
+            <QuestionChoices
+              options={options}
+              onSelect={onSend}
+              hint={msg("tagger.assist.interview.choices_hint")}
+              ariaLabel={msg("tagger.assist.interview.choices_label")}
+            />
           )}
 
           <Composer

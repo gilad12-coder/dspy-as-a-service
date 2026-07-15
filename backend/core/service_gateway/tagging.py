@@ -26,7 +26,9 @@ from ..billing.pricing import ModelUsage, credits_for_usage
 from ..config import settings
 from ..models import ColumnMapping, ModelConfig, RunRequest
 from .agents.code import ReasoningStreamListener, _reply_language
+from .agents.code_interview import INTERVIEW_TURN_ATTEMPTS, normalize_options
 from .agents.constants import REASONING_FIELD
+from .agents.parse_salvage import salvage_prediction
 from .language_models import (
     apply_model_reasoning_config,
     build_language_model,
@@ -80,8 +82,12 @@ class InterviewTurnSig(dspy.Signature):
     ``done`` to true, write a one-sentence wrap-up in ``message``, and emit
     the full rubric — 4 to 10 crisp, decision-ready rules that would let a
     stranger label exactly like the user. Rules state decisions ("X counts as
-    Y when ..."), not process. Write ``message``, quick replies and the rubric
-    in ``reply_language``.
+    Y when ..."), not process. Whenever the question has a small set of likely
+    answers, offer 2-4 of them in ``options_json`` — each a short pickable
+    answer with a one-line description of what choosing it means — so the user
+    can answer in one click. The UI always adds a free-text field, so never
+    add an "other" / "something else" option yourself. Write ``message``, the
+    options and the rubric in ``reply_language``.
     """
 
     task_description: str = dspy.InputField(desc="What is being labeled and the allowed labels.")
@@ -89,8 +95,12 @@ class InterviewTurnSig(dspy.Signature):
     transcript_json: str = dspy.InputField(desc="JSON array of prior {role, content} turns.")
     reply_language: str = dspy.InputField(desc="Language every output is written in.")
     message: str = dspy.OutputField(desc="The next question, or a short wrap-up when done.")
-    quick_replies_json: str = dspy.OutputField(
-        desc="JSON array of 0-4 short suggested answers for a closed question; [] otherwise."
+    options_json: str = dspy.OutputField(
+        desc=(
+            'JSON array of 0-4 answer options for a closed question, each '
+            '{"label": <short pickable answer, <= 6 words>, "description": '
+            '<one-line note on what picking it means>}; [] for an open question.'
+        )
     )
     rubric_json: str = dspy.OutputField(desc="JSON array of rubric rule strings; [] until done.")
     done: str = dspy.OutputField(desc="'true' when the interview is finished, else 'false'.")
@@ -426,7 +436,8 @@ def _parse_interview_prediction(pred: Any, asked: int) -> dict[str, Any]:
         asked: Assistant questions asked before this turn (limit enforcement).
 
     Returns:
-        ``{"message", "quick_replies", "rubric", "done"}`` — ``rubric`` is
+        ``{"message", "options", "rubric", "done"}`` — ``options`` is a list
+        of ``{label, description}`` picks (empty once done); ``rubric`` is
         empty until ``done`` is true.
     """
     done = str(getattr(pred, "done", "")).strip().lower() in {"true", "yes", "1"}
@@ -434,11 +445,10 @@ def _parse_interview_prediction(pred: Any, asked: int) -> dict[str, Any]:
     rubric = [str(r).strip() for r in rubric if str(r).strip()] if isinstance(rubric, list) else []
     if asked >= MAX_INTERVIEW_QUESTIONS and not done:
         done = True
-    quick = _parse_json(getattr(pred, "quick_replies_json", "[]"), [])
-    quick = [str(q).strip() for q in quick if str(q).strip()][:4] if isinstance(quick, list) else []
+    options = normalize_options(_parse_json(getattr(pred, "options_json", "[]"), []))
     return {
         "message": str(getattr(pred, "message", "")).strip(),
-        "quick_replies": [] if done else quick,
+        "options": [] if done else options,
         "rubric": rubric if done else [],
         "done": done,
         "model": assist_model_name(),
@@ -462,8 +472,8 @@ def interview_turn(
         locale: UI locale code; replies are written in that language.
 
     Returns:
-        ``{"message", "quick_replies", "rubric", "done"}`` — ``rubric`` is
-        empty until ``done`` is true.
+        ``{"message", "options", "rubric", "done"}`` — ``rubric`` is empty
+        until ``done`` is true.
     """
     asked = sum(1 for t in turns if t.get("role") == "assistant")
     lm = _build_assist_lm()
@@ -485,8 +495,14 @@ async def interview_turn_stream(
 
     Yields ``{"event", "data"}`` mappings ready for ``sse_from_events``:
     ``reasoning_patch`` for provider thinking tokens (same synthetic channel
-    the agents use), ``message_patch`` for reply deltas, and a terminal
-    ``interview_done`` carrying the parsed turn.
+    the agents use), ``message_patch`` for reply deltas, ``message_reset``
+    when a failed attempt is being retried (the client must drop partial
+    text), and a terminal ``interview_done`` carrying the parsed turn.
+
+    A turn whose terminal parse fails is first salvaged from the raw response
+    (minimax-class models answer in chat-adapter format even under the JSON
+    fallback — see ``agents.parse_salvage``) and only then retried from
+    scratch, mirroring the code interview.
 
     Args:
         config: The session's ``TaggerConfig`` payload.
@@ -497,25 +513,39 @@ async def interview_turn_stream(
     """
     asked = sum(1 for t in turns if t.get("role") == "assistant")
     predict = dspy.Predict(InterviewTurnSig)
-    program = dspy.streamify(
-        predict,
-        stream_listeners=[
-            dspy.streaming.StreamListener(signature_field_name="message"),
-            ReasoningStreamListener(predict=predict),
-        ],
-        async_streaming=True,
-    )
     lm = _build_assist_lm()
+    inputs = _interview_inputs(config, columns, data, turns, locale)
     prediction: Any = None
-    with dspy.context(lm=lm):
-        async for chunk in program(**_interview_inputs(config, columns, data, turns, locale)):
-            if isinstance(chunk, dspy.streaming.StreamResponse):
-                if chunk.signature_field_name == REASONING_FIELD:
-                    yield {"event": "reasoning_patch", "data": {"chunk": chunk.chunk}}
-                elif chunk.signature_field_name == "message":
-                    yield {"event": "message_patch", "data": {"chunk": chunk.chunk}}
-            elif isinstance(chunk, dspy.Prediction):
-                prediction = chunk
+    for attempt in range(INTERVIEW_TURN_ATTEMPTS):
+        # Stream listeners are single-use; rebuild the program per attempt.
+        program = dspy.streamify(
+            predict,
+            stream_listeners=[
+                dspy.streaming.StreamListener(signature_field_name="message"),
+                ReasoningStreamListener(predict=predict),
+            ],
+            async_streaming=True,
+        )
+        if attempt:
+            yield {"event": "message_reset", "data": {}}
+        try:
+            with dspy.context(lm=lm):
+                async for chunk in program(**inputs):
+                    if isinstance(chunk, dspy.streaming.StreamResponse):
+                        if chunk.signature_field_name == REASONING_FIELD:
+                            yield {"event": "reasoning_patch", "data": {"chunk": chunk.chunk}}
+                        elif chunk.signature_field_name == "message":
+                            yield {"event": "message_patch", "data": {"chunk": chunk.chunk}}
+                    elif isinstance(chunk, dspy.Prediction):
+                        prediction = chunk
+            break
+        except Exception as err:
+            prediction = salvage_prediction(err)
+            if prediction is not None:
+                break
+            if attempt + 1 >= INTERVIEW_TURN_ATTEMPTS:
+                raise
+            logger.warning("tagger interview turn failed; retrying", exc_info=True)
     yield {"event": "interview_done", "data": _parse_interview_prediction(prediction, asked)}
 
 

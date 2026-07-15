@@ -20,10 +20,14 @@ import dspy
 from ...config import settings
 from .code import ReasoningStreamListener, _build_agent_lm, _reply_language
 from .constants import REASONING_FIELD
+from .parse_salvage import salvage_prediction
 
 logger = logging.getLogger(__name__)
 
 MAX_INTERVIEW_QUESTIONS = 5
+
+INTERVIEW_TURN_ATTEMPTS = 2
+"""LLM attempts per turn; a parse-salvaged reply never spends the retry."""
 
 
 class CodeInterviewTurnSig(dspy.Signature):
@@ -46,8 +50,13 @@ class CodeInterviewTurnSig(dspy.Signature):
     true, write a one-sentence wrap-up in ``message``, and emit the full
     brief — 4 to 10 crisp directives for the code authors. Directives state
     decisions ("Outputs must ...", "Score X lower when ..."), not process.
-    Write ``message``, quick replies and the brief in ``reply_language``,
-    keeping the product terms ``Signature`` and ``Metric`` in English.
+    Whenever the question has a small set of likely answers, offer 2-4 of
+    them in ``options_json`` — each a short pickable answer with a one-line
+    description of what choosing it means — so the owner can answer in one
+    click. The UI always adds a free-text field, so never add an "other" /
+    "something else" option yourself. Write ``message``, the options and the
+    brief in ``reply_language``, keeping the product terms ``Signature`` and
+    ``Metric`` in English.
     """
 
     dataset_columns: list[str] = dspy.InputField(desc="Every column name in the dataset.")
@@ -70,11 +79,41 @@ class CodeInterviewTurnSig(dspy.Signature):
     transcript_json: str = dspy.InputField(desc="JSON array of prior {role, content} turns.")
     reply_language: str = dspy.InputField(desc="Language every output is written in.")
     message: str = dspy.OutputField(desc="The next question, or a short wrap-up when done.")
-    quick_replies_json: str = dspy.OutputField(
-        desc="JSON array of 0-4 short suggested answers for a closed question; [] otherwise."
+    options_json: str = dspy.OutputField(
+        desc=(
+            'JSON array of 0-4 answer options for a closed question, each '
+            '{"label": <short pickable answer, <= 6 words>, "description": '
+            '<one-line note on what picking it means>}; [] for an open question.'
+        )
     )
     brief_json: str = dspy.OutputField(desc="JSON array of authoring-directive strings; [] until done.")
     done: str = dspy.OutputField(desc="'true' when the interview is finished, else 'false'.")
+
+
+def normalize_options(raw: Any) -> list[dict[str, str]]:
+    """Coerce a model options field into ``[{label, description}]``.
+
+    Tolerant of the model emitting either the structured shape or a bare list
+    of answer strings; drops entries without a label and caps the list at four.
+
+    Args:
+        raw: The parsed ``options_json`` value (any JSON type).
+
+    Returns:
+        Up to four ``{"label", "description"}`` dicts with non-empty labels.
+    """
+    if not isinstance(raw, list):
+        return []
+    options: list[dict[str, str]] = []
+    for item in raw:
+        if isinstance(item, dict):
+            label = str(item.get("label", "")).strip()
+            description = str(item.get("description", "")).strip()
+        else:
+            label, description = str(item).strip(), ""
+        if label:
+            options.append({"label": label, "description": description})
+    return options[:4]
 
 
 def _parse_json(text: str, fallback: Any) -> Any:
@@ -142,7 +181,8 @@ def _parse_interview_prediction(pred: Any, asked: int) -> dict[str, Any]:
         asked: Assistant questions asked before this turn (limit enforcement).
 
     Returns:
-        ``{"message", "quick_replies", "brief", "done", "model"}`` — ``brief``
+        ``{"message", "options", "brief", "done", "model"}`` — ``options`` is
+        a list of ``{label, description}`` picks (empty once done); ``brief``
         is empty until ``done`` is true.
     """
     done = str(getattr(pred, "done", "")).strip().lower() in {"true", "yes", "1"}
@@ -150,11 +190,10 @@ def _parse_interview_prediction(pred: Any, asked: int) -> dict[str, Any]:
     brief = [str(b).strip() for b in brief if str(b).strip()] if isinstance(brief, list) else []
     if asked >= MAX_INTERVIEW_QUESTIONS and not done:
         done = True
-    quick = _parse_json(getattr(pred, "quick_replies_json", "[]"), [])
-    quick = [str(q).strip() for q in quick if str(q).strip()][:4] if isinstance(quick, list) else []
+    options = normalize_options(_parse_json(getattr(pred, "options_json", "[]"), []))
     return {
         "message": str(getattr(pred, "message", "")).strip(),
-        "quick_replies": [] if done else quick,
+        "options": [] if done else options,
         "brief": brief if done else [],
         "done": done,
         "model": settings.code_agent_model,
@@ -175,8 +214,13 @@ async def interview_turn_stream(
 
     Yields ``{"event", "data"}`` mappings ready for ``sse_from_events``:
     ``reasoning_patch`` for provider thinking tokens (same synthetic channel
-    the agents use), ``message_patch`` for reply deltas, and a terminal
-    ``interview_done`` carrying the parsed turn.
+    the agents use), ``message_patch`` for reply deltas, ``message_reset``
+    when a failed attempt is being retried (the client must drop partial
+    text), and a terminal ``interview_done`` carrying the parsed turn.
+
+    A turn whose terminal parse fails is first salvaged from the raw response
+    (minimax-class models answer in chat-adapter format even under the JSON
+    fallback — see ``parse_salvage``) and only then retried from scratch.
 
     Args:
         dataset_columns: All dataset column names.
@@ -189,26 +233,39 @@ async def interview_turn_stream(
     """
     asked = sum(1 for t in turns if t.get("role") == "assistant")
     predict = dspy.Predict(CodeInterviewTurnSig)
-    program = dspy.streamify(
-        predict,
-        stream_listeners=[
-            dspy.streaming.StreamListener(signature_field_name="message"),
-            ReasoningStreamListener(predict=predict),
-        ],
-        async_streaming=True,
-    )
     lm = _build_agent_lm()
     inputs = _interview_inputs(
         dataset_columns, column_roles, column_kinds, sample_rows, job_model, turns, locale
     )
     prediction: Any = None
-    with dspy.context(lm=lm):
-        async for chunk in program(**inputs):
-            if isinstance(chunk, dspy.streaming.StreamResponse):
-                if chunk.signature_field_name == REASONING_FIELD:
-                    yield {"event": "reasoning_patch", "data": {"chunk": chunk.chunk}}
-                elif chunk.signature_field_name == "message":
-                    yield {"event": "message_patch", "data": {"chunk": chunk.chunk}}
-            elif isinstance(chunk, dspy.Prediction):
-                prediction = chunk
+    for attempt in range(INTERVIEW_TURN_ATTEMPTS):
+        # Stream listeners are single-use; rebuild the program per attempt.
+        program = dspy.streamify(
+            predict,
+            stream_listeners=[
+                dspy.streaming.StreamListener(signature_field_name="message"),
+                ReasoningStreamListener(predict=predict),
+            ],
+            async_streaming=True,
+        )
+        if attempt:
+            yield {"event": "message_reset", "data": {}}
+        try:
+            with dspy.context(lm=lm):
+                async for chunk in program(**inputs):
+                    if isinstance(chunk, dspy.streaming.StreamResponse):
+                        if chunk.signature_field_name == REASONING_FIELD:
+                            yield {"event": "reasoning_patch", "data": {"chunk": chunk.chunk}}
+                        elif chunk.signature_field_name == "message":
+                            yield {"event": "message_patch", "data": {"chunk": chunk.chunk}}
+                    elif isinstance(chunk, dspy.Prediction):
+                        prediction = chunk
+            break
+        except Exception as err:
+            prediction = salvage_prediction(err)
+            if prediction is not None:
+                break
+            if attempt + 1 >= INTERVIEW_TURN_ATTEMPTS:
+                raise
+            logger.warning("code interview turn failed; retrying", exc_info=True)
     yield {"event": "interview_done", "data": _parse_interview_prediction(prediction, asked)}

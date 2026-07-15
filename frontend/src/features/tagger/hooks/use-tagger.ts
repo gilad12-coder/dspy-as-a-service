@@ -17,6 +17,7 @@ import {
   getOptimizationStatusLite,
   getOptimizationOptimizedPrompt,
   type TaggerSessionDetail,
+  type InterviewOption,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
 import { markRecentSession } from "@/shared/lib/recent-session";
@@ -513,7 +514,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
 
   // ------------------------------------------------------------- interview
 
-  const [quickReplies, setQuickReplies] = useState<string[]>([]);
+  const [interviewOptions, setInterviewOptions] = useState<InterviewOption[]>([]);
 
   // Streams the turn over SSE with the generalist agent's event shapes, so
   // the interview gets the same live reply + thinking treatment as the agent
@@ -536,6 +537,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       setAssistError(null);
       setInterviewStreamText("");
       setInterviewThinking(null);
+      setInterviewOptions([]);
       const controller = new AbortController();
       interviewAbortRef.current = controller;
       try {
@@ -559,6 +561,10 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
               );
               setInterviewStreamText((text) => text + chunk);
             },
+            onMessageReset: () => {
+              setInterviewStreamText("");
+              setInterviewThinking(null);
+            },
             onDone: (turn) => {
               patchAssist({
                 interview: {
@@ -574,7 +580,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
                 },
                 ...(turn.done && turn.rubric.length > 0 ? { rubric: turn.rubric } : {}),
               });
-              setQuickReplies(turn.done ? [] : turn.quick_replies);
+              setInterviewOptions(turn.done ? [] : turn.options);
             },
             onError: () => setAssistError("interview"),
           },
@@ -1026,7 +1032,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     interviewBusy,
     interviewStreamText,
     interviewThinking,
-    quickReplies,
+    interviewOptions,
     assistError,
     roundLoading,
     optimizeBusy,

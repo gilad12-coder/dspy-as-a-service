@@ -2129,9 +2129,36 @@ export interface CodeInterviewRequest {
   locale?: string;
 }
 
+/**
+ * One pickable answer for a closed interview question — structurally the
+ * `QuestionChoice` the answer picker renders. The UI always adds its own
+ * free-text path, so this never carries an "other" option.
+ */
+export interface InterviewOption {
+  label: string;
+  description: string;
+}
+
+/** Coerce a raw `interview_done` options payload into typed, non-empty picks. */
+export function parseInterviewOptions(raw: unknown): InterviewOption[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        return {
+          label: String(record.label ?? "").trim(),
+          description: String(record.description ?? "").trim(),
+        };
+      }
+      return { label: String(item ?? "").trim(), description: "" };
+    })
+    .filter((option) => option.label);
+}
+
 export interface CodeInterviewTurnResult {
   message: string;
-  quick_replies: string[];
+  options: InterviewOption[];
   brief: string[];
   done: boolean;
   model?: string | null;
@@ -2140,6 +2167,8 @@ export interface CodeInterviewTurnResult {
 export interface CodeInterviewHandlers {
   onReasoningPatch?: (chunk: string) => void;
   onMessagePatch?: (chunk: string) => void;
+  /** The server is retrying a failed attempt — drop streamed partial text. */
+  onMessageReset?: () => void;
   onDone: (turn: CodeInterviewTurnResult) => void;
   onError: (message: string) => void;
   signal?: AbortSignal;
@@ -2181,13 +2210,14 @@ export async function streamCodeInterviewTurn(
         case "message_patch":
           handlers.onMessagePatch?.(String(data.chunk ?? ""));
           break;
+        case "message_reset":
+          handlers.onMessageReset?.();
+          break;
         case "interview_done":
           finished = true;
           handlers.onDone({
             message: String(data.message ?? ""),
-            quick_replies: Array.isArray(data.quick_replies)
-              ? data.quick_replies.map(String)
-              : [],
+            options: parseInterviewOptions(data.options),
             brief: Array.isArray(data.brief) ? data.brief.map(String) : [],
             done: data.done === true,
             model: typeof data.model === "string" && data.model ? data.model : null,

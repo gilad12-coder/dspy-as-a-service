@@ -4,7 +4,7 @@ import * as React from "react";
 import { Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
 
 import { Button } from "@/shared/ui/primitives/button";
-import { AgentThread, ChatTranscript, Composer } from "@/shared/ui/agent";
+import { AgentThread, ChatTranscript, Composer, QuestionChoices } from "@/shared/ui/agent";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { CodeInterviewState } from "@/shared/hooks/use-code-interview";
@@ -84,22 +84,13 @@ export function CodeInterviewPanel({ interview, className }: Props) {
             </div>
           )}
 
-          {!interview.error && interview.quickReplies.length > 0 && !interview.busy && (
-            <div className="flex flex-wrap gap-1.5 border-t border-border/40 px-4 pt-2.5">
-              {interview.quickReplies.map((reply) => (
-                <button
-                  key={reply}
-                  type="button"
-                  onClick={() => interview.send(reply)}
-                  className={cn(
-                    "rounded-full border border-border bg-background px-3 py-1 text-xs",
-                    "text-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 cursor-pointer",
-                  )}
-                >
-                  {reply}
-                </button>
-              ))}
-            </div>
+          {!interview.error && interview.options.length > 0 && !interview.busy && (
+            <QuestionChoices
+              options={interview.options}
+              onSelect={interview.send}
+              hint={msg("submit.code.interview.choices_hint")}
+              ariaLabel={msg("submit.code.interview.choices_label")}
+            />
           )}
 
           <Composer

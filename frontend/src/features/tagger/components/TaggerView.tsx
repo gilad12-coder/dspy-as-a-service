@@ -30,7 +30,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
         busy={tagger.interviewBusy}
         streamText={tagger.interviewStreamText}
         thinking={tagger.interviewThinking}
-        quickReplies={tagger.quickReplies}
+        options={tagger.interviewOptions}
         error={tagger.assistError}
         onSend={(content) => void tagger.sendInterviewMessage(content)}
         onEditResend={(index, content) => void tagger.sendInterviewMessage(content, index)}

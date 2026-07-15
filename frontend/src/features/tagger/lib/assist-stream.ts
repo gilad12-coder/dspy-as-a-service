@@ -1,6 +1,6 @@
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { readServerSentEvents } from "@/shared/lib/sse";
-import { fetchWithAuthRetry } from "@/shared/lib/api";
+import { fetchWithAuthRetry, parseInterviewOptions, type InterviewOption } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
 
 // Resolve lazily — a module-load const races the injected window.__SKYNET_ENV__
@@ -9,7 +9,7 @@ const apiBase = () => getRuntimeEnv().apiUrl;
 
 export interface InterviewTurnResult {
   message: string;
-  quick_replies: string[];
+  options: InterviewOption[];
   rubric: string[];
   done: boolean;
   model?: string | null;
@@ -18,6 +18,8 @@ export interface InterviewTurnResult {
 export interface InterviewStreamHandlers {
   onReasoningPatch?: (chunk: string) => void;
   onMessagePatch?: (chunk: string) => void;
+  /** The server is retrying a failed attempt — drop streamed partial text. */
+  onMessageReset?: () => void;
   onDone: (turn: InterviewTurnResult) => void;
   onError: (message: string) => void;
   signal?: AbortSignal;
@@ -64,9 +66,19 @@ export async function streamInterviewTurn(
         case "message_patch":
           handlers.onMessagePatch?.(String(payload.chunk ?? ""));
           break;
+        case "message_reset":
+          handlers.onMessageReset?.();
+          break;
         case "interview_done":
           finished = true;
-          handlers.onDone(payload as unknown as InterviewTurnResult);
+          handlers.onDone({
+            message: String(payload.message ?? ""),
+            options: parseInterviewOptions(payload.options),
+            rubric: Array.isArray(payload.rubric) ? payload.rubric.map(String) : [],
+            done: payload.done === true,
+            model:
+              typeof payload.model === "string" && payload.model ? payload.model : null,
+          });
           break;
         case "error":
           finished = true;

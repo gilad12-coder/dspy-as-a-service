@@ -2432,6 +2432,8 @@ export type MessageKey =
   | "submit.code.interview.brief.empty"
   | "submit.code.interview.brief.remove"
   | "submit.code.interview.brief.title"
+  | "submit.code.interview.choices_hint"
+  | "submit.code.interview.choices_label"
   | "submit.code.interview.error"
   | "submit.code.interview.placeholder"
   | "submit.code.interview.reading"
@@ -2570,6 +2572,8 @@ export type MessageKey =
   | "tagger.assist.gate.round_title"
   | "tagger.assist.gate.tag_rest"
   | "tagger.assist.gate.tag_rest_estimate"
+  | "tagger.assist.interview.choices_hint"
+  | "tagger.assist.interview.choices_label"
   | "tagger.assist.interview.error"
   | "tagger.assist.interview.placeholder"
   | "tagger.assist.interview.reading"
@@ -4830,10 +4834,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "not_found.back_dashboard": "חזור/חזרי ללוח הבקרה",
   "not_found.description": "הכתובת שחיפשת לא קיימת או שהועברה למיקום אחר",
   "not_found.title": "הדף לא נמצא",
-  "onboarding.cta.free_note": "האופטימיזציה הראשונה שלך על משימה מכוסה בערבות — אם היא לא תנצח את קו הבסיס שלך, ההרצה חינם.",
+  "onboarding.cta.free_note": "האופטימיזציה הראשונה שלך על משימה מכוסה בערבות — אם היא לא תנצח את ציון הבסיס שלך, ההרצה חינם.",
   "onboarding.cta.run": "אופטימיזציה — ההרצה הראשונה שלך חינם",
   "onboarding.demo.after_label": "אחרי Skynet",
-  "onboarding.demo.before_label": "קו הבסיס שלך",
+  "onboarding.demo.before_label": "ציון הבסיס שלך",
   "onboarding.demo.caption": "נמדד על פיצול בדיקה שמור שהאופטימייזר מעולם לא ראה.",
   "onboarding.demo.desc": "הנה משימה לדוגמה שכבר ביצענו עליה אופטימיזציה, כדי שתראו את צורת התוצאה עוד לפני שהרמתם אצבע.",
   "onboarding.demo.task_label": "משימה לדוגמה",
@@ -4846,7 +4850,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "onboarding.skip": "דלגו — קחו אותי להגדרה המלאה",
   "onboarding.title": "בואו נוכיח את זה על הנתונים שלכם",
   "onboarding.upload.baseline_desc": "העלו, ואנחנו נשמור בצד {p1} דוגמאות שמורות שעליהן ננקד את התוכנית שלכם — הפער שהאופטימייזר צריך לסגור.",
-  "onboarding.upload.baseline_title": "קו הבסיס שלכם, נמדד על {p1} דוגמאות שמורות",
+  "onboarding.upload.baseline_title": "ציון הבסיס שלכם, נמדד על {p1} דוגמאות שמורות",
   "onboarding.upload.desc": "גררו קובץ CSV, JSON או JSONL. נקרא אותו כאן בדפדפן שלכם — שום דבר לא נשלח עד שתתחילו את ההרצה.",
   "onboarding.upload.dropzone_hint": "CSV, JSON או JSONL",
   "onboarding.upload.dropzone_label": "בחרו קובץ או גררו אותו לכאן",
@@ -4875,12 +4879,12 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "optimization.progress.gepa": "אופטימיזציית GEPA",
   "optimization.proof.basis.test": "נתונים שהאופטימייזר מעולם לא ראה",
   "optimization.proof.basis.val": "סט האימות שלך",
-  "optimization.proof.billed.line": "ניצחנו את קו הבסיס שלך ב-{p1} על {p2} — ולכן הרצה זו חויבה: {p3} קרדיטים.",
+  "optimization.proof.billed.line": "ניצחנו את ציון הבסיס שלך ב-{p1} על {p2} — ולכן הרצה זו חויבה: {p3} קרדיטים.",
   "optimization.proof.billed.neutral": "הרצה זו חויבה: {p1} קרדיטים.",
   "optimization.proof.billed.neutral.title": "הרצה זו חויבה",
   "optimization.proof.billed.title": "הוכח על נתונים שמורים",
   "optimization.proof.estimate_reconcile": "הערכה {low}–{high} קרדיטים · חיוב בפועל {actual}",
-  "optimization.proof.refunded.line": "לא הצלחנו לנצח את קו הבסיס שלך על {p1}, ולכן הרצה זו הייתה חינם. {p2} קרדיטים זוכו לארנק שלך.",
+  "optimization.proof.refunded.line": "לא הצלחנו לנצח את ציון הבסיס שלך על {p1}, ולכן הרצה זו הייתה חינם. {p2} קרדיטים זוכו לארנק שלך.",
   "optimization.proof.refunded.title": "אין שיפור — הרצה זו הייתה חינם",
   "optimization.proof.view_optimization": "צפייה באופטימיזציה",
   "optimization.readonly_by": "מאת {name}",
@@ -5261,6 +5265,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.code.interview.brief.empty": "אין עדיין הנחיות.",
   "submit.code.interview.brief.remove": "הסרת הנחיה",
   "submit.code.interview.brief.title": "תקציר ההנחיות",
+  "submit.code.interview.choices_hint": "או כתבו תשובה משלכם למטה.",
+  "submit.code.interview.choices_label": "אפשרויות מענה",
   "submit.code.interview.error": "העוזר לא הצליח לענות.",
   "submit.code.interview.placeholder": "כתבו תשובה…",
   "submit.code.interview.reading": "קורא את הדאטה…",
@@ -5399,6 +5405,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.assist.gate.round_title": "הסבב הסתיים",
   "tagger.assist.gate.tag_rest": "תיוג {rows} השורות שנותרו",
   "tagger.assist.gate.tag_rest_estimate": "תיוג {rows} השורות שנותרו (‎~{low}–{high} קרדיטים)",
+  "tagger.assist.interview.choices_hint": "או כתבו תשובה משלכם למטה.",
+  "tagger.assist.interview.choices_label": "אפשרויות מענה",
   "tagger.assist.interview.error": "העוזר לא הצליח לענות.",
   "tagger.assist.interview.placeholder": "כתבו תשובה…",
   "tagger.assist.interview.reading": "קורא את הדאטה…",
@@ -13725,6 +13733,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.code.interview.brief.empty": "No directives yet.",
   "submit.code.interview.brief.remove": "Remove directive",
   "submit.code.interview.brief.title": "Authoring brief",
+  "submit.code.interview.choices_hint": "Or type your own answer below.",
+  "submit.code.interview.choices_label": "Answer options",
   "submit.code.interview.error": "The assistant couldn't respond.",
   "submit.code.interview.placeholder": "Type your answer…",
   "submit.code.interview.reading": "Reading your dataset…",
@@ -13863,6 +13873,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.assist.gate.round_title": "Round complete",
   "tagger.assist.gate.tag_rest": "Tag the remaining {rows} rows",
   "tagger.assist.gate.tag_rest_estimate": "Tag the remaining {rows} rows (~{low}–{high} credits)",
+  "tagger.assist.interview.choices_hint": "Or type your own answer below.",
+  "tagger.assist.interview.choices_label": "Answer options",
   "tagger.assist.interview.error": "The assistant couldn't respond.",
   "tagger.assist.interview.placeholder": "Type your answer…",
   "tagger.assist.interview.reading": "Reading your dataset…",

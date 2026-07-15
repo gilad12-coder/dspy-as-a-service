@@ -2,7 +2,11 @@
 
 import * as React from "react";
 
-import { streamCodeInterviewTurn, type CodeAgentChatTurn } from "@/shared/lib/api";
+import {
+  streamCodeInterviewTurn,
+  type CodeAgentChatTurn,
+  type InterviewOption,
+} from "@/shared/lib/api";
 import type { ParsedDataset } from "@/shared/lib/parse-dataset";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
 import type { AgentMessage, AgentThinking } from "@/shared/ui/agent";
@@ -17,7 +21,8 @@ export interface CodeInterviewState {
   busy: boolean;
   streamText: string;
   thinking: AgentThinking | null;
-  quickReplies: string[];
+  /** Pickable answers for the current question; empty for an open question. */
+  options: InterviewOption[];
   error: boolean;
   /** The model finished asking; the brief card is showing. */
   done: boolean;
@@ -64,7 +69,7 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
   const [busy, setBusy] = React.useState(false);
   const [streamText, setStreamText] = React.useState("");
   const [thinking, setThinking] = React.useState<AgentThinking | null>(null);
-  const [quickReplies, setQuickReplies] = React.useState<string[]>([]);
+  const [options, setOptions] = React.useState<InterviewOption[]>([]);
   const [error, setError] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const [brief, setBrief] = React.useState<string[]>([]);
@@ -82,7 +87,7 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
       setError(false);
       setStreamText("");
       setThinking(null);
-      setQuickReplies([]);
+      setOptions([]);
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -118,12 +123,16 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
             );
             setStreamText((text) => text + chunk);
           },
+          onMessageReset: () => {
+            setStreamText("");
+            setThinking(null);
+          },
           onDone: (turn) => {
             setTurns((prev) => [
               ...prev,
               { role: "assistant", content: turn.message, model: turn.model ?? null },
             ]);
-            setQuickReplies(turn.done ? [] : turn.quick_replies);
+            setOptions(turn.done ? [] : turn.options);
             if (turn.done) {
               setDone(true);
               setBrief(turn.brief);
@@ -210,7 +219,7 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
     busy,
     streamText,
     thinking,
-    quickReplies,
+    options,
     error,
     done,
     brief,

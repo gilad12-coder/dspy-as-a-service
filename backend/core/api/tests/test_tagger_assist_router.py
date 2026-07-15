@@ -169,7 +169,10 @@ def test_interview_returns_turn(monkeypatch) -> None:
         seen.update({"turns": turns, "locale": locale, "rows": len(data)})
         return {
             "message": "Does sarcasm count?",
-            "quick_replies": ["Yes", "No"],
+            "options": [
+                {"label": "Yes", "description": "Treat sarcasm as positive."},
+                {"label": "No", "description": "Judge on literal wording."},
+            ],
             "rubric": [],
             "done": False,
         }
@@ -184,6 +187,10 @@ def test_interview_returns_turn(monkeypatch) -> None:
     assert resp.status_code == 200, resp.text
     assert resp.json()["message"] == "Does sarcasm count?"
     assert resp.json()["done"] is False
+    assert resp.json()["options"] == [
+        {"label": "Yes", "description": "Treat sarcasm as positive."},
+        {"label": "No", "description": "Judge on literal wording."},
+    ]
     assert seen["locale"] == "he"
     assert seen["rows"] == 4
     assert seen["turns"] == [{"role": "user", "content": "hi"}]

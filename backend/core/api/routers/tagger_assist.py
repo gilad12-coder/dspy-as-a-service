@@ -69,11 +69,18 @@ class InterviewRequest(BaseModel):
     )
 
 
+# A single pickable answer offered for a closed interview question. The UI
+# always adds its own free-text option, so this never carries an "other".
+class InterviewOption(BaseModel):
+    label: str
+    description: str = ""
+
+
 class InterviewResponse(BaseModel):
     """The assistant's next interview turn."""
 
     message: str
-    quick_replies: list[str] = Field(default_factory=list)
+    options: list[InterviewOption] = Field(default_factory=list)
     rubric: list[str] = Field(default_factory=list)
     done: bool
     model: str | None = None
@@ -254,8 +261,9 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         """Stream one interview turn with the generalist agent's event shape.
 
         Events: ``reasoning_patch`` (provider thinking tokens),
-        ``message_patch`` (reply deltas), a terminal ``interview_done``
-        carrying the parsed turn, and ``error`` on failure.
+        ``message_patch`` (reply deltas), ``message_reset`` (a failed attempt
+        is being retried; the client drops any partial reply), a terminal
+        ``interview_done`` carrying the parsed turn, and ``error`` on failure.
 
         Args:
             session_id: UUID of the tagger session.
