@@ -52,13 +52,18 @@ interface TaggerSetupProps {
   ) => void;
 }
 
-const TAGGER_STEPS = perLocale(
+const BASE_STEPS = perLocale(
   () =>
     [
       { id: "data", label: msg("auto.features.tagger.components.taggersetup.literal.1") },
       { id: "mode", label: msg("auto.features.tagger.components.taggersetup.literal.2") },
-      { id: "config", label: msg("auto.features.tagger.components.taggersetup.literal.3") },
     ] as const,
+);
+
+// Freetext needs no setup prompt — the assist interview elicits the task — so
+// it drops this step entirely; binary and multiclass still configure here.
+const CONFIG_STEP = perLocale(
+  () => ({ id: "config", label: msg("auto.features.tagger.components.taggersetup.literal.3") }) as const,
 );
 
 const ASSIST_STEP = perLocale(
@@ -145,7 +150,12 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
 
   const { prefs } = useUserPrefs();
   const assistAvailable = isTaggerAssistEnabled() && prefs.taggerAssist;
-  const activeSteps = assistAvailable ? [...TAGGER_STEPS, ASSIST_STEP] : [...TAGGER_STEPS];
+  const needsConfigStep = mode !== "freetext";
+  const activeSteps = [
+    ...BASE_STEPS,
+    ...(needsConfigStep ? [CONFIG_STEP] : []),
+    ...(assistAvailable ? [ASSIST_STEP] : []),
+  ];
 
   const [question, setQuestion] = useState(
     msg("auto.features.tagger.components.taggersetup.literal.10"),
@@ -154,7 +164,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     { id: "cat1", label: msg("auto.features.tagger.components.taggersetup.literal.11") },
     { id: "cat2", label: msg("auto.features.tagger.components.taggersetup.literal.12") },
   ]);
-  const [prompt, setPrompt] = useState("");
 
   // Tutorial hooks — let the guided tour inject demo data and navigate steps
   useEffect(
@@ -256,17 +265,28 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     setInputCols((prev) => (prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]));
   };
 
+  // Which steps exist depends on mode (freetext drops "config"), so gate on the
+  // step's id rather than its index.
   const validateStep = (s: number): boolean => {
-    if (s === 0) return parsedRows.length > 0 && inputCols.length > 0;
-    if (s === 1) return !!mode;
-    if (s === 2) {
-      if (!mode) return false;
+    const id = activeSteps[s]?.id;
+    if (id === "data") return parsedRows.length > 0 && inputCols.length > 0;
+    if (id === "mode") return !!mode;
+    if (id === "config") {
       if (mode === "multiclass") return categories.filter((c) => c.label.trim()).length >= 2;
-      return true;
+      return !!mode;
     }
-    if (s === 3) return assistAvailable;
+    if (id === "assist") return assistAvailable;
     return false;
   };
+
+  // The substantive gate for starting, independent of which optional steps the
+  // chosen mode renders: data selected, a mode picked, and — for multiclass —
+  // at least two categories.
+  const canStart = (): boolean =>
+    parsedRows.length > 0 &&
+    inputCols.length > 0 &&
+    !!mode &&
+    (mode !== "multiclass" || categories.filter((c) => c.label.trim()).length >= 2);
 
   const maxReachableStep = (() => {
     for (let i = 0; i < activeSteps.length; i++) {
@@ -299,7 +319,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   };
 
   const handleStart = () => {
-    if (!mode || !validateStep(0) || !validateStep(1) || !validateStep(2)) return;
+    if (!mode || !canStart()) return;
     const mapped: DataRow[] = parsedRows.map((row, i) => {
       const fields = inputCols.map((col) => ({ column: col, value: row[col] }));
       // ``text`` stays as a flat string for CSV export / search / single-col
@@ -321,9 +341,8 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     const config: TaggerConfig = { mode, inputColumns: inputCols };
     if (mode === "binary") config.question = question;
     if (mode === "multiclass") config.categories = categories.filter((c) => c.label.trim());
-    if (mode === "freetext") {
-      config.prompt = prompt || msg("auto.features.tagger.components.taggersetup.literal.13");
-    }
+    // Freetext carries no prompt: the assist interview establishes the task,
+    // and manual annotation falls back to a default header.
     onStart(
       config,
       mapped,
@@ -473,7 +492,9 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
         </div>
       </CardContent>
     </Card>,
+  ];
 
+  const configCard = (
     <Card key="config">
       <CardHeader>
         <CardTitle className="text-base">
@@ -485,11 +506,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
           {mode === "multiclass" && (
             <HelpTip text={tip("tagger.multiclass_categories")}>
               {msg("auto.features.tagger.components.taggersetup.7")}
-            </HelpTip>
-          )}
-          {mode === "freetext" && (
-            <HelpTip text={tip("tagger.freetext_instruction")}>
-              {msg("auto.features.tagger.components.taggersetup.8")}
             </HelpTip>
           )}
           {!mode && msg("auto.features.tagger.components.taggersetup.literal.14")}
@@ -544,24 +560,15 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
             </Button>
           </div>
         )}
-        {mode === "freetext" && (
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            placeholder={msg("auto.features.tagger.components.taggersetup.literal.18")}
-            dir="auto"
-          />
-        )}
         {!mode && (
           <p className="text-sm text-muted-foreground">
             {msg("auto.features.tagger.components.taggersetup.10")}
           </p>
         )}
       </CardContent>
-    </Card>,
-  ];
+    </Card>
+  );
+  if (needsConfigStep) steps.push(configCard);
 
   if (assistAvailable) {
     const target = mode
@@ -721,7 +728,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
           </Button>
         </div>
       ) : (
-        <Button onClick={handleStart} disabled={!validateStep(2)} size="lg" className="w-full">
+        <Button onClick={handleStart} disabled={!canStart()} size="lg" className="w-full">
           {msg("auto.features.tagger.components.taggersetup.15")}
         </Button>
       )}

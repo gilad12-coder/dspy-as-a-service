@@ -73,15 +73,6 @@ export function TaggerInterview({
 
   return (
     <div className="flex h-[calc(100dvh-var(--header-height,53px)-3rem)] w-full flex-col md:h-[calc(100dvh-var(--header-height,53px)-4rem)]">
-      <div className="px-1 pb-3">
-        <h2 className="text-base font-semibold text-foreground">
-          {msg("tagger.assist.interview.title")}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          {msg("tagger.assist.interview.subtitle")}
-        </p>
-      </div>
-
       {done ? (
         <RubricCard
           config={config}
@@ -91,6 +82,15 @@ export function TaggerInterview({
         />
       ) : (
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden py-0 gap-0">
+          <div className="border-b border-border/40 px-4 py-3 shrink-0">
+            <h3 className="text-sm font-semibold text-foreground">
+              {msg("tagger.assist.interview.title")}
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {msg("tagger.assist.interview.subtitle")}
+            </p>
+          </div>
+
           <AgentThread
             scrollDeps={[messages.length, streamText, thinking?.reasoning]}
             isEmpty={messages.length === 0}
@@ -138,15 +138,13 @@ export function TaggerInterview({
             streaming={busy}
             placeholder={msg("tagger.assist.interview.placeholder")}
           />
-        </Card>
-      )}
 
-      {!done && (
-        <div className="flex justify-center pt-2">
-          <Button variant="ghost" size="sm" onClick={onSkip} className="text-muted-foreground">
-            {msg("tagger.assist.interview.skip")}
-          </Button>
-        </div>
+          <div className="flex justify-center border-t border-border/40 py-1.5 shrink-0">
+            <Button variant="ghost" size="sm" onClick={onSkip} className="text-muted-foreground">
+              {msg("tagger.assist.interview.skip")}
+            </Button>
+          </div>
+        </Card>
       )}
     </div>
   );
@@ -154,7 +152,7 @@ export function TaggerInterview({
 
 /**
  * The distilled labeling guide, editable in place before anything runs —
- * including the task's own prompt/question, so refinements from the interview
+ * including the binary task's own question, so refinements from the interview
  * land on the tagging prompt itself. Confirming it is the moment the user
  * takes ownership of what the AI believes.
  */
@@ -171,7 +169,9 @@ function RubricCard({
 }) {
   const [rules, setRules] = useState<string[]>(assist.rubric);
   useEffect(() => setRules(assist.rubric), [assist.rubric]);
-  const taskKey = config.mode === "binary" ? "question" : config.mode === "freetext" ? "prompt" : null;
+  // Freetext carries no standalone prompt — its task is captured by the rubric
+  // rules below (the interview establishes it), so only binary shows a task field.
+  const taskKey = config.mode === "binary" ? "question" : null;
   const taskValue = taskKey ? String(config[taskKey] ?? "") : "";
 
   const update = (idx: number, value: string) =>

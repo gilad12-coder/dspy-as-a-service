@@ -77,7 +77,10 @@ class InterviewTurnSig(dspy.Signature):
     Ask ONE short, concrete question at a time — grounded in the sample rows —
     about ambiguous label boundaries, edge cases, and how to treat dirty or
     off-topic rows. Never ask generic questions the task description already
-    answers. After at most five questions total (or as soon as the user asks
+    answers. When the task description leaves the labeling target open (e.g. an
+    extraction task whose target is defined only by the rubric you have yet to
+    write), your first question must pin down exactly what to label or extract
+    from each row. After at most five questions total (or as soon as the user asks
     to proceed, or their answers stop adding information), stop asking: set
     ``done`` to true, write a one-sentence wrap-up in ``message``, and emit
     the full rubric — 4 to 10 crisp, decision-ready rules that would let a
@@ -227,7 +230,13 @@ def task_description(config: dict[str, Any]) -> str:
             f"from this exact list: {json.dumps(names, ensure_ascii=False)}. "
             "The label is a JSON array of the applying category names (at least one)."
         )
-    prompt = str(config.get("prompt") or "Extract the relevant text.")
+    prompt = str(config.get("prompt") or "").strip()
+    if not prompt:
+        return (
+            "Open-ended text extraction: the exact text to pull from each row is "
+            "the one described by the rubric rules. The label is that extracted "
+            "text, grounded in the row."
+        )
     return (
         f'Text extraction. For each row: "{prompt}". '
         "The label is the extracted text, taken from or grounded in the row."
