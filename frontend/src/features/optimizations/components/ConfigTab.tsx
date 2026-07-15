@@ -37,11 +37,12 @@ import type {
 } from "@/shared/types/api";
 import { tip } from "@/shared/lib/tooltips";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 import { moduleLabel } from "@/shared/lib/formatters";
 import { TERMS } from "@/shared/lib/terms";
 import { InfoCard, ReasoningPill } from "./ui-primitives";
 
-const OPT_PARAM_LABELS: Record<string, string> = {
+const OPT_PARAM_LABELS: Record<string, string> = perLocale(() => ({
   auto: msg("auto.features.optimizations.components.configtab.literal.1"),
   max_bootstrapped_demos: msg("auto.features.optimizations.components.configtab.literal.2"),
   max_labeled_demos: msg("auto.features.optimizations.components.configtab.literal.3"),
@@ -51,8 +52,8 @@ const OPT_PARAM_LABELS: Record<string, string> = {
   max_full_evals: msg("auto.features.optimizations.components.configtab.literal.7"),
   use_merge: msg("auto.features.optimizations.components.configtab.literal.8"),
   metric: TERMS.metric,
-};
-const OPT_PARAM_TIPS: Record<string, string> = {
+}));
+const OPT_PARAM_TIPS: Record<string, string> = perLocale(() => ({
   auto: msg("auto.features.optimizations.components.configtab.literal.9"),
   max_bootstrapped_demos: msg("auto.features.optimizations.components.configtab.literal.10"),
   max_labeled_demos: formatMsg("auto.features.optimizations.components.configtab.template.1", {
@@ -69,7 +70,7 @@ const OPT_PARAM_TIPS: Record<string, string> = {
   ),
   max_full_evals: msg("auto.features.optimizations.components.configtab.literal.12"),
   use_merge: msg("auto.features.optimizations.components.configtab.literal.13"),
-};
+}));
 
 function labelWithTip(key: string): ReactNode {
   const label = OPT_PARAM_LABELS[key] || key;
@@ -95,11 +96,11 @@ function paramIcon(key: string): ReactNode {
 // The GEPA budget level arrives as the raw "light" / "medium" / "heavy"
 // string; translate it to the same Hebrew the submit summary shows so the
 // value reads consistently across surfaces.
-const AUTO_LEVEL_LABELS: Record<string, string> = {
+const AUTO_LEVEL_LABELS: Record<string, string> = perLocale(() => ({
   light: msg("auto.features.optimizations.components.configtab.literal.18"),
   medium: msg("auto.features.optimizations.components.configtab.literal.19"),
   heavy: msg("auto.features.optimizations.components.configtab.literal.20"),
-};
+}));
 
 function formatParamValue(k: string, v: unknown): string {
   if (typeof v === "boolean")
@@ -112,10 +113,10 @@ function formatParamValue(k: string, v: unknown): string {
 
 // Tooltip copy keyed by the two named model-role labels. Grid cards use
 // indexed short labels (no match here) since their columns are already tipped.
-const MODEL_CARD_TIPS: Record<string, string> = {
+const MODEL_CARD_TIPS: Record<string, string> = perLocale(() => ({
   [msg("model.generation.label")]: tip("model.generation"),
   [TERMS.reflectionModel]: tip("model.reflection"),
-};
+}));
 
 /** Inline model-config card — matches the ModelChip style. */
 function ModelCard({ label, cfg }: { label: string; cfg: Record<string, unknown> }) {
@@ -169,7 +170,8 @@ function pickPairModelConfig(
   const candidates = (configs ?? []).filter((c) => c.name === name);
   const matched =
     candidates.find(
-      (c) => ((c.extra?.reasoning_effort as string | undefined) ?? null) === (reasoningEffort ?? null),
+      (c) =>
+        ((c.extra?.reasoning_effort as string | undefined) ?? null) === (reasoningEffort ?? null),
     ) ?? candidates[0];
   if (matched) return matched as unknown as Record<string, unknown>;
   return reasoningEffort ? { name, extra: { reasoning_effort: reasoningEffort } } : { name };

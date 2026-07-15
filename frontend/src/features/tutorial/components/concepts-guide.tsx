@@ -4,6 +4,7 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { X, BookOpen, Sparkles, Cog, Boxes, ListTree, Lightbulb, Compass } from "lucide-react";
 import { msg, formatMsg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
@@ -23,7 +24,7 @@ interface SectionMeta {
   Icon: React.ComponentType<{ className?: string }>;
 }
 
-const SECTIONS: readonly SectionMeta[] = [
+const SECTIONS: readonly SectionMeta[] = perLocale(() => [
   {
     id: "background",
     num: "1",
@@ -66,7 +67,7 @@ const SECTIONS: readonly SectionMeta[] = [
     title: msg("auto.features.tutorial.components.concepts.guide.literal.7"),
     Icon: Compass,
   },
-] as const;
+]);
 
 export function ConceptsGuide({ open, onClose }: ConceptsGuideProps) {
   const dialogRef = React.useRef<HTMLDivElement | null>(null);

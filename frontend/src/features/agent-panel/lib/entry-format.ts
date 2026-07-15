@@ -8,9 +8,10 @@
  */
 
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 import { TERMS } from "@/shared/lib/terms";
 
-export const ARG_LABELS: Record<string, string> = {
+export const ARG_LABELS: Record<string, string> = perLocale(() => ({
   optimization_id: msg("auto.features.agent.panel.lib.entry.row.literal.1"),
   job_id: msg("auto.features.agent.panel.lib.entry.row.literal.3"),
   ids: msg("auto.features.agent.panel.lib.entry.row.literal.4"),
@@ -92,7 +93,7 @@ export const ARG_LABELS: Record<string, string> = {
   summary: msg("auto.features.agent.panel.lib.entry.row.literal.47"),
   explanation: msg("auto.features.agent.panel.lib.entry.row.literal.48"),
   reason: msg("auto.features.agent.panel.lib.entry.row.literal.49"),
-};
+}));
 
 export function hasHebrewLabel(key: string): boolean {
   return Object.prototype.hasOwnProperty.call(ARG_LABELS, key);

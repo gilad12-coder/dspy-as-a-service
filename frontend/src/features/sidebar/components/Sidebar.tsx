@@ -53,23 +53,31 @@ import { AccountMenu } from "@/shared/layout/account-menu";
 import { ShareDialog } from "@/features/optimizations";
 import { StorageMeter } from "@/features/storage";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { sessionIdentity } from "@/shared/lib/session-identity";
 import { recentResumableId } from "@/shared/lib/recent-session";
 import { TERMS } from "@/shared/lib/terms";
 import { EmptyState } from "@/shared/ui/empty-state";
 
-const NAV_ITEMS = [
-  {
-    href: "/",
-    label: msg("auto.features.sidebar.components.sidebar.literal.1"),
-    icon: LayoutDashboard,
-  },
-  { href: "/tagger", label: msg("auto.features.sidebar.components.sidebar.literal.2"), icon: Tags },
-  { href: "/submit", label: TERMS.notificationNewOpt, icon: Send },
-  { href: "/explore", label: msg("sidebar.nav.explore"), icon: Compass },
-  { href: "/datasets", label: msg("sidebar.nav.datasets"), icon: Database },
-] as const;
+const NAV_ITEMS = perLocale(
+  () =>
+    [
+      {
+        href: "/",
+        label: msg("auto.features.sidebar.components.sidebar.literal.1"),
+        icon: LayoutDashboard,
+      },
+      {
+        href: "/tagger",
+        label: msg("auto.features.sidebar.components.sidebar.literal.2"),
+        icon: Tags,
+      },
+      { href: "/submit", label: TERMS.notificationNewOpt, icon: Send },
+      { href: "/explore", label: msg("sidebar.nav.explore"), icon: Compass },
+      { href: "/datasets", label: msg("sidebar.nav.datasets"), icon: Database },
+    ] as const,
+);
 
 const PAGE_SIZE = 20;
 

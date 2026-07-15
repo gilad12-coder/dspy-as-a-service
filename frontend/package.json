@@ -6,7 +6,7 @@
     "dev": "NODE_OPTIONS=--max-old-space-size=8192 next dev --turbo -p 3000",
     "build": "next build --webpack",
     "start": "next start -p 3001",
-    "lint": "eslint .",
+    "lint": "eslint . && node scripts/check-module-scope-i18n.mjs",
     "test:unit": "node --test --experimental-strip-types \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",

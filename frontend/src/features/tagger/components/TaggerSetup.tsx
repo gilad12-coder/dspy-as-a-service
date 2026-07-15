@@ -39,6 +39,7 @@ import type {
 import { isTaggerAssistEnabled } from "../lib/feature-flag";
 import { REVIEW_BATCH_SIZE, calibrationTarget } from "../lib/assist";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 interface TaggerSetupProps {
@@ -51,20 +52,25 @@ interface TaggerSetupProps {
   ) => void;
 }
 
-const TAGGER_STEPS = [
-  { id: "data", label: msg("auto.features.tagger.components.taggersetup.literal.1") },
-  { id: "mode", label: msg("auto.features.tagger.components.taggersetup.literal.2") },
-  { id: "config", label: msg("auto.features.tagger.components.taggersetup.literal.3") },
-] as const;
+const TAGGER_STEPS = perLocale(
+  () =>
+    [
+      { id: "data", label: msg("auto.features.tagger.components.taggersetup.literal.1") },
+      { id: "mode", label: msg("auto.features.tagger.components.taggersetup.literal.2") },
+      { id: "config", label: msg("auto.features.tagger.components.taggersetup.literal.3") },
+    ] as const,
+);
 
-const ASSIST_STEP = { id: "assist", label: msg("tagger.assist.setup.step_label") } as const;
+const ASSIST_STEP = perLocale(
+  () => ({ id: "assist", label: msg("tagger.assist.setup.step_label") }) as const,
+);
 
 const ASSIST_OPTIONS: Array<{
   mode: TaggerAssistMode;
   label: string;
   desc: string;
   recommended?: boolean;
-}> = [
+}> = perLocale(() => [
   {
     mode: "manual",
     label: msg("tagger.assist.setup.manual_label"),
@@ -81,7 +87,7 @@ const ASSIST_OPTIONS: Array<{
     label: msg("tagger.assist.setup.autopilot_label"),
     desc: msg("tagger.assist.setup.autopilot_desc"),
   },
-];
+]);
 
 const slideVariants = {
   enter: (direction: number) => ({
@@ -102,7 +108,7 @@ const MODE_OPTIONS: Array<{
   label: string;
   desc: string;
   icon: typeof Binary;
-}> = [
+}> = perLocale(() => [
   {
     mode: "binary",
     label: msg("auto.features.tagger.components.taggersetup.literal.4"),
@@ -121,7 +127,7 @@ const MODE_OPTIONS: Array<{
     desc: msg("auto.features.tagger.components.taggersetup.literal.9"),
     icon: TextCursorInput,
   },
-];
+]);
 
 export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const [step, setStep] = useState(0);
@@ -247,9 +253,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   };
 
   const toggleInputCol = (col: string) => {
-    setInputCols((prev) =>
-      prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col],
-    );
+    setInputCols((prev) => (prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]));
   };
 
   const validateStep = (s: number): boolean => {
@@ -381,9 +385,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
           />
         </label>
         {libraryLoading && (
-          <p className="text-sm text-muted-foreground">
-            {msg("tagger.setup.library_loading")}
-          </p>
+          <p className="text-sm text-muted-foreground">{msg("tagger.setup.library_loading")}</p>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
 

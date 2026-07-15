@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 
 import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
@@ -47,7 +48,7 @@ const FEATURED_TOOLS: readonly string[] = [
 
 // Tour-oriented descriptions (capabilities, not approval warnings). Fallback
 // to TOOL_META.description when a key is missing.
-const TOUR_DESCRIPTIONS: Record<string, string> = {
+const TOUR_DESCRIPTIONS: Record<string, string> = perLocale(() => ({
   submit_job_run_post: formatMsg("auto.features.agent.panel.components.toolscarousel.template.1", {
     p1: TERMS.optimization,
   }),
@@ -94,7 +95,7 @@ const TOUR_DESCRIPTIONS: Record<string, string> = {
     "auto.features.agent.panel.components.toolscarousel.literal.10",
   ),
   request_user_inference: msg("auto.features.agent.panel.components.toolscarousel.literal.17"),
-};
+}));
 
 interface ToolsCarouselProps {
   /**

@@ -20,6 +20,7 @@ import {
 } from "./demo-data";
 import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 
 export type TutorialTrack = "deep-dive";
 
@@ -299,7 +300,7 @@ function injectSampleDataset() {
   );
 }
 
-const tutorialSteps: TutorialStep[] = [
+const tutorialSteps: TutorialStep[] = perLocale(() => [
   {
     id: "dd-kpis",
     title: msg("auto.features.tutorial.lib.steps.literal.6"),
@@ -1039,7 +1040,7 @@ const tutorialSteps: TutorialStep[] = [
     track: "deep-dive",
     readingTimeSec: 5,
   },
-];
+]);
 
 const AGENT_PANEL_STEP_IDS = new Set(["dd-agent-pill", "dd-agent-panel"]);
 

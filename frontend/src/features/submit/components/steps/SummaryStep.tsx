@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 import { moduleLabel } from "@/shared/lib/formatters";
 import { TERMS } from "@/shared/lib/terms";
 import { ModelChip } from "@/shared/ui/model-chip";
@@ -37,7 +38,7 @@ const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m
   loading: () => <Skeleton height={200} borderRadius={8} />,
 });
 
-const SUMMARY_TABS = [
+const SUMMARY_TABS = perLocale(() => [
   {
     id: "general",
     label: msg("auto.features.submit.components.steps.summarystep.literal.1"),
@@ -55,7 +56,7 @@ const SUMMARY_TABS = [
     label: msg("auto.features.submit.components.steps.summarystep.literal.3"),
     icon: <Code className="size-3.5" />,
   },
-];
+]);
 
 /**
  * Read-only row shown when a grid side is set to "all available models".

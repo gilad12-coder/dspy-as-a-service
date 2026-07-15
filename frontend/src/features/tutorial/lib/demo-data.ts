@@ -26,6 +26,7 @@ import type {
 import { layoutTrajectory, type CandidateMetrics } from "@/features/trajectory";
 import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 
 export const DEMO_OPTIMIZATION_ID = "a7e3b291-4d2f-4f8c-b142-9d5e6f8a1c3b";
 export const DEMO_GRID_OPTIMIZATION_ID = "c3f9d215-8a47-4e6b-a1d3-7b2f9c58e4a1";
@@ -690,7 +691,7 @@ function daysAgo(n: number): string {
   return d.toISOString();
 }
 
-const DEMO_JOBS: OptimizationSummaryResponse[] = [
+const DEMO_JOBS: OptimizationSummaryResponse[] = perLocale(() => [
   {
     optimization_id: "demo-001",
     optimization_type: "run",
@@ -865,7 +866,7 @@ const DEMO_JOBS: OptimizationSummaryResponse[] = [
     metric_improvement: 0.18,
     username: "demo",
   },
-];
+]);
 
 function toAnalyticsJob(j: OptimizationSummaryResponse): DashboardAnalyticsJob {
   return {
@@ -884,14 +885,14 @@ function toAnalyticsJob(j: OptimizationSummaryResponse): DashboardAnalyticsJob {
   };
 }
 
-export const DEMO_DASHBOARD_JOBS: PaginatedJobsResponse = {
+export const DEMO_DASHBOARD_JOBS: PaginatedJobsResponse = perLocale(() => ({
   items: DEMO_JOBS,
   total: DEMO_JOBS.length,
   limit: 20,
   offset: 0,
-};
+}));
 
-export const DEMO_DASHBOARD_ANALYTICS: DashboardAnalytics = {
+export const DEMO_DASHBOARD_ANALYTICS: DashboardAnalytics = perLocale(() => ({
   filtered_total: DEMO_JOBS.length,
   status_counts: { success: 7, failed: 1, running: 1 },
   optimizer_counts: { GEPA: 5, MIPROv2: 2, BootstrapFewShot: 2 },
@@ -953,7 +954,7 @@ export const DEMO_DASHBOARD_ANALYTICS: DashboardAnalytics = {
     "claude-haiku-4",
     "gemini-2.0-pro",
   ],
-};
+}));
 
 /**
  * Demo compare data — three completed runs on the same task. IDs are
@@ -962,7 +963,7 @@ export const DEMO_DASHBOARD_ANALYTICS: DashboardAnalytics = {
  */
 export const DEMO_COMPARE_IDS = ["tutorial-compare-a", "tutorial-compare-b", "tutorial-compare-c"];
 
-const COMPARE_TASK_NAME = msg("auto.features.tutorial.lib.demo.data.literal.16");
+const compareTaskName = () => msg("auto.features.tutorial.lib.demo.data.literal.16");
 const COMPARE_FINGERPRINT = "tutorial-fingerprint-email-classifier";
 
 function compareInstructions(variant: "a" | "b" | "c"): string {
@@ -1085,7 +1086,7 @@ function buildCompareJob(opts: {
   };
 }
 
-const GRID_TASK_NAME = msg("auto.features.tutorial.lib.demo.data.literal.17");
+const gridTaskName = () => msg("auto.features.tutorial.lib.demo.data.literal.17");
 
 function gridInstructions(variant: 0 | 1 | 2 | 3): string {
   if (variant === 0) {
@@ -1277,7 +1278,7 @@ export function buildGridDemoJob(): OptimizationStatusResponse {
     optimization_id: DEMO_GRID_OPTIMIZATION_ID,
     optimization_type: "grid_search",
     status: "success",
-    name: GRID_TASK_NAME,
+    name: gridTaskName(),
     description: formatMsg("auto.features.tutorial.lib.demo.data.template.3", {
       p1: TERMS.modelPlural,
       p2: TERMS.pairPlural,
@@ -1316,10 +1317,10 @@ export function buildGridDemoJob(): OptimizationStatusResponse {
   };
 }
 
-export const DEMO_COMPARE_JOBS: OptimizationStatusResponse[] = [
+export const DEMO_COMPARE_JOBS: OptimizationStatusResponse[] = perLocale(() => [
   buildCompareJob({
     id: DEMO_COMPARE_IDS[0]!,
-    name: `${COMPARE_TASK_NAME} · gpt-4o-mini`,
+    name: `${compareTaskName()} · gpt-4o-mini`,
     description: formatMsg("auto.features.tutorial.lib.demo.data.template.4", { p1: TERMS.model }),
     modelName: "gpt-4o-mini",
     moduleName: "ChainOfThought",
@@ -1331,7 +1332,7 @@ export const DEMO_COMPARE_JOBS: OptimizationStatusResponse[] = [
   }),
   buildCompareJob({
     id: DEMO_COMPARE_IDS[1]!,
-    name: `${COMPARE_TASK_NAME} · gpt-4o`,
+    name: `${compareTaskName()} · gpt-4o`,
     description: formatMsg("auto.features.tutorial.lib.demo.data.template.5", { p1: TERMS.model }),
     modelName: "gpt-4o",
     moduleName: "ChainOfThought",
@@ -1343,7 +1344,7 @@ export const DEMO_COMPARE_JOBS: OptimizationStatusResponse[] = [
   }),
   buildCompareJob({
     id: DEMO_COMPARE_IDS[2]!,
-    name: `${COMPARE_TASK_NAME} · Predict`,
+    name: `${compareTaskName()} · Predict`,
     description: msg("auto.features.tutorial.lib.demo.data.literal.18"),
     modelName: "gpt-4o-mini",
     moduleName: "Predict",
@@ -1353,7 +1354,7 @@ export const DEMO_COMPARE_JOBS: OptimizationStatusResponse[] = [
     numLmCalls: 92,
     variant: "c",
   }),
-];
+]);
 
 /**
  * Per-example test-set outputs for the three compare runs.
@@ -1454,7 +1455,7 @@ export const DEMO_COMPARE_DATASET: OptimizationDatasetResponse = {
   split_counts: { train: 0, val: 0, test: COMPARE_DATASET_ROWS.length },
 };
 
-const EXPLORE_TASKS = [
+const EXPLORE_TASKS: string[] = perLocale(() => [
   msg("auto.features.tutorial.lib.demo.data.literal.1"),
   msg("auto.features.tutorial.lib.demo.data.literal.9"),
   msg("auto.features.tutorial.lib.demo.data.literal.12"),
@@ -1463,7 +1464,7 @@ const EXPLORE_TASKS = [
   msg("auto.features.tutorial.lib.demo.data.literal.33"),
   msg("auto.features.tutorial.lib.demo.data.literal.14"),
   msg("auto.features.tutorial.lib.demo.data.literal.34"),
-];
+]);
 
 // Maps each of the 32 grid cells to one of the 8 task indices above so
 // neighbouring cells share themes — the resulting scatter has visible
@@ -1532,4 +1533,4 @@ function buildExploreDemoPoints(): PublicDashboardPoint[] {
   return points;
 }
 
-export const DEMO_EXPLORE_POINTS: PublicDashboardPoint[] = buildExploreDemoPoints();
+export const DEMO_EXPLORE_POINTS: PublicDashboardPoint[] = perLocale(buildExploreDemoPoints);

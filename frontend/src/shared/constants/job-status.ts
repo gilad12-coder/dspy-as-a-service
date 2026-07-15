@@ -6,13 +6,14 @@
  * updating it fails at type-check, so a status cannot silently belong to
  * neither set. `ACTIVE_STATUSES` and `TERMINAL_STATUSES` are derived from it.
  *
- * `STATUS_LABELS` and `JOB_TYPE_LABELS` are frozen (`as const`) i18n lookups
- * pulling from `@/shared/lib/terms` (the Hebrew vocabulary catalogue).
+ * `STATUS_LABELS` and `JOB_TYPE_LABELS` are locale-lazy (`perLocale`) i18n
+ * lookups pulling from `@/shared/lib/terms` (the glossary catalogue).
  *
  * `getStatusLabel` and `getJobTypeLabel` deliberately accept `string` — see
  * their JSDoc for the fallback contract.
  */
 
+import { perLocale } from "@/shared/lib/per-locale";
 import { TERMS } from "@/shared/lib/terms";
 import type { JobStatus, OptimizationType } from "@/shared/types/api";
 
@@ -38,7 +39,7 @@ const statusesWith = (kind: StatusLifecycle): ReadonlySet<JobStatus> =>
 export const ACTIVE_STATUSES: ReadonlySet<JobStatus> = statusesWith("active");
 export const TERMINAL_STATUSES: ReadonlySet<JobStatus> = statusesWith("terminal");
 
-const STATUS_LABELS = {
+const STATUS_LABELS: Record<JobStatus, string> = perLocale(() => ({
   pending: TERMS.statusPending,
   validating: TERMS.statusValidating,
   running: TERMS.statusRunning,
@@ -46,12 +47,12 @@ const STATUS_LABELS = {
   failed: TERMS.statusFailed,
   cancelled: TERMS.statusCancelled,
   paused: TERMS.statusPaused,
-} as const satisfies Record<JobStatus, string>;
+}));
 
-const JOB_TYPE_LABELS = {
+const JOB_TYPE_LABELS: Record<OptimizationType, string> = perLocale(() => ({
   run: TERMS.optimizationTypeRun,
   grid_search: TERMS.optimizationTypeGrid,
-} as const satisfies Record<OptimizationType, string>;
+}));
 
 /**
  * Resolve a Hebrew display label for a status string.
