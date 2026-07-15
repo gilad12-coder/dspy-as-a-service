@@ -2503,6 +2503,11 @@ export type MessageKey =
   | "submit.split.warning.rare_class"
   | "submit.split.warning.too_small"
   | "submit.split.warnings_title"
+  | "submit.start_over"
+  | "submit.start_over_confirm.body"
+  | "submit.start_over_confirm.cancel"
+  | "submit.start_over_confirm.discard"
+  | "submit.start_over_confirm.title"
   | "submit.submit_failed"
   | "submit.summary.estimate_capped"
   | "submit.summary.estimate_cost"
@@ -2634,6 +2639,7 @@ export type MessageKey =
   | "tagger.assist.setup.step_label"
   | "tagger.assist.setup.tiny_dataset"
   | "tagger.assist.setup.title"
+  | "tagger.exit"
   | "tagger.library.name_cancel"
   | "tagger.library.name_label"
   | "tagger.library.name_save"
@@ -5336,6 +5342,11 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.split.warning.rare_class": "העמודה '{column_name}' מכילה קטגוריות נדירות ({rare_classes}) — חלק מהן עלול שלא להופיע ב{term.splitVal} או ב{term.splitTest}.",
   "submit.split.warning.too_small": "הדאטאסט מכיל {row_count} {term.examplePlural} — מעט מדי כדי למדוד שיפור בצורה אמינה. כדאי להוסיף עוד {term.examplePlural} כדי לקבל ציונים יציבים יותר.",
   "submit.split.warnings_title": "שים/שימי לב",
+  "submit.start_over": "התחלה מחדש",
+  "submit.start_over_confirm.body": "פעולה זו מנקה את כל השלבים (הדאטאסט, הקוד וההגדרות) ומחזירה אותך להתחלה. אי אפשר לבטל אותה.",
+  "submit.start_over_confirm.cancel": "ביטול",
+  "submit.start_over_confirm.discard": "התחלה מחדש",
+  "submit.start_over_confirm.title": "להתחיל מחדש?",
   "submit.submit_failed": "שגיאה בשליחת ה{term.optimization}",
   "submit.summary.estimate_capped": "תקרה קשיחה {cap} קרדיטים",
   "submit.summary.estimate_cost": "עלות משוערת",
@@ -5467,6 +5478,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.assist.setup.step_label": "סיוע",
   "tagger.assist.setup.tiny_dataset": "בגודל כזה ממילא תעברו כמעט על כל שורה — ידני או אוטופיילוט יתאימו יותר.",
   "tagger.assist.setup.title": "איך ה-AI יעזור?",
+  "tagger.exit": "התחלה מחדש",
   "tagger.library.name_cancel": "ביטול",
   "tagger.library.name_label": "שם הדאטאסט",
   "tagger.library.name_save": "שמירה",
@@ -13804,6 +13816,11 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.split.warning.rare_class": "The column '{column_name}' has rare categories ({rare_classes}) — some may not appear in {term.splitVal} or {term.splitTest}.",
   "submit.split.warning.too_small": "This dataset has {row_count} {term.examplePlural} — too few to measure improvement reliably. Add more {term.examplePlural} for more stable scores.",
   "submit.split.warnings_title": "Note",
+  "submit.start_over": "Start over",
+  "submit.start_over_confirm.body": "This clears every step — dataset, code, and settings — and takes you back to the start. It can't be undone.",
+  "submit.start_over_confirm.cancel": "Cancel",
+  "submit.start_over_confirm.discard": "Start over",
+  "submit.start_over_confirm.title": "Discard this submission?",
   "submit.submit_failed": "Error submitting the optimization",
   "submit.summary.estimate_capped": "Hard cap {cap} credits",
   "submit.summary.estimate_cost": "Estimated cost",
@@ -13935,6 +13952,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.assist.setup.step_label": "Assist",
   "tagger.assist.setup.tiny_dataset": "At this size you would review nearly every row anyway — Manual or Autopilot will serve you better.",
   "tagger.assist.setup.title": "How should the AI help?",
+  "tagger.exit": "Start over",
   "tagger.library.name_cancel": "Cancel",
   "tagger.library.name_label": "Dataset name",
   "tagger.library.name_save": "Save",

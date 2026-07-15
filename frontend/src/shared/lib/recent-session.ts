@@ -28,6 +28,20 @@ export function markRecentSession(kind: RecentKind, id: string): void {
 }
 
 /**
+ * Forget the most recent session of this kind, so the sidebar nav starts fresh
+ * on the next click. Call when the user deliberately leaves a session (e.g.
+ * "start over") — otherwise the resume window would reopen the one they left.
+ */
+export function clearRecentSession(kind: RecentKind): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(STORAGE_KEY[kind]);
+  } catch {
+    // localStorage unavailable — nothing to clear.
+  }
+}
+
+/**
  * The id to resume for this kind, or null when there is none or the user left it
  * more than {@link RESUME_WINDOW_MS} ago (in which case the caller starts fresh).
  */

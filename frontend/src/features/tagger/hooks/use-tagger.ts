@@ -20,7 +20,7 @@ import {
   type InterviewOption,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
-import { markRecentSession } from "@/shared/lib/recent-session";
+import { clearRecentSession, markRecentSession } from "@/shared/lib/recent-session";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
 import type { AgentThinking } from "@/shared/ui/agent";
 import { streamInterviewTurn } from "../lib/assist-stream";
@@ -232,7 +232,11 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     // Detach from the saved session — it stays in the sidebar to resume later;
     // the next ``startAnnotating`` creates a new one.
     setSessionId(null);
-  }, []);
+    // Forget the resume mark and drop the /tagger/[id] URL so neither the
+    // sidebar's resume window nor a reload reopens the session we just left.
+    clearRecentSession("tagger");
+    router.replace("/tagger");
+  }, [router]);
 
   // Buffer each edit as pending rather than writing on every keystroke; the
   // autosave loop and the leave-the-page handler drain it. Only the mutable

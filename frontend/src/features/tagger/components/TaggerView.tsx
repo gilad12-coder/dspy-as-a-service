@@ -37,6 +37,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
         onStop={tagger.stopInterview}
         onRetry={() => void tagger.sendInterviewMessage(null)}
         onSkip={() => tagger.confirmRubric(tagger.assist?.rubric ?? [])}
+        onExit={tagger.backToSetup}
         onTaskOverrideChange={tagger.setTaskOverride}
         onConfirmRubric={tagger.confirmRubric}
       />

@@ -24,6 +24,7 @@ interface Props {
   onStop: () => void;
   onRetry: () => void;
   onSkip: () => void;
+  onExit: () => void;
   onTaskOverrideChange: (override: { question?: string; prompt?: string }) => void;
   onConfirmRubric: (rubric: string[]) => void;
 }
@@ -48,6 +49,7 @@ export function TaggerInterview({
   onStop,
   onRetry,
   onSkip,
+  onExit,
   onTaskOverrideChange,
   onConfirmRubric,
 }: Props) {
@@ -82,13 +84,24 @@ export function TaggerInterview({
         />
       ) : (
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden py-0 gap-0">
-          <div className="border-b border-border/40 px-4 py-3 shrink-0">
-            <h3 className="text-sm font-semibold text-foreground">
-              {msg("tagger.assist.interview.title")}
-            </h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {msg("tagger.assist.interview.subtitle")}
-            </p>
+          <div className="flex items-start justify-between gap-3 border-b border-border/40 px-4 py-3 shrink-0">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-foreground">
+                {msg("tagger.assist.interview.title")}
+              </h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {msg("tagger.assist.interview.subtitle")}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onExit}
+              className="shrink-0 gap-1.5 text-muted-foreground"
+            >
+              <RotateCcw className="size-3.5" />
+              {msg("tagger.exit")}
+            </Button>
           </div>
 
           <AgentThread
