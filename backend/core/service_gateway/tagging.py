@@ -53,15 +53,18 @@ def assist_model_name() -> str:
     return settings.tagger_assist_model or settings.generalist_agent_model
 
 
-def _build_assist_lm() -> dspy.LM:
+def _build_assist_lm(model_name: str | None = None) -> dspy.LM:
     """Build the assist LM from settings, mirroring the generalist agent.
 
+    Args:
+        model_name: LiteLLM model id to run on; falls back to the configured
+            tagging-assist model (then the generalist agent's) when empty.
+
     Returns:
-        A cache-disabled ``dspy.LM`` on the configured tagging-assist model
-        (falls back to the generalist agent's model when unset).
+        A cache-disabled ``dspy.LM`` on the requested model.
     """
     config = ModelConfig(
-        name=assist_model_name(),
+        name=model_name or assist_model_name(),
         base_url=settings.tagger_assist_base_url or settings.generalist_agent_base_url or None,
     )
     return build_language_model(apply_model_reasoning_config(config), disable_cache=True)
@@ -217,12 +220,15 @@ def effective_task_config(config: dict[str, Any], assist: dict[str, Any]) -> dic
     The ``config`` column never changes after creation; the interview's
     refinements — question, categories, prompt and, on provisional-mode
     sessions, the inferred answer style — live in ``assist.taskOverride``.
-    Every LLM surface (router routes and the bulk worker alike) reads through
-    this merge.
+    The user's chosen tagging model (``assist.model``) rides along the same
+    way, so predictions, estimates and the bulk worker all see one merged
+    view. Every LLM surface (router routes and the bulk worker alike) reads
+    through this merge.
 
     Args:
         config: The stored ``TaggerConfig`` payload.
-        assist: The session's assist state (carries ``taskOverride``).
+        assist: The session's assist state (carries ``taskOverride`` and the
+            chosen tagging model).
 
     Returns:
         A copy of ``config`` with the override applied; ``modeProvisional``
@@ -241,6 +247,9 @@ def effective_task_config(config: dict[str, Any], assist: dict[str, Any]) -> dic
     categories = override.get("categories")
     if isinstance(categories, list) and categories:
         merged["categories"] = categories
+    model = str((assist or {}).get("model") or "").strip()
+    if model:
+        merged["model"] = model
     return merged
 
 
@@ -862,7 +871,8 @@ def predict_rows(
     """Label rows in concurrent batches and report the credit cost.
 
     Args:
-        config: The session's ``TaggerConfig`` payload.
+        config: The session's effective config; when it carries the user's
+            chosen tagging model (``model``), predictions run on it.
         instructions: Compiled tagging instructions.
         rows: Row payloads (each needs ``id`` and ``text``).
         on_batch: Called with each completed batch's predictions (bulk-job
@@ -873,7 +883,7 @@ def predict_rows(
         ``(predictions, credits)`` — the merged ``{row_id: prediction}`` map
         and the credit cost of the LM calls actually made.
     """
-    lm = _build_assist_lm()
+    lm = _build_assist_lm(str(config.get("model") or "").strip() or None)
     prepared = [{"id": str(r.get("id")), "text": _row_text(r)} for r in rows]
     batches = [prepared[i : i + BATCH_SIZE] for i in range(0, len(prepared), BATCH_SIZE)]
     merged: dict[str, dict[str, Any]] = {}
@@ -897,7 +907,9 @@ def predict_rows(
     return merged, credits
 
 
-def estimate_credits_for_rows(instructions: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+def estimate_credits_for_rows(
+    instructions: str, rows: list[dict[str, Any]], model: str | None = None
+) -> dict[str, Any]:
     """Estimate the credit cost of auto-tagging the given rows.
 
     A chars/4 token heuristic over the compiled instructions (repeated once
@@ -906,11 +918,13 @@ def estimate_credits_for_rows(instructions: str, rows: list[dict[str, Any]]) -> 
     Args:
         instructions: Compiled tagging instructions.
         rows: The rows that would be tagged.
+        model: LiteLLM id of the session's chosen tagging model; falls back
+            to the configured default when empty.
 
     Returns:
         ``{"rows", "model", "credits_low", "credits_high"}``.
     """
-    model = assist_model_name()
+    model = (model or "").strip() or assist_model_name()
     if not rows:
         return {"rows": 0, "model": model, "credits_low": 0, "credits_high": 0}
     batch_count = max(1, (len(rows) + BATCH_SIZE - 1) // BATCH_SIZE)

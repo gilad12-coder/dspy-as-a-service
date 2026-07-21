@@ -192,9 +192,11 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       rows: DataRow[],
       cols: string[],
       assistMode: TaggerAssistMode = "manual",
+      assistModel?: string,
     ) => {
       const startPhase: TaggerPhase = assistMode === "manual" ? "annotating" : "interview";
-      const startAssist = assistMode === "manual" ? null : initialAssistState(assistMode);
+      const startAssist =
+        assistMode === "manual" ? null : initialAssistState(assistMode, assistModel);
       setConfig(cfg);
       setData(rows);
       setColumns(cols);
@@ -342,6 +344,14 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   /** Merge a partial update into the assist state (no-op without assist). */
   const patchAssist = useCallback((patch: Partial<AssistState>) => {
     setAssist((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
+  // The ref is mirrored synchronously (not just via the effect) so a
+  // flush-then-call sequence fired in the same tick — fetching a fresh
+  // estimate right after a pick — already sends the new model.
+  const setAssistModel = useCallback((model: string) => {
+    setAssist((prev) => (prev ? { ...prev, model } : prev));
+    if (assistRef.current) assistRef.current = { ...assistRef.current, model };
   }, []);
 
   // ---------------------------------------------------------------- frames
@@ -1060,6 +1070,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     stopInterview,
     skipInterview,
     confirmRubric,
+    setAssistModel,
     assistToggleBinary,
     assistToggleCategory,
     assistSetFreetext,

@@ -11,13 +11,16 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+from .. import tagging
 from ..tagging import (
     MAX_EXAMPLES,
     InterviewTurnSig,
     _MessageLeakGuard,
     _parse_interview_prediction,
     _parse_json,
+    assist_model_name,
     compile_instructions,
+    effective_task_config,
     estimate_credits_for_rows,
     normalize_label,
     select_examples,
@@ -244,3 +247,36 @@ def test_estimate_scales_with_rows_and_handles_empty() -> None:
         "credits_low": 0,
         "credits_high": 0,
     }
+
+
+def test_estimate_prices_on_chosen_model() -> None:
+    """A chosen tagging model rides the estimate; blank falls back to default."""
+    rows = [{"id": 1, "text": "x" * 400}]
+    chosen = estimate_credits_for_rows("instructions", rows, model="openai/gpt-test")
+    assert chosen["model"] == "openai/gpt-test"
+    fallback = estimate_credits_for_rows("instructions", rows, model="  ")
+    assert fallback["model"] == assist_model_name()
+
+
+def test_effective_task_config_lifts_chosen_model() -> None:
+    """``assist.model`` merges into the effective config; blank stays absent."""
+    merged = effective_task_config(_BINARY, {"model": " openai/gpt-test "})
+    assert merged["model"] == "openai/gpt-test"
+    assert "model" not in effective_task_config(_BINARY, {"model": "  "})
+    assert "model" not in effective_task_config(_BINARY, {})
+
+
+def test_build_assist_lm_honors_model_override(monkeypatch) -> None:
+    """The chosen model reaches the LM builder; empty falls back to default."""
+    captured: list[str] = []
+
+    def fake_build(config, disable_cache):
+        """Record the requested model name instead of building an LM."""
+        captured.append(config.name)
+        return "lm"
+
+    monkeypatch.setattr(tagging, "build_language_model", fake_build)
+    monkeypatch.setattr(tagging, "apply_model_reasoning_config", lambda config: config)
+    tagging._build_assist_lm("openai/gpt-test")
+    tagging._build_assist_lm(None)
+    assert captured == ["openai/gpt-test", assist_model_name()]

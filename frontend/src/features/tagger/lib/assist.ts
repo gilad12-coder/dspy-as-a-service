@@ -150,9 +150,10 @@ export function provenanceCounts(
 }
 
 /** A fresh assist state for a session starting in the interview phase. */
-export function initialAssistState(mode: "copilot" | "autopilot"): AssistState {
+export function initialAssistState(mode: "copilot" | "autopilot", model?: string): AssistState {
   return {
     mode,
+    ...(model ? { model } : {}),
     interview: { turns: [], done: false },
     rubric: [],
     calibrationIds: [],

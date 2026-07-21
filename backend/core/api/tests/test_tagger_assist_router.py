@@ -13,6 +13,7 @@ the autosave 409 while a job runs, and the ownership guard.
 from __future__ import annotations
 
 import threading
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -28,6 +29,7 @@ from ...storage.remote import RemoteDBJobStore
 from ...worker.tagging_job import TaggingAutotagPayload, run_autotag_job
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
+from ..routers import tagger_assist
 from ..routers.tagger_assist import _effective_config, create_tagger_assist_router
 from ..routers.tagging_sessions import create_tagging_session_router
 
@@ -263,6 +265,50 @@ def test_estimate_counts_untagged_rows() -> None:
     body = resp.json()
     assert body["rows"] == 3
     assert body["credits_high"] >= body["credits_low"] >= 0
+
+
+def _catalog_with(*values: str) -> SimpleNamespace:
+    """Build a stand-in model catalog carrying just the given model ids."""
+    return SimpleNamespace(models=[SimpleNamespace(value=v) for v in values])
+
+
+def test_estimate_runs_on_chosen_model(monkeypatch) -> None:
+    """A session's chosen tagging model drives (and is echoed by) the estimate."""
+    monkeypatch.setattr(
+        tagger_assist, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test")
+    )
+    client, _ = _client(_ALICE)
+    body = dict(_SESSION_BODY)
+    body["assist"] = {**_SESSION_BODY["assist"], "model": "openai/gpt-test"}
+    resp = client.post("/tagging-sessions", json=body)
+    assert resp.status_code == 201, resp.text
+    session_id = resp.json()["id"]
+    resp = client.post(f"/tagging-sessions/{session_id}/assist/estimate")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["model"] == "openai/gpt-test"
+
+
+def test_unknown_model_rejected_before_spending(monkeypatch) -> None:
+    """A model outside the curated catalog is refused on every spend route."""
+    monkeypatch.setattr(
+        tagger_assist, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test")
+    )
+    worker = _FakeWorker()
+    client, _ = _client(_ALICE, worker=worker)
+    body = dict(_SESSION_BODY)
+    body["assist"] = {**_SESSION_BODY["assist"], "model": "smuggled/frontier-xl"}
+    resp = client.post("/tagging-sessions", json=body)
+    assert resp.status_code == 201, resp.text
+    session_id = resp.json()["id"]
+    for route, kwargs in (
+        ("predict", {"json": {"row_ids": ["2"]}}),
+        ("estimate", {}),
+        ("autotag", {}),
+    ):
+        resp = client.post(f"/tagging-sessions/{session_id}/assist/{route}", **kwargs)
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["code"] == "tagger.assist.unknown_model"
+    assert worker.submitted == []
 
 
 def test_autotag_start_submits_worker_job(monkeypatch) -> None:

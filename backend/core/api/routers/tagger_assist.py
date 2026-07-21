@@ -42,6 +42,7 @@ from ...storage.models import TaggingSessionModel
 from ...worker.tagging_job import TaggingAutotagPayload, untagged_rows
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
+from ..model_catalog import get_catalog_cached
 from ._helpers import sse_from_events
 
 logger = logging.getLogger(__name__)
@@ -161,6 +162,26 @@ def _effective_config(row: TaggingSessionModel) -> dict[str, Any]:
         cast("dict[str, Any]", row.config),
         cast("dict[str, Any]", row.assist) or {},
     )
+
+
+def _require_known_model(assist: dict[str, Any]) -> None:
+    """Reject a session whose chosen tagging model is not in the catalog.
+
+    The client only offers catalog models, but ``assist`` is a free-form JSON
+    column any API caller can write — and tagging spends platform credits, so
+    the curated catalog stays the boundary of what a session may run on.
+
+    Args:
+        assist: The session's assist state (may carry ``model``).
+
+    Raises:
+        DomainError: 422 when a chosen model is not in the curated catalog.
+    """
+    model = str((assist or {}).get("model") or "").strip()
+    if not model:
+        return
+    if all(entry.value != model for entry in get_catalog_cached().models):
+        raise DomainError("tagger.assist.unknown_model", status=422)
 
 
 def _interview_config(row: TaggingSessionModel) -> dict[str, Any]:
@@ -313,6 +334,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             data = cast("list[dict[str, Any]]", row.data)
             annotations = cast("dict[str, Any]", row.annotations)
             assist = cast("dict[str, Any]", row.assist) or {}
+        _require_known_model(assist)
         wanted = set(req.row_ids)
         rows = [r for r in data if str(r.get("id")) in wanted]
         if not rows:
@@ -348,11 +370,16 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             data = cast("list[dict[str, Any]]", row.data)
             annotations = cast("dict[str, Any]", row.annotations)
             assist = cast("dict[str, Any]", row.assist) or {}
+        _require_known_model(assist)
         rubric = [str(r) for r in assist.get("rubric") or []]
         examples = tagging.select_examples(config, data, annotations, assist)
         instructions = tagging.compile_instructions(config, rubric, examples)
         pending = untagged_rows(data, annotations)
-        return EstimateResponse(**tagging.estimate_credits_for_rows(instructions, pending))
+        return EstimateResponse(
+            **tagging.estimate_credits_for_rows(
+                instructions, pending, model=cast("str | None", config.get("model"))
+            )
+        )
 
     @router.post(
         "/tagging-sessions/{session_id}/assist/autotag",
@@ -390,6 +417,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             if not pending:
                 raise DomainError("tagger.assist.nothing_to_tag", status=422)
             state = dict(cast("dict[str, Any]", row.assist) or {})
+            _require_known_model(state)
             prior = dict(state.get("autotag") or {})
             prior_job = str(prior.get("job_id") or "")
             if (

@@ -99,6 +99,11 @@ export interface AutotagProgress {
 export interface AssistState {
   mode: Exclude<TaggerAssistMode, "manual">;
   /**
+   * LiteLLM id of the model that tags rows — predictions, estimates and the
+   * bulk job alike. Absent means the server's default tagging model.
+   */
+  model?: string;
+  /**
    * Only sessions saved before AI-first calibration carry this; it steers the
    * legacy human-first calibration phase, which new sessions never enter.
    */

@@ -31,6 +31,7 @@ import {
 } from "@/shared/ui/agent";
 import type { AgentMessage, AgentThinking } from "@/shared/ui/agent";
 import type { InterviewOption } from "@/shared/lib/api";
+import { ModelPicker } from "@/features/submit";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { AutotagEstimate } from "../hooks/use-tagger";
@@ -75,6 +76,8 @@ interface Props {
   rowCount: number;
   estimate: AutotagEstimate | null;
   onFetchEstimate: () => void;
+  /** Persist the picked tagging model on the session's assist state. */
+  onSetModel: (model: string) => void;
   onSend: (content: string) => void;
   onEditResend: (index: number, content: string) => void;
   onStop: () => void;
@@ -104,6 +107,7 @@ export function TaggerInterview({
   rowCount,
   estimate,
   onFetchEstimate,
+  onSetModel,
   onSend,
   onEditResend,
   onStop,
@@ -150,6 +154,7 @@ export function TaggerInterview({
           rowCount={rowCount}
           estimate={estimate}
           onFetchEstimate={onFetchEstimate}
+          onSetModel={onSetModel}
           onConfirm={onConfirmRubric}
         />
       ) : (
@@ -347,6 +352,7 @@ function RubricCard({
   rowCount,
   estimate,
   onFetchEstimate,
+  onSetModel,
   onConfirm,
 }: {
   config: TaggerConfig;
@@ -354,14 +360,16 @@ function RubricCard({
   rowCount: number;
   estimate: AutotagEstimate | null;
   onFetchEstimate: () => void;
+  onSetModel: (model: string) => void;
   onConfirm: (rubric: string[], task: TaskContract) => void;
 }) {
   const autopilot = assist.mode === "autopilot";
   // Cost before commitment: the bulk button carries the live estimate, so it
-  // is fetched the moment the contract card appears.
+  // is fetched the moment the contract card appears — and again whenever the
+  // tagging model changes, since pricing is per model.
   useEffect(() => {
     if (autopilot) onFetchEstimate();
-  }, [autopilot, onFetchEstimate]);
+  }, [autopilot, onFetchEstimate, assist.model]);
   const [mode, setMode] = useState<AnnotationMode>(config.mode);
   // The inferred question isn't edited here — it rides through the confirm
   // untouched; the rubric rules are the editable surface of the task.
@@ -564,6 +572,22 @@ function RubricCard({
                   </motion.div>
                 )}
               </AnimatePresence>
+            </CardContent>
+          </Card>
+
+          {/* Sits above the guide so the picker's dropdown opens over content
+              instead of extending the column's scroll area. */}
+          <Card className="shrink-0">
+            <CardHeader>
+              <CardTitle className="text-base">{msg("tagger.assist.model.title")}</CardTitle>
+              <CardDescription>{msg("tagger.assist.model.hint")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ModelPicker
+                value={assist.model ?? ""}
+                onChange={onSetModel}
+                placeholder={msg("tagger.assist.model.placeholder")}
+              />
             </CardContent>
           </Card>
 

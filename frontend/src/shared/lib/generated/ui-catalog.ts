@@ -2587,6 +2587,9 @@ export type MessageKey =
   | "tagger.assist.interview.title"
   | "tagger.assist.label.no"
   | "tagger.assist.label.yes"
+  | "tagger.assist.model.hint"
+  | "tagger.assist.model.placeholder"
+  | "tagger.assist.model.title"
   | "tagger.assist.rail.agree"
   | "tagger.assist.rail.agreement"
   | "tagger.assist.rail.confirm"
@@ -5442,6 +5445,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.assist.interview.title": "ראיון על הדאטה",
   "tagger.assist.label.no": "לא",
   "tagger.assist.label.yes": "כן",
+  "tagger.assist.model.hint": "המודל שמתייג את השורות שלכם — ברירת המחדל מתאימה לרוב הדאטהסטים.",
+  "tagger.assist.model.placeholder": "מודל ברירת המחדל",
+  "tagger.assist.model.title": "מודל התיוג",
   "tagger.assist.rail.agree": "אני מסכים עם התיוג שלכם.",
   "tagger.assist.rail.agreement": "הסכמה",
   "tagger.assist.rail.confirm": "אישור (Enter)",
@@ -13872,6 +13878,9 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.assist.interview.title": "Dataset interview",
   "tagger.assist.label.no": "No",
   "tagger.assist.label.yes": "Yes",
+  "tagger.assist.model.hint": "The model that tags your rows — the default suits most datasets.",
+  "tagger.assist.model.placeholder": "Default model",
+  "tagger.assist.model.title": "Tagging model",
   "tagger.assist.rail.agree": "I agree with your label.",
   "tagger.assist.rail.agreement": "Agreement",
   "tagger.assist.rail.confirm": "Confirm (Enter)",

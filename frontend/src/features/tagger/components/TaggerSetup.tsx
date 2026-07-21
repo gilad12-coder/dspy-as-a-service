@@ -29,6 +29,7 @@ import { tip } from "@/shared/lib/tooltips";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
 import { getDatasetRows, listDatasets, type DatasetSummary } from "@/shared/lib/api";
 import { registerTutorialHook, registerTutorialQuery } from "@/features/tutorial";
+import { ModelPicker } from "@/features/submit";
 import { useUserPrefs } from "@/features/settings";
 import type {
   AnnotationMode,
@@ -49,6 +50,7 @@ interface TaggerSetupProps {
     rows: DataRow[],
     columns: string[],
     assistMode?: TaggerAssistMode,
+    assistModel?: string,
   ) => void;
 }
 
@@ -153,6 +155,8 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<AnnotationMode | null>(null);
   const [assistMode, setAssistMode] = useState<TaggerAssistMode>("copilot");
+  // Empty = the server's default tagging model.
+  const [assistModel, setAssistModel] = useState("");
   const [libraryName, setLibraryName] = useState<string | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryOptions, setLibraryOptions] = useState<DatasetSummary[]>([]);
@@ -403,7 +407,13 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     config.assistMode = effectiveAssistMode;
     const source = libraryName ?? (file ? cleanSourceName(file.name) : null);
     if (source) config.sourceName = source;
-    onStart(config, mapped, parsedCols, effectiveAssistMode);
+    onStart(
+      config,
+      mapped,
+      parsedCols,
+      effectiveAssistMode,
+      effectiveAssistMode === "manual" ? undefined : assistModel.trim() || undefined,
+    );
   };
 
   const steps = [
@@ -721,6 +731,17 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
               {msg("tagger.assist.setup.tiny_dataset")}
             </p>
           )}
+          {assistMode !== "manual" && (
+            <div className="mt-2 space-y-1.5">
+              <p className="text-sm font-medium">{msg("tagger.assist.model.title")}</p>
+              <p className="text-xs text-muted-foreground">{msg("tagger.assist.model.hint")}</p>
+              <ModelPicker
+                value={assistModel}
+                onChange={setAssistModel}
+                placeholder={msg("tagger.assist.model.placeholder")}
+              />
+            </div>
+          )}
         </CardContent>
       </Card>,
     );
@@ -796,7 +817,9 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
         </div>
       </div>
 
-      <div className="relative overflow-hidden pt-[10px]">
+      {/* x-clip (not hidden): the step slide animates horizontally only, and
+          the model picker's dropdown must escape the wrapper vertically. */}
+      <div className="relative overflow-x-clip pt-[10px]">
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
             key={step}
