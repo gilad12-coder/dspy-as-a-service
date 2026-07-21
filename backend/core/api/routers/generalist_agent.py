@@ -79,6 +79,13 @@ class GeneralistAgentRequest(BaseModel):
             "``conversation_meta`` SSE event before any other event."
         ),
     )
+    regenerate: bool = Field(
+        default=False,
+        description=(
+            "Replace the existing conversation's final user/assistant turn "
+            "instead of appending a duplicate turn."
+        ),
+    )
     locale: str | None = Field(
         default=None,
         description=(
@@ -187,6 +194,38 @@ def _persist_user_turn(job_store, conversation_id: str, content: str) -> None:
                 created_at=datetime.now(UTC),
             )
         )
+        session.commit()
+
+
+def _discard_latest_turn(job_store, conversation_id: str) -> None:
+    """Delete the final persisted user turn and every response after it.
+
+    The regenerate UI replaces the latest assistant response in memory. Remove
+    the matching persisted suffix before saving its replacement so reopening
+    the conversation does not reveal duplicate copies of the same turn. A
+    user-only suffix is also removed, which covers retrying a failed stream
+    before an assistant row was written.
+
+    Args:
+        job_store: Job-store instance whose engine backs the DB session.
+        conversation_id: Conversation whose latest turn should be replaced.
+    """
+    with Session(job_store.engine) as session:
+        latest_user = (
+            session.query(AgentMessageModel)
+            .filter(
+                AgentMessageModel.conversation_id == conversation_id,
+                AgentMessageModel.role == "user",
+            )
+            .order_by(AgentMessageModel.id.desc())
+            .first()
+        )
+        if latest_user is None:
+            return
+        session.query(AgentMessageModel).filter(
+            AgentMessageModel.conversation_id == conversation_id,
+            AgentMessageModel.id >= latest_user.id,
+        ).delete(synchronize_session=False)
         session.commit()
 
 
@@ -471,6 +510,8 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
                 return None, None
             try:
                 cid, ttl = _ensure_conversation(job_store, req.conversation_id, current_user.username, req.user_message)
+                if req.regenerate:
+                    _discard_latest_turn(job_store, cid)
                 _persist_user_turn(job_store, cid, req.user_message)
             except DomainError:
                 raise

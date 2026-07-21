@@ -11,6 +11,17 @@ export interface TaggerConfig {
   question?: string;
   categories?: Category[];
   prompt?: string;
+  /**
+   * Assisted sessions are created before any answer style is chosen; the
+   * interview infers ``mode`` and stores it in the task override, which the
+   * effective-config merge (client and server alike) applies over this
+   * placeholder value.
+   */
+  modeProvisional?: boolean;
+  /** Assist level chosen at setup; the session list projects it onto cards. */
+  assistMode?: TaggerAssistMode;
+  /** Display name of the dataset the session was created from. */
+  sourceName?: string;
 }
 
 export interface DataField {
@@ -80,15 +91,6 @@ export interface AutotagProgress {
   credits_spent?: number;
 }
 
-/** A submitted deep-optimize GEPA run being tracked from the tagger. */
-export interface DeepOptimizeState {
-  jobId: string;
-  status: "running" | "success" | "failed";
-  /** Held-out scores from the finished run (the lift the user earned). */
-  baseline?: number | null;
-  optimized?: number | null;
-}
-
 /**
  * AI co-tagging state, persisted as the session's ``assist`` JSON. Final
  * labels always live in ``annotations``; this only carries how they came to be
@@ -96,17 +98,23 @@ export interface DeepOptimizeState {
  */
 export interface AssistState {
   mode: Exclude<TaggerAssistMode, "manual">;
-  calibrationStyle: "blind" | "assisted";
+  /**
+   * Only sessions saved before AI-first calibration carry this; it steers the
+   * legacy human-first calibration phase, which new sessions never enter.
+   */
+  calibrationStyle?: "blind" | "assisted";
   interview: { turns: InterviewTurn[]; done: boolean };
   /** The labeling rubric distilled from the interview; grows with corrections. */
   rubric: string[];
-  /** Row ids (String(row.id)) sampled for the calibration set. */
+  /** Row ids sampled by the legacy calibration phase (pre-AI-first sessions). */
   calibrationIds: string[];
   predictions: Record<string, AssistPrediction>;
   provenance: Record<string, AnnotationProvenance>;
   rounds: ReviewRound[];
   autotag?: AutotagProgress;
-  deepOptimize?: DeepOptimizeState;
-  /** Interview refinements to the task text; config itself stays immutable. */
-  taskOverride?: { question?: string; prompt?: string };
+  /**
+   * Interview-derived task definition; config itself stays immutable. On
+   * provisional-mode sessions this also carries the inferred answer style.
+   */
+  taskOverride?: Partial<Pick<TaggerConfig, "mode" | "question" | "categories" | "prompt">>;
 }

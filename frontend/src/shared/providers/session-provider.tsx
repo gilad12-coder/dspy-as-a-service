@@ -16,7 +16,12 @@ export function SessionProvider(props: SessionProviderProps) {
   // bearer JWT has a 15-min TTL (BACKEND_AUTH_TOKEN_TTL_SECONDS=900) and
   // without polling the in-memory token expires while the modal sits open.
   return (
-    <NextAuthSessionProvider refetchInterval={300} refetchOnWindowFocus {...props}>
+    <NextAuthSessionProvider
+      refetchInterval={300}
+      refetchOnWindowFocus={false}
+      refetchWhenOffline={false}
+      {...props}
+    >
       <ApiAuthTokenBridge />
       {props.children}
     </NextAuthSessionProvider>
@@ -34,12 +39,16 @@ function ApiAuthTokenBridge() {
   // the session — recovers a tab whose cached token expired while idle
   // during a long run, without forcing a full reload.
   React.useEffect(() => {
+    if (!session?.backendAccessToken) {
+      setApiAuthTokenRefresher(undefined);
+      return;
+    }
     setApiAuthTokenRefresher(async () => {
       const fresh = await getSession();
       return fresh?.backendAccessToken;
     });
     return () => setApiAuthTokenRefresher(undefined);
-  }, []);
+  }, [session?.backendAccessToken]);
 
   return null;
 }

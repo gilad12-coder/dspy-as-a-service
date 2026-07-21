@@ -186,7 +186,12 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
   );
 
   const runAgent = React.useCallback(
-    (userMessage: string, history: AgentMessage[], wizardStateOverride?: WizardState) => {
+    (
+      userMessage: string,
+      history: AgentMessage[],
+      wizardStateOverride?: WizardState,
+      regenerate = false,
+    ) => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -232,6 +237,7 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
           wizard_state: ws,
           trust_mode: tm,
           conversation_id: conversationIdRef.current,
+          regenerate,
           locale: getActiveLocale(),
         },
         {
@@ -411,7 +417,7 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
     const truncated = current.slice(0, lastUserIndex);
     setMessages(truncated);
     messagesRef.current = truncated;
-    runAgent(lastUser.content, truncated);
+    runAgent(lastUser.content, truncated, undefined, true);
   }, [runAgent]);
 
   const stop = React.useCallback(() => {

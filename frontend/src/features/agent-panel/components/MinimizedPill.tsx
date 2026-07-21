@@ -13,6 +13,8 @@ interface MinimizedPillProps {
   active: boolean;
   statusLabel?: string;
   hue?: string;
+  /** Rendered inside an AgentPillDock: the dock places it, so don't float. */
+  inline?: boolean;
   className?: string;
 }
 
@@ -21,6 +23,7 @@ export function MinimizedPill({
   active,
   statusLabel,
   hue = "#3D2E22",
+  inline = false,
   className,
 }: MinimizedPillProps) {
   const { prefs } = useUserPrefs();
@@ -40,7 +43,8 @@ export function MinimizedPill({
       // independent of whatever direction an ancestor or portal resolves to.
       dir={getActiveDir()}
       className={cn(
-        "fixed bottom-4 end-4 z-40 inline-flex items-center gap-2 rounded-full",
+        inline ? "relative" : "fixed bottom-4 end-4 z-40",
+        "inline-flex items-center gap-2 rounded-full",
         "border border-border/60 bg-background/90 backdrop-blur-md",
         "px-3.5 py-2 text-[0.75rem] text-foreground shadow-[0_6px_18px_rgba(61,46,34,0.08)]",
         "transition-all duration-200 hover:bg-background hover:shadow-[0_10px_24px_rgba(61,46,34,0.12)]",

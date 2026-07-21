@@ -23,17 +23,18 @@ export function AnalyticsEmpty({
     {
       icon: LucideIcon;
       title: string;
-      description: string;
-      action?: { label: string; onClick: () => void; icon?: LucideIcon };
+      description?: string;
+      action?: {
+        label: string;
+        onClick?: () => void;
+        href?: string;
+        icon?: LucideIcon;
+      };
     }
   > = {
     "no-data": {
       icon: Database,
       title: msg("auto.features.dashboard.components.analyticsempty.literal.1"),
-      description: formatMsg("auto.features.dashboard.components.analyticsempty.template.1", {
-        p1: TERMS.dataset,
-        p2: TERMS.optimization,
-      }),
     },
     "no-results": {
       icon: BarChart3,
@@ -63,16 +64,18 @@ export function AnalyticsEmpty({
   };
 
   const config = configs[variant];
+  const isNoData = variant === "no-data";
 
   return (
     <FadeIn>
       <EmptyState
-        variant="list"
+        variant={isNoData ? "page" : "list"}
         icon={config.icon}
+        iconWrap={isNoData ? "tile" : "none"}
         title={config.title}
         description={config.description}
         action={config.action}
-        className="min-h-[40vh] justify-center"
+        className={isNoData ? undefined : "min-h-[40vh] justify-center"}
       />
     </FadeIn>
   );

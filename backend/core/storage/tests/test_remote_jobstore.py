@@ -27,6 +27,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import core.storage.remote as remote_mod
+from core.constants import OPTIMIZATION_TYPE_TAGGING
 from core.storage.base import JobStore
 from core.storage.models import Base, JobModel
 from core.storage.remote import RemoteDBJobStore
@@ -567,6 +568,34 @@ def test_list_jobs_optimization_type_filter(store: SQLiteJobStore) -> None:
     result = store.list_jobs(optimization_type="opt_a")
     ids = {j["optimization_id"] for j in result}
     assert ids == {"lj-opt-a"}
+
+
+def test_internal_tagging_jobs_hidden_from_listing_surfaces(store: SQLiteJobStore) -> None:
+    """Tagger bulk jobs stay out of every listing/count unless filtered for by type."""
+    store.create_job("run-1")
+    store.set_payload_overview("run-1", {"username": "alice", "optimization_type": "run"})
+    store.create_job("tag-1")
+    store.set_payload_overview(
+        "tag-1", {"username": "alice", "optimization_type": OPTIMIZATION_TYPE_TAGGING}
+    )
+    assert {j["optimization_id"] for j in store.list_jobs()} == {"run-1"}
+    assert store.count_jobs() == 1
+    assert store.count_jobs_by_status() == {"pending": 1}
+    assert {j["optimization_id"] for j in store.list_jobs_visible_to("alice")} == {"run-1"}
+    assert store.count_jobs_visible_to("alice") == 1
+    assert store.count_jobs_by_status_visible_to("alice") == {"pending": 1}
+    assert {j["optimization_id"] for j in store.scan_jobs_for_analytics()} == {"run-1"}
+    # The explicit type filter stays the escape hatch for whoever needs the rows.
+    tagged = store.list_jobs(optimization_type=OPTIMIZATION_TYPE_TAGGING)
+    assert {j["optimization_id"] for j in tagged} == {"tag-1"}
+    assert store.count_jobs(optimization_type=OPTIMIZATION_TYPE_TAGGING) == 1
+
+
+def test_legacy_null_type_jobs_survive_internal_exclusion(store: SQLiteJobStore) -> None:
+    """Rows with a NULL optimization_type (legacy) are still listed and counted."""
+    store.create_job("legacy-1")
+    assert {j["optimization_id"] for j in store.list_jobs()} == {"legacy-1"}
+    assert store.count_jobs() == 1
 
 
 def test_list_jobs_limit(store: SQLiteJobStore) -> None:

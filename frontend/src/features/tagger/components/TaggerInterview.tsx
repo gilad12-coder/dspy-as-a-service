@@ -1,15 +1,58 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  Binary,
+  ChevronRight,
+  ListChecks,
+  Loader2,
+  Plus,
+  RotateCcw,
+  TextCursorInput,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
-import { AgentThread, ChatTranscript, Composer, QuestionChoices } from "@/shared/ui/agent";
+import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
+import { Input } from "@/shared/ui/primitives/input";
+import { FadeIn } from "@/shared/ui/motion";
+import { SubmitSplashOverlay, SUBMIT_SPLASH_HOLD_MS } from "@/shared/ui/submit-splash-overlay";
+import {
+  AgentThread,
+  ChatTranscript,
+  Composer,
+  QuestionChoices,
+  QuestionChoicesSkeleton,
+} from "@/shared/ui/agent";
 import type { AgentMessage, AgentThinking } from "@/shared/ui/agent";
 import type { InterviewOption } from "@/shared/lib/api";
-import { msg } from "@/shared/lib/messages";
+import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
-import type { AssistState, TaggerConfig } from "../lib/types";
+import type { AutotagEstimate } from "../hooks/use-tagger";
+import { calibrationTarget } from "../lib/assist";
+import type { AnnotationMode, AssistState, Category, TaggerConfig } from "../lib/types";
+
+/**
+ * Focus a just-appended field without the native focus jump: ``focus()``
+ * yanks the nearest scroll container to the element instantly, which reads
+ * as the list "jumping" at the add button. Focus is taken without scrolling,
+ * then the reveal happens as its own smooth glide (instant under
+ * reduced-motion).
+ */
+function focusAppendedField(el: HTMLElement): void {
+  el.focus({ preventScroll: true });
+  el.scrollIntoView({
+    block: "nearest",
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+  });
+}
+
+/** The confirmed task contract handed back from the labeling-guide card. */
+export interface TaskContract {
+  mode: AnnotationMode;
+  question?: string;
+  categories?: Category[];
+}
 
 interface Props {
   config: TaggerConfig;
@@ -18,23 +61,31 @@ interface Props {
   streamText: string;
   thinking: AgentThinking | null;
   options: InterviewOption[];
+  /** What's still generating after the reply: answer choices, or — on the
+   *  final turn — the labeling-guide contract. */
+  pending: "options" | "contract" | null;
   error: string | null;
+  /** Row count and live credit estimate for the contract card's autopilot
+   *  start buttons — cost shown before commitment. */
+  rowCount: number;
+  estimate: AutotagEstimate | null;
+  onFetchEstimate: () => void;
   onSend: (content: string) => void;
   onEditResend: (index: number, content: string) => void;
   onStop: () => void;
   onRetry: () => void;
   onSkip: () => void;
   onExit: () => void;
-  onTaskOverrideChange: (override: { question?: string; prompt?: string }) => void;
-  onConfirmRubric: (rubric: string[]) => void;
+  onConfirmRubric: (rubric: string[], task: TaskContract) => void;
 }
 
 /**
  * The dataset interview: the same live chat experience as the generalist
  * agent — streamed reply tokens, a collapsible thinking section, stop, and
  * edit-and-resend on any earlier answer — driving a purpose-built
- * interviewer. It ends in an editable labeling guide that also carries the
- * task's own prompt, so the whole task definition is confirmable in one place.
+ * interviewer. It ends in an editable task contract — the inferred answer
+ * style, its question/categories, and the labeling guide — so the whole task
+ * definition is confirmable in one place.
  */
 export function TaggerInterview({
   config,
@@ -43,27 +94,37 @@ export function TaggerInterview({
   streamText,
   thinking,
   options,
+  pending,
   error,
+  rowCount,
+  estimate,
+  onFetchEstimate,
   onSend,
   onEditResend,
   onStop,
   onRetry,
   onSkip,
   onExit,
-  onTaskOverrideChange,
   onConfirmRubric,
 }: Props) {
   const [draft, setDraft] = useState("");
   const done = assist.interview.done;
+  // Skipping asks the interviewer to finish with its best guess, so it only
+  // makes sense once the agent has seen the data and said something.
+  const canSkip =
+    !done && !busy && assist.interview.turns.some((turn) => turn.role === "assistant");
   const messages: AgentMessage[] = assist.interview.turns.map((turn) => ({
     role: turn.role,
     content: turn.content,
     model: turn.model ?? null,
   }));
   // The in-flight assistant reply streams into a trailing synthetic message,
-  // exactly how the agent panel renders its live turn.
-  if (busy && (streamText || thinking)) {
-    messages.push({ role: "assistant", content: streamText });
+  // exactly how the agent panel renders its live turn. The server filters
+  // structured-output leakage from the stream; this is the client backstop —
+  // JSON must never render as the reply (the parsed message lands at done).
+  const liveText = /^\s*[{[`]/.test(streamText) ? "" : streamText;
+  if (busy && (liveText || thinking)) {
+    messages.push({ role: "assistant", content: liveText });
   }
 
   const submit = () => {
@@ -74,12 +135,16 @@ export function TaggerInterview({
   };
 
   return (
-    <div className="flex h-[calc(100dvh-var(--header-height,53px)-3rem)] w-full flex-col md:h-[calc(100dvh-var(--header-height,53px)-4rem)]">
+    // Height subtracts page padding plus the ~2.5rem back-to-sessions bar
+    // rendered above, so the thread stays viewport-locked without page scroll.
+    <div className="flex h-[calc(100dvh-var(--header-height,53px)-5.5rem)] w-full flex-col md:h-[calc(100dvh-var(--header-height,53px)-6.5rem)]">
       {done ? (
         <RubricCard
           config={config}
           assist={assist}
-          onTaskOverrideChange={onTaskOverrideChange}
+          rowCount={rowCount}
+          estimate={estimate}
+          onFetchEstimate={onFetchEstimate}
           onConfirm={onConfirmRubric}
         />
       ) : (
@@ -141,6 +206,8 @@ export function TaggerInterview({
               ariaLabel={msg("tagger.assist.interview.choices_label")}
             />
           )}
+          {!error && busy && pending === "options" && <QuestionChoicesSkeleton />}
+          {!error && busy && pending === "contract" && <ContractPendingIndicator />}
 
           <Composer
             value={draft}
@@ -152,126 +219,371 @@ export function TaggerInterview({
             placeholder={msg("tagger.assist.interview.placeholder")}
           />
 
-          <div className="flex justify-center border-t border-border/40 py-1.5 shrink-0">
-            <Button variant="ghost" size="sm" onClick={onSkip} className="text-muted-foreground">
-              {msg("tagger.assist.interview.skip")}
-            </Button>
-          </div>
+          {canSkip && (
+            <div className="flex justify-center border-t border-border/40 py-1.5 shrink-0">
+              <Button variant="ghost" size="sm" onClick={onSkip} className="text-muted-foreground">
+                {msg("tagger.assist.interview.skip")}
+              </Button>
+            </div>
+          )}
         </Card>
       )}
     </div>
   );
 }
 
+/** Time constant of the pending bar's asymptotic fill (~65% at one tau). */
+const CONTRACT_PROGRESS_TAU_MS = 9_000;
+/** The fill never claims completion — arrival of the contract does that. */
+const CONTRACT_PROGRESS_CAP = 97;
+
 /**
- * The distilled labeling guide, editable in place before anything runs —
- * including the binary task's own question, so refinements from the interview
- * land on the tagging prompt itself. Confirming it is the moment the user
- * takes ownership of what the AI believes.
+ * Placeholder while the final turn's labeling guide and task contract are
+ * still generating: numbered shimmer lines in the guide card's rule-row
+ * shape, so the contract screen lands where the shimmer prefigured it —
+ * distinct from `QuestionChoicesSkeleton`, which promises answer choices.
+ *
+ * The tqdm-style bar has no real signal to read, so it fills asymptotically,
+ * calibrated to typical guide-generation time: fast early progress that keeps
+ * slowing but never stalls, capped short of 100 so it cannot claim a finish
+ * the stream hasn't delivered.
+ */
+function ContractPendingIndicator() {
+  const [percent, setPercent] = useState(0);
+  useEffect(() => {
+    const startedAt = performance.now();
+    const interval = window.setInterval(() => {
+      const elapsed = performance.now() - startedAt;
+      setPercent(CONTRACT_PROGRESS_CAP * (1 - Math.exp(-elapsed / CONTRACT_PROGRESS_TAU_MS)));
+    }, 180);
+    return () => window.clearInterval(interval);
+  }, []);
+  return (
+    <div className="flex flex-col gap-2 border-t border-border/40 px-4 pb-2 pt-3 motion-safe:animate-in motion-safe:fade-in-0">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" />
+        <p role="status" className="flex-1">
+          {msg("tagger.assist.interview.contract_pending")}
+        </p>
+        {/* aria-hidden: the ticking number would spam the status live region. */}
+        <span aria-hidden className="tabular-nums">
+          {Math.round(percent)}%
+        </span>
+      </div>
+      <div aria-hidden className="flex h-1 overflow-hidden rounded-full bg-muted">
+        <div
+          className="rounded-full bg-primary transition-[width] duration-200 ease-linear"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <div aria-hidden className="flex flex-col gap-2">
+        {(["w-3/4", "w-4/5", "w-2/3"] as const).map((width, index) => (
+          <div key={width} className="flex items-center gap-2.5">
+            <span className="w-4 select-none text-end font-mono text-xs tabular-nums text-muted-foreground/50">
+              {index + 1}
+            </span>
+            <span
+              className={cn("h-3 rounded bg-muted motion-safe:animate-pulse", width)}
+              style={{ animationDelay: `${index * 0.15}s` }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The task contract, editable in place before anything runs: the interview's
+ * inferred answer style and its question/categories. The distilled labeling
+ * guide rides through the confirm untouched — it steers predictions but has
+ * no editing surface. Confirming is the moment the user takes ownership of
+ * what the AI believes. Fields for a switched-to answer style start empty on
+ * purpose — the switch is a human override, so the human fills it in.
+ *
+ * On autopilot the launch button commits to tagging every row — scope and
+ * credit estimate on the button itself — and confirming goes straight into
+ * the bulk job with no interstitial screen. On copilot it commits to the
+ * opening batch: the AI tags it first and the human keeps or corrects each
+ * label, so nobody hand-labels from a blank slate.
  */
 function RubricCard({
   config,
   assist,
-  onTaskOverrideChange,
+  rowCount,
+  estimate,
+  onFetchEstimate,
   onConfirm,
 }: {
   config: TaggerConfig;
   assist: AssistState;
-  onTaskOverrideChange: (override: { question?: string; prompt?: string }) => void;
-  onConfirm: (rubric: string[]) => void;
+  rowCount: number;
+  estimate: AutotagEstimate | null;
+  onFetchEstimate: () => void;
+  onConfirm: (rubric: string[], task: TaskContract) => void;
 }) {
-  const [rules, setRules] = useState<string[]>(assist.rubric);
-  useEffect(() => setRules(assist.rubric), [assist.rubric]);
-  // Freetext carries no standalone prompt — its task is captured by the rubric
-  // rules below (the interview establishes it), so only binary shows a task field.
-  const taskKey = config.mode === "binary" ? "question" : null;
-  const taskValue = taskKey ? String(config[taskKey] ?? "") : "";
+  const autopilot = assist.mode === "autopilot";
+  // Cost before commitment: the bulk button carries the live estimate, so it
+  // is fetched the moment the contract card appears.
+  useEffect(() => {
+    if (autopilot) onFetchEstimate();
+  }, [autopilot, onFetchEstimate]);
+  const [mode, setMode] = useState<AnnotationMode>(config.mode);
+  // The inferred question isn't edited here — it rides through the confirm
+  // untouched; the rubric rules are the editable surface of the task.
+  const question = config.question ?? "";
+  const [categories, setCategories] = useState<Category[]>(config.categories ?? []);
+  // Which just-appended field should grab focus once it mounts.
+  const focusAppended = useRef<"category" | null>(null);
 
-  const update = (idx: number, value: string) =>
-    setRules((prev) => prev.map((r, i) => (i === idx ? value : r)));
-  const remove = (idx: number) => setRules((prev) => prev.filter((_, i) => i !== idx));
-  const cleaned = rules.map((r) => r.trim()).filter(Boolean);
+  const styleOptions: Array<{
+    mode: AnnotationMode;
+    label: string;
+    desc: string;
+    icon: typeof Binary;
+  }> = [
+    {
+      mode: "binary",
+      label: msg("auto.features.tagger.components.taggersetup.literal.4"),
+      desc: msg("auto.features.tagger.components.taggersetup.literal.5"),
+      icon: Binary,
+    },
+    {
+      mode: "multiclass",
+      label: msg("auto.features.tagger.components.taggersetup.literal.6"),
+      desc: msg("auto.features.tagger.components.taggersetup.literal.7"),
+      icon: ListChecks,
+    },
+    {
+      mode: "freetext",
+      label: msg("auto.features.tagger.components.taggersetup.literal.8"),
+      desc: msg("auto.features.tagger.components.taggersetup.literal.9"),
+      icon: TextCursorInput,
+    },
+  ];
+
+  const switchMode = (next: AnnotationMode) => {
+    setMode(next);
+    if (next === "multiclass" && categories.length === 0) {
+      setCategories([
+        { id: crypto.randomUUID(), label: "" },
+        { id: crypto.randomUUID(), label: "" },
+      ]);
+    }
+  };
+
+  const updateCategory = (id: string, label: string) =>
+    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, label } : c)));
+  const removeCategory = (id: string) => setCategories((prev) => prev.filter((c) => c.id !== id));
+  const addCategory = () => {
+    focusAppended.current = "category";
+    setCategories((prev) => [...prev, { id: crypto.randomUUID(), label: "" }]);
+  };
+  const cleanedCategories = categories.filter((c) => c.label.trim());
+
+  const taskValid = mode !== "multiclass" || cleanedCategories.length >= 2;
+
+  // Copilot's launch commits to the opening batch: the AI tags it and the
+  // human audits. Sized from the live contract so switching the answer style
+  // updates the promise on the button.
+  const copilotBatch = Math.min(
+    rowCount,
+    calibrationTarget({ mode, categories: cleanedCategories, inputColumns: config.inputColumns }),
+  );
+
+  const confirm = () =>
+    onConfirm(assist.rubric.map((r) => r.trim()).filter(Boolean), {
+      mode,
+      ...(mode === "binary" ? { question: question.trim() } : {}),
+      ...(mode === "multiclass" ? { categories: cleanedCategories } : {}),
+    });
+
+  // Launch mirrors the wizard submit: the splash plays for the shared hold,
+  // then the confirm flips the phase and the next screen is revealed under it.
+  const [launching, setLaunching] = useState(false);
+  const launch = () => {
+    if (launching) return;
+    setLaunching(true);
+    window.setTimeout(confirm, SUBMIT_SPLASH_HOLD_MS);
+  };
 
   return (
-    <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <CardHeader>
-        <CardTitle className="text-base">{msg("tagger.assist.rubric.title")}</CardTitle>
-        <CardDescription>{msg("tagger.assist.rubric.description")}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        {taskKey && (
-          <div className="mb-2 flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-muted-foreground">
-              {config.mode === "binary"
-                ? msg("tagger.assist.rubric.task_question")
-                : msg("tagger.assist.rubric.task_prompt")}
-            </label>
-            <input
-              type="text"
-              value={taskValue}
-              onChange={(e) => onTaskOverrideChange({ [taskKey]: e.target.value })}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              dir="auto"
-            />
-          </div>
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div
+        className={cn(
+          "grid min-h-0 flex-1 gap-3 overflow-y-auto",
+          "lg:grid-cols-[minmax(0,4fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:overflow-visible",
         )}
-        {config.mode === "multiclass" && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {(config.categories ?? []).map((cat) => (
-              <span
-                key={cat.id}
-                className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground"
-                dir="auto"
-              >
-                {cat.label}
-              </span>
-            ))}
-          </div>
-        )}
-        {rules.length === 0 && (
-          <p className="text-sm text-muted-foreground">{msg("tagger.assist.rubric.empty")}</p>
-        )}
-        {rules.map((rule, idx) => (
-          <div key={idx} className="flex items-start gap-2">
-            <span className="mt-2.5 size-1.5 shrink-0 rounded-full bg-primary/50" />
-            <textarea
-              value={rule}
-              onChange={(e) => update(idx, e.target.value)}
-              rows={2}
+      >
+        <FadeIn className="flex min-w-0 lg:min-h-0">
+          <Card className="flex w-full flex-col overflow-hidden">
+            <CardHeader>
+              <CardTitle className="text-lg">{msg("tagger.assist.rubric.answer_style")}</CardTitle>
+            </CardHeader>
+            <CardContent
               className={cn(
-                "flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
-                "leading-relaxed outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                "flex min-h-0 flex-1 flex-col gap-4 overscroll-contain lg:overflow-y-auto",
+                "lg:[mask-image:linear-gradient(to_bottom,black,black_calc(100%-10px),transparent)]",
               )}
-              dir="auto"
-            />
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => remove(idx)}
-              aria-label={msg("tagger.assist.rubric.remove")}
-              className="mt-1.5"
             >
-              <Trash2 className="size-3.5 text-muted-foreground" />
-            </Button>
-          </div>
-        ))}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setRules((prev) => [...prev, ""])}
-          className="mt-1 gap-1.5 self-start"
-        >
-          <Plus className="size-3.5" />
-          {msg("tagger.assist.rubric.add")}
-        </Button>
-      </CardContent>
-      <div className="border-t border-border/40 p-4">
-        <Button onClick={() => onConfirm(cleaned)} size="lg" className="w-full">
-          {assist.mode === "copilot"
-            ? msg("tagger.assist.rubric.confirm_copilot")
-            : msg("tagger.assist.rubric.confirm_autopilot")}
-        </Button>
+              <div className="flex flex-col gap-2">
+                {styleOptions.map((opt) => {
+                  const selected = mode === opt.mode;
+                  return (
+                    <button
+                      key={opt.mode}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => switchMode(opt.mode)}
+                      className={cn(
+                        "flex items-start gap-3 rounded-xl border p-3.5 text-start transition-all cursor-pointer",
+                        "hover:border-primary/40 hover:bg-primary/5",
+                        "focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40",
+                        selected ? "border-primary bg-primary/10 shadow-sm" : "border-border/50",
+                      )}
+                    >
+                      <opt.icon
+                        className={cn(
+                          "mt-0.5 size-5 shrink-0",
+                          selected ? "text-primary" : "text-muted-foreground",
+                        )}
+                      />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span
+                          className={cn(
+                            "text-sm font-medium",
+                            selected ? "text-primary" : "text-foreground",
+                          )}
+                        >
+                          {opt.label}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{opt.desc}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <AnimatePresence mode="wait" initial={false}>
+                {mode === "multiclass" && (
+                  <motion.div
+                    key="multiclass"
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="space-y-2"
+                  >
+                    <p className="text-xs text-muted-foreground">
+                      {msg("auto.features.tagger.components.taggersetup.9")}
+                    </p>
+                    {categories.map((cat, idx) => (
+                      <div key={cat.id} className="flex items-center gap-2">
+                        <Input
+                          ref={
+                            idx === categories.length - 1
+                              ? (el: HTMLInputElement | null) => {
+                                  if (el && focusAppended.current === "category") {
+                                    focusAppended.current = null;
+                                    focusAppendedField(el);
+                                  }
+                                }
+                              : undefined
+                          }
+                          value={cat.label}
+                          onChange={(e) => updateCategory(cat.id, e.target.value)}
+                          placeholder={msg(
+                            "auto.features.tagger.components.taggersetup.literal.16",
+                          )}
+                          aria-label={msg("auto.features.tagger.components.taggersetup.literal.16")}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => removeCategory(cat.id)}
+                          disabled={categories.length <= 2}
+                          aria-label={msg("auto.features.tagger.components.taggersetup.16")}
+                        >
+                          <Trash2 className="size-3.5 text-muted-foreground" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={addCategory}
+                      className="gap-1.5 self-start text-muted-foreground"
+                    >
+                      <Plus className="size-3.5" />
+                      {msg("auto.features.tagger.components.taggersetup.literal.17")}
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </CardContent>
+          </Card>
+        </FadeIn>
+
+        {/* The launch column: the submit wizard's start button stood beside
+            the guide, filling the row. On autopilot it commits to tagging
+            every row, scope and cost on the button itself. The chevrons
+            sweep in the reading direction — the container is authored LTR
+            and mirrored in RTL so glyphs, order, and motion all flip
+            together. */}
+        <FadeIn delay={0.16} className="flex min-w-0 lg:min-h-0">
+          <motion.button
+            type="button"
+            onClick={launch}
+            disabled={!taskValid || launching}
+            animate={{ scale: [1, 1.01, 1] }}
+            transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+            className={cn(
+              "group relative flex w-full cursor-pointer flex-col items-center justify-center gap-4",
+              "rounded-2xl bg-primary py-8 text-base font-semibold text-primary-foreground",
+              "transition-all duration-300 hover:scale-[1.01] hover:shadow-[0_0_30px_rgba(61,46,34,0.35)]",
+              "active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+          >
+            <span className="flex flex-col items-center gap-1 px-4">
+              <span>
+                {autopilot
+                  ? formatMsg("tagger.assist.rubric.start_autotag", { rows: rowCount })
+                  : formatMsg("tagger.assist.rubric.start_copilot_round", { rows: copilotBatch })}
+              </span>
+              {!taskValid ? (
+                <span className="text-xs font-normal text-primary-foreground/75" dir="auto">
+                  {msg("auto.features.tagger.components.taggersetup.9")}
+                </span>
+              ) : (
+                autopilot &&
+                estimate && (
+                  <span className="text-xs font-normal tabular-nums text-primary-foreground/75">
+                    {estimate.credits_low === estimate.credits_high
+                      ? estimate.credits_low === 1
+                        ? msg("tagger.assist.rubric.credits_estimate_one")
+                        : formatMsg("tagger.assist.rubric.credits_estimate_flat", {
+                            count: estimate.credits_low,
+                          })
+                      : formatMsg("tagger.assist.rubric.credits_estimate", {
+                          low: estimate.credits_low,
+                          high: estimate.credits_high,
+                        })}
+                  </span>
+                )
+              )}
+            </span>
+            <div
+              dir="ltr"
+              className="flex items-center -space-x-7 opacity-70 transition-opacity duration-200 group-hover:opacity-100 rtl:-scale-x-100 [&>svg]:animate-[cascadeDown_1s_ease-in-out_infinite] group-hover:[&>svg]:animate-[cascadeRightHyper_0.5s_ease-out_infinite]"
+            >
+              <ChevronRight className="size-10 [animation-delay:0s] group-hover:[animation-delay:0s]" />
+              <ChevronRight className="size-10 [animation-delay:0.15s] group-hover:[animation-delay:0.08s]" />
+              <ChevronRight className="size-10 [animation-delay:0.3s] group-hover:[animation-delay:0.16s]" />
+            </div>
+          </motion.button>
+        </FadeIn>
       </div>
-    </Card>
+
+      <SubmitSplashOverlay show={launching} />
+    </div>
   );
 }

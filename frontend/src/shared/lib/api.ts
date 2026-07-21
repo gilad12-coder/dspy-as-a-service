@@ -1114,6 +1114,10 @@ export interface TaggerSessionSummary {
   pinned: boolean;
   created_at: string;
   updated_at: string;
+  /** Assist level ("manual" | "copilot" | "autopilot"); null on old sessions. */
+  mode?: string | null;
+  /** Display name of the dataset the session was created from. */
+  source_name?: string | null;
 }
 
 /** Full tagger session — everything needed to rehydrate the annotator. */
@@ -1241,14 +1245,6 @@ export function taggerAssistPredict(sessionId: string, rowIds: string[]) {
   });
 }
 
-/** Reflectively rewrite the labeling rubric from the labels so far. */
-export function taggerAssistOptimize(sessionId: string, locale?: string) {
-  return request<{ rubric: string[] }>(`/tagging-sessions/${sessionId}/assist/optimize`, {
-    method: "POST",
-    body: JSON.stringify({ locale }),
-  });
-}
-
 /** Credit estimate for auto-tagging every currently-unlabeled row. */
 export function taggerAssistEstimate(sessionId: string) {
   return request<{ rows: number; model: string; credits_low: number; credits_high: number }>(
@@ -1280,33 +1276,6 @@ export function taggerAssistAutotagCancel(sessionId: string) {
   return request<{ cancelled: boolean }>(`/tagging-sessions/${sessionId}/assist/autotag`, {
     method: "DELETE",
   });
-}
-
-/** Submit a deep-optimize GEPA run trained on the session's labels. */
-export function taggerAssistDeepOptimize(sessionId: string) {
-  return request<{ optimization_id: string }>(
-    `/tagging-sessions/${sessionId}/assist/deep-optimize`,
-    { method: "POST" },
-  );
-}
-
-/** Lightweight status of one optimization run (deep-optimize tracking). */
-export function getOptimizationStatusLite(optimizationId: string) {
-  return request<{
-    status: string;
-    message?: string | null;
-    baseline_test_metric?: number | null;
-    optimized_test_metric?: number | null;
-  }>(`/optimizations/${optimizationId}/summary`);
-}
-
-/** The optimized program's prompt from a finished run (success only). */
-export function getOptimizationOptimizedPrompt(optimizationId: string) {
-  return request<{
-    program_artifact?: {
-      optimized_prompt?: { instructions?: string | null } | null;
-    } | null;
-  }>(`/optimizations/${optimizationId}/artifact`);
 }
 
 /**

@@ -8,7 +8,7 @@ import { formatMsg } from "@/shared/lib/messages";
 // i18n, which must follow the request locale rather than freeze at module load.
 export function generateMetadata(): Metadata {
   return {
-    title: "Text Tagger",
+    title: "Text labeling",
     description: formatMsg("auto.app.tagger.layout.template.1", { p1: TERMS.dataset }),
   };
 }

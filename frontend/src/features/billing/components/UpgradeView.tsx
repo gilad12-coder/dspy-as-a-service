@@ -88,7 +88,7 @@ function PlanCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: EASE_OUT, delay: 0.07 * index }}
       className={cn(
-        "relative flex flex-col rounded-2xl border bg-card p-6",
+        "relative flex h-full w-full max-w-96 justify-self-center flex-col rounded-2xl border bg-card p-6 md:min-h-[30rem]",
         highlight
           ? "border-[#C8A882]/70 ring-1 ring-[#C8A882]/40 shadow-[0_8px_30px_rgba(200,168,130,0.18)]"
           : "border-border/60 shadow-[0_4px_8px_rgba(0,0,0,0.04)]",
@@ -430,22 +430,17 @@ export function UpgradeView() {
   }, [beginSync]);
 
   return (
-    <div className="@container mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-10 sm:py-14">
-      <header className="flex flex-col items-center gap-2 text-center">
+    <div className="@container mx-auto flex w-full max-w-[78rem] flex-col gap-8 px-4 py-10 sm:py-14">
+      <header className="text-center">
         <h1 className="text-[clamp(1.75rem,4vw,2.25rem)] font-semibold tracking-tight text-foreground">
           {msg("billing.plans.heading")}
         </h1>
-        <p className="max-w-[46ch] text-sm text-muted-foreground">
-          {msg("billing.plans.subheading")}
-        </p>
       </header>
 
-      {/* Container-, not viewport-relative: the page lives inside the shell's
-          sidebar-narrowed <main>, so a viewport breakpoint forced 3 columns into
-          the smaller content area (cramped on non-HD laptops with the rail open).
-          Querying the grid's own width drops to 2-up, then 1-up, as the available
-          space shrinks — and reflows correctly when the sidebar collapses too. */}
-      <div className="grid items-stretch gap-5 @xl:grid-cols-2 @4xl:grid-cols-3">
+      {/* Size against the shell's actual content area: three plans stay on one
+          row at normal desktop widths, then collapse to two centered columns
+          and finally one card per row as the available space narrows. */}
+      <div className="grid grid-cols-1 gap-6 @2xl:grid-cols-2 @2xl:[&>*:last-child]:col-span-2 @4xl:grid-cols-3 @4xl:[&>*:last-child]:col-span-1">
         <FreeCard premiumActive={wallet.premiumActive} index={0} />
         <PremiumCard founders={founders} premiumActive={wallet.premiumActive} index={1} />
         <CreditsCard index={2} />

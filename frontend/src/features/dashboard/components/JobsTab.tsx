@@ -189,8 +189,8 @@ export function JobsTab({
 
         {!loading && data && filteredItems.length === 0 && data.total === 0 && (
           <EmptyState
-            variant="list"
             icon={Send}
+            iconWrap="tile"
             title={`${msg("auto.features.dashboard.components.jobstab.4")}${TERMS.optimizationPlural}`}
             description={msg("auto.features.dashboard.components.jobstab.5")}
             action={{ label: TERMS.notificationNewOpt, href: "/submit", icon: Plus }}

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, defer, sessionmaker
 
 from ..config import settings
 from ..constants import (
+    OPTIMIZATION_TYPE_TAGGING,
     PAYLOAD_OVERVIEW_DATASET_ROWS,
     PAYLOAD_OVERVIEW_MODEL_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
@@ -210,6 +211,24 @@ def _assemble_analytics_row(row: Any) -> JobRecord:
             result["best_pair"] = best_pair
         job["result"] = result
     return job
+
+
+def _user_facing_jobs():
+    """SQL filter keeping only user-facing job rows.
+
+    Tagger bulk auto-tag jobs share the jobs table so the worker fleet can
+    claim them, but they are not optimization runs: every listing and count
+    surface skips them unless a caller filters for the type explicitly. The
+    NULL branch is kept because ``optimization_type`` is nullable (legacy
+    rows) and a bare ``!=`` would silently drop those rows too.
+
+    Returns:
+        A SQLAlchemy boolean clause for ``query.filter``.
+    """
+    return or_(
+        JobModel.optimization_type.is_(None),
+        JobModel.optimization_type != OPTIMIZATION_TYPE_TAGGING,
+    )
 
 
 class RemoteDBJobStore:
@@ -2201,6 +2220,7 @@ class RemoteDBJobStore:
                 best_pair["optimized_test_metric"].as_string(),
                 best_pair["runtime_seconds"].as_string(),
             ).order_by(JobModel.created_at.desc())
+            q = q.filter(_user_facing_jobs())
             if status:
                 q = q.filter(JobModel.status == status)
             if username:
@@ -2224,7 +2244,8 @@ class RemoteDBJobStore:
 
         Progress and log counts are folded in via two aggregate
         queries so each returned row includes ``progress_count`` and
-        ``log_count`` without N extra round trips.
+        ``log_count`` without N extra round trips. Internal tagger bulk-job
+        rows are excluded unless ``optimization_type`` requests them.
 
         Args:
             status: Restrict to jobs with this status when set.
@@ -2250,6 +2271,8 @@ class RemoteDBJobStore:
                 q = q.filter(JobModel.username == username)
             if optimization_type:
                 q = q.filter(JobModel.optimization_type == optimization_type)
+            else:
+                q = q.filter(_user_facing_jobs())
             jobs = q.offset(offset).limit(limit).all()
             if not with_counts:
                 return [self._job_to_dict(j, include_payload=False) for j in jobs]
@@ -2349,6 +2372,7 @@ class RemoteDBJobStore:
                     OptimizationShareGrantModel.optimization_id == JobModel.optimization_id,
                 )
                 .filter(OptimizationShareGrantModel.grantee_username == normalized)
+                .filter(_user_facing_jobs())
                 .order_by(JobModel.created_at.desc())
                 .offset(offset)
                 .limit(limit)
@@ -2377,6 +2401,7 @@ class RemoteDBJobStore:
                     OptimizationShareGrantModel.optimization_id == JobModel.optimization_id,
                 )
                 .filter(OptimizationShareGrantModel.grantee_username == normalized)
+                .filter(_user_facing_jobs())
                 .scalar()
                 or 0
             )
@@ -2427,6 +2452,8 @@ class RemoteDBJobStore:
                 q = q.filter(JobModel.status == status)
             if optimization_type:
                 q = q.filter(JobModel.optimization_type == optimization_type)
+            else:
+                q = q.filter(_user_facing_jobs())
             jobs = q.order_by(JobModel.created_at.desc()).offset(offset).limit(limit).all()
             return self._rows_with_counts(session, jobs)
         finally:
@@ -2461,6 +2488,8 @@ class RemoteDBJobStore:
                 q = q.filter(JobModel.status == status)
             if optimization_type:
                 q = q.filter(JobModel.optimization_type == optimization_type)
+            else:
+                q = q.filter(_user_facing_jobs())
             return q.scalar() or 0
         finally:
             session.close()
@@ -2480,7 +2509,9 @@ class RemoteDBJobStore:
         """
         session = self._get_session()
         try:
-            q = session.query(JobModel.status, func.count(JobModel.optimization_id))
+            q = session.query(JobModel.status, func.count(JobModel.optimization_id)).filter(
+                _user_facing_jobs()
+            )
             if username:
                 q = q.filter(JobModel.username == username)
             return dict(q.group_by(JobModel.status).all())
@@ -2506,7 +2537,8 @@ class RemoteDBJobStore:
                 OptimizationShareGrantModel.grantee_username == normalized
             )
             q = session.query(JobModel.status, func.count(JobModel.optimization_id)).filter(
-                or_(JobModel.username == username, JobModel.optimization_id.in_(grant_ids))
+                or_(JobModel.username == username, JobModel.optimization_id.in_(grant_ids)),
+                _user_facing_jobs(),
             )
             return dict(q.group_by(JobModel.status).all())
         finally:
@@ -2534,6 +2566,8 @@ class RemoteDBJobStore:
                 q = q.filter(JobModel.username == username)
             if optimization_type:
                 q = q.filter(JobModel.optimization_type == optimization_type)
+            else:
+                q = q.filter(_user_facing_jobs())
             return q.scalar() or 0
         finally:
             session.close()

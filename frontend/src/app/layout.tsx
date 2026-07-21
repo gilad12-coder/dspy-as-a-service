@@ -21,11 +21,7 @@ import {
   SettingsModal,
 } from "@/features/settings";
 import { StorageQuotaModalHost } from "@/features/storage";
-import {
-  CreditProvider,
-  ByokKeysProvider,
-  InsufficientCreditsModalHost,
-} from "@/features/billing";
+import { CreditProvider, ByokKeysProvider, InsufficientCreditsModalHost } from "@/features/billing";
 import { AppSkeletonTheme } from "@/shared/ui/skeleton";
 import { msg } from "@/shared/lib/messages";
 import { getServerRuntimeEnv, serializeRuntimeEnv } from "@/shared/lib/runtime-env";
@@ -45,6 +41,7 @@ import {
 } from "@/shared/lib/runtime-messages";
 import { buildActiveCatalog } from "@/shared/lib/messages.server";
 import { getSiteUrl } from "@/shared/lib/site-config";
+import { auth } from "@/shared/lib/auth";
 import "@fontsource-variable/heebo/index.css";
 import "@fontsource-variable/geist/index.css";
 import "@fontsource-variable/jetbrains-mono/index.css";
@@ -159,6 +156,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
   const locale = await resolveRequestLocale();
   setServerLocale(locale);
   const messages = await resolveActiveCatalog();
@@ -215,7 +213,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body suppressHydrationWarning>
         <LocaleProvider initialLocale={locale}>
-          <SessionProvider>
+          <SessionProvider session={session}>
             <CreditProvider>
               <ByokKeysProvider>
                 <UserPrefsProvider>

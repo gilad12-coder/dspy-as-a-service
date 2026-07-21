@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
@@ -105,7 +106,7 @@ interface GeneralistPanelProps {
  * Mounted once in the app shell so the thread survives route changes.
  */
 export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
-  const { open, setOpen, width, setWidth } = useGeneralistPanelState();
+  const { open, setOpen, width, setWidth, pillDock } = useGeneralistPanelState();
   const { mode: trustMode, next: cycleTrust } = useTrustMode();
   const { prefs } = useUserPrefs();
   const shortcutLabel = formatShortcut(prefs.agentShortcut);
@@ -808,16 +809,29 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         )}
       </AnimatePresence>
 
-      {!open && (
-        <>
+      {/* A registered dock re-homes the pill into a surface's own chrome
+          (the tagger footers), so the launcher never floats over that
+          surface's bottom controls. */}
+      {!open &&
+        (pillDock ? (
+          createPortal(
+            <MinimizedPill
+              onOpen={openPanel}
+              active={streaming}
+              statusLabel={agent.statusLabel}
+              hue={hue}
+              inline
+            />,
+            pillDock,
+          )
+        ) : (
           <MinimizedPill
             onOpen={openPanel}
             active={streaming}
             statusLabel={agent.statusLabel}
             hue={hue}
           />
-        </>
-      )}
+        ))}
 
       <ConversationDrawer
         open={drawerOpen}

@@ -126,3 +126,34 @@ export function QuestionChoices({
     </div>
   );
 }
+
+/**
+ * Placeholder rendered while the interviewer is still composing its answer
+ * options: two pulsing option-card shapes in `QuestionChoices`'s exact
+ * geometry, so the real choices land without a layout shift.
+ */
+export function QuestionChoicesSkeleton({ className }: { className?: string }) {
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        "flex flex-col gap-1.5 border-t border-border/40 px-4 pb-1 pt-3",
+        "motion-safe:animate-in motion-safe:fade-in-0",
+        className,
+      )}
+    >
+      {[0, 1].map((index) => (
+        <div
+          key={index}
+          className="flex w-full items-start gap-2.5 rounded-lg border border-border/60 bg-background px-3 py-2.5"
+        >
+          <span className="mt-px size-5 shrink-0 rounded-md bg-muted motion-safe:animate-pulse" />
+          <span className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
+            <span className="h-3.5 w-2/5 rounded bg-muted motion-safe:animate-pulse" />
+            <span className="h-3 w-3/4 rounded bg-muted/70 motion-safe:animate-pulse" />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}

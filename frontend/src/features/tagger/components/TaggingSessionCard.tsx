@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Pencil, Pin, Tags, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Tags, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { Badge } from "@/shared/ui/primitives/badge";
@@ -10,6 +10,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -19,20 +20,40 @@ import { TooltipButton } from "@/shared/ui/tooltip-button";
 import {
   deleteTaggerSession,
   renameTaggerSession,
-  setTaggerSessionPinned,
   type TaggerSessionSummary,
 } from "@/shared/lib/api";
-import { msg } from "@/shared/lib/messages";
+import { msg, type MessageKey } from "@/shared/lib/messages";
 import { formatRelativeTime } from "@/shared/lib/formatters";
-import { cn } from "@/shared/lib/utils";
 import { TAGGER_SESSIONS_CHANGED } from "../hooks/use-tagger";
 
+const MODE_LABEL_KEYS: Record<string, MessageKey> = {
+  manual: "tagger.assist.setup.manual_label",
+  copilot: "tagger.assist.setup.copilot_label",
+  autopilot: "tagger.assist.setup.autopilot_label",
+};
+
+/** Human status for a session card, derived from phase and progress. */
+function sessionStatus(session: TaggerSessionSummary): string {
+  if (session.phase === "interview") return msg("tagger.session.status.setup");
+  if (session.phase === "calibration" || session.phase === "review") {
+    return msg("tagger.session.status.review");
+  }
+  if (session.phase === "autotagging") return msg("tagger.session.status.autotagging");
+  if (
+    session.phase === "complete" ||
+    (session.row_count > 0 && session.tagged_count >= session.row_count)
+  ) {
+    return msg("tagger.session.status.done");
+  }
+  return msg("tagger.session.status.in_progress");
+}
+
 /**
- * One saved text-labeling session on the Datasets page, styled to match
- * {@link DatasetCard}: an icon tile, the session name with a labeled/total
- * progress badge, and last-updated time. Clicking the card resumes annotating
- * at ``/tagger/[id]``; the trailing actions pin, rename, or delete it. Mutations
- * fire {@link TAGGER_SESSIONS_CHANGED} so any other open list refreshes too.
+ * Render one saved text-labeling session in the Tagger session chooser.
+ *
+ * Clicking the card resumes at ``/tagger/[id]``; the trailing actions rename
+ * or delete it. Mutations fire {@link TAGGER_SESSIONS_CHANGED} so any other
+ * open list refreshes too.
  */
 export function TaggingSessionCard({
   session,
@@ -47,9 +68,10 @@ export function TaggingSessionCard({
   const [renaming, setRenaming] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
-  const [pinning, setPinning] = React.useState(false);
 
   const displayName = session.name?.trim() || msg("tagger.session.untitled");
+  const modeKey = session.mode ? MODE_LABEL_KEYS[session.mode] : undefined;
+  const modeLabel = modeKey ? msg(modeKey) : null;
 
   const notifyChanged = () => {
     window.dispatchEvent(new Event(TAGGER_SESSIONS_CHANGED));
@@ -70,20 +92,6 @@ export function TaggingSessionCard({
       toast.error(err instanceof Error ? err.message : msg("datasets.toast.rename_failed"));
     } finally {
       setRenaming(false);
-    }
-  };
-
-  const handlePin = async () => {
-    if (pinning) return;
-    setPinning(true);
-    try {
-      await setTaggerSessionPinned(session.id, !session.pinned);
-      notifyChanged();
-    } catch {
-      // Pin is a non-critical ordering hint; a failed toggle just leaves the
-      // session where it was.
-    } finally {
-      setPinning(false);
     }
   };
 
@@ -130,32 +138,33 @@ export function TaggingSessionCard({
               {session.tagged_count}/{session.row_count}
             </Badge>
           </div>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {formatRelativeTime(session.updated_at)}
-          </p>
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+            <span className="shrink-0">{sessionStatus(session)}</span>
+            {modeLabel && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="shrink-0">{modeLabel}</span>
+              </>
+            )}
+            {session.source_name && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="min-w-0 truncate" dir="auto">
+                  {session.source_name}
+                </span>
+              </>
+            )}
+            <span aria-hidden>·</span>
+            <span className="shrink-0">{formatRelativeTime(session.updated_at)}</span>
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-1" onClick={stop}>
-          <TooltipButton tooltip={session.pinned ? msg("tagger.session.unpin") : msg("tagger.session.pin")}>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className={cn(
-                "text-muted-foreground hover:text-foreground",
-                session.pinned && "text-[#3D2E22]",
-              )}
-              onClick={handlePin}
-              disabled={pinning}
-              aria-label={session.pinned ? msg("tagger.session.unpin") : msg("tagger.session.pin")}
-            >
-              <Pin className={cn("size-4", session.pinned && "fill-current")} />
-            </Button>
-          </TooltipButton>
           <TooltipButton tooltip={msg("datasets.action.rename")}>
             <Button
               variant="ghost"
               size="icon-sm"
-              className="text-muted-foreground hover:text-foreground"
+              className="size-11 text-muted-foreground hover:text-foreground sm:size-8"
               onClick={() => {
                 setRenameValue(displayName);
                 setRenameOpen(true);
@@ -169,7 +178,7 @@ export function TaggingSessionCard({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="text-muted-foreground hover:text-destructive"
+              className="size-11 text-muted-foreground hover:text-destructive sm:size-8"
               onClick={() => setDeleteOpen(true)}
               aria-label={msg("datasets.action.delete")}
             >
@@ -217,12 +226,21 @@ export function TaggingSessionCard({
       </Dialog>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="w-[min(28rem,92vw)] max-w-[min(28rem,92vw)] sm:max-w-md">
-          <DialogHeader className="text-start">
+        <DialogContent
+          className="w-[min(28rem,92vw)] max-w-[min(28rem,92vw)] sm:max-w-md"
+          showCloseButton={false}
+        >
+          <DialogHeader>
             <DialogTitle>{msg("tagger.session.delete_title")}</DialogTitle>
+            <DialogDescription>
+              {msg("tagger.session.delete_body")}{" "}
+              <span className="break-words font-semibold text-foreground" dir="auto">
+                {displayName}
+              </span>
+              ? {msg("delete.irreversible")}
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">{msg("tagger.session.delete_body")}</p>
-          <DialogFooter>
+          <DialogFooter className="mt-2 gap-3">
             <Button
               variant="outline"
               onClick={() => setDeleteOpen(false)}
@@ -237,7 +255,11 @@ export function TaggingSessionCard({
               disabled={deleting}
               className="w-full justify-center shadow-xs"
             >
-              {deleting ? <Loader2 className="size-4 animate-spin" /> : msg("datasets.delete.confirm")}
+              {deleting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                msg("datasets.delete.confirm")
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

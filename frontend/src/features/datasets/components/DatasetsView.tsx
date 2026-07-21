@@ -5,13 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { Database, Search, Upload } from "lucide-react";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
-import { Input } from "@/shared/ui/primitives/input";
 import { EmptyState } from "@/shared/ui/empty-state";
+import { SearchField } from "@/shared/ui/search-field";
 import { isStorageQuotaError, saveDataset, type DatasetSummary } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
 import { cn } from "@/shared/lib/utils";
-import { TaggingSessionsPanel } from "@/features/tagger";
 import { useDatasets } from "../hooks/use-datasets";
 import { DatasetCard } from "./DatasetCard";
 import { DatasetDetailDialog } from "./DatasetDetailDialog";
@@ -101,31 +100,25 @@ export function DatasetsView() {
         }}
       />
 
-      <div className="flex items-center gap-2.5">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute end-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
+      {datasets.length > 0 && (
+        <div className="flex items-center gap-2.5">
+          <SearchField
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onValueChange={setSearch}
             placeholder={msg("datasets.search.placeholder")}
-            aria-label={msg("datasets.search.placeholder")}
-            className="pe-9"
+            className="flex-1"
           />
-        </div>
-        {datasets.length > 0 && (
           <Button
             variant="outline"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="shrink-0"
+            className="h-11 shrink-0 rounded-2xl"
           >
             <Upload className="size-4" />
             {msg("datasets.upload")}
           </Button>
-        )}
-      </div>
-
-      <TaggingSessionsPanel />
+        </div>
+      )}
 
       <div
         onDragOver={(e) => {
@@ -143,9 +136,7 @@ export function DatasetsView() {
         }}
         className={cn(
           "mt-5 rounded-xl border border-dashed transition-colors duration-150",
-          dragging
-            ? "border-[#3D2E22]/50 bg-[#3D2E22]/[0.03]"
-            : "border-transparent",
+          dragging ? "border-[#3D2E22]/50 bg-[#3D2E22]/[0.03]" : "border-transparent",
         )}
       >
         {error ? (

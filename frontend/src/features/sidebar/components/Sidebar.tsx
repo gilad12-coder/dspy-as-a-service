@@ -396,11 +396,9 @@ export function Sidebar() {
               badge={href === "/" && renderedTab === "mine" && activeCount > 0 ? activeCount : null}
               isTagger={href === "/tagger"}
               resume={
-                href === "/tagger"
-                  ? { kind: "tagger", detailBase: "/tagger" }
-                  : href === "/submit"
-                    ? { kind: "optimization", detailBase: "/optimizations" }
-                    : undefined
+                href === "/submit"
+                  ? { kind: "optimization", detailBase: "/optimizations" }
+                  : undefined
               }
             />
           ))}
@@ -472,8 +470,8 @@ export function Sidebar() {
                 ))}
                 {loadedAll && groupedJobs.length === 0 && (
                   <EmptyState
-                    variant="list"
-                    icon={renderedTab === "shared" ? undefined : Send}
+                    icon={Send}
+                    iconWrap="tile"
                     title={msg(
                       renderedTab === "shared" ? "sidebar.shared.empty" : "sidebar.mine.empty",
                     )}
@@ -482,6 +480,7 @@ export function Sidebar() {
                         ? "sidebar.shared.empty.hint"
                         : "sidebar.mine.empty.hint",
                     )}
+                    className="px-4 py-10"
                   />
                 )}
               </motion.div>

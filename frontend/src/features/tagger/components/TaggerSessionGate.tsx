@@ -12,6 +12,7 @@ import {
   type TaggerSessionDetail,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { TaggerBackLink } from "./TaggerBackLink";
 import { TaggerView } from "./TaggerView";
 
 type GateState =
@@ -64,12 +65,18 @@ export function TaggerSessionGate() {
   }
   if (state.mode === "notfound") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <XCircle className="size-12 text-destructive" />
-        <p className="text-lg text-muted-foreground">{msg("tagger.session.notfound")}</p>
-      </div>
+      <>
+        <div className="mb-3">
+          <TaggerBackLink />
+        </div>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+          <XCircle className="size-12 text-destructive" />
+          <p className="text-lg text-muted-foreground">{msg("tagger.session.notfound")}</p>
+        </div>
+      </>
     );
   }
   // Remount on id change so the hook re-seeds from the new session's state.
+  // TaggerView renders its own back link, so none is added here.
   return <TaggerView key={state.session.id} initialSession={state.session} />;
 }

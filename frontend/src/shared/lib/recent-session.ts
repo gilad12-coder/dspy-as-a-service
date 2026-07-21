@@ -28,6 +28,21 @@ export function markRecentSession(kind: RecentKind, id: string): void {
 }
 
 /**
+ * Re-stamp the mark for this kind only if one still exists. Leave-the-page
+ * handlers use this instead of {@link markRecentSession} so a deliberate exit
+ * (which clears the mark) isn't undone by the unmount autosave that follows.
+ */
+export function refreshRecentSession(kind: RecentKind, id: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (window.localStorage.getItem(STORAGE_KEY[kind]) === null) return;
+  } catch {
+    return;
+  }
+  markRecentSession(kind, id);
+}
+
+/**
  * Forget the most recent session of this kind, so the sidebar nav starts fresh
  * on the next click. Call when the user deliberately leaves a session (e.g.
  * "start over") — otherwise the resume window would reopen the one they left.

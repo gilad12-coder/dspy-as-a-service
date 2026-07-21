@@ -2,6 +2,7 @@ import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { readServerSentEvents } from "@/shared/lib/sse";
 import { fetchWithAuthRetry, parseInterviewOptions, type InterviewOption } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import type { TaggerConfig } from "./types";
 
 // Resolve lazily — a module-load const races the injected window.__SKYNET_ENV__
 // and freezes the build-time localhost fallback. See shared/lib/api.ts.
@@ -12,13 +13,21 @@ export interface InterviewTurnResult {
   options: InterviewOption[];
   rubric: string[];
   done: boolean;
+  taskOverride: Partial<Pick<TaggerConfig, "mode" | "question" | "categories" | "prompt">>;
+  /** Short session name the interview proposes on its final turn. */
+  title: string;
   model?: string | null;
 }
 
 export interface InterviewStreamHandlers {
   onReasoningPatch?: (chunk: string) => void;
   onMessagePatch?: (chunk: string) => void;
-  /** The server is retrying a failed attempt — drop streamed partial text. */
+  /** The reply is fully streamed; options/rubric are still generating. */
+  onMessageEnd?: () => void;
+  /** The streamed ``done`` field settled: the turn ends in the task contract
+   *  (final) or in another question — pick the matching placeholder. */
+  onTurnHint?: (final: boolean) => void;
+  /** The server dropped the partial reply (retry or leaked structure). */
   onMessageReset?: () => void;
   onDone: (turn: InterviewTurnResult) => void;
   onError: (message: string) => void;
@@ -66,6 +75,12 @@ export async function streamInterviewTurn(
         case "message_patch":
           handlers.onMessagePatch?.(String(payload.chunk ?? ""));
           break;
+        case "message_end":
+          handlers.onMessageEnd?.();
+          break;
+        case "turn_hint":
+          handlers.onTurnHint?.(payload.final === true);
+          break;
         case "message_reset":
           handlers.onMessageReset?.();
           break;
@@ -76,8 +91,14 @@ export async function streamInterviewTurn(
             options: parseInterviewOptions(payload.options),
             rubric: Array.isArray(payload.rubric) ? payload.rubric.map(String) : [],
             done: payload.done === true,
-            model:
-              typeof payload.model === "string" && payload.model ? payload.model : null,
+            taskOverride:
+              payload.task_override && typeof payload.task_override === "object"
+                ? (payload.task_override as Partial<
+                    Pick<TaggerConfig, "mode" | "question" | "categories" | "prompt">
+                  >)
+                : {},
+            title: typeof payload.title === "string" ? payload.title.trim() : "",
+            model: typeof payload.model === "string" && payload.model ? payload.model : null,
           });
           break;
         case "error":

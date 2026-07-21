@@ -159,12 +159,12 @@ export function ExploreView() {
 
         {isTrulyEmpty ? (
           <EmptyState
-            variant="list"
             icon={Send}
+            iconWrap="tile"
             title={msg("explore.empty.title")}
             description={msg("explore.empty.hint")}
             action={{ label: msg("explore.empty.cta"), href: "/submit", icon: Plus }}
-            className="min-h-[40vh] justify-center"
+            className="mt-3.5"
           />
         ) : (
           <ListPane
@@ -272,11 +272,12 @@ function ListPane({
     if (isMine && !response.isActive) {
       return (
         <EmptyState
-          variant="list"
           icon={Send}
+          iconWrap="tile"
           title={msg("explore.corpus.mine.empty")}
           description={msg("explore.corpus.mine.empty.hint")}
           action={{ label: msg("explore.empty.cta"), href: "/submit", icon: Plus }}
+          className="mt-3.5"
         />
       );
     }

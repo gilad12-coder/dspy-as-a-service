@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  Database,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/shared/ui/primitives/button";
@@ -26,7 +27,7 @@ import { cn } from "@/shared/lib/utils";
 import { HelpTip } from "@/shared/ui/help-tip";
 import { tip } from "@/shared/lib/tooltips";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
-import { getDatasetRows } from "@/shared/lib/api";
+import { getDatasetRows, listDatasets, type DatasetSummary } from "@/shared/lib/api";
 import { registerTutorialHook, registerTutorialQuery } from "@/features/tutorial";
 import { useUserPrefs } from "@/features/settings";
 import type {
@@ -48,22 +49,20 @@ interface TaggerSetupProps {
     rows: DataRow[],
     columns: string[],
     assistMode?: TaggerAssistMode,
-    calibrationStyle?: "blind" | "assisted",
   ) => void;
 }
 
 const BASE_STEPS = perLocale(
   () =>
-    [
-      { id: "data", label: msg("auto.features.tagger.components.taggersetup.literal.1") },
-      { id: "mode", label: msg("auto.features.tagger.components.taggersetup.literal.2") },
-    ] as const,
+    [{ id: "data", label: msg("auto.features.tagger.components.taggersetup.literal.1") }] as const,
 );
 
-// Freetext needs no setup prompt — the assist interview elicits the task — so
-// it drops this step entirely; binary and multiclass still configure here.
-const CONFIG_STEP = perLocale(
-  () => ({ id: "config", label: msg("auto.features.tagger.components.taggersetup.literal.3") }) as const,
+const TASK_STEP = perLocale(
+  () =>
+    ({
+      id: "task",
+      label: msg("auto.features.tagger.components.taggersetup.literal.2"),
+    }) as const,
 );
 
 const ASSIST_STEP = perLocale(
@@ -93,6 +92,15 @@ const ASSIST_OPTIONS: Array<{
     desc: msg("tagger.assist.setup.autopilot_desc"),
   },
 ]);
+
+/** "support_tickets.csv" → "support tickets" — a readable session-card name. */
+function cleanSourceName(fileName: string): string {
+  const base = fileName
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return base || fileName;
+}
 
 const slideVariants = {
   enter: (direction: number) => ({
@@ -147,14 +155,19 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const [assistMode, setAssistMode] = useState<TaggerAssistMode>("copilot");
   const [libraryName, setLibraryName] = useState<string | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryOptions, setLibraryOptions] = useState<DatasetSummary[]>([]);
+  const [pickedId, setPickedId] = useState<string | null>(null);
 
   const { prefs } = useUserPrefs();
   const assistAvailable = isTaggerAssistEnabled() && prefs.taggerAssist;
-  const needsConfigStep = mode !== "freetext";
+  const effectiveAssistMode = assistAvailable ? assistMode : "manual";
+  // Assisted flows leave the answer style to the interview, so only manual
+  // flows get the task-definition step (interface + question/categories).
+  const needsTaskStep = effectiveAssistMode === "manual";
   const activeSteps = [
     ...BASE_STEPS,
-    ...(needsConfigStep ? [CONFIG_STEP] : []),
     ...(assistAvailable ? [ASSIST_STEP] : []),
+    ...(needsTaskStep ? [TASK_STEP] : []),
   ];
 
   const [question, setQuestion] = useState(
@@ -193,6 +206,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     setError(null);
     setFile(f);
     setLibraryName(null);
+    setPickedId(null);
     try {
       const { columns, rows } = await parseDatasetFile(f);
       setParsedRows(rows as DataRow[]);
@@ -216,6 +230,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
       setParsedRows(detail.rows as DataRow[]);
       setParsedCols(detail.columns);
       setFile(null);
+      setPickedId(datasetId);
       setLibraryName(name || msg("tagger.setup.library_fallback_name"));
       const roles = detail.column_schema?.column_roles ?? {};
       const inputs = detail.columns.filter((c) => roles[c] === "input");
@@ -239,6 +254,18 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     const datasetId = params.get("dataset");
     if (datasetId) void loadLibraryDataset(datasetId, params.get("name"));
   }, [loadLibraryDataset]);
+
+  useEffect(() => {
+    let alive = true;
+    listDatasets()
+      .then((res) => {
+        if (alive) setLibraryOptions(res.datasets);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -265,28 +292,31 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     setInputCols((prev) => (prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]));
   };
 
-  // Which steps exist depends on mode (freetext drops "config"), so gate on the
-  // step's id rather than its index.
+  // Which steps exist depends on the chosen approach (assisted flows drop the
+  // task step), so gate on the step's id rather than its index.
   const validateStep = (s: number): boolean => {
     const id = activeSteps[s]?.id;
     if (id === "data") return parsedRows.length > 0 && inputCols.length > 0;
-    if (id === "mode") return !!mode;
-    if (id === "config") {
-      if (mode === "multiclass") return categories.filter((c) => c.label.trim()).length >= 2;
-      return !!mode;
-    }
     if (id === "assist") return assistAvailable;
+    if (id === "task") {
+      if (!mode) return false;
+      if (mode === "binary") return question.trim().length > 0;
+      if (mode === "multiclass") return categories.filter((c) => c.label.trim()).length >= 2;
+      return true;
+    }
     return false;
   };
 
-  // The substantive gate for starting, independent of which optional steps the
-  // chosen mode renders: data selected, a mode picked, and — for multiclass —
-  // at least two categories.
+  // The substantive gate for starting: data selected, plus — for manual flows
+  // only — a fully-defined task. Assisted flows define the task (including the
+  // answer style) in the interview instead.
   const canStart = (): boolean =>
     parsedRows.length > 0 &&
     inputCols.length > 0 &&
-    !!mode &&
-    (mode !== "multiclass" || categories.filter((c) => c.label.trim()).length >= 2);
+    (effectiveAssistMode !== "manual" ||
+      (!!mode &&
+        (mode !== "binary" || question.trim().length > 0) &&
+        (mode !== "multiclass" || categories.filter((c) => c.label.trim()).length >= 2)));
 
   const maxReachableStep = (() => {
     for (let i = 0; i < activeSteps.length; i++) {
@@ -319,7 +349,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   };
 
   const handleStart = () => {
-    if (!mode || !canStart()) return;
+    if (!canStart()) return;
     const mapped: DataRow[] = parsedRows.map((row, i) => {
       const fields = inputCols.map((col) => ({ column: col, value: row[col] }));
       // ``text`` stays as a flat string for CSV export / search / single-col
@@ -338,18 +368,21 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
         .join("\n");
       return { ...row, id: i + 1, text, fields };
     });
-    const config: TaggerConfig = { mode, inputColumns: inputCols };
-    if (mode === "binary") config.question = question;
-    if (mode === "multiclass") config.categories = categories.filter((c) => c.label.trim());
-    // Freetext carries no prompt: the assist interview establishes the task,
-    // and manual annotation falls back to a default header.
-    onStart(
-      config,
-      mapped,
-      parsedCols,
-      assistAvailable ? assistMode : "manual",
-      prefs.taggerCalibrationStyle,
-    );
+    // Assisted sessions start with a provisional answer style; the interview
+    // infers the real one and stores it in the task override. Manual freetext
+    // carries no prompt — annotation falls back to a default header.
+    const config: TaggerConfig =
+      effectiveAssistMode === "manual"
+        ? { mode: mode!, inputColumns: inputCols }
+        : { mode: "freetext", modeProvisional: true, inputColumns: inputCols };
+    if (effectiveAssistMode === "manual" && mode === "binary") config.question = question.trim();
+    if (effectiveAssistMode === "manual" && mode === "multiclass") {
+      config.categories = categories.filter((c) => c.label.trim());
+    }
+    config.assistMode = effectiveAssistMode;
+    const source = libraryName ?? (file ? cleanSourceName(file.name) : null);
+    if (source) config.sourceName = source;
+    onStart(config, mapped, parsedCols, effectiveAssistMode);
   };
 
   const steps = [
@@ -408,6 +441,47 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
 
+        {libraryOptions.length > 0 && (
+          <>
+            <div className="flex items-center gap-3">
+              <Separator className="flex-1" />
+              <span className="text-xs text-muted-foreground">
+                {msg("tagger.setup.library_or")}
+              </span>
+              <Separator className="flex-1" />
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{msg("tagger.setup.library_pick")}</p>
+              <div className="max-h-44 space-y-1 overflow-y-auto">
+                {libraryOptions.map((ds) => {
+                  const selected = pickedId === ds.id;
+                  return (
+                    <button
+                      key={ds.id}
+                      type="button"
+                      onClick={() => void loadLibraryDataset(ds.id, ds.name)}
+                      className={cn(
+                        "flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all cursor-pointer",
+                        selected
+                          ? "bg-primary/10 border border-primary/40 text-primary font-medium"
+                          : "border border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                      )}
+                    >
+                      <Database className="size-3.5 shrink-0" />
+                      <span className="truncate min-w-0" dir="auto">
+                        {ds.name}
+                      </span>
+                      <span className="ms-auto shrink-0 text-xs text-muted-foreground">
+                        {formatMsg("datasets.count.rows", { count: ds.row_count })}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+
         {parsedCols.length > 0 && (
           <>
             <Separator />
@@ -450,8 +524,12 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
         )}
       </CardContent>
     </Card>,
+  ];
 
-    <Card key="mode" data-tutorial="tagger-modes">
+  // The manual task step: pick the answer style, then define it inline —
+  // one decision surface instead of the old separate mode + settings steps.
+  const taskCard = (
+    <Card key="task" data-tutorial={assistAvailable ? undefined : "tagger-modes"}>
       <CardHeader>
         <CardTitle className="text-base">
           <HelpTip text={tip("tagger.mode")}>
@@ -459,7 +537,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
           </HelpTip>
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {MODE_OPTIONS.map((opt) => (
             <button
@@ -490,97 +568,96 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
             </button>
           ))}
         </div>
-      </CardContent>
-    </Card>,
-  ];
-
-  const configCard = (
-    <Card key="config">
-      <CardHeader>
-        <CardTitle className="text-base">
+        <AnimatePresence mode="wait" initial={false}>
           {mode === "binary" && (
-            <HelpTip text={tip("tagger.binary_question")}>
-              {msg("auto.features.tagger.components.taggersetup.6")}
-            </HelpTip>
+            <motion.div
+              key="binary"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="space-y-2"
+            >
+              <p className="text-sm font-medium">
+                <HelpTip text={tip("tagger.binary_question")}>
+                  {msg("auto.features.tagger.components.taggersetup.6")}
+                </HelpTip>
+              </p>
+              <input
+                type="text"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder={msg("auto.features.tagger.components.taggersetup.literal.15")}
+                dir="auto"
+              />
+            </motion.div>
           )}
           {mode === "multiclass" && (
-            <HelpTip text={tip("tagger.multiclass_categories")}>
-              {msg("auto.features.tagger.components.taggersetup.7")}
-            </HelpTip>
-          )}
-          {!mode && msg("auto.features.tagger.components.taggersetup.literal.14")}
-        </CardTitle>
-        {mode === "multiclass" && (
-          <CardDescription>{msg("auto.features.tagger.components.taggersetup.9")}</CardDescription>
-        )}
-      </CardHeader>
-      <CardContent>
-        {mode === "binary" && (
-          <input
-            type="text"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            placeholder={msg("auto.features.tagger.components.taggersetup.literal.15")}
-            dir="auto"
-          />
-        )}
-        {mode === "multiclass" && (
-          <div className="space-y-2">
-            {categories.map((cat) => (
-              <div key={cat.id} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={cat.label}
-                  onChange={(e) => updateCategory(cat.id, e.target.value)}
-                  className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  placeholder={msg("auto.features.tagger.components.taggersetup.literal.16")}
-                  dir="auto"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => removeCategory(cat.id)}
-                  disabled={categories.length <= 2}
-                  aria-label={msg("auto.features.tagger.components.taggersetup.16")}
-                >
-                  <Trash2 className="size-3.5 text-muted-foreground" />
-                </Button>
-              </div>
-            ))}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={addCategory}
-              className="mt-1 w-full"
-              title={msg("auto.features.tagger.components.taggersetup.literal.17")}
-              aria-label={msg("auto.features.tagger.components.taggersetup.literal.17")}
+            <motion.div
+              key="multiclass"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="space-y-2"
             >
-              <Plus className="size-3.5" />
-            </Button>
-          </div>
-        )}
-        {!mode && (
-          <p className="text-sm text-muted-foreground">
-            {msg("auto.features.tagger.components.taggersetup.10")}
-          </p>
-        )}
+              <p className="text-sm font-medium">
+                <HelpTip text={tip("tagger.multiclass_categories")}>
+                  {msg("auto.features.tagger.components.taggersetup.7")}
+                </HelpTip>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {msg("auto.features.tagger.components.taggersetup.9")}
+              </p>
+              {categories.map((cat) => (
+                <div key={cat.id} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={cat.label}
+                    onChange={(e) => updateCategory(cat.id, e.target.value)}
+                    className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    placeholder={msg("auto.features.tagger.components.taggersetup.literal.16")}
+                    dir="auto"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => removeCategory(cat.id)}
+                    disabled={categories.length <= 2}
+                    aria-label={msg("auto.features.tagger.components.taggersetup.16")}
+                  >
+                    <Trash2 className="size-3.5 text-muted-foreground" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={addCategory}
+                className="mt-1 w-full"
+                title={msg("auto.features.tagger.components.taggersetup.literal.17")}
+                aria-label={msg("auto.features.tagger.components.taggersetup.literal.17")}
+              >
+                <Plus className="size-3.5" />
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </CardContent>
     </Card>
   );
-  if (needsConfigStep) steps.push(configCard);
-
   if (assistAvailable) {
-    const target = mode
-      ? calibrationTarget({
-          mode,
-          inputColumns: inputCols,
-          categories: categories.filter((c) => c.label.trim()),
-        })
-      : 30;
+    // The approach step now precedes any interface choice, so the tiny-dataset
+    // caveat uses the provisional calibration target.
+    const target = calibrationTarget({
+      mode: "freetext",
+      modeProvisional: true,
+      inputColumns: inputCols,
+    });
     const tinyDataset = parsedRows.length > 0 && parsedRows.length <= target + REVIEW_BATCH_SIZE;
     steps.push(
-      <Card key="assist">
+      <Card key="assist" data-tutorial="tagger-modes">
         <CardHeader>
           <CardTitle className="text-base">{msg("tagger.assist.setup.title")}</CardTitle>
           <CardDescription>{msg("tagger.assist.setup.description")}</CardDescription>
@@ -628,6 +705,8 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
       </Card>,
     );
   }
+
+  if (needsTaskStep) steps.push(taskCard);
 
   const isLastStep = step === activeSteps.length - 1;
 

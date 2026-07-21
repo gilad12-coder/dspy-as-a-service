@@ -1,12 +1,11 @@
 "use client";
 
-import { CircleAlert, List, Loader2, Rocket, UserRound, Sparkles, BadgeCheck } from "lucide-react";
+import { CircleAlert, List, UserRound, Sparkles, BadgeCheck } from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import type { Annotation, AssistState } from "../lib/types";
-import { MIN_DEEP_OPTIMIZE_EXAMPLES, flaggedRowIds, provenanceCounts } from "../lib/assist";
-import { LiftLine, OpenRunLink } from "./TaggerReviewGate";
+import { flaggedRowIds, provenanceCounts } from "../lib/assist";
 
 interface Props {
   assist: AssistState;
@@ -14,7 +13,6 @@ interface Props {
   rowCount: number;
   onFlaggedPass: () => void;
   onBrowse: () => void;
-  onDeepOptimize: () => void;
 }
 
 /**
@@ -28,12 +26,10 @@ export function TaggerComplete({
   rowCount,
   onFlaggedPass,
   onBrowse,
-  onDeepOptimize,
 }: Props) {
   const counts = provenanceCounts(assist, annotations);
   const flagged = flaggedRowIds(assist);
   const credits = assist.autotag?.credits_spent ?? 0;
-  const vettedLabels = counts.human + counts.aiConfirmed;
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4 pt-10">
@@ -65,7 +61,9 @@ export function TaggerComplete({
 
           {credits > 0 && (
             <p className="text-xs text-muted-foreground">
-              {formatMsg("tagger.assist.complete.credits", { credits })}
+              {credits === 1
+                ? msg("tagger.assist.complete.credits_one")
+                : formatMsg("tagger.assist.complete.credits", { credits })}
             </p>
           )}
 
@@ -85,57 +83,6 @@ export function TaggerComplete({
               {msg("tagger.assist.complete.browse")}
             </Button>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">
-            {msg("tagger.assist.complete.optimization_title")}
-          </CardTitle>
-          <CardDescription>
-            {msg("tagger.assist.complete.optimization_description")}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {assist.deepOptimize?.status === "running" ? (
-            <>
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
-                {msg("tagger.assist.optimize.running")}
-              </p>
-              <OpenRunLink jobId={assist.deepOptimize.jobId} />
-            </>
-          ) : assist.deepOptimize?.status === "success" ? (
-            <>
-              <LiftLine deepOptimize={assist.deepOptimize} />
-              <OpenRunLink jobId={assist.deepOptimize.jobId} />
-            </>
-          ) : (
-            <>
-              <Button
-                variant="secondary"
-                onClick={onDeepOptimize}
-                disabled={vettedLabels < MIN_DEEP_OPTIMIZE_EXAMPLES}
-                className="w-full gap-2"
-              >
-                <Rocket className="size-4" />
-                {msg("tagger.assist.complete.optimization_cta")}
-              </Button>
-              {vettedLabels < MIN_DEEP_OPTIMIZE_EXAMPLES && (
-                <p className="text-xs text-muted-foreground">
-                  {formatMsg("tagger.assist.complete.optimization_too_few", {
-                    minimum: MIN_DEEP_OPTIMIZE_EXAMPLES,
-                  })}
-                </p>
-              )}
-              {assist.deepOptimize?.status === "failed" && (
-                <p className="text-xs text-muted-foreground">
-                  {msg("tagger.assist.optimize.failed")}
-                </p>
-              )}
-            </>
-          )}
         </CardContent>
       </Card>
     </div>

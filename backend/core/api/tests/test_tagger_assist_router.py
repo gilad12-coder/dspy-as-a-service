@@ -28,7 +28,7 @@ from ...storage.remote import RemoteDBJobStore
 from ...worker.tagging_job import TaggingAutotagPayload, run_autotag_job
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
-from ..routers.tagger_assist import create_tagger_assist_router
+from ..routers.tagger_assist import _effective_config, create_tagger_assist_router
 from ..routers.tagging_sessions import create_tagging_session_router
 
 _ALICE = AuthenticatedUser(username="alice", role="user", groups=())
@@ -160,13 +160,38 @@ def test_create_roundtrips_assist_state() -> None:
     assert detail["phase"] == "interview"
 
 
+def test_effective_config_applies_inferred_mode() -> None:
+    """The interview's inferred answer style overrides a provisional config."""
+    client, store = _client(_ALICE)
+    body = dict(_SESSION_BODY)
+    body["config"] = {"mode": "freetext", "modeProvisional": True, "inputColumns": ["text"]}
+    body["assist"] = {
+        **_SESSION_BODY["assist"],
+        "taskOverride": {
+            "mode": "multiclass",
+            "categories": [
+                {"id": "cat1", "label": "Billing"},
+                {"id": "cat2", "label": "Support"},
+            ],
+        },
+    }
+    resp = client.post("/tagging-sessions", json=body)
+    assert resp.status_code == 201, resp.text
+    with Session(store.engine) as db:
+        row = db.get(TaggingSessionModel, resp.json()["id"])
+        config = _effective_config(row)
+    assert config["mode"] == "multiclass"
+    assert "modeProvisional" not in config
+    assert [c["label"] for c in config["categories"]] == ["Billing", "Support"]
+
+
 def test_interview_returns_turn(monkeypatch) -> None:
     """The interview route forwards the transcript and returns the turn."""
     seen: dict = {}
 
     def fake_turn(config, columns, data, turns, locale):
         """Capture the forwarded arguments and return a canned turn."""
-        seen.update({"turns": turns, "locale": locale, "rows": len(data)})
+        seen.update({"turns": turns, "locale": locale, "rows": len(data), "config": config})
         return {
             "message": "Does sarcasm count?",
             "options": [
@@ -194,6 +219,7 @@ def test_interview_returns_turn(monkeypatch) -> None:
     assert seen["locale"] == "he"
     assert seen["rows"] == 4
     assert seen["turns"] == [{"role": "user", "content": "hi"}]
+    assert seen["config"]["_assist_mode"] == "copilot"
 
 
 def test_predict_excludes_requested_rows_from_examples(monkeypatch) -> None:
@@ -226,25 +252,6 @@ def test_predict_excludes_requested_rows_from_examples(monkeypatch) -> None:
     )
     assert resp.status_code == 404
     assert resp.json()["code"] == "tagger.assist.rows_not_found"
-
-
-def test_optimize_requires_examples(monkeypatch) -> None:
-    """Optimize 422s without labels and returns the improved rubric with them."""
-    monkeypatch.setattr(
-        tagging, "refine_rubric", lambda config, rubric, examples, locale: ["Better rule."]
-    )
-    client, _ = _client(_ALICE)
-    session_id = _create(client)
-    resp = client.post(f"/tagging-sessions/{session_id}/assist/optimize", json={"locale": "en"})
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["rubric"] == ["Better rule."]
-
-    empty_body = dict(_SESSION_BODY, annotations={})
-    resp = client.post("/tagging-sessions", json=empty_body)
-    bare_id = resp.json()["id"]
-    resp = client.post(f"/tagging-sessions/{bare_id}/assist/optimize", json={})
-    assert resp.status_code == 422
-    assert resp.json()["code"] == "tagger.assist.no_examples"
 
 
 def test_estimate_counts_untagged_rows() -> None:
@@ -379,58 +386,6 @@ def test_stale_running_mirror_reports_not_live_or_failed() -> None:
     body = client.get(f"/tagging-sessions/{session_id}/assist/autotag").json()
     assert body["status"] == "failed"
     assert body["live"] is False
-
-
-def test_deep_optimize_gates_and_submits_run(monkeypatch) -> None:
-    """Deep optimize 422s on thin labels, then submits a private GEPA run."""
-    from types import SimpleNamespace
-
-    from ..routers import tagger_assist as assist_module
-
-    captured: dict = {}
-
-    def fake_enqueue(job_store, new_id, payload, *, optimization_type):
-        """Capture the submission and create the job row like the real path."""
-        captured["payload"] = payload
-        captured["type"] = optimization_type
-        job_store.create_job(new_id, username=payload.username)
-        job_store.set_payload_overview(
-            new_id, {"optimization_type": optimization_type, "username": payload.username}
-        )
-        return SimpleNamespace(optimization_id=new_id)
-
-    monkeypatch.setattr(assist_module, "persist_and_enqueue", fake_enqueue)
-    monkeypatch.setattr(assist_module, "_enforce_credit_balance", lambda *args: None)
-    client, store = _client(_ALICE)
-    session_id = _create(client)
-
-    # Only one labeled row — not enough signal to train on.
-    resp = client.post(f"/tagging-sessions/{session_id}/assist/deep-optimize")
-    assert resp.status_code == 422
-    assert resp.json()["code"] == "tagger.assist.too_few_examples"
-
-    with Session(store.engine) as db:
-        row = db.get(TaggingSessionModel, session_id)
-        row.data = [{"id": i, "text": f"row {i}"} for i in range(1, 15)]
-        row.annotations = {str(i): "yes" if i % 2 else "no" for i in range(1, 13)}
-        row.assist = {
-            **row.assist,
-            "provenance": {str(i): "human" for i in range(1, 13)},
-        }
-        db.commit()
-
-    resp = client.post(f"/tagging-sessions/{session_id}/assist/deep-optimize")
-    assert resp.status_code == 202, resp.text
-    assert resp.json()["optimization_id"]
-    payload = captured["payload"]
-    assert captured["type"] == "run"
-    assert payload.username == "alice"
-    assert payload.name.startswith("Deep optimize · ")
-    assert payload.optimizer_name == "gepa"
-    assert len(payload.dataset) == 12
-    run_id = resp.json()["optimization_id"]
-    overview = store.get_job(run_id)["payload_overview"]
-    assert overview["tagger_session_id"] == session_id
 
 
 def test_ownership_enforced_on_assist_routes() -> None:

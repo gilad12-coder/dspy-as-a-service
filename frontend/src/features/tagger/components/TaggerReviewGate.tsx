@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
-import { ArrowRight, Check, CircleAlert, ExternalLink, Loader2, Rocket, Sparkles, Wand2 } from "lucide-react";
+import { ArrowRight, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import type { AutotagEstimate } from "../hooks/use-tagger";
 import type { Annotation, AssistState, TaggerConfig } from "../lib/types";
-import { agreementGate, agreementOver, gateStalled, gateUnlocked } from "../lib/assist";
+import { agreementGate, agreementOver, gateUnlocked } from "../lib/assist";
 
 interface Props {
   config: TaggerConfig;
@@ -17,12 +16,9 @@ interface Props {
   remainingCount: number;
   estimate: AutotagEstimate | null;
   roundLoading: boolean;
-  optimizeBusy: boolean;
   assistError: string | null;
   onStartRound: () => void;
   onStartAutotag: () => void;
-  onOptimize: () => void;
-  onDeepOptimize: () => void;
   onFetchEstimate: () => void;
 }
 
@@ -39,19 +35,15 @@ export function TaggerReviewGate({
   remainingCount,
   estimate,
   roundLoading,
-  optimizeBusy,
   assistError,
   onStartRound,
   onStartAutotag,
-  onOptimize,
-  onDeepOptimize,
   onFetchEstimate,
 }: Props) {
   const gate = agreementGate(config.mode);
   const closedRounds = assist.rounds.filter((r) => !r.flaggedPass && r.agreement !== undefined);
   const lastRound = closedRounds[closedRounds.length - 1];
   const unlocked = assist.mode === "autopilot" || gateUnlocked(config, assist);
-  const stalled = gateStalled(config, assist);
   const calibrationAgreement = agreementOver(
     config.mode,
     assist.calibrationIds,
@@ -151,71 +143,6 @@ export function TaggerReviewGate({
           )}
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">
-            {stalled && !unlocked
-              ? msg("tagger.assist.optimize.title")
-              : msg("tagger.assist.optimize.title_optional")}
-          </CardTitle>
-          <CardDescription>{msg("tagger.assist.optimize.description")}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {assist.deepOptimize?.status === "running" ? (
-            <>
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
-                {msg("tagger.assist.optimize.running")}
-              </p>
-              <OpenRunLink jobId={assist.deepOptimize.jobId} />
-            </>
-          ) : (
-            <>
-              {assist.deepOptimize?.status === "success" && (
-                <>
-                  <p className="flex items-center gap-2 text-sm text-foreground">
-                    <Check className="size-4 text-emerald-700" />
-                    {msg("tagger.assist.optimize.success")}
-                  </p>
-                  <LiftLine deepOptimize={assist.deepOptimize} />
-                  <OpenRunLink jobId={assist.deepOptimize.jobId} />
-                </>
-              )}
-              {assist.deepOptimize?.status === "failed" && (
-                <>
-                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <CircleAlert className="size-4" />
-                    {msg("tagger.assist.optimize.failed")}
-                  </p>
-                  <OpenRunLink jobId={assist.deepOptimize.jobId} />
-                </>
-              )}
-              <Button
-                variant={stalled && !unlocked ? "secondary" : "outline"}
-                onClick={onDeepOptimize}
-                className="w-full gap-2"
-              >
-                <Rocket className="size-4" />
-                {msg("tagger.assist.optimize.full_cta")}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={onOptimize}
-                disabled={optimizeBusy}
-                className="w-full gap-2"
-              >
-                {optimizeBusy ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Wand2 className="size-4" />
-                )}
-                {msg("tagger.assist.optimize.cta")}
-              </Button>
-            </>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -223,35 +150,5 @@ export function TaggerReviewGate({
 function Centered({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3">{children}</div>
-  );
-}
-
-/** The held-out lift the run earned — the one number that builds trust. */
-export function LiftLine({ deepOptimize }: { deepOptimize: AssistState["deepOptimize"] }) {
-  const baseline = deepOptimize?.baseline;
-  const optimized = deepOptimize?.optimized;
-  if (typeof baseline !== "number" || typeof optimized !== "number") return null;
-  return (
-    <p className="text-sm text-muted-foreground">
-      {msg("tagger.assist.optimize.lift_label")}{" "}
-      <span className="font-semibold tabular-nums text-foreground">
-        {formatMsg("tagger.assist.optimize.lift_value", {
-          baseline: Math.round(baseline * 100),
-          optimized: Math.round(optimized * 100),
-        })}
-      </span>
-    </p>
-  );
-}
-
-/** Ghost link into the run's full detail view (inference, program export). */
-export function OpenRunLink({ jobId }: { jobId: string }) {
-  return (
-    <Button asChild variant="ghost" size="sm" className="gap-1.5 self-start text-muted-foreground">
-      <Link href={`/optimizations/${jobId}`}>
-        {msg("tagger.assist.optimize.open_run")}
-        <ExternalLink className="size-3.5" />
-      </Link>
-    </Button>
   );
 }

@@ -10,8 +10,10 @@ import {
   Download,
   Keyboard,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "react-toastify";
+import { AgentPillDock } from "@/features/agent-panel";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardTitle } from "@/shared/ui/primitives/card";
 import { Badge } from "@/shared/ui/primitives/badge";
@@ -32,6 +34,7 @@ import { cn } from "@/shared/lib/utils";
 import { exportAnnotations, buildLibraryRows } from "../lib/export-csv";
 import type {
   AnnotationProvenance,
+  AssistPrediction,
   DataField,
   DataRow,
   Annotation,
@@ -49,6 +52,10 @@ interface Props {
   // Who produced each final label (assist sessions only); exported alongside
   // the labels so downstream consumers can filter by trust level.
   provenance?: Record<string, AnnotationProvenance>;
+  // The AI's per-row predictions. Review rounds pass them so the suggested
+  // answer is highlighted on the answer surface itself until the row is
+  // decided; blind phases simply omit the prop.
+  suggestions?: Record<string, AssistPrediction>;
   currentIndex: number;
   taggedCount: number;
   onNavigate: (dir: 1 | -1) => void;
@@ -66,6 +73,7 @@ export function TaggerAnnotation({
   columns,
   annotations,
   provenance,
+  suggestions,
   currentIndex,
   taggedCount,
   onNavigate,
@@ -92,6 +100,14 @@ export function TaggerAnnotation({
   const id = item ? String(item.id) : "";
   const pct = data.length > 0 ? (taggedCount / data.length) * 100 : 0;
   const currentAnn = annotations[id];
+  // The AI's pick shows only while the row is undecided — once the human
+  // commits (keep or correct), the real selection styling takes over.
+  const rowCommitted =
+    config.mode === "multiclass"
+      ? Array.isArray(currentAnn) && currentAnn.length > 0
+      : typeof currentAnn === "string" && currentAnn !== "";
+  const aiPick = rowCommitted ? undefined : suggestions?.[id]?.value;
+  const aiPickedCats = new Set(Array.isArray(aiPick) ? aiPick : []);
 
   const showConfettiBriefly = useCallback(() => {
     setShowConfetti(true);
@@ -301,12 +317,16 @@ export function TaggerAnnotation({
                   "flex-1 text-base font-medium rounded-xl gap-2 focus-visible:ring-0 focus-visible:border-transparent",
                   currentAnn === "yes" &&
                     "bg-emerald-600/15 hover:bg-emerald-600/20 border-emerald-600/40 text-emerald-700",
+                  aiPick === "yes" && "border-primary/45 bg-primary/5",
                 )}
               >
                 <Badge variant="ghost" size="sm" className="opacity-40 font-mono">
                   {msg("auto.features.tagger.components.taggerannotation.4")}
                 </Badge>
                 {msg("auto.features.tagger.components.taggerannotation.5")}
+                {aiPick === "yes" && (
+                  <Sparkles className="size-3.5 text-primary/70" aria-hidden="true" />
+                )}
               </Button>
               <Button
                 variant={currentAnn === "no" ? "default" : "outline"}
@@ -315,12 +335,16 @@ export function TaggerAnnotation({
                   "flex-1 text-base font-medium rounded-xl gap-2 focus-visible:ring-0 focus-visible:border-transparent",
                   currentAnn === "no" &&
                     "bg-red-500/15 hover:bg-red-500/20 border-red-500/40 text-red-600",
+                  aiPick === "no" && "border-primary/45 bg-primary/5",
                 )}
               >
                 <Badge variant="ghost" size="sm" className="opacity-40 font-mono">
                   {msg("auto.features.tagger.components.taggerannotation.6")}
                 </Badge>
                 {msg("auto.features.tagger.components.taggerannotation.7")}
+                {aiPick === "no" && (
+                  <Sparkles className="size-3.5 text-primary/70" aria-hidden="true" />
+                )}
               </Button>
             </div>
           )}
@@ -344,6 +368,7 @@ export function TaggerAnnotation({
                       (config.categories?.length ?? 0) >= 7 ? "text-sm" : "text-base",
                       "font-medium",
                       selected && "bg-primary/10 border-primary/40 text-primary",
+                      aiPickedCats.has(cat.id) && "border-primary/45 bg-primary/5",
                     )}
                   >
                     {i < 9 && (
@@ -356,6 +381,9 @@ export function TaggerAnnotation({
                       </Badge>
                     )}
                     <span className="min-w-0 break-words">{cat.label}</span>
+                    {aiPickedCats.has(cat.id) && (
+                      <Sparkles className="size-3.5 shrink-0 text-primary/70" aria-hidden="true" />
+                    )}
                   </Button>
                 );
               })}
@@ -479,6 +507,10 @@ export function TaggerAnnotation({
                 </PopoverPrimitive.Content>
               </PopoverPrimitive.Portal>
             </PopoverPrimitive.Root>
+            {/* The floating agent pill would cover the Next button on this
+                viewport-locked surface; docking it here keeps it out of the
+                way and reachable. */}
+            <AgentPillDock />
           </div>
 
           <Button
@@ -700,7 +732,8 @@ function Confetti() {
   );
 }
 
-function FieldsView({ fields }: { fields: DataField[] }) {
+/** Multi-column row renderer, shared with the live auto-tag walkthrough. */
+export function FieldsView({ fields }: { fields: DataField[] }) {
   return (
     <dl className="flex flex-col">
       {fields.map((field, i) => (

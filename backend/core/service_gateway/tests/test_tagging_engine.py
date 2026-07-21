@@ -2,25 +2,21 @@
 
 Covers label normalization across the three annotation modes, defensive JSON
 parsing of model output, few-shot example selection (corrections-first,
-exclusions, provenance filtering), instruction compilation, the credit
-estimator, and the deep-optimize builders — the generated signature/metric
-sources are exec'd and exercised the way the run loader would, so a payload
-that would fail at run time fails here first.
+exclusions, provenance filtering), instruction compilation, and the credit
+estimator.
 """
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
-
-import dspy
 
 from ..tagging import (
     MAX_EXAMPLES,
-    _deep_optimize_metric_code,
-    _deep_optimize_signature_code,
+    InterviewTurnSig,
+    _MessageLeakGuard,
+    _parse_interview_prediction,
     _parse_json,
-    build_deep_optimize_dataset,
-    build_deep_optimize_request,
     compile_instructions,
     estimate_credits_for_rows,
     normalize_label,
@@ -67,7 +63,7 @@ def test_normalize_freetext_strips_and_rejects_empty() -> None:
 
 def test_parse_json_tolerates_fences_and_prose() -> None:
     """Model JSON survives code fences and surrounding prose."""
-    assert _parse_json('```json\n[1, 2]\n```', None) == [1, 2]
+    assert _parse_json("```json\n[1, 2]\n```", None) == [1, 2]
     assert _parse_json('Here you go: {"a": 1} — done.', None) == {"a": 1}
     assert _parse_json("not json at all", "fallback") == "fallback"
 
@@ -99,6 +95,123 @@ def test_compile_instructions_carries_task_rubric_examples() -> None:
     assert task_description(_MULTI).count("Billing") == 1
 
 
+def test_missing_task_definition_interviews_in_both_assist_modes() -> None:
+    """Autopilot automates the tagging, not the task definition — both modes ask."""
+    base = {"mode": "binary", "inputColumns": ["text"]}
+    copilot = task_description({**base, "_assist_mode": "copilot"})
+    autopilot = task_description({**base, "_assist_mode": "autopilot"})
+    assert "first question must ask" in copilot
+    assert autopilot == copilot
+    multiclass = task_description({"mode": "multiclass", "_assist_mode": "copilot"})
+    extraction = task_description({"mode": "freetext", "_assist_mode": "autopilot"})
+    assert "which categories" in multiclass
+    assert "must ask the user" in extraction
+
+
+def test_interview_normalizes_inferred_multiclass_categories() -> None:
+    """Convert inferred category names into stable tagger category records."""
+    pred = SimpleNamespace(
+        done="true",
+        message="Ready",
+        options_json="[]",
+        rubric_json='["Apply every matching category."]',
+        task_config_json='{"categories": ["Billing", "Support", "Billing"]}',
+    )
+    turn = _parse_interview_prediction(pred, 1, {"mode": "multiclass"})
+    assert turn["task_override"] == {
+        "categories": [
+            {"id": "cat1", "label": "Billing"},
+            {"id": "cat2", "label": "Support"},
+        ]
+    }
+
+
+def test_provisional_mode_interviews_in_both_assist_modes() -> None:
+    """A provisional-mode config leaves the answer style to the interview."""
+    base = {"mode": "freetext", "modeProvisional": True, "inputColumns": ["text"]}
+    copilot = task_description({**base, "_assist_mode": "copilot"})
+    autopilot = task_description({**base, "_assist_mode": "autopilot"})
+    assert "You decide the answer style" in copilot
+    assert "2-4 concrete task directions" in copilot
+    assert '"mode"' in copilot
+    assert autopilot == copilot
+
+
+def test_provisional_override_carries_inferred_mode() -> None:
+    """Finalize payloads on provisional sessions emit the inferred mode."""
+    provisional = {"mode": "freetext", "modeProvisional": True}
+    pred = SimpleNamespace(
+        done="true",
+        message="Ready",
+        options_json="[]",
+        rubric_json='["Answer the question."]',
+        task_config_json='{"mode": "binary", "question": "Is it spam?"}',
+    )
+    turn = _parse_interview_prediction(pred, 1, provisional)
+    assert turn["task_override"] == {"mode": "binary", "question": "Is it spam?"}
+    pred.task_config_json = '{"categories": ["Billing", "Support"]}'
+    turn = _parse_interview_prediction(pred, 1, provisional)
+    assert turn["task_override"]["mode"] == "multiclass"
+    assert [c["label"] for c in turn["task_override"]["categories"]] == ["Billing", "Support"]
+    pred.task_config_json = '{"mode": "multiclass", "categories": ["Only one"]}'
+    assert _parse_interview_prediction(pred, 1, provisional)["task_override"] == {}
+    pred.task_config_json = '{"mode": "freetext"}'
+    assert _parse_interview_prediction(pred, 1, provisional)["task_override"] == {"mode": "freetext"}
+
+
+def test_interview_title_rides_the_final_turn_only() -> None:
+    """The proposed session title is stripped and gated on ``done``."""
+    pred = SimpleNamespace(
+        done="true",
+        message="Ready",
+        options_json="[]",
+        rubric_json='["Rule."]',
+        task_config_json="{}",
+        session_title='  "Routing support tickets"  ',
+    )
+    turn = _parse_interview_prediction(pred, 1, _FREE)
+    assert turn["title"] == "Routing support tickets"
+    pred.done = "false"
+    assert _parse_interview_prediction(pred, 1, _FREE)["title"] == ""
+
+
+def test_message_leak_guard_passes_clean_prose() -> None:
+    """A prose reply streams through unchanged, flushing buffered whitespace."""
+    guard = _MessageLeakGuard()
+    assert guard.feed("\n") == ("", False)
+    assert guard.feed("What should") == ("\nWhat should", False)
+    assert guard.feed(" a row count as?") == (" a row count as?", False)
+
+
+def test_message_leak_guard_mutes_structured_openings() -> None:
+    """A reply that opens like the raw payload is never forwarded."""
+    for opening in ('{"message": "hi",', "[[ ## message ## ]]", "```json"):
+        guard = _MessageLeakGuard()
+        assert guard.feed(opening) == ("", False)
+        assert guard.feed(' "options_json": []}') == ("", False)
+
+
+def test_message_leak_guard_resets_on_midstream_drift() -> None:
+    """Prose that drifts into payload fields resets the client once, then mutes."""
+    guard = _MessageLeakGuard()
+    assert guard.feed("Which direction fits?") == ("Which direction fits?", False)
+    assert guard.feed('\n"options_json": [{"label"') == ("", True)
+    assert guard.feed(': "Topic"}]') == ("", False)
+
+
+def test_interview_signature_streams_done_before_payload_fields() -> None:
+    """``done`` precedes the slow payload fields so the stream can hint early.
+
+    The interview stream emits ``turn_hint`` from the streamed ``done`` field;
+    that only works while ``done`` is generated before options/rubric/task.
+    """
+    fields = list(InterviewTurnSig.output_fields)
+    assert fields.index("done") < fields.index("options_json")
+    assert fields.index("done") < fields.index("rubric_json")
+    assert fields.index("done") < fields.index("task_config_json")
+    assert fields.index("done") < fields.index("session_title")
+
+
 def test_summarize_dataset_samples_rows() -> None:
     """The summary carries the row count and a bounded sample."""
     data = [{"id": i, "text": f"row {i}"} for i in range(100)]
@@ -107,91 +220,14 @@ def test_summarize_dataset_samples_rows() -> None:
     assert "row 0" in summary
 
 
-def _exec_metric(code: str):
-    """Exec generated metric source the way the run loader does.
-
-    Args:
-        code: The metric module source.
-
-    Returns:
-        The ``metric`` callable from the exec'd namespace.
-    """
-    namespace: dict = {"dspy": dspy}
-    exec(code, namespace)
-    return namespace["metric"]
-
-
-def test_deep_optimize_dataset_flattens_labels_and_skips_auto() -> None:
-    """The trainset carries string labels and only human-vetted rows."""
-    data = [{"id": i, "text": f"row {i}"} for i in range(1, 5)]
-    annotations = {"1": ["cat1", "cat2"], "2": ["cat2"], "3": ["cat1"]}
-    assist = {"predictions": {}, "provenance": {"1": "human", "2": "ai_confirmed", "3": "ai_auto"}}
-    rows = build_deep_optimize_dataset(_MULTI, data, annotations, assist)
-    by_text = {r["text"]: r["label"] for r in rows}
-    assert by_text == {"row 1": "Billing; Support", "row 2": "Support"}
-
-
-def test_deep_optimize_signature_is_single_and_sanitized() -> None:
-    """The generated source defines exactly one Signature, docstring intact."""
-    code = _deep_optimize_signature_code(_BINARY, ['Rule with """triple quotes"""'])
-    namespace: dict = {"dspy": dspy}
-    exec(code, namespace)
-    classes = [
-        obj
-        for obj in namespace.values()
-        if isinstance(obj, type) and issubclass(obj, dspy.Signature)
-    ]
-    assert len(classes) == 1
-    signature = classes[0]
-    assert "Positive?" in (signature.__doc__ or "")
-    assert '"""' not in (signature.__doc__ or "")
-    assert set(signature.input_fields) == {"text"}
-    assert set(signature.output_fields) == {"label"}
-
-
-def test_deep_optimize_metrics_score_correctly() -> None:
-    """Each mode's generated metric scores agreement and disagreement."""
-    binary = _exec_metric(_deep_optimize_metric_code(_BINARY))
-    assert binary(SimpleNamespace(label="yes"), SimpleNamespace(label="Yes ")).score == 1.0
-    miss = binary(SimpleNamespace(label="yes"), SimpleNamespace(label="no"))
-    assert miss.score == 0.0
-    assert "yes" in miss.feedback
-
-    multi = _exec_metric(_deep_optimize_metric_code(_MULTI))
-    assert (
-        multi(
-            SimpleNamespace(label="Billing; Support"),
-            SimpleNamespace(label="support;  billing"),
-        ).score
-        == 1.0
-    )
-    wrong = multi(SimpleNamespace(label="Billing"), SimpleNamespace(label="Support"))
-    assert wrong.score == 0.0
-    assert "billing" in wrong.feedback
-
-    free = _exec_metric(_deep_optimize_metric_code(_FREE))
-    assert (
-        free(SimpleNamespace(label="Paris, France"), SimpleNamespace(label="paris france")).score
-        == 1.0
-    )
-    assert free(SimpleNamespace(label="Paris"), SimpleNamespace(label="London")).score == 0.0
-
-
-def test_deep_optimize_request_builds_valid_payload() -> None:
-    """The assembled RunRequest passes model validation with GEPA wiring."""
-    dataset = [{"text": f"row {i}", "label": "yes" if i % 2 else "no"} for i in range(12)]
-    payload = build_deep_optimize_request(
-        _BINARY, ["Sarcasm counts."], dataset, name="Deep optimize · test", username="alice"
-    )
-    assert payload.optimizer_name == "gepa"
-    assert payload.optimizer_kwargs == {"auto": "light"}
-    assert payload.reflection_model_settings is not None
-    assert payload.column_mapping.inputs == {"text": "text"}
-    assert payload.column_mapping.outputs == {"label": "label"}
-    # Parity with wizard submissions: no forced privacy, default visibility.
-    assert payload.is_private is False
-    assert len(payload.dataset) == 12
-    assert "Sarcasm counts." in payload.signature_code
+def test_summarize_dataset_marks_unselected_columns_excluded() -> None:
+    """Columns outside the input selection surface as excluded, not available."""
+    data = [{"id": 1, "text": "What is 2+2?", "question": "What is 2+2?", "answer": "4"}]
+    config = {"mode": "freetext", "inputColumns": ["question"], "modeProvisional": True}
+    summary = json.loads(summarize_dataset(config, ["question", "answer"], data))
+    assert summary["input_columns"] == ["question"]
+    assert summary["excluded_columns"] == ["answer"]
+    assert "all_columns" not in summary
 
 
 def test_estimate_scales_with_rows_and_handles_empty() -> None:

@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, Loader2, Sparkles } from "lucide-react";
+import { Check, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
 import { Badge } from "@/shared/ui/primitives/badge";
-import { cn } from "@/shared/lib/utils";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import type {
   Annotation,
@@ -27,7 +26,6 @@ interface Props {
   onAccept: (id: string) => void;
   onGoTo: (idx: number) => void;
   onFinishRound: () => void;
-  onRubricChange: (rubric: string[]) => void;
   predictError: boolean;
 }
 
@@ -53,12 +51,12 @@ function displayLabel(config: TaggerConfig, value: Annotation | AssistPrediction
 /**
  * The co-pilot companion rail beside the annotation surface.
  *
- * Calibration is human-first (a cognitive forcing function): the AI predicts
- * silently and its guess is revealed only after the human commits — instant
- * agreement feedback without anchoring the labels the tagger is trained on.
  * Review is AI-first: the suggestion is the object under audit, confirmation
- * and correction both cost one keystroke. The rail is display-only chrome —
- * it never takes keyboard focus away from the annotator.
+ * and correction both cost one keystroke. The calibration branch serves only
+ * sessions saved before AI-first calibration — there the AI predicted
+ * silently and revealed its guess after the human committed. The rail is
+ * display-only chrome — it never takes keyboard focus away from the
+ * annotator.
  */
 export function TaggerAssistRail({
   phase,
@@ -71,12 +69,10 @@ export function TaggerAssistRail({
   onAccept,
   onGoTo,
   onFinishRound,
-  onRubricChange,
   predictError,
 }: Props) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [freetextRevealed, setFreetextRevealed] = useState<Set<string>>(new Set());
-  const [rubricOpen, setRubricOpen] = useState(false);
 
   const row = frameData[currentIndex];
   const rowId = row ? String(row.id) : "";
@@ -201,38 +197,6 @@ export function TaggerAssistRail({
             onConfirm={() => onAccept(rowId)}
             onFinishRound={onFinishRound}
           />
-        )}
-      </div>
-
-      <div className="rounded-xl border border-border/60 bg-card">
-        <button
-          type="button"
-          onClick={() => setRubricOpen((v) => !v)}
-          className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-foreground cursor-pointer"
-        >
-          {msg("tagger.assist.rail.rubric")}
-          <ChevronDown
-            className={cn("size-4 text-muted-foreground transition-transform", rubricOpen && "rotate-180")}
-          />
-        </button>
-        {rubricOpen && (
-          <div className="flex flex-col gap-2 px-4 pb-4">
-            {assist.rubric.length === 0 && (
-              <p className="text-xs text-muted-foreground">{msg("tagger.assist.rubric.empty")}</p>
-            )}
-            {assist.rubric.map((rule, idx) => (
-              <textarea
-                key={idx}
-                value={rule}
-                onChange={(e) =>
-                  onRubricChange(assist.rubric.map((r, i) => (i === idx ? e.target.value : r)))
-                }
-                rows={2}
-                className="resize-none rounded-md border border-input bg-background px-2.5 py-1.5 text-xs leading-relaxed outline-none focus-visible:border-ring"
-                dir="auto"
-              />
-            ))}
-          </div>
         )}
       </div>
     </aside>

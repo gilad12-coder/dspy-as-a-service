@@ -2,8 +2,8 @@
 
 Drives the tagger's assist modes on top of the persisted session rows:
 the dataset interview (rubric distillation), batched label predictions for
-calibration and review rounds, reflective rubric refinement ("deep
-optimize"), pre-run credit estimates, and the bulk auto-tag job.
+calibration and review rounds, pre-run credit estimates, and the bulk
+auto-tag job.
 
 The bulk job is a ``tagging_autotag`` row in the shared jobs table, claimed
 by the DB-lease background worker (any pod) and executed by
@@ -32,12 +32,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ...constants import (
-    OPTIMIZATION_TYPE_RUN,
     OPTIMIZATION_TYPE_TAGGING,
     PAYLOAD_OVERVIEW_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_USERNAME,
-    TOKEN_SOURCE_MANAGED,
 )
 from ...service_gateway import tagging
 from ...storage.models import TaggingSessionModel
@@ -45,8 +43,6 @@ from ...worker.tagging_job import TaggingAutotagPayload, untagged_rows
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ._helpers import sse_from_events
-from .optimizations._local import persist_and_enqueue
-from .submissions import _enforce_credit_balance
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +78,7 @@ class InterviewResponse(BaseModel):
     message: str
     options: list[InterviewOption] = Field(default_factory=list)
     rubric: list[str] = Field(default_factory=list)
+    task_override: dict[str, Any] = Field(default_factory=dict)
     done: bool
     model: str | None = None
 
@@ -97,27 +94,6 @@ class PredictResponse(BaseModel):
 
     predictions: dict[str, dict[str, Any]]
     credits: int
-
-
-class OptimizeRequest(BaseModel):
-    """Trigger a reflective rubric rewrite from the labels so far."""
-
-    locale: str | None = Field(
-        default=None,
-        description="UI locale code; the rubric is written in that language.",
-    )
-
-
-class OptimizeResponse(BaseModel):
-    """The improved rubric."""
-
-    rubric: list[str]
-
-
-class DeepOptimizeStartResponse(BaseModel):
-    """Ack that the deep-optimize GEPA run was submitted."""
-
-    optimization_id: str
 
 
 class EstimateResponse(BaseModel):
@@ -174,19 +150,31 @@ def _effective_config(row: TaggingSessionModel) -> dict[str, Any]:
     """Return the session config with the interview's task refinements applied.
 
     The ``config`` column is immutable by design; the interview stores its
-    refined question/prompt in ``assist.taskOverride`` and every LLM surface
-    reads through this merge.
+    refined question/prompt — and, for provisional-mode sessions, the inferred
+    answer style itself — in ``assist.taskOverride`` and every LLM surface
+    reads through :func:`tagging.effective_task_config`.
 
     Args:
         row: The loaded session row.
     """
-    config = dict(cast("dict[str, Any]", row.config))
+    return tagging.effective_task_config(
+        cast("dict[str, Any]", row.config),
+        cast("dict[str, Any]", row.assist) or {},
+    )
+
+
+def _interview_config(row: TaggingSessionModel) -> dict[str, Any]:
+    """Return effective config plus the assist mode used by the interviewer.
+
+    Args:
+        row: The loaded tagging session.
+
+    Returns:
+        A transient config carrying the selected assist mode.
+    """
+    config = _effective_config(row)
     assist = cast("dict[str, Any]", row.assist) or {}
-    override = assist.get("taskOverride") or {}
-    for key in ("question", "prompt"):
-        value = str(override.get(key) or "").strip()
-        if value:
-            config[key] = value
+    config["_assist_mode"] = assist.get("mode")
     return config
 
 
@@ -216,8 +204,8 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             submitted through it.
 
     Returns:
-        A FastAPI ``APIRouter`` exposing the interview / predict / optimize /
-        estimate / autotag routes under ``/tagging-sessions/{id}/assist``.
+        A FastAPI ``APIRouter`` exposing the interview / predict / estimate /
+        autotag routes under ``/tagging-sessions/{id}/assist``.
     """
     router = APIRouter()
 
@@ -226,9 +214,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         response_model=InterviewResponse,
         summary="Run one dataset-interview turn",
     )
-    def assist_interview(
-        session_id: str, req: InterviewRequest, user: AuthenticatedUserDep
-    ) -> InterviewResponse:
+    def assist_interview(session_id: str, req: InterviewRequest, user: AuthenticatedUserDep) -> InterviewResponse:
         """Return the assistant's next interview question or the final rubric.
 
         Args:
@@ -241,7 +227,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         """
         with Session(job_store.engine) as db:
             row = _load_owned(db, session_id, user.username)
-            config = _effective_config(row)
+            config = _interview_config(row)
             columns = cast("list[str]", row.columns)
             data = cast("list[dict[str, Any]]", row.data)
         try:
@@ -261,9 +247,11 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         """Stream one interview turn with the generalist agent's event shape.
 
         Events: ``reasoning_patch`` (provider thinking tokens),
-        ``message_patch`` (reply deltas), ``message_reset`` (a failed attempt
-        is being retried; the client drops any partial reply), a terminal
-        ``interview_done`` carrying the parsed turn, and ``error`` on failure.
+        ``message_patch`` (reply deltas), ``message_end`` (the reply is fully
+        streamed; options and rubric are still generating), ``message_reset``
+        (a failed attempt is being retried or leaked structure was dropped;
+        the client drops any partial reply), a terminal ``interview_done``
+        carrying the parsed turn, and ``error`` on failure.
 
         Args:
             session_id: UUID of the tagger session.
@@ -275,16 +263,14 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         """
         with Session(job_store.engine) as db:
             row = _load_owned(db, session_id, user.username)
-            config = _effective_config(row)
+            config = _interview_config(row)
             columns = cast("list[str]", row.columns)
             data = cast("list[dict[str, Any]]", row.data)
 
         async def source() -> Any:
             """Relay engine events, translating failures into an error event."""
             try:
-                async for event in tagging.interview_turn_stream(
-                    config, columns, data, req.turns, req.locale
-                ):
+                async for event in tagging.interview_turn_stream(config, columns, data, req.turns, req.locale):
                     yield event
             except Exception:
                 logger.exception("interview stream failed for session %s", session_id)
@@ -305,9 +291,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         response_model=PredictResponse,
         summary="Predict labels for specific rows (calibration / review)",
     )
-    def assist_predict(
-        session_id: str, req: PredictRequest, user: AuthenticatedUserDep
-    ) -> PredictResponse:
+    def assist_predict(session_id: str, req: PredictRequest, user: AuthenticatedUserDep) -> PredictResponse:
         """Predict labels for the requested rows using the stored rubric.
 
         Few-shot examples are compiled from the session's human labels,
@@ -344,110 +328,6 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         return PredictResponse(predictions=predictions, credits=credits)
 
     @router.post(
-        "/tagging-sessions/{session_id}/assist/optimize",
-        response_model=OptimizeResponse,
-        summary="Reflectively rewrite the rubric from labels and corrections",
-    )
-    def assist_optimize(
-        session_id: str, req: OptimizeRequest, user: AuthenticatedUserDep
-    ) -> OptimizeResponse:
-        """Return an improved rubric derived from every human label so far.
-
-        Args:
-            session_id: UUID of the tagger session.
-            req: The caller's UI locale (rubric language).
-            user: Authenticated caller; must own the session.
-
-        Returns:
-            The rewritten rubric (the original when the model output is
-            unusable).
-        """
-        with Session(job_store.engine) as db:
-            row = _load_owned(db, session_id, user.username)
-            config = _effective_config(row)
-            data = cast("list[dict[str, Any]]", row.data)
-            annotations = cast("dict[str, Any]", row.annotations)
-            assist = cast("dict[str, Any]", row.assist) or {}
-        rubric = [str(r) for r in assist.get("rubric") or []]
-        examples = tagging.select_examples(config, data, annotations, assist)
-        if not examples:
-            raise DomainError("tagger.assist.no_examples", status=422)
-        try:
-            improved = tagging.refine_rubric(config, rubric, examples, req.locale)
-        except Exception as exc:
-            logger.exception("rubric optimize failed for session %s", session_id)
-            raise DomainError("tagger.assist.llm_failed", status=502) from exc
-        return OptimizeResponse(rubric=improved)
-
-    @router.post(
-        "/tagging-sessions/{session_id}/assist/deep-optimize",
-        response_model=DeepOptimizeStartResponse,
-        status_code=202,
-        summary="Submit a GEPA run that evolves the labeling guide",
-    )
-    def assist_deep_optimize(
-        session_id: str, user: AuthenticatedUserDep
-    ) -> DeepOptimizeStartResponse:
-        """Submit a real optimization run trained on the session's labels.
-
-        A single-signature ``text → label`` classifier seeded with the current
-        rubric, trained on every human-vetted label (corrections first), on
-        GEPA's cheapest budget. The run is a normal private optimization the
-        client tracks through the existing ``/optimizations/{id}`` surfaces;
-        on success it applies the evolved instructions back to the rubric.
-
-        Args:
-            session_id: UUID of the tagger session.
-            user: Authenticated caller; must own the session.
-
-        Returns:
-            The submitted run's optimization id.
-
-        Raises:
-            DomainError: 422 when there are too few labeled rows to train on,
-                402 when the caller has no spendable credits.
-        """
-        with Session(job_store.engine) as db:
-            row = _load_owned(db, session_id, user.username)
-            config = _effective_config(row)
-            data = cast("list[dict[str, Any]]", row.data)
-            annotations = cast("dict[str, Any]", row.annotations)
-            assist = cast("dict[str, Any]", row.assist) or {}
-            session_name = cast(str, row.name)
-        dataset = tagging.build_deep_optimize_dataset(config, data, annotations, assist)
-        if len(dataset) < tagging.MIN_DEEP_OPTIMIZE_EXAMPLES:
-            raise DomainError(
-                "tagger.assist.too_few_examples",
-                status=422,
-                minimum=tagging.MIN_DEEP_OPTIMIZE_EXAMPLES,
-            )
-        _enforce_credit_balance(job_store, user.username, TOKEN_SOURCE_MANAGED)
-        rubric = [str(r) for r in assist.get("rubric") or []]
-        payload = tagging.build_deep_optimize_request(
-            config,
-            rubric,
-            dataset,
-            name=f"Deep optimize · {session_name}"[:200],
-            username=user.username,
-        )
-        submission = persist_and_enqueue(
-            job_store, str(uuid4()), payload, optimization_type=OPTIMIZATION_TYPE_RUN
-        )
-        # Best-effort provenance: stamp the source session onto the run's
-        # overview so future surfaces can link the optimization back to the
-        # tagging session it was trained from.
-        try:
-            job = job_store.get_job(submission.optimization_id)
-            overview = dict(job.get("payload_overview") or {})
-            overview["tagger_session_id"] = session_id
-            job_store.set_payload_overview(submission.optimization_id, overview)
-        except Exception:
-            logger.exception(
-                "failed to stamp tagger session onto run %s", submission.optimization_id
-            )
-        return DeepOptimizeStartResponse(optimization_id=submission.optimization_id)
-
-    @router.post(
         "/tagging-sessions/{session_id}/assist/estimate",
         response_model=EstimateResponse,
         summary="Estimate the credit cost of auto-tagging the remaining rows",
@@ -480,9 +360,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         status_code=202,
         summary="Start (or resume) the bulk auto-tag job",
     )
-    def assist_autotag_start(
-        session_id: str, user: AuthenticatedUserDep
-    ) -> AutotagStartResponse:
+    def assist_autotag_start(session_id: str, user: AuthenticatedUserDep) -> AutotagStartResponse:
         """Submit the bulk auto-tag job to the background worker fleet.
 
         Only rows without a final label are processed, so calling this after
@@ -543,9 +421,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                 PAYLOAD_OVERVIEW_NAME: f"Auto-tagging · {session_name}"[:200],
             },
         )
-        worker.submit_job(
-            job_id, TaggingAutotagPayload(session_id=session_id, username=user.username)
-        )
+        worker.submit_job(job_id, TaggingAutotagPayload(session_id=session_id, username=user.username))
         return AutotagStartResponse(total=len(pending))
 
     @router.get(
@@ -553,9 +429,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         response_model=AutotagStatusResponse,
         summary="Poll bulk auto-tag progress",
     )
-    def assist_autotag_status(
-        session_id: str, user: AuthenticatedUserDep
-    ) -> AutotagStatusResponse:
+    def assist_autotag_status(session_id: str, user: AuthenticatedUserDep) -> AutotagStatusResponse:
         """Report the bulk job's progress, reconciled against the job row.
 
         The session row's ``assist.autotag`` mirror is the primary source;

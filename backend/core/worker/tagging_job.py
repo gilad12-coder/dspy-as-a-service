@@ -167,12 +167,9 @@ def run_autotag_job(
             data = cast("list[dict[str, Any]]", row.data)
             annotations = dict(cast("dict[str, Any]", row.annotations))
             assist = dict(cast("dict[str, Any]", row.assist) or {})
-        # The interview's task refinements live beside the immutable config.
-        override = assist.get("taskOverride") or {}
-        for key in ("question", "prompt"):
-            value = str(override.get(key) or "").strip()
-            if value:
-                config[key] = value
+        # The interview's task refinements — including the inferred answer
+        # style and categories — live beside the immutable config.
+        config = tagging.effective_task_config(config, assist)
         rubric = [str(r) for r in assist.get("rubric") or []]
         examples = tagging.select_examples(config, data, annotations, assist)
         instructions = tagging.compile_instructions(config, rubric, examples)

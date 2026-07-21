@@ -120,13 +120,22 @@ def persistence_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Eng
     return TestClient(app), engine
 
 
-def _post_turn(client: TestClient, message: str, token: str | None) -> Any:
+def _post_turn(
+    client: TestClient,
+    message: str,
+    token: str | None,
+    *,
+    conversation_id: str | None = None,
+    regenerate: bool = False,
+) -> Any:
     """POST one generalist-agent turn and return the response.
 
     Args:
         client: Bound test client.
         message: User message text.
         token: Bearer token, or None to omit the Authorization header.
+        conversation_id: Existing conversation to continue, if any.
+        regenerate: Whether to replace the conversation's final persisted turn.
 
     Returns:
         The streaming ``Response`` (already fully read by the test client).
@@ -134,7 +143,14 @@ def _post_turn(client: TestClient, message: str, token: str | None) -> Any:
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     return client.post(
         "/optimizations/generalist-agent",
-        json={"user_message": message, "chat_history": [], "wizard_state": {}, "trust_mode": "ask"},
+        json={
+            "user_message": message,
+            "chat_history": [],
+            "wizard_state": {},
+            "trust_mode": "ask",
+            "conversation_id": conversation_id,
+            "regenerate": regenerate,
+        },
         headers=headers,
     )
 
@@ -178,6 +194,35 @@ def test_unauthenticated_turn_is_rejected(
     with Session(engine) as session:
         assert session.query(AgentConversationModel).count() == 0
         assert session.query(AgentMessageModel).count() == 0
+
+
+def test_regenerate_replaces_final_persisted_turn(
+    persistence_client: tuple[TestClient, Engine],
+) -> None:
+    """Regenerating the latest reply keeps one user/assistant pair after reload."""
+    client, engine = persistence_client
+    token = _session_token()
+
+    first = _post_turn(client, "hi", token)
+    assert first.status_code == 200
+    with Session(engine) as session:
+        conversation_id = session.query(AgentConversationModel.id).scalar()
+
+    regenerated = _post_turn(
+        client,
+        "hi",
+        token,
+        conversation_id=conversation_id,
+        regenerate=True,
+    )
+
+    assert regenerated.status_code == 200
+    with Session(engine) as session:
+        messages = session.query(AgentMessageModel).order_by(AgentMessageModel.id).all()
+        assert [(message.role, message.content) for message in messages] == [
+            ("user", "hi"),
+            ("assistant", "שלום"),
+        ]
 
 
 _CONV_ID = "conv-1"

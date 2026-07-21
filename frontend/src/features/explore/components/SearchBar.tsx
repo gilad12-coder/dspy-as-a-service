@@ -248,11 +248,6 @@ export function SearchBar({
           />
         )}
       </div>
-      <div className="mx-1 flex items-center justify-end gap-3 text-[12px] text-foreground/55">
-        <span className="hidden text-[11px] text-foreground/40 md:inline">
-          {msg("explore.search.kbd_hint")}
-        </span>
-      </div>
     </div>
   );
 }

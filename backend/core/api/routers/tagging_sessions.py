@@ -48,6 +48,8 @@ class TaggingSessionSummary(BaseModel):
     pinned: bool
     created_at: datetime
     updated_at: datetime
+    mode: str | None = None
+    source_name: str | None = None
 
 
 class TaggingSessionDetail(BaseModel):
@@ -130,6 +132,23 @@ def _count_tagged(annotations: dict[str, Any]) -> int:
     return total
 
 
+def _summary_meta(config: Any) -> tuple[str | None, str | None]:
+    """Extract the session-card metadata the frontend stores inside ``config``.
+
+    Args:
+        config: The session's ``config`` JSON value (may be ``None`` on old rows).
+
+    Returns:
+        ``(assist_mode, source_name)``; each ``None`` when absent so cards
+        created before these keys existed degrade to showing nothing.
+    """
+    if not isinstance(config, dict):
+        return None, None
+    mode = str(config.get("assistMode") or "").strip() or None
+    source = str(config.get("sourceName") or "").strip() or None
+    return mode, source
+
+
 def _row_to_summary(row: TaggingSessionModel) -> TaggingSessionSummary:
     """Project an ORM row into the lightweight list/summary response shape.
 
@@ -139,6 +158,7 @@ def _row_to_summary(row: TaggingSessionModel) -> TaggingSessionSummary:
     Returns:
         The serializable summary the list / patch / put routes return.
     """
+    mode, source_name = _summary_meta(row.config)
     return TaggingSessionSummary(
         id=cast(str, row.id),
         name=cast(str, row.name),
@@ -148,6 +168,8 @@ def _row_to_summary(row: TaggingSessionModel) -> TaggingSessionSummary:
         pinned=cast(bool, row.pinned),
         created_at=cast(datetime, row.created_at),
         updated_at=cast(datetime, row.updated_at),
+        mode=mode,
+        source_name=source_name,
     )
 
 
@@ -202,8 +224,10 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
     ) -> TaggingSessionListResponse:
         """Return the caller's sessions, pinned first then newest activity.
 
-        The heavy JSON columns (``data``/``annotations``/``config``) are not
-        selected so the sidebar list stays cheap as sessions accumulate.
+        The heavy JSON columns (``data``/``annotations``/``assist``) are not
+        selected so the sidebar list stays cheap as sessions accumulate;
+        ``config`` is small (task shape + column names) and feeds the
+        session-card metadata.
 
         Args:
             user: Authenticated caller; only their sessions are returned.
@@ -229,6 +253,7 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
                     TaggingSessionModel.pinned,
                     TaggingSessionModel.created_at,
                     TaggingSessionModel.updated_at,
+                    TaggingSessionModel.config,
                 )
                 .order_by(
                     TaggingSessionModel.pinned.desc(),
@@ -238,19 +263,23 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
                 .limit(limit)
                 .all()
             )
-            items = [
-                TaggingSessionSummary(
-                    id=cast(str, r.id),
-                    name=cast(str, r.name),
-                    phase=cast(str, r.phase),
-                    row_count=cast(int, r.row_count),
-                    tagged_count=cast(int, r.tagged_count),
-                    pinned=cast(bool, r.pinned),
-                    created_at=cast(datetime, r.created_at),
-                    updated_at=cast(datetime, r.updated_at),
+            items = []
+            for r in rows:
+                mode, source_name = _summary_meta(r.config)
+                items.append(
+                    TaggingSessionSummary(
+                        id=cast(str, r.id),
+                        name=cast(str, r.name),
+                        phase=cast(str, r.phase),
+                        row_count=cast(int, r.row_count),
+                        tagged_count=cast(int, r.tagged_count),
+                        pinned=cast(bool, r.pinned),
+                        created_at=cast(datetime, r.created_at),
+                        updated_at=cast(datetime, r.updated_at),
+                        mode=mode,
+                        source_name=source_name,
+                    )
                 )
-                for r in rows
-            ]
             return TaggingSessionListResponse(items=items, total=int(total))
 
     @router.post(

@@ -10,9 +10,9 @@
  *
  * - **Browser**: the `window.__SKYNET_MESSAGES__` shim the layout injects before
  *   hydration, so module-scope `msg()` calls (resolved while the bundle evaluates,
- *   ahead of any React render) can find their strings. Cached in a module global on
- *   the first `msg()` that observes a populated shim; a call made before the shim
- *   runs degrades transiently rather than freezing `{}` (see `getActiveMessages`).
+ *   ahead of any React render) can find their strings. Mirrored in a module global
+ *   and refreshed whenever navigation or Fast Refresh injects a newer catalog; a
+ *   call made before the shim runs degrades transiently rather than freezing `{}`.
  * - **Server Components** (RSC graph): a per-request slot held by React's
  *   `cache()`, pinned once at the top of the root layout — race-free across
  *   concurrent requests.
@@ -68,15 +68,12 @@ export function setServerMessages(catalog: UiCatalog): void {
 /**
  * Resolve the catalog every `msg()` call should read from.
  *
- * Branches by bundle, exactly like `getActiveLocale()`: the client map once
- * seeded (browser), else — when `window` is undefined — the per-request server
- * slot (populated in the RSC graph) or the request `globalThis` (the client
- * graph's SSR fallback, since its slot reads empty), else the injected
- * `window.__SKYNET_MESSAGES__` shim for the browser's first paint / module-scope
- * resolution.
+ * Branches by bundle, exactly like `getActiveLocale()`: when `window` is
+ * undefined, use the per-request server slot (populated in the RSC graph) or
+ * the request `globalThis` SSR fallback. In the browser, adopt the current
+ * injected `window.__SKYNET_MESSAGES__` object whenever it changes.
  */
 export function getActiveMessages(): UiCatalog {
-  if (clientMessages !== null) return clientMessages;
   if (typeof window === "undefined") {
     const slot = getServerSlot().current;
     if (slot !== null) return slot;
@@ -90,9 +87,8 @@ export function getActiveMessages(): UiCatalog {
   // global; until then degrade transiently so the first post-hydration read
   // recovers the real catalog.
   const injected = window.__SKYNET_MESSAGES__;
-  if (injected === undefined) return {};
-  clientMessages = injected;
-  return clientMessages;
+  if (injected !== undefined && injected !== clientMessages) clientMessages = injected;
+  return clientMessages ?? {};
 }
 
 /**

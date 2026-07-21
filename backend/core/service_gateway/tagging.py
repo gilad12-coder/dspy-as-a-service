@@ -2,9 +2,9 @@
 
 Powers the tagger's assist modes: the dataset interview that distills a
 labeling rubric, silent per-row predictions during calibration, batched
-review/auto-tagging, reflective rubric refinement ("deep optimize"), and the
-pre-run credit estimate. Pure functions over the session payload — persistence
-stays in the router; nothing here touches the database.
+review/auto-tagging, and the pre-run credit estimate. Pure functions over the
+session payload — persistence stays in the router; nothing here touches the
+database.
 
 All structured LLM outputs are JSON-in-a-string fields (the repo-wide dspy
 convention) parsed defensively, with a per-row fallback when a batch reply
@@ -24,7 +24,7 @@ import dspy
 
 from ..billing.pricing import ModelUsage, credits_for_usage
 from ..config import settings
-from ..models import ColumnMapping, ModelConfig, RunRequest
+from ..models import ModelConfig
 from .agents.code import ReasoningStreamListener, _reply_language
 from .agents.code_interview import INTERVIEW_TURN_ATTEMPTS, normalize_options
 from .agents.constants import REASONING_FIELD
@@ -46,9 +46,6 @@ MAX_ROW_CHARS = 1200
 # chars-per-token heuristic for the pre-run estimate; JSON label output per row.
 CHARS_PER_TOKEN = 4
 OUTPUT_TOKENS_PER_ROW = 30
-# GEPA needs enough labeled rows to split into train/val/test and still learn.
-MIN_DEEP_OPTIMIZE_EXAMPLES = 10
-DEEP_OPTIMIZE_MAX_EXAMPLES = 200
 
 
 def assist_model_name() -> str:
@@ -74,16 +71,21 @@ class InterviewTurnSig(dspy.Signature):
     """Interview the dataset owner to distill a labeling rubric.
 
     You are a labeling copilot preparing to tag the user's dataset for them.
+    The user chose which columns each row's text is built from; the dataset
+    summary lists the rest as excluded. Excluded columns are invisible to both
+    the human tagger and the tagging model, so the task, every direction you
+    offer, and every rubric rule must be decidable from the sample-row text
+    alone — never propose a task that needs an excluded column.
     Ask ONE short, concrete question at a time — grounded in the sample rows —
     about ambiguous label boundaries, edge cases, and how to treat dirty or
     off-topic rows. Never ask generic questions the task description already
-    answers. When the task description leaves the labeling target open (e.g. an
-    extraction task whose target is defined only by the rubric you have yet to
-    write), your first question must pin down exactly what to label or extract
-    from each row. After at most five questions total (or as soon as the user asks
-    to proceed, or their answers stop adding information), stop asking: set
+    answers. When the task description tells you to ask for a missing task
+    definition, your first question must pin it down. After at most five
+    questions total (or as
+    soon as the user asks to proceed, or their answers stop adding information),
+    stop asking: set
     ``done`` to true, write a one-sentence wrap-up in ``message``, and emit
-    the full rubric — 4 to 10 crisp, decision-ready rules that would let a
+    the full rubric and ``task_config_json`` — 4 to 10 crisp, decision-ready rules that would let a
     stranger label exactly like the user. Rules state decisions ("X counts as
     Y when ..."), not process. Whenever the question has a small set of likely
     answers, offer 2-4 of them in ``options_json`` — each a short pickable
@@ -94,19 +96,40 @@ class InterviewTurnSig(dspy.Signature):
     """
 
     task_description: str = dspy.InputField(desc="What is being labeled and the allowed labels.")
-    dataset_summary: str = dspy.InputField(desc="Row count, input columns, sample values.")
+    dataset_summary: str = dspy.InputField(
+        desc="Row count, input columns, excluded (invisible) columns, sample values."
+    )
     transcript_json: str = dspy.InputField(desc="JSON array of prior {role, content} turns.")
     reply_language: str = dspy.InputField(desc="Language every output is written in.")
     message: str = dspy.OutputField(desc="The next question, or a short wrap-up when done.")
+    # ``done`` sits right after ``message`` so it streams before the (slow)
+    # options/rubric fields — the client uses it to pick the correct
+    # still-generating placeholder (answer choices vs. the task contract).
+    done: str = dspy.OutputField(desc="'true' when the interview is finished, else 'false'.")
     options_json: str = dspy.OutputField(
         desc=(
-            'JSON array of 0-4 answer options for a closed question, each '
+            "JSON array of 0-4 answer options for a closed question, each "
             '{"label": <short pickable answer, <= 6 words>, "description": '
-            '<one-line note on what picking it means>}; [] for an open question.'
+            "<one-line note on what picking it means>}; [] for an open question."
         )
     )
     rubric_json: str = dspy.OutputField(desc="JSON array of rubric rule strings; [] until done.")
-    done: str = dspy.OutputField(desc="'true' when the interview is finished, else 'false'.")
+    task_config_json: str = dspy.OutputField(
+        desc=(
+            "JSON object containing the task definition once done; {} until done. "
+            'For binary use {"question": "..."}; for multiclass use '
+            '{"categories": ["..."]}; for freetext use {"prompt": "..."}. When the '
+            "task description says the answer style is yours to decide, also include "
+            '"mode": "binary" | "multiclass" | "freetext" next to its definition.'
+        )
+    )
+    session_title: str = dspy.OutputField(
+        desc=(
+            "Once done, a short session name (2-5 words) describing the labeling "
+            "task, e.g. 'Routing support tickets'; empty until done. Plain words "
+            "in the reply language — no quotes, no trailing punctuation."
+        )
+    )
 
 
 class TagBatchSig(dspy.Signature):
@@ -137,29 +160,7 @@ class TagOneSig(dspy.Signature):
 
     task_instructions: str = dspy.InputField(desc="Task, rubric and labeled examples.")
     row_text: str = dspy.InputField(desc="The row to label.")
-    label_json: str = dspy.OutputField(
-        desc='JSON object: {"label": <label>, "confidence": <0..1>, "reason": "..."}.'
-    )
-
-
-class RefineRubricSig(dspy.Signature):
-    """Rewrite the labeling rubric from the human's labels and corrections.
-
-    Study the labeled examples — especially rows where the AI's earlier guess
-    was corrected by the human — and produce an improved rubric of 5 to 12
-    crisp, decision-ready rules a stranger could apply to label exactly like
-    the human. Keep rules that already work, sharpen the ones the corrections
-    contradict, and add rules that resolve the observed disagreements. Rules
-    state decisions, not process. Write the rubric in ``reply_language``.
-    """
-
-    task_description: str = dspy.InputField(desc="What is being labeled and the allowed labels.")
-    current_rubric_json: str = dspy.InputField(desc="JSON array of the current rubric rules.")
-    examples_json: str = dspy.InputField(
-        desc="JSON array of {text, label, corrected_from?} labeled examples."
-    )
-    reply_language: str = dspy.InputField(desc="Language the rubric is written in.")
-    rubric_json: str = dspy.OutputField(desc="JSON array of the improved rubric rule strings.")
+    label_json: str = dspy.OutputField(desc='JSON object: {"label": <label>, "confidence": <0..1>, "reason": "..."}.')
 
 
 def _parse_json(raw: str, fallback: Any) -> Any:
@@ -205,6 +206,39 @@ def _row_text(row: dict[str, Any]) -> str:
     return text[:MAX_ROW_CHARS]
 
 
+def effective_task_config(config: dict[str, Any], assist: dict[str, Any]) -> dict[str, Any]:
+    """Merge the interview's task override over the immutable stored config.
+
+    The ``config`` column never changes after creation; the interview's
+    refinements — question, categories, prompt and, on provisional-mode
+    sessions, the inferred answer style — live in ``assist.taskOverride``.
+    Every LLM surface (router routes and the bulk worker alike) reads through
+    this merge.
+
+    Args:
+        config: The stored ``TaggerConfig`` payload.
+        assist: The session's assist state (carries ``taskOverride``).
+
+    Returns:
+        A copy of ``config`` with the override applied; ``modeProvisional``
+        is dropped once an inferred mode wins.
+    """
+    merged = dict(config)
+    override = (assist or {}).get("taskOverride") or {}
+    mode = str(override.get("mode") or "").strip()
+    if mode in {"binary", "multiclass", "freetext"}:
+        merged["mode"] = mode
+        merged.pop("modeProvisional", None)
+    for key in ("question", "prompt"):
+        value = str(override.get(key) or "").strip()
+        if value:
+            merged[key] = value
+    categories = override.get("categories")
+    if isinstance(categories, list) and categories:
+        merged["categories"] = categories
+    return merged
+
+
 def task_description(config: dict[str, Any]) -> str:
     """Describe the labeling task and its allowed labels for the LM.
 
@@ -215,16 +249,48 @@ def task_description(config: dict[str, Any]) -> str:
         A compact English framing of the task; user-authored parts (question,
         category names, prompt) are passed through verbatim in their language.
     """
+    # A provisional-mode session (assisted setup, no interface picked) leaves
+    # the answer style itself to the interview. Autopilot autonomy covers the
+    # tagging phase only — the task itself is always defined with the user.
+    if config.get("modeProvisional"):
+        return (
+            "The labeling task is not yet defined; defining it with the user is your "
+            "first job. Open by briefly describing what the sample rows look like, "
+            "then ask what the user wants to learn or decide about each row and what "
+            "the labels will be used for (for example training an optimized prompt, "
+            "filtering, or analysis). Offer 2-4 concrete task directions you infer "
+            "from the data as options. You decide the answer style — binary (one "
+            "yes/no question per row), multiclass (a fixed set of categories), or "
+            "freetext (text extracted or written per row) — from the user's goal; "
+            "ask about it only when the goal genuinely fits more than one style. "
+            'Return the chosen style in the task config as "mode" together with its '
+            "matching definition."
+        )
     mode = config.get("mode")
     if mode == "binary":
-        question = str(config.get("question") or "Does the row match?")
+        question = str(config.get("question") or "").strip()
+        if question:
+            return (
+                f'Binary labeling. For each row answer the question: "{question}". The label is exactly "yes" or "no".'
+            )
+        if config.get("_assist_mode"):
+            return (
+                "Binary labeling, but the yes/no classification criterion has not been defined. "
+                "Your first question must ask the user what each row should be classified for. "
+                'The final label is exactly "yes" or "no".'
+            )
         return (
-            f'Binary labeling. For each row answer the question: "{question}". '
+            "Binary labeling. Apply the rubric's classification criterion to each row. "
             'The label is exactly "yes" or "no".'
         )
     if mode == "multiclass":
         names = [str(c.get("label", "")).strip() for c in config.get("categories") or []]
         names = [n for n in names if n]
+        if not names and config.get("_assist_mode"):
+            return (
+                "Multi-label classification, but the allowed categories have not been defined. "
+                "Your first question must ask the user which categories can apply to each row."
+            )
         return (
             "Multi-label classification. Assign each row every category that applies "
             f"from this exact list: {json.dumps(names, ensure_ascii=False)}. "
@@ -232,6 +298,11 @@ def task_description(config: dict[str, Any]) -> str:
         )
     prompt = str(config.get("prompt") or "").strip()
     if not prompt:
+        if config.get("_assist_mode"):
+            return (
+                "Open-ended text extraction, but the extraction target has not been defined. "
+                "Your first question must ask the user exactly what to extract from each row."
+            )
         return (
             "Open-ended text extraction: the exact text to pull from each row is "
             "the one described by the rubric rules. The label is that extracted "
@@ -243,9 +314,7 @@ def task_description(config: dict[str, Any]) -> str:
     )
 
 
-def summarize_dataset(
-    config: dict[str, Any], columns: list[str], data: list[dict[str, Any]]
-) -> str:
+def summarize_dataset(config: dict[str, Any], columns: list[str], data: list[dict[str, Any]]) -> str:
     """Summarize the dataset for the interview and rubric prompts.
 
     Args:
@@ -260,11 +329,15 @@ def summarize_dataset(
     input_cols = [str(c) for c in config.get("inputColumns") or []]
     step = max(1, len(data) // SAMPLE_ROWS)
     sample = [_row_text(row) for row in data[::step][:SAMPLE_ROWS]]
+    # Columns the user left unselected are invisible at labeling time (the row
+    # text is built from the input columns only), so they are surfaced as
+    # explicitly excluded rather than as available material for the task.
+    excluded = [c for c in columns if c not in input_cols]
     return json.dumps(
         {
             "row_count": len(data),
-            "all_columns": columns,
             "input_columns": input_cols,
+            "excluded_columns": excluded,
             "sample_rows": sample,
         },
         ensure_ascii=False,
@@ -315,8 +388,7 @@ def normalize_label(config: dict[str, Any], raw: Any) -> str | list[str] | None:
     if mode == "multiclass":
         names = raw if isinstance(raw, list) else [raw]
         by_label = {
-            str(c.get("label", "")).strip().casefold(): str(c.get("id"))
-            for c in config.get("categories") or []
+            str(c.get("label", "")).strip().casefold(): str(c.get("id")) for c in config.get("categories") or []
         }
         by_id = {str(c.get("id")) for c in config.get("categories") or []}
         ids: list[str] = []
@@ -380,9 +452,7 @@ def select_examples(
     return (corrections + plain)[:cap]
 
 
-def compile_instructions(
-    config: dict[str, Any], rubric: list[str], examples: list[dict[str, Any]]
-) -> str:
+def compile_instructions(config: dict[str, Any], rubric: list[str], examples: list[dict[str, Any]]) -> str:
     """Compile the tagging instructions: task + rubric + labeled examples.
 
     Args:
@@ -400,8 +470,7 @@ def compile_instructions(
         parts.append(
             "Labeled examples (follow them exactly; entries with 'corrected_from' are "
             "rows where an earlier AI guess was wrong and the human fixed it — treat "
-            "these as the strongest signal):\n"
-            + json.dumps(examples, ensure_ascii=False)
+            "these as the strongest signal):\n" + json.dumps(examples, ensure_ascii=False)
         )
     return "\n\n".join(parts)
 
@@ -437,17 +506,85 @@ def _interview_inputs(
     }
 
 
-def _parse_interview_prediction(pred: Any, asked: int) -> dict[str, Any]:
+def _normalize_task_artifact(mode: str, raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalize the mode's task artifact (question / categories / prompt).
+
+    Args:
+        mode: The annotation mode the artifact belongs to.
+        raw: Parsed ``task_config_json`` output.
+
+    Returns:
+        The normalized artifact mapping, or an empty mapping when invalid.
+    """
+    if mode == "binary":
+        question = str(raw.get("question") or "").strip()
+        return {"question": question} if question else {}
+    if mode == "multiclass":
+        values = raw.get("categories")
+        if not isinstance(values, list):
+            return {}
+        labels: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            label = str(value.get("label") if isinstance(value, dict) else value).strip()
+            key = label.casefold()
+            if label and key not in seen:
+                labels.append(label)
+                seen.add(key)
+        if len(labels) < 2:
+            return {}
+        return {"categories": [{"id": f"cat{index}", "label": label} for index, label in enumerate(labels, start=1)]}
+    prompt = str(raw.get("prompt") or "").strip()
+    return {"prompt": prompt} if prompt else {}
+
+
+def _normalize_task_override(config: dict[str, Any], raw: Any) -> dict[str, Any]:
+    """Normalize a model-produced task definition for client and server use.
+
+    Provisional-mode sessions carry the inferred answer style in the override
+    as ``mode``; a missing ``mode`` is tolerated by inferring it from whichever
+    artifact the model produced.
+
+    Args:
+        config: The session's base tagger configuration.
+        raw: Parsed ``task_config_json`` output.
+
+    Returns:
+        A mode-appropriate task override, or an empty mapping when invalid.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    if config.get("modeProvisional"):
+        mode = str(raw.get("mode") or "").strip().lower()
+        if mode not in {"binary", "multiclass", "freetext"}:
+            if str(raw.get("question") or "").strip():
+                mode = "binary"
+            elif isinstance(raw.get("categories"), list):
+                mode = "multiclass"
+            elif str(raw.get("prompt") or "").strip():
+                mode = "freetext"
+            else:
+                return {}
+        artifact = _normalize_task_artifact(mode, raw)
+        # Freetext works without a prompt (the rubric carries the task); the
+        # other styles are unusable without their artifact.
+        if mode != "freetext" and not artifact:
+            return {}
+        return {"mode": mode, **artifact}
+    return _normalize_task_artifact(str(config.get("mode") or ""), raw)
+
+
+def _parse_interview_prediction(pred: Any, asked: int, config: dict[str, Any]) -> dict[str, Any]:
     """Turn a raw ``InterviewTurnSig`` prediction into the client turn payload.
 
     Args:
         pred: The prediction (or ``None`` when the stream produced nothing).
         asked: Assistant questions asked before this turn (limit enforcement).
+        config: The session's tagger configuration.
 
     Returns:
-        ``{"message", "options", "rubric", "done"}`` — ``options`` is a list
-        of ``{label, description}`` picks (empty once done); ``rubric`` is
-        empty until ``done`` is true.
+        The client turn payload. ``options`` is a list of pickable answers;
+        ``rubric`` and ``task_override`` stay empty until ``done`` is true.
     """
     done = str(getattr(pred, "done", "")).strip().lower() in {"true", "yes", "1"}
     rubric = _parse_json(getattr(pred, "rubric_json", "[]"), [])
@@ -455,13 +592,71 @@ def _parse_interview_prediction(pred: Any, asked: int) -> dict[str, Any]:
     if asked >= MAX_INTERVIEW_QUESTIONS and not done:
         done = True
     options = normalize_options(_parse_json(getattr(pred, "options_json", "[]"), []))
+    task_override = _normalize_task_override(
+        config,
+        _parse_json(getattr(pred, "task_config_json", "{}"), {}),
+    )
+    # The DB name column caps at 200; 80 keeps session cards to one line.
+    title = str(getattr(pred, "session_title", "")).strip().strip("\"'")[:80]
     return {
         "message": str(getattr(pred, "message", "")).strip(),
         "options": [] if done else options,
         "rubric": rubric if done else [],
+        "task_override": task_override if done else {},
+        "title": title if done else "",
         "done": done,
         "model": assist_model_name(),
     }
+
+
+# A reply that opens like JSON, a code fence or an adapter marker is leaked
+# structure, not prose; these markers are the transition points where a stream
+# that began as prose drifts into the payload's remaining fields.
+_LEAK_PREFIXES = ("{", "[", "`")
+_LEAK_MARKERS = ("[[ ##", '"options_json"', '"rubric_json"', '"task_config_json"', '"session_title"')
+
+
+class _MessageLeakGuard:
+    """Keep raw structured output out of the streamed reply channel.
+
+    dspy's field listener leaks the whole payload as ``message`` deltas when
+    the model answers in the other adapter's format (the same minimax-class
+    drift ``salvage_prediction`` covers). The parsed turn always arrives via
+    ``interview_done``, so leaked deltas are dropped rather than repaired: a
+    stream that opens like structured output is muted entirely, and one that
+    drifts into a marker mid-way is reset client-side and muted from there on.
+    """
+
+    def __init__(self) -> None:
+        self._seen = ""
+        self._sent = False
+        self._muted = False
+
+    def feed(self, chunk: str) -> tuple[str, bool]:
+        """Classify one reply delta.
+
+        Args:
+            chunk: The raw ``message`` delta from the stream listener.
+
+        Returns:
+            ``(text, reset)`` — ``text`` is what may be forwarded (empty while
+            muted or still all-whitespace); ``reset`` asks the client to drop
+            partial reply text it already rendered.
+        """
+        if self._muted:
+            return "", False
+        self._seen += chunk
+        head = self._seen.lstrip()
+        if not head:
+            return "", False
+        if head.startswith(_LEAK_PREFIXES) or any(marker in self._seen for marker in _LEAK_MARKERS):
+            self._muted = True
+            reset, self._sent = self._sent, False
+            return "", reset
+        # First forward flushes whatever whitespace was buffered ahead of it.
+        text = chunk if self._sent else self._seen
+        self._sent = True
+        return text, False
 
 
 def interview_turn(
@@ -487,10 +682,8 @@ def interview_turn(
     asked = sum(1 for t in turns if t.get("role") == "assistant")
     lm = _build_assist_lm()
     with dspy.context(lm=lm):
-        pred = dspy.Predict(InterviewTurnSig)(
-            **_interview_inputs(config, columns, data, turns, locale)
-        )
-    return _parse_interview_prediction(pred, asked)
+        pred = dspy.Predict(InterviewTurnSig)(**_interview_inputs(config, columns, data, turns, locale))
+    return _parse_interview_prediction(pred, asked, config)
 
 
 async def interview_turn_stream(
@@ -504,14 +697,22 @@ async def interview_turn_stream(
 
     Yields ``{"event", "data"}`` mappings ready for ``sse_from_events``:
     ``reasoning_patch`` for provider thinking tokens (same synthetic channel
-    the agents use), ``message_patch`` for reply deltas, ``message_reset``
-    when a failed attempt is being retried (the client must drop partial
-    text), and a terminal ``interview_done`` carrying the parsed turn.
+    the agents use), ``message_patch`` for reply deltas, ``message_end`` once
+    the reply is fully streamed (the remaining structured fields — options,
+    rubric, task — are still generating), ``turn_hint`` with ``{"final"}`` as
+    soon as the streamed ``done`` field settles (the client picks the matching
+    still-generating placeholder), ``message_reset`` when a failed attempt is
+    being retried or leaked structure was dropped (the client must drop
+    partial text and the hint), and a terminal ``interview_done`` carrying the
+    parsed turn. Reply deltas pass through :class:`_MessageLeakGuard` so raw
+    payload text never reaches the visible reply.
 
     A turn whose terminal parse fails is first salvaged from the raw response
     (minimax-class models answer in chat-adapter format even under the JSON
     fallback — see ``agents.parse_salvage``) and only then retried from
-    scratch, mirroring the code interview.
+    scratch, mirroring the code interview. A finished turn that carries no
+    rubric rules is retried the same way — a "done" turn without a rubric
+    would hand the user an empty contract card.
 
     Args:
         config: The session's ``TaggerConfig`` payload.
@@ -524,19 +725,23 @@ async def interview_turn_stream(
     predict = dspy.Predict(InterviewTurnSig)
     lm = _build_assist_lm()
     inputs = _interview_inputs(config, columns, data, turns, locale)
-    prediction: Any = None
+    turn: dict[str, Any] = {}
     for attempt in range(INTERVIEW_TURN_ATTEMPTS):
         # Stream listeners are single-use; rebuild the program per attempt.
         program = dspy.streamify(
             predict,
             stream_listeners=[
                 dspy.streaming.StreamListener(signature_field_name="message"),
+                dspy.streaming.StreamListener(signature_field_name="done"),
                 ReasoningStreamListener(predict=predict),
             ],
             async_streaming=True,
         )
         if attempt:
             yield {"event": "message_reset", "data": {}}
+        guard = _MessageLeakGuard()
+        prediction: Any = None
+        done_text = ""
         try:
             with dspy.context(lm=lm):
                 async for chunk in program(**inputs):
@@ -544,50 +749,35 @@ async def interview_turn_stream(
                         if chunk.signature_field_name == REASONING_FIELD:
                             yield {"event": "reasoning_patch", "data": {"chunk": chunk.chunk}}
                         elif chunk.signature_field_name == "message":
-                            yield {"event": "message_patch", "data": {"chunk": chunk.chunk}}
+                            text, reset = guard.feed(chunk.chunk)
+                            if reset:
+                                yield {"event": "message_reset", "data": {}}
+                            if text:
+                                yield {"event": "message_patch", "data": {"chunk": text}}
+                            if chunk.is_last_chunk:
+                                yield {"event": "message_end", "data": {}}
+                        elif chunk.signature_field_name == "done":
+                            done_text += chunk.chunk
+                            if chunk.is_last_chunk:
+                                yield {
+                                    "event": "turn_hint",
+                                    "data": {"final": "true" in done_text.lower()},
+                                }
                     elif isinstance(chunk, dspy.Prediction):
                         prediction = chunk
-            break
         except Exception as err:
             prediction = salvage_prediction(err)
-            if prediction is not None:
-                break
-            if attempt + 1 >= INTERVIEW_TURN_ATTEMPTS:
-                raise
-            logger.warning("tagger interview turn failed; retrying", exc_info=True)
-    yield {"event": "interview_done", "data": _parse_interview_prediction(prediction, asked)}
-
-
-def refine_rubric(
-    config: dict[str, Any],
-    rubric: list[str],
-    examples: list[dict[str, Any]],
-    locale: str | None,
-) -> list[str]:
-    """Reflectively rewrite the rubric from labels and corrections.
-
-    Args:
-        config: The session's ``TaggerConfig`` payload.
-        rubric: The current rubric rules.
-        examples: Labeled examples including ``corrected_from`` entries.
-        locale: UI locale code; the rubric is written in that language.
-
-    Returns:
-        The improved rubric, or the original when the model output is unusable.
-    """
-    lm = _build_assist_lm()
-    with dspy.context(lm=lm):
-        pred = dspy.Predict(RefineRubricSig)(
-            task_description=task_description(config),
-            current_rubric_json=json.dumps(rubric, ensure_ascii=False),
-            examples_json=json.dumps(examples, ensure_ascii=False),
-            reply_language=_reply_language(locale),
-        )
-    improved = _parse_json(getattr(pred, "rubric_json", "[]"), [])
-    if not isinstance(improved, list):
-        return rubric
-    cleaned = [str(r).strip() for r in improved if str(r).strip()]
-    return cleaned or rubric
+            if prediction is None:
+                if attempt + 1 >= INTERVIEW_TURN_ATTEMPTS:
+                    raise
+                logger.warning("tagger interview turn failed; retrying", exc_info=True)
+                continue
+        turn = _parse_interview_prediction(prediction, asked, config)
+        if turn["done"] and not turn["rubric"] and attempt + 1 < INTERVIEW_TURN_ATTEMPTS:
+            logger.warning("tagger interview finished without a rubric; retrying")
+            continue
+        break
+    yield {"event": "interview_done", "data": turn}
 
 
 def _predict_batch(
@@ -605,9 +795,7 @@ def _predict_batch(
         ``{row_id: {value, confidence, reason}}`` for every row the model
         produced a mappable label for.
     """
-    rows_json = json.dumps(
-        [{"id": str(r["id"]), "text": r["text"]} for r in batch], ensure_ascii=False
-    )
+    rows_json = json.dumps([{"id": str(r["id"]), "text": r["text"]} for r in batch], ensure_ascii=False)
     parsed: Any = None
     try:
         with dspy.context(lm=lm):
@@ -699,8 +887,7 @@ def predict_rows(
             merged.update(result)
     usage = usage_by_model_from_history(lm)
     credits = credits_for_usage(
-        ModelUsage(model=model, input_tokens=tokens[0], output_tokens=tokens[1])
-        for model, tokens in usage.items()
+        ModelUsage(model=model, input_tokens=tokens[0], output_tokens=tokens[1]) for model, tokens in usage.items()
     )
     return merged, credits
 
@@ -725,233 +912,10 @@ def estimate_credits_for_rows(instructions: str, rows: list[dict[str, Any]]) -> 
     row_chars = sum(len(_row_text(r)) for r in rows)
     input_tokens = (len(instructions) * batch_count + row_chars) // CHARS_PER_TOKEN
     output_tokens = OUTPUT_TOKENS_PER_ROW * len(rows)
-    base = credits_for_usage(
-        [ModelUsage(model=model, input_tokens=input_tokens, output_tokens=output_tokens)]
-    )
+    base = credits_for_usage([ModelUsage(model=model, input_tokens=input_tokens, output_tokens=output_tokens)])
     return {
         "rows": len(rows),
         "model": model,
         "credits_low": base,
         "credits_high": max(base, int(base * 1.8)),
     }
-
-
-def deep_optimize_reflection_model_name() -> str:
-    """Return the LiteLLM model id GEPA reflects with during deep optimize."""
-    return settings.tagger_deep_optimize_reflection_model or assist_model_name()
-
-
-def _label_as_text(config: dict[str, Any], value: Any) -> str:
-    """Flatten a stored annotation into the single-string label GEPA trains on.
-
-    Args:
-        config: The session's ``TaggerConfig`` payload.
-        value: The stored annotation value.
-
-    Returns:
-        Binary answers and extractions verbatim; multiclass as the category
-        names joined with ``"; "``.
-    """
-    display = _annotation_to_display(config, value)
-    if isinstance(display, list):
-        return "; ".join(str(d) for d in display)
-    return str(display)
-
-
-def build_deep_optimize_dataset(
-    config: dict[str, Any],
-    data: list[dict[str, Any]],
-    annotations: dict[str, Any],
-    assist: dict[str, Any],
-) -> list[dict[str, str]]:
-    """Build the ``{text, label}`` trainset for a deep-optimize run.
-
-    Every human-vetted label (human and ai_confirmed provenance) qualifies,
-    corrections first, capped at ``DEEP_OPTIMIZE_MAX_EXAMPLES``.
-
-    Args:
-        config: The session's ``TaggerConfig`` payload.
-        data: The full row payload.
-        annotations: The ``{row_id: value}`` final-label map.
-        assist: The session's assist state (predictions + provenance).
-
-    Returns:
-        Dataset rows shaped for the run payload's ``text``/``label`` columns.
-    """
-    examples = select_examples(
-        config, data, annotations, assist, cap=DEEP_OPTIMIZE_MAX_EXAMPLES
-    )
-    rows: list[dict[str, str]] = []
-    for example in examples:
-        label = example["label"]
-        rows.append(
-            {
-                "text": str(example["text"]),
-                "label": "; ".join(str(v) for v in label) if isinstance(label, list) else str(label),
-            }
-        )
-    return rows
-
-
-def _deep_optimize_signature_code(config: dict[str, Any], rubric: list[str]) -> str:
-    """Generate the single-signature classifier source for a deep-optimize run.
-
-    The task description and rubric become the signature docstring — the seed
-    instructions GEPA evolves. User text is sanitized so it cannot terminate
-    the docstring literal.
-
-    Args:
-        config: The session's ``TaggerConfig`` payload.
-        rubric: The current labeling rubric.
-
-    Returns:
-        Python source defining exactly one ``dspy.Signature`` subclass.
-    """
-    parts = [task_description(config)]
-    if rubric:
-        parts.append("Labeling rubric:\n" + "\n".join(f"- {r}" for r in rubric))
-    doc = "\n\n".join(parts).replace("\\", "\\\\").replace('"""', "'''")
-    mode = config.get("mode")
-    label_desc = (
-        "Exactly 'yes' or 'no'."
-        if mode == "binary"
-        else "Every applying category name, joined with '; '."
-        if mode == "multiclass"
-        else "The extracted text."
-    )
-    return (
-        "class TaggerLabelSignature(dspy.Signature):\n"
-        f'    """{doc}"""\n\n'
-        '    text: str = dspy.InputField(desc="The row to label.")\n'
-        f'    label: str = dspy.OutputField(desc="{label_desc}")\n'
-    )
-
-
-_BINARY_METRIC = '''\
-def metric(example, pred, trace=None, pred_name=None, pred_trace=None):
-    """Exact match on the normalized yes/no answer, with GEPA feedback."""
-    def norm(value):
-        text = str(value or "").strip().lower()
-        if text in ("yes", "y", "true", "1"):
-            return "yes"
-        if text in ("no", "n", "false", "0"):
-            return "no"
-        return text
-    gold = norm(getattr(example, "label", ""))
-    guess = norm(getattr(pred, "label", ""))
-    if gold == guess:
-        return dspy.Prediction(score=1.0, feedback="Correct.")
-    return dspy.Prediction(
-        score=0.0,
-        feedback=f"Expected '{gold}' but got '{guess}'. Answer exactly 'yes' or 'no'.",
-    )
-'''
-
-_MULTICLASS_METRIC = '''\
-def metric(example, pred, trace=None, pred_name=None, pred_trace=None):
-    """Set equality over the '; '-separated category names, with GEPA feedback."""
-    def parts(value):
-        return {p.strip().casefold() for p in str(value or "").split(";") if p.strip()}
-    gold = parts(getattr(example, "label", ""))
-    guess = parts(getattr(pred, "label", ""))
-    if gold == guess:
-        return dspy.Prediction(score=1.0, feedback="Correct.")
-    missing = "; ".join(sorted(gold - guess)) or "none"
-    extra = "; ".join(sorted(guess - gold)) or "none"
-    return dspy.Prediction(
-        score=0.0,
-        feedback=f"Wrong categories. Missing: {missing}. Extra: {extra}. "
-        "Answer with every applying category name, joined by '; '.",
-    )
-'''
-
-_FREETEXT_METRIC = '''\
-def metric(example, pred, trace=None, pred_name=None, pred_trace=None):
-    """Token-overlap (Dice) similarity of the extraction, with GEPA feedback."""
-    def tokens(value):
-        out = set()
-        for raw in str(value or "").lower().split():
-            word = "".join(ch for ch in raw if ch.isalnum())
-            if word:
-                out.add(word)
-        return out
-    gold = tokens(getattr(example, "label", ""))
-    guess = tokens(getattr(pred, "label", ""))
-    if not gold and not guess:
-        return dspy.Prediction(score=1.0, feedback="Correct (both empty).")
-    overlap = len(gold & guess)
-    denom = len(gold) + len(guess)
-    score = (2.0 * overlap / denom) if denom else 0.0
-    if score >= 0.85:
-        return dspy.Prediction(score=1.0, feedback="Correct.")
-    return dspy.Prediction(
-        score=score,
-        feedback=f"Extraction differs from the expected text: "
-        f"'{getattr(example, 'label', '')}'. Extract only the requested text.",
-    )
-'''
-
-
-def _deep_optimize_metric_code(config: dict[str, Any]) -> str:
-    """Return the mode-appropriate metric source for a deep-optimize run.
-
-    Args:
-        config: The session's ``TaggerConfig`` payload.
-    """
-    mode = config.get("mode")
-    if mode == "binary":
-        return _BINARY_METRIC
-    if mode == "multiclass":
-        return _MULTICLASS_METRIC
-    return _FREETEXT_METRIC
-
-
-def build_deep_optimize_request(
-    config: dict[str, Any],
-    rubric: list[str],
-    dataset: list[dict[str, str]],
-    *,
-    name: str,
-    username: str,
-) -> RunRequest:
-    """Assemble the GEPA run payload for a tagger deep-optimize.
-
-    A single-signature ``text → label`` classifier seeded with the rubric,
-    trained on the session's human-vetted labels, on the cheapest GEPA budget
-    (``auto="light"``). Deliberately a first-class run — same visibility,
-    billing and reuse (inference, program export) as a wizard submission.
-
-    Args:
-        config: The session's ``TaggerConfig`` payload.
-        rubric: The current labeling rubric (becomes the seed instructions).
-        dataset: ``{text, label}`` rows from :func:`build_deep_optimize_dataset`.
-        name: Display name of the run (shows in the jobs dashboard).
-        username: Owner of the run.
-
-    Returns:
-        A fully-populated ``RunRequest`` ready for the submission pipeline.
-    """
-    base_url = settings.tagger_assist_base_url or settings.generalist_agent_base_url or None
-    return RunRequest(
-        name=name,
-        username=username,
-        description=(
-            "Optimized classifier evolved by GEPA from a tagging session's "
-            "human-vetted labels. Reusable like any run: open it for "
-            "inference or export the program."
-        ),
-        module_name="predict",
-        signature_code=_deep_optimize_signature_code(config, rubric),
-        metric_code=_deep_optimize_metric_code(config),
-        optimizer_name="gepa",
-        optimizer_kwargs={"auto": "light"},
-        dataset=dataset,
-        column_mapping=ColumnMapping(inputs={"text": "text"}, outputs={"label": "label"}),
-        shuffle=True,
-        seed=42,
-        dataset_filename="tagger-labels.json",
-        model_settings=ModelConfig(name=assist_model_name(), base_url=base_url),
-        reflection_model_settings=ModelConfig(
-            name=deep_optimize_reflection_model_name(), base_url=base_url
-        ),
-    )

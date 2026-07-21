@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import {
-  Check,
   History,
   MoreHorizontal,
   Pencil,
@@ -371,16 +370,9 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
               <Trash2 className="size-3.5" />
               {msg("auto.features.agent.panel.components.conversationdrawer.delete")}
             </button>
-            {active && (
-              <div className="border-t border-border/60 mt-1 pt-1 px-2 py-1 text-[0.6875rem] text-muted-foreground flex items-center gap-1">
-                <Check className="size-3" />
-                {msg("auto.features.agent.panel.components.conversationdrawer.active_hint")}
-              </div>
-            )}
           </PopoverContent>
         </Popover>
       </div>
     </li>
   );
 }
-

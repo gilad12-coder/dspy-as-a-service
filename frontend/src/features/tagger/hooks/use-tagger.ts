@@ -5,28 +5,30 @@ import { useRouter } from "next/navigation";
 import {
   createTaggerSession,
   updateTaggerSession,
+  renameTaggerSession,
   stashTaggerSession,
   getTaggerSession,
   taggerAssistPredict,
-  taggerAssistOptimize,
   taggerAssistEstimate,
   taggerAssistAutotagStart,
   taggerAssistAutotagStatus,
   taggerAssistAutotagCancel,
-  taggerAssistDeepOptimize,
-  getOptimizationStatusLite,
-  getOptimizationOptimizedPrompt,
   type TaggerSessionDetail,
   type InterviewOption,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
-import { clearRecentSession, markRecentSession } from "@/shared/lib/recent-session";
+import {
+  clearRecentSession,
+  markRecentSession,
+  refreshRecentSession,
+} from "@/shared/lib/recent-session";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
 import type { AgentThinking } from "@/shared/ui/agent";
 import { streamInterviewTurn } from "../lib/assist-stream";
 import type {
   DataRow,
   Annotation,
+  Category,
   TaggerConfig,
   AnnotationMode,
   TaggerPhase,
@@ -50,11 +52,10 @@ export const TAGGER_SESSIONS_CHANGED = "tagger-sessions-changed";
 
 const AUTOSAVE_INTERVAL_MS = 60_000;
 const AUTOTAG_POLL_MS = 2_500;
-/** GEPA runs take minutes; a slow poll on the run's summary is plenty. */
-const DEEP_OPTIMIZE_POLL_MS = 5_000;
-const TERMINAL_RUN_STATUSES = new Set(["success", "failed", "cancelled", "paused"]);
 /** Calibration predictions are prefetched this many rows ahead of the cursor. */
 const PREDICT_AHEAD = 6;
+/** Ids per predict call — the server caps a single call at 50 rows. */
+const PREDICT_CHUNK = 40;
 
 function isTagged(ann: Annotation, mode: AnnotationMode): boolean {
   if (ann === undefined || ann === null) return false;
@@ -67,9 +68,11 @@ function deriveSessionName(config: TaggerConfig): string {
   if (config.mode === "binary" && config.question?.trim()) {
     return config.question.trim().slice(0, 80);
   }
-  if (config.mode === "freetext" && config.prompt?.trim()) {
+  if (config.mode === "freetext" && !config.modeProvisional && config.prompt?.trim()) {
     return config.prompt.trim().slice(0, 80);
   }
+  const source = config.sourceName?.trim();
+  if (source) return source.slice(0, 80);
   return msg("tagger.session.untitled");
 }
 
@@ -91,9 +94,12 @@ export interface AutotagEstimate {
  * across devices, the way optimizations persist.
  *
  * Assist sessions (co-pilot / autopilot) extend the same machine with the
- * interview → calibration → review → autotag phases. All final labels live in
+ * interview → review → autotag phases. All final labels live in
  * ``annotations`` regardless of who produced them; ``assist`` carries the AI
  * bookkeeping (rubric, predictions, provenance, rounds, bulk-job progress).
+ * Sessions saved before AI-first calibration may still resume mid-way through
+ * the legacy human-first ``calibration`` phase, which is why that machinery
+ * survives below even though new sessions never enter it.
  * During the ``autotagging`` phase the server owns the row, so autosaving is
  * suspended and progress is polled instead.
  */
@@ -125,7 +131,10 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   const interviewAbortRef = useRef<AbortController | null>(null);
   const [assistError, setAssistError] = useState<string | null>(null);
   const [roundLoading, setRoundLoading] = useState(false);
-  const [optimizeBusy, setOptimizeBusy] = useState(false);
+  // Autopilot contract confirmed, bulk job not yet started: held true until
+  // the starter resolves so the between-rounds gate never renders on the way
+  // out of the interview.
+  const [contractStarting, setContractStarting] = useState(false);
   const [estimate, setEstimate] = useState<AutotagEstimate | null>(null);
   const [autotagStatus, setAutotagStatus] = useState<{
     status: string;
@@ -158,17 +167,34 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     phaseRef.current = phase;
   }, [annotations, assist, currentIndex, phase]);
 
+  // Every consumer sees the interview's task refinements — including the
+  // inferred answer style on provisional-mode sessions — merged over the
+  // immutable stored config (the server applies the same merge on its side).
+  const effectiveConfig = useMemo(() => {
+    if (!config) return null;
+    const override = assist?.taskOverride ?? {};
+    const merged: TaggerConfig = {
+      ...config,
+      ...(override.mode ? { mode: override.mode } : {}),
+      ...(override.question?.trim() ? { question: override.question.trim() } : {}),
+      ...(override.categories && override.categories.length > 0
+        ? { categories: override.categories }
+        : {}),
+      ...(override.prompt?.trim() ? { prompt: override.prompt.trim() } : {}),
+    };
+    if (override.mode) delete merged.modeProvisional;
+    return merged;
+  }, [config, assist?.taskOverride]);
+
   const startAnnotating = useCallback(
     (
       cfg: TaggerConfig,
       rows: DataRow[],
       cols: string[],
       assistMode: TaggerAssistMode = "manual",
-      calibrationStyle: "blind" | "assisted" = "blind",
     ) => {
       const startPhase: TaggerPhase = assistMode === "manual" ? "annotating" : "interview";
-      const startAssist =
-        assistMode === "manual" ? null : initialAssistState(assistMode, calibrationStyle);
+      const startAssist = assistMode === "manual" ? null : initialAssistState(assistMode);
       setConfig(cfg);
       setData(rows);
       setColumns(cols);
@@ -294,7 +320,10 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       flush();
     }, AUTOSAVE_INTERVAL_MS);
     const onLeave = () => {
-      markRecentSession("tagger", sessionId);
+      // Refresh rather than set: a deliberate exit (back / start over) just
+      // cleared the mark, and re-stamping it here would hand the sidebar back
+      // the session the user explicitly left.
+      refreshRecentSession("tagger", sessionId);
       flush();
     };
     const onHide = () => {
@@ -358,14 +387,14 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   );
 
   const jumpToUntagged = useCallback(() => {
-    if (!config) return;
+    if (!effectiveConfig) return;
     for (let i = 0; i < frameData.length; i++) {
-      if (!isTagged(annotations[String(frameData[i]!.id)], config.mode)) {
+      if (!isTagged(annotations[String(frameData[i]!.id)], effectiveConfig.mode)) {
         setCurrentIndex(i);
         return;
       }
     }
-  }, [frameData, annotations, config]);
+  }, [frameData, annotations, effectiveConfig]);
 
   const toggleBinary = useCallback((id: string, value: "yes" | "no") => {
     (document.activeElement as HTMLElement)?.blur();
@@ -431,7 +460,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
           } else {
             const predicted = prev.predictions[id]?.value as Annotation;
             decided[id] = labelsAgree(
-              (config?.mode ?? "binary") as AnnotationMode,
+              (effectiveConfig?.mode ?? "binary") as AnnotationMode,
               value,
               predicted,
             )
@@ -443,7 +472,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
         return { ...prev, provenance, rounds };
       });
     },
-    [config],
+    [effectiveConfig],
   );
 
   const assistToggleBinary = useCallback(
@@ -487,38 +516,39 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   );
 
   /** Accept the AI's prediction as the row's final label (Enter / switch). */
-  const acceptPrediction = useCallback(
-    (id: string) => {
-      const state = assistRef.current;
-      const predicted = state?.predictions[id];
-      if (!state || !predicted) return;
-      setAnnotations((prev) => ({ ...prev, [id]: predicted.value as Annotation }));
-      annotationsRef.current = { ...annotationsRef.current, [id]: predicted.value as Annotation };
-      setAssist((prev) => {
-        if (!prev) return prev;
-        const provenance = { ...prev.provenance, [id]: "ai_confirmed" as const };
-        let rounds = prev.rounds;
-        const last = rounds[rounds.length - 1];
-        if (
-          phaseRef.current === "review" &&
-          last &&
-          last.agreement === undefined &&
-          last.rowIds.includes(id)
-        ) {
-          rounds = [
-            ...rounds.slice(0, -1),
-            { ...last, decided: { ...last.decided, [id]: "confirmed" as const } },
-          ];
-        }
-        return { ...prev, provenance, rounds };
-      });
-    },
-    [],
-  );
+  const acceptPrediction = useCallback((id: string) => {
+    const state = assistRef.current;
+    const predicted = state?.predictions[id];
+    if (!state || !predicted) return;
+    setAnnotations((prev) => ({ ...prev, [id]: predicted.value as Annotation }));
+    annotationsRef.current = { ...annotationsRef.current, [id]: predicted.value as Annotation };
+    setAssist((prev) => {
+      if (!prev) return prev;
+      const provenance = { ...prev.provenance, [id]: "ai_confirmed" as const };
+      let rounds = prev.rounds;
+      const last = rounds[rounds.length - 1];
+      if (
+        phaseRef.current === "review" &&
+        last &&
+        last.agreement === undefined &&
+        last.rowIds.includes(id)
+      ) {
+        rounds = [
+          ...rounds.slice(0, -1),
+          { ...last, decided: { ...last.decided, [id]: "confirmed" as const } },
+        ];
+      }
+      return { ...prev, provenance, rounds };
+    });
+  }, []);
 
   // ------------------------------------------------------------- interview
 
   const [interviewOptions, setInterviewOptions] = useState<InterviewOption[]>([]);
+  // What's still generating server-side between the reply finishing and the
+  // parsed turn arriving: answer choices, or — when the streamed ``done``
+  // field says the turn is final — the labeling-guide contract.
+  const [interviewPending, setInterviewPending] = useState<"options" | "contract" | null>(null);
 
   // Streams the turn over SSE with the generalist agent's event shapes, so
   // the interview gets the same live reply + thinking treatment as the agent
@@ -527,13 +557,16 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   const sendInterviewMessage = useCallback(
     async (content: string | null, truncateTo?: number) => {
       const state = assistRef.current;
-      if (!sessionId || !state || interviewBusy) return;
+      // The abort ref is the re-entry guard: `interviewBusy` is stale closure
+      // state during React's synchronous double effect-invocation (StrictMode
+      // mounts), which used to fire two parallel opening turns whose second
+      // result replaced the first "in a flash".
+      if (!sessionId || !state || interviewBusy || interviewAbortRef.current) return;
       const base =
         truncateTo === undefined
           ? state.interview.turns
           : state.interview.turns.slice(0, truncateTo);
-      const turns =
-        content === null ? base : [...base, { role: "user" as const, content }];
+      const turns = content === null ? base : [...base, { role: "user" as const, content }];
       if (content !== null || truncateTo !== undefined) {
         patchAssist({ interview: { turns, done: false } });
       }
@@ -542,6 +575,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       setInterviewStreamText("");
       setInterviewThinking(null);
       setInterviewOptions([]);
+      setInterviewPending(null);
       const controller = new AbortController();
       interviewAbortRef.current = controller;
       try {
@@ -559,15 +593,17 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
               })),
             onMessagePatch: (chunk) => {
               setInterviewThinking((prev) =>
-                prev && prev.streaming
-                  ? { ...prev, streaming: false, endedAt: Date.now() }
-                  : prev,
+                prev && prev.streaming ? { ...prev, streaming: false, endedAt: Date.now() } : prev,
               );
               setInterviewStreamText((text) => text + chunk);
             },
+            onMessageEnd: () =>
+              setInterviewPending((prev) => (prev === "contract" ? prev : "options")),
+            onTurnHint: (final) => setInterviewPending(final ? "contract" : "options"),
             onMessageReset: () => {
               setInterviewStreamText("");
               setInterviewThinking(null);
+              setInterviewPending(null);
             },
             onDone: (turn) => {
               patchAssist({
@@ -583,8 +619,19 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
                   done: turn.done,
                 },
                 ...(turn.done && turn.rubric.length > 0 ? { rubric: turn.rubric } : {}),
+                ...(turn.done && Object.keys(turn.taskOverride).length > 0
+                  ? { taskOverride: turn.taskOverride }
+                  : {}),
               });
               setInterviewOptions(turn.done ? [] : turn.options);
+              // The interview names the session on its final turn; the user
+              // hasn't had a rename affordance yet (the session was created
+              // seconds ago), so applying it unconditionally is safe.
+              if (turn.done && turn.title) {
+                void renameTaggerSession(sessionId, turn.title)
+                  .then(() => window.dispatchEvent(new Event(TAGGER_SESSIONS_CHANGED)))
+                  .catch(() => {});
+              }
             },
             onError: () => setAssistError("interview"),
           },
@@ -593,6 +640,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
         interviewAbortRef.current = null;
         setInterviewBusy(false);
         setInterviewStreamText("");
+        setInterviewPending(null);
         setInterviewThinking((prev) =>
           prev ? { ...prev, streaming: false, endedAt: prev.endedAt ?? Date.now() } : prev,
         );
@@ -606,14 +654,6 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     interviewAbortRef.current?.abort();
   }, []);
 
-  /** Persist the interview's refined task text (question/prompt). */
-  const setTaskOverride = useCallback(
-    (override: { question?: string; prompt?: string }) => {
-      setAssist((prev) => (prev ? { ...prev, taskOverride: override } : prev));
-    },
-    [],
-  );
-
   // Fire the opening interview question once the session exists server-side.
   useEffect(() => {
     if (phase !== "interview" || !sessionId) return;
@@ -623,41 +663,51 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     void sendInterviewMessage(null);
   }, [phase, sessionId]);
 
-  /** Confirm the (possibly edited) rubric and leave the interview. */
+  /**
+   * Confirm the task contract (answer style, artifacts, rubric) and leave the
+   * interview. Both modes launch directly (once the confirmed state has
+   * committed): copilot opens the first review batch — the AI tags it and the
+   * human keeps or corrects each label — and autopilot starts the bulk job.
+   * No interstitial screen re-asks what the launch button already promised.
+   */
   const confirmRubric = useCallback(
-    (rubric: string[]) => {
+    (
+      rubric: string[],
+      task?: { mode: AnnotationMode; question?: string; categories?: Category[] },
+    ) => {
       const state = assistRef.current;
-      if (!state || !config) return;
-      if (state.mode === "copilot") {
-        const ids = sampleRowIds(data, calibrationTarget(config));
-        setAssist((prev) =>
-          prev
-            ? {
-                ...prev,
-                rubric,
-                interview: { ...prev.interview, done: true },
-                calibrationIds: ids,
-              }
-            : prev,
-        );
-        setCurrentIndex(0);
-        setPhase("calibration");
-      } else {
-        setAssist((prev) =>
-          prev ? { ...prev, rubric, interview: { ...prev.interview, done: true } } : prev,
-        );
-        setCurrentIndex(0);
-        setPhase("review");
-      }
+      if (!state || !effectiveConfig) return;
+      // The confirmed contract replaces the interview's override wholesale so
+      // artifacts from a discarded answer style don't linger.
+      const override = task
+        ? {
+            mode: task.mode,
+            ...(task.mode === "binary" && task.question?.trim()
+              ? { question: task.question.trim() }
+              : {}),
+            ...(task.mode === "multiclass" && task.categories?.length
+              ? { categories: task.categories }
+              : {}),
+            ...(task.mode === "freetext" && state.taskOverride?.prompt
+              ? { prompt: state.taskOverride.prompt }
+              : {}),
+          }
+        : state.taskOverride;
+      const patch = task && override ? { taskOverride: override } : {};
+      setAssist((prev) =>
+        prev ? { ...prev, rubric, ...patch, interview: { ...prev.interview, done: true } } : prev,
+      );
+      setCurrentIndex(0);
+      setPhase("review");
+      setContractStarting(true);
     },
-    [config, data],
+    [effectiveConfig],
   );
 
-  /** Update the rubric in place (the rail's inline editor). */
-  const setRubric = useCallback(
-    (rubric: string[]) => patchAssist({ rubric }),
-    [patchAssist],
-  );
+  /** Ask the interviewer to wrap up now and finish with its best-guess contract. */
+  const skipInterview = useCallback(() => {
+    void sendInterviewMessage(msg("tagger.assist.interview.skip_message"));
+  }, [sendInterviewMessage]);
 
   // ------------------------------------------------------------ calibration
 
@@ -666,7 +716,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   // only revealed after the row is committed.
   const predictInFlight = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (phase !== "calibration" || !sessionId || !config) return;
+    if (phase !== "calibration" || !sessionId || !effectiveConfig) return;
     const state = assistRef.current;
     if (!state) return;
     const upcoming = (state.calibrationIds ?? [])
@@ -696,84 +746,91 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
         for (const id of upcoming) predictInFlight.current.delete(id);
       }
     })();
-  }, [phase, sessionId, config, currentIndex, annotations, flushNow]);
+  }, [phase, sessionId, effectiveConfig, currentIndex, annotations, flushNow]);
 
   const calibrationDone = useMemo(() => {
-    if (phase !== "calibration" || !assist || !config) return false;
+    if (phase !== "calibration" || !assist || !effectiveConfig) return false;
     return (
       assist.calibrationIds.length > 0 &&
-      assist.calibrationIds.every((id) => isTagged(annotations[id], config.mode))
+      assist.calibrationIds.every((id) => isTagged(annotations[id], effectiveConfig.mode))
     );
-  }, [phase, assist, config, annotations]);
+  }, [phase, assist, effectiveConfig, annotations]);
 
   /** Leave calibration for the review stage (or straight to done when tiny). */
   const finishCalibration = useCallback(() => {
-    if (!config) return;
-    const untagged = data.filter((row) => !isTagged(annotations[String(row.id)], config.mode));
+    if (!effectiveConfig) return;
+    const untagged = data.filter(
+      (row) => !isTagged(annotations[String(row.id)], effectiveConfig.mode),
+    );
     setCurrentIndex(0);
     setPhase(untagged.length === 0 ? "complete" : "review");
-  }, [config, data, annotations]);
+  }, [effectiveConfig, data, annotations]);
 
   // ---------------------------------------------------------------- review
 
   /** Sample a fresh batch of untagged rows, predict them, and open a round. */
-  const startReviewRound = useCallback(async () => {
-    if (!sessionId || !config || roundLoading) return;
-    const labeled = new Set(
-      Object.entries(annotationsRef.current)
-        .filter(([, v]) => isTagged(v, config.mode))
-        .map(([id]) => id),
-    );
-    const ids = sampleRowIds(data, REVIEW_BATCH_SIZE, labeled);
-    if (ids.length === 0) {
-      setPhase("complete");
-      return;
-    }
-    setRoundLoading(true);
-    setAssistError(null);
-    try {
-      await flushNow();
-      const res = await taggerAssistPredict(sessionId, ids);
-      setAssist((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          predictions: {
-            ...prev.predictions,
-            ...(res.predictions as Record<string, AssistPrediction>),
-          },
-          rounds: [...prev.rounds, { rowIds: ids, decided: {} }],
-        };
-      });
-      // Freetext audits by fixing the AI's extraction in place, so the round's
-      // rows are prefilled; binary/multiclass confirm or override per keystroke.
-      if (config.mode === "freetext") {
-        setAnnotations((prev) => {
-          const next = { ...prev };
-          for (const id of ids) {
-            const value = (res.predictions[id]?.value as Annotation) ?? undefined;
-            if (value !== undefined && !isTagged(next[id], config.mode)) next[id] = value;
-          }
-          return next;
-        });
+  const startReviewRound = useCallback(
+    async (count: number = REVIEW_BATCH_SIZE) => {
+      if (!sessionId || !effectiveConfig || roundLoading) return;
+      const labeled = new Set(
+        Object.entries(annotationsRef.current)
+          .filter(([, v]) => isTagged(v, effectiveConfig.mode))
+          .map(([id]) => id),
+      );
+      const ids = sampleRowIds(data, count, labeled);
+      if (ids.length === 0) {
+        setPhase("complete");
+        return;
       }
-      setCurrentIndex(0);
-    } catch {
-      setAssistError("predict");
-    } finally {
-      setRoundLoading(false);
-    }
-  }, [sessionId, config, data, roundLoading, flushNow]);
+      setRoundLoading(true);
+      setAssistError(null);
+      try {
+        await flushNow();
+        const predictions: Record<string, AssistPrediction> = {};
+        for (let i = 0; i < ids.length; i += PREDICT_CHUNK) {
+          const res = await taggerAssistPredict(sessionId, ids.slice(i, i + PREDICT_CHUNK));
+          Object.assign(predictions, res.predictions as Record<string, AssistPrediction>);
+        }
+        setAssist((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            predictions: { ...prev.predictions, ...predictions },
+            rounds: [...prev.rounds, { rowIds: ids, decided: {} }],
+          };
+        });
+        // Freetext audits by fixing the AI's extraction in place, so the round's
+        // rows are prefilled; binary/multiclass confirm or override per keystroke.
+        if (effectiveConfig.mode === "freetext") {
+          setAnnotations((prev) => {
+            const next = { ...prev };
+            for (const id of ids) {
+              const value = (predictions[id]?.value as Annotation) ?? undefined;
+              if (value !== undefined && !isTagged(next[id], effectiveConfig.mode)) next[id] = value;
+            }
+            return next;
+          });
+        }
+        setCurrentIndex(0);
+      } catch {
+        setAssistError("predict");
+      } finally {
+        setRoundLoading(false);
+      }
+    },
+    [sessionId, effectiveConfig, data, roundLoading, flushNow],
+  );
 
   // Close the open round once every row is audited (binary/multiclass); the
   // freetext round closes through ``finishRound`` below.
   useEffect(() => {
-    if (phase !== "review" || !assist || !config || config.mode === "freetext") return;
+    if (phase !== "review" || !assist || !effectiveConfig || effectiveConfig.mode === "freetext")
+      return;
     const last = assist.rounds[assist.rounds.length - 1];
     if (!last || last.agreement !== undefined) return;
     if (!last.rowIds.every((id) => last.decided[id] !== undefined)) return;
     const agreement =
-      agreementOver(config.mode, last.rowIds, annotations, assist.predictions) ?? 0;
+      agreementOver(effectiveConfig.mode, last.rowIds, annotations, assist.predictions) ?? 0;
     setAssist((prev) =>
       prev
         ? {
@@ -782,16 +839,17 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
           }
         : prev,
     );
-  }, [phase, assist, config, annotations]);
+  }, [phase, assist, effectiveConfig, annotations]);
 
   /** Close the open round explicitly (freetext rounds and the flagged pass). */
   const finishRound = useCallback(() => {
     const state = assistRef.current;
-    if (!state || !config) return;
+    if (!state || !effectiveConfig) return;
     const last = state.rounds[state.rounds.length - 1];
     if (!last || last.agreement !== undefined) return;
     const agreement =
-      agreementOver(config.mode, last.rowIds, annotationsRef.current, state.predictions) ?? 0;
+      agreementOver(effectiveConfig.mode, last.rowIds, annotationsRef.current, state.predictions) ??
+      0;
     setAssist((prev) => {
       if (!prev) return prev;
       const current = prev.rounds[prev.rounds.length - 1]!;
@@ -800,7 +858,11 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       for (const id of current.rowIds) {
         const final = annotationsRef.current[id];
         if (final === undefined) continue;
-        const agrees = labelsAgree(config.mode, final, prev.predictions[id]?.value as Annotation);
+        const agrees = labelsAgree(
+          effectiveConfig.mode,
+          final,
+          prev.predictions[id]?.value as Annotation,
+        );
         if (decided[id] === undefined) decided[id] = agrees ? "confirmed" : "corrected";
         // Untouched prefilled rows were approved by finishing the round.
         if (provenance[id] === undefined || provenance[id] === "ai_auto") {
@@ -814,84 +876,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       };
     });
     if (last.flaggedPass) setPhase("complete");
-  }, [config]);
-
-  /** Instant optimize: reflectively rewrite the rubric from all labels so far. */
-  const runOptimize = useCallback(async () => {
-    if (!sessionId || optimizeBusy) return;
-    setOptimizeBusy(true);
-    setAssistError(null);
-    try {
-      await flushNow();
-      const res = await taggerAssistOptimize(sessionId, getActiveLocale());
-      patchAssist({ rubric: res.rubric });
-    } catch {
-      setAssistError("optimize");
-    } finally {
-      setOptimizeBusy(false);
-    }
-  }, [sessionId, optimizeBusy, flushNow, patchAssist]);
-
-  /** Deep optimize: submit a real GEPA run trained on the labels so far. */
-  const startDeepOptimize = useCallback(async () => {
-    const state = assistRef.current;
-    if (!sessionId || state?.deepOptimize?.status === "running") return;
-    setAssistError(null);
-    try {
-      await flushNow();
-      const res = await taggerAssistDeepOptimize(sessionId);
-      patchAssist({
-        deepOptimize: { jobId: res.optimization_id, status: "running" },
-      });
-    } catch {
-      setAssistError("deep_optimize");
-    }
-  }, [sessionId, flushNow, patchAssist]);
-
-  // Track a running deep-optimize job; on success, pull the evolved
-  // instructions out of the run artifact and make them the labeling guide.
-  const deepOptimizeJobId = assist?.deepOptimize?.jobId;
-  const deepOptimizeRunning = assist?.deepOptimize?.status === "running";
-  useEffect(() => {
-    if (!deepOptimizeRunning || !deepOptimizeJobId) return;
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const summary = await getOptimizationStatusLite(deepOptimizeJobId);
-        if (cancelled || !TERMINAL_RUN_STATUSES.has(summary.status)) return;
-        if (summary.status === "success") {
-          const artifact = await getOptimizationOptimizedPrompt(deepOptimizeJobId);
-          if (cancelled) return;
-          const instructions =
-            artifact.program_artifact?.optimized_prompt?.instructions?.trim();
-          setAssist((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  ...(instructions ? { rubric: [instructions] } : {}),
-                  deepOptimize: {
-                    jobId: deepOptimizeJobId,
-                    status: "success",
-                    baseline: summary.baseline_test_metric,
-                    optimized: summary.optimized_test_metric,
-                  },
-                }
-              : prev,
-          );
-        } else {
-          patchAssist({ deepOptimize: { jobId: deepOptimizeJobId, status: "failed" } });
-        }
-      } catch {
-        // Transient poll failures are retried on the next tick.
-      }
-    };
-    void tick();
-    const interval = window.setInterval(() => void tick(), DEEP_OPTIMIZE_POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [deepOptimizeRunning, deepOptimizeJobId, patchAssist]);
+  }, [effectiveConfig]);
 
   /** Fetch the credit estimate for tagging everything that is still unlabeled. */
   const fetchEstimate = useCallback(async () => {
@@ -920,6 +905,27 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     }
   }, [sessionId, flushNow]);
 
+  // Start what the contract card promised: copilot's first review batch (the
+  // AI tags it, the human audits) or autopilot's bulk job. Runs as an effect
+  // rather than inside ``confirmRubric`` so the confirmed contract has
+  // committed (and the state mirrors above are fresh) before the starter
+  // flushes it to the server. On failure the flag clears and the
+  // between-rounds gate takes over as the recovery surface, error included.
+  const contractStartFired = useRef(false);
+  useEffect(() => {
+    if (!contractStarting || phase !== "review" || contractStartFired.current) return;
+    contractStartFired.current = true;
+    void (async () => {
+      if (assistRef.current?.mode === "copilot") {
+        await startReviewRound(effectiveConfig ? calibrationTarget(effectiveConfig) : undefined);
+      } else {
+        await startAutotag();
+      }
+      contractStartFired.current = false;
+      setContractStarting(false);
+    })();
+  }, [contractStarting, phase]);
+
   const cancelAutotag = useCallback(async () => {
     if (!sessionId) return;
     try {
@@ -930,10 +936,16 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   }, [sessionId]);
 
   // Poll the bulk job while it runs; when it ends, re-pull the whole session —
-  // the server wrote labels, provenance and the phase flip.
+  // the server wrote labels, provenance and the phase flip. While it runs,
+  // fresh labels are pulled down whenever the done-count moves (the worker
+  // persists each batch into the session row), so the live walkthrough shows
+  // rows being tagged as it happens. Local autosave is suspended in this
+  // phase, so adopting the server's annotations can't echo back a stale PUT.
   useEffect(() => {
     if (phase !== "autotagging" || !sessionId) return;
     let cancelled = false;
+    let syncedDone = -1;
+    let syncing = false;
     const tick = async () => {
       try {
         const status = await taggerAssistAutotagStatus(sessionId);
@@ -946,6 +958,17 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
           setAssist((detail.assist as AssistState | null) ?? null);
           setPhase((detail.phase as TaggerPhase) ?? "complete");
           setCurrentIndex(0);
+        } else if (status.done !== syncedDone && !syncing) {
+          syncing = true;
+          try {
+            const detail = await getTaggerSession(sessionId);
+            if (!cancelled) {
+              syncedDone = status.done;
+              setAnnotations((detail.annotations as Record<string, Annotation>) ?? {});
+            }
+          } finally {
+            syncing = false;
+          }
         }
       } catch {
         // Transient poll failures are retried on the next tick.
@@ -982,30 +1005,20 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     setPhase("annotating");
   }, []);
 
-  // Every consumer sees the interview's task refinements merged over the
-  // immutable stored config (the server applies the same merge on its side).
-  const effectiveConfig = useMemo(() => {
-    if (!config) return null;
-    const override = assist?.taskOverride ?? {};
-    return {
-      ...config,
-      ...(override.question?.trim() ? { question: override.question.trim() } : {}),
-      ...(override.prompt?.trim() ? { prompt: override.prompt.trim() } : {}),
-    };
-  }, [config, assist?.taskOverride]);
-
   const taggedCount = useMemo(
     () =>
-      config ? data.filter((d) => isTagged(annotations[String(d.id)], config.mode)).length : 0,
-    [config, data, annotations],
+      effectiveConfig
+        ? data.filter((d) => isTagged(annotations[String(d.id)], effectiveConfig.mode)).length
+        : 0,
+    [effectiveConfig, data, annotations],
   );
 
   const frameTaggedCount = useMemo(
     () =>
-      config
-        ? frameData.filter((d) => isTagged(annotations[String(d.id)], config.mode)).length
+      effectiveConfig
+        ? frameData.filter((d) => isTagged(annotations[String(d.id)], effectiveConfig.mode)).length
         : 0,
-    [config, frameData, annotations],
+    [effectiveConfig, frameData, annotations],
   );
 
   return {
@@ -1037,16 +1050,16 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     interviewStreamText,
     interviewThinking,
     interviewOptions,
+    interviewPending,
     assistError,
     roundLoading,
-    optimizeBusy,
+    contractStarting,
     estimate,
     autotagStatus,
     sendInterviewMessage,
     stopInterview,
-    setTaskOverride,
+    skipInterview,
     confirmRubric,
-    setRubric,
     assistToggleBinary,
     assistToggleCategory,
     assistSetFreetext,
@@ -1054,8 +1067,6 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     finishCalibration,
     startReviewRound,
     finishRound,
-    runOptimize,
-    startDeepOptimize,
     fetchEstimate,
     startAutotag,
     cancelAutotag,

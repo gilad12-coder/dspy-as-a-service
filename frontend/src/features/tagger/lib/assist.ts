@@ -14,10 +14,6 @@ export const REVIEW_BATCH_SIZE = 20;
 export const FLAG_CONFIDENCE = 0.75;
 /** Freetext agreement threshold on the token-overlap similarity. */
 const FREETEXT_MATCH = 0.85;
-/** Minimum human-vetted labels a deep-optimize run trains on (backend-enforced). */
-export const MIN_DEEP_OPTIMIZE_EXAMPLES = 10;
-/** Consecutive below-gate rounds before the deep-optimize offer appears. */
-export const STALL_ROUNDS = 2;
 
 /** Agreement a closed round must reach before "tag the rest" unlocks. */
 export function agreementGate(mode: AnnotationMode): number {
@@ -136,14 +132,6 @@ export function gateUnlocked(config: TaggerConfig, assist: AssistState): boolean
   return last !== undefined && (last.agreement ?? 0) >= agreementGate(config.mode);
 }
 
-/** Whether the last ``STALL_ROUNDS`` closed rounds all missed the gate. */
-export function gateStalled(config: TaggerConfig, assist: AssistState): boolean {
-  const rounds = closedGateRounds(assist);
-  if (rounds.length < STALL_ROUNDS) return false;
-  const gate = agreementGate(config.mode);
-  return rounds.slice(-STALL_ROUNDS).every((r) => (r.agreement ?? 0) < gate);
-}
-
 /** Counts of final labels by provenance, for the completion summary. */
 export function provenanceCounts(
   assist: AssistState,
@@ -162,13 +150,9 @@ export function provenanceCounts(
 }
 
 /** A fresh assist state for a session starting in the interview phase. */
-export function initialAssistState(
-  mode: "copilot" | "autopilot",
-  calibrationStyle: "blind" | "assisted",
-): AssistState {
+export function initialAssistState(mode: "copilot" | "autopilot"): AssistState {
   return {
     mode,
-    calibrationStyle,
     interview: { turns: [], done: false },
     rubric: [],
     calibrationIds: [],

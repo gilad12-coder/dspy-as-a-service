@@ -85,6 +85,26 @@
     transform: translateY(16px) scale(0.7);
   }
 }
+/* Horizontal twin of cascadeDownHyper. Authored LTR; RTL flips via a
+   scale-x mirror on the container, which reverses this motion too. */
+@keyframes cascadeRightHyper {
+  0% {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: translateX(4px) scale(1.15);
+  }
+  60% {
+    opacity: 0.8;
+    transform: translateX(8px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(16px) scale(0.7);
+  }
+}
 
 @custom-variant data-open {
   &:where([data-state="open"]),
@@ -328,9 +348,8 @@ body {
    a non-Latin UI still renders in Geist. Switching the locale switches the font
    automatically — no JS. Latin/Cyrillic locales (incl. ru, uk) use the base. */
 :root {
-  --font-ui:
-    "Geist Variable", "Heebo Variable", system-ui, -apple-system, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-ui: "Geist Variable", "Heebo Variable", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
 }
 html[lang="ar"] {
   --font-ui: "Noto Sans Arabic Variable", "Geist Variable", system-ui, sans-serif;

@@ -3,7 +3,7 @@ export { autoResizeTextarea } from "./auto-resize";
 export { ChatTranscript } from "./chat-transcript";
 export { Composer } from "./composer";
 export { MessageActions } from "./message-actions";
-export { QuestionChoices } from "./question-choices";
+export { QuestionChoices, QuestionChoicesSkeleton } from "./question-choices";
 export type {
   AgentMessage,
   AgentStatus,
