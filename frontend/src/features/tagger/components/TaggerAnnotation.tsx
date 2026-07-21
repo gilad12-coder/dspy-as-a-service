@@ -58,6 +58,10 @@ interface Props {
   suggestions?: Record<string, AssistPrediction>;
   currentIndex: number;
   taggedCount: number;
+  // Review rounds pre-label every row, so tagged/total reads full before the
+  // human starts; when set, the header bar counts decided rows instead — the
+  // same number the co-pilot rail reports.
+  reviewProgress?: { done: number; total: number };
   onNavigate: (dir: 1 | -1) => void;
   onGoTo: (idx: number) => void;
   onJumpUntagged: () => void;
@@ -76,6 +80,7 @@ export function TaggerAnnotation({
   suggestions,
   currentIndex,
   taggedCount,
+  reviewProgress,
   onNavigate,
   onGoTo,
   onJumpUntagged,
@@ -98,7 +103,9 @@ export function TaggerAnnotation({
 
   const item = data[currentIndex];
   const id = item ? String(item.id) : "";
-  const pct = data.length > 0 ? (taggedCount / data.length) * 100 : 0;
+  const headerDone = reviewProgress ? reviewProgress.done : taggedCount;
+  const headerTotal = reviewProgress ? reviewProgress.total : data.length;
+  const pct = headerTotal > 0 ? (headerDone / headerTotal) * 100 : 0;
   const currentAnn = annotations[id];
   // The AI's pick shows only while the row is undecided — once the human
   // commits (keep or correct), the real selection styling takes over.
@@ -279,7 +286,7 @@ export function TaggerAnnotation({
           />
         </div>
         <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-          <span className="font-semibold text-primary">{taggedCount}</span>/{data.length}
+          <span className="font-semibold text-primary">{headerDone}</span>/{headerTotal}
         </span>
       </div>
 

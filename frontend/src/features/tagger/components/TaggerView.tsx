@@ -165,6 +165,17 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
   const assistActive =
     tagger.assist !== null && (tagger.phase === "calibration" || tagger.phase === "review");
 
+  // During a round the header bar tracks the human's audit, not the AI's
+  // pre-labels — the same decided/total the rail shows, one number per screen.
+  const openRound = tagger.openRound;
+  const reviewProgress =
+    tagger.phase === "review" && openRound
+      ? {
+          done: openRound.rowIds.filter((id) => openRound.decided[id] !== undefined).length,
+          total: openRound.rowIds.length,
+        }
+      : undefined;
+
   const annotation = (
     <TaggerAnnotation
       config={tagger.config}
@@ -175,6 +186,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
       suggestions={tagger.phase === "review" ? tagger.assist?.predictions : undefined}
       currentIndex={tagger.currentIndex}
       taggedCount={tagger.frameTaggedCount}
+      reviewProgress={reviewProgress}
       onNavigate={tagger.navigate}
       onGoTo={tagger.goTo}
       onJumpUntagged={tagger.jumpToUntagged}

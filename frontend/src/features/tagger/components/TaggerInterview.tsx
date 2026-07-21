@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Binary,
   ChevronRight,
@@ -13,9 +13,14 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/shared/ui/primitives/card";
 import { Input } from "@/shared/ui/primitives/input";
-import { FadeIn } from "@/shared/ui/motion";
 import { SubmitSplashOverlay, SUBMIT_SPLASH_HOLD_MS } from "@/shared/ui/submit-splash-overlay";
 import {
   AgentThread,
@@ -294,12 +299,41 @@ function ContractPendingIndicator() {
 }
 
 /**
+ * Mount-triggered fade-rise. The shared ``FadeIn`` animates on viewport
+ * entry, which leaves content at opacity 0 until a scroll nudge when it
+ * mounts right at the fold — on the contract screen the launch button is
+ * the primary CTA and must be visible at first paint.
+ */
+function Rise({
+  delay = 0,
+  className,
+  children,
+}: {
+  delay?: number;
+  className?: string;
+  children: ReactNode;
+}) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={reduce ? { duration: 0 } : { duration: 0.5, delay, ease: [0.2, 0.8, 0.2, 1] }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/**
  * The task contract, editable in place before anything runs: the interview's
- * inferred answer style and its question/categories. The distilled labeling
- * guide rides through the confirm untouched — it steers predictions but has
- * no editing surface. Confirming is the moment the user takes ownership of
- * what the AI believes. Fields for a switched-to answer style start empty on
- * purpose — the switch is a human override, so the human fills it in.
+ * inferred answer style and its question/categories, alongside a read-only
+ * view of the distilled labeling guide. The guide rides through the confirm
+ * untouched — it steers predictions but has no editing surface. Confirming
+ * is the moment the user takes ownership of what the AI believes. Fields for
+ * a switched-to answer style start empty on purpose — the switch is a human
+ * override, so the human fills it in.
  *
  * On autopilot the launch button commits to tagging every row — scope and
  * credit estimate on the button itself — and confirming goes straight into
@@ -409,23 +443,34 @@ function RubricCard({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <Rise className="shrink-0">
+        <h3 className="text-lg font-semibold text-foreground">
+          {msg("tagger.assist.rubric.title")}
+        </h3>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          {msg("tagger.assist.rubric.subtitle")}
+        </p>
+      </Rise>
       <div
         className={cn(
           "grid min-h-0 flex-1 gap-3 overflow-y-auto",
           "lg:grid-cols-[minmax(0,4fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:overflow-visible",
         )}
       >
-        <FadeIn className="flex min-w-0 lg:min-h-0">
-          <Card className="flex w-full flex-col overflow-hidden">
+        <Rise
+          delay={0.06}
+          className={cn(
+            "flex min-w-0 flex-col gap-3 overscroll-contain lg:min-h-0 lg:overflow-y-auto",
+            "lg:[mask-image:linear-gradient(to_bottom,black,black_calc(100%-10px),transparent)]",
+          )}
+        >
+          <Card className="shrink-0">
             <CardHeader>
-              <CardTitle className="text-lg">{msg("tagger.assist.rubric.answer_style")}</CardTitle>
+              <CardTitle className="text-base">
+                {msg("tagger.assist.rubric.answer_style")}
+              </CardTitle>
             </CardHeader>
-            <CardContent
-              className={cn(
-                "flex min-h-0 flex-1 flex-col gap-4 overscroll-contain lg:overflow-y-auto",
-                "lg:[mask-image:linear-gradient(to_bottom,black,black_calc(100%-10px),transparent)]",
-              )}
-            >
+            <CardContent className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 {styleOptions.map((opt) => {
                   const selected = mode === opt.mode;
@@ -521,7 +566,35 @@ function RubricCard({
               </AnimatePresence>
             </CardContent>
           </Card>
-        </FadeIn>
+
+          {assist.rubric.length > 0 && (
+            <Card className="shrink-0">
+              <CardHeader>
+                <CardTitle className="text-base">
+                  {msg("tagger.assist.rubric.guide_title")}
+                </CardTitle>
+                <CardDescription>{msg("tagger.assist.rubric.guide_hint")}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ol className="flex flex-col gap-2.5">
+                  {assist.rubric.map((rule, idx) => (
+                    <li
+                      key={idx}
+                      className="flex gap-2.5 text-sm leading-relaxed text-foreground"
+                    >
+                      <span className="w-4 shrink-0 select-none pt-px text-end font-mono text-xs tabular-nums text-muted-foreground/60">
+                        {idx + 1}
+                      </span>
+                      <span className="min-w-0" dir="auto">
+                        {rule}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </CardContent>
+            </Card>
+          )}
+        </Rise>
 
         {/* The launch column: the submit wizard's start button stood beside
             the guide, filling the row. On autopilot it commits to tagging
@@ -529,7 +602,7 @@ function RubricCard({
             sweep in the reading direction — the container is authored LTR
             and mirrored in RTL so glyphs, order, and motion all flip
             together. */}
-        <FadeIn delay={0.16} className="flex min-w-0 lg:min-h-0">
+        <Rise delay={0.16} className="flex min-w-0 lg:min-h-0">
           <motion.button
             type="button"
             onClick={launch}
@@ -580,7 +653,7 @@ function RubricCard({
               <ChevronRight className="size-10 [animation-delay:0.3s] group-hover:[animation-delay:0.16s]" />
             </div>
           </motion.button>
-        </FadeIn>
+        </Rise>
       </div>
 
       <SubmitSplashOverlay show={launching} />

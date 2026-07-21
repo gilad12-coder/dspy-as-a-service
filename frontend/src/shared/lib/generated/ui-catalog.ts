@@ -2556,6 +2556,7 @@ export type MessageKey =
   | "tagger.assist.complete.credits_one"
   | "tagger.assist.complete.flagged_cta"
   | "tagger.assist.complete.human"
+  | "tagger.assist.complete.no_flags"
   | "tagger.assist.complete.subtitle"
   | "tagger.assist.complete.title"
   | "tagger.assist.gate.another_round"
@@ -2609,8 +2610,12 @@ export type MessageKey =
   | "tagger.assist.rubric.credits_estimate"
   | "tagger.assist.rubric.credits_estimate_flat"
   | "tagger.assist.rubric.credits_estimate_one"
+  | "tagger.assist.rubric.guide_hint"
+  | "tagger.assist.rubric.guide_title"
   | "tagger.assist.rubric.start_autotag"
   | "tagger.assist.rubric.start_copilot_round"
+  | "tagger.assist.rubric.subtitle"
+  | "tagger.assist.rubric.title"
   | "tagger.assist.setup.autopilot_desc"
   | "tagger.assist.setup.autopilot_label"
   | "tagger.assist.setup.copilot_desc"
@@ -5406,6 +5411,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.assist.complete.credits_one": "התיוג האוטומטי עלה בערך קרדיט אחד.",
   "tagger.assist.complete.flagged_cta": "בדיקת {count} שורות שה-AI התלבט בהן",
   "tagger.assist.complete.human": "תויגו על ידיכם",
+  "tagger.assist.complete.no_flags": "אף שורה לא סומנה לבדיקה — ה-AI היה בטוח בכל {count} השורות שתייג.",
   "tagger.assist.complete.subtitle": "כל {total} השורות מתויגות. הנה מי עשה מה.",
   "tagger.assist.complete.title": "הדאטה תויג",
   "tagger.assist.gate.another_round": "עוד סבב בדיקה",
@@ -5443,7 +5449,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.assist.rail.decided_corrected": "תוקן — ה-AI ילמד מזה",
   "tagger.assist.rail.disagree": "אני הייתי מתייג אחרת:",
   "tagger.assist.rail.finish_round": "סיום הסבב",
-  "tagger.assist.rail.gate": "השער נפתח ב-{gate}%",
+  "tagger.assist.rail.gate": "כשנגיע ל-{gate}% הסכמה, אתייג את השאר בעצמי.",
   "tagger.assist.rail.keep": "להשאיר את שלי",
   "tagger.assist.rail.kept": "נרשם — התיוג שלכם נשאר.",
   "tagger.assist.rail.predict_error": "החיזויים לא זמינים כרגע — התיוג ממשיך לעבוד.",
@@ -5459,14 +5465,18 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.assist.rubric.credits_estimate": "‎~{low}–{high} קרדיטים",
   "tagger.assist.rubric.credits_estimate_flat": "‎~{count} קרדיטים",
   "tagger.assist.rubric.credits_estimate_one": "‎~קרדיט אחד",
+  "tagger.assist.rubric.guide_hint": "זוקק מהתשובות שלכם ומנחה כל תיוג של ה-AI.",
+  "tagger.assist.rubric.guide_title": "מדריך התיוג",
   "tagger.assist.rubric.start_autotag": "תיוג כל {rows} השורות",
   "tagger.assist.rubric.start_copilot_round": "תיוג {rows} שורות ראשונות לבדיקה שלכם",
+  "tagger.assist.rubric.subtitle": "מה שה-AI למד מהתשובות שלכם — אשרו לפני שהתיוג מתחיל.",
+  "tagger.assist.rubric.title": "הנה התוכנית",
   "tagger.assist.setup.autopilot_desc": "ראיון קצר, ואז ה-AI מתייג הכול לבד ומסמן שורות שבהן התלבט.",
   "tagger.assist.setup.autopilot_label": "אוטופיילוט",
   "tagger.assist.setup.copilot_desc": "ראיון קצר, ואז ה-AI מתייג סבב ראשון ואתם מאשרים או מתקנים כל תווית. הוא מרוויח את האמון שלכם בסבבי בדיקה לפני שהוא מתייג את השאר.",
   "tagger.assist.setup.copilot_label": "קו-פיילוט",
   "tagger.assist.setup.description": "המתייג יכול ללמוד את התיוגים שלכם ולתייג את השאר בעצמו.",
-  "tagger.assist.setup.manual_desc": "מתייגים כל שורה לבד, בדיוק כמו קודם.",
+  "tagger.assist.setup.manual_desc": "מתייגים כל שורה לבד — בלי AI.",
   "tagger.assist.setup.manual_label": "ידני",
   "tagger.assist.setup.recommended": "מומלץ",
   "tagger.assist.setup.step_label": "גישה",
@@ -13831,6 +13841,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.assist.complete.credits_one": "Auto-labeling used about 1 credit.",
   "tagger.assist.complete.flagged_cta": "Review {count} rows the AI wasn't sure about",
   "tagger.assist.complete.human": "Labeled by you",
+  "tagger.assist.complete.no_flags": "No rows were flagged — the AI was confident on all {count} it labeled.",
   "tagger.assist.complete.subtitle": "All {total} rows carry a label. Here's who did what.",
   "tagger.assist.complete.title": "Dataset tagged",
   "tagger.assist.gate.another_round": "One more review round",
@@ -13868,7 +13879,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.assist.rail.decided_corrected": "Corrected — the AI will learn from this",
   "tagger.assist.rail.disagree": "I'd have tagged this differently:",
   "tagger.assist.rail.finish_round": "Finish this round",
-  "tagger.assist.rail.gate": "Gate opens at {gate}%",
+  "tagger.assist.rail.gate": "Once we agree {gate}% of the time, I'll tag the rest myself.",
   "tagger.assist.rail.keep": "Keep mine",
   "tagger.assist.rail.kept": "Noted — your label stands.",
   "tagger.assist.rail.predict_error": "Predictions are unavailable right now — labeling still works.",
@@ -13884,14 +13895,18 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.assist.rubric.credits_estimate": "~{low}–{high} credits",
   "tagger.assist.rubric.credits_estimate_flat": "~{count} credits",
   "tagger.assist.rubric.credits_estimate_one": "~1 credit",
+  "tagger.assist.rubric.guide_hint": "Distilled from your answers — it steers every label the AI writes.",
+  "tagger.assist.rubric.guide_title": "Labeling guide",
   "tagger.assist.rubric.start_autotag": "Tag all {rows} rows",
   "tagger.assist.rubric.start_copilot_round": "Tag the first {rows} rows for my review",
+  "tagger.assist.rubric.subtitle": "What the AI learned from your answers — confirm it before anything runs.",
+  "tagger.assist.rubric.title": "Here's the plan",
   "tagger.assist.setup.autopilot_desc": "A short interview, then the AI tags everything on its own and flags rows it wasn't sure about.",
   "tagger.assist.setup.autopilot_label": "Autopilot",
   "tagger.assist.setup.copilot_desc": "A short interview, then the AI tags a first batch and you keep or correct each label. It earns your trust in review rounds before tagging the rest.",
   "tagger.assist.setup.copilot_label": "Co-pilot",
   "tagger.assist.setup.description": "The tagger can learn your labels and tag the rest for you.",
-  "tagger.assist.setup.manual_desc": "You tag every row yourself, exactly as before.",
+  "tagger.assist.setup.manual_desc": "You label every row yourself — no AI involved.",
   "tagger.assist.setup.manual_label": "Manual",
   "tagger.assist.setup.recommended": "Recommended",
   "tagger.assist.setup.step_label": "Approach",

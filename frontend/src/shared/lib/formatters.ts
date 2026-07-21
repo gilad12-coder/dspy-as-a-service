@@ -160,3 +160,13 @@ export function moduleLabel(raw: string | null | undefined): string {
   return raw;
 }
 
+
+/**
+ * Sentence-case a lowercase glossary term for standalone UI positions (nav
+ * items, wizard step labels) where surrounding labels are capitalized.
+ * Caseless scripts (Hebrew) pass through unchanged.
+ * @example "new optimization" → "New optimization"
+ */
+export function sentenceCase(term: string): string {
+  return term.charAt(0).toLocaleUpperCase(getActiveIntlLocale()) + term.slice(1);
+}

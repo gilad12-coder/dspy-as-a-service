@@ -44,6 +44,20 @@ export function AgentThread({
     el.scrollTop = el.scrollHeight;
   }, [children, scrollDeps]);
 
+  // Siblings mounting below the thread (answer choices, a growing composer)
+  // shrink this box AFTER the effect above ran, sliding the last lines — the
+  // question the user must answer — out of view. Follow mode re-pins on any
+  // box resize so the bottom stays the bottom.
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      if (stickToBottomRef.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     // No overscroll containment: once the thread hits its boundary (or is too
     // short to scroll at all), the wheel falls through and scrolls the page —

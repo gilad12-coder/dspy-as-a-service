@@ -58,6 +58,7 @@ import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { sessionIdentity } from "@/shared/lib/session-identity";
 import { recentResumableId } from "@/shared/lib/recent-session";
 import { TERMS } from "@/shared/lib/terms";
+import { sentenceCase } from "@/shared/lib/formatters";
 import { EmptyState } from "@/shared/ui/empty-state";
 
 const NAV_ITEMS = perLocale(
@@ -73,7 +74,9 @@ const NAV_ITEMS = perLocale(
         label: msg("auto.features.sidebar.components.sidebar.literal.2"),
         icon: Tags,
       },
-      { href: "/submit", label: TERMS.notificationNewOpt, icon: Send },
+      // The glossary term is lowercase for mid-sentence use; nav items are
+      // sentence-cased ("Explore", "Datasets"), so this one matches.
+      { href: "/submit", label: sentenceCase(TERMS.notificationNewOpt), icon: Send },
       { href: "/explore", label: msg("sidebar.nav.explore"), icon: Compass },
       { href: "/datasets", label: msg("sidebar.nav.datasets"), icon: Database },
     ] as const,

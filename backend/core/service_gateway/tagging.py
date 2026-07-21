@@ -101,7 +101,12 @@ class InterviewTurnSig(dspy.Signature):
     )
     transcript_json: str = dspy.InputField(desc="JSON array of prior {role, content} turns.")
     reply_language: str = dspy.InputField(desc="Language every output is written in.")
-    message: str = dspy.OutputField(desc="The next question, or a short wrap-up when done.")
+    message: str = dspy.OutputField(
+        desc=(
+            "The next question, or a short wrap-up when done. Plain conversational "
+            "prose — never JSON, braces, or bracketed lists."
+        )
+    )
     # ``done`` sits right after ``message`` so it streams before the (slow)
     # options/rubric fields — the client uses it to pick the correct
     # still-generating placeholder (answer choices vs. the task contract).

@@ -59,6 +59,13 @@ export function TaggerComplete({
             />
           </dl>
 
+          {flagged.length === 0 && counts.aiAuto > 0 && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <BadgeCheck className="size-3.5 shrink-0 text-emerald-700" />
+              {formatMsg("tagger.assist.complete.no_flags", { count: counts.aiAuto })}
+            </p>
+          )}
+
           {credits > 0 && (
             <p className="text-xs text-muted-foreground">
               {credits === 1

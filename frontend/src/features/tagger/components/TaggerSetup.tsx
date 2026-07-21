@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   Upload,
   Binary,
@@ -158,6 +158,10 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const [libraryOptions, setLibraryOptions] = useState<DatasetSummary[]>([]);
   const [pickedId, setPickedId] = useState<string | null>(null);
 
+  // Whether the user chose an approach themselves — an explicit pick must
+  // never be overridden by the size-hint default below.
+  const assistPicked = useRef(false);
+
   const { prefs } = useUserPrefs();
   const assistAvailable = isTaggerAssistEnabled() && prefs.taggerAssist;
   const effectiveAssistMode = assistAvailable ? assistMode : "manual";
@@ -169,6 +173,23 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     ...(assistAvailable ? [ASSIST_STEP] : []),
     ...(needsTaskStep ? [TASK_STEP] : []),
   ];
+
+  // The approach step precedes any interface choice, so the tiny-dataset
+  // caveat sizes against the provisional calibration target.
+  const tinyTarget = calibrationTarget({
+    mode: "freetext",
+    modeProvisional: true,
+    inputColumns: inputCols,
+  });
+  const tinyDataset = parsedRows.length > 0 && parsedRows.length <= tinyTarget + REVIEW_BATCH_SIZE;
+
+  // The pre-selected approach follows the size hint: while the hint says
+  // "Manual or Autopilot will serve you better", Co-pilot must not stay
+  // selected by default — the screen would contradict itself.
+  useEffect(() => {
+    if (assistPicked.current) return;
+    setAssistMode(tinyDataset ? "manual" : "copilot");
+  }, [tinyDataset]);
 
   const [question, setQuestion] = useState(
     msg("auto.features.tagger.components.taggersetup.literal.10"),
@@ -459,6 +480,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                     <button
                       key={ds.id}
                       type="button"
+                      aria-pressed={selected}
                       onClick={() => void loadLibraryDataset(ds.id, ds.name)}
                       className={cn(
                         "flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all cursor-pointer",
@@ -498,6 +520,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                     <button
                       key={`${col}-${i}`}
                       type="button"
+                      aria-pressed={selected}
                       onClick={() => toggleInputCol(col)}
                       className={cn(
                         "flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all cursor-pointer",
@@ -543,6 +566,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
             <button
               key={opt.mode}
               type="button"
+              aria-pressed={mode === opt.mode}
               onClick={() => setMode(opt.mode)}
               className={cn(
                 "flex min-w-0 flex-col items-center gap-2 rounded-xl border p-4 text-center transition-all cursor-pointer",
@@ -648,14 +672,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     </Card>
   );
   if (assistAvailable) {
-    // The approach step now precedes any interface choice, so the tiny-dataset
-    // caveat uses the provisional calibration target.
-    const target = calibrationTarget({
-      mode: "freetext",
-      modeProvisional: true,
-      inputColumns: inputCols,
-    });
-    const tinyDataset = parsedRows.length > 0 && parsedRows.length <= target + REVIEW_BATCH_SIZE;
     steps.push(
       <Card key="assist" data-tutorial="tagger-modes">
         <CardHeader>
@@ -670,7 +686,11 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
               <button
                 key={opt.mode}
                 type="button"
-                onClick={() => setAssistMode(opt.mode)}
+                aria-pressed={selected}
+                onClick={() => {
+                  assistPicked.current = true;
+                  setAssistMode(opt.mode);
+                }}
                 className={cn(
                   "flex min-w-0 flex-col gap-0.5 rounded-xl border p-3.5 text-start transition-all cursor-pointer",
                   "hover:border-primary/40 hover:bg-primary/5",

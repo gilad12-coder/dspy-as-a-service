@@ -18,6 +18,10 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
   const isThinking = streaming && !endedAt && Boolean(startedAt);
   const hasFinished = Boolean(endedAt && startedAt);
   const [open, setOpen] = React.useState(true);
+  // While the body animates closed, the header must not show the tail yet —
+  // truncated preview over a still-visible body reads as overlapping ghost
+  // text. The exit animation's completion clears this.
+  const [collapsing, setCollapsing] = React.useState(false);
   const [nowTs, setNowTs] = React.useState(() => Date.now());
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const autoCollapsedRef = React.useRef(false);
@@ -29,12 +33,19 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
     return () => clearInterval(id);
   }, [isThinking]);
 
+  // Under reduced motion the exit is instant and may skip onExitComplete, so
+  // the collapsing flag is only armed when the animation actually runs.
+  const beginCollapse = React.useCallback(() => {
+    if (reasoning && !shouldReduceMotion) setCollapsing(true);
+    setOpen(false);
+  }, [reasoning, shouldReduceMotion]);
+
   React.useEffect(() => {
     if (hasFinished && !autoCollapsedRef.current) {
       autoCollapsedRef.current = true;
-      setOpen(false);
+      beginCollapse();
     }
-  }, [hasFinished]);
+  }, [hasFinished, beginCollapse]);
 
   // Follow the stream only while the user is at the bottom. Once they scroll
   // up to read earlier reasoning their position persists — new tokens must
@@ -61,7 +72,15 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
 
   const tail = React.useMemo(() => {
     if (!reasoning) return "";
-    const cleaned = reasoning.replace(/\s+/g, " ").trim();
+    // The tail is a prose preview. Structured turns usually end their
+    // reasoning by drafting the payload, so fenced blocks and JSON-shaped
+    // lines are dropped — the preview shows thought, never raw config.
+    const prose = reasoning
+      .replace(/```[\s\S]*?(?:```|$)/g, " ")
+      .split("\n")
+      .filter((line) => !/^\s*[{}[\]"'`]|"\s*:|:\s*[{["']/.test(line))
+      .join(" ");
+    const cleaned = prose.replace(/\s+/g, " ").trim();
     return cleaned.length > 90 ? `…${cleaned.slice(-89)}` : cleaned;
   }, [reasoning]);
 
@@ -77,7 +96,7 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
     <div>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? beginCollapse() : setOpen(true))}
         className="flex w-full items-center gap-2.5 px-4 py-2.5 text-start hover:bg-[#3D2E22]/[0.035] transition-colors cursor-pointer"
         aria-expanded={open}
       >
@@ -100,7 +119,7 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
             </span>
           )}
         </div>
-        {!open && tail && (
+        {!open && !collapsing && tail && (
           <span
             className="flex-1 min-w-0 text-[0.6875rem] text-muted-foreground/45 font-mono truncate"
             dir="ltr"
@@ -115,7 +134,7 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
           )}
         />
       </button>
-      <AnimatePresence initial={false}>
+      <AnimatePresence initial={false} onExitComplete={() => setCollapsing(false)}>
         {open && reasoning && (
           <motion.div
             initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}

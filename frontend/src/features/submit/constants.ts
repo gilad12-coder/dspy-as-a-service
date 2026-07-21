@@ -1,6 +1,7 @@
 import type { ModelConfig, SplitFractions } from "@/shared/types/api";
 import { TERMS } from "@/shared/lib/terms";
 import { msg } from "@/shared/lib/messages";
+import { sentenceCase } from "@/shared/lib/formatters";
 
 export const emptyModelConfig = (): ModelConfig => ({
   name: "",
@@ -38,10 +39,13 @@ export const defaultReactConfig = (): ReactConfig => ({
 // sides inside the request, where the catalog is pinned.
 export const STEPS = [
   { id: "basics", label: () => msg("auto.features.submit.constants.literal.1") },
-  { id: "data", label: () => TERMS.dataset },
+  // Glossary terms are lowercase for mid-sentence use; the stepper sits them
+  // beside capitalized labels ("Basic details", "Parameters"), so they get
+  // sentence case here.
+  { id: "data", label: () => sentenceCase(TERMS.dataset) },
   { id: "params", label: () => msg("auto.features.submit.constants.literal.2") },
   { id: "code", label: () => msg("auto.features.submit.constants.literal.3") },
-  { id: "model", label: () => TERMS.model },
+  { id: "model", label: () => sentenceCase(TERMS.model) },
   { id: "review", label: () => msg("auto.features.submit.constants.literal.4") },
 ] as const;
 
