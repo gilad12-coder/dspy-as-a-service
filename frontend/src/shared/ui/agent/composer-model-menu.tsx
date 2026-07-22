@@ -1,13 +1,22 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, ChevronRight } from "lucide-react";
 
 import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { ModelCatalogResponse } from "@/shared/types/api";
-import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/shared/ui/primitives/dropdown-menu";
 
 interface ComposerModelMenuProps {
   /** LiteLLM id of the chosen model; ``null`` runs the server default. */
@@ -53,16 +62,13 @@ function effortHint(level: string | null): string {
 }
 
 /**
- * The composer's model menu — the ChatGPT-style picker: a quiet pill naming
- * the current choice that opens a portaled menu of catalog models, the
- * default ("Auto") row first and a checkmark on the active row. When the
- * chosen model supports reasoning, a Codex-style thinking-level control
- * (Default/Low/Medium/High) docks under the list. The choice applies from
- * the next turn of the surrounding conversation.
- *
- * ``modal``: rendered inside a dialog, the parent's scroll lock would eat
- * wheel events on the portaled list — same lesson as the submit wizard's
- * ModelPicker.
+ * The composer's model menu, structured like Codex's: a quiet chip naming the
+ * current choice ("gpt-5 High") opens a compact two-row menu — Model and
+ * Thinking level, each showing its current value — and each row fans out a
+ * side submenu with the checkmarked options. Picking anything closes the
+ * whole menu; the choice applies from the next turn of the surrounding
+ * conversation. The thinking row is visible but inert on models without
+ * reasoning support.
  */
 export function ComposerModelMenu({
   value,
@@ -76,8 +82,9 @@ export function ComposerModelMenu({
   const [catalog, setCatalog] = React.useState<ModelCatalogResponse | null>(
     cachedCatalog() ?? null,
   );
+  // The synchronous cache may be stale (served without a TTL so the menu is
+  // never empty) — always adopt the revalidated catalog when it lands.
   React.useEffect(() => {
-    if (catalog) return;
     let cancelled = false;
     getModelCatalog()
       .then((c) => {
@@ -87,7 +94,7 @@ export function ComposerModelMenu({
     return () => {
       cancelled = true;
     };
-  }, [catalog]);
+  }, []);
 
   const available = React.useMemo(
     () => (catalog?.models ?? []).filter((m) => m.available),
@@ -121,20 +128,17 @@ export function ComposerModelMenu({
     if (!model || !available.find((m) => m.value === model)?.supports_thinking) {
       onEffortChange(null);
     }
-    setOpen(false);
-    setQuery("");
   };
 
   return (
-    <Popover
+    <DropdownMenu
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setQuery("");
       }}
-      modal
     >
-      <PopoverTrigger asChild>
+      <DropdownMenuTrigger asChild>
         <button
           type="button"
           disabled={disabled}
@@ -155,111 +159,107 @@ export function ComposerModelMenu({
           {value && effort && <span className="shrink-0 opacity-60">{effortLabel(effort)}</span>}
           <ChevronDown className="size-3 shrink-0" />
         </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={6} className="w-72 overflow-hidden p-0">
-        {available.length > 8 && (
-          <div className="border-b border-border/40 p-2">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={msg("agent.model_menu.search")}
-              aria-label={msg("agent.model_menu.search")}
-              className={cn(
-                "w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm",
-                "outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring",
-              )}
-              dir="ltr"
-            />
-          </div>
-        )}
-        <div
-          role="listbox"
-          aria-label={msg("agent.model_menu.label")}
-          className="max-h-72 overflow-y-auto py-1"
-        >
-          {!q && (
-            <MenuRow
-              selected={value === null}
-              label={msg("agent.model_menu.auto")}
-              description={msg("agent.model_menu.auto_hint")}
-              onClick={() => pick(null)}
-            />
-          )}
-          {[...grouped.entries()].map(([provider, group]) => (
-            <div key={provider}>
-              <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
-                {providerLabel(provider)}
-              </p>
-              {group.map((m) => (
-                <MenuRow
-                  key={m.value}
-                  selected={value === m.value}
-                  label={m.label}
-                  onClick={() => pick(m.value)}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={6} className="w-60 py-1">
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <span className="shrink-0">{msg("agent.model_menu.model")}</span>
+            <span className="ms-auto truncate text-muted-foreground" dir="ltr">
+              {value ? shortName(value) : msg("agent.model_menu.auto")}
+            </span>
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-72 overflow-hidden p-0">
+            {available.length > 8 && (
+              <div className="border-b border-border/40 p-2">
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  // Typed characters must stay in the input — the menu's
+                  // typeahead would otherwise swallow them to jump rows.
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder={msg("agent.model_menu.search")}
+                  aria-label={msg("agent.model_menu.search")}
+                  className={cn(
+                    "w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm",
+                    "outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring",
+                  )}
+                  dir="ltr"
                 />
+              </div>
+            )}
+            <div className="max-h-72 overflow-y-auto py-1">
+              {!q && (
+                <MenuItem
+                  selected={value === null}
+                  label={msg("agent.model_menu.auto")}
+                  description={msg("agent.model_menu.auto_hint")}
+                  onSelect={() => pick(null)}
+                />
+              )}
+              {[...grouped.entries()].map(([provider, group]) => (
+                <div key={provider}>
+                  <DropdownMenuLabel>{providerLabel(provider)}</DropdownMenuLabel>
+                  {group.map((m) => (
+                    <MenuItem
+                      key={m.value}
+                      selected={value === m.value}
+                      label={m.label}
+                      onSelect={() => pick(m.value)}
+                    />
+                  ))}
+                </div>
               ))}
+              {filtered.length === 0 && (
+                <p className="px-3 py-2 text-sm text-muted-foreground">
+                  {msg("agent.model_menu.empty")}
+                </p>
+              )}
             </div>
-          ))}
-          {filtered.length === 0 && (
-            <p className="px-3 py-2 text-sm text-muted-foreground">
-              {msg("agent.model_menu.empty")}
-            </p>
-          )}
-        </div>
-        {/* Codex-style reasoning selector: each effort is a menu row with a
-            one-line description and a checkmark, and picking one closes the
-            menu — the same gesture as picking a model. */}
-        {canThink && (
-          <div className="border-t border-border/40 py-1">
-            <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
-              {msg("agent.model_menu.effort_label")}
-            </p>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger disabled={!canThink}>
+            <span className="shrink-0">{msg("agent.model_menu.effort_label")}</span>
+            <span className="ms-auto truncate text-muted-foreground">
+              {effort ? effortLabel(effort) : msg("agent.model_menu.effort_default")}
+            </span>
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-60 py-1">
             {[null, ...EFFORT_LEVELS].map((level) => (
-              <MenuRow
+              <MenuItem
                 key={level ?? "default"}
                 selected={effort === level}
                 label={level ? effortLabel(level) : msg("agent.model_menu.effort_default")}
                 description={effortHint(level)}
                 dir="auto"
-                onClick={() => {
-                  onEffortChange(level);
-                  setOpen(false);
-                  setQuery("");
-                }}
+                onSelect={() => onEffortChange(level)}
               />
             ))}
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
-function MenuRow({
+function MenuItem({
   selected,
   label,
   description,
-  onClick,
+  onSelect,
   dir = "ltr",
 }: {
   selected: boolean;
   label: string;
   description?: string;
-  onClick: () => void;
+  onSelect: () => void;
   /** Model ids are latin so rows default LTR; localized rows pass ``auto``. */
   dir?: "ltr" | "auto";
 }) {
   return (
-    <button
-      type="button"
-      role="option"
-      aria-selected={selected}
-      onClick={onClick}
-      className={cn(
-        "flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-start",
-        "hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none",
-      )}
-    >
+    <DropdownMenuItem onSelect={onSelect}>
       <span className="flex min-w-0 flex-1 flex-col">
         <span
           className={cn("truncate text-sm text-foreground", selected && "font-medium")}
@@ -274,6 +274,6 @@ function MenuRow({
         )}
       </span>
       <Check className={cn("size-4 shrink-0 text-primary", !selected && "invisible")} />
-    </button>
+    </DropdownMenuItem>
   );
 }
