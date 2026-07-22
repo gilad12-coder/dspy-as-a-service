@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/shared/ui/primitives/dialog";
 import { EmptyState } from "@/shared/ui/empty-state";
+import { ListPageSkeleton } from "@/shared/ui/list-page-skeleton";
 import { SearchField } from "@/shared/ui/search-field";
 import { SelectionBar } from "@/shared/ui/selection-bar";
 import { TAGGER_SESSIONS_CHANGED } from "../hooks/use-tagger";
@@ -131,15 +132,11 @@ export function TaggingSessionsPanel({ onStartNew }: { onStartNew: () => void })
 
   if (!loaded) {
     return (
-      <section
-        className="flex min-h-64 w-full items-center justify-center"
-        aria-live="polite"
-        aria-busy="true"
-      >
-        <div role="status">
-          <Loader2 className="size-6 animate-spin text-primary" />
-          <span className="sr-only">{msg("tagger.session.loading")}</span>
-        </div>
+      <section className="w-full pb-16" aria-busy="true">
+        <ListPageSkeleton />
+        <span className="sr-only" role="status">
+          {msg("tagger.session.loading")}
+        </span>
       </section>
     );
   }

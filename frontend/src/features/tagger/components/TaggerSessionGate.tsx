@@ -12,6 +12,7 @@ import {
   type TaggerSessionDetail,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { PageContainer } from "@/shared/layout/page-container";
 import { TaggerBackLink } from "./TaggerBackLink";
 import { TaggerView } from "./TaggerView";
 
@@ -58,14 +59,16 @@ export function TaggerSessionGate() {
 
   if (state.mode === "loading") {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="size-8 animate-spin text-primary" />
-      </div>
+      <PageContainer full>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="size-8 animate-spin text-primary" />
+        </div>
+      </PageContainer>
     );
   }
   if (state.mode === "notfound") {
     return (
-      <>
+      <PageContainer full>
         <div className="mb-3">
           <TaggerBackLink />
         </div>
@@ -73,7 +76,7 @@ export function TaggerSessionGate() {
           <XCircle className="size-12 text-destructive" />
           <p className="text-lg text-muted-foreground">{msg("tagger.session.notfound")}</p>
         </div>
-      </>
+      </PageContainer>
     );
   }
   // Remount on id change so the hook re-seeds from the new session's state.

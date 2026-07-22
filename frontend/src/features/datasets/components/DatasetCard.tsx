@@ -185,7 +185,7 @@ export function DatasetCard({
               asChild
               variant="ghost"
               size="icon-sm"
-              className="text-muted-foreground hover:text-foreground"
+              className="size-11 text-muted-foreground hover:text-foreground sm:size-8"
               aria-label={msg("datasets.action.tag")}
             >
               <Link href={`/tagger?dataset=${dataset.id}&name=${encodeURIComponent(dataset.name)}`}>
@@ -199,7 +199,7 @@ export function DatasetCard({
                 asChild
                 variant="ghost"
                 size="icon-sm"
-                className="text-muted-foreground hover:text-foreground"
+                className="size-11 text-muted-foreground hover:text-foreground sm:size-8"
                 aria-label={msg("datasets.action.edit")}
               >
                 <Link href={`/datasets/${dataset.id}/edit?name=${encodeURIComponent(dataset.name)}`}>
@@ -215,7 +215,7 @@ export function DatasetCard({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="text-muted-foreground hover:text-foreground"
+                  className="size-11 text-muted-foreground hover:text-foreground sm:size-8"
                   onClick={() => {
                     setRenameValue(dataset.name);
                     setRenameOpen(true);
@@ -229,7 +229,7 @@ export function DatasetCard({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="text-muted-foreground hover:text-destructive"
+                  className="size-11 text-muted-foreground hover:text-destructive sm:size-8"
                   onClick={() => setDeleteOpen(true)}
                   aria-label={msg("datasets.action.delete")}
                 >
@@ -242,7 +242,7 @@ export function DatasetCard({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="text-muted-foreground hover:text-foreground"
+                className="size-11 text-muted-foreground hover:text-foreground sm:size-8"
                 onClick={handleClone}
                 disabled={cloning}
                 aria-label={msg("datasets.action.clone")}
