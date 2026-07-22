@@ -11,10 +11,14 @@ export type MessageKey =
   | "agent.model_menu.auto"
   | "agent.model_menu.auto_hint"
   | "agent.model_menu.effort_default"
+  | "agent.model_menu.effort_default_hint"
   | "agent.model_menu.effort_high"
+  | "agent.model_menu.effort_high_hint"
   | "agent.model_menu.effort_label"
   | "agent.model_menu.effort_low"
+  | "agent.model_menu.effort_low_hint"
   | "agent.model_menu.effort_medium"
+  | "agent.model_menu.effort_medium_hint"
   | "agent.model_menu.empty"
   | "agent.model_menu.label"
   | "agent.model_menu.search"
@@ -2901,10 +2905,14 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "agent.model_menu.auto": "אוטומטי",
   "agent.model_menu.auto_hint": "מודל ברירת המחדל המומלץ",
   "agent.model_menu.effort_default": "ברירת מחדל",
+  "agent.model_menu.effort_default_hint": "רמת ברירת המחדל של המודל",
   "agent.model_menu.effort_high": "גבוהה",
+  "agent.model_menu.effort_high_hint": "חשיבה מעמיקה יותר למשימות מורכבות",
   "agent.model_menu.effort_label": "רמת חשיבה",
   "agent.model_menu.effort_low": "נמוכה",
+  "agent.model_menu.effort_low_hint": "התגובות המהירות ביותר",
   "agent.model_menu.effort_medium": "בינונית",
+  "agent.model_menu.effort_medium_hint": "איזון בין מהירות לעומק",
   "agent.model_menu.empty": "אין מודלים תואמים",
   "agent.model_menu.label": "בחירת מודל",
   "agent.model_menu.search": "חיפוש מודלים...",
@@ -11364,10 +11372,14 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "agent.model_menu.auto": "Auto",
   "agent.model_menu.auto_hint": "The recommended default model",
   "agent.model_menu.effort_default": "Default",
+  "agent.model_menu.effort_default_hint": "The model's default level",
   "agent.model_menu.effort_high": "High",
+  "agent.model_menu.effort_high_hint": "Thinks harder for complex tasks",
   "agent.model_menu.effort_label": "Thinking level",
   "agent.model_menu.effort_low": "Low",
+  "agent.model_menu.effort_low_hint": "Fastest responses",
   "agent.model_menu.effort_medium": "Medium",
+  "agent.model_menu.effort_medium_hint": "Balances speed and depth",
   "agent.model_menu.empty": "No models match",
   "agent.model_menu.label": "Choose a model",
   "agent.model_menu.search": "Search models...",

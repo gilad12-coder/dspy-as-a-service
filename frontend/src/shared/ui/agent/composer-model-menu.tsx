@@ -39,6 +39,19 @@ function effortLabel(level: string): string {
   }
 }
 
+function effortHint(level: string | null): string {
+  switch (level) {
+    case "low":
+      return msg("agent.model_menu.effort_low_hint");
+    case "medium":
+      return msg("agent.model_menu.effort_medium_hint");
+    case "high":
+      return msg("agent.model_menu.effort_high_hint");
+    default:
+      return msg("agent.model_menu.effort_default_hint");
+  }
+}
+
 /**
  * The composer's model menu — the ChatGPT-style picker: a quiet pill naming
  * the current choice that opens a portaled menu of catalog models, the
@@ -137,7 +150,9 @@ export function ComposerModelMenu({
           <span className="max-w-40 truncate" dir="ltr">
             {value ? shortName(value) : msg("agent.model_menu.auto")}
           </span>
-          {value && effort && <span className="shrink-0">· {effortLabel(effort)}</span>}
+          {/* Codex-style chip: the effort reads as a lighter suffix after the
+              model name ("gpt-5 High"), not a separated fragment. */}
+          {value && effort && <span className="shrink-0 opacity-60">{effortLabel(effort)}</span>}
           <ChevronDown className="size-3 shrink-0" />
         </button>
       </PopoverTrigger>
@@ -191,29 +206,28 @@ export function ComposerModelMenu({
             </p>
           )}
         </div>
+        {/* Codex-style reasoning selector: each effort is a menu row with a
+            one-line description and a checkmark, and picking one closes the
+            menu — the same gesture as picking a model. */}
         {canThink && (
-          <div className="border-t border-border/40 p-2">
-            <p className="px-1 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+          <div className="border-t border-border/40 py-1">
+            <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
               {msg("agent.model_menu.effort_label")}
             </p>
-            <div className="flex rounded-lg bg-muted p-0.5">
-              {[null, ...EFFORT_LEVELS].map((level) => (
-                <button
-                  key={level ?? "default"}
-                  type="button"
-                  onClick={() => onEffortChange(level)}
-                  className={cn(
-                    "flex-1 cursor-pointer rounded-md px-2 py-1 text-center text-xs font-medium transition-colors",
-                    "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40",
-                    effort === level
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {level ? effortLabel(level) : msg("agent.model_menu.effort_default")}
-                </button>
-              ))}
-            </div>
+            {[null, ...EFFORT_LEVELS].map((level) => (
+              <MenuRow
+                key={level ?? "default"}
+                selected={effort === level}
+                label={level ? effortLabel(level) : msg("agent.model_menu.effort_default")}
+                description={effortHint(level)}
+                dir="auto"
+                onClick={() => {
+                  onEffortChange(level);
+                  setOpen(false);
+                  setQuery("");
+                }}
+              />
+            ))}
           </div>
         )}
       </PopoverContent>
@@ -226,11 +240,14 @@ function MenuRow({
   label,
   description,
   onClick,
+  dir = "ltr",
 }: {
   selected: boolean;
   label: string;
   description?: string;
   onClick: () => void;
+  /** Model ids are latin so rows default LTR; localized rows pass ``auto``. */
+  dir?: "ltr" | "auto";
 }) {
   return (
     <button
@@ -246,12 +263,12 @@ function MenuRow({
       <span className="flex min-w-0 flex-1 flex-col">
         <span
           className={cn("truncate text-sm text-foreground", selected && "font-medium")}
-          dir="ltr"
+          dir={dir}
         >
           {label}
         </span>
         {description && (
-          <span className="truncate text-xs text-muted-foreground" dir="ltr">
+          <span className="truncate text-xs text-muted-foreground" dir={dir}>
             {description}
           </span>
         )}
