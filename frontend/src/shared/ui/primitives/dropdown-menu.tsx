@@ -39,6 +39,7 @@ function DropdownMenuContent({
   className,
   sideOffset = 6,
   align = "center",
+  collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   return (
@@ -47,6 +48,7 @@ function DropdownMenuContent({
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         align={align}
+        collisionPadding={collisionPadding}
         className={cn(panelClass, className)}
         style={{ zIndex: 50 }}
         {...props}
@@ -104,6 +106,7 @@ function DropdownMenuSubTrigger({
 function DropdownMenuSubContent({
   className,
   sideOffset = 6,
+  collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
   return (
@@ -111,6 +114,7 @@ function DropdownMenuSubContent({
       <DropdownMenuPrimitive.SubContent
         data-slot="dropdown-menu-sub-content"
         sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
         className={cn(panelClass, className)}
         style={{ zIndex: 50 }}
         {...props}

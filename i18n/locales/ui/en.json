@@ -2854,6 +2854,7 @@
   "agent.model_menu.empty": "No models match",
   "agent.model_menu.label": "Choose a model",
   "agent.model_menu.model": "Model",
+  "agent.model_menu.narrow": "Keep typing to narrow the results",
   "agent.model_menu.search": "Search models...",
   "agent.composer.record": "Dictate",
   "agent.composer.record_finish": "Finish and transcribe",

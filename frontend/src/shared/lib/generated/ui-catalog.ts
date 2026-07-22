@@ -22,6 +22,7 @@ export type MessageKey =
   | "agent.model_menu.empty"
   | "agent.model_menu.label"
   | "agent.model_menu.model"
+  | "agent.model_menu.narrow"
   | "agent.model_menu.search"
   | "app.meta.description"
   | "app.shell.account.aria"
@@ -2917,6 +2918,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "agent.model_menu.empty": "אין מודלים תואמים",
   "agent.model_menu.label": "בחירת מודל",
   "agent.model_menu.model": "מודל",
+  "agent.model_menu.narrow": "הקלידו עוד כדי לצמצם את התוצאות",
   "agent.model_menu.search": "חיפוש מודלים...",
   "app.meta.description": "מערכת לאופטימיזציית פרומפטים עם DSPy — שיפור ביצועים של מודלי שפה באופן אוטומטי",
   "app.shell.account.aria": "תפריט חשבון",
@@ -11385,6 +11387,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "agent.model_menu.empty": "No models match",
   "agent.model_menu.label": "Choose a model",
   "agent.model_menu.model": "Model",
+  "agent.model_menu.narrow": "Keep typing to narrow the results",
   "agent.model_menu.search": "Search models...",
   "app.meta.description": "Prompt optimization with DSPy — automatically improve the performance of language models",
   "app.shell.account.aria": "Account menu",

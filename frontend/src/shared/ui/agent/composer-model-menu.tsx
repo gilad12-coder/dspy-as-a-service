@@ -35,6 +35,30 @@ function shortName(id: string): string {
 
 const EFFORT_LEVELS = ["low", "medium", "high"] as const;
 
+// Display curation only. The composer picks a conversation partner, not a
+// training target — the full gateway catalog (500+ ids, embeddings and TTS
+// included) belongs to the submit wizard, not here. Search still reaches
+// every available model; ids that leave the catalog drop out silently.
+const FEATURED_MODELS = [
+  "openai/gpt-5.6-sol",
+  "openai/gpt-5.6-terra",
+  "openai/gpt-5.6-luna",
+  "openai/gpt-5.5",
+  "openai/gpt-5.4-mini",
+  "openrouter/anthropic/claude-fable-5",
+  "openrouter/anthropic/claude-opus-4.8",
+  "openrouter/anthropic/claude-sonnet-5",
+  "openrouter/anthropic/claude-haiku-4.5",
+  "openrouter/google/gemini-3.1-pro-preview",
+  "openrouter/google/gemini-3.6-flash",
+  "openrouter/x-ai/grok-4.5",
+  "openrouter/deepseek/deepseek-v4-pro",
+  "openrouter/moonshotai/kimi-k3",
+];
+
+// Renders stay cheap even for one-letter queries that match half the catalog.
+const SEARCH_RESULT_CAP = 50;
+
 function effortLabel(level: string): string {
   switch (level) {
     case "low":
@@ -68,7 +92,8 @@ function effortHint(level: string | null): string {
  * side submenu with the checkmarked options. Picking anything closes the
  * whole menu; the choice applies from the next turn of the surrounding
  * conversation. The thinking row is visible but inert on models without
- * reasoning support.
+ * reasoning support. The model submenu shows only the curated featured
+ * shortlist; the full catalog is reachable through search.
  */
 export function ComposerModelMenu({
   value,
@@ -106,15 +131,30 @@ export function ComposerModelMenu({
         (m) => m.value.toLowerCase().includes(q) || m.label.toLowerCase().includes(q),
       )
     : available;
+  const capped = filtered.slice(0, SEARCH_RESULT_CAP);
   const grouped = React.useMemo(() => {
-    const groups = new Map<string, typeof filtered>();
-    for (const m of filtered) {
+    const groups = new Map<string, typeof capped>();
+    for (const m of capped) {
       const arr = groups.get(m.provider) ?? [];
       arr.push(m);
       groups.set(m.provider, arr);
     }
     return groups;
-  }, [filtered]);
+  }, [capped]);
+
+  // Small deployments (an on-prem gateway with a handful of models) may miss
+  // every featured id — fall back to the whole list rather than an empty menu.
+  const featured = React.useMemo(() => {
+    const byId = new Map(available.map((m) => [m.value, m]));
+    const rows = FEATURED_MODELS.flatMap((id) => byId.get(id) ?? []);
+    return rows.length ? rows : available.slice(0, SEARCH_RESULT_CAP);
+  }, [available]);
+  // A model picked through search must keep its checkmarked row next time
+  // the menu opens, even though it isn't featured.
+  const currentExtra =
+    value && !featured.some((m) => m.value === value)
+      ? (available.find((m) => m.value === value) ?? null)
+      : null;
 
   const providerLabel = (slug: string) =>
     catalog?.providers.find((p) => p.slug === slug)?.label ?? slug;
@@ -189,31 +229,56 @@ export function ComposerModelMenu({
               </div>
             )}
             <div className="max-h-72 overflow-y-auto py-1">
-              {!q && (
-                <MenuItem
-                  selected={value === null}
-                  label={msg("agent.model_menu.auto")}
-                  description={msg("agent.model_menu.auto_hint")}
-                  onSelect={() => pick(null)}
-                />
-              )}
-              {[...grouped.entries()].map(([provider, group]) => (
-                <div key={provider}>
-                  <DropdownMenuLabel>{providerLabel(provider)}</DropdownMenuLabel>
-                  {group.map((m) => (
+              {!q ? (
+                <>
+                  <MenuItem
+                    selected={value === null}
+                    label={msg("agent.model_menu.auto")}
+                    description={msg("agent.model_menu.auto_hint")}
+                    onSelect={() => pick(null)}
+                  />
+                  {currentExtra && (
+                    <MenuItem
+                      selected
+                      label={shortName(currentExtra.value)}
+                      onSelect={() => pick(currentExtra.value)}
+                    />
+                  )}
+                  {featured.map((m) => (
                     <MenuItem
                       key={m.value}
                       selected={value === m.value}
-                      label={m.label}
+                      label={shortName(m.value)}
                       onSelect={() => pick(m.value)}
                     />
                   ))}
-                </div>
-              ))}
-              {filtered.length === 0 && (
-                <p className="px-3 py-2 text-sm text-muted-foreground">
-                  {msg("agent.model_menu.empty")}
-                </p>
+                </>
+              ) : (
+                <>
+                  {[...grouped.entries()].map(([provider, group]) => (
+                    <div key={provider}>
+                      <DropdownMenuLabel>{providerLabel(provider)}</DropdownMenuLabel>
+                      {group.map((m) => (
+                        <MenuItem
+                          key={m.value}
+                          selected={value === m.value}
+                          label={m.label}
+                          onSelect={() => pick(m.value)}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                  {filtered.length > SEARCH_RESULT_CAP && (
+                    <p className="px-3 py-2 text-xs text-muted-foreground">
+                      {msg("agent.model_menu.narrow")}
+                    </p>
+                  )}
+                  {filtered.length === 0 && (
+                    <p className="px-3 py-2 text-sm text-muted-foreground">
+                      {msg("agent.model_menu.empty")}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </DropdownMenuSubContent>
