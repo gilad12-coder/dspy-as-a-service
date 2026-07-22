@@ -54,8 +54,9 @@ def assist_model_name() -> str:
     return settings.tagger_assist_model or settings.generalist_agent_model
 
 
-# Reasoning-effort levels the shared model-config dialog offers.
-_REASONING_EFFORT_LEVELS = frozenset({"minimal", "low", "medium", "high"})
+# Union of the per-provider effort vocabularies the composer offers
+# ("ultra" is GPT-5.6 Sol's top tier, "max" is Anthropic's).
+_REASONING_EFFORT_LEVELS = frozenset({"minimal", "low", "medium", "high", "ultra", "max"})
 
 
 def _sanitize_model_params(params: Any) -> dict[str, Any]:

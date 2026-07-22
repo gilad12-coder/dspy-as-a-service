@@ -74,7 +74,7 @@ class InterviewRequest(BaseModel):
             "composer's model menu); absent runs the server default."
         ),
     )
-    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = Field(
+    reasoning_effort: Literal["minimal", "low", "medium", "high", "ultra", "max"] | None = Field(
         default=None,
         description=(
             "Explicit reasoning-effort level for the chosen model; absent "

@@ -18,8 +18,14 @@ export type MessageKey =
   | "agent.model_menu.effort_label"
   | "agent.model_menu.effort_low"
   | "agent.model_menu.effort_low_hint"
+  | "agent.model_menu.effort_max"
+  | "agent.model_menu.effort_max_hint"
   | "agent.model_menu.effort_medium"
   | "agent.model_menu.effort_medium_hint"
+  | "agent.model_menu.effort_minimal"
+  | "agent.model_menu.effort_minimal_hint"
+  | "agent.model_menu.effort_ultra"
+  | "agent.model_menu.effort_ultra_hint"
   | "agent.model_menu.empty"
   | "agent.model_menu.label"
   | "agent.model_menu.model"
@@ -2915,8 +2921,14 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "agent.model_menu.effort_label": "מאמץ",
   "agent.model_menu.effort_low": "נמוכה",
   "agent.model_menu.effort_low_hint": "התגובות המהירות ביותר",
+  "agent.model_menu.effort_max": "מקסימלית",
+  "agent.model_menu.effort_max_hint": "החשיבה העמוקה ביותר שהמודל מציע",
   "agent.model_menu.effort_medium": "בינונית",
   "agent.model_menu.effort_medium_hint": "איזון בין מהירות לעומק",
+  "agent.model_menu.effort_minimal": "מזערית",
+  "agent.model_menu.effort_minimal_hint": "כמעט מיידית, חשיבה מזערית",
+  "agent.model_menu.effort_ultra": "אולטרה",
+  "agent.model_menu.effort_ultra_hint": "חשיבה מורחבת לבעיות הקשות ביותר",
   "agent.model_menu.empty": "אין מודלים תואמים",
   "agent.model_menu.label": "בחירת מודל",
   "agent.model_menu.model": "מודל",
@@ -11385,8 +11397,14 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "agent.model_menu.effort_label": "Effort",
   "agent.model_menu.effort_low": "Low",
   "agent.model_menu.effort_low_hint": "Fastest responses",
+  "agent.model_menu.effort_max": "Max",
+  "agent.model_menu.effort_max_hint": "The deepest reasoning the model offers",
   "agent.model_menu.effort_medium": "Medium",
   "agent.model_menu.effort_medium_hint": "Balances speed and depth",
+  "agent.model_menu.effort_minimal": "Minimal",
+  "agent.model_menu.effort_minimal_hint": "Near-instant, minimal thinking",
+  "agent.model_menu.effort_ultra": "Ultra",
+  "agent.model_menu.effort_ultra_hint": "Extended reasoning for the hardest problems",
   "agent.model_menu.empty": "No models match",
   "agent.model_menu.label": "Choose a model",
   "agent.model_menu.model": "Model",

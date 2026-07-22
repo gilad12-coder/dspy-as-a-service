@@ -33,7 +33,22 @@ function shortName(id: string): string {
   return id.split("/").pop() || id;
 }
 
-const EFFORT_LEVELS = ["low", "medium", "high"] as const;
+// Effort vocabularies are per-API, not universal: OpenAI accepts "minimal"
+// and GPT-5.6 Sol tops out at "ultra", Anthropic tops out at "max". Offering
+// a level the provider rejects would fail the turn at the gateway.
+const DEFAULT_EFFORTS = ["low", "medium", "high"] as const;
+const OPENAI_EFFORTS = ["minimal", "low", "medium", "high"] as const;
+const OPENAI_SOL_EFFORTS = ["minimal", "low", "medium", "high", "ultra"] as const;
+const ANTHROPIC_EFFORTS = ["low", "medium", "high", "max"] as const;
+
+function effortsFor(model: string | null): readonly string[] {
+  if (!model) return DEFAULT_EFFORTS;
+  if (model.includes("anthropic/claude")) return ANTHROPIC_EFFORTS;
+  if (model.startsWith("openai/")) {
+    return model.includes("gpt-5.6-sol") ? OPENAI_SOL_EFFORTS : OPENAI_EFFORTS;
+  }
+  return DEFAULT_EFFORTS;
+}
 
 // Display curation only. The composer picks a conversation partner, not a
 // training target — the full gateway catalog (500+ ids, embeddings and TTS
@@ -52,8 +67,10 @@ const FEATURED_MODELS = [
   "openrouter/google/gemini-3.1-pro-preview",
   "openrouter/google/gemini-3.6-flash",
   "openrouter/x-ai/grok-4.5",
+  "openrouter/meta/muse-spark-1.1",
   "openrouter/deepseek/deepseek-v4-pro",
   "openrouter/moonshotai/kimi-k3",
+  "openrouter/minimax/minimax-m3",
 ];
 
 // Renders stay cheap even for one-letter queries that match half the catalog.
@@ -61,12 +78,18 @@ const SEARCH_RESULT_CAP = 50;
 
 function effortLabel(level: string): string {
   switch (level) {
+    case "minimal":
+      return msg("agent.model_menu.effort_minimal");
     case "low":
       return msg("agent.model_menu.effort_low");
     case "medium":
       return msg("agent.model_menu.effort_medium");
     case "high":
       return msg("agent.model_menu.effort_high");
+    case "ultra":
+      return msg("agent.model_menu.effort_ultra");
+    case "max":
+      return msg("agent.model_menu.effort_max");
     default:
       return level;
   }
@@ -74,12 +97,18 @@ function effortLabel(level: string): string {
 
 function effortHint(level: string | null): string {
   switch (level) {
+    case "minimal":
+      return msg("agent.model_menu.effort_minimal_hint");
     case "low":
       return msg("agent.model_menu.effort_low_hint");
     case "medium":
       return msg("agent.model_menu.effort_medium_hint");
     case "high":
       return msg("agent.model_menu.effort_high_hint");
+    case "ultra":
+      return msg("agent.model_menu.effort_ultra_hint");
+    case "max":
+      return msg("agent.model_menu.effort_max_hint");
     default:
       return msg("agent.model_menu.effort_default_hint");
   }
@@ -163,9 +192,14 @@ export function ComposerModelMenu({
 
   const pick = (model: string | null) => {
     onChange(model);
-    // Effort only means something on a reasoning-capable model; carrying it
-    // across to one that isn't would silently send a dead parameter.
-    if (!model || !available.find((m) => m.value === model)?.supports_thinking) {
+    // Effort only means something on a reasoning-capable model, and each
+    // provider speaks its own vocabulary — carrying a level the new model
+    // doesn't support would send a dead or rejected parameter.
+    if (
+      !model ||
+      !available.find((m) => m.value === model)?.supports_thinking ||
+      (effort !== null && !effortsFor(model).includes(effort))
+    ) {
       onEffortChange(null);
     }
   };
@@ -294,7 +328,7 @@ export function ComposerModelMenu({
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-60 py-1">
-            {[null, ...EFFORT_LEVELS].map((level) => (
+            {[null, ...effortsFor(value)].map((level) => (
               <MenuItem
                 key={level ?? "default"}
                 selected={effort === level}
