@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRight, List } from "lucide-react";
 import type { TaggerSessionDetail } from "@/shared/lib/api";
 import { Button } from "@/shared/ui/primitives/button";
+import { DataHubTabs } from "@/shared/ui/data-hub-tabs";
 import { msg } from "@/shared/lib/messages";
 import { useTagger } from "../hooks/use-tagger";
 import { TaggerResultsTable } from "./TaggerResultsTable";
@@ -22,13 +23,29 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
   const [startingNew, setStartingNew] = useState(false);
   const tagger = useTagger(initialSession);
   const allLabeled = tagger.data.length > 0 && tagger.taggedCount >= tagger.data.length;
+  const readOnlyViewer = initialSession?.role === "viewer";
   // A session that arrives fully labeled opens on the results table; one still
   // being labeled stays in the row view even as the last label lands (no
   // surprise scene change mid-flip) — the overview is one click away instead.
-  const [focusRow, setFocusRow] = useState(() => !allLabeled);
+  // Shared-in viewers always land on the table: browsing is their whole job.
+  const [focusRow, setFocusRow] = useState(() => !allLabeled && !readOnlyViewer);
+
+  // "Tag this dataset" deep links (/tagger?dataset=…) skip the session chooser
+  // straight into setup, which loads the referenced dataset itself. Applied in
+  // an effect (not the state initializer) so SSR and first client paint agree.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("dataset")) setStartingNew(true);
+  }, []);
 
   if (!initialSession && !startingNew) {
-    return <TaggingSessionsPanel onStartNew={() => setStartingNew(true)} />;
+    // The app shell gives /tagger the full viewport for the annotation surface;
+    // the chooser is a list page, so cap it to match the datasets tab.
+    return (
+      <div className="mx-auto w-full max-w-7xl">
+        <DataHubTabs active="sessions" />
+        <TaggingSessionsPanel onStartNew={() => setStartingNew(true)} />
+      </div>
+    );
   }
 
   // Sessions saved at /tagger/[id] navigate back as a plain link; a session
@@ -60,6 +77,64 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
 
   if (!tagger.config) return null;
 
+  // Shared-in viewers browse read-only: the results table by default, with a
+  // row-by-row view whose answer controls render disabled. The assist surfaces
+  // are never mounted, and the hook never buffers autosaves for a viewer (the
+  // PUT would be rejected below editor).
+  if (readOnlyViewer) {
+    if (!focusRow) {
+      return (
+        <>
+          {backBar}
+          <TaggerResultsTable
+            config={tagger.config}
+            data={tagger.data}
+            columns={tagger.columns}
+            annotations={tagger.annotations}
+            assist={tagger.assist}
+            onOpenRow={(index) => {
+              tagger.goTo(index);
+              setFocusRow(true);
+            }}
+          />
+        </>
+      );
+    }
+    return (
+      <>
+        {backBar}
+        <div className="mb-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setFocusRow(false)}
+            className="gap-1.5"
+          >
+            <List className="size-3.5" />
+            {msg("tagger.results.back")}
+          </Button>
+        </div>
+        <TaggerAnnotation
+          config={tagger.config}
+          data={tagger.frameData}
+          columns={tagger.columns}
+          annotations={tagger.annotations}
+          provenance={tagger.assist?.provenance}
+          currentIndex={tagger.currentIndex}
+          taggedCount={tagger.frameTaggedCount}
+          readOnly
+          onNavigate={tagger.navigate}
+          onGoTo={tagger.goTo}
+          onJumpUntagged={tagger.jumpToUntagged}
+          onToggleBinary={() => undefined}
+          onToggleCategory={() => undefined}
+          onSetFreetext={() => undefined}
+          onBack={tagger.backToSetup}
+        />
+      </>
+    );
+  }
+
   if (tagger.phase === "interview" && tagger.assist) {
     return (
       <>
@@ -77,6 +152,8 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
           estimate={tagger.estimate}
           onFetchEstimate={() => void tagger.fetchEstimate()}
           onSetModel={tagger.setAssistModel}
+          onSetInterviewModel={tagger.setInterviewModel}
+        onSetInterviewEffort={tagger.setInterviewEffort}
           onSend={(content) => void tagger.sendInterviewMessage(content)}
           onEditResend={(index, content) => void tagger.sendInterviewMessage(content, index)}
           onStop={tagger.stopInterview}

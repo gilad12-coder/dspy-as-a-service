@@ -2,13 +2,28 @@
 
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
-import { Database, Search, Upload } from "lucide-react";
+import { Database, Loader2, Search, Upload } from "lucide-react";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/ui/primitives/dialog";
+import { DataHubTabs } from "@/shared/ui/data-hub-tabs";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { SearchField } from "@/shared/ui/search-field";
-import { isStorageQuotaError, saveDataset, type DatasetSummary } from "@/shared/lib/api";
-import { msg } from "@/shared/lib/messages";
+import { SelectionBar } from "@/shared/ui/selection-bar";
+import {
+  bulkDeleteDatasets,
+  isStorageQuotaError,
+  saveDataset,
+  type DatasetSummary,
+} from "@/shared/lib/api";
+import { formatMsg, msg } from "@/shared/lib/messages";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
 import { cn } from "@/shared/lib/utils";
 import { useDatasets } from "../hooks/use-datasets";
@@ -32,8 +47,47 @@ export function DatasetsView() {
   const [selected, setSelected] = React.useState<DatasetSummary | null>(null);
   const [dragging, setDragging] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  // Last-toggled dataset id — the shift-click range anchor, kept as an id (not
+  // an index) so it survives the search filter reordering the visible list.
+  const [anchorId, setAnchorId] = React.useState<string | null>(null);
+  const [bulkOpen, setBulkOpen] = React.useState(false);
+  const [bulkDeleting, setBulkDeleting] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const deepLinkedRef = React.useRef(false);
+
+  // Drop selections that stopped resolving to an owned dataset (deleted in
+  // another tab, or ownership changed), so the bar never counts ghosts.
+  React.useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set(
+        [...prev].filter((id) => datasets.some((d) => d.id === id && d.role === "owner")),
+      );
+      return next.size === prev.size ? prev : next;
+    });
+  }, [datasets]);
+
+  const confirmBulkDelete = async () => {
+    if (bulkDeleting) return;
+    setBulkDeleting(true);
+    try {
+      const res = await bulkDeleteDatasets([...selectedIds]);
+      if (res.deleted.length > 0) {
+        toast.success(formatMsg("datasets.toast.bulk_deleted", { count: res.deleted.length }));
+      }
+      if (res.skipped.length > 0) {
+        toast.warn(formatMsg("shared.selection.delete_skipped", { count: res.skipped.length }));
+      }
+      setBulkOpen(false);
+      setSelectedIds(new Set());
+      setAnchorId(null);
+      refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : msg("datasets.toast.delete_failed"));
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   // Honour ?open=<id> once the list has loaded: open that dataset's detail sheet
   // (the navigable link from an optimization's source-dataset row). Guarded so
@@ -55,6 +109,38 @@ export function DatasetsView() {
     if (!q) return datasets;
     return datasets.filter((d) => d.name.toLowerCase().includes(q));
   }, [datasets, search]);
+
+  // Same mechanism as the storage cleanup drawer: plain click toggles one row,
+  // shift-click applies the clicked row's new state to the whole visible range
+  // between it and the previous toggle. Shared-in rows inside a range are
+  // skipped — only owned datasets can be bulk-deleted.
+  const toggleSelected = React.useCallback(
+    (id: string, shiftKey: boolean) => {
+      const visible = filtered;
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        const willSelect = !prev.has(id);
+        const index = visible.findIndex((d) => d.id === id);
+        const anchor = anchorId === null ? -1 : visible.findIndex((d) => d.id === anchorId);
+        if (shiftKey && anchor !== -1 && index !== -1) {
+          const [lo, hi] = anchor < index ? [anchor, index] : [index, anchor];
+          for (let i = lo; i <= hi; i++) {
+            const row = visible[i];
+            if (!row || row.role !== "owner") continue;
+            if (willSelect) next.add(row.id);
+            else next.delete(row.id);
+          }
+        } else if (willSelect) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+        return next;
+      });
+      setAnchorId(id);
+    },
+    [filtered, anchorId],
+  );
 
   const handleFiles = React.useCallback(
     async (files: FileList | null) => {
@@ -85,10 +171,18 @@ export function DatasetsView() {
     [uploading, refetch],
   );
 
-  if (loading) return <DatasetsSkeleton />;
+  if (loading) {
+    return (
+      <div className="pb-16">
+        <DataHubTabs active="datasets" />
+        <DatasetsSkeleton />
+      </div>
+    );
+  }
 
   return (
     <div className="pb-16">
+      <DataHubTabs active="datasets" />
       <input
         ref={fileInputRef}
         type="file"
@@ -164,11 +258,58 @@ export function DatasetsView() {
                 dataset={dataset}
                 onOpen={setSelected}
                 onChanged={refetch}
+                selected={selectedIds.has(dataset.id)}
+                onToggleSelect={(shiftKey) => toggleSelected(dataset.id, shiftKey)}
               />
             ))}
           </div>
         )}
       </div>
+
+      <SelectionBar
+        count={selectedIds.size}
+        onClear={() => {
+          setSelectedIds(new Set());
+          setAnchorId(null);
+        }}
+        onDelete={() => setBulkOpen(true)}
+      />
+
+      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <DialogContent
+          className="w-[min(28rem,92vw)] max-w-[min(28rem,92vw)] sm:max-w-md"
+          showCloseButton={false}
+        >
+          <DialogHeader>
+            <DialogTitle>{msg("datasets.delete.selected_title")}</DialogTitle>
+            <DialogDescription>
+              {formatMsg("datasets.delete.selected_body", { count: selectedIds.size })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-2 gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setBulkOpen(false)}
+              disabled={bulkDeleting}
+              className="w-full justify-center"
+            >
+              {msg("datasets.delete.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmBulkDelete}
+              disabled={bulkDeleting}
+              className="w-full justify-center shadow-xs"
+            >
+              {bulkDeleting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                msg("datasets.delete.confirm")
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <DatasetDetailDialog dataset={selected} onClose={() => setSelected(null)} />
     </div>

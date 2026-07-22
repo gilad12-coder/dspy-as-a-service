@@ -18,6 +18,7 @@ import hmac
 import json
 import time
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -31,6 +32,7 @@ from sqlalchemy.pool import StaticPool
 
 from ...storage.models import AgentConversationModel, AgentMessageModel, Base
 from .. import auth as auth_mod
+from .. import model_catalog
 from ..routers import generalist_agent as agent_mod
 from ..routers.generalist_agent import create_generalist_agent_router
 
@@ -175,6 +177,68 @@ def test_authenticated_turn_persists_conversation_and_messages(
             ("user", "hi"),
             ("assistant", "שלום"),
         ]
+
+
+def test_turn_forwards_chosen_model(
+    persistence_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The composer menu's model rides the request into the agent engine."""
+    client, _ = persistence_client
+    seen: dict[str, Any] = {}
+
+    async def capture_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        """Record the forwarded kwargs and finish in one turn."""
+        seen.update(kwargs)
+        yield {"event": "done", "data": {"assistant_message": "ok", "model": "m"}}
+
+    monkeypatch.setattr(agent_mod, "run_generalist_agent", capture_stream)
+    monkeypatch.setattr(
+        model_catalog,
+        "get_catalog_cached",
+        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
+    )
+    resp = client.post(
+        "/optimizations/generalist-agent",
+        json={
+            "user_message": "hi",
+            "chat_history": [],
+            "wizard_state": {},
+            "trust_mode": "ask",
+            "model": "openai/gpt-test",
+            "reasoning_effort": "high",
+        },
+        headers={"Authorization": f"Bearer {_session_token()}"},
+    )
+    assert resp.status_code == 200
+    assert seen["model_config"] is not None
+    assert seen["model_config"].name == "openai/gpt-test"
+    assert seen["model_config"].extra == {"reasoning_effort": "high"}
+
+
+def test_turn_rejects_unknown_model(
+    persistence_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-catalog model is refused before the engine ever runs."""
+    client, _ = persistence_client
+    monkeypatch.setattr(
+        model_catalog,
+        "get_catalog_cached",
+        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
+    )
+    resp = client.post(
+        "/optimizations/generalist-agent",
+        json={
+            "user_message": "hi",
+            "chat_history": [],
+            "wizard_state": {},
+            "trust_mode": "ask",
+            "model": "openai/not-a-model",
+        },
+        headers={"Authorization": f"Bearer {_session_token()}"},
+    )
+    assert resp.status_code == 422
 
 
 def test_unauthenticated_turn_is_rejected(

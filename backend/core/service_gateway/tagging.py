@@ -28,9 +28,10 @@ from ..models import ModelConfig
 from .agents.code import ReasoningStreamListener, _reply_language
 from .agents.code_interview import INTERVIEW_TURN_ATTEMPTS, normalize_options
 from .agents.constants import REASONING_FIELD
-from .agents.parse_salvage import salvage_prediction
+from .agents.parse_salvage import salvage_prediction, strip_adapter_debris
 from .language_models import (
     apply_model_reasoning_config,
+    apply_reasoning_effort,
     build_language_model,
     usage_by_model_from_history,
 )
@@ -53,12 +54,56 @@ def assist_model_name() -> str:
     return settings.tagger_assist_model or settings.generalist_agent_model
 
 
-def _build_assist_lm(model_name: str | None = None) -> dspy.LM:
+# Reasoning-effort levels the shared model-config dialog offers.
+_REASONING_EFFORT_LEVELS = frozenset({"minimal", "low", "medium", "high"})
+
+
+def _sanitize_model_params(params: Any) -> dict[str, Any]:
+    """Reduce stored model params to the sampling knobs tagging honors.
+
+    ``assist`` is a free-form JSON column any API caller can write, so only
+    temperature, max_tokens, top_p and the reasoning-effort extra pass
+    through — coerced and clamped to the ``ModelConfig`` bounds — and
+    connection fields (endpoints, keys, arbitrary LiteLLM kwargs) never
+    reach the tagging LM.
+
+    Args:
+        params: The ``modelParams`` mapping stored on the assist state.
+
+    Returns:
+        Keyword arguments safe to construct a :class:`ModelConfig` with.
+    """
+    if not isinstance(params, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key, low, high in (("temperature", 0.0, 2.0), ("top_p", 0.0, 1.0)):
+        value = params.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            out[key] = min(high, max(low, float(value)))
+    tokens = params.get("max_tokens")
+    if isinstance(tokens, (int, float)) and not isinstance(tokens, bool) and int(tokens) >= 1:
+        out["max_tokens"] = int(tokens)
+    extra = params.get("extra")
+    effort = extra.get("reasoning_effort") if isinstance(extra, dict) else None
+    if isinstance(effort, str) and effort.lower() in _REASONING_EFFORT_LEVELS:
+        out["extra"] = {"reasoning_effort": effort.lower()}
+    return out
+
+
+def _build_assist_lm(
+    model_name: str | None = None,
+    params: dict[str, Any] | None = None,
+    reasoning_effort: str | None = None,
+) -> dspy.LM:
     """Build the assist LM from settings, mirroring the generalist agent.
 
     Args:
         model_name: LiteLLM model id to run on; falls back to the configured
             tagging-assist model (then the generalist agent's) when empty.
+        params: Sampling parameters saved alongside the chosen model
+            (``assist.modelParams``); sanitized before use.
+        reasoning_effort: Explicit ``reasoning_effort`` level chosen in the
+            composer's model menu; ``None`` keeps the model's default.
 
     Returns:
         A cache-disabled ``dspy.LM`` on the requested model.
@@ -66,7 +111,9 @@ def _build_assist_lm(model_name: str | None = None) -> dspy.LM:
     config = ModelConfig(
         name=model_name or assist_model_name(),
         base_url=settings.tagger_assist_base_url or settings.generalist_agent_base_url or None,
+        **_sanitize_model_params(params),
     )
+    config = apply_reasoning_effort(config, reasoning_effort)
     return build_language_model(apply_model_reasoning_config(config), disable_cache=True)
 
 
@@ -93,9 +140,13 @@ class InterviewTurnSig(dspy.Signature):
     Y when ..."), not process. Whenever the question has a small set of likely
     answers, offer 2-4 of them in ``options_json`` — each a short pickable
     answer with a one-line description of what choosing it means — so the user
-    can answer in one click. The UI always adds a free-text field, so never
-    add an "other" / "something else" option yourself. Write ``message``, the
-    options and the rubric in ``reply_language``.
+    can answer in one click. Every option must be a concrete, self-contained
+    answer. The composer under the options is always the free-text path, so
+    never spend an option on an escape hatch — no "other", "something else",
+    "none of these", "I use my own ...", or any rewording whose real meaning
+    is "I'll type it below"; when only escape hatches would fill the list,
+    offer fewer options or ask an open question instead. Write ``message``,
+    the options and the rubric in ``reply_language``.
     """
 
     task_description: str = dspy.InputField(desc="What is being labeled and the allowed labels.")
@@ -220,9 +271,10 @@ def effective_task_config(config: dict[str, Any], assist: dict[str, Any]) -> dic
     The ``config`` column never changes after creation; the interview's
     refinements — question, categories, prompt and, on provisional-mode
     sessions, the inferred answer style — live in ``assist.taskOverride``.
-    The user's chosen tagging model (``assist.model``) rides along the same
-    way, so predictions, estimates and the bulk worker all see one merged
-    view. Every LLM surface (router routes and the bulk worker alike) reads
+    The user's chosen tagging model (``assist.model``) and its saved
+    sampling parameters (``assist.modelParams``) ride along the same way, so
+    predictions, estimates and the bulk worker all see one merged view.
+    Every LLM surface (router routes and the bulk worker alike) reads
     through this merge.
 
     Args:
@@ -250,6 +302,9 @@ def effective_task_config(config: dict[str, Any], assist: dict[str, Any]) -> dic
     model = str((assist or {}).get("model") or "").strip()
     if model:
         merged["model"] = model
+        params = (assist or {}).get("modelParams")
+        if isinstance(params, dict) and params:
+            merged["modelParams"] = params
     return merged
 
 
@@ -610,8 +665,11 @@ def _parse_interview_prediction(pred: Any, asked: int, config: dict[str, Any]) -
         config,
         _parse_json(getattr(pred, "task_config_json", "{}"), {}),
     )
-    # The DB name column caps at 200; 80 keeps session cards to one line.
-    title = str(getattr(pred, "session_title", "")).strip().strip("\"'")[:80]
+    # session_title is the signature's last output field, so a malformed
+    # terminal adapter marker leaks into its tail — strip it before the name
+    # reaches the session card. The DB name column caps at 200; 80 keeps
+    # session cards to one line.
+    title = strip_adapter_debris(str(getattr(pred, "session_title", ""))).strip().strip("\"'")[:80]
     return {
         "message": str(getattr(pred, "message", "")).strip(),
         "options": [] if done else options,
@@ -679,6 +737,8 @@ def interview_turn(
     data: list[dict[str, Any]],
     turns: list[dict[str, str]],
     locale: str | None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     """Run one interview turn and return the assistant's reply (non-streaming).
 
@@ -688,16 +748,22 @@ def interview_turn(
         data: The full row payload (sampled for the summary).
         turns: Prior ``{role, content}`` turns, oldest first.
         locale: UI locale code; replies are written in that language.
+        model: LiteLLM id conducting the interview; ``None`` runs the default.
+        reasoning_effort: Explicit effort level for ``model``; ``None`` keeps
+            the model's default.
 
     Returns:
         ``{"message", "options", "rubric", "done"}`` — ``rubric`` is empty
         until ``done`` is true.
     """
     asked = sum(1 for t in turns if t.get("role") == "assistant")
-    lm = _build_assist_lm()
+    lm = _build_assist_lm(model, reasoning_effort=reasoning_effort)
     with dspy.context(lm=lm):
         pred = dspy.Predict(InterviewTurnSig)(**_interview_inputs(config, columns, data, turns, locale))
-    return _parse_interview_prediction(pred, asked, config)
+    turn = _parse_interview_prediction(pred, asked, config)
+    if model:
+        turn["model"] = model
+    return turn
 
 
 async def interview_turn_stream(
@@ -706,6 +772,8 @@ async def interview_turn_stream(
     data: list[dict[str, Any]],
     turns: list[dict[str, str]],
     locale: str | None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> Any:
     """Run one interview turn, streaming it the way the generalist agent does.
 
@@ -734,10 +802,13 @@ async def interview_turn_stream(
         data: The full row payload (sampled for the summary).
         turns: Prior ``{role, content}`` turns, oldest first.
         locale: UI locale code; replies are written in that language.
+        model: LiteLLM id conducting the interview; ``None`` runs the default.
+        reasoning_effort: Explicit effort level for ``model``; ``None`` keeps
+            the model's default.
     """
     asked = sum(1 for t in turns if t.get("role") == "assistant")
     predict = dspy.Predict(InterviewTurnSig)
-    lm = _build_assist_lm()
+    lm = _build_assist_lm(model, reasoning_effort=reasoning_effort)
     inputs = _interview_inputs(config, columns, data, turns, locale)
     turn: dict[str, Any] = {}
     for attempt in range(INTERVIEW_TURN_ATTEMPTS):
@@ -791,6 +862,8 @@ async def interview_turn_stream(
             logger.warning("tagger interview finished without a rubric; retrying")
             continue
         break
+    if model and turn:
+        turn["model"] = model
     yield {"event": "interview_done", "data": turn}
 
 
@@ -872,7 +945,8 @@ def predict_rows(
 
     Args:
         config: The session's effective config; when it carries the user's
-            chosen tagging model (``model``), predictions run on it.
+            chosen tagging model (``model``) and its saved sampling
+            parameters (``modelParams``), predictions run on them.
         instructions: Compiled tagging instructions.
         rows: Row payloads (each needs ``id`` and ``text``).
         on_batch: Called with each completed batch's predictions (bulk-job
@@ -883,7 +957,7 @@ def predict_rows(
         ``(predictions, credits)`` — the merged ``{row_id: prediction}`` map
         and the credit cost of the LM calls actually made.
     """
-    lm = _build_assist_lm(str(config.get("model") or "").strip() or None)
+    lm = _build_assist_lm(str(config.get("model") or "").strip() or None, config.get("modelParams"))
     prepared = [{"id": str(r.get("id")), "text": _row_text(r)} for r in rows]
     batches = [prepared[i : i + BATCH_SIZE] for i in range(0, len(prepared), BATCH_SIZE)]
     merged: dict[str, dict[str, Any]] = {}

@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "Вручну",
   "tagger.assist.setup.recommended": "Рекомендовано",
   "tagger.assist.setup.step_label": "Допомога",
-  "tagger.assist.setup.tiny_dataset": "За такого розміру ви все одно переглядали б майже кожен рядок — «Вручну» або «Автопілот» підійдуть вам краще.",
   "tagger.assist.setup.title": "Як ШІ має допомагати?",
   "tagger.setup.library_error": "Не вдалося завантажити набір даних із бібліотеки.",
   "tagger.setup.library_or": "або",

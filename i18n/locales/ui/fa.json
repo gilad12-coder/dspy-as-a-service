@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "دستی",
   "tagger.assist.setup.recommended": "توصیه‌شده",
   "tagger.assist.setup.step_label": "کمک",
-  "tagger.assist.setup.tiny_dataset": "در این اندازه به‌هرحال تقریباً همه ردیف‌ها را بررسی می‌کردید — حالت دستی یا خلبان خودکار بهتر به کارتان می‌آید.",
   "tagger.assist.setup.title": "هوش مصنوعی چگونه کمک کند؟",
   "tagger.setup.library_error": "بارگذاری مجموعه‌داده از کتابخانه ممکن نشد.",
   "tagger.setup.library_or": "یا",

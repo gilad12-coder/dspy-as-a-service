@@ -8,12 +8,16 @@ on the seed endpoint is covered the same way against ``run_code_agent``.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
+from .. import model_catalog
 from ..auth import AuthenticatedUser, get_authenticated_user
+from ..errors import DomainError
 from ..routers import code_agent as code_agent_router
 from ..routers.code_agent import create_code_agent_router
 
@@ -35,6 +39,15 @@ def _client() -> TestClient:
     app = FastAPI()
     app.include_router(create_code_agent_router())
     app.dependency_overrides[get_authenticated_user] = lambda: _ALICE
+
+    @app.exception_handler(DomainError)
+    async def _domain_error_handler(_request, exc: DomainError) -> JSONResponse:
+        """Mirror the app-level envelope so tests can assert on ``code``."""
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "code": exc.code, "params": exc.params},
+        )
+
     return TestClient(app)
 
 
@@ -52,7 +65,15 @@ def test_interview_streams_events_and_forwards_args(monkeypatch) -> None:
         }
 
     monkeypatch.setattr(code_agent_router, "interview_turn_stream", fake_stream)
-    resp = _client().post("/optimizations/code-interview", json=_INTERVIEW_BODY)
+    monkeypatch.setattr(
+        model_catalog,
+        "get_catalog_cached",
+        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
+    )
+    resp = _client().post(
+        "/optimizations/code-interview",
+        json={**_INTERVIEW_BODY, "model": "openai/gpt-test", "reasoning_effort": "high"},
+    )
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/event-stream")
     assert "event: message_patch" in resp.text
@@ -64,6 +85,22 @@ def test_interview_streams_events_and_forwards_args(monkeypatch) -> None:
     assert seen["locale"] == "en"
     assert seen["turns"] == _INTERVIEW_BODY["turns"]
     assert len(seen["sample_rows"]) == 5
+    assert seen["model"] == "openai/gpt-test"
+    assert seen["reasoning_effort"] == "high"
+
+
+def test_interview_rejects_unknown_model(monkeypatch) -> None:
+    """A non-catalog interview model is refused before any LLM spend."""
+    monkeypatch.setattr(
+        model_catalog,
+        "get_catalog_cached",
+        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
+    )
+    resp = _client().post(
+        "/optimizations/code-interview", json={**_INTERVIEW_BODY, "model": "openai/not-a-model"}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "models.unknown_model"
 
 
 def test_interview_translates_engine_failure_to_error_event(monkeypatch) -> None:

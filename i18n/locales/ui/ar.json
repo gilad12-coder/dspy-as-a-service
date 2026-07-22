@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "يدوي",
   "tagger.assist.setup.recommended": "موصى به",
   "tagger.assist.setup.step_label": "المساعدة",
-  "tagger.assist.setup.tiny_dataset": "بهذا الحجم ستراجع كل صف تقريبًا على أي حال — سيخدمك الوضع اليدوي أو الطيّار الآلي بشكل أفضل.",
   "tagger.assist.setup.title": "كيف ينبغي أن يساعد الذكاء الاصطناعي؟",
   "tagger.setup.library_error": "تعذّر تحميل مجموعة البيانات من المكتبة.",
   "tagger.setup.library_or": "أو",

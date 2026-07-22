@@ -14,12 +14,31 @@ responses (see the retry loops in ``code_interview`` / ``tagging``).
 from __future__ import annotations
 
 import logging
+import re
 
 import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.utils.exceptions import AdapterParseError
 
 logger = logging.getLogger(__name__)
+
+# minimax-m3 occasionally emits the chat adapter's closing field marker
+# malformed — ``[[ ## completed ## ]`` with brackets missing — so dspy fails
+# to recognize it and the marker text leaks into the tail of the last parsed
+# field (seed code, the tagger interview's session title, …).
+_ADAPTER_DEBRIS_RE = re.compile(r"\s*\[\[\s*##\s*\w+\s*##\s*\]{0,2}\s*$")
+
+
+def strip_adapter_debris(text: str) -> str:
+    """Drop a trailing (possibly malformed) chat-adapter field marker.
+
+    Args:
+        text: A freshly parsed output-field value.
+
+    Returns:
+        The text without any trailing ``[[ ## … ## ]]``-style marker.
+    """
+    return _ADAPTER_DEBRIS_RE.sub("", text).rstrip()
 
 
 def find_adapter_parse_error(err: BaseException) -> AdapterParseError | None:

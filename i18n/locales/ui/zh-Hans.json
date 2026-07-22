@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "手动",
   "tagger.assist.setup.recommended": "推荐",
   "tagger.assist.setup.step_label": "辅助",
-  "tagger.assist.setup.tiny_dataset": "在这样的规模下，你几乎会复核每一行——手动或自动驾驶更适合你。",
   "tagger.assist.setup.title": "AI 应如何帮忙？",
   "tagger.setup.library_error": "无法从库中加载数据集。",
   "tagger.setup.library_or": "或",

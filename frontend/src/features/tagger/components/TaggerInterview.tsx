@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Binary,
@@ -26,16 +26,20 @@ import {
   AgentThread,
   ChatTranscript,
   Composer,
+  ComposerModelMenu,
   QuestionChoices,
   QuestionChoicesSkeleton,
 } from "@/shared/ui/agent";
 import type { AgentMessage, AgentThinking } from "@/shared/ui/agent";
 import type { InterviewOption } from "@/shared/lib/api";
-import { ModelPicker } from "@/features/submit";
+import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
+import type { CatalogModel, ModelConfig } from "@/shared/types/api";
+import { ModelConfigModal } from "@/features/submit";
+import { ModelChip } from "@/shared/ui/model-chip";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { AutotagEstimate } from "../hooks/use-tagger";
-import { calibrationTarget } from "../lib/assist";
+import { assistModelConfig, calibrationTarget } from "../lib/assist";
 import type { AnnotationMode, AssistState, Category, TaggerConfig } from "../lib/types";
 
 /**
@@ -76,8 +80,12 @@ interface Props {
   rowCount: number;
   estimate: AutotagEstimate | null;
   onFetchEstimate: () => void;
-  /** Persist the picked tagging model on the session's assist state. */
-  onSetModel: (model: string) => void;
+  /** Persist the picked tagging model config on the session's assist state. */
+  onSetModel: (config: ModelConfig) => void;
+  /** Persist the interviewer's model (the composer's model menu). */
+  onSetInterviewModel: (model: string | null) => void;
+  /** Persist the interviewer's reasoning-effort level. */
+  onSetInterviewEffort: (effort: string | null) => void;
   onSend: (content: string) => void;
   onEditResend: (index: number, content: string) => void;
   onStop: () => void;
@@ -108,6 +116,8 @@ export function TaggerInterview({
   estimate,
   onFetchEstimate,
   onSetModel,
+  onSetInterviewModel,
+  onSetInterviewEffort,
   onSend,
   onEditResend,
   onStop,
@@ -227,6 +237,14 @@ export function TaggerInterview({
             disabled={!busy && messages.length === 0}
             streaming={busy}
             placeholder={msg("tagger.assist.interview.placeholder")}
+            modelMenu={
+              <ComposerModelMenu
+                value={assist.interviewModel ?? null}
+                onChange={onSetInterviewModel}
+                effort={assist.interviewEffort ?? null}
+                onEffortChange={onSetInterviewEffort}
+              />
+            }
           />
 
           {canSkip && (
@@ -333,9 +351,9 @@ function Rise({
 
 /**
  * The task contract, editable in place before anything runs: the interview's
- * inferred answer style and its question/categories, alongside a read-only
- * view of the distilled labeling guide. The guide rides through the confirm
- * untouched — it steers predictions but has no editing surface. Confirming
+ * inferred answer style and its question/categories, alongside the distilled
+ * labeling guide — every rule editable, removable and extendable in place,
+ * mirroring the code interview's brief card. Confirming
  * is the moment the user takes ownership of what the AI believes. Fields for
  * a switched-to answer style start empty on purpose — the switch is a human
  * override, so the human fills it in.
@@ -360,7 +378,7 @@ function RubricCard({
   rowCount: number;
   estimate: AutotagEstimate | null;
   onFetchEstimate: () => void;
-  onSetModel: (model: string) => void;
+  onSetModel: (config: ModelConfig) => void;
   onConfirm: (rubric: string[], task: TaskContract) => void;
 }) {
   const autopilot = assist.mode === "autopilot";
@@ -370,13 +388,21 @@ function RubricCard({
   useEffect(() => {
     if (autopilot) onFetchEstimate();
   }, [autopilot, onFetchEstimate, assist.model]);
+  // Stable identity per assist snapshot: the model dialog resyncs its draft
+  // whenever this prop changes, so an inline object would reset an open
+  // dialog on any unrelated re-render (e.g. the estimate arriving).
+  const modelConfig = useMemo(() => assistModelConfig(assist), [assist]);
   const [mode, setMode] = useState<AnnotationMode>(config.mode);
   // The inferred question isn't edited here — it rides through the confirm
   // untouched; the rubric rules are the editable surface of the task.
   const question = config.question ?? "";
   const [categories, setCategories] = useState<Category[]>(config.categories ?? []);
   // Which just-appended field should grab focus once it mounts.
-  const focusAppended = useRef<"category" | null>(null);
+  const focusAppended = useRef<"category" | "rule" | null>(null);
+  // The guide is an editable draft, like the code interview's brief; a
+  // re-run interview replaces it.
+  const [rules, setRules] = useState<string[]>(assist.rubric);
+  useEffect(() => setRules(assist.rubric), [assist.rubric]);
 
   const styleOptions: Array<{
     mode: AnnotationMode;
@@ -423,6 +449,14 @@ function RubricCard({
   };
   const cleanedCategories = categories.filter((c) => c.label.trim());
 
+  const updateRule = (idx: number, value: string) =>
+    setRules((prev) => prev.map((r, i) => (i === idx ? value : r)));
+  const removeRule = (idx: number) => setRules((prev) => prev.filter((_, i) => i !== idx));
+  const addRule = () => {
+    focusAppended.current = "rule";
+    setRules((prev) => [...prev, ""]);
+  };
+
   const taskValid = mode !== "multiclass" || cleanedCategories.length >= 2;
 
   // Copilot's launch commits to the opening batch: the AI tags it and the
@@ -434,7 +468,7 @@ function RubricCard({
   );
 
   const confirm = () =>
-    onConfirm(assist.rubric.map((r) => r.trim()).filter(Boolean), {
+    onConfirm(rules.map((r) => r.trim()).filter(Boolean), {
       mode,
       ...(mode === "binary" ? { question: question.trim() } : {}),
       ...(mode === "multiclass" ? { categories: cleanedCategories } : {}),
@@ -443,6 +477,24 @@ function RubricCard({
   // Launch mirrors the wizard submit: the splash plays for the shared hold,
   // then the confirm flips the phase and the next screen is revealed under it.
   const [launching, setLaunching] = useState(false);
+  const [modelDialogOpen, setModelDialogOpen] = useState(false);
+  // Managed catalog for the model dialog's thinking detection and the chip's
+  // vision badge — same source the submit wizard feeds it.
+  const [catalogModels, setCatalogModels] = useState<CatalogModel[] | null>(
+    cachedCatalog()?.models ?? null,
+  );
+  useEffect(() => {
+    if (catalogModels) return;
+    let cancelled = false;
+    getModelCatalog()
+      .then((c) => {
+        if (!cancelled) setCatalogModels(c.models);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogModels]);
   const launch = () => {
     if (launching) return;
     setLaunching(true);
@@ -462,7 +514,10 @@ function RubricCard({
       <div
         className={cn(
           "grid min-h-0 flex-1 gap-3 overflow-y-auto",
-          "lg:grid-cols-[minmax(0,4fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:overflow-visible",
+          // The launch column shrink-wraps the button (auto), so the cards
+          // always absorb every pixel the button doesn't use, at any button
+          // width.
+          "lg:grid-cols-[minmax(0,1fr)_auto] lg:grid-rows-[minmax(0,1fr)] lg:overflow-visible",
         )}
       >
         <Rise
@@ -575,18 +630,27 @@ function RubricCard({
             </CardContent>
           </Card>
 
-          {/* Sits above the guide so the picker's dropdown opens over content
-              instead of extending the column's scroll area. */}
           <Card className="shrink-0">
             <CardHeader>
               <CardTitle className="text-base">{msg("tagger.assist.model.title")}</CardTitle>
               <CardDescription>{msg("tagger.assist.model.hint")}</CardDescription>
             </CardHeader>
             <CardContent>
-              <ModelPicker
-                value={assist.model ?? ""}
-                onChange={onSetModel}
-                placeholder={msg("tagger.assist.model.placeholder")}
+              <ModelChip
+                config={modelConfig}
+                emptyLabel={msg("tagger.assist.model.placeholder")}
+                catalogModels={catalogModels ?? undefined}
+                onClick={() => setModelDialogOpen(true)}
+                onRemove={assist.model ? () => onSetModel({ name: "" }) : undefined}
+              />
+              <ModelConfigModal
+                open={modelDialogOpen}
+                onOpenChange={setModelDialogOpen}
+                config={modelConfig}
+                onSave={onSetModel}
+                roleLabel={msg("tagger.assist.model.title")}
+                catalogModels={catalogModels ?? undefined}
+                showConnection={false}
               />
             </CardContent>
           </Card>
@@ -599,22 +663,55 @@ function RubricCard({
                 </CardTitle>
                 <CardDescription>{msg("tagger.assist.rubric.guide_hint")}</CardDescription>
               </CardHeader>
-              <CardContent>
-                <ol className="flex flex-col gap-2.5">
-                  {assist.rubric.map((rule, idx) => (
-                    <li
-                      key={idx}
-                      className="flex gap-2.5 text-sm leading-relaxed text-foreground"
+              <CardContent className="flex flex-col gap-2.5">
+                {rules.map((rule, idx) => (
+                  <div key={idx} className="flex items-start gap-2.5">
+                    <span className="w-4 shrink-0 select-none pt-2.5 text-end font-mono text-xs tabular-nums text-muted-foreground/60">
+                      {idx + 1}
+                    </span>
+                    <textarea
+                      ref={
+                        idx === rules.length - 1
+                          ? (el: HTMLTextAreaElement | null) => {
+                              if (el && focusAppended.current === "rule") {
+                                focusAppended.current = null;
+                                focusAppendedField(el);
+                              }
+                            }
+                          : undefined
+                      }
+                      value={rule}
+                      onChange={(e) => updateRule(idx, e.target.value)}
+                      rows={2}
+                      aria-label={formatMsg("tagger.assist.rubric.rule_label", {
+                        number: idx + 1,
+                      })}
+                      className={cn(
+                        "flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
+                        "leading-relaxed outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                      )}
+                      dir="auto"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => removeRule(idx)}
+                      aria-label={msg("tagger.assist.rubric.rule_remove")}
+                      className="mt-1.5"
                     >
-                      <span className="w-4 shrink-0 select-none pt-px text-end font-mono text-xs tabular-nums text-muted-foreground/60">
-                        {idx + 1}
-                      </span>
-                      <span className="min-w-0" dir="auto">
-                        {rule}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
+                      <Trash2 className="size-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={addRule}
+                  className="gap-1.5 self-start text-muted-foreground"
+                >
+                  <Plus className="size-3.5" />
+                  {msg("tagger.assist.rubric.rule_add")}
+                </Button>
               </CardContent>
             </Card>
           )}
@@ -626,7 +723,7 @@ function RubricCard({
             sweep in the reading direction — the container is authored LTR
             and mirrored in RTL so glyphs, order, and motion all flip
             together. */}
-        <Rise delay={0.16} className="flex min-w-0 lg:min-h-0">
+        <Rise delay={0.16} className="flex min-w-0 justify-end lg:min-h-0">
           <motion.button
             type="button"
             onClick={launch}
@@ -634,7 +731,10 @@ function RubricCard({
             animate={{ scale: [1, 1.01, 1] }}
             transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
             className={cn(
-              "group relative flex w-full cursor-pointer flex-col items-center justify-center gap-4",
+              // overflow-hidden: on the narrow rail a long unbreakable word
+              // (some locales) clips inside the button instead of spilling
+              // over the cards.
+              "group relative flex w-[100px] cursor-pointer flex-col items-center justify-center gap-4 overflow-hidden",
               "rounded-2xl bg-primary py-8 text-base font-semibold text-primary-foreground",
               "transition-all duration-300 hover:scale-[1.01] hover:shadow-[0_0_30px_rgba(61,46,34,0.35)]",
               "active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60",

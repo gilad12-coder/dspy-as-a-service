@@ -179,21 +179,45 @@ def test_delete_then_get_is_404() -> None:
     assert missing.json()["code"] == "tagger.session.not_found"
 
 
+def test_bulk_delete_reports_per_id_outcomes() -> None:
+    """Owned ids delete; unknown and foreign ids are skipped as not_found."""
+    alice_client, store = _client(_ALICE)
+    mine_a = _create(alice_client)
+    mine_b = _create(alice_client)
+    bob_client, _ = _client(_BOB, store=store)
+    bobs = _create(bob_client)
+
+    resp = alice_client.post(
+        "/tagging-sessions/bulk-delete",
+        json={"ids": [mine_a, mine_b, mine_a, bobs, "no-such-id"]},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["deleted"] == [mine_a, mine_b]
+    assert body["skipped"] == [
+        {"id": bobs, "reason": "not_found"},
+        {"id": "no-such-id", "reason": "not_found"},
+    ]
+    assert alice_client.get("/tagging-sessions").json()["total"] == 0
+    # Bob's session survived Alice's attempt.
+    assert bob_client.get("/tagging-sessions").json()["total"] == 1
+
+
 def test_other_user_cannot_access_session() -> None:
-    """Bob gets 403 on Alice's session for read, update, patch and delete."""
+    """Bob gets 404 on Alice's session — no access never leaks existence."""
     alice_client, store = _client(_ALICE)
     sid = _create(alice_client)
     bob_client, _ = _client(_BOB, store=store)
 
-    assert bob_client.get(f"/tagging-sessions/{sid}").status_code == 403
+    assert bob_client.get(f"/tagging-sessions/{sid}").status_code == 404
     assert (
         bob_client.put(
             f"/tagging-sessions/{sid}", json={"annotations": {}, "current_index": 0}
         ).status_code
-        == 403
+        == 404
     )
-    assert bob_client.patch(f"/tagging-sessions/{sid}", json={"pinned": True}).status_code == 403
-    assert bob_client.delete(f"/tagging-sessions/{sid}").status_code == 403
+    assert bob_client.patch(f"/tagging-sessions/{sid}", json={"pinned": True}).status_code == 404
+    assert bob_client.delete(f"/tagging-sessions/{sid}").status_code == 404
     # Bob's own list never sees Alice's session.
     assert bob_client.get("/tagging-sessions").json() == {"items": [], "total": 0}
 

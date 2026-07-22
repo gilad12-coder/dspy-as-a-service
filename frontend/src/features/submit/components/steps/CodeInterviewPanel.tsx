@@ -4,7 +4,14 @@ import * as React from "react";
 import { Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
 
 import { Button } from "@/shared/ui/primitives/button";
-import { AgentThread, ChatTranscript, Composer, QuestionChoices } from "@/shared/ui/agent";
+import {
+  AgentThread,
+  ChatTranscript,
+  Composer,
+  ComposerModelMenu,
+  QuestionChoices,
+  QuestionChoicesSkeleton,
+} from "@/shared/ui/agent";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { CodeInterviewState } from "@/shared/hooks/use-code-interview";
@@ -92,6 +99,9 @@ export function CodeInterviewPanel({ interview, className }: Props) {
               ariaLabel={msg("submit.code.interview.choices_label")}
             />
           )}
+          {!interview.error && interview.busy && interview.pending === "options" && (
+            <QuestionChoicesSkeleton />
+          )}
 
           <Composer
             value={draft}
@@ -101,6 +111,14 @@ export function CodeInterviewPanel({ interview, className }: Props) {
             disabled={!interview.busy && interview.messages.length === 0}
             streaming={interview.busy}
             placeholder={msg("submit.code.interview.placeholder")}
+            modelMenu={
+              <ComposerModelMenu
+              value={interview.model}
+              onChange={interview.setModel}
+              effort={interview.reasoningEffort}
+              onEffortChange={interview.setReasoningEffort}
+            />
+            }
           />
 
           <div className="flex justify-center border-t border-border/40 py-1.5 shrink-0">

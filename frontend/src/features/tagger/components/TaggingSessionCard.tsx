@@ -16,15 +16,18 @@ import {
   DialogTitle,
 } from "@/shared/ui/primitives/dialog";
 import { Input } from "@/shared/ui/primitives/input";
+import { SelectCheckbox } from "@/shared/ui/select-checkbox";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import {
   deleteTaggerSession,
   renameTaggerSession,
   type TaggerSessionSummary,
 } from "@/shared/lib/api";
-import { msg, type MessageKey } from "@/shared/lib/messages";
+import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
 import { formatRelativeTime } from "@/shared/lib/formatters";
+import { cn } from "@/shared/lib/utils";
 import { TAGGER_SESSIONS_CHANGED } from "../hooks/use-tagger";
+import { TaggingSessionShareDialog } from "./TaggingSessionShareDialog";
 
 const MODE_LABEL_KEYS: Record<string, MessageKey> = {
   manual: "tagger.assist.setup.manual_label",
@@ -58,11 +61,17 @@ function sessionStatus(session: TaggerSessionSummary): string {
 export function TaggingSessionCard({
   session,
   onChanged,
+  selected,
+  onToggleSelect,
 }: {
   session: TaggerSessionSummary;
   onChanged: () => void;
+  selected: boolean;
+  /** ``shiftKey`` is true on shift-click, extending the panel's range anchor. */
+  onToggleSelect: (shiftKey: boolean) => void;
 }) {
   const router = useRouter();
+  const isOwner = session.role === "owner";
   const [renameOpen, setRenameOpen] = React.useState(false);
   const [renameValue, setRenameValue] = React.useState(session.name);
   const [renaming, setRenaming] = React.useState(false);
@@ -125,8 +134,21 @@ export function TaggingSessionCard({
           }
         }}
         aria-label={displayName}
-        className="group flex cursor-pointer items-center gap-4 rounded-xl border border-[#DDD4C8]/60 bg-gradient-to-b from-white/95 to-[#F8F4EF] px-4 py-3.5 text-start shadow-[0_1px_3px_rgba(28,22,18,0.03)] transition-[border-color,box-shadow] duration-200 hover:border-[#C8B9A8]/70 hover:shadow-[0_2px_10px_rgba(28,22,18,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className={cn(
+          "group flex cursor-pointer items-center gap-4 rounded-xl border border-[#DDD4C8]/60 bg-gradient-to-b from-white/95 to-[#F8F4EF] px-4 py-3.5 text-start shadow-[0_1px_3px_rgba(28,22,18,0.03)] transition-[border-color,box-shadow] duration-200 hover:border-[#C8B9A8]/70 hover:shadow-[0_2px_10px_rgba(28,22,18,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+          selected && "border-primary/50 hover:border-primary/50",
+        )}
       >
+        {/* Shared-in sessions can't be bulk-deleted, so their checkbox is an
+            invisible placeholder that keeps the rows column-aligned. */}
+        <span className={cn("flex shrink-0 items-center", !isOwner && "invisible")}>
+          <SelectCheckbox
+            checked={selected}
+            onToggle={onToggleSelect}
+            disabled={!isOwner}
+            ariaLabel={formatMsg("shared.selection.select_named", { name: displayName })}
+          />
+        </span>
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#3D2E22]/8 text-[#3D2E22]">
           <Tags className="size-5" />
         </span>
@@ -137,6 +159,11 @@ export function TaggingSessionCard({
             <Badge variant="secondary" size="sm" className="tabular-nums">
               {session.tagged_count}/{session.row_count}
             </Badge>
+            {!isOwner && (
+              <Badge variant="secondary" size="sm">
+                {msg("datasets.shared_badge")}
+              </Badge>
+            )}
           </div>
           <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
             <span className="shrink-0">{sessionStatus(session)}</span>
@@ -159,33 +186,36 @@ export function TaggingSessionCard({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1" onClick={stop}>
-          <TooltipButton tooltip={msg("datasets.action.rename")}>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="size-11 text-muted-foreground hover:text-foreground sm:size-8"
-              onClick={() => {
-                setRenameValue(displayName);
-                setRenameOpen(true);
-              }}
-              aria-label={msg("datasets.action.rename")}
-            >
-              <Pencil className="size-4" />
-            </Button>
-          </TooltipButton>
-          <TooltipButton tooltip={msg("datasets.action.delete")}>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="size-11 text-muted-foreground hover:text-destructive sm:size-8"
-              onClick={() => setDeleteOpen(true)}
-              aria-label={msg("datasets.action.delete")}
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          </TooltipButton>
-        </div>
+        {isOwner && (
+          <div className="flex shrink-0 items-center gap-1" onClick={stop}>
+            <TaggingSessionShareDialog sessionId={session.id} />
+            <TooltipButton tooltip={msg("datasets.action.rename")}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-11 text-muted-foreground hover:text-foreground sm:size-8"
+                onClick={() => {
+                  setRenameValue(displayName);
+                  setRenameOpen(true);
+                }}
+                aria-label={msg("datasets.action.rename")}
+              >
+                <Pencil className="size-4" />
+              </Button>
+            </TooltipButton>
+            <TooltipButton tooltip={msg("datasets.action.delete")}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-11 text-muted-foreground hover:text-destructive sm:size-8"
+                onClick={() => setDeleteOpen(true)}
+                aria-label={msg("datasets.action.delete")}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </TooltipButton>
+          </div>
+        )}
       </div>
 
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>

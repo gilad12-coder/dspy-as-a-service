@@ -939,3 +939,68 @@ class DatasetShareGrantModel(Base):
     # The composite PK leads with dataset_id, so "list everything shared with
     # this user" (filtering on grantee_username alone) could not use it.
     __table_args__ = (Index("ix_dataset_share_grants_grantee", "grantee_username"),)
+
+
+class TaggingSessionShareLinkModel(Base):
+    """Per-session sharing config keyed by a public link token.
+
+    Mirrors :class:`DatasetShareLinkModel` for saved tagger sessions: the
+    ``token`` is the unguessable capability embedded in the public
+    ``/tagger/share/<token>`` URL, stored in plaintext because it IS the public
+    identifier, not a credential hash. The active (``revoked_at IS NULL``) row
+    per session holds the config; ``general_access`` and ``general_role`` carry
+    the same semantics as the dataset variant. The ``session_id`` foreign key
+    cascades, so deleting a session removes its link rows automatically.
+    """
+
+    __tablename__ = "tagging_session_share_links"
+
+    token: Mapped[str] = mapped_column(String(48), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tagging_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    general_access: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="restricted", server_default="restricted"
+    )
+    general_role: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="viewer", server_default="viewer"
+    )
+
+
+class TaggingSessionShareGrantModel(Base):
+    """A single per-user access grant on a shared tagger session.
+
+    Mirrors :class:`DatasetShareGrantModel`: each row invites one
+    ``grantee_username`` to a session with a tier ``role`` (``'viewer'`` /
+    ``'editor'`` / ``'owner'``). The pair ``(session_id, grantee_username)`` is
+    the primary key, so re-inviting a user replaces their grant. The
+    ``session_id`` foreign key cascades, removing grants when the session is
+    deleted.
+    """
+
+    __tablename__ = "tagging_session_share_grants"
+
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tagging_sessions.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    grantee_username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    # The composite PK leads with session_id, so "list everything shared with
+    # this user" (filtering on grantee_username alone) could not use it.
+    __table_args__ = (Index("ix_tagging_session_share_grants_grantee", "grantee_username"),)

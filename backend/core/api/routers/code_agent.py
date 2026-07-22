@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ from ...service_gateway.agents.code import run_code_agent
 from ...service_gateway.agents.code_interview import interview_turn_stream
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
+from ..model_catalog import require_known_model
 from ._helpers import sse_from_events
 
 logger = logging.getLogger(__name__)
@@ -145,6 +146,20 @@ class CodeInterviewRequest(BaseModel):
         description=(
             "UI locale code of the client (e.g. 'he', 'en', 'fr-CA'). Sets "
             "the interview's language; unknown or missing falls back to Hebrew."
+        ),
+    )
+    model: str | None = Field(
+        default=None,
+        description=(
+            "LiteLLM id of the catalog model conducting the interview (the "
+            "composer's model menu); absent runs the server default."
+        ),
+    )
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = Field(
+        default=None,
+        description=(
+            "Explicit reasoning-effort level for the chosen model; absent "
+            "keeps the model's default."
         ),
     )
 
@@ -282,6 +297,10 @@ def create_code_agent_router() -> APIRouter:
 
         * ``reasoning_patch`` — ``{"chunk": "<token>"}`` (provider thinking)
         * ``message_patch`` — ``{"chunk": "<token>"}`` (reply stream)
+        * ``message_end`` — ``{}`` (the reply is fully streamed; options and
+          brief are still generating)
+        * ``turn_hint`` — ``{"final": bool}`` (the streamed ``done`` field
+          settled; the client picks the matching placeholder)
         * ``message_reset`` — ``{}`` (a failed attempt is being retried; the
           client drops any partial reply streamed so far)
         * ``interview_done`` — ``{"message", "options", "brief", "done",
@@ -296,6 +315,8 @@ def create_code_agent_router() -> APIRouter:
         Returns:
             A :class:`StreamingResponse` of Server-Sent Events.
         """
+        require_known_model(req.model)
+
         async def source() -> AsyncIterator[dict]:
             """Relay engine events, translating failures into an error event."""
             try:
@@ -307,6 +328,8 @@ def create_code_agent_router() -> APIRouter:
                     job_model=req.job_model,
                     turns=[t.model_dump() for t in req.turns],
                     locale=req.locale,
+                    model=req.model,
+                    reasoning_effort=req.reasoning_effort,
                 ):
                     yield event
             except Exception:

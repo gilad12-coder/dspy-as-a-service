@@ -27,6 +27,7 @@ from ...service_gateway import tagging
 from ...storage.models import Base, TaggingSessionModel
 from ...storage.remote import RemoteDBJobStore
 from ...worker.tagging_job import TaggingAutotagPayload, run_autotag_job
+from .. import model_catalog
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..routers import tagger_assist
@@ -191,9 +192,18 @@ def test_interview_returns_turn(monkeypatch) -> None:
     """The interview route forwards the transcript and returns the turn."""
     seen: dict = {}
 
-    def fake_turn(config, columns, data, turns, locale):
+    def fake_turn(config, columns, data, turns, locale, model=None, reasoning_effort=None):
         """Capture the forwarded arguments and return a canned turn."""
-        seen.update({"turns": turns, "locale": locale, "rows": len(data), "config": config})
+        seen.update(
+            {
+                "turns": turns,
+                "locale": locale,
+                "rows": len(data),
+                "config": config,
+                "model": model,
+                "reasoning_effort": reasoning_effort,
+            }
+        )
         return {
             "message": "Does sarcasm count?",
             "options": [
@@ -205,11 +215,17 @@ def test_interview_returns_turn(monkeypatch) -> None:
         }
 
     monkeypatch.setattr(tagging, "interview_turn", fake_turn)
+    monkeypatch.setattr(model_catalog, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test"))
     client, _ = _client(_ALICE)
     session_id = _create(client)
     resp = client.post(
         f"/tagging-sessions/{session_id}/assist/interview",
-        json={"turns": [{"role": "user", "content": "hi"}], "locale": "he"},
+        json={
+            "turns": [{"role": "user", "content": "hi"}],
+            "locale": "he",
+            "model": "openai/gpt-test",
+            "reasoning_effort": "high",
+        },
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["message"] == "Does sarcasm count?"
@@ -222,6 +238,44 @@ def test_interview_returns_turn(monkeypatch) -> None:
     assert seen["rows"] == 4
     assert seen["turns"] == [{"role": "user", "content": "hi"}]
     assert seen["config"]["_assist_mode"] == "copilot"
+    assert seen["model"] == "openai/gpt-test"
+    assert seen["reasoning_effort"] == "high"
+
+
+def test_interview_rejects_unknown_model(monkeypatch) -> None:
+    """A non-catalog interview model is refused before any LLM spend."""
+    monkeypatch.setattr(model_catalog, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test"))
+    client, _ = _client(_ALICE)
+    session_id = _create(client)
+    resp = client.post(
+        f"/tagging-sessions/{session_id}/assist/interview",
+        json={"turns": [], "model": "openai/not-a-model"},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "models.unknown_model"
+
+
+def test_interview_stream_forwards_model(monkeypatch) -> None:
+    """The SSE interview route hands the chosen model to the engine."""
+    seen: dict = {}
+
+    async def fake_stream(config, columns, data, turns, locale, model=None, reasoning_effort=None):
+        """Capture the forwarded kwargs and finish immediately."""
+        seen.update({"turns": turns, "model": model, "reasoning_effort": reasoning_effort})
+        yield {"event": "interview_done", "data": {"message": "hi", "done": False}}
+
+    monkeypatch.setattr(tagging, "interview_turn_stream", fake_stream)
+    monkeypatch.setattr(model_catalog, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test"))
+    client, _ = _client(_ALICE)
+    session_id = _create(client)
+    resp = client.post(
+        f"/tagging-sessions/{session_id}/assist/interview/stream",
+        json={"turns": [], "model": "openai/gpt-test", "reasoning_effort": "low"},
+    )
+    assert resp.status_code == 200
+    assert "event: interview_done" in resp.text
+    assert seen["model"] == "openai/gpt-test"
+    assert seen["reasoning_effort"] == "low"
 
 
 def test_predict_excludes_requested_rows_from_examples(monkeypatch) -> None:
@@ -435,15 +489,15 @@ def test_stale_running_mirror_reports_not_live_or_failed() -> None:
 
 
 def test_ownership_enforced_on_assist_routes() -> None:
-    """Another user gets 403 on every assist surface."""
+    """A user with no grant gets 404 on every assist surface (no leak)."""
     alice_client, store = _client(_ALICE)
     session_id = _create(alice_client)
     bob_client, _ = _client(_BOB, store=store)
     resp = bob_client.post(
         f"/tagging-sessions/{session_id}/assist/interview", json={"turns": []}
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 404
     resp = bob_client.post(f"/tagging-sessions/{session_id}/assist/estimate")
-    assert resp.status_code == 403
+    assert resp.status_code == 404
     resp = bob_client.get(f"/tagging-sessions/{session_id}/assist/autotag")
-    assert resp.status_code == 403
+    assert resp.status_code == 404

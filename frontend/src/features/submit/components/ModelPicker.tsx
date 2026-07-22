@@ -12,6 +12,7 @@ import {
   cachedByokCatalog,
   discoverModels,
 } from "@/shared/lib/model-catalog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
 import type { CatalogModel, CatalogProvider } from "@/shared/types/api";
 
 interface ModelPickerProps {
@@ -76,7 +77,6 @@ export function ModelPicker({
   const [discovering, setDiscovering] = React.useState(false);
   const [discoveryError, setDiscoveryError] = React.useState<string | null>(null);
 
-  const rootRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   // If cache wasn't ready at mount time, await it once
@@ -160,19 +160,6 @@ export function ModelPicker({
     };
   }, [discoverUrl, runDiscover]);
 
-  React.useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
-  React.useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 50);
-  }, [open]);
-
   const allModels: EnrichedModel[] = React.useMemo(() => {
     let staticModels = activeCatalog?.models ?? [];
     // In BYOK mode, only surface models for providers the user has connected.
@@ -251,146 +238,151 @@ export function ModelPicker({
   };
 
   return (
-    <div ref={rootRef} className={cn("relative w-full", className)}>
-      <button
-        type="button"
-        id={id}
-        disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
-        className={cn(
-          "flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm",
-          "shadow-xs cursor-pointer transition-[border-color,background-color,box-shadow] duration-120",
-          "hover:border-foreground/20 hover:bg-accent/40",
-          "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-          open && "border-foreground/25 bg-accent/40",
-        )}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        {value ? (
-          <span className="flex min-w-0 flex-1 items-center gap-2" dir="ltr">
-            <span className="truncate font-mono text-[0.8125rem]">
-              {selectedModel?.label ?? value}
-            </span>
-          </span>
-        ) : (
-          <span className="flex min-w-0 flex-1 items-center gap-2 text-muted-foreground">
-            {placeholder}
-          </span>
-        )}
-        <ChevronDown
+    // The list is a portaled popover, not an absolutely-positioned child:
+    // inside a scrollable dialog body an absolute dropdown still counts
+    // toward the container's scrollable overflow, so opening it grew a
+    // scrollbar on the whole panel. Radix also brings dismissal, Escape
+    // layering under a parent dialog, and edge-collision flipping.
+    // ``modal``: the parent dialog's scroll lock blocks wheel events on
+    // everything outside its subtree — including this portaled content — so
+    // the popover must own a scroll-lock layer that whitelists its list.
+    <Popover open={open} onOpenChange={setOpen} modal>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          id={id}
+          disabled={disabled}
           className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
-            open && "rotate-180",
+            "flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm",
+            "shadow-xs cursor-pointer transition-[border-color,background-color,box-shadow] duration-120",
+            "hover:border-foreground/20 hover:bg-accent/40",
+            "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+            open && "border-foreground/25 bg-accent/40",
+            className,
           )}
-        />
-      </button>
-
-      {open && (
-        <div
-          className={cn(
-            "absolute z-50 mt-1 w-full overflow-hidden rounded-xl border border-border/70 bg-popover shadow-lg",
-            "animate-in fade-in-0 zoom-in-95 slide-in-from-top-1",
-          )}
-          role="listbox"
+          aria-haspopup="listbox"
         >
-          <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2">
-            <Search className="size-3.5 shrink-0 text-muted-foreground" />
-            <input
-              ref={inputRef}
-              dir="auto"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={msg("auto.features.submit.components.modelpicker.literal.4")}
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  setOpen(false);
-                }
-              }}
-            />
-            {discoverUrl && (
-              <button
-                type="button"
-                onClick={() => void runDiscover()}
-                disabled={discovering}
-                className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[0.6875rem] font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-                title={msg("auto.features.submit.components.modelpicker.literal.3")}
-              >
-                {discovering ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="size-3" />
-                )}
-                {msg("auto.features.submit.components.modelpicker.1")}
-              </button>
+          {value ? (
+            <span className="flex min-w-0 flex-1 items-center gap-2" dir="ltr">
+              <span className="truncate font-mono text-[0.8125rem]">
+                {selectedModel?.label ?? value}
+              </span>
+            </span>
+          ) : (
+            <span className="flex min-w-0 flex-1 items-center gap-2 text-muted-foreground">
+              {placeholder}
+            </span>
+          )}
+          <ChevronDown
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
+              open && "rotate-180",
             )}
-          </div>
+          />
+        </button>
+      </PopoverTrigger>
 
-          <div className="max-h-[120px] overflow-y-auto py-1">
-            {discoveryError && discoverUrl && (
-              <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                {msg("auto.features.submit.components.modelpicker.2")}
-                {discoverUrl}: {discoveryError}
-              </div>
-            )}
-            {filtered.length === 0 && (
-              <div className="px-3 py-8 text-center text-xs text-muted-foreground">
-                {msg("auto.features.submit.components.modelpicker.3")}
-              </div>
-            )}
-            {Array.from(grouped.entries()).map(([provider, items]) => (
-              <div key={provider} className="py-1">
-                <div
-                  className="px-3 py-1 text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground text-start"
-                  dir="ltr"
-                >
-                  {providerLabel(provider)}
-                </div>
-                {items.map((m) => (
-                  <button
-                    key={m.value}
-                    type="button"
-                    onClick={() => commit(m.value)}
-                    className={cn(
-                      "flex w-full items-center gap-2 px-3 py-1.5 text-start text-sm transition-colors hover:bg-accent/70",
-                      value === m.value && "bg-accent/50",
-                      !m.available && "opacity-60",
-                    )}
-                    role="option"
-                    aria-selected={value === m.value}
-                  >
-                    <span className="flex min-w-0 flex-1 items-center gap-1.5" dir="ltr">
-                      <span className="truncate text-[0.8125rem]">{m.label}</span>
-                      {m.max_input_tokens && (
-                        <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground">
-                          {formatCtx(m.max_input_tokens)}
-                        </span>
-                      )}
-                      {m.supports_vision && (
-                        <span
-                          className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-primary/10 px-1 py-px text-[9px] text-primary"
-                          title={msg("shared.model_chip.vision_badge")}
-                        >
-                          <Eye className="size-2.5" />
-                        </span>
-                      )}
-                    </span>
-                    <Check
-                      className={cn(
-                        "size-3.5 shrink-0",
-                        value === m.value ? "opacity-100" : "opacity-0",
-                      )}
-                    />
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
+      <PopoverContent
+        align="start"
+        sideOffset={4}
+        role="listbox"
+        className="w-(--radix-popover-trigger-width) overflow-hidden p-0"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          inputRef.current?.focus();
+        }}
+      >
+        <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2">
+          <Search className="size-3.5 shrink-0 text-muted-foreground" />
+          <input
+            ref={inputRef}
+            dir="auto"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={msg("auto.features.submit.components.modelpicker.literal.4")}
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          {discoverUrl && (
+            <button
+              type="button"
+              onClick={() => void runDiscover()}
+              disabled={discovering}
+              className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[0.6875rem] font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              title={msg("auto.features.submit.components.modelpicker.literal.3")}
+            >
+              {discovering ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <RefreshCw className="size-3" />
+              )}
+              {msg("auto.features.submit.components.modelpicker.1")}
+            </button>
+          )}
         </div>
-      )}
-    </div>
+
+        <div className="max-h-60 overflow-y-auto py-1">
+          {discoveryError && discoverUrl && (
+            <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              {msg("auto.features.submit.components.modelpicker.2")}
+              {discoverUrl}: {discoveryError}
+            </div>
+          )}
+          {filtered.length === 0 && (
+            <div className="px-3 py-8 text-center text-xs text-muted-foreground">
+              {msg("auto.features.submit.components.modelpicker.3")}
+            </div>
+          )}
+          {Array.from(grouped.entries()).map(([provider, items]) => (
+            <div key={provider} className="py-1">
+              <div
+                className="px-3 py-1 text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground text-start"
+                dir="ltr"
+              >
+                {providerLabel(provider)}
+              </div>
+              {items.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => commit(m.value)}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-1.5 text-start text-sm transition-colors hover:bg-accent/70",
+                    value === m.value && "bg-accent/50",
+                    !m.available && "opacity-60",
+                  )}
+                  role="option"
+                  aria-selected={value === m.value}
+                >
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5" dir="ltr">
+                    <span className="truncate text-[0.8125rem]">{m.label}</span>
+                    {m.max_input_tokens && (
+                      <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground">
+                        {formatCtx(m.max_input_tokens)}
+                      </span>
+                    )}
+                    {m.supports_vision && (
+                      <span
+                        className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-primary/10 px-1 py-px text-[9px] text-primary"
+                        title={msg("shared.model_chip.vision_badge")}
+                      >
+                        <Eye className="size-2.5" />
+                      </span>
+                    )}
+                  </span>
+                  <Check
+                    className={cn(
+                      "size-3.5 shrink-0",
+                      value === m.value ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

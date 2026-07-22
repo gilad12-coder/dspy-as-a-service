@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 from core.service_gateway.agents.code_interview import (
     MAX_INTERVIEW_QUESTIONS,
+    CodeInterviewTurnSig,
     _interview_inputs,
     _parse_interview_prediction,
 )
@@ -111,6 +112,17 @@ def test_parse_turn_caps_options_at_four() -> None:
         asked=0,
     )
     assert [o["label"] for o in turn["options"]] == ["a", "b", "c", "d"]
+
+
+def test_interview_signature_streams_done_before_payload_fields() -> None:
+    """``done`` precedes the slow payload fields so the stream can hint early.
+
+    The interview stream emits ``turn_hint`` from the streamed ``done`` field;
+    that only works while ``done`` is generated before options and brief.
+    """
+    fields = list(CodeInterviewTurnSig.output_fields)
+    assert fields.index("done") < fields.index("options_json")
+    assert fields.index("done") < fields.index("brief_json")
 
 
 def test_interview_inputs_shapes_and_language() -> None:

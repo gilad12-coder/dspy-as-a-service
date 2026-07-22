@@ -22,6 +22,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/
 import { AgentThread } from "@/shared/ui/agent/agent-thread";
 import { ChatTranscript } from "@/shared/ui/agent/chat-transcript";
 import { Composer } from "@/shared/ui/agent/composer";
+import { ComposerModelMenu } from "@/shared/ui/agent/composer-model-menu";
 import type { AgentThinking, AgentToolCall } from "@/shared/ui/agent/types";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { SubmitSplashOverlay, SUBMIT_SPLASH_HOLD_MS } from "@/shared/ui/submit-splash-overlay";
@@ -781,6 +782,14 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                 placeholder={msg("auto.features.agent.panel.components.generalistpanel.literal.5")}
                 streaming={streaming}
                 disabled={codeAuthoringActive}
+                modelMenu={
+              <ComposerModelMenu
+                value={agent.model}
+                onChange={agent.setModel}
+                effort={agent.reasoningEffort}
+                onEffortChange={agent.setReasoningEffort}
+              />
+            }
                 sendAriaLabel={msg(
                   "auto.features.agent.panel.components.generalistpanel.literal.6",
                 )}

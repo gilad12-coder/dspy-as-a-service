@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "Manuell",
   "tagger.assist.setup.recommended": "Empfohlen",
   "tagger.assist.setup.step_label": "Assistenz",
-  "tagger.assist.setup.tiny_dataset": "Bei dieser Größe würdest du ohnehin fast jede Zeile prüfen – Manuell oder Autopilot passt besser zu dir.",
   "tagger.assist.setup.title": "Wie soll die KI helfen?",
   "tagger.setup.library_error": "Der Datensatz konnte nicht aus der Bibliothek geladen werden.",
   "tagger.setup.library_or": "oder",

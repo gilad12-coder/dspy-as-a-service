@@ -1,9 +1,10 @@
 """CRUD routes for persisted text-labeling (tagger) sessions. [INTERNAL]
 
 Backs the tagger's save / restore so a user can resume annotating across
-refreshes and devices, mirroring how optimizations persist. Each user owns
-their own sessions; ownership is enforced on every read and write by comparing
-the authenticated principal to the row's ``username``.
+refreshes and devices, mirroring how optimizations persist. Access is resolved
+through :mod:`core.api.tagging_session_access`: the row's ``username`` is the
+owner, and share grants raise other callers to ``viewer`` (read) or ``editor``
+(annotate); rename/pin/delete stay owner-only.
 
 The dataset (``data``/``columns``/``config``) is uploaded once at create time;
 annotation progress is autosaved through the lightweight PUT so the heavy JSON
@@ -24,9 +25,20 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ...models import (
+    BulkDeleteByIdsRequest,
+    BulkDeleteByIdsResponse,
+    BulkDeleteByIdsSkipped,
+)
 from ...storage.models import TaggingSessionModel
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
+from ..sharing_access import MEMBER_ROLES, ShareRole
+from ..tagging_session_access import (
+    list_grants_for_user_all,
+    require_role,
+    resolve_effective_role,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +62,9 @@ class TaggingSessionSummary(BaseModel):
     updated_at: datetime
     mode: str | None = None
     source_name: str | None = None
+    # The caller's effective tier on the row ("owner" for their own sessions);
+    # lets the chooser badge shared-in sessions and gate owner-only actions.
+    role: str = "owner"
 
 
 class TaggingSessionDetail(BaseModel):
@@ -69,6 +84,7 @@ class TaggingSessionDetail(BaseModel):
     pinned: bool
     created_at: datetime
     updated_at: datetime
+    role: str = "owner"
 
 
 class TaggingSessionCreateRequest(BaseModel):
@@ -149,11 +165,12 @@ def _summary_meta(config: Any) -> tuple[str | None, str | None]:
     return mode, source
 
 
-def _row_to_summary(row: TaggingSessionModel) -> TaggingSessionSummary:
+def _row_to_summary(row: TaggingSessionModel, role: str = "owner") -> TaggingSessionSummary:
     """Project an ORM row into the lightweight list/summary response shape.
 
     Args:
         row: Loaded ``TaggingSessionModel``.
+        role: The caller's effective tier on the row.
 
     Returns:
         The serializable summary the list / patch / put routes return.
@@ -170,14 +187,16 @@ def _row_to_summary(row: TaggingSessionModel) -> TaggingSessionSummary:
         updated_at=cast(datetime, row.updated_at),
         mode=mode,
         source_name=source_name,
+        role=role,
     )
 
 
-def _row_to_detail(row: TaggingSessionModel) -> TaggingSessionDetail:
+def _row_to_detail(row: TaggingSessionModel, role: str = "owner") -> TaggingSessionDetail:
     """Project an ORM row into the full restore-payload response shape.
 
     Args:
         row: Loaded ``TaggingSessionModel``.
+        role: The caller's effective tier on the row.
 
     Returns:
         A ``TaggingSessionDetail`` carrying the complete session state.
@@ -197,6 +216,7 @@ def _row_to_detail(row: TaggingSessionModel) -> TaggingSessionDetail:
         pinned=cast(bool, row.pinned),
         created_at=cast(datetime, row.created_at),
         updated_at=cast(datetime, row.updated_at),
+        role=role,
     )
 
 
@@ -227,16 +247,17 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
         The heavy JSON columns (``data``/``annotations``/``assist``) are not
         selected so the sidebar list stays cheap as sessions accumulate;
         ``config`` is small (task shape + column names) and feeds the
-        session-card metadata.
+        session-card metadata. Sessions shared with the caller are appended
+        after the owned page, stamped with the granted role.
 
         Args:
-            user: Authenticated caller; only their sessions are returned.
-            limit: Page size, clamped to ``MAX_LIST``.
-            offset: Number of rows to skip for paging.
+            user: Authenticated caller.
+            limit: Page size for the owned rows, clamped to ``MAX_LIST``.
+            offset: Number of owned rows to skip for paging.
 
         Returns:
             A ``TaggingSessionListResponse`` with the page of summaries and the
-            caller's total session count.
+            caller's total session count (owned + shared-in).
         """
         with Session(job_store.engine) as session:
             owned = session.query(TaggingSessionModel).filter(
@@ -280,7 +301,56 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
                         source_name=source_name,
                     )
                 )
-            return TaggingSessionListResponse(items=items, total=int(total))
+            shared_roles = list_grants_for_user_all(session, user.username)
+            owned_ids = {item.id for item in items}
+            shared_ids = [
+                sid
+                for sid, role in shared_roles.items()
+                if role in MEMBER_ROLES and sid not in owned_ids
+            ]
+            total = int(total) + len(shared_ids)
+            # Shared-in rows are appended only on the first page — repeating
+            # them at every offset would duplicate cards while paging. Same
+            # light column projection as the owned page (no heavy JSON).
+            if shared_ids and offset == 0:
+                shared_rows = (
+                    session.query(TaggingSessionModel)
+                    .filter(TaggingSessionModel.id.in_(shared_ids))
+                    .with_entities(
+                        TaggingSessionModel.id,
+                        TaggingSessionModel.name,
+                        TaggingSessionModel.phase,
+                        TaggingSessionModel.row_count,
+                        TaggingSessionModel.tagged_count,
+                        TaggingSessionModel.pinned,
+                        TaggingSessionModel.created_at,
+                        TaggingSessionModel.updated_at,
+                        TaggingSessionModel.config,
+                    )
+                    .order_by(
+                        TaggingSessionModel.pinned.desc(),
+                        TaggingSessionModel.updated_at.desc(),
+                    )
+                    .all()
+                )
+                for r in shared_rows:
+                    mode, source_name = _summary_meta(r.config)
+                    items.append(
+                        TaggingSessionSummary(
+                            id=cast(str, r.id),
+                            name=cast(str, r.name),
+                            phase=cast(str, r.phase),
+                            row_count=cast(int, r.row_count),
+                            tagged_count=cast(int, r.tagged_count),
+                            pinned=cast(bool, r.pinned),
+                            created_at=cast(datetime, r.created_at),
+                            updated_at=cast(datetime, r.updated_at),
+                            mode=mode,
+                            source_name=source_name,
+                            role=shared_roles[cast(str, r.id)],
+                        )
+                    )
+            return TaggingSessionListResponse(items=items, total=total)
 
     @router.post(
         "/tagging-sessions",
@@ -332,25 +402,25 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
     def get_tagging_session(
         session_id: str, user: AuthenticatedUserDep
     ) -> TaggingSessionDetail:
-        """Return a single owned session with everything needed to resume.
+        """Return a single accessible session with everything needed to resume.
 
         Args:
             session_id: UUID of the session to load.
-            user: Authenticated caller; must own the session.
+            user: Authenticated caller; needs at least ``viewer`` access.
 
         Returns:
-            The session as ``TaggingSessionDetail``.
+            The session as ``TaggingSessionDetail`` stamped with the caller's
+            effective role.
 
         Raises:
-            DomainError: 404 when unknown, 403 when the caller does not own it.
+            DomainError: 404 when unknown or inaccessible.
         """
         with Session(job_store.engine) as session:
             row = session.get(TaggingSessionModel, session_id)
             if row is None:
                 raise DomainError("tagger.session.not_found", status=404)
-            if row.username != user.username:
-                raise DomainError("tagger.session.forbidden", status=403)
-            return _row_to_detail(row)
+            role = require_role(session, session_id, user, ShareRole.viewer)
+            return _row_to_detail(row, role=str(role))
 
     @router.put(
         "/tagging-sessions/{session_id}",
@@ -371,21 +441,20 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
         Args:
             session_id: UUID of the session to update.
             req: The latest annotations, cursor position and optional phase.
-            user: Authenticated caller; must own the session.
+            user: Authenticated caller; needs at least ``editor`` access.
 
         Returns:
             The updated row projected as ``TaggingSessionSummary``.
 
         Raises:
-            DomainError: 404 when unknown, 403 when the caller does not own
-                it, 409 while the bulk auto-tag job is writing the row.
+            DomainError: 404 when unknown/inaccessible, 403 for a viewer,
+                409 while the bulk auto-tag job is writing the row.
         """
         with Session(job_store.engine) as session:
             row = session.get(TaggingSessionModel, session_id)
             if row is None:
                 raise DomainError("tagger.session.not_found", status=404)
-            if row.username != user.username:
-                raise DomainError("tagger.session.forbidden", status=403)
+            role = require_role(session, session_id, user, ShareRole.editor)
             # The bulk auto-tag job owns the row while it runs — a stale tab's
             # autosave would otherwise overwrite the labels it already wrote.
             autotag = (cast("dict[str, Any]", row.assist) or {}).get("autotag") or {}
@@ -401,7 +470,7 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
             row.updated_at = cast(Any, datetime.now(UTC))
             session.commit()
             session.refresh(row)
-            return _row_to_summary(row)
+            return _row_to_summary(row, role=str(role))
 
     @router.patch(
         "/tagging-sessions/{session_id}",
@@ -418,14 +487,14 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
         Args:
             session_id: UUID of the session to patch.
             req: Partial update body; at least one field must be supplied.
-            user: Authenticated caller; must own the row.
+            user: Authenticated caller; must be the owner.
 
         Returns:
             The updated row projected as ``TaggingSessionSummary``.
 
         Raises:
-            DomainError: 422 when no field supplied, 404 when unknown,
-                403 when the caller does not own the row.
+            DomainError: 422 when no field supplied, 404 when unknown or
+                inaccessible, 403 for a non-owner member.
         """
         if req.name is None and req.pinned is None:
             raise DomainError("tagger.session.patch_requires_field", status=422)
@@ -433,8 +502,7 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
             row = session.get(TaggingSessionModel, session_id)
             if row is None:
                 raise DomainError("tagger.session.not_found", status=404)
-            if row.username != user.username:
-                raise DomainError("tagger.session.forbidden", status=403)
+            require_role(session, session_id, user, ShareRole.owner)
             if req.name is not None:
                 row.name = cast(Any, req.name.strip()[:MAX_NAME])
             if req.pinned is not None:
@@ -458,22 +526,58 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
 
         Args:
             session_id: UUID of the session to delete.
-            user: Authenticated caller; must own the row.
+            user: Authenticated caller; must be the owner.
 
         Returns:
             ``{"id": session_id, "deleted": True}`` on success.
 
         Raises:
-            DomainError: 404 when unknown, 403 when the caller does not own it.
+            DomainError: 404 when unknown or inaccessible, 403 for a non-owner
+                member.
         """
         with Session(job_store.engine) as session:
             row = session.get(TaggingSessionModel, session_id)
             if row is None:
                 raise DomainError("tagger.session.not_found", status=404)
-            if row.username != user.username:
-                raise DomainError("tagger.session.forbidden", status=403)
+            require_role(session, session_id, user, ShareRole.owner)
             session.delete(row)
             session.commit()
         return {"id": session_id, "deleted": True}
+
+    @router.post(
+        "/tagging-sessions/bulk-delete",
+        response_model=BulkDeleteByIdsResponse,
+        summary="Delete many sessions in a single request",
+    )
+    def bulk_delete_tagging_sessions(
+        body: BulkDeleteByIdsRequest, user: AuthenticatedUserDep
+    ) -> BulkDeleteByIdsResponse:
+        """Delete a batch of owned sessions and report per-id outcomes.
+
+        Duplicate ids are deduplicated. An id the caller cannot delete —
+        unknown or owned by someone else — lands in ``skipped`` (both as
+        ``not_found``, so a foreign id is indistinguishable from a missing
+        one) rather than failing the whole request, mirroring the dataset
+        library's bulk delete.
+
+        Args:
+            body: The bulk-delete request body carrying the session ids.
+            user: Authenticated caller; only sessions they own are deleted.
+
+        Returns:
+            A :class:`BulkDeleteByIdsResponse` listing deleted and skipped ids.
+        """
+        deleted: list[str] = []
+        skipped: list[BulkDeleteByIdsSkipped] = []
+        with Session(job_store.engine) as session:
+            for session_id in dict.fromkeys(body.ids):
+                row = session.get(TaggingSessionModel, session_id)
+                if row is None or resolve_effective_role(session, session_id, user) != ShareRole.owner:
+                    skipped.append(BulkDeleteByIdsSkipped(id=session_id, reason="not_found"))
+                    continue
+                session.delete(row)
+                deleted.append(session_id)
+            session.commit()
+        return BulkDeleteByIdsResponse(deleted=deleted, skipped=skipped)
 
     return router

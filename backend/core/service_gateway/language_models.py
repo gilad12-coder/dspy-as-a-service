@@ -99,6 +99,28 @@ def apply_model_reasoning_config(config: ModelConfig) -> ModelConfig:
     )
 
 
+def apply_reasoning_effort(config: ModelConfig, effort: str | None) -> ModelConfig:
+    """Stamp a caller-chosen reasoning effort onto ``config``.
+
+    The effort lands in ``extra`` so it survives
+    :func:`apply_model_reasoning_config` — caller extras win over the
+    model-specific defaults there, so an explicit choice overrides the
+    ``"medium"`` default applied to OpenAI reasoning models.
+
+    Args:
+        config: The model configuration to annotate.
+        effort: LiteLLM ``reasoning_effort`` level chosen by the user, or
+            ``None``/empty to leave the model's default behaviour untouched.
+
+    Returns:
+        ``config`` unchanged when ``effort`` is falsy, else a copy with the
+        effort merged into ``extra``.
+    """
+    if not effort:
+        return config
+    return config.model_copy(update={"extra": {**config.extra, "reasoning_effort": effort}})
+
+
 def _apply_managed_gateway(lm_kwargs: dict[str, object]) -> None:
     """Route a managed call through the self-hosted LiteLLM proxy when configured.
 

@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "手動",
   "tagger.assist.setup.recommended": "推奨",
   "tagger.assist.setup.step_label": "アシスト",
-  "tagger.assist.setup.tiny_dataset": "このサイズではどのみちほぼすべての行を確認することになります。手動またはオートパイロットの方が適しています。",
   "tagger.assist.setup.title": "AIにどのように手伝ってほしいですか？",
   "tagger.setup.library_error": "ライブラリからデータセットを読み込めませんでした。",
   "tagger.setup.library_or": "または",

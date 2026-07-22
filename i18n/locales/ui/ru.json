@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "Вручную",
   "tagger.assist.setup.recommended": "Рекомендуется",
   "tagger.assist.setup.step_label": "Помощь",
-  "tagger.assist.setup.tiny_dataset": "При таком размере вы всё равно будете проверять почти каждую строку — «Вручную» или «Автопилот» подойдут вам лучше.",
   "tagger.assist.setup.title": "Как ИИ должен помогать?",
   "tagger.setup.library_error": "Не удалось загрузить набор данных из библиотеки.",
   "tagger.setup.library_or": "или",

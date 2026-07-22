@@ -14,6 +14,7 @@ from core.models import ModelConfig
 from core.service_gateway.language_models import (
     _apply_managed_gateway,
     apply_model_reasoning_config,
+    apply_reasoning_effort,
     build_language_model,
     total_tokens_from_history,
     usage_by_model_from_history,
@@ -313,6 +314,21 @@ def test_apply_reasoning_config_non_reasoning_model_is_floored_plain() -> None:
     assert out.max_tokens == 4000
     assert out.temperature is None
     assert out.extra == {}
+
+
+def test_apply_reasoning_effort_none_is_a_no_op() -> None:
+    """No chosen effort returns the config unchanged."""
+    config = ModelConfig(name="openai/gpt-5")
+
+    assert apply_reasoning_effort(config, None) is config
+
+
+def test_apply_reasoning_effort_overrides_reasoning_model_default() -> None:
+    """A chosen effort survives the reasoning defaults and beats the "medium" one."""
+    config = apply_reasoning_effort(ModelConfig(name="openai/gpt-5"), "high")
+    out = apply_model_reasoning_config(config)
+
+    assert out.extra["reasoning_effort"] == "high"
 
 
 def test_managed_gateway_routes_managed_call(monkeypatch: pytest.MonkeyPatch) -> None:

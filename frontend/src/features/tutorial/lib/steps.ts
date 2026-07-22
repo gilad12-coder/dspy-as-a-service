@@ -940,7 +940,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     id: "dd-tagger-intro",
     title: msg("auto.features.tutorial.lib.steps.literal.28"),
     description: formatMsg("auto.features.tutorial.lib.steps.template.43", { p1: TERMS.dataset }),
-    target: "[data-tutorial='sidebar-tagger']",
+    target: "[data-tutorial='sidebar-data']",
     placement: "left",
     beforeShow: async () => {
       await ensureDashboard();

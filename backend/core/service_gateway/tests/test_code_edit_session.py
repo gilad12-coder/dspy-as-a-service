@@ -12,7 +12,8 @@ from __future__ import annotations
 import pytest
 
 from core.service_gateway.agents import code as code_module
-from core.service_gateway.agents.code import _CodeEditSession, _strip_adapter_debris
+from core.service_gateway.agents.code import _CodeEditSession
+from core.service_gateway.agents.parse_salvage import strip_adapter_debris
 
 _SIG = (
     "class Step(dspy.Signature):\n"
@@ -42,7 +43,7 @@ _MET = "def metric(gold, pred, trace=None):\n    return 1.0\n"
 )
 def test_strip_adapter_debris(raw: str, expected: str) -> None:
     """Trailing field markers are dropped, well-formed or malformed; real code survives."""
-    assert _strip_adapter_debris(raw) == expected
+    assert strip_adapter_debris(raw) == expected
 
 
 @pytest.fixture

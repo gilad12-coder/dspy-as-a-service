@@ -20,6 +20,9 @@ interface ComposerProps {
   streaming?: boolean;
   sendAriaLabel?: string;
   stopAriaLabel?: string;
+  /** Optional model selector rendered in a footer row under the textarea
+   *  (the ChatGPT-style composer pill — see ``ComposerModelMenu``). */
+  modelMenu?: React.ReactNode;
 }
 
 export function Composer({
@@ -32,6 +35,7 @@ export function Composer({
   streaming,
   sendAriaLabel = msg("auto.shared.ui.agent.composer.literal.1"),
   stopAriaLabel = msg("auto.shared.ui.agent.composer.literal.2"),
+  modelMenu,
 }: ComposerProps) {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
@@ -104,6 +108,7 @@ export function Composer({
           </Button>
         )}
       </div>
+      {modelMenu && <div className="mt-1.5 flex items-center">{modelMenu}</div>}
     </form>
   );
 }

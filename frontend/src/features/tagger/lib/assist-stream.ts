@@ -41,7 +41,12 @@ export interface InterviewStreamHandlers {
  */
 export async function streamInterviewTurn(
   sessionId: string,
-  req: { turns: Array<{ role: string; content: string }>; locale?: string },
+  req: {
+    turns: Array<{ role: string; content: string }>;
+    locale?: string;
+    model?: string;
+    reasoning_effort?: string;
+  },
   handlers: InterviewStreamHandlers,
 ): Promise<void> {
   let res: Response;

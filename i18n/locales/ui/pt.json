@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "Manual",
   "tagger.assist.setup.recommended": "Recomendado",
   "tagger.assist.setup.step_label": "Assistência",
-  "tagger.assist.setup.tiny_dataset": "Com este tamanho, você revisaria quase todas as linhas de qualquer forma — Manual ou Piloto automático serão mais adequados para você.",
   "tagger.assist.setup.title": "Como a IA deve ajudar?",
   "tagger.setup.library_error": "Não foi possível carregar o conjunto de dados da biblioteca.",
   "tagger.setup.library_or": "ou",

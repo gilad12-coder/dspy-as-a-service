@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "मैन्युअल",
   "tagger.assist.setup.recommended": "अनुशंसित",
   "tagger.assist.setup.step_label": "सहायता",
-  "tagger.assist.setup.tiny_dataset": "इस आकार पर आप वैसे भी लगभग हर पंक्ति की समीक्षा करेंगे — मैन्युअल या ऑटोपायलट आपके लिए बेहतर रहेगा।",
   "tagger.assist.setup.title": "AI को कैसे मदद करनी चाहिए?",
   "tagger.setup.library_error": "लाइब्रेरी से डेटासेट लोड नहीं हो सका।",
   "tagger.setup.library_or": "या",

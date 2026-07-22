@@ -1514,7 +1514,20 @@ async def run_generalist_agent(
     registry = approval_registry or get_approval_registry()
     model_name = model_config.name if model_config else settings.generalist_agent_model
     try:
-        lm = build_language_model(model_config) if model_config else _build_generalist_lm()
+        if model_config:
+            # A caller-chosen model runs through the same pipeline as the
+            # default: platform base_url unless the config carries its own,
+            # the reasoning-model knobs, and no response cache.
+            override = model_config.model_copy(
+                update={
+                    "base_url": model_config.base_url
+                    or settings.generalist_agent_base_url
+                    or None
+                }
+            )
+            lm = build_language_model(apply_model_reasoning_config(override), disable_cache=True)
+        else:
+            lm = _build_generalist_lm()
     except ServiceError as exc:
         yield {"event": "error", "data": {"error": str(exc)}}
         return

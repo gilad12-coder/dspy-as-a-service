@@ -174,6 +174,10 @@ def test_interview_title_rides_the_final_turn_only() -> None:
     )
     turn = _parse_interview_prediction(pred, 1, _FREE)
     assert turn["title"] == "Routing support tickets"
+    # session_title is the last output field, so minimax's malformed terminal
+    # marker lands in its tail (seen in the wild as "… [[ ## completed ## ]").
+    pred.session_title = "Route support tickets [[ ## completed ## ]"
+    assert _parse_interview_prediction(pred, 1, _FREE)["title"] == "Route support tickets"
     pred.done = "false"
     assert _parse_interview_prediction(pred, 1, _FREE)["title"] == ""
 
@@ -266,17 +270,55 @@ def test_effective_task_config_lifts_chosen_model() -> None:
     assert "model" not in effective_task_config(_BINARY, {})
 
 
+def test_effective_task_config_lifts_model_params_with_model() -> None:
+    """``assist.modelParams`` rides along the chosen model, never alone."""
+    params = {"temperature": 0.2, "max_tokens": 2048}
+    merged = effective_task_config(_BINARY, {"model": "openai/gpt-test", "modelParams": params})
+    assert merged["modelParams"] == params
+    assert "modelParams" not in effective_task_config(_BINARY, {"modelParams": params})
+    assert "modelParams" not in effective_task_config(
+        _BINARY, {"model": "openai/gpt-test", "modelParams": "junk"}
+    )
+
+
+def test_sanitize_model_params_bounds_and_filters() -> None:
+    """Sampling knobs are clamped; connection fields and junk never pass."""
+    out = tagging._sanitize_model_params(
+        {
+            "temperature": 5,
+            "top_p": -1,
+            "max_tokens": 512.0,
+            "base_url": "http://evil",
+            "extra": {"reasoning_effort": "High", "api_key": "sk-leak"},
+        }
+    )
+    assert out == {
+        "temperature": 2.0,
+        "top_p": 0.0,
+        "max_tokens": 512,
+        "extra": {"reasoning_effort": "high"},
+    }
+    assert tagging._sanitize_model_params(None) == {}
+    assert tagging._sanitize_model_params("junk") == {}
+    assert tagging._sanitize_model_params(
+        {"temperature": "hot", "max_tokens": 0, "extra": {"reasoning_effort": "extreme"}}
+    ) == {}
+
+
 def test_build_assist_lm_honors_model_override(monkeypatch) -> None:
-    """The chosen model reaches the LM builder; empty falls back to default."""
-    captured: list[str] = []
+    """The chosen model and params reach the LM builder; empty falls back."""
+    captured: list[tuple[str, float | None, int | None]] = []
 
     def fake_build(config, disable_cache):
-        """Record the requested model name instead of building an LM."""
-        captured.append(config.name)
+        """Record the requested model config instead of building an LM."""
+        captured.append((config.name, config.temperature, config.max_tokens))
         return "lm"
 
     monkeypatch.setattr(tagging, "build_language_model", fake_build)
     monkeypatch.setattr(tagging, "apply_model_reasoning_config", lambda config: config)
-    tagging._build_assist_lm("openai/gpt-test")
+    tagging._build_assist_lm("openai/gpt-test", {"temperature": 0.1, "max_tokens": 2048})
     tagging._build_assist_lm(None)
-    assert captured == ["openai/gpt-test", assist_model_name()]
+    assert captured == [
+        ("openai/gpt-test", 0.1, 2048),
+        (assist_model_name(), None, None),
+    ]

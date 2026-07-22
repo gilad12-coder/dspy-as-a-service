@@ -1,3 +1,4 @@
+import type { ModelConfig } from "@/shared/types/api";
 import type {
   Annotation,
   AnnotationMode,
@@ -149,11 +150,37 @@ export function provenanceCounts(
   return counts;
 }
 
+/** The assist's chosen tagging model, viewed as the shared ModelConfig shape. */
+export function assistModelConfig(
+  assist: Pick<AssistState, "model" | "modelParams">,
+): ModelConfig {
+  return { name: assist.model ?? "", ...assist.modelParams };
+}
+
+/**
+ * Split a config saved by the shared model dialog back into the assist's
+ * ``model`` + ``modelParams`` fields. An empty name clears both — removing
+ * the chip resets to the server's default model with default parameters.
+ */
+export function assistModelPatch(
+  config?: ModelConfig,
+): Pick<AssistState, "model" | "modelParams"> {
+  if (!config || !config.name.trim()) return { model: undefined, modelParams: undefined };
+  const { name, ...params } = config;
+  const hasParams = Object.values(params).some(
+    (v) => v != null && (typeof v !== "object" || Object.keys(v).length > 0),
+  );
+  return { model: name.trim(), modelParams: hasParams ? params : undefined };
+}
+
 /** A fresh assist state for a session starting in the interview phase. */
-export function initialAssistState(mode: "copilot" | "autopilot", model?: string): AssistState {
+export function initialAssistState(
+  mode: "copilot" | "autopilot",
+  modelConfig?: ModelConfig,
+): AssistState {
   return {
     mode,
-    ...(model ? { model } : {}),
+    ...assistModelPatch(modelConfig),
     interview: { turns: [], done: false },
     rubric: [],
     calibrationIds: [],

@@ -8,7 +8,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
   Send,
-  Tags,
   Trash2,
   MoreHorizontal,
   Share,
@@ -69,16 +68,19 @@ const NAV_ITEMS = perLocale(
         label: msg("auto.features.sidebar.components.sidebar.literal.1"),
         icon: LayoutDashboard,
       },
+      // One entry covers the whole Data hub: the dataset library and the
+      // labeling-session chooser are tabs of the same surface, so both route
+      // prefixes light it up.
       {
-        href: "/tagger",
-        label: msg("auto.features.sidebar.components.sidebar.literal.2"),
-        icon: Tags,
+        href: "/datasets",
+        label: msg("sidebar.nav.data"),
+        icon: Database,
+        match: ["/datasets", "/tagger"],
       },
       // The glossary term is lowercase for mid-sentence use; nav items are
-      // sentence-cased ("Explore", "Datasets"), so this one matches.
+      // sentence-cased ("Explore", "Data"), so this one matches.
       { href: "/submit", label: sentenceCase(TERMS.notificationNewOpt), icon: Send },
       { href: "/explore", label: msg("sidebar.nav.explore"), icon: Compass },
-      { href: "/datasets", label: msg("sidebar.nav.datasets"), icon: Database },
     ] as const,
 );
 
@@ -389,17 +391,25 @@ export function Sidebar() {
           aria-label={msg("auto.features.sidebar.components.sidebar.literal.7")}
           data-tutorial="sidebar-nav"
         >
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
+          {NAV_ITEMS.map((item) => (
             <NavItem
-              key={href}
-              href={href}
-              label={label}
-              Icon={Icon}
-              active={href === "/" ? pathname === "/" : pathname.startsWith(href)}
-              badge={href === "/" && renderedTab === "mine" && activeCount > 0 ? activeCount : null}
-              isTagger={href === "/tagger"}
+              key={item.href}
+              href={item.href}
+              label={item.label}
+              Icon={item.icon}
+              active={
+                item.href === "/"
+                  ? pathname === "/"
+                  : ("match" in item ? item.match : [item.href]).some((prefix) =>
+                      pathname.startsWith(prefix),
+                    )
+              }
+              badge={
+                item.href === "/" && renderedTab === "mine" && activeCount > 0 ? activeCount : null
+              }
+              tutorialId={item.href === "/datasets" ? "sidebar-data" : undefined}
               resume={
-                href === "/submit"
+                item.href === "/submit"
                   ? { kind: "optimization", detailBase: "/optimizations" }
                   : undefined
               }
@@ -562,7 +572,7 @@ function NavItem({
   Icon,
   active,
   badge,
-  isTagger,
+  tutorialId,
   resume,
 }: {
   href: string;
@@ -570,7 +580,8 @@ function NavItem({
   Icon: React.ComponentType<{ className?: string }>;
   active: boolean;
   badge: number | null;
-  isTagger: boolean;
+  /** ``data-tutorial`` anchor for entries the tutorial spotlights. */
+  tutorialId?: string;
   resume?: { kind: "tagger" | "optimization"; detailBase: string };
 }) {
   const router = useRouter();
@@ -592,7 +603,7 @@ function NavItem({
     <Link
       href={href}
       onClick={onClick}
-      {...(isTagger ? { "data-tutorial": "sidebar-tagger" } : {})}
+      {...(tutorialId ? { "data-tutorial": tutorialId } : {})}
       className={cn(
         "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
         active

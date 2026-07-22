@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "Manuel",
   "tagger.assist.setup.recommended": "Recommandé",
   "tagger.assist.setup.step_label": "Assistance",
-  "tagger.assist.setup.tiny_dataset": "À cette taille, vous vérifieriez de toute façon presque chaque ligne — le mode Manuel ou Pilote automatique vous conviendra mieux.",
   "tagger.assist.setup.title": "Comment l'IA doit-elle vous aider ?",
   "tagger.setup.library_error": "Impossible de charger le jeu de données depuis la bibliothèque.",
   "tagger.setup.library_or": "ou",

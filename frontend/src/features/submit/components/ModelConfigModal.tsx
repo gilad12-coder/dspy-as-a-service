@@ -40,6 +40,12 @@ interface ModelConfigModalProps {
    * callback — the caller is expected to flip the matching grid-search flag.
    */
   onSelectAllAvailable?: () => void;
+  /**
+   * Hide the custom-connection section (base URL / API key) for surfaces
+   * that always run through the platform endpoint — e.g. the tagger's
+   * tagging model, which the server restricts to the curated catalog.
+   */
+  showConnection?: boolean;
 }
 
 export function ModelConfigModal({
@@ -52,6 +58,7 @@ export function ModelConfigModal({
   recentConfigs,
   onRemoveRecent,
   onSelectAllAvailable,
+  showConnection = true,
 }: ModelConfigModalProps) {
   const { wallet } = useCredits();
   const { keys } = useByokKeys();
@@ -277,24 +284,26 @@ export function ModelConfigModal({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => setConnectionOpen((o) => !o)}
-            aria-expanded={connectionOpen}
-            className="flex w-full cursor-pointer items-center justify-between gap-1.5 text-[0.625rem] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <HelpTip text={tip("model_config.connection_section")} className="cursor-pointer">
-              {msg("auto.features.submit.components.modelconfigmodal.section.connection")}
-            </HelpTip>
-            <ChevronDown
-              className={cn(
-                "size-3 shrink-0 transition-transform duration-150",
-                connectionOpen && "rotate-180",
-              )}
-            />
-          </button>
+          {showConnection && (
+            <button
+              type="button"
+              onClick={() => setConnectionOpen((o) => !o)}
+              aria-expanded={connectionOpen}
+              className="flex w-full cursor-pointer items-center justify-between gap-1.5 text-[0.625rem] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <HelpTip text={tip("model_config.connection_section")} className="cursor-pointer">
+                {msg("auto.features.submit.components.modelconfigmodal.section.connection")}
+              </HelpTip>
+              <ChevronDown
+                className={cn(
+                  "size-3 shrink-0 transition-transform duration-150",
+                  connectionOpen && "rotate-180",
+                )}
+              />
+            </button>
+          )}
 
-          {connectionOpen && (
+          {showConnection && connectionOpen && (
             <div className="space-y-4 animate-in fade-in-0 slide-in-from-top-1">
               <div className="space-y-2">
                 <Label htmlFor="modelConfigBaseUrl">
@@ -349,7 +358,7 @@ export function ModelConfigModal({
             </div>
           )}
 
-          <Separator />
+          {showConnection && <Separator />}
 
           <div className="space-y-2">
             <Label>

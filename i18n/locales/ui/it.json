@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "Manuale",
   "tagger.assist.setup.recommended": "Consigliato",
   "tagger.assist.setup.step_label": "Assistenza",
-  "tagger.assist.setup.tiny_dataset": "Con queste dimensioni finiresti comunque per revisionare quasi ogni riga — Manuale o Pilota automatico fanno al caso tuo.",
   "tagger.assist.setup.title": "Come dovrebbe aiutarti l'IA?",
   "tagger.setup.library_error": "Impossibile caricare il dataset dalla libreria.",
   "tagger.setup.library_or": "oppure",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Upload,
   Binary,
@@ -11,7 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
-  Database,
+  Library,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/shared/ui/primitives/button";
@@ -27,9 +27,13 @@ import { cn } from "@/shared/lib/utils";
 import { HelpTip } from "@/shared/ui/help-tip";
 import { tip } from "@/shared/lib/tooltips";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
-import { getDatasetRows, listDatasets, type DatasetSummary } from "@/shared/lib/api";
+import { getDatasetRows } from "@/shared/lib/api";
+import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
+import type { CatalogModel, ModelConfig } from "@/shared/types/api";
 import { registerTutorialHook, registerTutorialQuery } from "@/features/tutorial";
-import { ModelPicker } from "@/features/submit";
+import { ModelConfigModal } from "@/features/submit";
+import { DatasetPickerDialog } from "@/features/datasets";
+import { ModelChip } from "@/shared/ui/model-chip";
 import { useUserPrefs } from "@/features/settings";
 import type {
   AnnotationMode,
@@ -39,7 +43,6 @@ import type {
   Category,
 } from "../lib/types";
 import { isTaggerAssistEnabled } from "../lib/feature-flag";
-import { REVIEW_BATCH_SIZE, calibrationTarget } from "../lib/assist";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { perLocale } from "@/shared/lib/per-locale";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
@@ -50,7 +53,7 @@ interface TaggerSetupProps {
     rows: DataRow[],
     columns: string[],
     assistMode?: TaggerAssistMode,
-    assistModel?: string,
+    assistModel?: ModelConfig,
   ) => void;
 }
 
@@ -155,16 +158,29 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<AnnotationMode | null>(null);
   const [assistMode, setAssistMode] = useState<TaggerAssistMode>("copilot");
-  // Empty = the server's default tagging model.
-  const [assistModel, setAssistModel] = useState("");
+  // Empty name = the server's default tagging model.
+  const [assistModel, setAssistModel] = useState<ModelConfig>({ name: "" });
+  const [modelDialogOpen, setModelDialogOpen] = useState(false);
+  // Managed catalog for the model dialog's thinking detection and the chip's
+  // vision badge — same source the submit wizard feeds it.
+  const [catalogModels, setCatalogModels] = useState<CatalogModel[] | null>(
+    cachedCatalog()?.models ?? null,
+  );
+  useEffect(() => {
+    if (catalogModels) return;
+    let cancelled = false;
+    getModelCatalog()
+      .then((c) => {
+        if (!cancelled) setCatalogModels(c.models);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogModels]);
   const [libraryName, setLibraryName] = useState<string | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(false);
-  const [libraryOptions, setLibraryOptions] = useState<DatasetSummary[]>([]);
-  const [pickedId, setPickedId] = useState<string | null>(null);
-
-  // Whether the user chose an approach themselves — an explicit pick must
-  // never be overridden by the size-hint default below.
-  const assistPicked = useRef(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const { prefs } = useUserPrefs();
   const assistAvailable = isTaggerAssistEnabled() && prefs.taggerAssist;
@@ -177,23 +193,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     ...(assistAvailable ? [ASSIST_STEP] : []),
     ...(needsTaskStep ? [TASK_STEP] : []),
   ];
-
-  // The approach step precedes any interface choice, so the tiny-dataset
-  // caveat sizes against the provisional calibration target.
-  const tinyTarget = calibrationTarget({
-    mode: "freetext",
-    modeProvisional: true,
-    inputColumns: inputCols,
-  });
-  const tinyDataset = parsedRows.length > 0 && parsedRows.length <= tinyTarget + REVIEW_BATCH_SIZE;
-
-  // The pre-selected approach follows the size hint: while the hint says
-  // "Manual or Autopilot will serve you better", Co-pilot must not stay
-  // selected by default — the screen would contradict itself.
-  useEffect(() => {
-    if (assistPicked.current) return;
-    setAssistMode(tinyDataset ? "manual" : "copilot");
-  }, [tinyDataset]);
 
   const [question, setQuestion] = useState(
     msg("auto.features.tagger.components.taggersetup.literal.10"),
@@ -231,7 +230,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     setError(null);
     setFile(f);
     setLibraryName(null);
-    setPickedId(null);
     try {
       const { columns, rows } = await parseDatasetFile(f);
       setParsedRows(rows as DataRow[]);
@@ -255,7 +253,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
       setParsedRows(detail.rows as DataRow[]);
       setParsedCols(detail.columns);
       setFile(null);
-      setPickedId(datasetId);
       setLibraryName(name || msg("tagger.setup.library_fallback_name"));
       const roles = detail.column_schema?.column_roles ?? {};
       const inputs = detail.columns.filter((c) => roles[c] === "input");
@@ -279,18 +276,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     const datasetId = params.get("dataset");
     if (datasetId) void loadLibraryDataset(datasetId, params.get("name"));
   }, [loadLibraryDataset]);
-
-  useEffect(() => {
-    let alive = true;
-    listDatasets()
-      .then((res) => {
-        if (alive) setLibraryOptions(res.datasets);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -412,7 +397,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
       mapped,
       parsedCols,
       effectiveAssistMode,
-      effectiveAssistMode === "manual" ? undefined : assistModel.trim() || undefined,
+      effectiveAssistMode === "manual" || !assistModel.name.trim() ? undefined : assistModel,
     );
   };
 
@@ -472,47 +457,27 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        {libraryOptions.length > 0 && (
-          <>
-            <div className="flex items-center gap-3">
-              <Separator className="flex-1" />
-              <span className="text-xs text-muted-foreground">
-                {msg("tagger.setup.library_or")}
-              </span>
-              <Separator className="flex-1" />
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">{msg("tagger.setup.library_pick")}</p>
-              <div className="max-h-44 space-y-1 overflow-y-auto">
-                {libraryOptions.map((ds) => {
-                  const selected = pickedId === ds.id;
-                  return (
-                    <button
-                      key={ds.id}
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => void loadLibraryDataset(ds.id, ds.name)}
-                      className={cn(
-                        "flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all cursor-pointer",
-                        selected
-                          ? "bg-primary/10 border border-primary/40 text-primary font-medium"
-                          : "border border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                      )}
-                    >
-                      <Database className="size-3.5 shrink-0" />
-                      <span className="truncate min-w-0" dir="auto">
-                        {ds.name}
-                      </span>
-                      <span className="ms-auto shrink-0 text-xs text-muted-foreground">
-                        {formatMsg("datasets.count.rows", { count: ds.row_count })}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </>
-        )}
+        <div className="flex items-center gap-3">
+          <Separator className="flex-1" />
+          <span className="text-xs text-muted-foreground">{msg("tagger.setup.library_or")}</span>
+          <Separator className="flex-1" />
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setPickerOpen(true)}
+          className="w-full justify-center gap-2"
+        >
+          <Library className="size-4" />
+          {msg("tagger.setup.library_pick")}
+        </Button>
+
+        <DatasetPickerDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          onPick={(ds) => void loadLibraryDataset(ds.id, ds.name)}
+        />
 
         {parsedCols.length > 0 && (
           <>
@@ -691,16 +656,12 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
         <CardContent className="flex flex-col gap-2">
           {ASSIST_OPTIONS.map((opt) => {
             const selected = assistMode === opt.mode;
-            const discouraged = tinyDataset && opt.mode === "copilot";
             return (
               <button
                 key={opt.mode}
                 type="button"
                 aria-pressed={selected}
-                onClick={() => {
-                  assistPicked.current = true;
-                  setAssistMode(opt.mode);
-                }}
+                onClick={() => setAssistMode(opt.mode)}
                 className={cn(
                   "flex min-w-0 flex-col gap-0.5 rounded-xl border p-3.5 text-start transition-all cursor-pointer",
                   "hover:border-primary/40 hover:bg-primary/5",
@@ -716,7 +677,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                   >
                     {opt.label}
                   </span>
-                  {opt.recommended && !discouraged && (
+                  {opt.recommended && (
                     <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
                       {msg("tagger.assist.setup.recommended")}
                     </span>
@@ -726,19 +687,25 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
               </button>
             );
           })}
-          {tinyDataset && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {msg("tagger.assist.setup.tiny_dataset")}
-            </p>
-          )}
           {assistMode !== "manual" && (
             <div className="mt-2 space-y-1.5">
               <p className="text-sm font-medium">{msg("tagger.assist.model.title")}</p>
               <p className="text-xs text-muted-foreground">{msg("tagger.assist.model.hint")}</p>
-              <ModelPicker
-                value={assistModel}
-                onChange={setAssistModel}
-                placeholder={msg("tagger.assist.model.placeholder")}
+              <ModelChip
+                config={assistModel}
+                emptyLabel={msg("tagger.assist.model.placeholder")}
+                catalogModels={catalogModels ?? undefined}
+                onClick={() => setModelDialogOpen(true)}
+                onRemove={assistModel.name ? () => setAssistModel({ name: "" }) : undefined}
+              />
+              <ModelConfigModal
+                open={modelDialogOpen}
+                onOpenChange={setModelDialogOpen}
+                config={assistModel}
+                onSave={setAssistModel}
+                roleLabel={msg("tagger.assist.model.title")}
+                catalogModels={catalogModels ?? undefined}
+                showConnection={false}
               />
             </div>
           )}
@@ -817,8 +784,8 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
         </div>
       </div>
 
-      {/* x-clip (not hidden): the step slide animates horizontally only, and
-          the model picker's dropdown must escape the wrapper vertically. */}
+      {/* x-clip (not hidden): only the horizontal slide animation needs
+          clipping — y stays visible so focus rings and shadows aren't cut. */}
       <div className="relative overflow-x-clip pt-[10px]">
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div

@@ -26,7 +26,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from functools import partial
@@ -39,10 +38,15 @@ from pydantic import ValidationError
 from ...config import settings
 from ...exceptions import ServiceError
 from ...models import ModelConfig, WorkflowSpec
-from ..language_models import build_language_model
+from ..language_models import (
+    apply_model_reasoning_config,
+    apply_reasoning_effort,
+    build_language_model,
+)
 from ..react_compat import REACT_CLASS, react_uses_submit
 from ..safe_exec import validate_metric_code, validate_signature_code
 from .constants import REASONING_FIELD
+from .parse_salvage import strip_adapter_debris
 
 logger = logging.getLogger(__name__)
 
@@ -1186,8 +1190,17 @@ class ReactReplyStream:
         return chunk.chunk or None
 
 
-def _build_agent_lm() -> dspy.LM:
+def _build_agent_lm(
+    model_name_override: str | None = None, reasoning_effort: str | None = None
+) -> dspy.LM:
     """Construct the LM used by the code agent from global settings.
+
+    Args:
+        model_name_override: Optional LiteLLM id chosen by the caller (the
+            interview composer's model menu); ``None`` runs the configured
+            code-agent model.
+        reasoning_effort: Explicit effort level for the chosen model; ``None``
+            keeps the model's default.
 
     Reasoning knobs we send, by provider:
 
@@ -1204,7 +1217,7 @@ def _build_agent_lm() -> dspy.LM:
     Returns:
         A configured :class:`dspy.LM` instance for the code agent.
     """
-    model_name = settings.code_agent_model
+    model_name = model_name_override or settings.code_agent_model
     lower = model_name.lower()
     extra: dict = {}
     is_native_minimax = lower.startswith("minimax/") or (
@@ -1223,6 +1236,13 @@ def _build_agent_lm() -> dspy.LM:
         max_tokens=16000,
         extra=extra,
     )
+    config = apply_reasoning_effort(config, reasoning_effort)
+    # A caller-chosen model can be anything in the catalog — run it through
+    # the generic reasoning-model knobs (mandatory temperature/effort for
+    # OpenAI reasoning models); the configured default keeps its hand-tuned
+    # MiniMax setup untouched.
+    if model_name_override:
+        config = apply_model_reasoning_config(config)
     return build_language_model(config, disable_cache=True)
 
 
@@ -1316,27 +1336,6 @@ def _run_code_fixer(
     return (getattr(pred, "fixed_code", "") or "").strip()
 
 
-# minimax-m3 occasionally emits the chat adapter's closing field marker
-# malformed — ``[[ ## completed ## ]`` with a bracket missing — so dspy fails
-# to recognize it and the marker text leaks into the parsed field. The debris
-# turns otherwise-valid code into a syntax error ("'[' was never closed"),
-# which costs a repair LLM round-trip plus two more multi-second subprocess
-# validations on nearly every seed.
-_ADAPTER_DEBRIS_RE = re.compile(r"\s*\[\[\s*##\s*\w+\s*##\s*\]{0,2}\s*$")
-
-
-def _strip_adapter_debris(code: str) -> str:
-    """Drop a trailing (possibly malformed) chat-adapter field marker.
-
-    Args:
-        code: Freshly parsed artifact source.
-
-    Returns:
-        The source without any trailing ``[[ ## … ## ]]``-style marker.
-    """
-    return _ADAPTER_DEBRIS_RE.sub("", code).rstrip()
-
-
 async def _validate_and_repair_artifact(
     *,
     lm: dspy.LM,
@@ -1374,7 +1373,7 @@ async def _validate_and_repair_artifact(
         A ``(code, error)`` tuple — the best source produced and the final
         validator error (empty string once valid).
     """
-    code = _strip_adapter_debris(code)
+    code = strip_adapter_debris(code)
     error = await asyncio.to_thread(validator, code)
     attempts = 0
     while error and attempts < max_attempts:
@@ -1677,7 +1676,7 @@ class _CodeEditSession:
         # Tool args can carry the same malformed trailing field marker the
         # seed path strips; unstripped it fails validation and burns a ReAct
         # iteration on an otherwise-valid edit.
-        new_code = _strip_adapter_debris(new_code)
+        new_code = strip_adapter_debris(new_code)
         if new_code.strip() == self._slots["signature_code"].strip():
             self._emit(
                 {
@@ -1758,7 +1757,7 @@ class _CodeEditSession:
                 "in reply."
             )
         # Same trailing-marker strip as edit_signature — see the note there.
-        new_code = _strip_adapter_debris(new_code)
+        new_code = strip_adapter_debris(new_code)
         if new_code.strip() == self._slots["metric_code"].strip():
             self._emit(
                 {

@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "Manuel",
   "tagger.assist.setup.recommended": "Önerilir",
   "tagger.assist.setup.step_label": "Yardım",
-  "tagger.assist.setup.tiny_dataset": "Bu boyutta zaten neredeyse her satırı inceleyecektiniz — Manuel veya Otomatik pilot sizin için daha iyi olur.",
   "tagger.assist.setup.title": "Yapay zeka nasıl yardımcı olsun?",
   "tagger.setup.library_error": "Veri kümesi kitaplıktan yüklenemedi.",
   "tagger.setup.library_or": "veya",

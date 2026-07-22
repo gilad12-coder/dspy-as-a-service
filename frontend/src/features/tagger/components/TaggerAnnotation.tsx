@@ -62,6 +62,10 @@ interface Props {
   // human starts; when set, the header bar counts decided rows instead — the
   // same number the co-pilot rail reports.
   reviewProgress?: { done: number; total: number };
+  // Shared-in viewers page through rows but cannot label: the answer controls
+  // render disabled and the label keyboard shortcuts are inert, while
+  // navigation and export stay live.
+  readOnly?: boolean;
   onNavigate: (dir: 1 | -1) => void;
   onGoTo: (idx: number) => void;
   onJumpUntagged: () => void;
@@ -81,6 +85,7 @@ export function TaggerAnnotation({
   currentIndex,
   taggedCount,
   reviewProgress,
+  readOnly = false,
   onNavigate,
   onGoTo,
   onJumpUntagged,
@@ -238,6 +243,8 @@ export function TaggerAnnotation({
       } else if (e.key === "e" || e.key === "E") {
         e.preventDefault();
         handleExport("csv");
+      } else if (readOnly) {
+        return;
       } else if (config.mode === "binary") {
         if (e.key === "y" || e.key === "Y") {
           e.preventDefault();
@@ -263,6 +270,7 @@ export function TaggerAnnotation({
     config,
     id,
     showShortcuts,
+    readOnly,
     onNavigate,
     onGoTo,
     onJumpUntagged,
@@ -320,6 +328,7 @@ export function TaggerAnnotation({
               <Button
                 variant={currentAnn === "yes" ? "default" : "outline"}
                 onClick={() => onToggleBinary(id, "yes")}
+                disabled={readOnly}
                 className={cn(
                   "flex-1 text-base font-medium rounded-xl gap-2 focus-visible:ring-0 focus-visible:border-transparent",
                   currentAnn === "yes" &&
@@ -338,6 +347,7 @@ export function TaggerAnnotation({
               <Button
                 variant={currentAnn === "no" ? "default" : "outline"}
                 onClick={() => onToggleBinary(id, "no")}
+                disabled={readOnly}
                 className={cn(
                   "flex-1 text-base font-medium rounded-xl gap-2 focus-visible:ring-0 focus-visible:border-transparent",
                   currentAnn === "no" &&
@@ -370,6 +380,7 @@ export function TaggerAnnotation({
                     key={cat.id}
                     variant="outline"
                     onClick={() => onToggleCategory(id, cat.id)}
+                    disabled={readOnly}
                     className={cn(
                       "flex-1 min-h-0 min-w-0 rounded-xl gap-2 whitespace-normal focus-visible:ring-0 focus-visible:border-transparent",
                       (config.categories?.length ?? 0) >= 7 ? "text-sm" : "text-base",
@@ -401,6 +412,7 @@ export function TaggerAnnotation({
             <textarea
               value={typeof currentAnn === "string" ? currentAnn : ""}
               onChange={(e) => onSetFreetext(id, e.target.value)}
+              readOnly={readOnly}
               className="flex-1 min-h-0 resize-none rounded-xl border border-input/90 bg-background/75 px-4 py-3 text-sm leading-relaxed shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-sm transition-[color,box-shadow,border-color] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
               dir="auto"
             />
@@ -538,7 +550,7 @@ export function TaggerAnnotation({
             <DialogTitle>{msg("auto.features.tagger.components.taggerannotation.14")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-1.5">
-            {config.mode === "binary" && (
+            {!readOnly && config.mode === "binary" && (
               <>
                 <ShortcutRow
                   keys="Y"
@@ -550,13 +562,14 @@ export function TaggerAnnotation({
                 />
               </>
             )}
-            {config.mode === "multiclass" &&
+            {!readOnly &&
+              config.mode === "multiclass" &&
               (config.categories ?? [])
                 .slice(0, 9)
                 .map((cat, i) => (
                   <ShortcutRow key={cat.id} keys={String(i + 1)} label={cat.label} />
                 ))}
-            <Separator className="my-2" />
+            {!readOnly && <Separator className="my-2" />}
             <ShortcutRow
               keys="← / →"
               label={msg("auto.features.tagger.components.taggerannotation.literal.6")}

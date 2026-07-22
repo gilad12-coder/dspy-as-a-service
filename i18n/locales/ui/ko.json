@@ -97,7 +97,6 @@
   "tagger.assist.setup.manual_label": "수동",
   "tagger.assist.setup.recommended": "권장",
   "tagger.assist.setup.step_label": "지원",
-  "tagger.assist.setup.tiny_dataset": "이 정도 규모면 어차피 거의 모든 행을 검토하게 되므로, 수동 또는 오토파일럿이 더 적합합니다.",
   "tagger.assist.setup.title": "AI가 어떻게 도와드릴까요?",
   "tagger.setup.library_error": "라이브러리에서 데이터셋을 불러오지 못했습니다.",
   "tagger.setup.library_or": "또는",

@@ -21,6 +21,8 @@ interface ModelChipProps {
   onCopyFrom?: () => void;
   /** Catalog used to resolve a model's vision capability for the badge. */
   catalogModels?: CatalogModel[];
+  /** Placeholder when no model is set; overrides the required/not-configured copy. */
+  emptyLabel?: string;
   className?: string;
 }
 
@@ -60,11 +62,13 @@ export function ModelChip({
   copyFromLabel,
   onCopyFrom,
   catalogModels,
+  emptyLabel,
   className,
 }: ModelChipProps) {
   const effort = config.extra?.reasoning_effort as string | undefined;
   const name =
     config.name ||
+    emptyLabel ||
     (required ? msg("shared.model_chip.choose_model") : msg("shared.model_chip.not_configured"));
   const isEmpty = !config.name;
   const supportsVision = !!catalogModels?.find((m) => m.value === config.name)?.supports_vision;
@@ -98,15 +102,20 @@ export function ModelChip({
         >
           {isEmpty ? name : (name.split("/").pop() ?? name)}
         </span>
-        {!isEmpty && (
+        {/* A config that carries only a model id (e.g. the tagger's tagging
+            model) renders no parameter row at all — a fabricated temperature
+            would read as a setting the surface doesn't actually have. */}
+        {!isEmpty && (config.temperature != null || config.max_tokens || effort || supportsVision) && (
           <div
             className="flex items-center gap-2.5 text-[0.625rem] text-muted-foreground"
             dir="ltr"
           >
-            <span className="inline-flex items-center gap-0.5">
-              <Thermometer className="size-2.5" />
-              {config.temperature?.toFixed(1) ?? "0.7"}
-            </span>
+            {config.temperature != null && (
+              <span className="inline-flex items-center gap-0.5">
+                <Thermometer className="size-2.5" />
+                {config.temperature.toFixed(1)}
+              </span>
+            )}
             {config.max_tokens && (
               <span className="inline-flex items-center gap-0.5">
                 <Coins className="size-2.5" />
