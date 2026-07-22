@@ -49,6 +49,21 @@ class Settings(BaseSettings):
     remote_db_url: SecretStr | None = Field(default=None, description="PostgreSQL connection string for remote storage")
 
     openai_api_key: SecretStr | None = Field(default=None, description="OpenAI API key for model access")
+    openai_api_base: str | None = Field(
+        default=None,
+        description=(
+            "Base URL of the OpenAI-compatible LLM gateway (LiteLLM reads the same "
+            "env var for serving). The dictation endpoint posts whisper audio here."
+        ),
+    )
+    soniox_api_key: SecretStr | None = Field(
+        default=None,
+        description="Soniox API key for the dictation STT chain's best-ranked leg. Unset skips it.",
+    )
+    elevenlabs_api_key: SecretStr | None = Field(
+        default=None,
+        description="ElevenLabs API key for the dictation STT chain's second leg. Unset skips it.",
+    )
     anthropic_api_key: SecretStr | None = Field(default=None, description="Anthropic API key for Claude models")
     fireworks_ai_api_key: SecretStr | None = Field(
         default=None,
