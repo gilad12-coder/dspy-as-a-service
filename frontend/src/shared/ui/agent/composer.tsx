@@ -25,6 +25,10 @@ interface ComposerProps {
   /** Optional model selector chip rendered in the control row beside the mic
    *  and send controls (the Codex-style composer — see ``ComposerModelMenu``). */
   modelMenu?: React.ReactNode;
+  /** Optional controls docked at the inline-start of the control row (the
+   *  Codex layout: attach + permissions on the left, model/mic/send on the
+   *  right). */
+  leadingControls?: React.ReactNode;
 }
 
 /**
@@ -46,6 +50,7 @@ export function Composer({
   sendAriaLabel = msg("auto.shared.ui.agent.composer.literal.1"),
   stopAriaLabel = msg("auto.shared.ui.agent.composer.literal.2"),
   modelMenu,
+  leadingControls,
 }: ComposerProps) {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const { locale } = useLocale();
@@ -159,6 +164,7 @@ export function Composer({
         )}
 
         <div className="flex items-center gap-1.5 px-2 pb-2 pt-0.5">
+          {leadingControls && <div className="flex items-center gap-1">{leadingControls}</div>}
           <div className="ms-auto flex items-center gap-1.5">
             {modelMenu}
             {dictation.state.kind === "rec" ? (

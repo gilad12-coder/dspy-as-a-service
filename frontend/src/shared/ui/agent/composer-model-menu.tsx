@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, ChevronRight } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Zap } from "lucide-react";
 
 import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
 import { msg } from "@/shared/lib/messages";
@@ -184,25 +184,28 @@ export function ComposerModelMenu({
           disabled={disabled}
           aria-label={msg("agent.model_menu.label")}
           className={cn(
-            "flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground",
-            "cursor-pointer transition-colors hover:bg-accent hover:text-foreground",
+            "flex h-9 items-center gap-1.5 rounded-full bg-accent/60 px-3 text-xs text-foreground",
+            "cursor-pointer transition-colors hover:bg-accent",
             "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40",
             "disabled:pointer-events-none disabled:opacity-50",
-            open && "bg-accent text-foreground",
+            open && "bg-accent",
           )}
         >
-          <span className="max-w-40 truncate" dir="ltr">
+          <Zap className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <span className="max-w-40 truncate font-medium" dir="ltr">
             {value ? shortName(value) : msg("agent.model_menu.auto")}
           </span>
           {/* Codex-style chip: the effort reads as a lighter suffix after the
               model name ("gpt-5 High"), not a separated fragment. */}
-          {value && effort && <span className="shrink-0 opacity-60">{effortLabel(effort)}</span>}
-          <ChevronDown className="size-3 shrink-0" />
+          {value && effort && (
+            <span className="shrink-0 text-muted-foreground">{effortLabel(effort)}</span>
+          )}
+          <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={6} className="w-60 py-1">
+      <DropdownMenuContent align="start" sideOffset={6} className="w-64 py-1.5">
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger className="py-2.5">
             <span className="shrink-0">{msg("agent.model_menu.model")}</span>
             <span className="ms-auto truncate text-muted-foreground" dir="ltr">
               {value ? shortName(value) : msg("agent.model_menu.auto")}
@@ -284,7 +287,7 @@ export function ComposerModelMenu({
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger disabled={!canThink}>
+          <DropdownMenuSubTrigger disabled={!canThink} className="py-2.5">
             <span className="shrink-0">{msg("agent.model_menu.effort_label")}</span>
             <span className="ms-auto truncate text-muted-foreground">
               {effort ? effortLabel(effort) : msg("agent.model_menu.effort_default")}

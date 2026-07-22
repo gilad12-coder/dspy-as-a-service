@@ -116,7 +116,14 @@ function DropdownMenuSubContent({
         sideOffset={sideOffset}
         collisionPadding={collisionPadding}
         className={cn(panelClass, className)}
-        style={{ zIndex: 50 }}
+        // Submenus only flip left/right and Radix never clamps the cross
+        // axis, so on narrow viewports a fixed-width panel hangs off-screen.
+        // Capping to the popper's computed available width lands the panel
+        // exactly at the collision padding instead.
+        style={{
+          zIndex: 50,
+          maxWidth: "var(--radix-dropdown-menu-content-available-width)",
+        }}
         {...props}
       />
     </DropdownMenuPrimitive.Portal>

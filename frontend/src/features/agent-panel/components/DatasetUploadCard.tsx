@@ -39,7 +39,9 @@ interface ParsedFile {
 }
 
 interface DatasetUploadCardProps {
-  call: AgentToolCall;
+  /** The agent tool call that requested the upload; absent when the user
+   *  attaches proactively from the composer's + button. */
+  call?: AgentToolCall;
   disabled?: boolean;
   alreadyConfirmed?: boolean;
   onConfirm: (confirmed: ConfirmedDataset) => void;
