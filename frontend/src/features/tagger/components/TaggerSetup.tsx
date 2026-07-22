@@ -802,25 +802,26 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
         </AnimatePresence>
       </div>
 
-      {!isLastStep ? (
-        <div className="flex items-center justify-between">
-          <Button variant="outline" onClick={goPrev} disabled={step === 0} className="gap-2">
-            <BackIcon className="h-4 w-4" />
-            {msg("auto.features.tagger.components.taggersetup.13")}
-          </Button>
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {step + 1} / {activeSteps.length}
-          </span>
-          <Button onClick={handleNext} disabled={!validateStep(step)} className="gap-2">
-            {msg("auto.features.tagger.components.taggersetup.14")}
-            <NextIcon className="h-4 w-4" />
-          </Button>
-        </div>
-      ) : (
-        <Button onClick={handleStart} disabled={!canStart()} size="lg" className="w-full">
-          {msg("auto.features.tagger.components.taggersetup.15")}
+      {/* The last step's Next launches the session (interview for assisted
+          modes, straight to annotating for manual) — same footer, no separate
+          "start" button. */}
+      <div className="flex items-center justify-between">
+        <Button variant="outline" onClick={goPrev} disabled={step === 0} className="gap-2">
+          <BackIcon className="h-4 w-4" />
+          {msg("auto.features.tagger.components.taggersetup.13")}
         </Button>
-      )}
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {step + 1} / {activeSteps.length}
+        </span>
+        <Button
+          onClick={isLastStep ? handleStart : handleNext}
+          disabled={isLastStep ? !canStart() : !validateStep(step)}
+          className="gap-2"
+        >
+          {msg("auto.features.tagger.components.taggersetup.14")}
+          <NextIcon className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }

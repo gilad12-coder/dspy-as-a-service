@@ -6,11 +6,11 @@ import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   ArrowLeft,
-  Check,
   ChevronLeft,
   ChevronRight,
   Loader2,
   Plus,
+  Save,
   Tags,
   Trash2,
   X,
@@ -265,7 +265,7 @@ export function DatasetEditorView() {
           {dirty && <TooltipContent>{msg("datasets.editor.tag_dirty_hint")}</TooltipContent>}
         </Tooltip>
         <Button onClick={save} disabled={!dirty || saving || rows.length === 0} className="gap-2">
-          {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+          {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
           {msg("datasets.editor.save")}
         </Button>
       </div>
@@ -394,8 +394,8 @@ export function DatasetEditorView() {
         </table>
       </div>
 
-      <div className="flex items-center justify-between">
-        <Button variant="outline" size="sm" onClick={addRow} className="gap-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <Button variant="outline" size="sm" onClick={addRow} className="flex-1 gap-1.5">
           <Plus className="size-3.5" />
           {msg("datasets.editor.add_row")}
         </Button>
