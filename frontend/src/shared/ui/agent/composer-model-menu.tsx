@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, ChevronRight, Zap } from "lucide-react";
+import { Check, ChevronDown, ChevronRight } from "lucide-react";
 
 import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
 import { msg } from "@/shared/lib/messages";
@@ -191,7 +191,6 @@ export function ComposerModelMenu({
             open && "bg-accent",
           )}
         >
-          <Zap className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="max-w-40 truncate font-medium" dir="ltr">
             {value ? shortName(value) : msg("agent.model_menu.auto")}
           </span>
