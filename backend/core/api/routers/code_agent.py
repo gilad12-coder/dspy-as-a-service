@@ -19,7 +19,7 @@ from ...service_gateway.agents.code import run_code_agent
 from ...service_gateway.agents.code_interview import interview_turn_stream
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
-from ..model_catalog import require_known_model
+from ..model_router import route_menu_model
 from ._helpers import sse_from_events
 
 logger = logging.getLogger(__name__)
@@ -152,7 +152,9 @@ class CodeInterviewRequest(BaseModel):
         default=None,
         description=(
             "LiteLLM id of the catalog model conducting the interview (the "
-            "composer's model menu); absent runs the server default."
+            "composer's model menu). Absent routes automatically (balanced "
+            "tier); the sentinel 'auto:intelligent' routes to a frontier-"
+            "quality model."
         ),
     )
     reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = Field(
@@ -315,7 +317,7 @@ def create_code_agent_router() -> APIRouter:
         Returns:
             A :class:`StreamingResponse` of Server-Sent Events.
         """
-        require_known_model(req.model)
+        model, lm_extra_body = route_menu_model(req.model)
 
         async def source() -> AsyncIterator[dict]:
             """Relay engine events, translating failures into an error event."""
@@ -328,8 +330,9 @@ def create_code_agent_router() -> APIRouter:
                     job_model=req.job_model,
                     turns=[t.model_dump() for t in req.turns],
                     locale=req.locale,
-                    model=req.model,
+                    model=model,
                     reasoning_effort=req.reasoning_effort,
+                    lm_extra_body=lm_extra_body,
                 ):
                     yield event
             except Exception:

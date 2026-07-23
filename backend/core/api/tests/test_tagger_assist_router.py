@@ -27,7 +27,7 @@ from ...service_gateway import tagging
 from ...storage.models import Base, TaggingSessionModel
 from ...storage.remote import RemoteDBJobStore
 from ...worker.tagging_job import TaggingAutotagPayload, run_autotag_job
-from .. import model_catalog
+from .. import model_catalog, model_router
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..routers import tagger_assist
@@ -192,7 +192,9 @@ def test_interview_returns_turn(monkeypatch) -> None:
     """The interview route forwards the transcript and returns the turn."""
     seen: dict = {}
 
-    def fake_turn(config, columns, data, turns, locale, model=None, reasoning_effort=None):
+    def fake_turn(
+        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None
+    ):
         """Capture the forwarded arguments and return a canned turn."""
         seen.update(
             {
@@ -202,6 +204,7 @@ def test_interview_returns_turn(monkeypatch) -> None:
                 "config": config,
                 "model": model,
                 "reasoning_effort": reasoning_effort,
+                "lm_extra_body": lm_extra_body,
             }
         )
         return {
@@ -240,6 +243,7 @@ def test_interview_returns_turn(monkeypatch) -> None:
     assert seen["config"]["_assist_mode"] == "copilot"
     assert seen["model"] == "openai/gpt-test"
     assert seen["reasoning_effort"] == "high"
+    assert seen["lm_extra_body"] is None
 
 
 def test_interview_rejects_unknown_model(monkeypatch) -> None:
@@ -259,9 +263,18 @@ def test_interview_stream_forwards_model(monkeypatch) -> None:
     """The SSE interview route hands the chosen model to the engine."""
     seen: dict = {}
 
-    async def fake_stream(config, columns, data, turns, locale, model=None, reasoning_effort=None):
+    async def fake_stream(
+        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None
+    ):
         """Capture the forwarded kwargs and finish immediately."""
-        seen.update({"turns": turns, "model": model, "reasoning_effort": reasoning_effort})
+        seen.update(
+            {
+                "turns": turns,
+                "model": model,
+                "reasoning_effort": reasoning_effort,
+                "lm_extra_body": lm_extra_body,
+            }
+        )
         yield {"event": "interview_done", "data": {"message": "hi", "done": False}}
 
     monkeypatch.setattr(tagging, "interview_turn_stream", fake_stream)
@@ -276,6 +289,38 @@ def test_interview_stream_forwards_model(monkeypatch) -> None:
     assert "event: interview_done" in resp.text
     assert seen["model"] == "openai/gpt-test"
     assert seen["reasoning_effort"] == "low"
+    assert seen["lm_extra_body"] is None
+
+
+def test_interview_stream_auto_rides_router_with_sticky_session(monkeypatch) -> None:
+    """No chosen model rides the auto router, keyed to the tagging session."""
+    seen: dict = {}
+
+    async def fake_stream(
+        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None
+    ):
+        """Capture the forwarded kwargs and finish immediately."""
+        seen.update({"model": model, "lm_extra_body": lm_extra_body})
+        yield {"event": "interview_done", "data": {"message": "hi", "done": False}}
+
+    monkeypatch.setattr(tagging, "interview_turn_stream", fake_stream)
+    monkeypatch.setattr(
+        model_router,
+        "get_catalog_cached",
+        lambda: _catalog_with("openrouter/anthropic/claude-sonnet-5"),
+    )
+    client, _ = _client(_ALICE)
+    session_id = _create(client)
+    resp = client.post(
+        f"/tagging-sessions/{session_id}/assist/interview/stream",
+        json={"turns": []},
+    )
+    assert resp.status_code == 200
+    assert seen["model"] == model_router.OPENROUTER_AUTO_ID
+    assert seen["lm_extra_body"] == {
+        "plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}],
+        "session_id": session_id,
+    }
 
 
 def test_predict_excludes_requested_rows_from_examples(monkeypatch) -> None:

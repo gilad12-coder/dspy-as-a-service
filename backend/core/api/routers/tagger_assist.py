@@ -43,7 +43,8 @@ from ...storage.models import TaggingSessionModel
 from ...worker.tagging_job import TaggingAutotagPayload, untagged_rows
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
-from ..model_catalog import get_catalog_cached, require_known_model
+from ..model_catalog import get_catalog_cached
+from ..model_router import route_menu_model
 from ..sharing_access import ShareRole
 from ..tagging_session_access import require_role
 from ._helpers import sse_from_events
@@ -71,7 +72,9 @@ class InterviewRequest(BaseModel):
         default=None,
         description=(
             "LiteLLM id of the catalog model conducting the interview (the "
-            "composer's model menu); absent runs the server default."
+            "composer's model menu). Absent routes automatically (balanced "
+            "tier); the sentinel 'auto:intelligent' routes to a frontier-"
+            "quality model."
         ),
     )
     reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = Field(
@@ -275,7 +278,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             config = _interview_config(row)
             columns = cast("list[str]", row.columns)
             data = cast("list[dict[str, Any]]", row.data)
-        require_known_model(req.model)
+        model, lm_extra_body = route_menu_model(req.model, session_id=session_id)
         try:
             turn = tagging.interview_turn(
                 config,
@@ -283,8 +286,9 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                 data,
                 req.turns,
                 req.locale,
-                model=req.model,
+                model=model,
                 reasoning_effort=req.reasoning_effort,
+                lm_extra_body=lm_extra_body,
             )
         except Exception as exc:
             logger.exception("interview turn failed for session %s", session_id)
@@ -320,7 +324,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             config = _interview_config(row)
             columns = cast("list[str]", row.columns)
             data = cast("list[dict[str, Any]]", row.data)
-        require_known_model(req.model)
+        model, lm_extra_body = route_menu_model(req.model, session_id=session_id)
 
         async def source() -> Any:
             """Relay engine events, translating failures into an error event."""
@@ -331,8 +335,9 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                     data,
                     req.turns,
                     req.locale,
-                    model=req.model,
+                    model=model,
                     reasoning_effort=req.reasoning_effort,
+                    lm_extra_body=lm_extra_body,
                 ):
                     yield event
             except Exception:

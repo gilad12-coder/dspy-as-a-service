@@ -26,9 +26,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 # TODO: On-prem / air-gap — set this to whatever LiteLLM identifier your
 # internal gateway exposes (e.g. "openai/<model>") and point
 # CODE_AGENT_BASE_URL / GENERALIST_AGENT_BASE_URL at the gateway via env.
-# The shipped default is OpenRouter-hosted MiniMax M3.
-# Requires OPENROUTER_API_KEY in the env.
-DEFAULT_AGENT_MODEL_ID = "openrouter/minimax/minimax-m3"
+# The shipped default is OpenRouter's Auto Router Beta: OpenRouter is the
+# platform's sole LLM provider, and the router picks a concrete model
+# per request. Requires OPENROUTER_API_KEY in the env.
+DEFAULT_AGENT_MODEL_ID = "openrouter/openrouter/auto-beta"
 
 
 class Settings(BaseSettings):
@@ -53,16 +54,16 @@ class Settings(BaseSettings):
         default=None,
         description=(
             "Base URL of the OpenAI-compatible LLM gateway (LiteLLM reads the same "
-            "env var for serving). The dictation endpoint posts whisper audio here."
+            "env var for serving)."
         ),
     )
-    soniox_api_key: SecretStr | None = Field(
+    groq_api_key: SecretStr | None = Field(
         default=None,
-        description="Soniox API key for the dictation STT chain's best-ranked leg. Unset skips it.",
-    )
-    elevenlabs_api_key: SecretStr | None = Field(
-        default=None,
-        description="ElevenLabs API key for the dictation STT chain's second leg. Unset skips it.",
+        description=(
+            "Groq API key for dictation speech-to-text (Whisper large-v3-turbo "
+            "on Groq LPUs) — the platform's sole STT provider. Unset disables "
+            "dictation with a typed 503."
+        ),
     )
     anthropic_api_key: SecretStr | None = Field(default=None, description="Anthropic API key for Claude models")
     fireworks_ai_api_key: SecretStr | None = Field(
@@ -387,7 +388,7 @@ class Settings(BaseSettings):
         default=DEFAULT_AGENT_MODEL_ID,
         description=(
             "LiteLLM model id used by the submit-wizard code agent. "
-            "Defaults to DEFAULT_AGENT_MODEL_ID (OpenRouter-hosted MiniMax M3); "
+            "Defaults to DEFAULT_AGENT_MODEL_ID (OpenRouter's Auto Router); "
             "override via CODE_AGENT_MODEL for on-prem deployments."
         ),
     )
@@ -411,9 +412,8 @@ class Settings(BaseSettings):
         default=DEFAULT_AGENT_MODEL_ID,
         description=(
             "LiteLLM model id used by the generalist agent (Cmd/Ctrl+J "
-            "panel). Defaults to DEFAULT_AGENT_MODEL_ID (OpenRouter-hosted "
-            "MiniMax M3); the shipped default emits <think> reasoning that "
-            "streams visibly to the chat UI."
+            "panel). Defaults to DEFAULT_AGENT_MODEL_ID (OpenRouter's Auto "
+            "Router, which picks a concrete model per request)."
         ),
     )
     # TODO: On-prem / air-gap — set GENERALIST_AGENT_BASE_URL to your internal

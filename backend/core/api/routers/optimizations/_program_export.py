@@ -132,7 +132,7 @@ def load_program(tools=None):
 
 def configure_lm(model=None):
     """Point dspy at an LM. Defaults to the model the program was optimized on."""
-    dspy.configure(lm=dspy.LM(model or _META.get("model") or "openai/gpt-4o-mini"))
+    dspy.configure(lm=dspy.LM(model or _META.get("model") or "openrouter/openai/gpt-4o-mini"))
 
 
 if __name__ == "__main__":

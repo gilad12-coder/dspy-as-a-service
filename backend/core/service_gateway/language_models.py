@@ -158,6 +158,41 @@ def _apply_managed_gateway(lm_kwargs: dict[str, object]) -> None:
         lm_kwargs["model"] = f"litellm_proxy/{model.removeprefix('openrouter/')}"
 
 
+def _translate_gateway_reasoning(lm_kwargs: dict[str, object]) -> None:
+    """Mirror ``reasoning_effort`` into OpenRouter's native ``reasoning`` param.
+
+    Calls that reach OpenRouter (directly via an ``openrouter/`` id, or through
+    the LiteLLM proxy whose wildcard fronts OpenRouter) lose the OpenAI-style
+    ``reasoning_effort`` kwarg: LiteLLM doesn't map it onto OpenRouter's
+    ``reasoning`` request param — so a user-picked effort was a no-op and
+    opt-in thinking models (Anthropic, Gemini) never streamed reasoning.
+    OpenRouter's ceiling vocabulary is ``xhigh``, so Anthropic's ``max`` maps
+    down to it.
+
+    The kwarg is kept (aligned to the mapped value) rather than popped: dspy's
+    ``Reasoning`` signature field injects ``reasoning_effort="low"`` at call
+    time whenever the LM carries no effort of its own, and OpenRouter rejects
+    requests whose ``reasoning_effort`` and ``reasoning.effort`` disagree.
+
+    Args:
+        lm_kwargs: The ``dspy.LM`` kwargs assembled so far, mutated in place.
+    """
+    model = lm_kwargs.get("model")
+    if not isinstance(model, str) or not model.startswith(("litellm_proxy/", "openrouter/")):
+        return
+    effort = lm_kwargs.get("reasoning_effort")
+    if not isinstance(effort, str) or not effort:
+        return
+    mapped = "xhigh" if effort == "max" else effort
+    body = lm_kwargs.get("extra_body")
+    merged = dict(body) if isinstance(body, dict) else {}
+    native = merged.setdefault("reasoning", {"effort": mapped})
+    if isinstance(native, dict) and isinstance(native.get("effort"), str) and native["effort"]:
+        mapped = native["effort"]
+    lm_kwargs["reasoning_effort"] = mapped
+    lm_kwargs["extra_body"] = merged
+
+
 # One lock for every MeteredLM: ``LM.copy()`` shallow-copies instances, so an
 # instance-level lock would be shared anyway, and contention is a few dozen
 # nanoseconds per LM call against a network round-trip.
@@ -294,8 +329,20 @@ def build_language_model(config: ModelConfig, *, disable_cache: bool = False) ->
         lm_kwargs["top_p"] = config.top_p
     lm_kwargs.update(config.extra)
     _apply_managed_gateway(lm_kwargs)
+    _translate_gateway_reasoning(lm_kwargs)
     if disable_cache:
         lm_kwargs["cache"] = False
+        # ``cache=False`` only disables the client-side cache — the LiteLLM
+        # proxy keeps its own Redis cache whose key ignores params like
+        # ``reasoning``, so a user-facing turn could replay a stale cached
+        # answer (and cached replays drop reasoning deltas entirely). The
+        # body-level directive opts this request out server-side too.
+        model = lm_kwargs.get("model")
+        if isinstance(model, str) and model.startswith("litellm_proxy/"):
+            body = lm_kwargs.get("extra_body")
+            merged = dict(body) if isinstance(body, dict) else {}
+            merged.setdefault("cache", {"no-cache": True})
+            lm_kwargs["extra_body"] = merged
     try:
         language_model = MeteredLM(**lm_kwargs)
     except ValueError as exc:
