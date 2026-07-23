@@ -184,3 +184,94 @@ def test_seed_endpoint_forwards_interview_brief(monkeypatch) -> None:
     resp = _client().post("/optimizations/ai-generate-code", json=body)
     assert resp.status_code == 200
     assert seen["interview_brief"] == ["Outputs must be lowercase.", "Penalize hedging."]
+
+
+_SEED_BODY = {
+    "dataset_columns": ["text", "label"],
+    "column_roles": {"text": "input", "label": "output"},
+    "sample_rows": [],
+    "user_message": "",
+}
+
+
+def _fake_run(seen: dict[str, Any]):
+    """Build a ``run_code_agent`` stub that records kwargs and finishes at once."""
+
+    def fake_run(**kwargs: Any) -> Any:
+        """Record kwargs and return an immediately-done stream."""
+        seen.update(kwargs)
+
+        async def gen() -> Any:
+            yield {"event": "done", "data": {"signature_code": "", "metric_code": ""}}
+
+        return gen()
+
+    return fake_run
+
+
+def test_seed_endpoint_forwards_model_and_effort(monkeypatch) -> None:
+    """An explicit catalog model + effort ride ai-generate-code into the engine."""
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(code_agent_router, "run_code_agent", _fake_run(seen))
+    monkeypatch.setattr(
+        model_catalog,
+        "get_catalog_cached",
+        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
+    )
+    resp = _client().post(
+        "/optimizations/ai-generate-code",
+        json={**_SEED_BODY, "model": "openai/gpt-test", "reasoning_effort": "high"},
+    )
+    assert resp.status_code == 200
+    assert seen["model"] == "openai/gpt-test"
+    assert seen["reasoning_effort"] == "high"
+    assert seen["lm_extra_body"] is None
+
+
+def test_seed_endpoint_auto_tiers_ride_the_auto_router(monkeypatch) -> None:
+    """Absent and 'auto:intelligent' models route the code author through OpenRouter."""
+    seen: list[dict[str, Any]] = []
+
+    def fake_run(**kwargs: Any) -> Any:
+        """Record kwargs and return an immediately-done stream."""
+        seen.append(kwargs)
+
+        async def gen() -> Any:
+            yield {"event": "done", "data": {"signature_code": "", "metric_code": ""}}
+
+        return gen()
+
+    monkeypatch.setattr(code_agent_router, "run_code_agent", fake_run)
+    monkeypatch.setattr(
+        model_router,
+        "get_catalog_cached",
+        lambda: SimpleNamespace(models=[SimpleNamespace(value="openrouter/anthropic/claude-sonnet-5")]),
+    )
+    client = _client()
+    assert client.post("/optimizations/ai-generate-code", json=_SEED_BODY).status_code == 200
+    assert (
+        client.post(
+            "/optimizations/ai-generate-code",
+            json={**_SEED_BODY, "model": "auto:intelligent"},
+        ).status_code
+        == 200
+    )
+    assert [k["model"] for k in seen] == [model_router.OPENROUTER_AUTO_ID] * 2
+    assert [k["lm_extra_body"] for k in seen] == [
+        {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]},
+        {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 0}]},
+    ]
+
+
+def test_seed_endpoint_rejects_unknown_model(monkeypatch) -> None:
+    """A non-catalog code-author model is refused before any LLM spend."""
+    monkeypatch.setattr(
+        model_catalog,
+        "get_catalog_cached",
+        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
+    )
+    resp = _client().post(
+        "/optimizations/ai-generate-code", json={**_SEED_BODY, "model": "openai/not-a-model"}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "models.unknown_model"

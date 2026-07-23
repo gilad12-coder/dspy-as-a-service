@@ -345,6 +345,11 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       typeof effectiveWizard.optimizer_name === "string"
         ? effectiveWizard.optimizer_name
         : undefined,
+    // Code authoring follows the conversation's chosen model, so picking a
+    // concrete model in the composer (instead of the auto-router default) also
+    // steers the seed — the escape hatch when the default is rate-limited.
+    model: agent.model,
+    reasoningEffort: agent.reasoningEffort,
   });
   // The agent's turn ends BEFORE its card finishes (the code agent streams
   // after the turn), so the composer locks on this signal — not ``streaming``

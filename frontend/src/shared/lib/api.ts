@@ -2032,6 +2032,11 @@ export interface CodeAgentRequest {
   // Directives confirmed at the end of the Signature & Metric interview;
   // the seed authors honor every directive. Empty when no interview ran.
   interview_brief?: string[];
+  // Catalog model id that authors the code (the composer's model menu).
+  // Absent routes automatically; "auto:intelligent" picks a frontier model.
+  model?: string;
+  // Explicit reasoning-effort level for the chosen model; absent keeps its default.
+  reasoning_effort?: string;
 }
 
 export type CodeAgentToolName =

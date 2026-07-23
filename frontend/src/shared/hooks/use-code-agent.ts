@@ -206,6 +206,11 @@ export interface UseCodeAgentArgs {
   // When set, the conversation survives the locale-switch reload under this
   // stash key. Leave unset for surfaces that shouldn't persist.
   reloadPersistKey?: string;
+  // Catalog model id + effort the code author runs on (the composer's model
+  // menu). Absent/`null` routes automatically. The agent panel forwards the
+  // conversation's chosen model so code authoring follows the composer.
+  model?: string | null;
+  reasoningEffort?: string | null;
 }
 
 export function useCodeAgent(args: UseCodeAgentArgs): CodeAgentState {
@@ -237,6 +242,8 @@ export function useCodeAgent(args: UseCodeAgentArgs): CodeAgentState {
     seedEnabled = true,
     interviewBrief,
     reloadPersistKey,
+    model,
+    reasoningEffort,
   } = args;
 
   // Read the reload stash once at mount, before the initializers below
@@ -560,6 +567,8 @@ export function useCodeAgent(args: UseCodeAgentArgs): CodeAgentState {
                 initial_workflow: initialWorkflowRef.current ?? priorWorkflow,
               }
             : {}),
+          ...(model ? { model } : {}),
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
         },
         {
           signal: controller.signal,
@@ -843,6 +852,8 @@ export function useCodeAgent(args: UseCodeAgentArgs): CodeAgentState {
       columnKinds,
       isWorkflow,
       interviewBrief,
+      model,
+      reasoningEffort,
       setSignatureCode,
       setMetricCode,
       setSignatureValidation,

@@ -2724,6 +2724,9 @@ async def run_code_agent(
     initial_workflow: dict | None = None,
     interview_brief: list[str] | None = None,
     locale: str | None = None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
+    lm_extra_body: dict[str, Any] | None = None,
     usage_sink: list | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Stream code-agent events to the UI.
@@ -2777,13 +2780,20 @@ async def run_code_agent(
         locale: UI locale code of the client; sets the language of every
             user-facing agent string (replies, intro messages, tool
             rationales). Unknown or missing falls back to Hebrew.
+        model: LiteLLM id of the model that authors the code, resolved from
+            the composer's model menu. ``None`` runs the server default
+            (``settings.code_agent_model``).
+        reasoning_effort: Explicit reasoning-effort level for ``model``;
+            ``None`` keeps the model's default.
+        lm_extra_body: Provider ``extra_body`` (e.g. the auto-router plugin
+            dial) merged into the LM's request payload.
         usage_sink: Optional list the built LM is appended to, so the caller
             can meter the turn's token usage on any exit path.
 
     Yields:
         SSE event dicts of shape ``{"event": str, "data": dict}``.
     """
-    lm = _build_agent_lm()
+    lm = _build_agent_lm(model, reasoning_effort, lm_extra_body)
     if usage_sink is not None:
         usage_sink.append(lm)
     column_roles_json = json.dumps(column_roles, ensure_ascii=False)

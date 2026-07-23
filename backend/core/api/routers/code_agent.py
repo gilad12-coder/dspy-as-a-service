@@ -115,6 +115,22 @@ class CodeAgentRequest(BaseModel):
             "no interview happened."
         ),
     )
+    model: str | None = Field(
+        default=None,
+        description=(
+            "LiteLLM id of the catalog model that authors the code (the "
+            "composer's model menu). Absent routes automatically (balanced "
+            "tier); the sentinel 'auto:intelligent' routes to a frontier-"
+            "quality model."
+        ),
+    )
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = Field(
+        default=None,
+        description=(
+            "Explicit reasoning-effort level for the chosen model; absent "
+            "keeps the model's default."
+        ),
+    )
 
 
 class CodeInterviewRequest(BaseModel):
@@ -266,6 +282,7 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
             A :class:`StreamingResponse` of Server-Sent Events.
         """
         await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
+        model, lm_extra_body = route_menu_model(req.model)
         usage_sink: list = []
         source = run_code_agent(
             dataset_columns=req.dataset_columns,
@@ -284,6 +301,9 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
             initial_workflow=req.initial_workflow,
             interview_brief=req.interview_brief,
             locale=req.locale,
+            model=model,
+            reasoning_effort=req.reasoning_effort,
+            lm_extra_body=lm_extra_body,
             usage_sink=usage_sink,
         )
         metered = stream_with_llm_metering(
