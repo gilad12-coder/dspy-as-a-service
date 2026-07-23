@@ -45,6 +45,7 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
@@ -59,6 +60,17 @@ function DialogContent({
           className,
         )}
         style={{ zIndex: 50, top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}
+        // Non-Radix portals (e.g. the excel-filter dropdown) mount on
+        // document.body, so Radix sees clicks inside them as "outside" and
+        // would dismiss the dialog. Portals marked modal-safe opt out.
+        onInteractOutside={(event) => {
+          const target = event.target as Element | null;
+          if (target?.closest?.("[data-modal-safe-portal]")) {
+            event.preventDefault();
+            return;
+          }
+          onInteractOutside?.(event);
+        }}
         {...props}
       >
         {children}

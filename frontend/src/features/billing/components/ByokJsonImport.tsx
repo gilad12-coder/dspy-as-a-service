@@ -8,7 +8,7 @@ import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";
 import { useByokKeys } from "../providers/byok-provider";
 import { BYOK_PROVIDERS } from "../lib/byok";
-import { ProviderLogo } from "./ProviderLogo";
+import { ProviderLogo } from "@/shared/ui/provider-logo";
 
 /** One connection entry parsed and validated from the pasted JSON. */
 interface ParsedConnection {

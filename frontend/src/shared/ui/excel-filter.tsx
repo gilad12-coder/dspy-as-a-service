@@ -306,7 +306,11 @@ function FilterDropdown({
   const dropdown = (
     <div
       ref={ref}
-      className="fixed z-[9999] max-w-[min(90vw,320px)] w-full rounded-[22px] border border-border/70 bg-popover/95 p-2 shadow-[var(--shadow-card)] backdrop-blur-xl"
+      // A modal Radix dialog puts pointer-events:none on <body>; this portal
+      // mounts on body, so it must re-enable its own pointer events, and the
+      // modal-safe marker keeps the dialog from dismissing on clicks here.
+      data-modal-safe-portal=""
+      className="pointer-events-auto fixed z-[9999] max-w-[min(90vw,320px)] w-full rounded-[22px] border border-border/70 bg-popover/95 p-2 shadow-[var(--shadow-card)] backdrop-blur-xl"
       style={
         pos
           ? { top: pos.top, left: pos.left, minWidth: "clamp(180px, 25vw, 260px)" }

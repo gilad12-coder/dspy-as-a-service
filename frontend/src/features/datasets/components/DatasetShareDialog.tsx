@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Copy, Globe, Loader2, Lock, User, UserPlus, Users, X } from "lucide-react";
+import { Globe, Loader2, Lock, User, UserPlus, Users, X } from "lucide-react";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/shared/ui/primitives/select";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
+import { CopyButton } from "@/shared/ui/copy-button";
 import { SettingsRow } from "@/shared/ui/settings-row";
 import {
   addDatasetShareMember,
@@ -172,14 +173,6 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
   const handleInvite = async (username: string, role: MemberRole) => {
     setState(await addDatasetShareMember(datasetId, { username, role }));
     toast.success(msg("share.member_added"));
-  };
-
-  const handleCopy = () => {
-    if (!shareUrl) return;
-    navigator.clipboard
-      .writeText(shareUrl)
-      .then(() => toast.success(msg("share.link_copied")))
-      .catch(() => toast.error(msg("clipboard.copy_failed")));
   };
 
   return (
@@ -392,15 +385,13 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
                       </code>
                       <div aria-hidden className="h-5 w-px shrink-0 bg-border/70" />
                       <TooltipButton tooltip={msg("share.copy_link")}>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={handleCopy}
-                          aria-label={msg("share.copy_link")}
+                        <CopyButton
+                          text={shareUrl}
+                          ariaLabel={msg("share.copy_link")}
+                          onCopied={() => toast.success(msg("share.link_copied"))}
+                          onCopyError={() => toast.error(msg("clipboard.copy_failed"))}
                           className="size-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0"
-                        >
-                          <Copy className="size-3.5" />
-                        </Button>
+                        />
                       </TooltipButton>
                     </div>
                   )}

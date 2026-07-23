@@ -47,7 +47,7 @@ export const BYOK_PROVIDERS: ByokProviderInfo[] = [
   { slug: "openai", label: "OpenAI", placeholder: "sk-…" },
   { slug: "anthropic", label: "Anthropic", placeholder: "sk-ant-…" },
   { slug: "google", label: "Google AI", placeholder: "AIza…" },
-  { slug: "xai", label: "xAI", placeholder: "xai-…" },
+  { slug: "xai", label: "SpaceXAI", placeholder: "xai-…" },
   { slug: "deepseek", label: "DeepSeek", placeholder: "sk-…" },
   { slug: "mistral", label: "Mistral", placeholder: "…" },
   { slug: "groq", label: "Groq", placeholder: "gsk_…" },

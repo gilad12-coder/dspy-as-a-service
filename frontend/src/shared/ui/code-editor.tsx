@@ -22,9 +22,8 @@ import { indentWithTab } from "@codemirror/commands";
 import { Prec } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { linkifyMessage } from "@/shared/lib/linkify";
+import { CopyGlyph, useCopyToClipboard } from "@/shared/ui/copy-button";
 import {
-  Copy,
-  Check,
   ChevronUp,
   ChevronDown,
   Play,
@@ -319,8 +318,8 @@ export function CodeEditor({
     return base;
   }, [streaming, flashLines]);
   const [collapsed, setCollapsed] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [consoleCopied, setConsoleCopied] = useState(false);
+  const { copied, copy: copyToClipboard } = useCopyToClipboard();
+  const { copied: consoleCopied, copy: copyConsoleToClipboard } = useCopyToClipboard();
   const [running, setRunning] = useState(false);
   const [formatting, setFormatting] = useState(false);
   const [result, setResult] = useState<ValidationResult | null>(null);
@@ -333,14 +332,8 @@ export function CodeEditor({
   const lineCount = value.split("\n").length;
 
   const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch (error) {
-      console.warn("Failed to copy editor contents", error);
-    }
-  }, [value]);
+    await copyToClipboard(value);
+  }, [copyToClipboard, value]);
 
   const handleCopyConsole = useCallback(async () => {
     if (!result) return;
@@ -348,14 +341,8 @@ export function CodeEditor({
     for (const err of result.errors) lines.push(`[error] ${err}`);
     for (const w of result.warnings) lines.push(`[warn]  ${w}`);
     if (lines.length === 0) return;
-    try {
-      await navigator.clipboard.writeText(lines.join("\n"));
-      setConsoleCopied(true);
-      setTimeout(() => setConsoleCopied(false), 1500);
-    } catch (error) {
-      console.warn("Failed to copy console output", error);
-    }
-  }, [result]);
+    await copyConsoleToClipboard(lines.join("\n"));
+  }, [copyConsoleToClipboard, result]);
 
   const handleRun = useCallback(async () => {
     if (!onRun || running) return;
@@ -453,7 +440,7 @@ export function CodeEditor({
           onClick={handleCopy}
           className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-black/5 transition-colors cursor-pointer"
         >
-          {copied ? <Check className="size-3 text-[#3D2E22]" /> : <Copy className="size-3" />}
+          <CopyGlyph copied={copied} className="size-3" checkClassName="text-[#3D2E22]" />
           {copied ? msg("shared.code_editor.copied") : msg("shared.code_editor.copy")}
         </button>
       </div>
@@ -567,11 +554,7 @@ export function CodeEditor({
                       className="close-button"
                       aria-label={msg("shared.code_editor.copy_console")}
                     >
-                      {consoleCopied ? (
-                        <Check style={{ color: "#3D2E22" }} />
-                      ) : (
-                        <Copy />
-                      )}
+                      <CopyGlyph copied={consoleCopied} checkClassName="text-[#3D2E22]" />
                     </button>
                   </TooltipButton>
                 )}

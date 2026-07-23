@@ -12,8 +12,6 @@ import {
   TrendingUp,
   Timer,
   Send,
-  Copy,
-  Check,
   CopyPlus,
   Database,
   Settings,
@@ -34,6 +32,7 @@ import { PingDot } from "@/shared/ui/ping-dot";
 import { markRecentSession } from "@/shared/lib/recent-session";
 import { FadeIn } from "@/shared/ui/motion";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
+import { CopyGlyph, useCopyToClipboard } from "@/shared/ui/copy-button";
 import {
   getJob,
   cancelJob,
@@ -208,25 +207,22 @@ function LiveElapsedBadge({
   );
 }
 
-// Copy control for the failure card. Mirrors the app-wide icon-button copy
-// pattern (inline check-swap, tooltip flips to "copied"), tinted to the warm
-// error palette so it reads as part of the card rather than a generic action.
+// Copy control for the failure card. Mirrors the app-wide animated copy
+// pattern (Copy morphs into a check, tooltip flips to "copied"), tinted to
+// the warm error palette so it reads as part of the card rather than a
+// generic action.
 function FailureCopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
   const label = msg(copied ? "shared.code_editor.copied" : "shared.code_editor.copy");
   return (
     <TooltipButton tooltip={label}>
       <button
         type="button"
         aria-label={label}
-        onClick={() => {
-          void navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
+        onClick={() => void copy(text)}
         className="-me-1 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-[#B04030]/70 transition-colors hover:bg-[#B04030]/10 hover:text-[#B04030] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B04030]/30"
       >
-        {copied ? <Check className="size-3.5 text-[#B04030]" /> : <Copy className="size-3.5" />}
+        <CopyGlyph copied={copied} className="size-3.5" checkClassName="text-[#B04030]" />
       </button>
     </TooltipButton>
   );

@@ -8,7 +8,6 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
-  Copy,
   Inbox,
   Loader2,
   Sparkles,
@@ -32,6 +31,7 @@ import {
   type SortDir,
 } from "@/shared/ui/excel-filter";
 import { StatusBadge } from "@/shared/ui/status-badge";
+import { CopyButton } from "@/shared/ui/copy-button";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { FadeIn } from "@/shared/ui/motion";
 import {
@@ -179,6 +179,28 @@ export function DatasetDetailDialog({
       .then(() => toast.success(msg("clipboard.copied")))
       .catch(() => toast.error(msg("clipboard.copy_failed")));
   }, []);
+
+  // A cell's single click copies its value, but the same spot double-clicked
+  // opens the row reader — so the copy waits long enough to know no second
+  // click is coming, and the double-click handler cancels it.
+  const pendingCopy = React.useRef<number | null>(null);
+  const cancelPendingCopy = React.useCallback(() => {
+    if (pendingCopy.current !== null) {
+      window.clearTimeout(pendingCopy.current);
+      pendingCopy.current = null;
+    }
+  }, []);
+  const scheduleCellCopy = React.useCallback(
+    (text: string) => {
+      cancelPendingCopy();
+      pendingCopy.current = window.setTimeout(() => {
+        pendingCopy.current = null;
+        copyValue(text);
+      }, 250);
+    },
+    [cancelPendingCopy, copyValue],
+  );
+  React.useEffect(() => cancelPendingCopy, [cancelPendingCopy]);
 
   const readerRow = readerIndex === null ? null : (filtered[readerIndex] ?? null);
 
@@ -345,17 +367,16 @@ export function DatasetDetailDialog({
                             <dt className="text-[0.6875rem] font-semibold tracking-wide text-muted-foreground uppercase">
                               {col}
                             </dt>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => copyValue(value)}
-                              aria-label={formatMsg("datasets.detail.row_reader.copy_field", {
+                            <CopyButton
+                              text={value}
+                              ariaLabel={formatMsg("datasets.detail.row_reader.copy_field", {
                                 column: col,
                               })}
+                              onCopied={() => toast.success(msg("clipboard.copied"))}
+                              onCopyError={() => toast.error(msg("clipboard.copy_failed"))}
                               className="size-6 opacity-0 transition-opacity group-hover/field:opacity-100 focus-visible:opacity-100"
-                            >
-                              <Copy className="size-3" />
-                            </Button>
+                              iconClassName="size-3"
+                            />
                           </div>
                           <dd
                             dir="auto"
@@ -392,10 +413,6 @@ export function DatasetDetailDialog({
                   <FadeIn className="flex min-h-0 flex-1 flex-col">
                     <div className="mb-2 flex items-center justify-between gap-3">
                       <span className="min-w-0 truncate text-xs text-muted-foreground">
-                        <span className="tabular-nums">
-                          {formatMsg("datasets.detail.rows_count", { count: filtered.length })}
-                        </span>
-                        {" · "}
                         {msg("datasets.detail.row_reader.hint")}
                       </span>
                       <ResetColumnsButton resize={colResize} />
@@ -445,7 +462,10 @@ export function DatasetDetailDialog({
                               <TableRow
                                 key={i}
                                 className="cursor-pointer transition-colors hover:bg-muted/40"
-                                onClick={() => setReaderIndex(i)}
+                                onDoubleClick={() => {
+                                  cancelPendingCopy();
+                                  setReaderIndex(i);
+                                }}
                               >
                                 {columns.map((col) => (
                                   <TableCell
@@ -460,10 +480,14 @@ export function DatasetDetailDialog({
                                         : undefined
                                     }
                                     title={cellText(row[col])}
+                                    onClick={(e) => {
+                                      if (e.detail !== 1) return;
+                                      scheduleCellCopy(cellText(row[col]));
+                                    }}
                                   >
                                     <span
                                       dir="auto"
-                                      className="line-clamp-2 break-words whitespace-normal"
+                                      className="line-clamp-2 break-words whitespace-normal hover:underline underline-offset-2 decoration-foreground/40"
                                     >
                                       {cellText(row[col])}
                                     </span>
