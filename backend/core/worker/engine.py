@@ -890,6 +890,7 @@ class BackgroundWorker:
             self._job_store,
             optimization_id,
             payload.session_id,
+            username=payload.username,
             cancel_event=cancel_event or threading.Event(),
             heartbeat=lambda: self._touch_activity(worker_id),
         )

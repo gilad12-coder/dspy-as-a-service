@@ -480,6 +480,18 @@ function SpendChart({ buckets }: { buckets: Bucket[] }) {
 }
 
 /** Per-model spend as a ranked bar list. Lite mode falls back to a table. */
+/** Compact token count for the per-model rows ("1.2M"). */
+function formatTokens(count: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(
+    count,
+  );
+}
+
+/** Total measured tokens behind a model row, or 0 when untracked (fallback rows). */
+function rowTokens(row: BillingUsageResponse["by_model"][number]): number {
+  return (row.input_tokens ?? 0) + (row.output_tokens ?? 0);
+}
+
 function ModelBreakdown({
   rows,
   locale,
@@ -500,11 +512,13 @@ function ModelBreakdown({
           model: row.model ?? msg("usage.model.unknown"),
           credits: row.credits,
           runs: row.runs,
+          tokens: rowTokens(row) > 0 ? formatTokens(rowTokens(row), locale) : "—",
         }))}
         columns={[
           { key: "model", label: msg("usage.col.model") },
           { key: "credits", label: msg("usage.col.credits"), align: "end" },
           { key: "runs", label: msg("usage.col.runs"), align: "end" },
+          { key: "tokens", label: msg("usage.col.tokens"), align: "end" },
         ]}
       />
     );
@@ -514,14 +528,29 @@ function ModelBreakdown({
     <ul className="flex flex-col gap-2.5">
       {rows.slice(0, 6).map((row, index) => {
         const label = row.model ?? msg("usage.model.unknown");
+        const tokens = rowTokens(row);
         return (
           <li key={label} className="flex flex-col gap-1">
             <div className="flex items-baseline justify-between gap-3">
               <span dir="ltr" className="min-w-0 truncate text-xs text-foreground" title={label}>
                 {label}
               </span>
-              <span dir="ltr" className="shrink-0 text-xs font-medium tabular-nums text-foreground">
-                {formatCredits(row.credits, locale)}
+              <span className="flex shrink-0 items-baseline gap-2">
+                {tokens > 0 && (
+                  <span
+                    dir="ltr"
+                    className="text-[11px] tabular-nums text-muted-foreground"
+                    title={msg("usage.tokens.split", {
+                      input: (row.input_tokens ?? 0).toLocaleString(locale),
+                      output: (row.output_tokens ?? 0).toLocaleString(locale),
+                    })}
+                  >
+                    {msg("usage.tokens.count", { count: formatTokens(tokens, locale) })}
+                  </span>
+                )}
+                <span dir="ltr" className="text-xs font-medium tabular-nums text-foreground">
+                  {formatCredits(row.credits, locale)}
+                </span>
               </span>
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">

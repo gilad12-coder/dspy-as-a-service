@@ -42,7 +42,7 @@ from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..model_catalog import require_known_model
 from ..model_router import resolve_auto_tier, route_auto_model
-from ._helpers import sse_from_events
+from ._helpers import enforce_llm_credits, sse_from_events, stream_with_llm_metering
 
 logger = logging.getLogger(__name__)
 
@@ -542,6 +542,7 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
                 return None, None
             return cid, ttl
 
+        await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         conversation_id, title = await asyncio.to_thread(_setup_turn)
 
         wizard_state: WizardState = {**req.wizard_state}  # type: ignore[typeddict-item]
@@ -555,6 +556,7 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
             if requested_model
             else route_auto_model(auto_tier or "balanced", conversation_id)
         )
+        usage_sink: list = []
         source = run_generalist_agent(
             wizard_state=wizard_state,
             chat_history=[t.model_dump() for t in req.chat_history],
@@ -563,9 +565,17 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
             auth_header=authorization,
             locale=req.locale,
             model_config=model_config,
+            usage_sink=usage_sink,
+        )
+        metered = stream_with_llm_metering(
+            source,
+            job_store=job_store,
+            username=current_user.username,
+            description="Agent chat",
+            usage_sink=usage_sink,
         )
         wrapped = _wrap_with_persistence(
-            source,
+            metered,
             job_store=job_store,
             conversation_id=conversation_id,
             title=title,

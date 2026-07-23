@@ -30,7 +30,13 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from ...storage.models import AgentConversationModel, AgentMessageModel, Base
+from ...storage.models import (
+    AgentConversationModel,
+    AgentMessageModel,
+    Base,
+    BillingCustomerModel,
+    CreditLedgerModel,
+)
 from .. import auth as auth_mod
 from .. import model_catalog
 from ..routers import generalist_agent as agent_mod
@@ -110,7 +116,16 @@ def persistence_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Eng
         on the persisted rows directly.
     """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[AgentConversationModel.__table__, AgentMessageModel.__table__])
+    # Billing tables back the turn's credit gate + usage metering seam.
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            AgentConversationModel.__table__,
+            AgentMessageModel.__table__,
+            BillingCustomerModel.__table__,
+            CreditLedgerModel.__table__,
+        ],
+    )
     monkeypatch.setattr(auth_mod.settings, "backend_auth_secret", SecretStr(_SECRET))
     monkeypatch.setattr(agent_mod, "run_generalist_agent", _fake_stream)
     monkeypatch.setattr(agent_mod, "queue_conversation_embed", lambda *a, **k: None)
@@ -177,6 +192,31 @@ def test_authenticated_turn_persists_conversation_and_messages(
             ("user", "hi"),
             ("assistant", "שלום"),
         ]
+
+
+def test_depleted_account_gets_402_before_streaming(
+    persistence_client: tuple[TestClient, Engine],
+) -> None:
+    """A zero-balance account is refused before any LLM work or persistence."""
+    client, engine = persistence_client
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice@example.com",
+                stripe_customer_id="cus_alice",
+                credit_balance=0,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
+
+    resp = _post_turn(client, "hi", _session_token())
+
+    # The bare test app skips create_app's DomainError handler (which adds the
+    # machine-readable ``code``), so the status is the assertable contract.
+    assert resp.status_code == 402
+    with Session(engine) as session:
+        assert session.query(AgentConversationModel).count() == 0
 
 
 def test_turn_forwards_chosen_model(
@@ -304,7 +344,16 @@ def wrapper_engine(monkeypatch: pytest.MonkeyPatch) -> Engine:
         The bound ``Engine`` holding one ``agent_conversations`` row.
     """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[AgentConversationModel.__table__, AgentMessageModel.__table__])
+    # Billing tables back the turn's credit gate + usage metering seam.
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            AgentConversationModel.__table__,
+            AgentMessageModel.__table__,
+            BillingCustomerModel.__table__,
+            CreditLedgerModel.__table__,
+        ],
+    )
     monkeypatch.setattr(agent_mod, "queue_conversation_embed", lambda *a, **k: None)
     with Session(engine) as session:
         session.add(AgentConversationModel(id=_CONV_ID, username="alice@example.com", title="hi"))

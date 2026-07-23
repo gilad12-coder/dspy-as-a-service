@@ -1472,6 +1472,7 @@ async def run_generalist_agent(
     approval_registry: ApprovalRegistry | None = None,
     auth_header: str | None = None,
     locale: str | None = None,
+    usage_sink: list | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Stream generalist-agent events for one user turn.
 
@@ -1504,6 +1505,9 @@ async def run_generalist_agent(
         locale: UI locale code of the client (e.g. ``he``, ``fr-CA``).
             Resolved via :func:`_reply_language`; unknown or missing falls
             back to Hebrew.
+        usage_sink: Optional list the built LM is appended to, so the caller
+            can meter the turn's token usage on any exit path — including a
+            client disconnect where the ``done`` event never fires.
 
     Yields:
         SSE event dicts of shape ``{"event": str, "data": dict}``.
@@ -1532,6 +1536,8 @@ async def run_generalist_agent(
     except ServiceError as exc:
         yield {"event": "error", "data": {"error": str(exc)}}
         return
+    if usage_sink is not None:
+        usage_sink.append(lm)
 
     # The approval wrapper is called from a worker thread by DSPy, so we
     # need a thread-safe hop back to this coroutine's event loop to emit

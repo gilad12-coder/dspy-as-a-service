@@ -2724,6 +2724,7 @@ async def run_code_agent(
     initial_workflow: dict | None = None,
     interview_brief: list[str] | None = None,
     locale: str | None = None,
+    usage_sink: list | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Stream code-agent events to the UI.
 
@@ -2776,11 +2777,15 @@ async def run_code_agent(
         locale: UI locale code of the client; sets the language of every
             user-facing agent string (replies, intro messages, tool
             rationales). Unknown or missing falls back to Hebrew.
+        usage_sink: Optional list the built LM is appended to, so the caller
+            can meter the turn's token usage on any exit path.
 
     Yields:
         SSE event dicts of shape ``{"event": str, "data": dict}``.
     """
     lm = _build_agent_lm()
+    if usage_sink is not None:
+        usage_sink.append(lm)
     column_roles_json = json.dumps(column_roles, ensure_ascii=False)
     column_kinds_json = json.dumps(column_kinds or {}, ensure_ascii=False)
     sample_rows_json = json.dumps(sample_rows[:5], ensure_ascii=False, default=str)

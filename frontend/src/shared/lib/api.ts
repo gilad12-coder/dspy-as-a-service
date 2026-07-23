@@ -561,6 +561,10 @@ export interface BillingUsageModel {
   model: string | null;
   credits: number;
   runs: number;
+  /** Measured token counts behind the billed runs; absent on the client-side
+   *  ledger fallback, which has no per-row token data. */
+  input_tokens?: number;
+  output_tokens?: number;
 }
 
 /** A date-ranged usage rollup for the Usage dashboard (snake_case mirrors the API). */

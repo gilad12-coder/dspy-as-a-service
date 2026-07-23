@@ -25,6 +25,7 @@ from typing import Any, cast
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..billing.metering import meter_llm_run
 from ..service_gateway import tagging
 from ..storage.models import TaggingSessionModel
 
@@ -99,6 +100,7 @@ def run_autotag_job(
     optimization_id: str,
     session_id: str,
     *,
+    username: str = "",
     cancel_event: threading.Event,
     heartbeat: Any,
 ) -> dict[str, Any]:
@@ -116,6 +118,8 @@ def run_autotag_job(
             status read drives cross-pod cancel.
         optimization_id: The job row's id (for the cross-pod status poll).
         session_id: UUID of the tagger session being tagged.
+        username: Account the run's LM usage is debited to (the job
+            initiator, from the worker payload); empty skips billing.
         cancel_event: The worker's per-job cooperative cancel flag.
         heartbeat: Zero-arg callable renewing the claim lease; called every
             monitor tick.
@@ -158,6 +162,7 @@ def run_autotag_job(
     monitor_thread.start()
 
     credits = 0
+    usage_sink: list = []
     try:
         with Session(engine) as db:
             row = db.get(TaggingSessionModel, session_id)
@@ -209,7 +214,7 @@ def run_autotag_job(
                 db.commit()
 
         tagged, credits = tagging.predict_rows(
-            config, instructions, pending, on_batch=persist_batch, cancel=stop
+            config, instructions, pending, on_batch=persist_batch, cancel=stop, usage_sink=usage_sink
         )
     except Exception:
         done.set()
@@ -217,6 +222,10 @@ def run_autotag_job(
         raise
     finally:
         done.set()
+        # Every exit path — success, cancel, failure, even a lease-loss abort —
+        # debits the LM calls this pod actually made; a resumed job re-tags only
+        # still-unlabeled rows, so reruns never double-bill.
+        meter_llm_run(engine, username, usage_sink, description="Auto-tagging")
 
     if stop.is_set():
         if cancel_event.is_set() and not _job_cancelled(job_store, optimization_id):

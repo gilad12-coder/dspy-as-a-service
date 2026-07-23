@@ -21,6 +21,7 @@ status) need ``viewer``. Hidden from the public Scalar reference.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -32,6 +33,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ...billing.metering import meter_llm_run
 from ...constants import (
     OPTIMIZATION_TYPE_TAGGING,
     PAYLOAD_OVERVIEW_NAME,
@@ -47,7 +49,7 @@ from ..model_catalog import get_catalog_cached
 from ..model_router import route_menu_model
 from ..sharing_access import ShareRole
 from ..tagging_session_access import require_role
-from ._helpers import sse_from_events
+from ._helpers import enforce_llm_credits, sse_from_events, stream_with_llm_metering
 
 logger = logging.getLogger(__name__)
 
@@ -273,12 +275,14 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         Returns:
             The assistant turn; ``rubric`` is populated once ``done`` is true.
         """
+        enforce_llm_credits(job_store, user.username)
         with Session(job_store.engine) as db:
             row = _load_for_role(db, session_id, user)
             config = _interview_config(row)
             columns = cast("list[str]", row.columns)
             data = cast("list[dict[str, Any]]", row.data)
         model, lm_extra_body = route_menu_model(req.model, session_id=session_id)
+        usage_sink: list = []
         try:
             turn = tagging.interview_turn(
                 config,
@@ -289,10 +293,16 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                 model=model,
                 reasoning_effort=req.reasoning_effort,
                 lm_extra_body=lm_extra_body,
+                usage_sink=usage_sink,
             )
         except Exception as exc:
             logger.exception("interview turn failed for session %s", session_id)
             raise DomainError("tagger.assist.llm_failed", status=502) from exc
+        finally:
+            # A failed turn's retries still consumed tokens; bill what ran.
+            meter_llm_run(
+                job_store.engine, user.username, usage_sink, description="Tagging interview"
+            )
         return InterviewResponse(**turn)
 
     @router.post(
@@ -319,12 +329,14 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         Returns:
             A ``text/event-stream`` response.
         """
+        await asyncio.to_thread(enforce_llm_credits, job_store, user.username)
         with Session(job_store.engine) as db:
             row = _load_for_role(db, session_id, user)
             config = _interview_config(row)
             columns = cast("list[str]", row.columns)
             data = cast("list[dict[str, Any]]", row.data)
         model, lm_extra_body = route_menu_model(req.model, session_id=session_id)
+        usage_sink: list = []
 
         async def source() -> Any:
             """Relay engine events, translating failures into an error event."""
@@ -338,14 +350,22 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                     model=model,
                     reasoning_effort=req.reasoning_effort,
                     lm_extra_body=lm_extra_body,
+                    usage_sink=usage_sink,
                 ):
                     yield event
             except Exception:
                 logger.exception("interview stream failed for session %s", session_id)
                 yield {"event": "error", "data": {"code": "tagger.assist.llm_failed"}}
 
+        metered = stream_with_llm_metering(
+            source(),
+            job_store=job_store,
+            username=user.username,
+            description="Tagging interview",
+            usage_sink=usage_sink,
+        )
         return StreamingResponse(
-            sse_from_events(source()),
+            sse_from_events(metered),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -386,14 +406,23 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         rows = [r for r in data if str(r.get("id")) in wanted]
         if not rows:
             raise DomainError("tagger.assist.rows_not_found", status=404)
+        enforce_llm_credits(job_store, user.username)
         rubric = [str(r) for r in assist.get("rubric") or []]
         examples = tagging.select_examples(config, data, annotations, assist, exclude_ids=wanted)
         instructions = tagging.compile_instructions(config, rubric, examples)
+        usage_sink: list = []
         try:
-            predictions, credits = tagging.predict_rows(config, instructions, rows)
+            predictions, credits = tagging.predict_rows(
+                config, instructions, rows, usage_sink=usage_sink
+            )
         except Exception as exc:
             logger.exception("prediction failed for session %s", session_id)
             raise DomainError("tagger.assist.llm_failed", status=502) from exc
+        finally:
+            # A failed batch's completed calls still consumed tokens; bill what ran.
+            meter_llm_run(
+                job_store.engine, user.username, usage_sink, description="Tagging predictions"
+            )
         return PredictResponse(predictions=predictions, credits=credits)
 
     @router.post(
@@ -455,6 +484,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         worker = get_worker_ref()
         if worker is None:
             raise DomainError("tagger.assist.worker_unavailable", status=503)
+        enforce_llm_credits(job_store, user.username)
         job_id = str(uuid4())
         with Session(job_store.engine) as db:
             row = _load_for_role(db, session_id, user)

@@ -1254,7 +1254,7 @@ def create_app(
     app.include_router(create_code_validation_router(), tags=["Code Validation"])
     app.include_router(create_mcp_probe_router(), tags=["Code Validation"])
     app.include_router(create_transcription_router(), tags=["Transcription"])
-    app.include_router(create_code_agent_router(), tags=["Code Validation"])
+    app.include_router(create_code_agent_router(job_store=job_store), tags=["Code Validation"])
     app.include_router(create_generalist_agent_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_agent_history_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_api_tokens_router(job_store=job_store), tags=["Settings"])

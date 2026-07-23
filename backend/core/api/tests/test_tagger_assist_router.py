@@ -193,7 +193,7 @@ def test_interview_returns_turn(monkeypatch) -> None:
     seen: dict = {}
 
     def fake_turn(
-        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None
+        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None, usage_sink=None
     ):
         """Capture the forwarded arguments and return a canned turn."""
         seen.update(
@@ -264,7 +264,7 @@ def test_interview_stream_forwards_model(monkeypatch) -> None:
     seen: dict = {}
 
     async def fake_stream(
-        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None
+        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None, usage_sink=None
     ):
         """Capture the forwarded kwargs and finish immediately."""
         seen.update(
@@ -297,7 +297,7 @@ def test_interview_stream_auto_rides_router_with_sticky_session(monkeypatch) -> 
     seen: dict = {}
 
     async def fake_stream(
-        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None
+        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None, usage_sink=None
     ):
         """Capture the forwarded kwargs and finish immediately."""
         seen.update({"model": model, "lm_extra_body": lm_extra_body})
@@ -327,7 +327,7 @@ def test_predict_excludes_requested_rows_from_examples(monkeypatch) -> None:
     """Predictions come back per row; requested ids never leak into examples."""
     captured: dict = {}
 
-    def fake_predict(config, instructions, rows, on_batch=None, cancel=None):
+    def fake_predict(config, instructions, rows, on_batch=None, cancel=None, usage_sink=None):
         """Return a canned prediction for every requested row."""
         captured["instructions"] = instructions
         return (
@@ -441,7 +441,7 @@ def test_autotag_start_submits_worker_job(monkeypatch) -> None:
     assert resp.json()["code"] == "tagger.assist.autotag_running"
 
     # Run the job body the worker would execute; the session row completes.
-    def fake_predict(config, instructions, rows, on_batch=None, cancel=None):
+    def fake_predict(config, instructions, rows, on_batch=None, cancel=None, usage_sink=None):
         """Emit one canned batch through on_batch, like the real engine."""
         batch = {
             str(r["id"]): {"value": "no", "confidence": 0.4, "reason": "test"} for r in rows

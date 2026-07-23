@@ -7,6 +7,7 @@ router. Kept under a leading underscore to signal "package-internal".
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -19,6 +20,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from ...billing import StripeBillingService
+from ...billing.metering import meter_llm_run
 from ...config import settings
 from ...constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
@@ -152,6 +155,73 @@ def clear_program_cache() -> None:
     Intended for test teardown; production code should not call this.
     """
     _program_cache.clear()
+
+
+def enforce_llm_credits(job_store, username: str) -> None:
+    """Refuse an interactive LLM turn for an account with no spendable credits.
+
+    The turn-surface twin of the submit gate: agent chats, interview turns and
+    tagging predictions spend managed tokens, so a depleted account is stopped
+    before the LLM call rather than billed into the negative. The free grant
+    means a brand-new account always passes. A store with no SQL engine
+    (legacy/in-memory) skips the gate, matching the submit path.
+
+    Args:
+        job_store: Job-store instance whose ORM engine backs the billing tables.
+        username: Account attempting the turn.
+
+    Raises:
+        DomainError: 402 when the account has no spendable credits.
+    """
+    engine = getattr(job_store, "engine", None)
+    if engine is None or not username:
+        return
+    if StripeBillingService(engine=engine).spendable_credits(username) > 0:
+        return
+    raise DomainError("billing.insufficient_credits", status=402)
+
+
+async def stream_with_llm_metering(
+    source: AsyncIterable[dict[str, Any]],
+    *,
+    job_store,
+    username: str,
+    description: str,
+    usage_sink: list,
+) -> AsyncIterator[dict[str, Any]]:
+    """Mirror SSE events and meter the turn's LLM usage when the stream ends.
+
+    Wraps a turn's event stream; on teardown — normal completion, error, or
+    the client dropping the SSE connection mid-turn — it debits and
+    Stripe-meters whatever usage the LMs in ``usage_sink`` accumulated. The
+    sink is harvested in ``finally`` (not on the ``done`` event) because the
+    frontend routinely tears streams down early, and a ``MeteredLM``'s running
+    totals are current at any point. The synchronous billing write is
+    offloaded to a worker thread, mirroring the persistence wrapper.
+
+    Args:
+        source: Upstream async event stream for one turn.
+        job_store: Job-store whose engine backs the billing tables; a store
+            without an engine streams unmetered.
+        username: Account the turn is billed to.
+        description: Ledger-row label for the charge (e.g. ``"Agent chat"``).
+        usage_sink: List the run function appends its ``MeteredLM``(s) to.
+
+    Yields:
+        The upstream events, unchanged.
+    """
+    try:
+        async for event in source:
+            yield event
+    finally:
+        engine = getattr(job_store, "engine", None)
+        if engine is not None and usage_sink:
+            try:
+                await asyncio.to_thread(
+                    meter_llm_run, engine, username, list(usage_sink), description=description
+                )
+            except Exception:
+                logger.exception("LLM turn metering failed for %s", username)
 
 
 async def sse_from_events(

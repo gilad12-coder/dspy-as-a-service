@@ -150,11 +150,18 @@ class UsageDayRow:
 
 @dataclass(frozen=True)
 class UsageModelRow:
-    """One model's share of run spend over the window: gross billed credits and run count."""
+    """One model's share of run spend over the window: gross billed credits and run count.
+
+    ``input_tokens``/``output_tokens`` sum the measured usage stamped on the
+    model's spend rows; rows written before token metering carry no counts and
+    contribute zero.
+    """
 
     model: str | None
     credits: int
     runs: int
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -692,6 +699,8 @@ class StripeBillingService:
                     CreditLedgerModel.model,
                     CreditLedgerModel.delta_credits,
                     CreditLedgerModel.description,
+                    CreditLedgerModel.input_tokens,
+                    CreditLedgerModel.output_tokens,
                 )
                 .filter(
                     CreditLedgerModel.username == username,
@@ -715,9 +724,11 @@ class StripeBillingService:
                 billed += spent
                 runs += 1
                 day[0] += spent
-                model = per_model.setdefault(row.model, [0, 0])
+                model = per_model.setdefault(row.model, [0, 0, 0, 0])
                 model[0] += spent
                 model[1] += 1
+                model[2] += row.input_tokens or 0
+                model[3] += row.output_tokens or 0
             elif row.delta_credits > 0:
                 refunded += row.delta_credits
                 day[1] += row.delta_credits
@@ -726,7 +737,13 @@ class StripeBillingService:
             for date, vals in sorted(per_day.items())
         ]
         by_model = [
-            UsageModelRow(model=model, credits=vals[0], runs=vals[1])
+            UsageModelRow(
+                model=model,
+                credits=vals[0],
+                runs=vals[1],
+                input_tokens=vals[2],
+                output_tokens=vals[3],
+            )
             for model, vals in sorted(per_model.items(), key=lambda kv: kv[1][0], reverse=True)
         ]
         entries = [
@@ -811,9 +828,15 @@ class StripeBillingService:
         Returns:
             The credit cost charged (``0`` when nothing was billed).
         """
-        cost = run_cost_credits(usages, token_source)
+        usage_rows = list(usages)
+        cost = run_cost_credits(usage_rows, token_source)
         if cost <= 0:
             return 0
+        # The ledger row records the measured tokens behind the charge — the
+        # per-model Usage tab reads these back, so the invoice-side credit
+        # figure and the token figure come from the same measurement.
+        input_tokens = sum(usage.input_tokens for usage in usage_rows)
+        output_tokens = sum(usage.output_tokens for usage in usage_rows)
         now = datetime.now(UTC)
         with Session(self._engine) as session:
             customer = session.get(BillingCustomerModel, username)
@@ -843,6 +866,8 @@ class StripeBillingService:
                     kind="run",
                     description=description or "Run",
                     model=model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
                 )
             )
             session.commit()

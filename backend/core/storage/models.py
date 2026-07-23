@@ -158,6 +158,14 @@ class CreditLedgerModel(Base):
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Measured usage behind a run row's charge; None on top-ups/grants and on
+    # rows written before token metering landed.
+    input_tokens: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=True
+    )
+    output_tokens: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=True
+    )
     stripe_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True

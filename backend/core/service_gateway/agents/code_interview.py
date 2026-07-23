@@ -220,6 +220,7 @@ async def interview_turn_stream(
     model: str | None = None,
     reasoning_effort: str | None = None,
     lm_extra_body: dict[str, Any] | None = None,
+    usage_sink: list | None = None,
 ) -> Any:
     """Run one interview turn, streaming it the way the generalist agent does.
 
@@ -250,10 +251,14 @@ async def interview_turn_stream(
             the model's default.
         lm_extra_body: Extra request-body fields for the LM call (the auto
             router's plugin dial when the composer picked an Auto tier).
+        usage_sink: Optional list the built LM is appended to, so the caller
+            can meter the turn's token usage on any exit path.
     """
     asked = sum(1 for t in turns if t.get("role") == "assistant")
     predict = dspy.Predict(CodeInterviewTurnSig)
     lm = _build_agent_lm(model, reasoning_effort, lm_extra_body)
+    if usage_sink is not None:
+        usage_sink.append(lm)
     inputs = _interview_inputs(
         dataset_columns, column_roles, column_kinds, sample_rows, job_model, turns, locale
     )

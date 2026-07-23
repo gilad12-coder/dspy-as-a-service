@@ -751,6 +751,7 @@ def interview_turn(
     model: str | None = None,
     reasoning_effort: str | None = None,
     lm_extra_body: dict[str, Any] | None = None,
+    usage_sink: list | None = None,
 ) -> dict[str, Any]:
     """Run one interview turn and return the assistant's reply (non-streaming).
 
@@ -765,6 +766,8 @@ def interview_turn(
             the model's default.
         lm_extra_body: Extra request-body fields for the LM call (the auto
             router's plugin dial when the composer picked an Auto tier).
+        usage_sink: Optional list the built LM is appended to, so the caller
+            can meter the turn's token usage on any exit path.
 
     Returns:
         ``{"message", "options", "rubric", "done"}`` — ``rubric`` is empty
@@ -772,6 +775,8 @@ def interview_turn(
     """
     asked = sum(1 for t in turns if t.get("role") == "assistant")
     lm = _build_assist_lm(model, reasoning_effort=reasoning_effort, lm_extra_body=lm_extra_body)
+    if usage_sink is not None:
+        usage_sink.append(lm)
     with dspy.context(lm=lm):
         pred = dspy.Predict(InterviewTurnSig)(**_interview_inputs(config, columns, data, turns, locale))
     turn = _parse_interview_prediction(pred, asked, config)
@@ -789,6 +794,7 @@ async def interview_turn_stream(
     model: str | None = None,
     reasoning_effort: str | None = None,
     lm_extra_body: dict[str, Any] | None = None,
+    usage_sink: list | None = None,
 ) -> Any:
     """Run one interview turn, streaming it the way the generalist agent does.
 
@@ -822,10 +828,14 @@ async def interview_turn_stream(
             the model's default.
         lm_extra_body: Extra request-body fields for the LM call (the auto
             router's plugin dial when the composer picked an Auto tier).
+        usage_sink: Optional list the built LM is appended to, so the caller
+            can meter the turn's token usage on any exit path.
     """
     asked = sum(1 for t in turns if t.get("role") == "assistant")
     predict = dspy.Predict(InterviewTurnSig)
     lm = _build_assist_lm(model, reasoning_effort=reasoning_effort, lm_extra_body=lm_extra_body)
+    if usage_sink is not None:
+        usage_sink.append(lm)
     inputs = _interview_inputs(config, columns, data, turns, locale)
     turn: dict[str, Any] = {}
     for attempt in range(INTERVIEW_TURN_ATTEMPTS):
@@ -958,6 +968,7 @@ def predict_rows(
     rows: list[dict[str, Any]],
     on_batch: Callable[[dict[str, dict[str, Any]]], None] | None = None,
     cancel: threading.Event | None = None,
+    usage_sink: list | None = None,
 ) -> tuple[dict[str, dict[str, Any]], int]:
     """Label rows in concurrent batches and report the credit cost.
 
@@ -970,12 +981,16 @@ def predict_rows(
         on_batch: Called with each completed batch's predictions (bulk-job
             progress persistence); called from worker threads.
         cancel: Cooperative cancellation; pending batches are skipped once set.
+        usage_sink: Optional list the built LM is appended to, so the caller
+            can debit the run's token usage on any exit path.
 
     Returns:
         ``(predictions, credits)`` — the merged ``{row_id: prediction}`` map
         and the credit cost of the LM calls actually made.
     """
     lm = _build_assist_lm(str(config.get("model") or "").strip() or None, config.get("modelParams"))
+    if usage_sink is not None:
+        usage_sink.append(lm)
     prepared = [{"id": str(r.get("id")), "text": _row_text(r)} for r in rows]
     batches = [prepared[i : i + BATCH_SIZE] for i in range(0, len(prepared), BATCH_SIZE)]
     merged: dict[str, dict[str, Any]] = {}

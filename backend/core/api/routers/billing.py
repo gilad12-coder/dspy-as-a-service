@@ -103,6 +103,12 @@ class UsageModelResponse(BaseModel):
     model: str | None = Field(default=None, description="Model id, or null for runs without one.")
     credits: int = Field(description="Gross run credits billed to this model.")
     runs: int = Field(description="Billed runs attributed to this model.")
+    input_tokens: int = Field(
+        default=0, description="Measured input tokens behind this model's billed runs."
+    )
+    output_tokens: int = Field(
+        default=0, description="Measured output tokens behind this model's billed runs."
+    )
 
 
 class UsageResponse(BaseModel):
@@ -279,7 +285,13 @@ def create_billing_router(*, job_store) -> APIRouter:
                 for day in snapshot.by_day
             ],
             by_model=[
-                UsageModelResponse(model=row.model, credits=row.credits, runs=row.runs)
+                UsageModelResponse(
+                    model=row.model,
+                    credits=row.credits,
+                    runs=row.runs,
+                    input_tokens=row.input_tokens,
+                    output_tokens=row.output_tokens,
+                )
                 for row in snapshot.by_model
             ],
             entries=[

@@ -787,6 +787,8 @@ def _add_ledger(
     model: str | None,
     when: datetime,
     description: str = "",
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
 ) -> None:
     """Insert one credit-ledger row at an explicit instant.
 
@@ -798,6 +800,8 @@ def _add_ledger(
         model: Model id, or None for non-run rows.
         when: ``created_at`` instant the row is stamped with.
         description: Row label; defaults to the kind.
+        input_tokens: Measured input tokens, or None for legacy/non-run rows.
+        output_tokens: Measured output tokens, or None for legacy/non-run rows.
     """
     with Session(engine) as session:
         session.add(
@@ -808,6 +812,8 @@ def _add_ledger(
                 description=description or kind,
                 model=model,
                 created_at=when,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
             )
         )
         session.commit()
@@ -840,6 +846,34 @@ def test_get_usage_aggregates_runs_by_day_and_model(engine: object) -> None:
     day1_row = next(d for d in snapshot.by_day if d.date == day1.date().isoformat())
     assert day1_row.billed_credits == 350
     assert day1_row.refunded_credits == 120
+
+
+def test_debit_run_stamps_token_counts(engine: object) -> None:
+    """The ledger row records the measured input/output tokens behind the charge."""
+    service = StripeBillingService(engine=engine)
+    service.debit_run("u@x.com", _usages(100_000, 40_000), model="m", description="Run")
+    with Session(engine) as session:
+        row = session.query(CreditLedgerModel).one()
+    assert row.input_tokens == 100_000
+    assert row.output_tokens == 40_000
+
+
+def test_get_usage_rolls_up_token_counts_per_model(engine: object) -> None:
+    """Per-model token sums cover stamped rows; legacy rows contribute zero."""
+    user = "u@x.com"
+    now = datetime.now(UTC)
+    when = now - timedelta(days=1)
+    _add_ledger(engine, user, delta=-30, kind="run", model="m", when=when, input_tokens=1000, output_tokens=200)
+    _add_ledger(engine, user, delta=-20, kind="run", model="m", when=when, input_tokens=500, output_tokens=100)
+    _add_ledger(engine, user, delta=-10, kind="run", model="m", when=when)
+
+    service = StripeBillingService(engine=engine)
+    snapshot = service.get_usage(user, now - timedelta(days=3), now)
+
+    (model_row,) = snapshot.by_model
+    assert model_row.input_tokens == 1500
+    assert model_row.output_tokens == 300
+    assert model_row.runs == 3
 
 
 def test_get_usage_excludes_rows_outside_window(engine: object) -> None:
