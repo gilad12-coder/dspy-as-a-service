@@ -1885,6 +1885,12 @@ export type MessageKey =
   | "datasets.delete.title"
   | "datasets.delete.used_warning"
   | "datasets.detail.loading"
+  | "datasets.detail.row_reader.back"
+  | "datasets.detail.row_reader.copy_field"
+  | "datasets.detail.row_reader.counter"
+  | "datasets.detail.row_reader.hint"
+  | "datasets.detail.row_reader.next"
+  | "datasets.detail.row_reader.prev"
   | "datasets.detail.rows_count"
   | "datasets.detail.rows_empty"
   | "datasets.detail.rows_more"
@@ -4790,6 +4796,12 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "datasets.delete.title": "מחיקת דאטאסט",
   "datasets.delete.used_warning": "{count} אופטימיזציות נבנו מהדאטאסט הזה. הן יישארו תקינות, אבל הקישור אליו מתוכן יישבר.",
   "datasets.detail.loading": "טוען…",
+  "datasets.detail.row_reader.back": "כל השורות",
+  "datasets.detail.row_reader.copy_field": "העתקת {column}",
+  "datasets.detail.row_reader.counter": "שורה {index} מתוך {total}",
+  "datasets.detail.row_reader.hint": "לחצו על שורה כדי לקרוא אותה במלואה",
+  "datasets.detail.row_reader.next": "השורה הבאה",
+  "datasets.detail.row_reader.prev": "השורה הקודמת",
   "datasets.detail.rows_count": "{count} שורות",
   "datasets.detail.rows_empty": "אין שורות להצגה",
   "datasets.detail.rows_more": "מוצגות {shown} מתוך {total} שורות",
@@ -13268,6 +13280,12 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "datasets.delete.title": "Delete dataset",
   "datasets.delete.used_warning": "{count} optimizations were built from this dataset. They will remain valid, but their link back to it will break.",
   "datasets.detail.loading": "Loading…",
+  "datasets.detail.row_reader.back": "All rows",
+  "datasets.detail.row_reader.copy_field": "Copy {column}",
+  "datasets.detail.row_reader.counter": "Row {index} of {total}",
+  "datasets.detail.row_reader.hint": "Click a row to read it in full",
+  "datasets.detail.row_reader.next": "Next row",
+  "datasets.detail.row_reader.prev": "Previous row",
   "datasets.detail.rows_count": "{count} rows",
   "datasets.detail.rows_empty": "No rows to show",
   "datasets.detail.rows_more": "Showing {shown} of {total} rows",

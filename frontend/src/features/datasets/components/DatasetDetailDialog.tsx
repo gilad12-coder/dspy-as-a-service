@@ -3,8 +3,19 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "react-toastify";
-import { ArrowUpRight, Inbox, Loader2, Sparkles, Table2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Inbox,
+  Loader2,
+  Sparkles,
+  Table2,
+} from "lucide-react";
 import { motion } from "framer-motion";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +65,18 @@ function cellText(value: unknown): string {
   }
 }
 
+/** Render a value for the full-record reader: prose as-is, structures pretty-printed. */
+function readerText(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 /**
  * Read-only detail sheet for one library dataset, split by a sliding segmented
  * toggle into two views: an interactive row grid (sort / per-column filter /
@@ -72,6 +95,9 @@ export function DatasetDetailDialog({
   const [rows, setRows] = React.useState<DatasetRowsResponse | null>(null);
   const [optimizations, setOptimizations] = React.useState<DatasetOptimizationRef[] | null>(null);
   const [tab, setTab] = React.useState<DetailTab>("rows");
+  // Index into the filtered row order; non-null swaps the grid for the reader.
+  const [readerIndex, setReaderIndex] = React.useState<number | null>(null);
+  const readerRef = React.useRef<HTMLDivElement>(null);
   const datasetId = dataset?.id ?? null;
 
   const colFilters = useColumnFilters();
@@ -87,6 +113,7 @@ export function DatasetDetailDialog({
     setRows(null);
     setOptimizations(null);
     setTab("rows");
+    setReaderIndex(null);
     setSortKey("");
     setSortDir("asc");
     clearFilters();
@@ -145,16 +172,32 @@ export function DatasetDetailDialog({
     return opts;
   }, [allRows, columns]);
 
-  const copyCell = React.useCallback((e: React.MouseEvent) => {
-    const td = (e.target as HTMLElement).closest("td");
-    if (!td) return;
-    const text = td.textContent?.trim();
+  const copyValue = React.useCallback((text: string) => {
     if (!text) return;
     navigator.clipboard
       .writeText(text)
       .then(() => toast.success(msg("clipboard.copied")))
       .catch(() => toast.error(msg("clipboard.copy_failed")));
   }, []);
+
+  const readerRow = readerIndex === null ? null : (filtered[readerIndex] ?? null);
+
+  const stepReader = React.useCallback(
+    (delta: number) => {
+      setReaderIndex((cur) => {
+        if (cur === null) return cur;
+        const next = cur + delta;
+        return next < 0 || next >= filtered.length ? cur : next;
+      });
+    },
+    [filtered.length],
+  );
+
+  // The reader owns Arrow-key row navigation while it is open; focus lands on
+  // its container so the keys work without clicking anything first.
+  React.useEffect(() => {
+    if (readerRow !== null) readerRef.current?.focus({ preventScroll: true });
+  }, [readerRow]);
 
   const usageCount = optimizations?.length ?? 0;
 
@@ -166,8 +209,15 @@ export function DatasetDetailDialog({
   return (
     <Dialog open={dataset !== null} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
-        className="w-[min(56rem,94vw)] max-w-[min(56rem,94vw)] overflow-hidden p-0"
+        className="max-w-[min(72rem,94vw)] overflow-hidden p-0 sm:max-w-[min(72rem,94vw)]"
         aria-describedby={undefined}
+        onEscapeKeyDown={(e) => {
+          // Escape peels one layer: reader -> grid first, dialog second.
+          if (readerIndex !== null) {
+            e.preventDefault();
+            setReaderIndex(null);
+          }
+        }}
       >
         <div className="flex max-h-[85vh] flex-col">
           <DialogHeader className="shrink-0 px-6 pt-6 pb-4 text-start">
@@ -227,7 +277,103 @@ export function DatasetDetailDialog({
               </div>
             </div>
 
-            {tab === "rows" ? (
+            {tab === "rows" && readerRow !== null && readerIndex !== null ? (
+              <div
+                ref={readerRef}
+                tabIndex={-1}
+                role="group"
+                aria-label={formatMsg("datasets.detail.row_reader.counter", {
+                  index: readerIndex + 1,
+                  total: filtered.length,
+                })}
+                className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-4 focus-visible:outline-none"
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    stepReader(-1);
+                  } else if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    stepReader(1);
+                  }
+                }}
+              >
+                <div className="mb-3 flex shrink-0 items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setReaderIndex(null)}
+                    className="gap-1.5 text-muted-foreground hover:text-foreground"
+                  >
+                    <ArrowLeft className="size-4 rtl:rotate-180" />
+                    {msg("datasets.detail.row_reader.back")}
+                  </Button>
+                  <div className="ms-auto flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => stepReader(-1)}
+                      disabled={readerIndex === 0}
+                      aria-label={msg("datasets.detail.row_reader.prev")}
+                    >
+                      <ChevronLeft className="size-4 rtl:rotate-180" />
+                    </Button>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {formatMsg("datasets.detail.row_reader.counter", {
+                        index: readerIndex + 1,
+                        total: filtered.length,
+                      })}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => stepReader(1)}
+                      disabled={readerIndex >= filtered.length - 1}
+                      aria-label={msg("datasets.detail.row_reader.next")}
+                    >
+                      <ChevronRight className="size-4 rtl:rotate-180" />
+                    </Button>
+                  </div>
+                </div>
+                <FadeIn key={readerIndex} className="min-h-0 flex-1 overflow-y-auto pe-1">
+                  <dl className="flex flex-col gap-4 pb-2">
+                    {columns.map((col) => {
+                      const value = readerText(readerRow[col]);
+                      const structured = readerRow[col] != null && typeof readerRow[col] !== "string";
+                      return (
+                        <div key={col} className="group/field">
+                          <div className="mb-1.5 flex items-center gap-2">
+                            <dt className="text-[0.6875rem] font-semibold tracking-wide text-muted-foreground uppercase">
+                              {col}
+                            </dt>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => copyValue(value)}
+                              aria-label={formatMsg("datasets.detail.row_reader.copy_field", {
+                                column: col,
+                              })}
+                              className="size-6 opacity-0 transition-opacity group-hover/field:opacity-100 focus-visible:opacity-100"
+                            >
+                              <Copy className="size-3" />
+                            </Button>
+                          </div>
+                          <dd
+                            dir="auto"
+                            className={`rounded-lg border border-border/50 bg-muted/20 px-3.5 py-2.5 break-words whitespace-pre-wrap ${
+                              structured
+                                ? "font-mono text-xs leading-5 text-foreground/80"
+                                : "text-[0.8125rem] leading-6 text-foreground/90"
+                            }`}
+                          >
+                            {value || <span className="text-muted-foreground">—</span>}
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                </FadeIn>
+              </div>
+            ) : tab === "rows" ? (
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-4">
                 {rows === null ? (
                   <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
@@ -245,8 +391,12 @@ export function DatasetDetailDialog({
                 ) : (
                   <FadeIn className="flex min-h-0 flex-1 flex-col">
                     <div className="mb-2 flex items-center justify-between gap-3">
-                      <span className="text-xs tabular-nums text-muted-foreground">
-                        {formatMsg("datasets.detail.rows_count", { count: filtered.length })}
+                      <span className="min-w-0 truncate text-xs text-muted-foreground">
+                        <span className="tabular-nums">
+                          {formatMsg("datasets.detail.rows_count", { count: filtered.length })}
+                        </span>
+                        {" · "}
+                        {msg("datasets.detail.row_reader.hint")}
                       </span>
                       <ResetColumnsButton resize={colResize} />
                     </div>
@@ -295,12 +445,12 @@ export function DatasetDetailDialog({
                               <TableRow
                                 key={i}
                                 className="cursor-pointer transition-colors hover:bg-muted/40"
-                                onClick={copyCell}
+                                onClick={() => setReaderIndex(i)}
                               >
                                 {columns.map((col) => (
                                   <TableCell
                                     key={col}
-                                    className="max-w-[280px] font-mono text-xs text-foreground/75"
+                                    className="max-w-[280px] align-top text-xs text-foreground/80"
                                     style={
                                       colResize.widths[col]
                                         ? {
@@ -311,7 +461,12 @@ export function DatasetDetailDialog({
                                     }
                                     title={cellText(row[col])}
                                   >
-                                    {cellText(row[col])}
+                                    <span
+                                      dir="auto"
+                                      className="line-clamp-2 break-words whitespace-normal"
+                                    >
+                                      {cellText(row[col])}
+                                    </span>
                                   </TableCell>
                                 ))}
                               </TableRow>
