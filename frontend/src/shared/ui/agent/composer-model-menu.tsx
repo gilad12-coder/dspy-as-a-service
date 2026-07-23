@@ -4,14 +4,15 @@ import * as React from "react";
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
 
 import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
+import { effortLabel, effortsFor } from "@/shared/lib/model-efforts";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
+import { ProviderLogo } from "@/shared/ui/provider-logo";
 import type { ModelCatalogResponse } from "@/shared/types/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -33,82 +34,95 @@ function shortName(id: string): string {
   return id.split("/").pop() || id;
 }
 
-// Effort vocabularies are per-API, not universal, and providers silently
-// clamp or reject levels outside their documented ladder — so featured ids
-// carry their exact documented ladder and unknown ids fall back to a
-// per-family one. An empty ladder disables the Effort row entirely (Haiku
-// 4.5 has no effort param; MiniMax M3's thinking is an on/off toggle, not a
-// ladder). "max" is Sol-only among OpenAI models and "ultra" is a separate
-// mode, not an effort level, so it is deliberately absent.
-const DEFAULT_EFFORTS = ["low", "medium", "high"] as const;
-const OPENAI_EFFORTS = ["none", "low", "medium", "high", "xhigh"] as const;
-const ANTHROPIC_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
-const MODEL_EFFORTS: Record<string, readonly string[]> = {
-  "openai/gpt-5.6-sol": ["none", "low", "medium", "high", "xhigh", "max"],
-  "openrouter/anthropic/claude-haiku-4.5": [],
-  "openrouter/google/gemini-3.1-pro-preview": ["low", "medium", "high"],
-  "openrouter/google/gemini-3.6-flash": ["minimal", "low", "medium", "high"],
-  "openrouter/x-ai/grok-4.5": ["low", "medium", "high"],
-  "openrouter/meta/muse-spark-1.1": ["minimal", "low", "medium", "high", "xhigh"],
-  // DeepSeek accepts the full set but only none/high/max are distinct.
-  "openrouter/deepseek/deepseek-v4-pro": ["none", "high", "max"],
-  "openrouter/moonshotai/kimi-k3": ["low", "high", "max"],
-  "openrouter/minimax/minimax-m3": [],
-};
+// Sentinel sent instead of a catalog id: the backend's per-turn router in
+// its frontier-quality tier (Cursor-style "Intelligence"). Plain null stays
+// the balanced router tier.
+export const AUTO_INTELLIGENT_MODEL = "auto:intelligent";
 
-function effortsFor(model: string | null): readonly string[] {
-  if (!model) return DEFAULT_EFFORTS;
-  const exact = MODEL_EFFORTS[model];
-  if (exact) return exact;
-  if (model.includes("anthropic/claude")) return ANTHROPIC_EFFORTS;
-  if (model.startsWith("openai/")) return OPENAI_EFFORTS;
-  return DEFAULT_EFFORTS;
+/** Menu/chip label for the current choice, including the auto tiers. */
+function displayName(value: string | null): string {
+  if (!value) return msg("agent.model_menu.auto");
+  if (value === AUTO_INTELLIGENT_MODEL) return msg("agent.model_menu.auto_intelligent");
+  return shortName(value);
+}
+
+/** Company slug for a LiteLLM id — the OpenRouter prefix is transport, not brand. */
+function providerSlug(id: string): string {
+  const parts = id.split("/");
+  const slug = (parts[0] === "openrouter" && parts.length > 2 ? parts[1] : parts[0]) ?? id;
+  return slug === "x-ai" ? "xai" : slug;
+}
+
+/** Leading icon for the current choice: both auto tiers run OpenRouter's
+ * Auto Router, so they wear the OpenRouter mark; explicit picks wear the
+ * model company's mark. */
+function choiceIcon(value: string | null, size: number): React.ReactNode {
+  if (!value || value === AUTO_INTELLIGENT_MODEL) {
+    return <ProviderLogo slug="openrouter" size={size} />;
+  }
+  return <ProviderLogo slug={providerSlug(value)} size={size} />;
 }
 
 // Display curation only. The composer picks a conversation partner, not a
 // training target — the full gateway catalog (500+ ids, embeddings and TTS
-// included) belongs to the submit wizard, not here. Search still reaches
-// every available model; ids that leave the catalog drop out silently.
+// included) belongs to the submit wizard, not here. Ids that leave the
+// catalog drop out silently. Kept deliberately short: the auto-router rows
+// cover "just pick well for me", so the list is a few current picks per
+// major lab.
 const FEATURED_MODELS = [
-  "openai/gpt-5.6-sol",
-  "openai/gpt-5.6-terra",
-  "openai/gpt-5.6-luna",
-  "openai/gpt-5.5",
-  "openai/gpt-5.4-mini",
+  "openrouter/openai/gpt-5.6-sol",
+  "openrouter/openai/gpt-5.6-terra",
+  "openrouter/openai/gpt-5.6-luna",
   "openrouter/anthropic/claude-fable-5",
   "openrouter/anthropic/claude-opus-4.8",
   "openrouter/anthropic/claude-sonnet-5",
   "openrouter/anthropic/claude-haiku-4.5",
   "openrouter/google/gemini-3.1-pro-preview",
   "openrouter/google/gemini-3.6-flash",
-  "openrouter/x-ai/grok-4.5",
   "openrouter/meta/muse-spark-1.1",
+  "openrouter/x-ai/grok-4.5",
   "openrouter/deepseek/deepseek-v4-pro",
   "openrouter/moonshotai/kimi-k3",
   "openrouter/minimax/minimax-m3",
 ];
 
-// Renders stay cheap even for one-letter queries that match half the catalog.
-const SEARCH_RESULT_CAP = 50;
+// Caps the fallback list when none of the featured ids exist in a deployment.
+const FALLBACK_LIST_CAP = 50;
 
-function effortLabel(level: string): string {
-  switch (level) {
-    case "none":
-      return msg("agent.model_menu.effort_none");
-    case "minimal":
-      return msg("agent.model_menu.effort_minimal");
-    case "low":
-      return msg("agent.model_menu.effort_low");
-    case "medium":
-      return msg("agent.model_menu.effort_medium");
-    case "high":
-      return msg("agent.model_menu.effort_high");
-    case "xhigh":
-      return msg("agent.model_menu.effort_xhigh");
-    case "max":
-      return msg("agent.model_menu.effort_max");
+// One-liners distilled from each provider's own launch copy, kept short
+// enough to never truncate in the submenu row. Non-featured ids get none.
+function modelDescription(id: string): string | undefined {
+  switch (id) {
+    case "openrouter/openai/gpt-5.6-sol":
+      return msg("agent.model_menu.desc_gpt_5_6_sol");
+    case "openrouter/openai/gpt-5.6-terra":
+      return msg("agent.model_menu.desc_gpt_5_6_terra");
+    case "openrouter/openai/gpt-5.6-luna":
+      return msg("agent.model_menu.desc_gpt_5_6_luna");
+    case "openrouter/anthropic/claude-fable-5":
+      return msg("agent.model_menu.desc_claude_fable_5");
+    case "openrouter/anthropic/claude-opus-4.8":
+      return msg("agent.model_menu.desc_claude_opus_4_8");
+    case "openrouter/anthropic/claude-sonnet-5":
+      return msg("agent.model_menu.desc_claude_sonnet_5");
+    case "openrouter/anthropic/claude-haiku-4.5":
+      return msg("agent.model_menu.desc_claude_haiku_4_5");
+    case "openrouter/google/gemini-3.1-pro-preview":
+      return msg("agent.model_menu.desc_gemini_3_1_pro");
+    case "openrouter/google/gemini-3.6-flash":
+      return msg("agent.model_menu.desc_gemini_3_6_flash");
+    case "openrouter/meta/muse-spark-1.1":
+      return msg("agent.model_menu.desc_muse_spark_1_1");
+    case "openrouter/moonshotai/kimi-k3":
+      return msg("agent.model_menu.desc_kimi_k3");
+    case "openrouter/x-ai/grok-4.5":
+      return msg("agent.model_menu.desc_grok_4_5");
+    case "openrouter/deepseek/deepseek-v4-pro":
+      return msg("agent.model_menu.desc_deepseek_v4_pro");
+    case "openrouter/minimax/minimax-m3":
+      return msg("agent.model_menu.desc_minimax_m3");
     default:
-      return level;
+      return undefined;
   }
 }
 
@@ -141,7 +155,7 @@ function effortHint(level: string | null): string {
  * whole menu; the choice applies from the next turn of the surrounding
  * conversation. The thinking row is visible but inert on models without
  * reasoning support. The model submenu shows only the curated featured
- * shortlist; the full catalog is reachable through search.
+ * shortlist.
  */
 export function ComposerModelMenu({
   value,
@@ -151,7 +165,6 @@ export function ComposerModelMenu({
   disabled,
 }: ComposerModelMenuProps) {
   const [open, setOpen] = React.useState(false);
-  const [query, setQuery] = React.useState("");
   const [catalog, setCatalog] = React.useState<ModelCatalogResponse | null>(
     cachedCatalog() ?? null,
   );
@@ -173,39 +186,20 @@ export function ComposerModelMenu({
     () => (catalog?.models ?? []).filter((m) => m.available),
     [catalog],
   );
-  const q = query.trim().toLowerCase();
-  const filtered = q
-    ? available.filter(
-        (m) => m.value.toLowerCase().includes(q) || m.label.toLowerCase().includes(q),
-      )
-    : available;
-  const capped = filtered.slice(0, SEARCH_RESULT_CAP);
-  const grouped = React.useMemo(() => {
-    const groups = new Map<string, typeof capped>();
-    for (const m of capped) {
-      const arr = groups.get(m.provider) ?? [];
-      arr.push(m);
-      groups.set(m.provider, arr);
-    }
-    return groups;
-  }, [capped]);
 
   // Small deployments (an on-prem gateway with a handful of models) may miss
   // every featured id — fall back to the whole list rather than an empty menu.
   const featured = React.useMemo(() => {
     const byId = new Map(available.map((m) => [m.value, m]));
     const rows = FEATURED_MODELS.flatMap((id) => byId.get(id) ?? []);
-    return rows.length ? rows : available.slice(0, SEARCH_RESULT_CAP);
+    return rows.length ? rows : available.slice(0, FALLBACK_LIST_CAP);
   }, [available]);
-  // A model picked through search must keep its checkmarked row next time
-  // the menu opens, even though it isn't featured.
+  // A previously chosen model outside the shortlist keeps its checkmarked
+  // row next time the menu opens.
   const currentExtra =
     value && !featured.some((m) => m.value === value)
       ? (available.find((m) => m.value === value) ?? null)
       : null;
-
-  const providerLabel = (slug: string) =>
-    catalog?.providers.find((p) => p.slug === slug)?.label ?? slug;
 
   const canThink = !!available.find((m) => m.value === value)?.supports_thinking;
   const efforts = effortsFor(value);
@@ -225,28 +219,23 @@ export function ComposerModelMenu({
   };
 
   return (
-    <DropdownMenu
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setQuery("");
-      }}
-    >
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
           disabled={disabled}
           aria-label={msg("agent.model_menu.label")}
           className={cn(
-            "flex h-9 items-center gap-1.5 rounded-full bg-accent/60 px-3 text-xs text-foreground",
-            "cursor-pointer transition-colors hover:bg-accent",
+            "flex h-9 items-center gap-1.5 rounded-full px-3 text-xs text-foreground",
+            "cursor-pointer transition-colors hover:bg-accent/60",
             "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40",
             "disabled:pointer-events-none disabled:opacity-50",
-            open && "bg-accent",
+            open && "bg-accent/60",
           )}
         >
+          {choiceIcon(value, 16)}
           <span className="max-w-40 truncate font-medium" dir="ltr">
-            {value ? shortName(value) : msg("agent.model_menu.auto")}
+            {displayName(value)}
           </span>
           {/* Codex-style chip: the effort reads as a lighter suffix after the
               model name ("gpt-5 High"), not a separated fragment. */}
@@ -261,81 +250,45 @@ export function ComposerModelMenu({
           <DropdownMenuSubTrigger className="py-2.5">
             <span className="shrink-0">{msg("agent.model_menu.model")}</span>
             <span className="ms-auto truncate text-muted-foreground" dir="ltr">
-              {value ? shortName(value) : msg("agent.model_menu.auto")}
+              {displayName(value)}
             </span>
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-72 overflow-hidden p-0">
-            {available.length > 8 && (
-              <div className="border-b border-border/40 p-2">
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  // Typed characters must stay in the input — the menu's
-                  // typeahead would otherwise swallow them to jump rows.
-                  onKeyDown={(e) => e.stopPropagation()}
-                  placeholder={msg("agent.model_menu.search")}
-                  aria-label={msg("agent.model_menu.search")}
-                  className={cn(
-                    "w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm",
-                    "outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring",
-                  )}
-                  dir="ltr"
-                />
-              </div>
-            )}
             <div className="max-h-72 overflow-y-auto py-1">
-              {!q ? (
-                <>
-                  <MenuItem
-                    selected={value === null}
-                    label={msg("agent.model_menu.auto")}
-                    description={msg("agent.model_menu.auto_hint")}
-                    onSelect={() => pick(null)}
-                  />
-                  {currentExtra && (
-                    <MenuItem
-                      selected
-                      label={shortName(currentExtra.value)}
-                      onSelect={() => pick(currentExtra.value)}
-                    />
-                  )}
-                  {featured.map((m) => (
-                    <MenuItem
-                      key={m.value}
-                      selected={value === m.value}
-                      label={shortName(m.value)}
-                      onSelect={() => pick(m.value)}
-                    />
-                  ))}
-                </>
-              ) : (
-                <>
-                  {[...grouped.entries()].map(([provider, group]) => (
-                    <div key={provider}>
-                      <DropdownMenuLabel>{providerLabel(provider)}</DropdownMenuLabel>
-                      {group.map((m) => (
-                        <MenuItem
-                          key={m.value}
-                          selected={value === m.value}
-                          label={m.label}
-                          onSelect={() => pick(m.value)}
-                        />
-                      ))}
-                    </div>
-                  ))}
-                  {filtered.length > SEARCH_RESULT_CAP && (
-                    <p className="px-3 py-2 text-xs text-muted-foreground">
-                      {msg("agent.model_menu.narrow")}
-                    </p>
-                  )}
-                  {filtered.length === 0 && (
-                    <p className="px-3 py-2 text-sm text-muted-foreground">
-                      {msg("agent.model_menu.empty")}
-                    </p>
-                  )}
-                </>
+              <MenuItem
+                selected={value === null}
+                label={msg("agent.model_menu.auto")}
+                description={msg("agent.model_menu.auto_hint")}
+                icon={<ProviderLogo slug="openrouter" size={18} />}
+                onSelect={() => pick(null)}
+              />
+              <MenuItem
+                selected={value === AUTO_INTELLIGENT_MODEL}
+                label={msg("agent.model_menu.auto_intelligent")}
+                description={msg("agent.model_menu.auto_intelligent_hint")}
+                icon={<ProviderLogo slug="openrouter" size={18} />}
+                onSelect={() => pick(AUTO_INTELLIGENT_MODEL)}
+              />
+              {currentExtra && (
+                <MenuItem
+                  selected
+                  label={shortName(currentExtra.value)}
+                  description={modelDescription(currentExtra.value)}
+                  icon={<ProviderLogo slug={providerSlug(currentExtra.value)} size={18} />}
+                  onSelect={() => pick(currentExtra.value)}
+                />
               )}
+              {featured.map((m) => (
+                <MenuItem
+                  key={m.value}
+                  selected={value === m.value}
+                  label={shortName(m.value)}
+                  description={modelDescription(m.value)}
+                  icon={<ProviderLogo slug={providerSlug(m.value)} size={18} />}
+                  onSelect={() => pick(m.value)}
+                />
+              ))}
             </div>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
@@ -369,18 +322,21 @@ function MenuItem({
   selected,
   label,
   description,
+  icon,
   onSelect,
   dir = "ltr",
 }: {
   selected: boolean;
   label: string;
   description?: string;
+  icon?: React.ReactNode;
   onSelect: () => void;
   /** Model ids are latin so rows default LTR; localized rows pass ``auto``. */
   dir?: "ltr" | "auto";
 }) {
   return (
     <DropdownMenuItem onSelect={onSelect}>
+      {icon}
       <span className="flex min-w-0 flex-1 flex-col">
         <span
           className={cn("truncate text-sm text-foreground", selected && "font-medium")}
@@ -388,8 +344,10 @@ function MenuItem({
         >
           {label}
         </span>
+        {/* Descriptions are localized even on LTR model-id rows — let the
+            text pick its own direction so Hebrew copy orders correctly. */}
         {description && (
-          <span className="truncate text-xs text-muted-foreground" dir={dir}>
+          <span className="truncate text-xs text-muted-foreground" dir="auto">
             {description}
           </span>
         )}

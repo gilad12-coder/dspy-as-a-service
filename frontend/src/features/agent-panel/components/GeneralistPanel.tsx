@@ -47,7 +47,11 @@ import { MAX_WIDTH, MIN_WIDTH, NARROW_VIEWPORT_QUERY } from "../constants";
 
 import { ApprovalCard } from "./ApprovalCard";
 import { ConversationDrawer } from "./ConversationDrawer";
-import { DatasetUploadCard, type ConfirmedDataset } from "./DatasetUploadCard";
+import {
+  DATASET_FILE_ACCEPT,
+  DatasetUploadCard,
+  type ConfirmedDataset,
+} from "./DatasetUploadCard";
 import { InferenceFormCard } from "./InferenceFormCard";
 import { CodeAuthoringCard } from "./CodeAuthoringCard";
 import { MinimizedPill } from "./MinimizedPill";
@@ -318,6 +322,10 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
 
   const [draft, setDraft] = React.useState("");
   const [attachOpen, setAttachOpen] = React.useState(false);
+  // The + button opens the OS file picker directly; the popover only appears
+  // once a file was chosen, already parsed into the column-mapping card.
+  const attachInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [attachFile, setAttachFile] = React.useState<File | null>(null);
   const confirmedDatasetCallsRef = React.useRef<Set<string>>(new Set());
   // Latest dataset the user confirmed in-panel — supplies columns + roles +
   // sample rows to the hosted code agent. Kept as state (not a ref) so the
@@ -792,7 +800,27 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
             }
                 leadingControls={
                   <>
-                    <Popover open={attachOpen} onOpenChange={setAttachOpen}>
+                    <input
+                      ref={attachInputRef}
+                      type="file"
+                      accept={DATASET_FILE_ACCEPT}
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) {
+                          setAttachFile(file);
+                          setAttachOpen(true);
+                        }
+                      }}
+                    />
+                    <Popover
+                      open={attachOpen}
+                      onOpenChange={(open) => {
+                        setAttachOpen(open);
+                        if (!open) setAttachFile(null);
+                      }}
+                    >
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <PopoverTrigger asChild>
@@ -800,6 +828,12 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                               type="button"
                               disabled={codeAuthoringActive}
                               aria-label={msg("agent.composer.attach")}
+                              onClick={(e) => {
+                                // Skip the popover toggle — go straight to the
+                                // OS file picker; the popover opens on pick.
+                                e.preventDefault();
+                                attachInputRef.current?.click();
+                              }}
                               className={cn(
                                 "inline-flex size-9 items-center justify-center rounded-full",
                                 "text-muted-foreground transition-colors cursor-pointer",
@@ -821,8 +855,10 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                         className="w-96 max-w-[calc(100vw-2rem)] p-3"
                       >
                         <DatasetUploadCard
+                          initialFile={attachFile}
                           onConfirm={(confirmed) => {
                             setAttachOpen(false);
+                            setAttachFile(null);
                             void handleDatasetConfirm(`user-attach-${confirmed.fileName}`, confirmed);
                           }}
                         />

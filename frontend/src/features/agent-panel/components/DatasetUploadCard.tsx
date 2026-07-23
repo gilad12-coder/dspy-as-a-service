@@ -44,10 +44,13 @@ interface DatasetUploadCardProps {
   call?: AgentToolCall;
   disabled?: boolean;
   alreadyConfirmed?: boolean;
+  /** File already chosen via the OS picker; when set, the card skips the
+   *  dropzone entirely and parses it straight away. */
+  initialFile?: File | null;
   onConfirm: (confirmed: ConfirmedDataset) => void;
 }
 
-const FILE_ACCEPT = ".csv,.json,.jsonl,.xlsx,.xls";
+export const DATASET_FILE_ACCEPT = ".csv,.json,.jsonl,.xlsx,.xls";
 
 function defaultRoleFor(idx: number, total: number): ColumnRole {
   if (total === 1) return "input";
@@ -58,6 +61,7 @@ export function DatasetUploadCard({
   call,
   disabled,
   alreadyConfirmed,
+  initialFile,
   onConfirm,
 }: DatasetUploadCardProps) {
   const reduceMotion = useReducedMotion();
@@ -107,6 +111,10 @@ export function DatasetUploadCard({
       setParsing(false);
     }
   }, []);
+
+  React.useEffect(() => {
+    if (initialFile) void handleFile(initialFile);
+  }, [initialFile, handleFile]);
 
   const onPickClick = React.useCallback(() => {
     inputRef.current?.click();
@@ -191,15 +199,6 @@ export function DatasetUploadCard({
     });
   }, [counts.input, counts.output, kinds, onConfirm, parsed, roles]);
 
-  const handleReset = React.useCallback(() => {
-    if (confirmed) return;
-    setParsed(null);
-    setRoles({});
-    setKinds({});
-    setParseError(null);
-    setValidationError(null);
-  }, [confirmed]);
-
   const fade = reduceMotion
     ? { initial: false, animate: { opacity: 1 }, exit: { opacity: 0 } }
     : {
@@ -245,14 +244,38 @@ export function DatasetUploadCard({
         <input
           ref={inputRef}
           type="file"
-          accept={FILE_ACCEPT}
+          accept={DATASET_FILE_ACCEPT}
           className="hidden"
           onChange={onInputChange}
           disabled={disabled || parsing || confirmed}
         />
 
         <AnimatePresence mode="wait" initial={false}>
-          {!parsed && !parsing && (
+          {!parsed && !parsing && initialFile && parseError && (
+            <motion.div key="pick-error" {...fade} className="px-4 py-3.5 space-y-2">
+              <div className="text-[0.6875rem] text-red-600/90 bg-red-50/80 border border-red-100 rounded-md px-2.5 py-1.5">
+                {parseError}
+              </div>
+              <button
+                type="button"
+                onClick={onPickClick}
+                disabled={disabled}
+                className={cn(
+                  "w-full inline-flex items-center justify-center gap-1.5",
+                  "rounded-xl px-3 py-2 text-[0.8125rem] font-medium cursor-pointer",
+                  "border border-[#C8A882]/50 bg-white/50 text-[#3D2E22]",
+                  "hover:border-[#3D2E22]/60 hover:bg-white/80 transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D2E22]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAF8F5]",
+                  "disabled:opacity-50 disabled:cursor-not-allowed",
+                )}
+              >
+                <Upload className="size-3.5" />
+                {msg("auto.features.agent.panel.components.datasetuploadcard.replace")}
+              </button>
+            </motion.div>
+          )}
+
+          {!parsed && !parsing && !initialFile && (
             <motion.div key="empty" {...fade} className="px-4 py-3.5">
               <button
                 type="button"
@@ -328,7 +351,7 @@ export function DatasetUploadCard({
                 {!confirmed && (
                   <button
                     type="button"
-                    onClick={handleReset}
+                    onClick={onPickClick}
                     aria-label={msg(
                       "auto.features.agent.panel.components.datasetuploadcard.replace",
                     )}
