@@ -3,7 +3,10 @@
 LiteLLM ships ``model_prices_and_context_window.json`` — ~2600 models with
 metadata (provider, mode, context window, ``supports_reasoning``, etc.).
 We filter to chat-mode models, de-duplicate dated variants, and mark which
-providers have active API keys via ``litellm.get_valid_models()``.
+providers have active API keys via ``litellm.get_valid_models()``. The
+hosted (platform-billed) catalog is restricted to OpenRouter — the
+platform's sole LLM provider; the BYOK catalog still spans every provider
+a user may bring a key for.
 """
 
 from __future__ import annotations
@@ -164,7 +167,7 @@ _PROVIDER_META: dict[str, tuple[str, list[_DataCenter]]] = {
         ],
     ),
     "xai": (
-        "xAI (Grok)",
+        "SpaceXAI (Grok)",
         [
             _DataCenter(
                 base_url="https://api.x.ai/v1",
@@ -244,6 +247,13 @@ _PROVIDER_META: dict[str, tuple[str, list[_DataCenter]]] = {
 }
 
 _ON_PREM_DC_LABEL = "On-prem gateway"
+
+# The platform brokers every LLM call through OpenRouter, so the hosted
+# catalog lists only its models — other providers' keys may exist for
+# non-LLM features (OpenAI powers Whisper dictation) without their chat
+# models leaking into the menu. The full ``_PROVIDER_META`` table stays:
+# the BYOK catalog still needs the other providers' labels.
+_PLATFORM_PROVIDERS: frozenset[str] = frozenset({"openrouter"})
 
 _DATE_SUFFIX_RE = re.compile(r"-\d{4}-\d{2}-\d{2}$")
 
@@ -504,7 +514,7 @@ def _probe_all_providers() -> dict[tuple[str, str | None], dict[str, dict] | Non
     results: dict[tuple[str, str | None], dict[str, dict] | None] = {}
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {}
-        for slug in _PROVIDER_META:
+        for slug in _PLATFORM_PROVIDERS:
             for dc in _provider_data_centers(slug):
                 futures[executor.submit(_probe_deployed_models, slug, dc)] = (slug, dc.label)
         for fut in as_completed(futures):
@@ -552,7 +562,7 @@ def get_catalog() -> ModelCatalogResponse:
 
         provider_slug: str = meta.get("litellm_provider", "unknown")
 
-        if provider_slug not in _PROVIDER_META:
+        if provider_slug not in _PLATFORM_PROVIDERS:
             continue
 
         base_name = _DATE_SUFFIX_RE.sub("", model_id)

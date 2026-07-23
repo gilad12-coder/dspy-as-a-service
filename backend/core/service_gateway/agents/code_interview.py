@@ -218,6 +218,7 @@ async def interview_turn_stream(
     locale: str | None,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    lm_extra_body: dict[str, Any] | None = None,
 ) -> Any:
     """Run one interview turn, streaming it the way the generalist agent does.
 
@@ -246,10 +247,12 @@ async def interview_turn_stream(
         model: LiteLLM id conducting the interview; ``None`` runs the default.
         reasoning_effort: Explicit effort level for ``model``; ``None`` keeps
             the model's default.
+        lm_extra_body: Extra request-body fields for the LM call (the auto
+            router's plugin dial when the composer picked an Auto tier).
     """
     asked = sum(1 for t in turns if t.get("role") == "assistant")
     predict = dspy.Predict(CodeInterviewTurnSig)
-    lm = _build_agent_lm(model, reasoning_effort)
+    lm = _build_agent_lm(model, reasoning_effort, lm_extra_body)
     inputs = _interview_inputs(
         dataset_columns, column_roles, column_kinds, sample_rows, job_model, turns, locale
     )

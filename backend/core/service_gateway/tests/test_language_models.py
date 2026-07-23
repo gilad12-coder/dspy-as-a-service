@@ -13,12 +13,26 @@ from core.exceptions import ServiceError
 from core.models import ModelConfig
 from core.service_gateway.language_models import (
     _apply_managed_gateway,
+    _translate_gateway_reasoning,
     apply_model_reasoning_config,
     apply_reasoning_effort,
     build_language_model,
     total_tokens_from_history,
     usage_by_model_from_history,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_local_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the managed gateway off so results don't depend on the local ``.env``.
+
+    A developer machine with ``LITELLM_PROXY_URL`` set would otherwise reroute
+    every ``build_language_model`` call through ``litellm_proxy/`` and fail the
+    plain-path assertions. Gateway-specific tests re-enable the proxy with
+    their own ``monkeypatch.setattr`` calls, which run after this fixture.
+    """
+    monkeypatch.setattr(settings, "litellm_proxy_url", None)
+    monkeypatch.setattr(settings, "litellm_proxy_api_key", None)
 
 
 class _FakeLM:
@@ -275,11 +289,11 @@ def test_apply_reasoning_config_native_minimax_sets_extra_and_floor() -> None:
     assert out.extra["extra_body"] == {"reasoning_split": True}
 
 
-def test_apply_reasoning_config_fireworks_minimax_floors_without_extra() -> None:
-    """The shipped Fireworks minimax default gets max_tokens>=4000 and no extra."""
+def test_apply_reasoning_config_shipped_default_floors_without_extra() -> None:
+    """The shipped auto-router default gets max_tokens>=4000 and no extra."""
     out = apply_model_reasoning_config(ModelConfig(name=settings.generalist_agent_model))
 
-    assert "minimax" in settings.generalist_agent_model.lower()
+    assert settings.generalist_agent_model == "openrouter/openrouter/auto-beta"
     assert out.max_tokens == 4000
     assert out.extra == {}
 
@@ -387,3 +401,88 @@ def test_managed_gateway_noop_without_proxy(monkeypatch: pytest.MonkeyPatch) -> 
     assert "base_url" not in kwargs
     assert "api_key" not in kwargs
     assert kwargs["model"] == "openai/gpt-4o"  # untouched without a proxy
+
+
+def test_gateway_reasoning_translates_effort_to_native_param() -> None:
+    """On a gateway-bound call ``reasoning_effort`` is mirrored into ``reasoning``.
+
+    The kwarg must survive (not be popped): dspy's ``Reasoning`` field injects
+    ``reasoning_effort="low"`` at call time when the LM carries none, and
+    OpenRouter rejects requests where the two forms disagree.
+    """
+    kwargs: dict[str, object] = {
+        "model": "litellm_proxy/google/gemini-3.6-flash",
+        "reasoning_effort": "low",
+    }
+    _translate_gateway_reasoning(kwargs)
+    assert kwargs["reasoning_effort"] == "low"
+    assert kwargs["extra_body"] == {"reasoning": {"effort": "low"}}
+
+
+def test_gateway_reasoning_maps_max_to_openrouter_ceiling() -> None:
+    """Anthropic's ``max`` maps to ``xhigh`` on both wire forms, kept in agreement."""
+    kwargs: dict[str, object] = {
+        "model": "openrouter/anthropic/claude-fable-5",
+        "reasoning_effort": "max",
+    }
+    _translate_gateway_reasoning(kwargs)
+    assert kwargs["reasoning_effort"] == "xhigh"
+    assert kwargs["extra_body"] == {"reasoning": {"effort": "xhigh"}}
+
+
+def test_gateway_reasoning_leaves_direct_provider_calls_alone() -> None:
+    """A direct (non-gateway) call keeps the LiteLLM-native ``reasoning_effort``."""
+    kwargs: dict[str, object] = {"model": "openai/gpt-5.6-sol", "reasoning_effort": "low"}
+    _translate_gateway_reasoning(kwargs)
+    assert kwargs["reasoning_effort"] == "low"
+    assert "extra_body" not in kwargs
+
+
+def test_gateway_reasoning_preserves_existing_extra_body() -> None:
+    """Translation merges into an existing ``extra_body`` without clobbering it."""
+    kwargs: dict[str, object] = {
+        "model": "litellm_proxy/openrouter/auto-beta",
+        "reasoning_effort": "high",
+        "extra_body": {"plugins": [{"id": "auto-router"}]},
+    }
+    _translate_gateway_reasoning(kwargs)
+    assert kwargs["reasoning_effort"] == "high"
+    assert kwargs["extra_body"] == {
+        "plugins": [{"id": "auto-router"}],
+        "reasoning": {"effort": "high"},
+    }
+
+
+def test_gateway_reasoning_aligns_kwarg_to_caller_supplied_body() -> None:
+    """A caller-set ``extra_body.reasoning`` wins and the kwarg is aligned to it."""
+    kwargs: dict[str, object] = {
+        "model": "openrouter/deepseek/deepseek-v4-pro",
+        "reasoning_effort": "max",
+        "extra_body": {"reasoning": {"effort": "high"}},
+    }
+    _translate_gateway_reasoning(kwargs)
+    assert kwargs["reasoning_effort"] == "high"
+    assert kwargs["extra_body"] == {"reasoning": {"effort": "high"}}
+
+
+def test_disable_cache_sends_proxy_no_cache_directive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``disable_cache`` opts a proxied call out of the proxy's server-side cache too."""
+    monkeypatch.setattr(settings, "litellm_proxy_url", "https://proxy.internal/v1")
+    monkeypatch.setattr(settings, "litellm_proxy_api_key", SecretStr("sk-proxy"))
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
+        build_language_model(_cfg(name="openrouter/minimax/minimax-m3"), disable_cache=True)
+
+    call_kwargs = mock_cls.call_args[1]
+    assert call_kwargs["cache"] is False
+    assert call_kwargs["extra_body"]["cache"] == {"no-cache": True}
+
+
+def test_disable_cache_keeps_direct_provider_body_clean(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without a proxy, ``disable_cache`` stays client-side — no foreign body keys."""
+    monkeypatch.setattr(settings, "litellm_proxy_url", None)
+    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
+        build_language_model(_cfg(name="openai/gpt-4o-mini"), disable_cache=True)
+
+    call_kwargs = mock_cls.call_args[1]
+    assert call_kwargs["cache"] is False
+    assert "extra_body" not in call_kwargs

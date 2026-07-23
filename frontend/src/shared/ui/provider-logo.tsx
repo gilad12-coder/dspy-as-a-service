@@ -8,7 +8,10 @@ import {
   Fireworks,
   Gemini,
   Groq,
+  Meta,
+  Minimax,
   Mistral,
+  Moonshot,
   OpenAI,
   OpenRouter,
   Together,
@@ -57,10 +60,17 @@ function renderBrand(slug: string, size: number): React.ReactNode {
       return <XAI.Avatar size={size} />;
     case "deepseek":
       return <DeepSeek.Avatar size={size} />;
+    case "meta":
+      return <Meta.Avatar size={size} />;
+    case "minimax":
+      return <Minimax.Avatar size={size} />;
     case "mistral":
       return <Mistral.Avatar size={size} />;
     case "groq":
       return <Groq.Avatar size={size} />;
+    case "moonshot":
+    case "moonshotai":
+      return <Moonshot.Avatar size={size} />;
     case "together":
       return <Together.Avatar size={size} />;
     case "fireworks":

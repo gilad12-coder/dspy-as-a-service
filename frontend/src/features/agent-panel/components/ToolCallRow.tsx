@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, Check, ChevronDown, Copy, RefreshCw, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ChevronDown, RefreshCw, type LucideIcon } from "lucide-react";
 import { msg } from "@/shared/lib/messages";
+import { CopyGlyph, useCopyToClipboard } from "@/shared/ui/copy-button";
 
 import { cn } from "@/shared/lib/utils";
 import type { AgentToolCall } from "@/shared/ui/agent/types";
@@ -356,21 +357,14 @@ function EmptyPlaceholder() {
 }
 
 function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = React.useState(false);
-  const copy = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    } catch {
-      // Clipboard access denied — silently ignore.
-    }
-  };
+  const { copied, copy } = useCopyToClipboard();
   return (
     <button
       type="button"
-      onClick={copy}
+      onClick={(e) => {
+        e.stopPropagation();
+        void copy(text);
+      }}
       aria-label={
         copied
           ? msg("auto.features.agent.panel.components.toolcallrow.literal.9")
@@ -382,11 +376,7 @@ function CopyButton({ text }: { text: string }) {
         "hover:bg-background hover:text-foreground transition-colors cursor-pointer",
       )}
     >
-      {copied ? (
-        <Check className="size-3" strokeWidth={2.5} aria-hidden="true" />
-      ) : (
-        <Copy className="size-3" aria-hidden="true" />
-      )}
+      <CopyGlyph copied={copied} className="size-3" />
     </button>
   );
 }

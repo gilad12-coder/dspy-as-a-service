@@ -1,8 +1,8 @@
-"""Tests for the dictation transcription route (provider chain + guards).
+"""Tests for the dictation transcription route (Groq-only + guards).
 
-Mounts the router with the auth dependency overridden and the provider legs
+Mounts the router with the auth dependency overridden and the Groq leg
 monkeypatched — no network. Covers the unconfigured 503, the size-cap 413,
-the happy path, and the fall-through to the next leg when the best one fails.
+the happy path, and the provider-failure 502.
 """
 
 from __future__ import annotations
@@ -50,61 +50,47 @@ def _post_audio(client: TestClient, payload: bytes = b"RIFFxxxx") -> httpx.Respo
 
 
 def test_unconfigured_returns_typed_503(monkeypatch: pytest.MonkeyPatch) -> None:
-    """With no provider key at all, the route answers an honest 503."""
-    monkeypatch.setattr(settings, "soniox_api_key", None)
-    monkeypatch.setattr(settings, "elevenlabs_api_key", None)
-    monkeypatch.setattr(settings, "openai_api_key", None)
+    """Without a Groq key, the route answers an honest 503."""
+    monkeypatch.setattr(settings, "groq_api_key", None)
     resp = _post_audio(_client())
     assert resp.status_code == 503
     assert resp.json()["code"] == "transcription.unconfigured"
 
 
 def test_oversized_clip_rejected_413(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A clip over the cap is rejected before any provider is contacted."""
-    monkeypatch.setattr(settings, "openai_api_key", SecretStr("sk-test"))
+    """A clip over the cap is rejected before the provider is contacted."""
+    monkeypatch.setattr(settings, "groq_api_key", SecretStr("gsk-test"))
     monkeypatch.setattr(transcription, "_MAX_AUDIO_BYTES", 4)
     resp = _post_audio(_client(), payload=b"12345")
     assert resp.status_code == 413
     assert resp.json()["code"] == "transcription.too_large"
 
 
-def test_whisper_leg_returns_transcript(monkeypatch: pytest.MonkeyPatch) -> None:
-    """With only the gateway key set, the whisper leg serves the transcript."""
-    monkeypatch.setattr(settings, "soniox_api_key", None)
-    monkeypatch.setattr(settings, "elevenlabs_api_key", None)
-    monkeypatch.setattr(settings, "openai_api_key", SecretStr("sk-test"))
+def test_groq_leg_returns_transcript(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With a Groq key set, the leg serves the transcript."""
+    monkeypatch.setattr(settings, "groq_api_key", SecretStr("gsk-test"))
 
-    async def _fake_whisper(_client, _audio, _filename, _key, _base) -> str:
-        return "שלום עולם"
+    seen: dict[str, str] = {}
 
-    monkeypatch.setattr(transcription, "_whisper_transcribe", _fake_whisper)
+    async def _fake_groq(_client, _audio, _filename, key) -> str:
+        seen["key"] = key
+        return "מהיר מאוד"
+
+    monkeypatch.setattr(transcription, "_groq_transcribe", _fake_groq)
     resp = _post_audio(_client())
     assert resp.status_code == 200
-    assert resp.json() == {"text": "שלום עולם", "provider": "openai"}
+    assert resp.json() == {"text": "מהיר מאוד", "provider": "groq"}
+    assert seen == {"key": "gsk-test"}
 
 
-def test_chain_falls_through_to_next_leg(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A failing best leg falls through; all legs failing answers a 502."""
-    monkeypatch.setattr(settings, "soniox_api_key", None)
-    monkeypatch.setattr(settings, "elevenlabs_api_key", SecretStr("xi-test"))
-    monkeypatch.setattr(settings, "openai_api_key", SecretStr("sk-test"))
+def test_provider_failure_returns_502(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing Groq call answers a typed 502."""
+    monkeypatch.setattr(settings, "groq_api_key", SecretStr("gsk-test"))
 
     async def _boom(_client, _audio, _filename, _key) -> str:
-        raise RuntimeError("elevenlabs transcribe: 500")
+        raise RuntimeError("groq transcribe: 500")
 
-    async def _fake_whisper(_client, _audio, _filename, _key, _base) -> str:
-        return "fallback text"
-
-    monkeypatch.setattr(transcription, "_elevenlabs_transcribe", _boom)
-    monkeypatch.setattr(transcription, "_whisper_transcribe", _fake_whisper)
-    resp = _post_audio(_client())
-    assert resp.status_code == 200
-    assert resp.json() == {"text": "fallback text", "provider": "openai"}
-
-    async def _boom_whisper(_client, _audio, _filename, _key, _base) -> str:
-        raise RuntimeError("whisper transcribe: 500")
-
-    monkeypatch.setattr(transcription, "_whisper_transcribe", _boom_whisper)
+    monkeypatch.setattr(transcription, "_groq_transcribe", _boom)
     resp = _post_audio(_client())
     assert resp.status_code == 502
     assert resp.json()["code"] == "transcription.failed"

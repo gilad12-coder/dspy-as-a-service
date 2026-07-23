@@ -17,8 +17,9 @@ Two distinct modes share this module:
   call so the UI can render a tool-call card and swap the code atomically.
 
 The agent runs on whatever LiteLLM-compatible model is configured via
-``settings.code_agent_model`` (default: ``openrouter/minimax/minimax-m3``). Users can
-point it at an internal gateway via ``CODE_AGENT_BASE_URL``.
+``settings.code_agent_model`` (default: ``openrouter/openrouter/auto-beta``,
+OpenRouter's Auto Router). Users can point it at an internal gateway via
+``CODE_AGENT_BASE_URL``.
 """
 
 from __future__ import annotations
@@ -945,11 +946,14 @@ class WorkflowAssistant(dspy.Signature):
 def _extract_reasoning_token(chunk: object) -> str | None:
     """Pull a thinking/reasoning token from a raw LiteLLM streaming chunk.
 
-    Handles both conventions in the wild:
+    Handles the conventions in the wild:
       - LiteLLM-normalized: ``delta.reasoning_content`` (string). Emitted by
         Fireworks, DeepSeek, OpenAI o-series, and most reasoning providers.
-      - Native MiniMax with ``reasoning_split=true``: ``delta.reasoning_details``
-        (list of ``{"text": "..."}`` blocks).
+      - OpenRouter passthrough: ``delta.reasoning`` (string) on responses that
+        skip LiteLLM's normalization (direct/BYOK OpenRouter calls).
+      - Detail blocks: ``delta.reasoning_details`` — MiniMax ``reasoning_split``
+        and OpenRouter both use it; blocks carry ``text`` (``reasoning.text``)
+        or ``summary`` (``reasoning.summary``, OpenAI-style summarized CoT).
 
     Args:
         chunk: A streaming chunk object from LiteLLM.
@@ -966,11 +970,17 @@ def _extract_reasoning_token(chunk: object) -> str | None:
     content = getattr(delta, "reasoning_content", None)
     if isinstance(content, str) and content:
         return content
+    plain = getattr(delta, "reasoning", None)
+    if isinstance(plain, str) and plain:
+        return plain
     details = getattr(delta, "reasoning_details", None)
     if isinstance(details, list) and details:
         parts: list[str] = []
         for block in details:
-            text = block.get("text") if isinstance(block, dict) else getattr(block, "text", None)
+            if isinstance(block, dict):
+                text = block.get("text") or block.get("summary")
+            else:
+                text = getattr(block, "text", None) or getattr(block, "summary", None)
             if isinstance(text, str) and text:
                 parts.append(text)
         if parts:
@@ -1191,7 +1201,9 @@ class ReactReplyStream:
 
 
 def _build_agent_lm(
-    model_name_override: str | None = None, reasoning_effort: str | None = None
+    model_name_override: str | None = None,
+    reasoning_effort: str | None = None,
+    lm_extra_body: dict[str, Any] | None = None,
 ) -> dspy.LM:
     """Construct the LM used by the code agent from global settings.
 
@@ -1201,6 +1213,8 @@ def _build_agent_lm(
             code-agent model.
         reasoning_effort: Explicit effort level for the chosen model; ``None``
             keeps the model's default.
+        lm_extra_body: Extra request-body fields merged into the provider
+            call (the auto router's plugin dial rides here).
 
     Reasoning knobs we send, by provider:
 
@@ -1225,6 +1239,8 @@ def _build_agent_lm(
     )
     if is_native_minimax:
         extra["extra_body"] = {"reasoning_split": True}
+    if lm_extra_body:
+        extra["extra_body"] = {**extra.get("extra_body", {}), **lm_extra_body}
     config = ModelConfig(
         name=model_name,
         base_url=settings.code_agent_base_url or None,

@@ -91,7 +91,6 @@ interface Props {
   onStop: () => void;
   onRetry: () => void;
   onSkip: () => void;
-  onExit: () => void;
   onConfirmRubric: (rubric: string[], task: TaskContract) => void;
 }
 
@@ -123,7 +122,6 @@ export function TaggerInterview({
   onStop,
   onRetry,
   onSkip,
-  onExit,
   onConfirmRubric,
 }: Props) {
   const [draft, setDraft] = useState("");
@@ -178,15 +176,6 @@ export function TaggerInterview({
                 {msg("tagger.assist.interview.subtitle")}
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onExit}
-              className="shrink-0 gap-1.5 text-muted-foreground"
-            >
-              <RotateCcw className="size-3.5" />
-              {msg("tagger.exit")}
-            </Button>
           </div>
 
           <AgentThread

@@ -5,6 +5,7 @@ import { Check, Loader2, Mic, Square, X } from "lucide-react";
 import { msg } from "@/shared/lib/messages";
 
 import { useLocale } from "@/shared/providers";
+import { useUserPrefs } from "@/features/settings";
 import { Button } from "@/shared/ui/primitives/button";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { cn } from "@/shared/lib/utils";
@@ -54,6 +55,7 @@ export function Composer({
 }: ComposerProps) {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const { locale } = useLocale();
+  const { prefs } = useUserPrefs();
 
   const valueRef = React.useRef(value);
   React.useEffect(() => {
@@ -76,6 +78,9 @@ export function Composer({
     },
   });
   const dictating = dictation.state.kind !== "idle";
+  // A recording in flight keeps its controls even if the pref flips off in
+  // the settings modal mid-take.
+  const showMic = prefs.dictationEnabled || dictating;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,33 +172,34 @@ export function Composer({
           {leadingControls && <div className="flex items-center gap-1">{leadingControls}</div>}
           <div className="ms-auto flex items-center gap-1.5">
             {modelMenu}
-            {dictation.state.kind === "rec" ? (
-              <TooltipButton tooltip={msg("agent.composer.record_finish")} side="top">
-                <Button
-                  type="button"
-                  size="icon"
-                  onClick={dictation.finish}
-                  className="shrink-0 rounded-full !size-9"
-                  aria-label={msg("agent.composer.record_finish")}
-                >
-                  <Check className="size-4" />
-                </Button>
-              </TooltipButton>
-            ) : (
-              <TooltipButton tooltip={msg("agent.composer.record")} side="top">
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => void dictation.start()}
-                  disabled={disabled || streaming || dictation.state.kind === "busy"}
-                  className="shrink-0 rounded-full !size-9 text-muted-foreground hover:text-foreground"
-                  aria-label={msg("agent.composer.record")}
-                >
-                  <Mic className="size-4" />
-                </Button>
-              </TooltipButton>
-            )}
+            {showMic &&
+              (dictation.state.kind === "rec" ? (
+                <TooltipButton tooltip={msg("agent.composer.record_finish")} side="top">
+                  <Button
+                    type="button"
+                    size="icon"
+                    onClick={dictation.finish}
+                    className="shrink-0 rounded-full !size-9"
+                    aria-label={msg("agent.composer.record_finish")}
+                  >
+                    <Check className="size-4" />
+                  </Button>
+                </TooltipButton>
+              ) : (
+                <TooltipButton tooltip={msg("agent.composer.record")} side="top">
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => void dictation.start()}
+                    disabled={disabled || streaming || dictation.state.kind === "busy"}
+                    className="shrink-0 rounded-full !size-9 text-muted-foreground hover:text-foreground"
+                    aria-label={msg("agent.composer.record")}
+                  >
+                    <Mic className="size-4" />
+                  </Button>
+                </TooltipButton>
+              ))}
             {streaming && onStop ? (
               <TooltipButton tooltip={stopAriaLabel} side="top">
                 <Button

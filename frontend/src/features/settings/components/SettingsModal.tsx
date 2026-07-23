@@ -10,8 +10,7 @@ import {
   BookOpen,
   Bot,
   Columns2,
-  Check,
-  Copy,
+  Cpu,
   CreditCard,
   KeyRound,
   ExternalLink,
@@ -20,6 +19,7 @@ import {
   Keyboard,
   Lock,
   type LucideIcon,
+  Mic,
   Pencil,
   Plug,
   Plus,
@@ -53,6 +53,7 @@ import {
 } from "@/shared/ui/primitives/select";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { Button } from "@/shared/ui/primitives/button";
+import { CopyButton } from "@/shared/ui/copy-button";
 import { WalletTab, UsageTab, ByokKeysSection } from "@/features/billing";
 import { Input } from "@/shared/ui/primitives/input";
 import { NumberInput } from "@/shared/ui/number-input";
@@ -81,6 +82,11 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { msg } from "@/shared/lib/messages";
 import { formatStorageSize } from "@/shared/lib/formatters";
+import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
+import type { CatalogModel } from "@/shared/types/api";
+import { ComposerModelMenu } from "@/shared/ui/agent";
+import { ModelChip } from "@/shared/ui/model-chip";
+import { ModelConfigModal } from "@/features/submit";
 import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import {
@@ -137,6 +143,33 @@ function WizardTab() {
         </Select>
       </SettingsRow>
 
+    </div>
+  );
+}
+
+function TaggingTab() {
+  const { prefs, setPref } = useUserPrefs();
+  const [modelDialogOpen, setModelDialogOpen] = React.useState(false);
+  // Same managed-catalog source the tagger setup feeds the dialog: thinking
+  // detection and the chip's vision badge need the model metadata.
+  const [catalogModels, setCatalogModels] = React.useState<CatalogModel[] | null>(
+    cachedCatalog()?.models ?? null,
+  );
+  React.useEffect(() => {
+    if (catalogModels) return;
+    let cancelled = false;
+    getModelCatalog()
+      .then((c) => {
+        if (!cancelled) setCatalogModels(c.models);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogModels]);
+
+  return (
+    <div className="space-y-1">
       <SettingsRow
         icon={Tags}
         label={msg("settings.tagger.assist.label")}
@@ -147,6 +180,33 @@ function WizardTab() {
           onCheckedChange={(v) => setPref("taggerAssist", v)}
         />
       </SettingsRow>
+
+      <SettingsRow
+        icon={Cpu}
+        label={msg("settings.tagger.default_model.label")}
+        description={msg("settings.tagger.default_model.description")}
+      >
+        <ModelChip
+          config={prefs.taggerAssistModel}
+          emptyLabel={msg("tagger.assist.model.placeholder")}
+          catalogModels={catalogModels ?? undefined}
+          onClick={() => setModelDialogOpen(true)}
+          onRemove={
+            prefs.taggerAssistModel.name
+              ? () => setPref("taggerAssistModel", { name: "" })
+              : undefined
+          }
+        />
+      </SettingsRow>
+      <ModelConfigModal
+        open={modelDialogOpen}
+        onOpenChange={setModelDialogOpen}
+        config={prefs.taggerAssistModel}
+        onSave={(cfg) => setPref("taggerAssistModel", cfg)}
+        roleLabel={msg("settings.tagger.default_model.label")}
+        catalogModels={catalogModels ?? undefined}
+        showConnection={false}
+      />
     </div>
   );
 }
@@ -156,6 +216,30 @@ function AgentTab() {
 
   return (
     <div className="space-y-1">
+      <SettingsRow
+        icon={Cpu}
+        label={msg("settings.agent.default_model.label")}
+        description={msg("settings.agent.default_model.description")}
+      >
+        <ComposerModelMenu
+          value={prefs.composerModel}
+          onChange={(v) => setPref("composerModel", v)}
+          effort={prefs.composerEffort}
+          onEffortChange={(v) => setPref("composerEffort", v)}
+        />
+      </SettingsRow>
+
+      <SettingsRow
+        icon={Mic}
+        label={msg("settings.agent.dictation.label")}
+        description={msg("settings.agent.dictation.description")}
+      >
+        <Switch
+          checked={prefs.dictationEnabled}
+          onCheckedChange={(v) => setPref("dictationEnabled", v)}
+        />
+      </SettingsRow>
+
       <SettingsRow
         icon={Shield}
         label={msg("settings.agent.trust.label")}
@@ -956,7 +1040,6 @@ function ApiTab() {
   const [loaded, setLoaded] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [revealed, setRevealed] = React.useState<string | null>(null);
-  const [copied, setCopied] = React.useState(false);
   const [loadError, setLoadError] = React.useState<string | null>(null);
 
   // A failed passive load (most often the backend being unreachable) surfaces as
@@ -987,7 +1070,6 @@ function ApiTab() {
     try {
       const created = await generateApiToken();
       setRevealed(created.token);
-      setCopied(false);
       setInfo({ last4: created.last4, created_at: created.created_at, last_used_at: null });
       toast.success(msg("settings.api.generated_toast"));
     } catch (err) {
@@ -1010,16 +1092,6 @@ function ApiTab() {
       setBusy(false);
     }
   }, []);
-
-  const handleCopy = React.useCallback(async () => {
-    if (!revealed) return;
-    try {
-      await navigator.clipboard.writeText(revealed);
-      setCopied(true);
-    } catch {
-      // Clipboard access can be blocked; the token stays visible to copy by hand.
-    }
-  }, [revealed]);
 
   const formatTimestamp = (iso: string) => new Date(iso).toLocaleString(getActiveIntlLocale());
   const docsUrl = `${getRuntimeEnv().apiUrl}/scalar`;
@@ -1092,19 +1164,15 @@ function ApiTab() {
             </code>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  size="icon-sm"
+                <CopyButton
+                  text={revealed ?? ""}
+                  ariaLabel={msg("settings.api.copy")}
+                  copiedAriaLabel={msg("settings.api.copied")}
                   variant="outline"
                   className="shrink-0"
-                  onClick={handleCopy}
-                  aria-label={copied ? msg("settings.api.copied") : msg("settings.api.copy")}
-                >
-                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                </Button>
+                />
               </TooltipTrigger>
-              <TooltipContent>
-                {copied ? msg("settings.api.copied") : msg("settings.api.copy")}
-              </TooltipContent>
+              <TooltipContent>{msg("settings.api.copy")}</TooltipContent>
             </Tooltip>
           </div>
           <button
@@ -1173,6 +1241,7 @@ function ApiTab() {
 
 const SETTINGS_TAB_ORDER = [
   "wizard",
+  "tagging",
   "agent",
   "admin",
   "account",
@@ -1190,6 +1259,7 @@ const SETTINGS_TAB_META: Record<
   { icon: LucideIcon; labelKey: Parameters<typeof msg>[0] }
 > = {
   wizard: { icon: Sparkles, labelKey: "settings.tab.wizard" },
+  tagging: { icon: Tags, labelKey: "settings.tab.tagging" },
   agent: { icon: Bot, labelKey: "settings.tab.agent" },
   admin: { icon: HardDrive, labelKey: "settings.tab.admin" },
   account: { icon: User, labelKey: "settings.tab.account" },
@@ -1313,6 +1383,9 @@ export function SettingsModal() {
             >
               <TabsContent value="wizard">
                 <WizardTab />
+              </TabsContent>
+              <TabsContent value="tagging">
+                <TaggingTab />
               </TabsContent>
               <TabsContent value="agent">
                 <AgentTab />

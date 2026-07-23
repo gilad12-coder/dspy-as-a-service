@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from .. import model_catalog
+from .. import model_catalog, model_router
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..routers import code_agent as code_agent_router
@@ -87,6 +87,41 @@ def test_interview_streams_events_and_forwards_args(monkeypatch) -> None:
     assert len(seen["sample_rows"]) == 5
     assert seen["model"] == "openai/gpt-test"
     assert seen["reasoning_effort"] == "high"
+    assert seen["lm_extra_body"] is None
+
+
+def test_interview_auto_tiers_ride_the_auto_router(monkeypatch) -> None:
+    """Absent and 'auto:intelligent' models route through OpenRouter's router."""
+    seen: list[dict[str, Any]] = []
+
+    async def fake_stream(**kwargs: Any) -> Any:
+        """Record the forwarded kwargs and finish immediately."""
+        seen.append(kwargs)
+        yield {
+            "event": "interview_done",
+            "data": {"message": "q", "options": [], "brief": [], "done": False, "model": "m"},
+        }
+
+    monkeypatch.setattr(code_agent_router, "interview_turn_stream", fake_stream)
+    monkeypatch.setattr(
+        model_router,
+        "get_catalog_cached",
+        lambda: SimpleNamespace(models=[SimpleNamespace(value="openrouter/anthropic/claude-sonnet-5")]),
+    )
+    client = _client()
+    assert client.post("/optimizations/code-interview", json=_INTERVIEW_BODY).status_code == 200
+    assert (
+        client.post(
+            "/optimizations/code-interview",
+            json={**_INTERVIEW_BODY, "model": "auto:intelligent"},
+        ).status_code
+        == 200
+    )
+    assert [k["model"] for k in seen] == [model_router.OPENROUTER_AUTO_ID] * 2
+    assert [k["lm_extra_body"] for k in seen] == [
+        {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]},
+        {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 0}]},
+    ]
 
 
 def test_interview_rejects_unknown_model(monkeypatch) -> None:
@@ -112,6 +147,13 @@ def test_interview_translates_engine_failure_to_error_event(monkeypatch) -> None
         yield  # pragma: no cover - marks this as a generator
 
     monkeypatch.setattr(code_agent_router, "interview_turn_stream", failing_stream)
+    # The model-less request auto-routes, which consults the catalog — keep
+    # the test hermetic instead of probing live providers.
+    monkeypatch.setattr(
+        model_router,
+        "get_catalog_cached",
+        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
+    )
     resp = _client().post("/optimizations/code-interview", json=_INTERVIEW_BODY)
     assert resp.status_code == 200
     assert "event: error" in resp.text

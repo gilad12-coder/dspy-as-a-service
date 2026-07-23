@@ -13,6 +13,7 @@ import { Input } from "@/shared/ui/primitives/input";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { Separator } from "@/shared/ui/primitives/separator";
 import { ModelPicker, modelSupportsThinking } from "./ModelPicker";
+import { effortLabel, effortsFor } from "@/shared/lib/model-efforts";
 import { NumberInput } from "@/shared/ui/number-input";
 import { cn } from "@/shared/lib/utils";
 import type { ModelConfig, CatalogModel } from "@/shared/types/api";
@@ -110,7 +111,17 @@ export function ModelConfigModal({
     }
   }, [open, config, mode]);
 
-  const canThink = modelSupportsThinking(draft.name, detectionModels);
+  // The effort ladder is model-specific (providers reject levels outside
+  // their documented set). "none" is expressed by the switch itself, and an
+  // empty ladder (always-on thinkers like MiniMax M3) leaves nothing to
+  // configure, so the whole section disappears.
+  const effortLadder = React.useMemo(
+    () => effortsFor(draft.name).filter((level) => level !== "none"),
+    [draft.name],
+  );
+  const defaultEffort = (ladder: readonly string[]) =>
+    ladder.includes("medium") ? "medium" : (ladder[Math.floor(ladder.length / 2)] ?? "medium");
+  const canThink = modelSupportsThinking(draft.name, detectionModels) && effortLadder.length > 0;
   const thinkingEnabled = !!draft.extra?.reasoning_effort;
   const reasoningEffort = (draft.extra?.reasoning_effort as string) ?? "medium";
 
@@ -125,7 +136,7 @@ export function ModelConfigModal({
     setDraft((p) => ({
       ...p,
       extra: on
-        ? { ...p.extra, reasoning_effort: "medium" }
+        ? { ...p.extra, reasoning_effort: defaultEffort(effortLadder) }
         : (() => {
             const rest = { ...p.extra };
             delete rest.reasoning_effort;
@@ -369,14 +380,17 @@ export function ModelConfigModal({
             <ModelPicker
               value={draft.name}
               onChange={(next) => {
-                setDraft((p) => ({ ...p, name: next }));
-                if (!modelSupportsThinking(next, detectionModels)) {
-                  setDraft((p) => {
-                    const rest = { ...p.extra };
+                setDraft((p) => {
+                  const ladder = effortsFor(next).filter((level) => level !== "none");
+                  const rest = { ...p.extra };
+                  const effort = rest.reasoning_effort as string | undefined;
+                  if (!modelSupportsThinking(next, detectionModels) || ladder.length === 0) {
                     delete rest.reasoning_effort;
-                    return { ...p, extra: Object.keys(rest).length ? rest : undefined };
-                  });
-                }
+                  } else if (effort && !ladder.includes(effort)) {
+                    rest.reasoning_effort = defaultEffort(ladder);
+                  }
+                  return { ...p, name: next, extra: Object.keys(rest).length ? rest : undefined };
+                });
               }}
               discoverUrl={draft.base_url?.trim() || undefined}
               discoverApiKey={(draft.extra?.api_key as string | undefined) || undefined}
@@ -464,22 +478,7 @@ export function ModelConfigModal({
                   <div className="space-y-2 p-3 border rounded-lg bg-muted/30">
                     <Label>{msg("auto.features.submit.components.modelconfigmodal.9")}</Label>
                     <div className="flex rounded-lg bg-muted p-0.5 w-full">
-                      {(
-                        [
-                          [
-                            "low",
-                            msg("auto.features.submit.components.modelconfigmodal.literal.4"),
-                          ],
-                          [
-                            "medium",
-                            msg("auto.features.submit.components.modelconfigmodal.literal.5"),
-                          ],
-                          [
-                            "high",
-                            msg("auto.features.submit.components.modelconfigmodal.literal.6"),
-                          ],
-                        ] as const
-                      ).map(([val, label]) => (
+                      {effortLadder.map((val) => (
                         <button
                           key={val}
                           type="button"
@@ -491,7 +490,7 @@ export function ModelConfigModal({
                               : "text-muted-foreground hover:text-foreground",
                           )}
                         >
-                          {label}
+                          {effortLabel(val)}
                         </button>
                       ))}
                     </div>

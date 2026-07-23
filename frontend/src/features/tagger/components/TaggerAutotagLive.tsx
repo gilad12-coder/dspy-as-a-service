@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, OctagonX } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { AgentPillDock } from "@/features/agent-panel";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardTitle } from "@/shared/ui/primitives/card";
@@ -16,7 +16,6 @@ interface Props {
   data: DataRow[];
   annotations: Record<string, Annotation>;
   status: { status: string; total: number; done: number; live: boolean } | null;
-  onCancel: () => void;
 }
 
 /** True when this row's label has been settled (by the AI or a human). */
@@ -32,7 +31,7 @@ function hasLabel(ann: Annotation, mode: TaggerConfig["mode"]): boolean {
  * AI labeled as batches land. Browsing back detaches from that frontier;
  * stepping forward to it (or the jump chip) re-engages the follow.
  */
-export function TaggerAutotagLive({ config, data, annotations, status, onCancel }: Props) {
+export function TaggerAutotagLive({ config, data, annotations, status }: Props) {
   const rtl = getActiveDir() === "rtl";
   const PrevIcon = rtl ? ChevronRight : ChevronLeft;
   const NextIcon = rtl ? ChevronLeft : ChevronRight;
@@ -81,15 +80,6 @@ export function TaggerAutotagLive({ config, data, annotations, status, onCancel 
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
           <span className="font-semibold text-primary">{done}</span>/{total}
         </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onCancel}
-          className="shrink-0 gap-1.5 text-muted-foreground"
-        >
-          <OctagonX className="size-3.5" />
-          {msg("tagger.assist.autotag.cancel")}
-        </Button>
       </div>
 
       <div className="flex flex-1 flex-col gap-3 overflow-hidden p-5 pt-2">

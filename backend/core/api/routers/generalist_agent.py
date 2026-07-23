@@ -41,6 +41,7 @@ from ...storage.models import AgentConversationModel, AgentMessageModel
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..model_catalog import require_known_model
+from ..model_router import resolve_auto_tier, route_auto_model
 from ._helpers import sse_from_events
 
 logger = logging.getLogger(__name__)
@@ -100,7 +101,9 @@ class GeneralistAgentRequest(BaseModel):
         default=None,
         description=(
             "LiteLLM id of the catalog model to run this turn on (the "
-            "composer's model menu); absent runs the server default."
+            "composer's model menu). Absent routes automatically per turn "
+            "(balanced tier); the sentinel 'auto:intelligent' routes to a "
+            "frontier model on every turn."
         ),
     )
     reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = Field(
@@ -539,7 +542,16 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
         conversation_id, title = await asyncio.to_thread(_setup_turn)
 
         wizard_state: WizardState = {**req.wizard_state}  # type: ignore[typeddict-item]
-        require_known_model(req.model)
+        requested_model, auto_tier = resolve_auto_tier(req.model)
+        require_known_model(requested_model)
+        model_config = (
+            ModelConfig(
+                name=requested_model,
+                extra=({"reasoning_effort": req.reasoning_effort} if req.reasoning_effort else {}),
+            )
+            if requested_model
+            else route_auto_model(auto_tier or "balanced", conversation_id)
+        )
         source = run_generalist_agent(
             wizard_state=wizard_state,
             chat_history=[t.model_dump() for t in req.chat_history],
@@ -547,16 +559,7 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
             trust_mode=req.trust_mode,
             auth_header=authorization,
             locale=req.locale,
-            model_config=(
-                ModelConfig(
-                    name=req.model,
-                    extra=(
-                        {"reasoning_effort": req.reasoning_effort} if req.reasoning_effort else {}
-                    ),
-                )
-                if req.model
-                else None
-            ),
+            model_config=model_config,
         )
         wrapped = _wrap_with_persistence(
             source,

@@ -96,6 +96,7 @@ def _build_assist_lm(
     model_name: str | None = None,
     params: dict[str, Any] | None = None,
     reasoning_effort: str | None = None,
+    lm_extra_body: dict[str, Any] | None = None,
 ) -> dspy.LM:
     """Build the assist LM from settings, mirroring the generalist agent.
 
@@ -106,14 +107,21 @@ def _build_assist_lm(
             (``assist.modelParams``); sanitized before use.
         reasoning_effort: Explicit ``reasoning_effort`` level chosen in the
             composer's model menu; ``None`` keeps the model's default.
+        lm_extra_body: Extra request-body fields merged into the provider
+            call (the auto router's plugin dial rides here).
 
     Returns:
         A cache-disabled ``dspy.LM`` on the requested model.
     """
+    kwargs = _sanitize_model_params(params)
+    if lm_extra_body:
+        extra = dict(kwargs.get("extra") or {})
+        extra["extra_body"] = {**dict(extra.get("extra_body") or {}), **lm_extra_body}
+        kwargs["extra"] = extra
     config = ModelConfig(
         name=model_name or assist_model_name(),
         base_url=settings.tagger_assist_base_url or settings.generalist_agent_base_url or None,
-        **_sanitize_model_params(params),
+        **kwargs,
     )
     config = apply_reasoning_effort(config, reasoning_effort)
     return build_language_model(apply_model_reasoning_config(config), disable_cache=True)
@@ -741,6 +749,7 @@ def interview_turn(
     locale: str | None,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    lm_extra_body: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run one interview turn and return the assistant's reply (non-streaming).
 
@@ -753,13 +762,15 @@ def interview_turn(
         model: LiteLLM id conducting the interview; ``None`` runs the default.
         reasoning_effort: Explicit effort level for ``model``; ``None`` keeps
             the model's default.
+        lm_extra_body: Extra request-body fields for the LM call (the auto
+            router's plugin dial when the composer picked an Auto tier).
 
     Returns:
         ``{"message", "options", "rubric", "done"}`` — ``rubric`` is empty
         until ``done`` is true.
     """
     asked = sum(1 for t in turns if t.get("role") == "assistant")
-    lm = _build_assist_lm(model, reasoning_effort=reasoning_effort)
+    lm = _build_assist_lm(model, reasoning_effort=reasoning_effort, lm_extra_body=lm_extra_body)
     with dspy.context(lm=lm):
         pred = dspy.Predict(InterviewTurnSig)(**_interview_inputs(config, columns, data, turns, locale))
     turn = _parse_interview_prediction(pred, asked, config)
@@ -776,6 +787,7 @@ async def interview_turn_stream(
     locale: str | None,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    lm_extra_body: dict[str, Any] | None = None,
 ) -> Any:
     """Run one interview turn, streaming it the way the generalist agent does.
 
@@ -807,10 +819,12 @@ async def interview_turn_stream(
         model: LiteLLM id conducting the interview; ``None`` runs the default.
         reasoning_effort: Explicit effort level for ``model``; ``None`` keeps
             the model's default.
+        lm_extra_body: Extra request-body fields for the LM call (the auto
+            router's plugin dial when the composer picked an Auto tier).
     """
     asked = sum(1 for t in turns if t.get("role") == "assistant")
     predict = dspy.Predict(InterviewTurnSig)
-    lm = _build_assist_lm(model, reasoning_effort=reasoning_effort)
+    lm = _build_assist_lm(model, reasoning_effort=reasoning_effort, lm_extra_body=lm_extra_body)
     inputs = _interview_inputs(config, columns, data, turns, locale)
     turn: dict[str, Any] = {}
     for attempt in range(INTERVIEW_TURN_ATTEMPTS):

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { readPref } from "@/features/settings";
 import {
   streamCodeInterviewTurn,
   type CodeAgentChatTurn,
@@ -80,8 +81,12 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
   const [thinking, setThinking] = React.useState<AgentThinking | null>(null);
   const [options, setOptions] = React.useState<InterviewOption[]>([]);
   const [pending, setPending] = React.useState<"options" | "brief" | null>(null);
-  const [model, setModel] = React.useState<string | null>(null);
-  const [reasoningEffort, setReasoningEffort] = React.useState<string | null>(null);
+  // Seeded from the settings-modal default; the interview mounts on a user
+  // action well past hydration, so the localStorage read is safe.
+  const [model, setModel] = React.useState<string | null>(() => readPref("composerModel"));
+  const [reasoningEffort, setReasoningEffort] = React.useState<string | null>(() =>
+    readPref("composerEffort"),
+  );
   const [error, setError] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const [brief, setBrief] = React.useState<string[]>([]);

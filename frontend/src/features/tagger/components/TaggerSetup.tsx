@@ -34,7 +34,7 @@ import { registerTutorialHook, registerTutorialQuery } from "@/features/tutorial
 import { ModelConfigModal } from "@/features/submit";
 import { DatasetPickerDialog } from "@/features/datasets";
 import { ModelChip } from "@/shared/ui/model-chip";
-import { useUserPrefs } from "@/features/settings";
+import { readPref, useUserPrefs } from "@/features/settings";
 import type {
   AnnotationMode,
   TaggerAssistMode,
@@ -158,8 +158,11 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<AnnotationMode | null>(null);
   const [assistMode, setAssistMode] = useState<TaggerAssistMode>("copilot");
-  // Empty name = the server's default tagging model.
-  const [assistModel, setAssistModel] = useState<ModelConfig>({ name: "" });
+  // Empty name = the server's default tagging model. Seeded from the
+  // settings-modal default; the chip in the assist step overrides per session.
+  const [assistModel, setAssistModel] = useState<ModelConfig>(() =>
+    readPref("taggerAssistModel"),
+  );
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
   // Managed catalog for the model dialog's thinking detection and the chip's
   // vision badge — same source the submit wizard feeds it.

@@ -3,17 +3,18 @@
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
-import { AtSign, ChartNoAxesColumn, Check, Copy, Database, User } from "lucide-react";
+import { AtSign, ChartNoAxesColumn, Database, User } from "lucide-react";
 
 import { msg } from "@/shared/lib/messages";
 import { invalidateCache } from "@/shared/lib/api";
 import { isTelemetryOptedOut, setTelemetryOptOut } from "@/shared/lib/telemetry/client";
 import { SettingsRow } from "@/shared/ui/settings-row";
+import { CopyButton } from "@/shared/ui/copy-button";
 import { Button } from "@/shared/ui/primitives/button";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { Separator } from "@/shared/ui/primitives/separator";
 
-/** A monospace value with an icon Button that swaps Copy→Check for ~1.5s after copying. */
+/** A monospace value with the app-standard animated copy button. */
 function CopyValueRow({
   icon,
   label,
@@ -25,37 +26,12 @@ function CopyValueRow({
   value: string;
   signedOut: boolean;
 }) {
-  const [copied, setCopied] = React.useState(false);
-
-  const handleCopy = React.useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-    } catch {
-      // Clipboard access can be blocked; the value stays visible to copy by hand.
-    }
-  }, [value]);
-
-  React.useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
-
   return (
     <SettingsRow icon={icon} label={label}>
       <span className="text-sm font-mono text-foreground" dir="ltr">
         {signedOut ? msg("settings.account.signed_out") : value}
       </span>
-      <Button
-        variant="outline"
-        size="icon-sm"
-        onClick={handleCopy}
-        disabled={signedOut}
-        aria-label={label}
-      >
-        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-      </Button>
+      <CopyButton text={value} ariaLabel={label} variant="outline" disabled={signedOut} />
     </SettingsRow>
   );
 }

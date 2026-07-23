@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/
 import { useByokKeys } from "../providers/byok-provider";
 import { formatResetDate } from "../lib/credit";
 import { BYOK_PROVIDERS, type ByokProviderInfo, type KeyStatus } from "../lib/byok";
-import { ProviderLogo } from "./ProviderLogo";
+import { ProviderLogo } from "@/shared/ui/provider-logo";
 import { ByokJsonImport } from "./ByokJsonImport";
 
 /** The status pill next to a saved key. Gold for verified, calm muted/destructive otherwise. */

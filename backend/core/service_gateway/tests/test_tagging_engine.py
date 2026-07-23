@@ -322,3 +322,27 @@ def test_build_assist_lm_honors_model_override(monkeypatch) -> None:
         ("openai/gpt-test", 0.1, 2048),
         (assist_model_name(), None, None),
     ]
+
+
+def test_build_assist_lm_merges_lm_extra_body(monkeypatch) -> None:
+    """Auto-router extras land in the LM config without clobbering params."""
+    captured: list[dict] = []
+
+    def fake_build(config, disable_cache):
+        """Record the config extras instead of building an LM."""
+        captured.append(config.extra)
+        return "lm"
+
+    monkeypatch.setattr(tagging, "build_language_model", fake_build)
+    monkeypatch.setattr(tagging, "apply_model_reasoning_config", lambda config: config)
+    tagging._build_assist_lm(
+        "openrouter/openrouter/auto-beta",
+        {"extra": {"reasoning_effort": "high"}},
+        lm_extra_body={"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]},
+    )
+    assert captured == [
+        {
+            "reasoning_effort": "high",
+            "extra_body": {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]},
+        }
+    ]

@@ -161,7 +161,6 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
           onStop={tagger.stopInterview}
           onRetry={() => void tagger.sendInterviewMessage(null)}
           onSkip={tagger.skipInterview}
-          onExit={tagger.backToSetup}
           onConfirmRubric={tagger.confirmRubric}
         />
       </PageContainer>
@@ -197,7 +196,6 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
             data={tagger.data}
             annotations={tagger.annotations}
             status={autotag}
-            onCancel={() => void tagger.cancelAutotag()}
           />
         )}
       </PageContainer>

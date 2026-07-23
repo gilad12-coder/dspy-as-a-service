@@ -56,7 +56,14 @@ export function MessageActions({ text, model, onRegenerate, className }: Message
     window.setTimeout(() => setCopied(false), 1500);
   }, [text]);
 
-  const shortModel = model ? (model.split("/").pop() ?? model) : null;
+  // Turns routed by OpenRouter's Auto Router (the composer's Auto tiers)
+  // report the router's own id — read it back as "Auto", not a model slug.
+  const isAutoRouted = model === "openrouter/openrouter/auto-beta";
+  const shortModel = isAutoRouted
+    ? msg("agent.model_menu.auto")
+    : model
+      ? (model.split("/").pop() ?? model)
+      : null;
 
   return (
     <div className={cn("flex items-center gap-1 -ms-1.5", className)}>
