@@ -369,17 +369,29 @@ class _ApprovalGatedTool:
                 and not kwargs.get("dataset")
             ):
                 kwargs["staged_dataset_id"] = self._staged_dataset_id
-            # Signature/Metric are authored and validated by
-            # ``request_code_authoring``; the validated source is mirrored into
-            # the wizard snapshot. The agent has historically re-typed its own
-            # broken code into submit args even after a clean authoring pass
+            # Signature/Metric (or, for a workflow run, the authored graph) are
+            # produced and validated by ``request_code_authoring`` and mirrored
+            # into the wizard snapshot. The agent has historically re-typed its
+            # own broken code into submit args even after a clean authoring pass
             # (3-arg metrics, unmatched braces), producing 400s that dead-ended
-            # at the user. Source the code from the snapshot and discard
+            # at the user. Source the program from the snapshot and discard
             # whatever the agent supplied so only validated code reaches submit.
-            for code_field in ("signature_code", "metric_code"):
-                snapshot_code = self._wizard_state.get(code_field)
-                if snapshot_code:
-                    kwargs[code_field] = snapshot_code
+            module_name = str(self._wizard_state.get("module_name") or "").strip().lower()
+            workflow_snapshot = self._wizard_state.get("workflow")
+            if module_name == "workflow" and workflow_snapshot:
+                # ``RunRequest`` enforces workflow XOR signature_code; ship the
+                # graph and drop any signature the agent may have supplied.
+                kwargs["module_name"] = "workflow"
+                kwargs["workflow"] = workflow_snapshot
+                kwargs.pop("signature_code", None)
+                metric_snapshot = self._wizard_state.get("metric_code")
+                if metric_snapshot:
+                    kwargs["metric_code"] = metric_snapshot
+            else:
+                for code_field in ("signature_code", "metric_code"):
+                    snapshot_code = self._wizard_state.get(code_field)
+                    if snapshot_code:
+                        kwargs[code_field] = snapshot_code
         # Profiling a staged dataset needs the same rehydration submit relies
         # on: the rows live behind an opaque id, never inline in the model's
         # args, so without this the agent passes an empty dataset, the profile
@@ -578,6 +590,11 @@ class WizardState(TypedDict, total=False):
     model_configured: bool
     staged_dataset_id: str
     optimizer_name: str
+    module_name: str
+    # Authored ``WorkflowSpec`` graph for multi-module runs. Present only when
+    # ``module_name == "workflow"``; carries the run's program in place of
+    # ``signature_code`` (the two are mutually exclusive at submit).
+    workflow: dict[str, Any]
     model_config: dict[str, Any]
     reflection_model_config: dict[str, Any]
 
@@ -737,17 +754,24 @@ def _is_placeholder_metric(code: str) -> bool:
 
 
 def _code_ready(state: WizardState) -> bool:
-    """Return True when authored Signature and Metric code are present (Code step).
+    """Return True when the Code step is authored for the chosen module.
 
     A non-empty value is not enough: the frontend seeds placeholder templates
     into the wizard, so the gate must reject those un-edited placeholders and
-    stay locked until the user authors real code.
+    stay locked until the user authors real code. Workflow runs carry an
+    authored graph instead of a single Signature — a valid graph plus a real
+    metric is the ready state for that module.
     """
-    signature = state.get("signature_code") or ""
     metric = state.get("metric_code") or ""
-    if not signature or not metric:
+    metric_ready = bool(metric) and not _is_placeholder_metric(metric)
+    if str(state.get("module_name") or "").strip().lower() == "workflow":
+        workflow = state.get("workflow")
+        graph_ready = bool(isinstance(workflow, dict) and workflow.get("nodes"))
+        return graph_ready and metric_ready
+    signature = state.get("signature_code") or ""
+    if not signature or not metric_ready:
         return False
-    return not (_is_placeholder_signature(signature) or _is_placeholder_metric(metric))
+    return not _is_placeholder_signature(signature)
 
 
 def _model_ready(state: WizardState) -> bool:

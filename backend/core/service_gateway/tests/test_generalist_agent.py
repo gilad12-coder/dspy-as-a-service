@@ -71,6 +71,27 @@ def test_full_readiness_unlocks_submit() -> None:
     assert "submit_grid_search_grid_search_post" not in allowed
 
 
+def test_workflow_ready_unlocks_submit() -> None:
+    """A workflow run readies on an authored graph + metric, not a Signature."""
+    base = {
+        "job_name": "Graph run",
+        "dataset_ready": True,
+        "columns_configured": True,
+        "module_name": "workflow",
+        "metric_code": "def metric(gold, pred, trace, pred_name, pred_trace): return 1.0",
+        "model_configured": True,
+        "reflection_model_config": {"name": "openai/gpt-4o-mini"},
+    }
+    # No graph (or an empty one) is not an authored program — submit stays locked
+    # even though there is no Signature to satisfy the single-module gate.
+    assert "submit_job_run_post" not in tools_for(cast(WizardState, base))
+    assert "submit_job_run_post" not in tools_for(
+        cast(WizardState, {**base, "workflow": {"nodes": [], "edges": []}})
+    )
+    ready = {**base, "workflow": {"nodes": [{"id": "input"}, {"id": "out"}], "edges": []}}
+    assert "submit_job_run_post" in tools_for(cast(WizardState, ready))
+
+
 def test_gepa_without_reflection_model_keeps_submit_locked() -> None:
     """GEPA with a generation model but no reflection model must NOT unlock submit.
 
@@ -493,6 +514,38 @@ async def test_submit_without_snapshot_code_leaves_agent_args() -> None:
     await tool.func._async_body(signature_code="agent_sig", metric_code="agent_metric")
     assert seen["signature_code"] == "agent_sig"
     assert seen["metric_code"] == "agent_metric"
+
+
+@pytest.mark.asyncio
+async def test_submit_injects_workflow_graph_over_signature() -> None:
+    """A workflow submit ships the authored graph and drops signature_code."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    graph = {"nodes": [{"id": "input"}, {"id": "out"}], "edges": []}
+    wizard_state = cast(
+        WizardState,
+        {
+            "module_name": "workflow",
+            "workflow": graph,
+            "metric_code": "def good(gold, pred, trace, pred_name, pred_trace): return 1.0",
+            "staged_dataset_id": "ds_9",
+        },
+    )
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        staged_dataset_id="ds_9",
+        wizard_state=wizard_state,
+    )
+    # The agent leaves a stale Signature in its args; the workflow snapshot wins.
+    await tool.func._async_body(signature_code="class Leftover(dspy.Signature): ...")
+    assert seen["module_name"] == "workflow"
+    assert seen["workflow"] == graph
+    assert "signature_code" not in seen
+    assert seen["metric_code"] == "def good(gold, pred, trace, pred_name, pred_trace): return 1.0"
+    assert seen["staged_dataset_id"] == "ds_9"
 
 
 @pytest.mark.asyncio

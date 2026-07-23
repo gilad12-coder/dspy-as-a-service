@@ -20,6 +20,13 @@ const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m
   loading: () => <Skeleton height={150} borderRadius={8} />,
 });
 
+// The same react-flow canvas the /submit wizard uses, mounted inline so a
+// workflow (multi-module) run can be authored and edited without leaving chat.
+const WorkflowCanvas = dynamic(
+  () => import("@/features/submit/workflow/WorkflowCanvas").then((m) => m.WorkflowCanvas),
+  { ssr: false, loading: () => <Skeleton height={420} borderRadius={8} /> },
+);
+
 const NOOP = () => {};
 
 interface CodeAuthoringCardProps {
@@ -38,7 +45,8 @@ interface CodeAuthoringCardProps {
  */
 export function CodeAuthoringCard({ agent }: CodeAuthoringCardProps) {
   const streaming = agent.status === "streaming";
-  const hasOutput = streaming || !!agent.signatureCode || !!agent.metricCode || !!agent.reasoning;
+  const authored = agent.isWorkflow ? !!agent.workflowSpec : !!agent.signatureCode;
+  const hasOutput = streaming || authored || !!agent.metricCode || !!agent.reasoning;
   const hasError = agent.status === "error" && !!agent.error;
 
   // A run that fails before emitting any reasoning or code — e.g. an upstream
@@ -82,7 +90,7 @@ export function CodeAuthoringCard({ agent }: CodeAuthoringCardProps) {
         }}
       />
 
-      {streaming && agent.mode === "seed" && (
+      {streaming && agent.mode === "seed" && !agent.isWorkflow && (
         <div className="flex justify-center px-4 py-3">
           <ActivityBreadcrumb
             signatureStatus={agent.signatureStatus}
@@ -92,13 +100,26 @@ export function CodeAuthoringCard({ agent }: CodeAuthoringCardProps) {
       )}
 
       <div dir="ltr" className="space-y-3 px-4 pb-4 pt-3">
-        <ArtifactBlock
-          label={TERMS.signature}
-          code={agent.signatureCode}
-          streaming={agent.signatureStatus === "writing"}
-          validationResult={agent.signatureValidation}
-          flashLines={agent.signatureFlashLines}
-        />
+        {agent.isWorkflow ? (
+          agent.workflowSpec && (
+            <div className="h-[440px] overflow-hidden rounded-lg border border-border/40">
+              <WorkflowCanvas
+                spec={agent.workflowSpec}
+                specRevision={agent.workflowRevision}
+                onSpecChange={agent.updateWorkflowSpec}
+                pulseNodeId={agent.agentPulseNodeId}
+              />
+            </div>
+          )
+        ) : (
+          <ArtifactBlock
+            label={TERMS.signature}
+            code={agent.signatureCode}
+            streaming={agent.signatureStatus === "writing"}
+            validationResult={agent.signatureValidation}
+            flashLines={agent.signatureFlashLines}
+          />
+        )}
         <ArtifactBlock
           label={TERMS.metric}
           code={agent.metricCode}

@@ -390,22 +390,35 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
     if (!codeArmed) return;
     if (agent.status === "streaming") return;
     if (codeAgent.status !== "done") return;
-    if (!codeAgent.signatureCode.trim() || !codeAgent.metricCode.trim()) return;
-    const sigVal = codeAgent.signatureValidation;
+    // The metric is required for every module; validate it first.
+    if (!codeAgent.metricCode.trim()) return;
     const metVal = codeAgent.metricValidation;
-    if (!sigVal || sigVal.errors.length > 0) return;
     if (!metVal || metVal.errors.length > 0) return;
+    // The authored program differs by module: a workflow run carries the graph
+    // (validated authoritatively by the backend on submit — the canvas already
+    // surfaces graph issues), a single-module run carries the Signature.
+    let authoredCode: Partial<WizardState>;
+    if (codeAgent.isWorkflow) {
+      const spec = codeAgent.workflowSpec;
+      // Require a real step between the input/output anchors before handing off.
+      if (!spec || spec.nodes.length < 3) return;
+      authoredCode = { workflow: spec, metric_code: codeAgent.metricCode };
+    } else {
+      if (!codeAgent.signatureCode.trim()) return;
+      const sigVal = codeAgent.signatureValidation;
+      if (!sigVal || sigVal.errors.length > 0) return;
+      authoredCode = {
+        signature_code: codeAgent.signatureCode,
+        metric_code: codeAgent.metricCode,
+      };
+    }
     handedOffRef.current = true;
-    // Ride the authored code on this SAME nudge turn as an explicit override,
-    // not just via applyAgentPatch. agentSend reads a render-lagged snapshot,
-    // so without the override the code_ready_note turn would ship a
-    // wizard_state with empty signature_code/metric_code — the agent would see
-    // "Code incomplete", reject the Model step as out-of-order, and loop back
-    // into request_code_authoring. Mirrors the dataset handoff above.
-    const authoredCode = {
-      signature_code: codeAgent.signatureCode,
-      metric_code: codeAgent.metricCode,
-    };
+    // Ride the authored program on this SAME nudge turn as an explicit override,
+    // not just via applyAgentPatch. agentSend reads a render-lagged snapshot, so
+    // without the override the code_ready_note turn would ship a wizard_state
+    // with empty program fields — the agent would see "Code incomplete", reject
+    // the Model step as out-of-order, and loop back into request_code_authoring.
+    // Mirrors the dataset handoff above.
     applyAgentPatch?.(authoredCode);
     agentSend(
       msg("auto.features.agent.panel.components.generalistpanel.code_ready_note"),
@@ -417,6 +430,8 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
     agentSend,
     applyAgentPatch,
     codeAgent.status,
+    codeAgent.isWorkflow,
+    codeAgent.workflowSpec,
     codeAgent.signatureCode,
     codeAgent.metricCode,
     codeAgent.signatureValidation,

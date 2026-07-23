@@ -15,6 +15,7 @@ type WizardKey =
   | "job_type"
   | "optimizer_name"
   | "module_name"
+  | "workflow"
   | "react_config"
   | "dataset_columns"
   | "column_roles"
@@ -210,6 +211,15 @@ export function extractWizardPatch(result: unknown): Partial<WizardState> {
 
   if (typeof wrap.optimizer_name === "string") patch.optimizer_name = wrap.optimizer_name;
   if (typeof wrap.module_name === "string") patch.module_name = wrap.module_name;
+
+  if (
+    wrap.workflow &&
+    typeof wrap.workflow === "object" &&
+    !Array.isArray(wrap.workflow) &&
+    Array.isArray((wrap.workflow as Record<string, unknown>).nodes)
+  ) {
+    patch.workflow = wrap.workflow as WizardState["workflow"];
+  }
 
   if (
     wrap.react_config &&

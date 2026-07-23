@@ -1,3 +1,5 @@
+import type { WorkflowSpec } from "@/shared/types/api";
+
 /** Trust mode — how much the agent must ask before acting. */
 export type TrustMode = "ask" | "auto_safe" | "yolo";
 
@@ -29,6 +31,9 @@ export interface WizardState {
   job_type?: "run" | "grid_search";
   optimizer_name?: string;
   module_name?: string;
+  // Authored graph for a ``workflow`` (multi-module) run — carried in place of
+  // signature_code and injected into the run request on submit.
+  workflow?: WorkflowSpec;
   // React (ReAct-agent) run config — the live tool source. Excludes the secret
   // mcp_auth_header, which is never shared.
   react_config?: Record<string, unknown>;
