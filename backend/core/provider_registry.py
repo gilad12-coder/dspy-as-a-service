@@ -22,20 +22,13 @@ from __future__ import annotations
 
 # Ordered ``(vault slug, LiteLLM provider prefix)`` for every BYOK provider. The
 # slug is what a user saves a key under (and how the vault keys it); the prefix
-# is what that provider's model ids carry in the catalog. They match for most
-# providers — the handful that differ are the whole reason a bridge exists. Order
-# is the canonical display order, mirrored by the frontend ``BYOK_PROVIDERS``.
+# is what that provider's model ids carry in the catalog. The platform brokers
+# every LLM call through OpenRouter, so OpenRouter is the only key worth
+# bringing — a direct-provider key would pay for models the catalog never
+# offers. Self-hosted/on-prem gateways remain reachable through the vault's
+# custom ``api_base`` path, which accepts any slug. The bridge maps below stay
+# derived (empty today) so a future slug≠prefix provider needs no new plumbing.
 BYOK_PROVIDER_SLUGS: tuple[tuple[str, str], ...] = (
-    ("openai", "openai"),
-    ("anthropic", "anthropic"),
-    ("google", "gemini"),
-    ("xai", "xai"),
-    ("deepseek", "deepseek"),
-    ("mistral", "mistral"),
-    ("groq", "groq"),
-    ("together", "together_ai"),
-    ("fireworks", "fireworks_ai"),
-    ("cohere", "cohere_chat"),
     ("openrouter", "openrouter"),
 )
 

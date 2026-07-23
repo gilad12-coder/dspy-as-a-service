@@ -50,58 +50,6 @@ STATUS_INVALID = "invalid"
 # authenticated GET is enough to tell a working key from a rejected one without
 # spending tokens. ``header`` is templated with the secret at probe time.
 _PROVIDER_PROBES: dict[str, dict[str, str]] = {
-    "openai": {
-        "url": "https://api.openai.com/v1/models",
-        "header_name": "Authorization",
-        "header_value": "Bearer {secret}",
-    },
-    "anthropic": {
-        "url": "https://api.anthropic.com/v1/models",
-        "header_name": "x-api-key",
-        "header_value": "{secret}",
-        "extra_header_name": "anthropic-version",
-        "extra_header_value": "2023-06-01",
-    },
-    "google": {
-        "url": "https://generativelanguage.googleapis.com/v1beta/models",
-        "header_name": "x-goog-api-key",
-        "header_value": "{secret}",
-    },
-    "xai": {
-        "url": "https://api.x.ai/v1/models",
-        "header_name": "Authorization",
-        "header_value": "Bearer {secret}",
-    },
-    "deepseek": {
-        "url": "https://api.deepseek.com/models",
-        "header_name": "Authorization",
-        "header_value": "Bearer {secret}",
-    },
-    "mistral": {
-        "url": "https://api.mistral.ai/v1/models",
-        "header_name": "Authorization",
-        "header_value": "Bearer {secret}",
-    },
-    "groq": {
-        "url": "https://api.groq.com/openai/v1/models",
-        "header_name": "Authorization",
-        "header_value": "Bearer {secret}",
-    },
-    "together": {
-        "url": "https://api.together.xyz/v1/models",
-        "header_name": "Authorization",
-        "header_value": "Bearer {secret}",
-    },
-    "fireworks": {
-        "url": "https://api.fireworks.ai/inference/v1/models",
-        "header_name": "Authorization",
-        "header_value": "Bearer {secret}",
-    },
-    "cohere": {
-        "url": "https://api.cohere.com/v1/models",
-        "header_name": "Authorization",
-        "header_value": "Bearer {secret}",
-    },
     "openrouter": {
         "url": "https://openrouter.ai/api/v1/models",
         "header_name": "Authorization",

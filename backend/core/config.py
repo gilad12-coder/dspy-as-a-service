@@ -66,14 +66,6 @@ class Settings(BaseSettings):
         ),
     )
     anthropic_api_key: SecretStr | None = Field(default=None, description="Anthropic API key for Claude models")
-    fireworks_ai_api_key: SecretStr | None = Field(
-        default=None,
-        description=(
-            "Fireworks API key. LiteLLM reads it from the env for serving; the "
-            "training-ground grounding scorer reads it here to call the echo "
-            "completions endpoint directly."
-        ),
-    )
 
     stripe_secret_key: SecretStr | None = Field(
         default=None,
@@ -394,7 +386,7 @@ class Settings(BaseSettings):
     )
     # TODO: On-prem / air-gap — set CODE_AGENT_BASE_URL to your internal
     # OpenAI-compatible gateway (e.g. https://llm.your-company.com/v1) so the
-    # agent stops trying to reach api.fireworks.ai.
+    # agent stops trying to reach the public OpenRouter endpoint.
     code_agent_base_url: str = Field(
         default="",
         description="Optional custom base URL for the code agent LM (e.g. internal OpenAI-compatible gateway)",

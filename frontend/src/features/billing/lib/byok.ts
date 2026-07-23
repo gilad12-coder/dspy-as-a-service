@@ -40,36 +40,23 @@ export interface ProviderKey {
 }
 
 /**
- * Providers offered for BYOK. Curated to the major vendors a DSPy job is likely
- * to target; the backend will eventually drive this off the live catalog.
+ * Providers offered for BYOK. The platform brokers every LLM call through
+ * OpenRouter, so it is the only key worth bringing — a direct-provider key
+ * would pay for models the catalog never offers. Mirrors the backend
+ * `BYOK_PROVIDER_SLUGS` registry (a parity test pins the two).
  */
 export const BYOK_PROVIDERS: ByokProviderInfo[] = [
-  { slug: "openai", label: "OpenAI", placeholder: "sk-…" },
-  { slug: "anthropic", label: "Anthropic", placeholder: "sk-ant-…" },
-  { slug: "google", label: "Google AI", placeholder: "AIza…" },
-  { slug: "xai", label: "SpaceXAI", placeholder: "xai-…" },
-  { slug: "deepseek", label: "DeepSeek", placeholder: "sk-…" },
-  { slug: "mistral", label: "Mistral", placeholder: "…" },
-  { slug: "groq", label: "Groq", placeholder: "gsk_…" },
-  { slug: "together", label: "Together AI", placeholder: "…" },
-  { slug: "fireworks", label: "Fireworks AI", placeholder: "fw_…" },
-  { slug: "cohere", label: "Cohere", placeholder: "…" },
   { slug: "openrouter", label: "OpenRouter", placeholder: "sk-or-…" },
 ];
 
 /**
  * Maps a BYOK provider slug to the LiteLLM provider prefix its models carry in
- * the catalog (e.g. a key saved under `together` runs models prefixed
- * `together_ai/`). Only the slugs that differ are listed; everything else is
- * identity. Mirrors the backend `byok_provider_for_litellm` so the model picker
- * can narrow the BYOK catalog to the providers the user has actually connected.
+ * the catalog. Only the slugs that differ are listed; everything else is
+ * identity — empty today with OpenRouter as the sole provider. Mirrors the
+ * backend `byok_provider_for_litellm` so the model picker can narrow the BYOK
+ * catalog to the providers the user has actually connected.
  */
-const BYOK_TO_LITELLM_PROVIDER: Record<string, string> = {
-  google: "gemini",
-  together: "together_ai",
-  fireworks: "fireworks_ai",
-  cohere: "cohere_chat",
-};
+const BYOK_TO_LITELLM_PROVIDER: Record<string, string> = {};
 
 /** The LiteLLM provider prefix a BYOK provider slug's catalog models carry. */
 export function litellmProviderForByok(slug: string): string {
