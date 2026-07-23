@@ -540,12 +540,17 @@ def install_openrouter_served_model_patch() -> None:
     def _adopting_handler(self, chunk):
         """Adopt the provider-reported model before normal chunk handling."""
         served = getattr(chunk, "model", None)
-        # litellm_proxy is included for when the platform fronts OpenRouter
-        # with a self-hosted proxy: today the proxy's own litellm strips the
-        # routed model (chunks echo the request group, which the suffix-echo
-        # guard in served_model_from suppresses), but a passthrough-capable
-        # proxy lights the reveal up with no backend change.
-        if served and getattr(self, "custom_llm_provider", None) in ("openrouter", "litellm_proxy"):
+        # Every platform call is an OpenRouter slug — reached directly
+        # (provider "openrouter") or through the managed LiteLLM proxy, which
+        # surfaces as an openai-compatible passthrough whose requested model
+        # keeps the "openrouter/" marker. The proxy forwards the Auto Router's
+        # concrete pick via deploy/litellm/custom_callbacks.py.
+        provider = getattr(self, "custom_llm_provider", None)
+        requested = getattr(self, "model", None)
+        if served and (
+            provider in ("openrouter", "litellm_proxy")
+            or (isinstance(requested, str) and "openrouter/" in requested)
+        ):
             self.model = served
         return handler(self, chunk)
 

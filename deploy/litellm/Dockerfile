@@ -12,4 +12,5 @@
 # over the dual-stack socket.
 FROM ghcr.io/berriai/litellm:main-stable
 COPY config.yaml /app/config.yaml
+COPY custom_callbacks.py /app/custom_callbacks.py
 CMD ["--config", "/app/config.yaml", "--port", "4000", "--host", "::"]

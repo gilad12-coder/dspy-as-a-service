@@ -563,7 +563,7 @@ def test_served_model_from_suppresses_non_news() -> None:
 
 
 def test_openrouter_patch_adopts_provider_chunk_model() -> None:
-    """The patched chunk handler adopts openrouter's reported model — and only openrouter's."""
+    """The patched chunk handler adopts the reported model for openrouter-addressed calls only."""
     assert CustomStreamWrapper is not None, "litellm streaming internals moved"
     install_openrouter_served_model_patch()
     install_openrouter_served_model_patch()
@@ -577,6 +577,13 @@ def test_openrouter_patch_adopts_provider_chunk_model() -> None:
     with contextlib.suppress(Exception):
         handler(target, chunk)
     assert target.model == "google/gemini-3.6-flash"
+
+    # The managed proxy path surfaces as an openai-compatible passthrough but
+    # keeps the "openrouter/" marker in the requested model.
+    proxied = MagicMock(custom_llm_provider="openai", model="openrouter/auto-beta")
+    with contextlib.suppress(Exception):
+        handler(proxied, chunk)
+    assert proxied.model == "google/gemini-3.6-flash"
 
     other = MagicMock(custom_llm_provider="openai", model="openai/gpt-4o-mini")
     with contextlib.suppress(Exception):
