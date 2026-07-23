@@ -12,9 +12,13 @@ import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from ...i18n_keys import I18nKey
 from ...models import ProgramArtifact
+from ...storage.models import Base, BillingCustomerModel, CreditLedgerModel
 
 # noinspection PyProtectedMember
 from ..routers import _helpers
@@ -670,6 +674,166 @@ def test_serve_chat_confirm_returns_404_for_unknown_call_id(
     resp = serve_client.post("/serve/plain/chat/confirm", json={"call_id": "never-registered", "approved": True})
     assert resp.status_code == 404
     assert resp.json()["code"] == I18nKey.AGENT_APPROVAL_UNKNOWN_CALL_ID.value
+
+
+class _UsageLm:
+    """History-carrying LM double matching the ``usage_by_model_from_history`` contract."""
+
+    def __init__(self) -> None:
+        """Seed one history entry with a token usage block."""
+        self.history = [{"usage": {"prompt_tokens": 120_000, "completion_tokens": 30_000}}]
+        self.model = "openrouter/test/unpriced"
+
+
+@pytest.fixture
+def metered_store(serve_store: _FakeJobStore) -> _FakeJobStore:
+    """Back the fake store with a real SQLite engine carrying the billing tables.
+
+    Seeds a servable run job (``ok``) and a grid job (``grid1``) so every
+    LLM-invoking serve route can be exercised against the same store.
+
+    Args:
+        serve_store: Base fake store to attach the engine to.
+
+    Returns:
+        The store with ``engine`` set and both jobs seeded.
+    """
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine, tables=[BillingCustomerModel.__table__, CreditLedgerModel.__table__])
+    serve_store.engine = engine
+    _seed_run_job(serve_store, "ok")
+    serve_store.seed_raw("grid1", job=make_grid_job("grid1", pair_index=0))
+    # noinspection PyProtectedMember
+    _helpers._program_cache["grid1_pair_0"] = MagicMock(return_value=_FakePrediction())
+    return serve_store
+
+
+@pytest.fixture
+def metered_client(metered_store: _FakeJobStore) -> TestClient:
+    """Build a ``TestClient`` exposing the serve router over the metered store.
+
+    Args:
+        metered_store: Engine-backed fake job store.
+
+    Returns:
+        A ``TestClient`` over a minimal FastAPI app.
+    """
+    app = FastAPI()
+    app.include_router(create_serve_router(job_store=metered_store))
+    _wire_http_handler(app)
+    bypass_auth(app)
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _deplete(engine: object) -> None:
+    """Seed the test user's billing row with zero balance and zero grant."""
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice",
+                stripe_customer_id="cus_alice",
+                credit_balance=0,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
+
+
+def _ledger_rows(engine: object) -> list[CreditLedgerModel]:
+    """Return every credit-ledger row, oldest first."""
+    with Session(engine) as session:
+        return session.query(CreditLedgerModel).order_by(CreditLedgerModel.id).all()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/serve/ok",
+        "/serve/ok/stream",
+        "/serve/grid1/pair/0",
+        "/serve/grid1/pair/0/stream",
+    ],
+)
+def test_serve_endpoints_return_402_when_depleted(
+    metered_client: TestClient, metered_store: _FakeJobStore, url: str
+) -> None:
+    """Every program-serving route refuses a zero-balance account before the LLM call."""
+    _deplete(metered_store.engine)
+
+    resp = metered_client.post(url, json={"inputs": {"question": "hi"}})
+
+    assert resp.status_code == 402
+    assert resp.json()["code"] == I18nKey.BILLING_INSUFFICIENT_CREDITS.value
+
+
+def test_serve_chat_returns_402_when_depleted(
+    metered_client: TestClient, metered_store: _FakeJobStore
+) -> None:
+    """The react-serve chat refuses a zero-balance account before streaming."""
+    _deplete(metered_store.engine)
+    overlay = SimpleNamespace(tool_source={"kind": "live_mcp", "mcp_url": "http://mcp.local"})
+
+    with patch(
+        "core.api.routers.serve.load_react_chat_inputs",
+        return_value=(object, "{}", overlay, {"model_name": "openai/gpt-4o-mini"}),
+    ):
+        resp = metered_client.post("/serve/any/chat", json={"user_message": "hi"})
+
+    assert resp.status_code == 402
+
+
+def test_serve_program_debits_the_turn(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
+    """A blocking serve call books one ledger row with the measured tokens."""
+    lm = _UsageLm()
+
+    with patch("core.api.routers.serve.build_language_model", return_value=lm), _PATCH_DSPY_CTX:
+        resp = metered_client.post("/serve/ok", json={"inputs": {"question": "hi"}})
+
+    assert resp.status_code == 200
+    (row,) = _ledger_rows(metered_store.engine)
+    assert row.description == "Serve inference"
+    assert row.delta_credits < 0
+    assert row.input_tokens == 120_000
+    assert row.output_tokens == 30_000
+
+
+def test_serve_stream_debits_on_completion(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
+    """A streamed serve call books its ledger row when the stream winds down."""
+    lm = _UsageLm()
+
+    with (
+        patch("core.api.routers.serve.build_language_model", return_value=lm),
+        _PATCH_DSPY_CTX,
+        patch("dspy.streamify", side_effect=RuntimeError("not streamable")),
+    ):
+        resp = metered_client.post("/serve/ok/stream", json={"inputs": {"question": "hi"}})
+
+    assert resp.status_code == 200
+    assert "event: final" in resp.text
+    (row,) = _ledger_rows(metered_store.engine)
+    assert row.description == "Serve inference"
+    assert row.delta_credits < 0
+
+
+def test_serve_chat_debits_the_turn(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
+    """A react-serve chat turn books its ledger row under the chat label."""
+    overlay = SimpleNamespace(tool_source={"kind": "live_mcp", "mcp_url": "http://mcp.local"})
+    lm = _UsageLm()
+
+    with (
+        patch(
+            "core.api.routers.serve.load_react_chat_inputs",
+            return_value=(object, "{}", overlay, {"model_name": "openai/gpt-4o-mini"}),
+        ),
+        patch("core.api.routers.serve.build_language_model", return_value=lm),
+        patch("core.api.routers.serve.run_react_chat", side_effect=lambda **_kw: _fake_react_chat_stream()),
+    ):
+        resp = metered_client.post("/serve/any/chat", json={"user_message": "hi"})
+
+    assert resp.status_code == 200
+    (row,) = _ledger_rows(metered_store.engine)
+    assert row.description == "Serve chat"
+    assert row.delta_credits < 0
 
 
 def test_coerce_sample_value_keeps_clean_values_and_drops_unusable() -> None:

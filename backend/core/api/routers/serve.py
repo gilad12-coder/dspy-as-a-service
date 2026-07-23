@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
+from ...billing.metering import meter_llm_run
 from ...config import settings
 from ...constants import (
     PAYLOAD_OVERVIEW_MODEL_NAME,
@@ -38,6 +39,7 @@ from ..errors import DomainError
 from ..response_limits import AGENT_MAX_INSTRUCTIONS, AGENT_MAX_TEXT, truncate_text
 from ..sharing_access import ShareRole
 from ._helpers import (
+    enforce_llm_credits,
     load_job_for_user,
     load_pair_program,
     load_program,
@@ -45,6 +47,7 @@ from ._helpers import (
     require_role_at_least,
     sanitize_node_traces,
     sse_from_events,
+    stream_with_llm_metering,
     workflow_spec_from_overview,
 )
 
@@ -469,8 +472,9 @@ def create_serve_router(*, job_store) -> APIRouter:
             A ``ServeResponse`` with the predicted outputs and resolved model.
 
         Raises:
-            DomainError: 400 (bad inputs / no model), 404 (unknown or
-                inaccessible), 409 (not in a serveable state).
+            DomainError: 400 (bad inputs / no model), 402 (caller has no
+                spendable credits), 404 (unknown or inaccessible), 409 (not
+                in a serveable state).
         """
         program, result, overview = load_program(job_store, optimization_id, current_user)
         artifact = result.program_artifact
@@ -505,16 +509,27 @@ def create_serve_router(*, job_store) -> APIRouter:
             )
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
+        enforce_llm_credits(job_store, current_user.username)
         lm = build_language_model(model_config)
 
         node_traces = None
-        with dspy.context(lm=lm):
-            if workflow_spec is not None:
-                with capture_node_traces() as raw_traces:
+        try:
+            with dspy.context(lm=lm):
+                if workflow_spec is not None:
+                    with capture_node_traces() as raw_traces:
+                        prediction = program(**filtered_inputs)
+                    node_traces = sanitize_node_traces(raw_traces)
+                else:
                     prediction = program(**filtered_inputs)
-                node_traces = sanitize_node_traces(raw_traces)
-            else:
-                prediction = program(**filtered_inputs)
+        finally:
+            # A failed inference still consumed provider tokens (dspy retries
+            # under the hood), so the debit rides ``finally``.
+            meter_llm_run(
+                getattr(job_store, "engine", None),
+                current_user.username,
+                [lm],
+                description="Serve inference",
+            )
 
         outputs: dict[str, Any] = {}
         if output_fields:
@@ -556,8 +571,8 @@ def create_serve_router(*, job_store) -> APIRouter:
             A streaming ``StreamingResponse`` with ``text/event-stream`` body.
 
         Raises:
-            DomainError: 400, 404 (including inaccessible to caller), or
-                409 mirroring the non-streaming route.
+            DomainError: 400, 402, 404 (including inaccessible to caller),
+                or 409 mirroring the non-streaming route.
         """
         # Offload the synchronous DB read + program deserialization so it does
         # not block the single event loop (and every other in-flight request /
@@ -601,6 +616,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             )
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
+        await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         lm = build_language_model(model_config)
         model_used = model_config.normalized_identifier()
         listeners = [StreamListener(signature_field_name=f) for f in output_fields]
@@ -614,8 +630,15 @@ def create_serve_router(*, job_store) -> APIRouter:
             model_used=model_used,
             error_log_context=f"job {optimization_id}",
         )
+        metered = stream_with_llm_metering(
+            source,
+            job_store=job_store,
+            username=current_user.username,
+            description="Serve inference",
+            usage_sink=[lm],
+        )
         return StreamingResponse(
-            sse_from_events(source),
+            sse_from_events(metered),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -695,8 +718,9 @@ def create_serve_router(*, job_store) -> APIRouter:
             A ``ServeResponse`` with the predicted outputs and resolved model.
 
         Raises:
-            DomainError: 400 (bad inputs), 404 (unknown / inaccessible),
-                409 (not finished or pair failed).
+            DomainError: 400 (bad inputs), 402 (caller has no spendable
+                credits), 404 (unknown / inaccessible), 409 (not finished
+                or pair failed).
         """
         program, pair, _overview = load_pair_program(job_store, optimization_id, pair_index, current_user)
         artifact = pair.program_artifact
@@ -717,10 +741,21 @@ def create_serve_router(*, job_store) -> APIRouter:
             )
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
+        enforce_llm_credits(job_store, current_user.username)
         lm = build_language_model(model_config)
 
-        with dspy.context(lm=lm):
-            prediction = program(**filtered_inputs)
+        try:
+            with dspy.context(lm=lm):
+                prediction = program(**filtered_inputs)
+        finally:
+            # A failed inference still consumed provider tokens (dspy retries
+            # under the hood), so the debit rides ``finally``.
+            meter_llm_run(
+                getattr(job_store, "engine", None),
+                current_user.username,
+                [lm],
+                description="Serve inference",
+            )
 
         outputs: dict[str, Any] = {}
         if output_fields:
@@ -763,8 +798,9 @@ def create_serve_router(*, job_store) -> APIRouter:
             A streaming ``StreamingResponse`` with ``text/event-stream`` body.
 
         Raises:
-            DomainError: 400 (bad inputs), 404 (unknown / inaccessible),
-                409 (not finished or pair failed).
+            DomainError: 400 (bad inputs), 402 (caller has no spendable
+                credits), 404 (unknown / inaccessible), 409 (not finished
+                or pair failed).
         """
         # Offload the synchronous DB read + program deserialization so it does
         # not block the single event loop before the first byte is produced.
@@ -789,6 +825,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             )
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
+        await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         lm = build_language_model(model_config)
         model_used = model_config.normalized_identifier()
         listeners = [StreamListener(signature_field_name=f) for f in output_fields]
@@ -802,8 +839,15 @@ def create_serve_router(*, job_store) -> APIRouter:
             model_used=model_used,
             error_log_context=f"job {optimization_id} pair {pair_index}",
         )
+        metered = stream_with_llm_metering(
+            source,
+            job_store=job_store,
+            username=current_user.username,
+            description="Serve inference",
+            usage_sink=[lm],
+        )
         return StreamingResponse(
-            sse_from_events(source),
+            sse_from_events(metered),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -844,7 +888,8 @@ def create_serve_router(*, job_store) -> APIRouter:
 
         Raises:
             DomainError: 404 (unknown/inaccessible), 409 (not a success react
-                run, or not served from a live-MCP source), 400 (no model).
+                run, or not served from a live-MCP source), 400 (no model),
+                402 (caller has no spendable credits).
         """
         # Offload the synchronous DB read + program deserialization so it does
         # not block the single event loop before the first byte is produced.
@@ -864,6 +909,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             else:
                 raise DomainError("serve.no_model_config", status=400)
 
+        await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         lm = build_language_model(model_config)
         tool_source = react_overlay.tool_source or {}
         mcp_url = tool_source.get("mcp_url") or settings.generalist_agent_mcp_url
@@ -879,8 +925,15 @@ def create_serve_router(*, job_store) -> APIRouter:
             mcp_url=mcp_url,
             auth_header=authorization,
         )
+        metered = stream_with_llm_metering(
+            source,
+            job_store=job_store,
+            username=current_user.username,
+            description="Serve chat",
+            usage_sink=[lm],
+        )
         return StreamingResponse(
-            sse_from_events(source),
+            sse_from_events(metered),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
