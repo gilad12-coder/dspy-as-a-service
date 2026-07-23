@@ -48,6 +48,7 @@ from ...models import ModelConfig
 from ..language_models import (
     apply_model_reasoning_config,
     build_language_model,
+    served_model_from,
 )
 from ..optimization.training_ground.registry import hash_tool_schema
 from ..react_compat import REACT_CLASS
@@ -1564,7 +1565,16 @@ async def run_generalist_agent(
             if drive_task in done and out_queue.empty():
                 break
         reply = await drive_task
-        yield {"event": "done", "data": {"assistant_message": reply, "model": model_name}}
+        yield {
+            "event": "done",
+            "data": {
+                "assistant_message": reply,
+                "model": model_name,
+                # The concrete model behind an auto-routed turn (None when the
+                # request named one explicitly); the reply footer reveals it.
+                "served_model": served_model_from(lm),
+            },
+        }
     except asyncio.CancelledError:
         drive_task.cancel()
         raise

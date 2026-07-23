@@ -57,6 +57,7 @@ from ..service_gateway.embedding_pipeline import (
     purge_orphan_conversation_embeddings,
     purge_orphan_embeddings,
 )
+from ..service_gateway.language_models import install_openrouter_served_model_patch
 from ..service_gateway.service_builder import wire_registry_aliases
 from ..storage import get_job_store
 from ..worker.engine import BackgroundWorker, get_worker
@@ -668,6 +669,7 @@ def create_app(
     Returns:
         The fully wired :class:`FastAPI` application.
     """
+    install_openrouter_served_model_patch()
     registry = registry or ServiceRegistry()
     # Mirror the alias-backed factories from the resolver into the registry
     # so ``get_registry_snapshot`` reflects the actually-supported names

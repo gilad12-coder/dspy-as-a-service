@@ -353,6 +353,7 @@ async def _wrap_with_persistence(
     tool_calls: dict[str, dict[str, Any]] = {}
     tool_order: list[str] = []
     model_used: str | None = None
+    served_model_used: str | None = None
     allowed_tools: list[str] | None = None
     tool_schema_hashes: dict[str, str] | None = None
     wizard_state_after: dict[str, Any] = dict(wizard_state_before) if wizard_state_before else {}
@@ -383,7 +384,7 @@ async def _wrap_with_persistence(
                 wizard_state_after=wizard_state_after or None,
                 allowed_tools=allowed_tools,
                 tool_schema_hashes=tool_schema_hashes,
-                router_metadata=None,
+                router_metadata={"served_model": served_model_used} if served_model_used else None,
             )
         except Exception:
             logger.exception("Failed to persist assistant turn")
@@ -435,6 +436,8 @@ async def _wrap_with_persistence(
                 content = final_text if isinstance(final_text, str) and final_text else "".join(assistant_buf)
                 raw_model = data.get("model")
                 model_used = raw_model if isinstance(raw_model, str) and raw_model else None
+                raw_served = data.get("served_model")
+                served_model_used = raw_served if isinstance(raw_served, str) and raw_served else None
                 await _do_persist(content)
             yield event
     finally:

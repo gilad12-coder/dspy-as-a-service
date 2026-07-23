@@ -4,6 +4,7 @@ Builds ``dspy.LM`` instances from ``ModelConfig`` while filtering out
 ``None`` optional fields so LiteLLM does not reject the call.
 """
 
+import logging
 import threading
 from dataclasses import dataclass
 
@@ -12,6 +13,13 @@ import dspy
 from ..config import settings
 from ..exceptions import ServiceError
 from ..models import ModelConfig
+
+try:
+    from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
+except ImportError:  # pragma: no cover - depends on litellm internals
+    CustomStreamWrapper = None
+
+logger = logging.getLogger("skynet.service_gateway.language_models")
 
 _DEFAULT_REASONING_MAX_TOKENS = 4000
 """Floor on ``max_tokens`` for chat-style replies. Below this a reasoning model
@@ -236,14 +244,25 @@ class MeteredLM(dspy.LM):
         """Construct the LM and attach a fresh usage aggregate."""
         super().__init__(*args, **kwargs)
         self.usage_totals = LmUsageTotals()
+        self.last_request_model: str | None = None
+        self.last_response_model: str | None = None
 
     def update_history(self, entry: object) -> None:
         """Fold one call's usage into the running totals and discard the entry.
 
         Args:
             entry: The history dict stock dspy would have appended; only its
-                ``usage`` block is read.
+                ``usage`` block and model ids are read.
         """
+        # The served-model reveal reads just these two fields of the entry
+        # this class otherwise drops (see served_model_from).
+        if isinstance(entry, dict):
+            request_model = entry.get("model")
+            response_model = entry.get("response_model")
+            self.last_request_model = request_model if isinstance(request_model, str) else None
+            self.last_response_model = (
+                response_model if isinstance(response_model, str) else None
+            )
         usage = entry.get("usage") if isinstance(entry, dict) else None
         total = _usage_total_tokens(usage)
         split = _usage_in_out_tokens(usage)
@@ -495,3 +514,77 @@ def usage_by_model_from_history(*language_models: object) -> dict[str, tuple[int
     if not found:
         return None
     return {model: (in_out[0], in_out[1]) for model, in_out in by_model.items()}
+
+
+_SERVED_MODEL_PATCH_FLAG = "_skynet_served_model_patch"
+
+
+def install_openrouter_served_model_patch() -> None:
+    """Make LiteLLM streams report the model OpenRouter actually served.
+
+    LiteLLM's ``CustomStreamWrapper`` overwrites every streamed chunk's
+    ``model`` with the request id, discarding the concrete model OpenRouter's
+    Auto Router names in its raw SSE chunks. Adopt the provider-reported
+    model for openrouter calls — the same special-case LiteLLM already ships
+    for Azure — so ``lm.history`` records the served model under
+    ``response_model`` instead of echoing the router's own id. Idempotent;
+    called once from ``create_app``.
+    """
+    if CustomStreamWrapper is None:
+        logger.warning("litellm streaming internals moved; served-model reveal disabled")
+        return
+    handler = CustomStreamWrapper.handle_openai_chat_completion_chunk
+    if getattr(handler, _SERVED_MODEL_PATCH_FLAG, False):
+        return
+
+    def _adopting_handler(self, chunk):
+        """Adopt the provider-reported model before normal chunk handling."""
+        served = getattr(chunk, "model", None)
+        # litellm_proxy is included for when the platform fronts OpenRouter
+        # with a self-hosted proxy: today the proxy's own litellm strips the
+        # routed model (chunks echo the request group, which the suffix-echo
+        # guard in served_model_from suppresses), but a passthrough-capable
+        # proxy lights the reveal up with no backend change.
+        if served and getattr(self, "custom_llm_provider", None) in ("openrouter", "litellm_proxy"):
+            self.model = served
+        return handler(self, chunk)
+
+    setattr(_adopting_handler, _SERVED_MODEL_PATCH_FLAG, True)
+    CustomStreamWrapper.handle_openai_chat_completion_chunk = _adopting_handler
+
+
+def served_model_from(language_model: object) -> str | None:
+    """Concrete model that answered ``language_model``'s latest call, if newsworthy.
+
+    Reads the last ``lm.history`` entry and returns its provider-reported
+    ``response_model`` only when it differs from the requested id — i.e. an
+    auto-routed call resolved to a concrete model. Explicit picks and
+    providers that merely echo the request return ``None`` (LiteLLM strips
+    the transport prefix, so a bare suffix echo is not news either).
+
+    Args:
+        language_model: A ``dspy.LM``-like object — either a ``MeteredLM``
+            (which drops history but stashes the last call's model ids) or a
+            stock LM with a ``history`` list.
+
+    Returns:
+        The served model id, or ``None`` when there is nothing to reveal.
+    """
+    served = getattr(language_model, "last_response_model", None)
+    requested = getattr(language_model, "last_request_model", None)
+    if not served:
+        history = getattr(language_model, "history", None)
+        if not history:
+            return None
+        entry = history[-1]
+        if not isinstance(entry, dict):
+            return None
+        served = entry.get("response_model")
+        requested = entry.get("model")
+    if not served or not isinstance(served, str):
+        return None
+    if served == requested:
+        return None
+    if isinstance(requested, str) and requested.endswith(f"/{served}"):
+        return None
+    return served

@@ -159,6 +159,7 @@ export function ChatTranscript({
                 <MessageActions
                   text={agentMsg.content}
                   model={agentMsg.model}
+                  servedModel={agentMsg.servedModel}
                   onRegenerate={
                     pair.user
                       ? () =>

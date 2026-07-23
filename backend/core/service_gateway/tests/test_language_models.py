@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -12,11 +13,15 @@ from core.config import settings
 from core.exceptions import ServiceError
 from core.models import ModelConfig
 from core.service_gateway.language_models import (
+    CustomStreamWrapper,
+    MeteredLM,
     _apply_managed_gateway,
     _translate_gateway_reasoning,
     apply_model_reasoning_config,
     apply_reasoning_effort,
     build_language_model,
+    install_openrouter_served_model_patch,
+    served_model_from,
     total_tokens_from_history,
     usage_by_model_from_history,
 )
@@ -486,3 +491,94 @@ def test_disable_cache_keeps_direct_provider_body_clean(monkeypatch: pytest.Monk
     call_kwargs = mock_cls.call_args[1]
     assert call_kwargs["cache"] is False
     assert "extra_body" not in call_kwargs
+
+
+class _FakeLm:
+    """Minimal stand-in exposing the ``history`` list dspy LMs record."""
+
+    def __init__(self, history: list[dict[str, Any]]) -> None:
+        """Store the canned history.
+
+        Args:
+            history: Entries mimicking dspy's per-call records.
+        """
+        self.history = history
+
+
+def test_served_model_from_reveals_auto_routed_pick() -> None:
+    """An auto-routed call resolving to a concrete model is revealed."""
+    lm = _FakeLm(
+        [
+            {
+                "model": "openrouter/openrouter/auto-beta",
+                "response_model": "google/gemini-3.6-flash",
+            }
+        ]
+    )
+    assert served_model_from(lm) == "google/gemini-3.6-flash"
+
+
+def test_served_model_from_reads_metered_lm_attributes() -> None:
+    """MeteredLM drops history, so the reveal reads the stashed model ids."""
+    lm = MagicMock(spec=[])
+    lm.last_request_model = "openrouter/openrouter/auto-beta"
+    lm.last_response_model = "deepseek/deepseek-v4-flash"
+    assert served_model_from(lm) == "deepseek/deepseek-v4-flash"
+
+    echo = MagicMock(spec=[])
+    echo.last_request_model = "openrouter/openai/gpt-5.6-terra"
+    echo.last_response_model = "openai/gpt-5.6-terra"
+    assert served_model_from(echo) is None
+
+
+def test_metered_lm_update_history_stashes_model_ids() -> None:
+    """update_history keeps the served-model fields of the entry it discards."""
+    lm = MagicMock()
+    lm.last_request_model = None
+    lm.last_response_model = None
+    MeteredLM.update_history(
+        lm,
+        {
+            "model": "openrouter/openrouter/auto-beta",
+            "response_model": "google/gemini-3.6-flash",
+            "usage": {},
+        },
+    )
+    assert lm.last_request_model == "openrouter/openrouter/auto-beta"
+    assert lm.last_response_model == "google/gemini-3.6-flash"
+
+
+def test_served_model_from_suppresses_non_news() -> None:
+    """Echoes, prefix-stripped echoes, and empty history all return None."""
+    assert served_model_from(_FakeLm([])) is None
+    assert served_model_from(object()) is None
+    same = {"model": "openai/gpt-4o-mini", "response_model": "openai/gpt-4o-mini"}
+    assert served_model_from(_FakeLm([same])) is None
+    stripped = {
+        "model": "openrouter/openai/gpt-5.6-terra",
+        "response_model": "openai/gpt-5.6-terra",
+    }
+    assert served_model_from(_FakeLm([stripped])) is None
+    assert served_model_from(_FakeLm([{"model": "x", "response_model": None}])) is None
+
+
+def test_openrouter_patch_adopts_provider_chunk_model() -> None:
+    """The patched chunk handler adopts openrouter's reported model — and only openrouter's."""
+    assert CustomStreamWrapper is not None, "litellm streaming internals moved"
+    install_openrouter_served_model_patch()
+    install_openrouter_served_model_patch()
+    handler = CustomStreamWrapper.handle_openai_chat_completion_chunk
+    assert getattr(handler, "_skynet_served_model_patch", False)
+
+    # Stub self/chunk exercise only the adoption prologue; litellm's real
+    # parsing then fails on the stub, which is irrelevant to this assertion.
+    target = MagicMock(custom_llm_provider="openrouter", model="openrouter/auto-beta")
+    chunk = MagicMock(model="google/gemini-3.6-flash")
+    with contextlib.suppress(Exception):
+        handler(target, chunk)
+    assert target.model == "google/gemini-3.6-flash"
+
+    other = MagicMock(custom_llm_provider="openai", model="openai/gpt-4o-mini")
+    with contextlib.suppress(Exception):
+        handler(other, chunk)
+    assert other.model == "openai/gpt-4o-mini"

@@ -12,6 +12,8 @@ import { getActiveDir } from "@/shared/lib/runtime-locale";
 interface MessageActionsProps {
   text: string;
   model?: string | null;
+  /** Concrete model the Auto Router picked for this turn, when known. */
+  servedModel?: string | null;
   onRegenerate?: () => void;
   className?: string;
 }
@@ -47,7 +49,13 @@ function ActionButton({ label, onClick, children }: ActionButtonProps) {
   );
 }
 
-export function MessageActions({ text, model, onRegenerate, className }: MessageActionsProps) {
+export function MessageActions({
+  text,
+  model,
+  servedModel,
+  onRegenerate,
+  className,
+}: MessageActionsProps) {
   const [copied, setCopied] = React.useState(false);
   const handleCopy = React.useCallback(() => {
     if (!text) return;
@@ -57,13 +65,18 @@ export function MessageActions({ text, model, onRegenerate, className }: Message
   }, [text]);
 
   // Turns routed by OpenRouter's Auto Router (the composer's Auto tiers)
-  // report the router's own id — read it back as "Auto", not a model slug.
-  const isAutoRouted = model === "openrouter/openrouter/auto-beta";
+  // report the router's own id — read it back as "Auto", and when the
+  // backend resolved the concrete pick, reveal it: "Auto · gemini-3.6-flash".
+  const isAutoRouted = !!model && model.startsWith("openrouter/openrouter/auto");
+  const served = servedModel ? (servedModel.split("/").pop() ?? servedModel) : null;
   const shortModel = isAutoRouted
-    ? msg("agent.model_menu.auto")
+    ? served
+      ? `${msg("agent.model_menu.auto")} · ${served}`
+      : msg("agent.model_menu.auto")
     : model
       ? (model.split("/").pop() ?? model)
       : null;
+  const fullModel = isAutoRouted && servedModel ? servedModel : model;
 
   return (
     <div className={cn("flex items-center gap-1 -ms-1.5", className)}>
@@ -100,11 +113,11 @@ export function MessageActions({ text, model, onRegenerate, className }: Message
               )}
             >
               <Cpu aria-hidden="true" />
-              <span className="truncate max-w-[140px]">{shortModel}</span>
+              <span className="truncate max-w-[180px]">{shortModel}</span>
             </Badge>
           </TooltipTrigger>
           <TooltipContent side="top" dir="ltr" className="font-mono">
-            {model}
+            {fullModel}
           </TooltipContent>
         </Tooltip>
       )}

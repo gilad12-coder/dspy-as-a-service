@@ -18,6 +18,7 @@ from typing import Any
 import dspy
 
 from ...config import settings
+from ..language_models import served_model_from
 from .code import ReasoningStreamListener, _build_agent_lm, _reply_language
 from .constants import REASONING_FIELD
 from .parse_salvage import salvage_prediction
@@ -301,4 +302,5 @@ async def interview_turn_stream(
     turn = _parse_interview_prediction(prediction, asked)
     if model:
         turn["model"] = model
+    turn["served_model"] = served_model_from(lm)
     yield {"event": "interview_done", "data": turn}

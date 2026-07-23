@@ -134,6 +134,7 @@ export function TaggerInterview({
     role: turn.role,
     content: turn.content,
     model: turn.model ?? null,
+    servedModel: turn.servedModel ?? null,
   }));
   // The in-flight assistant reply streams into a trailing synthetic message,
   // exactly how the agent panel renders its live turn. The server filters

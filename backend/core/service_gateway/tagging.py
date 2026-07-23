@@ -33,6 +33,7 @@ from .language_models import (
     apply_model_reasoning_config,
     apply_reasoning_effort,
     build_language_model,
+    served_model_from,
     usage_by_model_from_history,
 )
 
@@ -880,6 +881,7 @@ async def interview_turn_stream(
         break
     if model and turn:
         turn["model"] = model
+    turn["served_model"] = served_model_from(lm)
     yield {"event": "interview_done", "data": turn}
 
 

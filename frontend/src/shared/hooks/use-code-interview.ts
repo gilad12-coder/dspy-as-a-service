@@ -14,6 +14,7 @@ import type { AgentMessage, AgentThinking } from "@/shared/ui/agent";
 
 interface InterviewTurn extends CodeAgentChatTurn {
   model?: string | null;
+  served_model?: string | null;
 }
 
 export interface CodeInterviewState {
@@ -154,7 +155,12 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
           onDone: (turn) => {
             setTurns((prev) => [
               ...prev,
-              { role: "assistant", content: turn.message, model: turn.model ?? null },
+              {
+                role: "assistant",
+                content: turn.message,
+                model: turn.model ?? null,
+                served_model: turn.served_model ?? null,
+              },
             ]);
             setOptions(turn.done ? [] : turn.options);
             if (turn.done) {
@@ -234,6 +240,7 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
       role: t.role,
       content: t.content,
       model: t.model ?? null,
+      servedModel: t.served_model ?? null,
     }));
     if (busy && (streamText || thinking)) {
       mapped.push({ role: "assistant", content: streamText });

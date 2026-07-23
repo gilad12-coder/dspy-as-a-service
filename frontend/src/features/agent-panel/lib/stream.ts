@@ -44,7 +44,11 @@ export interface GeneralistAgentHandlers {
   onApprovalResolved?: (ev: ApprovalResolvedPayload) => void;
   onMessagePatch?: (chunk: string) => void;
   onConversationMeta?: (ev: ConversationMetaPayload) => void;
-  onDone: (result: { assistant_message: string; model: string | null }) => void;
+  onDone: (result: {
+    assistant_message: string;
+    model: string | null;
+    served_model: string | null;
+  }) => void;
   onError: (message: string) => void;
   signal?: AbortSignal;
 }
@@ -133,9 +137,11 @@ export async function streamGeneralistAgent(
         break;
       case "done": {
         const rawModel = data.model;
+        const rawServed = data.served_model;
         handlers.onDone({
           assistant_message: String(data.assistant_message ?? ""),
           model: typeof rawModel === "string" && rawModel.length > 0 ? rawModel : null,
+          served_model: typeof rawServed === "string" && rawServed.length > 0 ? rawServed : null,
         });
         break;
       }

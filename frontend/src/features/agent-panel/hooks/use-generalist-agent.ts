@@ -355,6 +355,7 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
                 ...last,
                 content: result.assistant_message || fallback,
                 model: result.model,
+                servedModel: result.served_model,
               };
               return next;
             });

@@ -2243,6 +2243,8 @@ export interface CodeInterviewTurnResult {
   brief: string[];
   done: boolean;
   model?: string | null;
+  /** Concrete model the Auto Router picked for this turn, when resolved. */
+  served_model?: string | null;
 }
 
 export interface CodeInterviewHandlers {
@@ -2313,6 +2315,10 @@ export async function streamCodeInterviewTurn(
             brief: Array.isArray(data.brief) ? data.brief.map(String) : [],
             done: data.done === true,
             model: typeof data.model === "string" && data.model ? data.model : null,
+            served_model:
+              typeof data.served_model === "string" && data.served_model
+                ? data.served_model
+                : null,
           });
           break;
         case "error":

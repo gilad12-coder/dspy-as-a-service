@@ -71,6 +71,8 @@ class ConversationMessage(BaseModel):
     content: str
     tool_calls: list[dict[str, Any]] | None = None
     model: str | None = None
+    # The concrete model behind an auto-routed turn, from router_metadata.
+    served_model: str | None = None
     created_at: datetime
 
 
@@ -246,6 +248,9 @@ def create_agent_history_router(*, job_store) -> APIRouter:
                         content=cast(str, m.content),
                         tool_calls=cast("list[dict[str, Any]] | None", m.tool_calls),
                         model=cast("str | None", m.model),
+                        served_model=(m.router_metadata or {}).get("served_model")
+                        if isinstance(m.router_metadata, dict)
+                        else None,
                         created_at=cast(datetime, m.created_at),
                     )
                     for m in msgs

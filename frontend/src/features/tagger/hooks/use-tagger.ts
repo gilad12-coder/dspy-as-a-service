@@ -651,6 +651,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
                       role: "assistant" as const,
                       content: turn.message,
                       model: turn.model ?? null,
+                      servedModel: turn.served_model ?? null,
                     },
                   ],
                   done: turn.done,

@@ -72,6 +72,8 @@ export interface InterviewTurn {
   content: string;
   /** LiteLLM model id that produced an assistant turn (the reply's chip). */
   model?: string | null;
+  /** Concrete model the Auto Router picked for the turn, when resolved. */
+  servedModel?: string | null;
 }
 
 /** One AI-tags-human-audits batch (review rounds and the flagged pass alike). */
