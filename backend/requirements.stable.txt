@@ -199,7 +199,7 @@ markupsafe==3.0.3
     # via
     #   jinja2
     #   mako
-mcp==1.28.0
+mcp==1.28.1
     # via fastmcp-slim
 mdurl==0.1.2
     # via markdown-it-py
