@@ -1,3 +1,5 @@
+import type { ModelConfig } from "@/shared/types/api";
+
 export type CodeAssistDefault = "auto" | "manual";
 export type SplitModeDefault = "auto" | "manual";
 export type TrustModeDefault = "ask" | "auto_safe" | "yolo";
@@ -25,6 +27,17 @@ export interface UserPrefs {
   // AI co-tagging in the tagger: the master toggle (off = today's fully
   // manual tagger).
   taggerAssist: boolean;
+  // Seed for new conversations (agent panel, code interview, tagger
+  // interview): the composer-menu model id, null = the auto router, or the
+  // "auto:intelligent" sentinel. Per-conversation picks override it.
+  composerModel: string | null;
+  // Companion thinking level for composerModel; null runs the model default.
+  composerEffort: string | null;
+  // Shows/hides the dictation mic in the shared composer.
+  dictationEnabled: boolean;
+  // Seed for the assist model in new tagging sessions; empty name = the
+  // server's default tagging model.
+  taggerAssistModel: ModelConfig;
 }
 
 export const PREF_KEYS: Record<keyof UserPrefs, string> = {
@@ -35,6 +48,10 @@ export const PREF_KEYS: Record<keyof UserPrefs, string> = {
   agentTrustMode: "skynet.prefs.agent.trust-mode",
   agentShortcut: "skynet.prefs.agent.shortcut",
   taggerAssist: "skynet.prefs.tagger.assist",
+  composerModel: "skynet.prefs.composer.model",
+  composerEffort: "skynet.prefs.composer.effort",
+  dictationEnabled: "skynet.prefs.composer.dictation",
+  taggerAssistModel: "skynet.prefs.tagger.assist-model",
 };
 
 export const DEFAULT_AGENT_SHORTCUT: AgentShortcut = {
@@ -53,6 +70,10 @@ export const DEFAULT_PREFS: UserPrefs = {
   agentTrustMode: "ask",
   agentShortcut: DEFAULT_AGENT_SHORTCUT,
   taggerAssist: true,
+  composerModel: null,
+  composerEffort: null,
+  dictationEnabled: true,
+  taggerAssistModel: { name: "" },
 };
 
 // The retired global "advanced mode" toggle. Users who had it on expect the

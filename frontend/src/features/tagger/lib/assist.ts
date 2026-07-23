@@ -1,3 +1,4 @@
+import { readPref } from "@/features/settings";
 import type { ModelConfig } from "@/shared/types/api";
 import type {
   Annotation,
@@ -181,6 +182,10 @@ export function initialAssistState(
   return {
     mode,
     ...assistModelPatch(modelConfig),
+    // The interviewer starts on the settings-modal conversation default; the
+    // composer menu in the interview overrides it per session.
+    interviewModel: readPref("composerModel") ?? undefined,
+    interviewEffort: readPref("composerEffort") ?? undefined,
     interview: { turns: [], done: false },
     rubric: [],
     calibrationIds: [],

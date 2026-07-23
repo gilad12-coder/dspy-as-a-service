@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { readPref } from "@/features/settings";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
 
@@ -87,16 +88,20 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
   const [error, setError] = React.useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = React.useState<PendingApprovalPayload | null>(null);
   const [conversationId, setConversationId] = React.useState<string | null>(null);
-  const [model, setModelState] = React.useState<string | null>(null);
+  // Seeded from the settings-modal default; the panel is client-only
+  // (ssr:false), so the localStorage read is hydration-safe.
+  const [model, setModelState] = React.useState<string | null>(() => readPref("composerModel"));
   // Mirrored in a ref so the streaming closures (retry, regenerate) always
   // send the current choice without re-memoizing runAgent.
-  const modelRef = React.useRef<string | null>(null);
+  const modelRef = React.useRef<string | null>(model);
   const setModel = React.useCallback((next: string | null) => {
     modelRef.current = next;
     setModelState(next);
   }, []);
-  const [reasoningEffort, setReasoningEffortState] = React.useState<string | null>(null);
-  const effortRef = React.useRef<string | null>(null);
+  const [reasoningEffort, setReasoningEffortState] = React.useState<string | null>(() =>
+    readPref("composerEffort"),
+  );
+  const effortRef = React.useRef<string | null>(reasoningEffort);
   const setReasoningEffort = React.useCallback((next: string | null) => {
     effortRef.current = next;
     setReasoningEffortState(next);
