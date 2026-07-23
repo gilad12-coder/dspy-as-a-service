@@ -359,16 +359,22 @@ class _ApprovalGatedTool:
         if self._tool_name in _CODE_AUTHORING_TOOLS:
             self._authoring_flag.authoring_requested = True
         submit_after_authoring = (
-            self._tool_name in _READY_TO_SUBMIT_TOOLS
+            self._tool_name in _SUBMIT_TOOLS
             and self._authoring_flag.authoring_requested
         )
-        if self._tool_name in _READY_TO_SUBMIT_TOOLS and not submit_after_authoring:
+        if self._tool_name in _SUBMIT_TOOLS and not submit_after_authoring:
             if (
                 self._staged_dataset_id
                 and not kwargs.get("staged_dataset_id")
                 and not kwargs.get("dataset")
             ):
                 kwargs["staged_dataset_id"] = self._staged_dataset_id
+            # Privacy is private-by-default, matching the wizard. The submit
+            # request models default ``is_private=False`` (public), so an agent
+            # run that never set it would silently publish to Explore — force the
+            # snapshot value, defaulting to private, so a run only goes public
+            # when the user explicitly asked for it.
+            kwargs["is_private"] = bool(self._wizard_state.get("is_private", True))
             # Signature/Metric (or, for a workflow run, the authored graph) are
             # produced and validated by ``request_code_authoring`` and mirrored
             # into the wizard snapshot. The agent has historically re-typed its
@@ -591,12 +597,18 @@ class WizardState(TypedDict, total=False):
     staged_dataset_id: str
     optimizer_name: str
     module_name: str
+    job_type: str
+    is_private: bool
     # Authored ``WorkflowSpec`` graph for multi-module runs. Present only when
     # ``module_name == "workflow"``; carries the run's program in place of
     # ``signature_code`` (the two are mutually exclusive at submit).
     workflow: dict[str, Any]
     model_config: dict[str, Any]
     reflection_model_config: dict[str, Any]
+    generation_models: list[dict[str, Any]]
+    reflection_models: list[dict[str, Any]]
+    use_all_generation_models: bool
+    use_all_reflection_models: bool
 
 
 _ALWAYS_TOOLS = frozenset(
@@ -669,12 +681,17 @@ _DATASET_READY_TOOLS = frozenset(
 # Basics (name) → Data → Params → Code — and the wizard is populated and
 # verifiable before any code is authored.
 _CODE_AUTHORING_TOOLS = frozenset({"request_code_authoring"})
-# Single-tool submit surface. ``submit_grid_search`` was historically here
-# alongside ``submit_job_run_post``; exposing both at the same time made
-# MiniMax oscillate between them and occasionally lapse into a "no submit
-# tool" hallucinated refusal. Grid search is still reachable from the UI
-# wizard for users who need it; the agent's flow is single-run only.
+# The submit surface is job-type-exclusive: exactly ONE submit tool is exposed
+# per turn, chosen by ``job_type`` (see ``tools_for``). Exposing both at once
+# historically made MiniMax oscillate between them and occasionally lapse into a
+# "no submit tool" hallucinated refusal — so a single run only ever sees
+# ``submit_job_run_post`` and a grid run only ever sees the grid tool; the two
+# are never visible together.
 _READY_TO_SUBMIT_TOOLS = frozenset({"submit_job_run_post"})
+_GRID_SUBMIT_TOOLS = frozenset({"submit_grid_search_grid_search_post"})
+# Every submit surface — used to scope the wrapper's argument injection (staged
+# dataset, validated program, privacy) uniformly across single and grid runs.
+_SUBMIT_TOOLS = _READY_TO_SUBMIT_TOOLS | _GRID_SUBMIT_TOOLS
 _POST_SUBMIT_TOOLS = frozenset(
     {
         "cancel_job_optimizations",
@@ -774,31 +791,53 @@ def _code_ready(state: WizardState) -> bool:
     return not _is_placeholder_signature(signature)
 
 
-def _model_ready(state: WizardState) -> bool:
-    """Return True when the Model step is complete for the chosen optimizer.
+def _is_grid(state: WizardState) -> bool:
+    """Return True when the run is configured as a grid-search sweep."""
+    return str(state.get("job_type") or "run").strip().lower() == "grid_search"
 
-    A generation model is always required. GEPA additionally reflects on a
-    second model, and submitting it without a ``reflection_model_config`` is a
-    known 422 — so the gate mirrors the manual wizard's
-    ``reflection_model_required`` check and stays locked until both are set.
-    GEPA is the only supported optimizer, so an absent ``optimizer_name``
-    defaults to it (the strict path).
+
+def _has_model_list(value: object) -> bool:
+    """Return True when ``value`` is a non-empty list of named model configs."""
+    return isinstance(value, list) and any(
+        isinstance(m, dict) and m.get("name") for m in value
+    )
+
+
+def _model_ready(state: WizardState) -> bool:
+    """Return True when the Model step is complete for the chosen run type.
+
+    A single run needs a generation model (and, for GEPA, a reflection model —
+    submitting GEPA without one is a known 422). A grid-search sweep instead
+    needs a non-empty generation-model list (or the sweep-all flag) and, for
+    GEPA, a reflection-model list (or its sweep-all flag). GEPA is the only
+    supported optimizer, so an absent ``optimizer_name`` defaults to it (the
+    strict path).
 
     Args:
         state: Current wizard snapshot.
 
     Returns:
-        True when the generation model (and, for GEPA, the reflection model)
-        are present.
+        True when the model(s) the chosen run type requires are present.
     """
+    is_gepa = str(state.get("optimizer_name") or "gepa").strip().lower() == "gepa"
+    if _is_grid(state):
+        has_generation = bool(state.get("use_all_generation_models")) or _has_model_list(
+            state.get("generation_models")
+        )
+        if not has_generation:
+            return False
+        if is_gepa:
+            return bool(state.get("use_all_reflection_models")) or _has_model_list(
+                state.get("reflection_models")
+            )
+        return True
     model_cfg = state.get("model_config") or {}
     has_generation = bool(state.get("model_configured")) or bool(
         isinstance(model_cfg, dict) and model_cfg.get("name")
     )
     if not has_generation:
         return False
-    optimizer = str(state.get("optimizer_name") or "gepa").strip().lower()
-    if optimizer == "gepa":
+    if is_gepa:
         reflection_cfg = state.get("reflection_model_config") or {}
         return bool(isinstance(reflection_cfg, dict) and reflection_cfg.get("name"))
     return True
@@ -833,7 +872,10 @@ def tools_for(state: WizardState) -> set[str]:
         and _code_ready(state)
         and _model_ready(state)
     ):
-        allowed |= _READY_TO_SUBMIT_TOOLS
+        # Expose exactly one submit surface, matching the chosen run type, so
+        # the agent never sees two submit tools at once (which made the model
+        # oscillate). Grid runs sweep model lists; single runs use one pair.
+        allowed |= _GRID_SUBMIT_TOOLS if _is_grid(state) else _READY_TO_SUBMIT_TOOLS
     return allowed
 
 
@@ -849,6 +891,7 @@ _WIZARD_STEP_LABELS = ("Basics", "Data", "Params", "Code", "Model")
 _FIELD_STEP: dict[str, int] = {
     "job_name": 0,
     "job_description": 0,
+    "is_private": 0,
     "column_roles": 1,
     "optimizer_name": 2,
     "module_name": 2,
@@ -1217,6 +1260,19 @@ class GeneralistSig(dspy.Signature):
       do NOT report it as submitted. A run is submitted ONLY when
       ``submit_job_run_post`` returns a successful result in your
       trajectory this turn.
+    * Grid search vs single run: the two submit tools are mutually
+      exclusive — only the one matching ``job_type`` is exposed. The
+      default ``job_type`` (``"run"``) uses a single model pair
+      (``model_config`` + ``reflection_model_config``) and unlocks
+      ``submit_job_run_post``. Set ``job_type`` to ``"grid_search"`` via
+      update_wizard_state to sweep several models: a grid run needs model
+      LISTS (``generation_models`` + ``reflection_models``, or the
+      ``use_all_*`` flags) instead of the single configs, and unlocks
+      ``submit_grid_search_grid_search_post`` instead. Only propose a grid
+      search when the user asks to compare/sweep models.
+    * Run privacy: runs are private by default (excluded from public
+      Explore). Set ``is_private`` to false via update_wizard_state ONLY
+      when the user explicitly asks to make the run public.
     * Dataset handoff for submit: never inline ``dataset`` rows into the
       submit tool arguments. The wizard stages the parsed rows on the
       backend after upload and surfaces a ``staged_dataset_id`` in the

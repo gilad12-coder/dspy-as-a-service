@@ -92,6 +92,47 @@ def test_workflow_ready_unlocks_submit() -> None:
     assert "submit_job_run_post" in tools_for(cast(WizardState, ready))
 
 
+def test_grid_job_type_swaps_submit_tool() -> None:
+    """A grid run exposes the grid submit tool and hides the single-run one."""
+    base = {
+        "job_name": "Sweep",
+        "dataset_ready": True,
+        "columns_configured": True,
+        "signature_code": "class S(dspy.Signature): ...",
+        "metric_code": "def metric(gold, pred, trace, pred_name, pred_trace): return 1.0",
+        "job_type": "grid_search",
+        "use_all_generation_models": True,
+        "use_all_reflection_models": True,
+    }
+    allowed = tools_for(cast(WizardState, base))
+    # Exactly one submit surface, matching job_type — never both (the state
+    # that made the model oscillate between two submit tools).
+    assert "submit_grid_search_grid_search_post" in allowed
+    assert "submit_job_run_post" not in allowed
+
+
+def test_grid_requires_generation_and_reflection_model_lists() -> None:
+    """Grid submit stays locked until both model lists (or use_all flags) are set."""
+    base = {
+        "job_name": "Sweep",
+        "dataset_ready": True,
+        "columns_configured": True,
+        "signature_code": "class S(dspy.Signature): ...",
+        "metric_code": "def metric(gold, pred, trace, pred_name, pred_trace): return 1.0",
+        "job_type": "grid_search",
+    }
+    assert "submit_grid_search_grid_search_post" not in tools_for(cast(WizardState, base))
+    # A generation list alone is not enough for GEPA (it reflects on a second).
+    gen_only = {**base, "generation_models": [{"name": "openai/gpt-4o-mini"}]}
+    assert "submit_grid_search_grid_search_post" not in tools_for(cast(WizardState, gen_only))
+    both = {
+        **base,
+        "generation_models": [{"name": "openai/gpt-4o-mini"}],
+        "reflection_models": [{"name": "openai/gpt-4o"}],
+    }
+    assert "submit_grid_search_grid_search_post" in tools_for(cast(WizardState, both))
+
+
 def test_gepa_without_reflection_model_keeps_submit_locked() -> None:
     """GEPA with a generation model but no reflection model must NOT unlock submit.
 
@@ -546,6 +587,38 @@ async def test_submit_injects_workflow_graph_over_signature() -> None:
     assert "signature_code" not in seen
     assert seen["metric_code"] == "def good(gold, pred, trace, pred_name, pred_trace): return 1.0"
     assert seen["staged_dataset_id"] == "ds_9"
+
+
+@pytest.mark.asyncio
+async def test_submit_defaults_to_private() -> None:
+    """Submit forces ``is_private`` to private when the snapshot never set it."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        wizard_state=cast(WizardState, {}),
+    )
+    await tool.func._async_body()
+    assert seen["is_private"] is True
+
+
+@pytest.mark.asyncio
+async def test_submit_respects_explicit_public() -> None:
+    """A snapshot ``is_private=False`` (user asked for public) reaches submit."""
+    tool, seen = _make_recording_tool("submit_grid_search_grid_search_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        wizard_state=cast(WizardState, {"is_private": False}),
+    )
+    await tool.func._async_body()
+    assert seen["is_private"] is False
 
 
 @pytest.mark.asyncio

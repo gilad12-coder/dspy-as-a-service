@@ -65,6 +65,10 @@ class WizardUpdateRequest(BaseModel):
         default=None,
         description="'run' for a single-pair run, 'grid_search' for a model-pair sweep.",
     )
+    is_private: bool | None = Field(
+        default=None,
+        description="When true (the default for new runs), the run is excluded from public Explore.",
+    )
 
     column_roles: dict[str, str] | None = Field(
         default=None,
@@ -351,6 +355,7 @@ def create_wizard_router() -> APIRouter:
             "use_all_generation_models",
             "use_all_reflection_models",
             "shuffle",
+            "is_private",
         ):
             if bool_key in supplied and supplied[bool_key] is not None:
                 patch[bool_key] = bool(supplied[bool_key])
