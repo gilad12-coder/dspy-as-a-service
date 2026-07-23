@@ -5,6 +5,7 @@ import { ArrowRight, List } from "lucide-react";
 import type { TaggerSessionDetail } from "@/shared/lib/api";
 import { Button } from "@/shared/ui/primitives/button";
 import { DataHubTabs } from "@/shared/ui/data-hub-tabs";
+import { PageContainer } from "@/shared/layout/page-container";
 import { msg } from "@/shared/lib/messages";
 import { useTagger } from "../hooks/use-tagger";
 import { TaggerResultsTable } from "./TaggerResultsTable";
@@ -38,13 +39,14 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
   }, []);
 
   if (!initialSession && !startingNew) {
-    // The app shell gives /tagger the full viewport for the annotation surface;
-    // the chooser is a list page, so cap it to match the datasets tab.
+    // The shell leaves /tagger unwrapped for the annotation surfaces; the
+    // chooser is a list page, so it renders the same capped PageContainer the
+    // shell gives /datasets — identical geometry, no hop between hub tabs.
     return (
-      <div className="mx-auto w-full max-w-7xl">
+      <PageContainer>
         <DataHubTabs active="sessions" />
         <TaggingSessionsPanel onStartNew={() => setStartingNew(true)} />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -68,10 +70,10 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
 
   if (tagger.phase === "setup") {
     return (
-      <>
+      <PageContainer full>
         {backBar}
         <TaggerSetup onStart={tagger.startAnnotating} />
-      </>
+      </PageContainer>
     );
   }
 
@@ -84,7 +86,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
   if (readOnlyViewer) {
     if (!focusRow) {
       return (
-        <>
+        <PageContainer full>
           {backBar}
           <TaggerResultsTable
             config={tagger.config}
@@ -97,11 +99,11 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
               setFocusRow(true);
             }}
           />
-        </>
+        </PageContainer>
       );
     }
     return (
-      <>
+      <PageContainer full>
         {backBar}
         <div className="mb-3">
           <Button
@@ -131,13 +133,13 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
           onSetFreetext={() => undefined}
           onBack={tagger.backToSetup}
         />
-      </>
+      </PageContainer>
     );
   }
 
   if (tagger.phase === "interview" && tagger.assist) {
     return (
-      <>
+      <PageContainer full>
         {backBar}
         <TaggerInterview
           config={tagger.config}
@@ -153,7 +155,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
           onFetchEstimate={() => void tagger.fetchEstimate()}
           onSetModel={tagger.setAssistModel}
           onSetInterviewModel={tagger.setInterviewModel}
-        onSetInterviewEffort={tagger.setInterviewEffort}
+          onSetInterviewEffort={tagger.setInterviewEffort}
           onSend={(content) => void tagger.sendInterviewMessage(content)}
           onEditResend={(index, content) => void tagger.sendInterviewMessage(content, index)}
           onStop={tagger.stopInterview}
@@ -162,7 +164,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
           onExit={tagger.backToSetup}
           onConfirmRubric={tagger.confirmRubric}
         />
-      </>
+      </PageContainer>
     );
   }
 
@@ -177,7 +179,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
         autotag.status === "failed" ||
         autotag.status === "canceled");
     return (
-      <>
+      <PageContainer full>
         {backBar}
         {needsRecovery ? (
           <TaggerAutotagProgress
@@ -198,13 +200,13 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
             onCancel={() => void tagger.cancelAutotag()}
           />
         )}
-      </>
+      </PageContainer>
     );
   }
 
   if (tagger.phase === "complete" && tagger.assist) {
     return (
-      <>
+      <PageContainer full>
         {backBar}
         <TaggerComplete
           assist={tagger.assist}
@@ -216,13 +218,13 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
             tagger.browseAll();
           }}
         />
-      </>
+      </PageContainer>
     );
   }
 
   if (tagger.phase === "review" && tagger.assist && !tagger.openRound) {
     return (
-      <>
+      <PageContainer full>
         {backBar}
         <TaggerReviewGate
           config={tagger.config}
@@ -236,7 +238,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
           onStartAutotag={() => void tagger.startAutotag()}
           onFetchEstimate={() => void tagger.fetchEstimate()}
         />
-      </>
+      </PageContainer>
     );
   }
 
@@ -278,7 +280,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
   if (!assistActive || !tagger.assist) {
     if (tagger.phase === "annotating" && allLabeled && !focusRow) {
       return (
-        <>
+        <PageContainer full>
           {backBar}
           <TaggerResultsTable
             config={tagger.config}
@@ -291,11 +293,11 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
               setFocusRow(true);
             }}
           />
-        </>
+        </PageContainer>
       );
     }
     return (
-      <>
+      <PageContainer full>
         {backBar}
         {tagger.phase === "annotating" && allLabeled && (
           <div className="mb-3">
@@ -311,12 +313,12 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
           </div>
         )}
         {annotation}
-      </>
+      </PageContainer>
     );
   }
 
   return (
-    <>
+    <PageContainer full>
       {backBar}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">
@@ -347,6 +349,6 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
           />
         </div>
       </div>
-    </>
+    </PageContainer>
   );
 }

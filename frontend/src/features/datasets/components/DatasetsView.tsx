@@ -26,10 +26,10 @@ import {
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
 import { cn } from "@/shared/lib/utils";
+import { ListPageSkeleton } from "@/shared/ui/list-page-skeleton";
 import { useDatasets } from "../hooks/use-datasets";
 import { DatasetCard } from "./DatasetCard";
 import { DatasetDetailDialog } from "./DatasetDetailDialog";
-import { DatasetsSkeleton } from "./DatasetsSkeleton";
 
 const UPLOAD_ACCEPT = ".csv,.json,.xlsx,.xls";
 
@@ -175,7 +175,7 @@ export function DatasetsView() {
     return (
       <div className="pb-16">
         <DataHubTabs active="datasets" />
-        <DatasetsSkeleton />
+        <ListPageSkeleton />
       </div>
     );
   }

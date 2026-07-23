@@ -101,6 +101,7 @@ from .routers.tagger_assist import create_tagger_assist_router
 from .routers.tagging_session_share import create_tagging_session_share_router
 from .routers.tagging_sessions import create_tagging_session_router
 from .routers.telemetry import create_telemetry_router
+from .routers.transcription import create_transcription_router
 from .routers.usage import create_usage_router
 from .routers.wizard import create_wizard_router
 from .routers.workflows import create_workflows_router
@@ -1250,6 +1251,7 @@ def create_app(
     app.include_router(create_registry_router(registry=registry), tags=["Registry"])
     app.include_router(create_code_validation_router(), tags=["Code Validation"])
     app.include_router(create_mcp_probe_router(), tags=["Code Validation"])
+    app.include_router(create_transcription_router(), tags=["Transcription"])
     app.include_router(create_code_agent_router(), tags=["Code Validation"])
     app.include_router(create_generalist_agent_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_agent_history_router(job_store=job_store), tags=["Optimizations"])

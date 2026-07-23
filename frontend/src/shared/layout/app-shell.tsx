@@ -13,6 +13,7 @@ import { useLocale } from "@/shared/providers";
 import { dirForLocale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
 import { JobsStreamProvider } from "@/shared/hooks/use-jobs-stream";
+import { PageContainer } from "@/shared/layout/page-container";
 import { useUserPrefs, LiteModeHint } from "@/features/settings";
 import { CreditBalanceChip } from "@/features/billing";
 import {
@@ -228,17 +229,15 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         />
 
         <main className="app-main flex-1 overflow-auto min-w-0 page-gradient grid-pattern">
-          {/* The tagger is a working surface (annotation + AI rail), not a
-              reading page — it gets the whole viewport; narrow phases (setup,
-              interview, summaries) center themselves with their own max-w. */}
-          <div
-            className={`relative z-[1] mx-auto py-6 md:py-8 ${
-              pathname.startsWith("/tagger") ? "max-w-none" : "max-w-7xl"
-            }`}
-            style={{ paddingInline: "clamp(1rem, 5vw - 0.5rem, 2rem)" }}
-          >
-            {children}
-          </div>
+          {/* The tagger picks its own container per phase (full-width working
+              surface vs the capped session chooser), so its routes render bare
+              and wrap themselves in PageContainer — nesting it inside the
+              shell's box would double the inline padding. */}
+          {pathname.startsWith("/tagger") ? (
+            children
+          ) : (
+            <PageContainer>{children}</PageContainer>
+          )}
         </main>
 
         {/* The sidebar lives after <main> in source order (content-first for

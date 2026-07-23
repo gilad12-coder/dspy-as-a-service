@@ -1,14 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { Square } from "lucide-react";
+import { Check, Loader2, Mic, Square, X } from "lucide-react";
 import { msg } from "@/shared/lib/messages";
 
+import { useLocale } from "@/shared/providers";
 import { Button } from "@/shared/ui/primitives/button";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { cn } from "@/shared/lib/utils";
 
 import { autoResizeTextarea } from "./auto-resize";
+import { formatRecSeconds, useDictation } from "./use-dictation";
 
 interface ComposerProps {
   value: string;
@@ -20,11 +22,23 @@ interface ComposerProps {
   streaming?: boolean;
   sendAriaLabel?: string;
   stopAriaLabel?: string;
-  /** Optional model selector rendered in a footer row under the textarea
-   *  (the ChatGPT-style composer pill — see ``ComposerModelMenu``). */
+  /** Optional model selector chip rendered in the control row beside the mic
+   *  and send controls (the Codex-style composer — see ``ComposerModelMenu``). */
   modelMenu?: React.ReactNode;
+  /** Optional controls docked at the inline-start of the control row (the
+   *  Codex layout: attach + permissions on the left, model/mic/send on the
+   *  right). */
+  leadingControls?: React.ReactNode;
 }
 
+/**
+ * The shared chat composer, laid out Codex-style: one bordered box holding a
+ * borderless textarea with a control row docked under it — model chip, then
+ * dictation mic, then the circular send/stop button at the inline end. While
+ * dictating, the textarea swaps for a recording strip (pulsing dot, timer,
+ * cancel) and the mic becomes the finish control; the transcript is appended
+ * to the draft for review, never auto-sent.
+ */
 export function Composer({
   value,
   onChange,
@@ -36,12 +50,36 @@ export function Composer({
   sendAriaLabel = msg("auto.shared.ui.agent.composer.literal.1"),
   stopAriaLabel = msg("auto.shared.ui.agent.composer.literal.2"),
   modelMenu,
+  leadingControls,
 }: ComposerProps) {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const { locale } = useLocale();
+
+  const valueRef = React.useRef(value);
+  React.useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+  const dictation = useDictation({
+    language: locale,
+    onText: (text) => {
+      const prev = valueRef.current;
+      onChange(prev.trim() ? `${prev.replace(/\s+$/, "")} ${text}` : text);
+      // The textarea remounts from the recording strip on this same commit —
+      // focus and grow it once it's back in the tree.
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          autoResizeTextarea(el);
+        }
+      });
+    },
+  });
+  const dictating = dictation.state.kind !== "idle";
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (disabled || streaming || !value.trim()) return;
+    if (disabled || streaming || dictating || !value.trim()) return;
     onSubmit();
     if (textareaRef.current) textareaRef.current.style.height = "42px";
   };
@@ -56,59 +94,140 @@ export function Composer({
 
   return (
     <form onSubmit={handleSubmit} className="border-t border-border/40 px-3 py-3 shrink-0">
-      <div className="flex items-start gap-2">
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => {
-            onChange(e.target.value);
-            autoResizeTextarea(e.target);
-          }}
-          onKeyDown={handleKeyDown}
-          disabled={disabled || streaming}
-          rows={1}
-          placeholder={placeholder}
-          className={cn(
-            "block flex-1 bg-muted/20 rounded-2xl border border-[#DDD4C8] px-4 py-[11px] text-sm leading-[20px] resize-none overflow-hidden",
-            "h-[42px] max-h-[120px] outline-none ring-0 shadow-none",
-            "focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus:border-[#C8A882] transition-colors",
-            "placeholder:text-muted-foreground/40",
-            "disabled:opacity-50 disabled:cursor-not-allowed",
-          )}
-        />
-        {streaming && onStop ? (
-          <TooltipButton tooltip={stopAriaLabel} side="top">
-            <Button
-              type="button"
-              size="icon"
-              onClick={onStop}
-              className="shrink-0 rounded-full !size-[42px]"
-              aria-label={stopAriaLabel}
-            >
-              <Square className="size-3 fill-current" />
-            </Button>
-          </TooltipButton>
-        ) : (
-          <Button
-            type="submit"
-            size="icon"
-            className="shrink-0 rounded-full !size-[42px]"
-            disabled={disabled || !value.trim()}
-            aria-label={sendAriaLabel}
-          >
-            <svg viewBox="0 0 24 24" fill="none" className="size-4">
-              <path
-                d="M12 2L12 22M12 2L5 9M12 2L19 9"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </Button>
+      <div
+        className={cn(
+          "rounded-2xl border border-[#DDD4C8] bg-muted/20 transition-colors",
+          "focus-within:border-[#C8A882]",
         )}
+      >
+        {!dictating ? (
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => {
+              onChange(e.target.value);
+              autoResizeTextarea(e.target);
+            }}
+            onKeyDown={handleKeyDown}
+            disabled={disabled || streaming}
+            rows={1}
+            placeholder={placeholder}
+            className={cn(
+              "block w-full bg-transparent px-4 py-[11px] text-sm leading-[20px] resize-none overflow-hidden",
+              "h-[42px] max-h-[120px] outline-none ring-0 border-0 shadow-none",
+              "focus:outline-none focus-visible:outline-none focus-visible:ring-0",
+              "placeholder:text-muted-foreground/40",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+            )}
+          />
+        ) : (
+          <div
+            className="flex h-[42px] items-center gap-2 px-4 text-sm"
+            role="status"
+            aria-live="polite"
+          >
+            {dictation.state.kind === "rec" && (
+              <>
+                <span className="size-2 shrink-0 animate-pulse rounded-full bg-red-500" />
+                <span className="tabular-nums text-muted-foreground" dir="ltr">
+                  {formatRecSeconds(dictation.seconds)}
+                </span>
+                <span className="truncate text-muted-foreground">
+                  {msg("agent.composer.recording")}
+                </span>
+                <button
+                  type="button"
+                  onClick={dictation.cancel}
+                  aria-label={msg("agent.composer.record_cancel")}
+                  className={cn(
+                    "ms-auto inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full",
+                    "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+                    "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40",
+                  )}
+                >
+                  <X className="size-4" />
+                </button>
+              </>
+            )}
+            {dictation.state.kind === "busy" && (
+              <>
+                <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                <span className="truncate text-muted-foreground">
+                  {msg("agent.composer.transcribing")}
+                </span>
+              </>
+            )}
+            {dictation.state.kind === "err" && (
+              <span className="truncate text-destructive">{dictation.state.message}</span>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center gap-1.5 px-2 pb-2 pt-0.5">
+          {leadingControls && <div className="flex items-center gap-1">{leadingControls}</div>}
+          <div className="ms-auto flex items-center gap-1.5">
+            {modelMenu}
+            {dictation.state.kind === "rec" ? (
+              <TooltipButton tooltip={msg("agent.composer.record_finish")} side="top">
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={dictation.finish}
+                  className="shrink-0 rounded-full !size-9"
+                  aria-label={msg("agent.composer.record_finish")}
+                >
+                  <Check className="size-4" />
+                </Button>
+              </TooltipButton>
+            ) : (
+              <TooltipButton tooltip={msg("agent.composer.record")} side="top">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => void dictation.start()}
+                  disabled={disabled || streaming || dictation.state.kind === "busy"}
+                  className="shrink-0 rounded-full !size-9 text-muted-foreground hover:text-foreground"
+                  aria-label={msg("agent.composer.record")}
+                >
+                  <Mic className="size-4" />
+                </Button>
+              </TooltipButton>
+            )}
+            {streaming && onStop ? (
+              <TooltipButton tooltip={stopAriaLabel} side="top">
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={onStop}
+                  className="shrink-0 rounded-full !size-9"
+                  aria-label={stopAriaLabel}
+                >
+                  <Square className="size-3 fill-current" />
+                </Button>
+              </TooltipButton>
+            ) : (
+              <Button
+                type="submit"
+                size="icon"
+                className="shrink-0 rounded-full !size-9"
+                disabled={disabled || dictating || !value.trim()}
+                aria-label={sendAriaLabel}
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="size-4">
+                  <path
+                    d="M12 2L12 22M12 2L5 9M12 2L19 9"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
-      {modelMenu && <div className="mt-1.5 flex items-center">{modelMenu}</div>}
     </form>
   );
 }

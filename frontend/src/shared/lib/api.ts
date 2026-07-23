@@ -221,7 +221,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     fetch(`${apiBase()}${path}`, {
       ...init,
       headers: {
-        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        // FormData bodies must keep the browser's own multipart boundary header.
+        ...(init?.body && !(init.body instanceof FormData)
+          ? { "Content-Type": "application/json" }
+          : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...init?.headers,
       },
@@ -1653,6 +1656,24 @@ export async function claimSharedTaggerSession(token: string) {
   );
   invalidateCache("/tagging-sessions");
   return res;
+}
+
+/** Transcript of one dictated clip plus which STT provider produced it. */
+export interface TranscriptionResult {
+  text: string;
+  provider: string;
+}
+
+/** Transcribe one recorded clip; ``language`` is a soft BCP-47 locale hint. */
+export async function transcribeAudio(
+  audio: Blob,
+  filename: string,
+  language?: string,
+): Promise<TranscriptionResult> {
+  const form = new FormData();
+  form.append("audio", audio, filename);
+  if (language) form.append("language", language);
+  return request<TranscriptionResult>("/transcribe", { method: "POST", body: form });
 }
 
 /** Bulk-delete the caller's pending (staged) uploads. */

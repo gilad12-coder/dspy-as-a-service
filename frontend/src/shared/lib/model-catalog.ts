@@ -5,7 +5,6 @@ import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 // and freezes the build-time localhost fallback. See shared/lib/api.ts.
 const apiBase = () => getRuntimeEnv().apiUrl;
 const LS_KEY = "skynet:model-catalog";
-const LS_TTL = 10 * 60 * 1000;
 
 const EMPTY_CATALOG: ModelCatalogResponse = { providers: [], models: [] };
 
@@ -15,16 +14,16 @@ function isModelCatalogResponse(value: unknown): value is ModelCatalogResponse {
   return Array.isArray(candidate.providers) && Array.isArray(candidate.models);
 }
 
+// Stale-while-revalidate: serve whatever the last load stored — no TTL. An
+// expired cache used to leave the model menu empty for the seconds the
+// LiteLLM round-trip takes; a slightly stale list beats a blank one, and the
+// module-load fetch below replaces it as soon as fresh data lands.
 let _cache: ModelCatalogResponse | null = null;
 try {
   const raw = typeof window !== "undefined" ? localStorage.getItem(LS_KEY) : null;
   if (raw) {
     const parsed = JSON.parse(raw) as { ts?: unknown; data?: unknown };
-    if (
-      typeof parsed.ts === "number" &&
-      Date.now() - parsed.ts < LS_TTL &&
-      isModelCatalogResponse(parsed.data)
-    ) {
+    if (isModelCatalogResponse(parsed.data)) {
       _cache = parsed.data;
     }
   }

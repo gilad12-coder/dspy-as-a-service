@@ -143,6 +143,12 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "submission.validation_failed": "Payload validation failed. Check the optimizer, module, and column mapping.",
     "submission.vision_required": "Dataset contains image columns ({fields}) but the selected model ('{model}') does not support image inputs. Pick a vision-capable model.",
     "submit.no_models_available": "No models available in the catalog — configure a provider API key first.",
+    "transcription.failed": "Transcription failed on every configured provider.",
+    "transcription.too_large": "Audio clip exceeds the {max_mb}MB transcription limit.",
+    "transcription.unconfigured": (
+        "No transcription provider configured. Set SONIOX_API_KEY, "
+        "ELEVENLABS_API_KEY, or OPENAI_API_KEY."
+    ),
     "user.storage.quota_exceeded": "Storage quota exceeded ({used_mb}MB of {quota_mb}MB used). Free up space and try again.",
     "wizard.column_roles_not_object": "column_roles must be an object.",
     "wizard.field_must_be_list": "{field} must be a list.",

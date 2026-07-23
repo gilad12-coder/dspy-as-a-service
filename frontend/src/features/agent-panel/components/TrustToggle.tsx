@@ -14,6 +14,9 @@ interface TrustToggleProps {
   mode: TrustMode;
   onCycle: () => void;
   className?: string;
+  /** Codex-style borderless variant for the composer's control row: colored
+   *  icon + label only, sized to sit beside the h-9 composer controls. */
+  plain?: boolean;
 }
 
 const ICONS: Record<TrustMode, React.ComponentType<{ className?: string }>> = {
@@ -24,7 +27,7 @@ const ICONS: Record<TrustMode, React.ComponentType<{ className?: string }>> = {
 
 const MODE_ORDER: TrustMode[] = ["ask", "auto_safe", "yolo"];
 
-export function TrustToggle({ mode, onCycle, className }: TrustToggleProps) {
+export function TrustToggle({ mode, onCycle, className, plain }: TrustToggleProps) {
   const Icon = ICONS[mode];
   const hue = TRUST_MODE_HUE[mode];
   const label = TRUST_MODE_LABEL[mode]();
@@ -39,17 +42,23 @@ export function TrustToggle({ mode, onCycle, className }: TrustToggleProps) {
             p1: label,
           })}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[0.6875rem]",
+            plain
+              ? "inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs"
+              : "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[0.6875rem]",
             "transition-all duration-150 hover:bg-accent/60 active:scale-[0.97] cursor-pointer",
             className,
           )}
-          style={{
-            borderColor: `${hue}30`,
-            color: hue,
-            backgroundColor: `${hue}0A`,
-          }}
+          style={
+            plain
+              ? { color: hue }
+              : {
+                  borderColor: `${hue}30`,
+                  color: hue,
+                  backgroundColor: `${hue}0A`,
+                }
+          }
         >
-          <Icon className="size-3" aria-hidden="true" />
+          <Icon className={plain ? "size-3.5" : "size-3"} aria-hidden="true" />
           <span className="font-medium leading-none">{label}</span>
         </button>
       </TooltipTrigger>

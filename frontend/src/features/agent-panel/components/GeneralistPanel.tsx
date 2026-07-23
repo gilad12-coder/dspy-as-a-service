@@ -317,6 +317,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   };
 
   const [draft, setDraft] = React.useState("");
+  const [attachOpen, setAttachOpen] = React.useState(false);
   const confirmedDatasetCallsRef = React.useRef<Set<string>>(new Set());
   // Latest dataset the user confirmed in-panel — supplies columns + roles +
   // sample rows to the hosted code agent. Kept as state (not a ref) so the
@@ -657,7 +658,6 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <TrustToggle mode={trustMode} onCycle={cycleTrust} />
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
@@ -790,6 +790,47 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                 onEffortChange={agent.setReasoningEffort}
               />
             }
+                leadingControls={
+                  <>
+                    <Popover open={attachOpen} onOpenChange={setAttachOpen}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              disabled={codeAuthoringActive}
+                              aria-label={msg("agent.composer.attach")}
+                              className={cn(
+                                "inline-flex size-9 items-center justify-center rounded-full",
+                                "text-muted-foreground transition-colors cursor-pointer",
+                                "hover:bg-accent/60 hover:text-foreground",
+                                "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40",
+                                "disabled:pointer-events-none disabled:opacity-50",
+                              )}
+                            >
+                              <Plus className="size-4" />
+                            </button>
+                          </PopoverTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">{msg("agent.composer.attach")}</TooltipContent>
+                      </Tooltip>
+                      <PopoverContent
+                        side="top"
+                        align="start"
+                        sideOffset={8}
+                        className="w-96 max-w-[calc(100vw-2rem)] p-3"
+                      >
+                        <DatasetUploadCard
+                          onConfirm={(confirmed) => {
+                            setAttachOpen(false);
+                            void handleDatasetConfirm(`user-attach-${confirmed.fileName}`, confirmed);
+                          }}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <TrustToggle mode={trustMode} onCycle={cycleTrust} plain />
+                  </>
+                }
                 sendAriaLabel={msg(
                   "auto.features.agent.panel.components.generalistpanel.literal.6",
                 )}

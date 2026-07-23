@@ -188,7 +188,7 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="text-muted-foreground hover:text-foreground"
+          className="size-11 text-muted-foreground hover:text-foreground sm:size-8"
           onClick={() => handleOpenChange(true)}
           aria-label={msg("share.button")}
         >
