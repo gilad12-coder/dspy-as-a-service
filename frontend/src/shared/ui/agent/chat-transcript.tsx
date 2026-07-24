@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import { AgentBubble } from "./agent-bubble";
 import { MessageActions } from "./message-actions";
+import { TtftIndicator } from "./ttft-indicator";
 import { UserBubble, UserBubbleEditor } from "./user-bubble";
 import type { AgentMessage, AgentThinking, AgentToolCall } from "./types";
 
@@ -126,6 +127,19 @@ export function ChatTranscript({
       !isStreamingThisPair &&
       (agentText.length > 0 || Boolean(agentMsg.model));
 
+    // The send → first-token gap: mirrors exactly when AgentBubble collapses to
+    // null (no text, tools, or reasoning yet). The ember stands in for that
+    // empty placeholder and is unmounted the moment any of those signals lands.
+    const pairThinking = pair.key === latestAgentKey ? thinking : undefined;
+    const hasThinking = Boolean(
+      pairThinking && (pairThinking.reasoning || (pairThinking.streaming && pairThinking.startedAt)),
+    );
+    const isWaitingFirstToken =
+      isStreamingThisPair &&
+      agentText.length === 0 &&
+      !(agentMsg?.toolCalls?.length ?? 0) &&
+      !hasThinking;
+
     return (
       <>
         {pair.user &&
@@ -148,6 +162,7 @@ export function ChatTranscript({
         {agentMsg && !isEditing && (
           <div className="flex justify-end">
             <div className="flex flex-col items-end gap-1 max-w-[88%]">
+              {isWaitingFirstToken && <TtftIndicator />}
               <AgentBubble
                 msg={agentMsg}
                 thinking={pair.key === latestAgentKey ? thinking : undefined}

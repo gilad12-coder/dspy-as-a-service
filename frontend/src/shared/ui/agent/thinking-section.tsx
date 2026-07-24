@@ -8,6 +8,7 @@ import { cn } from "@/shared/lib/utils";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import type { AgentThinking } from "./types";
+import { EmberGlyph } from "./ttft-indicator";
 
 // Within this many px of the bottom still counts as "at the bottom", so
 // momentum scrolling and fractional positions don't break follow mode.
@@ -100,7 +101,7 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
         className="flex w-full items-center gap-2.5 px-4 py-2.5 text-start hover:bg-[#3D2E22]/[0.035] transition-colors cursor-pointer"
         aria-expanded={open}
       >
-        <ThinkingIndicator active={isThinking} />
+        <ThinkingIndicator active={isThinking} reduce={Boolean(shouldReduceMotion)} />
         <div className="flex items-baseline gap-2 shrink-0">
           <span
             className={cn(
@@ -160,14 +161,9 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
   );
 }
 
-function ThinkingIndicator({ active }: { active: boolean }) {
+function ThinkingIndicator({ active, reduce }: { active: boolean; reduce: boolean }) {
   if (active) {
-    return (
-      <span className="relative inline-flex size-4 items-center justify-center shrink-0">
-        <span className="absolute inset-0 rounded-full bg-[#3D2E22]/15 animate-ping motion-reduce:animate-none" />
-        <span className="relative size-2 rounded-full bg-[#3D2E22]" />
-      </span>
-    );
+    return <EmberGlyph reduce={reduce} />;
   }
   return (
     <span className="inline-flex size-4 items-center justify-center rounded-full bg-[#3D2E22]/15 shrink-0">
