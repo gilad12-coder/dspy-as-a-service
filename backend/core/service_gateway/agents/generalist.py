@@ -626,6 +626,9 @@ _ALWAYS_TOOLS = frozenset(
         "get_analytics_summary_analytics_summary_get",
         "get_optimizer_stats_analytics_optimizers_get",
         "get_model_stats_analytics_models_get",
+        # Read-only wallet: credit balance, free grant, plan, and recent ledger —
+        # lets the agent answer "how many credits do I have / what did I spend?".
+        "get_wallet_for_agent",
         "serve_info_serve",
         "serve_pair_info_serve",
         # UI-trigger tool — calling it renders an inline inference-input
@@ -661,6 +664,10 @@ _ALWAYS_TOOLS = frozenset(
         "get_test_results_optimizations",
         "get_grid_search_result_optimizations",
         "get_pair_test_results_optimizations",
+        # Read-only tagger reach: list the caller's tagging sessions so the agent
+        # can answer questions about them and point the user at /tagger/{id}. The
+        # tagger has its own assist agent; the generalist only reads here.
+        "list_tagging_sessions_for_agent",
     }
 )
 # Diagnostic tools unlocked the moment a dataset has columns + roles. These

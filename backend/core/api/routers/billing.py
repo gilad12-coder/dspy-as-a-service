@@ -206,7 +206,9 @@ def create_billing_router(*, job_store) -> APIRouter:
     @router.get(
         "/billing/wallet",
         response_model=WalletResponse,
+        operation_id="get_wallet_for_agent",
         summary="Return the caller's credit wallet and subscription state",
+        tags=["agent"],
     )
     def get_wallet(user: AuthenticatedUserDep) -> WalletResponse:
         """Return the caller's purchased balance, free grant, subscription, and ledger.

@@ -386,6 +386,15 @@ def test_always_tools_include_discovery_and_post_submit() -> None:
     assert "rename_job_optimizations" in allowed
 
 
+def test_read_only_reach_tools_always_available() -> None:
+    """Wallet and tagging-session reads are always-on and never gate."""
+    allowed = tools_for(WizardState())
+    assert "get_wallet_for_agent" in allowed
+    assert "list_tagging_sessions_for_agent" in allowed
+    for name in ("get_wallet_for_agent", "list_tagging_sessions_for_agent"):
+        assert _needs_approval(name, "ask") is False
+
+
 def test_yolo_never_gates() -> None:
     """Yolo trust-mode never gates any tool."""
     for name in ("delete_job_optimizations", "submit_job_run_post", "rename_job_optimizations"):

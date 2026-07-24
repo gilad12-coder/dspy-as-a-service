@@ -235,7 +235,9 @@ def create_tagging_session_router(*, job_store) -> APIRouter:
     @router.get(
         "/tagging-sessions",
         response_model=TaggingSessionListResponse,
+        operation_id="list_tagging_sessions_for_agent",
         summary="List the caller's saved tagger sessions",
+        tags=["agent"],
     )
     def list_tagging_sessions(
         user: AuthenticatedUserDep,

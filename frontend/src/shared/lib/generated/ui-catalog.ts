@@ -313,6 +313,10 @@ export type MessageKey =
   | "auto.features.agent.panel.components.submitsummarycard.1"
   | "auto.features.agent.panel.components.submitsummarycard.literal.1"
   | "auto.features.agent.panel.components.submitsummarycard.template.1"
+  | "auto.features.agent.panel.components.taggingsessionscard.empty"
+  | "auto.features.agent.panel.components.taggingsessionscard.summary"
+  | "auto.features.agent.panel.components.taggingsessionscard.tagged"
+  | "auto.features.agent.panel.components.taggingsessionscard.title"
   | "auto.features.agent.panel.components.testresultscard.empty"
   | "auto.features.agent.panel.components.testresultscard.fixed"
   | "auto.features.agent.panel.components.testresultscard.optimized"
@@ -358,6 +362,13 @@ export type MessageKey =
   | "auto.features.agent.panel.components.toolscarousel.template.8"
   | "auto.features.agent.panel.components.trusttoggle.1"
   | "auto.features.agent.panel.components.trusttoggle.template.1"
+  | "auto.features.agent.panel.components.walletcard.free_grant"
+  | "auto.features.agent.panel.components.walletcard.paid_balance"
+  | "auto.features.agent.panel.components.walletcard.plan_free"
+  | "auto.features.agent.panel.components.walletcard.plan_premium"
+  | "auto.features.agent.panel.components.walletcard.recent"
+  | "auto.features.agent.panel.components.walletcard.summary"
+  | "auto.features.agent.panel.components.walletcard.title"
   | "auto.features.agent.panel.hooks.use.generalist.agent.literal.1"
   | "auto.features.agent.panel.hooks.use.generalist.agent.literal.2"
   | "auto.features.agent.panel.hooks.use.generalist.agent.literal.3"
@@ -3267,6 +3278,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.agent.panel.components.submitsummarycard.1": "פתח/י",
   "auto.features.agent.panel.components.submitsummarycard.literal.1": "הגשה נכשלה",
   "auto.features.agent.panel.components.submitsummarycard.template.1": "ה{p1} הוגשה",
+  "auto.features.agent.panel.components.taggingsessionscard.empty": "אין סשני תיוג עדיין",
+  "auto.features.agent.panel.components.taggingsessionscard.summary": "{p1} סשני תיוג",
+  "auto.features.agent.panel.components.taggingsessionscard.tagged": "{p1}/{p2} תויגו",
+  "auto.features.agent.panel.components.taggingsessionscard.title": "סשני תיוג",
   "auto.features.agent.panel.components.testresultscard.empty": "אין תוצאות בדיקה עדיין",
   "auto.features.agent.panel.components.testresultscard.fixed": "תוקן",
   "auto.features.agent.panel.components.testresultscard.optimized": "משופר",
@@ -3312,6 +3327,13 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.agent.panel.components.toolscarousel.template.8": "מנתח {p1} כדי לזהות עמודות, סוגים ודוגמאות.",
   "auto.features.agent.panel.components.trusttoggle.1": "מצב אמון · לחץ/י כדי להחליף",
   "auto.features.agent.panel.components.trusttoggle.template.1": "מצב אמון: {p1}. לחץ/י כדי להחליף",
+  "auto.features.agent.panel.components.walletcard.free_grant": "מענק חינם",
+  "auto.features.agent.panel.components.walletcard.paid_balance": "יתרה בתשלום",
+  "auto.features.agent.panel.components.walletcard.plan_free": "חינם",
+  "auto.features.agent.panel.components.walletcard.plan_premium": "פרימיום",
+  "auto.features.agent.panel.components.walletcard.recent": "פעילות אחרונה",
+  "auto.features.agent.panel.components.walletcard.summary": "{p1} קרדיטים · {p2}",
+  "auto.features.agent.panel.components.walletcard.title": "קרדיטים",
   "auto.features.agent.panel.hooks.use.generalist.agent.literal.1": "חושב…",
   "auto.features.agent.panel.hooks.use.generalist.agent.literal.2": "ממתין לאישור…",
   "auto.features.agent.panel.hooks.use.generalist.agent.literal.3": "ממשיך…",
@@ -11812,6 +11834,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.agent.panel.components.submitsummarycard.1": "Open",
   "auto.features.agent.panel.components.submitsummarycard.literal.1": "Submission failed",
   "auto.features.agent.panel.components.submitsummarycard.template.1": "The {p1} was submitted",
+  "auto.features.agent.panel.components.taggingsessionscard.empty": "No tagging sessions yet",
+  "auto.features.agent.panel.components.taggingsessionscard.summary": "{p1} tagging sessions",
+  "auto.features.agent.panel.components.taggingsessionscard.tagged": "{p1}/{p2} tagged",
+  "auto.features.agent.panel.components.taggingsessionscard.title": "Tagging sessions",
   "auto.features.agent.panel.components.testresultscard.empty": "No test results yet",
   "auto.features.agent.panel.components.testresultscard.fixed": "Fixed",
   "auto.features.agent.panel.components.testresultscard.optimized": "Optimized",
@@ -11857,6 +11883,13 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.agent.panel.components.toolscarousel.template.8": "Analyzes {p1} to identify columns, types, and examples.",
   "auto.features.agent.panel.components.trusttoggle.1": "Trust mode · click to switch",
   "auto.features.agent.panel.components.trusttoggle.template.1": "Trust mode: {p1}. Click to switch",
+  "auto.features.agent.panel.components.walletcard.free_grant": "Free grant",
+  "auto.features.agent.panel.components.walletcard.paid_balance": "Paid balance",
+  "auto.features.agent.panel.components.walletcard.plan_free": "Free",
+  "auto.features.agent.panel.components.walletcard.plan_premium": "Premium",
+  "auto.features.agent.panel.components.walletcard.recent": "Recent activity",
+  "auto.features.agent.panel.components.walletcard.summary": "{p1} credits · {p2}",
+  "auto.features.agent.panel.components.walletcard.title": "Credits",
   "auto.features.agent.panel.hooks.use.generalist.agent.literal.1": "Thinking…",
   "auto.features.agent.panel.hooks.use.generalist.agent.literal.2": "Waiting for approval…",
   "auto.features.agent.panel.hooks.use.generalist.agent.literal.3": "Continuing…",

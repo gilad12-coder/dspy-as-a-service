@@ -311,6 +311,9 @@ const TOOL_TITLES: Record<string, LocaleString> = {
   ),
   get_grid_search_result_optimizations: () => msg("auto.features.agent.panel.lib.tool.meta.literal.77"),
   get_pair_test_results_optimizations: () => msg("auto.features.agent.panel.lib.tool.meta.literal.78"),
+  get_wallet_for_agent: () => msg("auto.features.agent.panel.components.walletcard.title"),
+  list_tagging_sessions_for_agent: () =>
+    msg("auto.features.agent.panel.components.taggingsessionscard.title"),
 };
 
 function prettifyToolName(tool: string): string {
