@@ -280,6 +280,7 @@
   "auto.features.agent.panel.components.librarydatasetcard.pick": "בחר מהספרייה",
   "auto.features.agent.panel.components.librarydatasetcard.picked": "נבחר: {p1}",
   "auto.features.agent.panel.components.librarydatasetcard.error": "טעינת הדאטאסט נכשלה",
+  "auto.features.agent.panel.components.inferenceformcard.pair": "זוג {p1}",
   "auto.features.agent.panel.components.submitsummarycard.1": "פתח/י",
   "auto.features.agent.panel.components.submitsummarycard.literal.1": "הגשה נכשלה",
   "auto.features.agent.panel.components.submitsummarycard.template.1": "ה{p1} הוגשה",

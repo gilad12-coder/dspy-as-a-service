@@ -74,6 +74,15 @@ class RequestUserInferenceResponse(BaseModel):
     prompt: str
 
 
+class RequestUserPairInferenceResponse(BaseModel):
+    """Envelope for ``POST /serve/{id}/pair/{index}/request-form`` — UI-trigger marker."""
+
+    optimization_id: str
+    pair_index: int
+    awaiting_inputs: bool
+    prompt: str
+
+
 class ServeChatTurn(BaseModel):
     """One prior chat turn carried by the react-serve chat request."""
 
@@ -444,6 +453,53 @@ def create_serve_router(*, job_store) -> APIRouter:
         load_program(job_store, optimization_id, current_user)
         return RequestUserInferenceResponse(
             optimization_id=optimization_id,
+            awaiting_inputs=True,
+            prompt=req.prompt.strip(),
+        )
+
+    @router.post(
+        "/serve/{optimization_id}/pair/{pair_index}/request-form",
+        response_model=RequestUserPairInferenceResponse,
+        operation_id="request_user_pair_inference",
+        summary="Ask the user to run inference through one grid-search pair; the chat renders an input card",
+        tags=["agent"],
+    )
+    def request_user_pair_inference(
+        optimization_id: str,
+        pair_index: int,
+        req: RequestUserInferenceRequest,
+        current_user: AuthenticatedUserDep,
+    ) -> RequestUserPairInferenceResponse:
+        """Signal the chat UI to render an inline inference card for one pair.
+
+        The grid-search twin of :func:`request_user_inference`: it targets a
+        single generation×reflection pair by ``pair_index`` (the agent picks
+        one after reading ``serve_pair_info`` / ``get_grid_search_result``).
+        Access and pair existence are gated by ``load_pair_program`` — the
+        same check ``serve_pair_program`` uses — so the agent can't render a
+        form for an inaccessible run or a nonexistent pair. The card fetches
+        the field schema from ``/serve/{id}/pair/{index}/info`` and runs
+        inference via ``/serve/{id}/pair/{index}``; the agent never calls
+        those directly.
+
+        Args:
+            optimization_id: Grid-search optimization id.
+            pair_index: Index of the pair to serve.
+            req: Optional prompt describing why inference is being offered.
+            current_user: Authenticated caller resolved from the bearer token.
+
+        Returns:
+            A :class:`RequestUserPairInferenceResponse` echoing the target pair
+            and prompt so the card can render them.
+
+        Raises:
+            DomainError: 404 if unknown/inaccessible, 409 if not in a
+                serveable state, 400 if the pair index is out of range.
+        """
+        load_pair_program(job_store, optimization_id, pair_index, current_user)
+        return RequestUserPairInferenceResponse(
+            optimization_id=optimization_id,
+            pair_index=pair_index,
             awaiting_inputs=True,
             prompt=req.prompt.strip(),
         )

@@ -1887,6 +1887,18 @@ export function serveProgram(optimizationId: string, inputs: Record<string, stri
   });
 }
 
+/** Run inference through one grid-search pair (non-streaming). */
+export function servePairProgram(
+  optimizationId: string,
+  pairIndex: number,
+  inputs: Record<string, string>,
+) {
+  return request<ServeResponse>(`/serve/${optimizationId}/pair/${pairIndex}`, {
+    method: "POST",
+    body: JSON.stringify({ inputs }),
+  });
+}
+
 export interface StreamServeHandlers {
   onToken: (field: string, chunk: string) => void;
   onFinal: (result: {

@@ -280,6 +280,7 @@
   "auto.features.agent.panel.components.librarydatasetcard.pick": "Choose from library",
   "auto.features.agent.panel.components.librarydatasetcard.picked": "Selected: {p1}",
   "auto.features.agent.panel.components.librarydatasetcard.error": "Couldn't load the dataset",
+  "auto.features.agent.panel.components.inferenceformcard.pair": "Pair {p1}",
   "auto.features.agent.panel.components.submitsummarycard.1": "Open",
   "auto.features.agent.panel.components.submitsummarycard.literal.1": "Submission failed",
   "auto.features.agent.panel.components.submitsummarycard.template.1": "The {p1} was submitted",

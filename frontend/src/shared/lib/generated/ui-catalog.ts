@@ -296,6 +296,7 @@ export type MessageKey =
   | "auto.features.agent.panel.components.inferenceformcard.literal.6"
   | "auto.features.agent.panel.components.inferenceformcard.literal.7"
   | "auto.features.agent.panel.components.inferenceformcard.literal.8"
+  | "auto.features.agent.panel.components.inferenceformcard.pair"
   | "auto.features.agent.panel.components.librarydatasetcard.error"
   | "auto.features.agent.panel.components.librarydatasetcard.pick"
   | "auto.features.agent.panel.components.librarydatasetcard.picked"
@@ -3265,6 +3266,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.agent.panel.components.inferenceformcard.literal.6": "אין שדות קלט זמינים.",
   "auto.features.agent.panel.components.inferenceformcard.literal.7": "ההרצה נכשלה.",
   "auto.features.agent.panel.components.inferenceformcard.literal.8": "טוען שדות…",
+  "auto.features.agent.panel.components.inferenceformcard.pair": "זוג {p1}",
   "auto.features.agent.panel.components.librarydatasetcard.error": "טעינת הדאטאסט נכשלה",
   "auto.features.agent.panel.components.librarydatasetcard.pick": "בחר מהספרייה",
   "auto.features.agent.panel.components.librarydatasetcard.picked": "נבחר: {p1}",
@@ -11825,6 +11827,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.agent.panel.components.inferenceformcard.literal.6": "No input fields available.",
   "auto.features.agent.panel.components.inferenceformcard.literal.7": "The run failed.",
   "auto.features.agent.panel.components.inferenceformcard.literal.8": "Loading fields…",
+  "auto.features.agent.panel.components.inferenceformcard.pair": "Pair {p1}",
   "auto.features.agent.panel.components.librarydatasetcard.error": "Couldn't load the dataset",
   "auto.features.agent.panel.components.librarydatasetcard.pick": "Choose from library",
   "auto.features.agent.panel.components.librarydatasetcard.picked": "Selected: {p1}",

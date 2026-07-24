@@ -664,6 +664,10 @@ _ALWAYS_TOOLS = frozenset(
         # the agent NEVER calls serve_program directly because it cannot
         # know the user's inputs.
         "request_user_inference",
+        # Grid-search twin of request_user_inference: renders the inference card
+        # for one pair. The agent picks pair_index from serve_pair_info /
+        # get_grid_search_result; the card runs the pair inference client-side.
+        "request_user_pair_inference",
         "discover_models_models_discover_post",
         "rename_job_optimizations",
         "toggle_pin_job_optimizations",

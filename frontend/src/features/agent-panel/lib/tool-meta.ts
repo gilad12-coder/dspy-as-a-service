@@ -311,6 +311,7 @@ const TOOL_TITLES: Record<string, LocaleString> = {
   ),
   request_user_dataset_from_library: () =>
     msg("auto.features.agent.panel.components.librarydatasetcard.title"),
+  request_user_pair_inference: () => msg("auto.features.agent.panel.lib.tool.meta.literal.70"),
   get_grid_search_result_optimizations: () => msg("auto.features.agent.panel.lib.tool.meta.literal.77"),
   get_pair_test_results_optimizations: () => msg("auto.features.agent.panel.lib.tool.meta.literal.78"),
   get_wallet_for_agent: () => msg("auto.features.agent.panel.components.walletcard.title"),

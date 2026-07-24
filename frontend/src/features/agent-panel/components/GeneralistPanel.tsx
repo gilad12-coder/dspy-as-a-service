@@ -65,6 +65,7 @@ import { getToolRenderer } from "./tool-renderers";
 const REQUEST_DATASET_TOOL = "request_user_dataset_datasets_request_upload_post";
 const REQUEST_LIBRARY_TOOL = "request_user_dataset_from_library";
 const REQUEST_INFERENCE_TOOL = "request_user_inference";
+const REQUEST_PAIR_INFERENCE_TOOL = "request_user_pair_inference";
 const REQUEST_CODE_TOOL = "request_code_authoring";
 
 // Submit tools whose success should mirror the manual wizard submit button:
@@ -629,7 +630,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
           />
         );
       }
-      if (call.tool === REQUEST_INFERENCE_TOOL) {
+      if (call.tool === REQUEST_INFERENCE_TOOL || call.tool === REQUEST_PAIR_INFERENCE_TOOL) {
         return <InferenceFormCard call={call} disabled={streaming} />;
       }
       if (call.tool === REQUEST_CODE_TOOL) {

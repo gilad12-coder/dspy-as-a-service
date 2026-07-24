@@ -402,6 +402,12 @@ def test_dataset_library_tools_always_available() -> None:
     assert "request_user_dataset_from_library" in allowed
 
 
+def test_pair_inference_trigger_always_available() -> None:
+    """The grid-search pair inference trigger is always exposed and never gates."""
+    assert "request_user_pair_inference" in tools_for(WizardState())
+    assert _needs_approval("request_user_pair_inference", "ask") is False
+
+
 def test_yolo_never_gates() -> None:
     """Yolo trust-mode never gates any tool."""
     for name in ("delete_job_optimizations", "submit_job_run_post", "rename_job_optimizations"):
