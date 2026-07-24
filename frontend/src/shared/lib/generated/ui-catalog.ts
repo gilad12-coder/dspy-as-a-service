@@ -237,9 +237,18 @@ export type MessageKey =
   | "auto.app.optimizations.id.page.template.4"
   | "auto.app.submit.layout.template.1"
   | "auto.app.tagger.layout.template.1"
+  | "auto.features.agent.panel.components.analyticssummarycard.avg_improvement"
+  | "auto.features.agent.panel.components.analyticssummarycard.avg_runtime"
+  | "auto.features.agent.panel.components.analyticssummarycard.sampled"
+  | "auto.features.agent.panel.components.analyticssummarycard.success_rate"
+  | "auto.features.agent.panel.components.analyticssummarycard.summary"
+  | "auto.features.agent.panel.components.analyticssummarycard.total"
   | "auto.features.agent.panel.components.approvalcard.literal.1"
   | "auto.features.agent.panel.components.approvalcard.literal.2"
   | "auto.features.agent.panel.components.approvalcard.literal.3"
+  | "auto.features.agent.panel.components.comparejobscard.missing"
+  | "auto.features.agent.panel.components.comparejobscard.status"
+  | "auto.features.agent.panel.components.comparejobscard.type"
   | "auto.features.agent.panel.components.conversationdrawer.delete"
   | "auto.features.agent.panel.components.conversationdrawer.empty"
   | "auto.features.agent.panel.components.conversationdrawer.no_results"
@@ -289,6 +298,10 @@ export type MessageKey =
   | "auto.features.agent.panel.components.inferenceformcard.literal.8"
   | "auto.features.agent.panel.components.minimizedpill.literal.1"
   | "auto.features.agent.panel.components.minimizedpill.literal.3"
+  | "auto.features.agent.panel.components.resultcards.module"
+  | "auto.features.agent.panel.components.resultcards.more"
+  | "auto.features.agent.panel.components.resultcards.open"
+  | "auto.features.agent.panel.components.resultcards.rows"
   | "auto.features.agent.panel.components.searchresultscard.count_many"
   | "auto.features.agent.panel.components.searchresultscard.count_one"
   | "auto.features.agent.panel.components.searchresultscard.count_truncated"
@@ -300,6 +313,11 @@ export type MessageKey =
   | "auto.features.agent.panel.components.submitsummarycard.1"
   | "auto.features.agent.panel.components.submitsummarycard.literal.1"
   | "auto.features.agent.panel.components.submitsummarycard.template.1"
+  | "auto.features.agent.panel.components.testresultscard.empty"
+  | "auto.features.agent.panel.components.testresultscard.fixed"
+  | "auto.features.agent.panel.components.testresultscard.optimized"
+  | "auto.features.agent.panel.components.testresultscard.passed"
+  | "auto.features.agent.panel.components.testresultscard.regressed"
   | "auto.features.agent.panel.components.toolcallrow.1"
   | "auto.features.agent.panel.components.toolcallrow.2"
   | "auto.features.agent.panel.components.toolcallrow.3"
@@ -3173,9 +3191,18 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.app.optimizations.id.page.template.4": "ה{p1} בוטלה על ידי המשתמש.",
   "auto.app.submit.layout.template.1": "צור/צרי אופטימיזציית פרומפטים חדשה עם DSPy — בחר/י {p1}, העלה/העלי {p2}, ושפר/שפרי ביצועים",
   "auto.app.tagger.layout.template.1": "הגדרות תיוג — סווג/סווגי, תייג/תייגי וחלץ/חלצי מידע מ{p1}ים",
+  "auto.features.agent.panel.components.analyticssummarycard.avg_improvement": "שיפור ממוצע",
+  "auto.features.agent.panel.components.analyticssummarycard.avg_runtime": "זמן ריצה ממוצע",
+  "auto.features.agent.panel.components.analyticssummarycard.sampled": "מבוסס על מדגם חלקי",
+  "auto.features.agent.panel.components.analyticssummarycard.success_rate": "אחוז הצלחה",
+  "auto.features.agent.panel.components.analyticssummarycard.summary": "{p1} {p2} · {p3} הצלחה",
+  "auto.features.agent.panel.components.analyticssummarycard.total": "סה\"כ {p1}",
   "auto.features.agent.panel.components.approvalcard.literal.1": "הסתר/הסתירי פרטים טכניים",
   "auto.features.agent.panel.components.approvalcard.literal.2": "הצג/הציגי פרטים טכניים",
   "auto.features.agent.panel.components.approvalcard.literal.3": "בטל/י",
+  "auto.features.agent.panel.components.comparejobscard.missing": "{p1} לא נמצאו",
+  "auto.features.agent.panel.components.comparejobscard.status": "סטטוס",
+  "auto.features.agent.panel.components.comparejobscard.type": "סוג",
   "auto.features.agent.panel.components.conversationdrawer.delete": "מחק/י",
   "auto.features.agent.panel.components.conversationdrawer.empty": "אין עדיין שיחות שמורות",
   "auto.features.agent.panel.components.conversationdrawer.no_results": "אין תוצאות חיפוש",
@@ -3225,6 +3252,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.agent.panel.components.inferenceformcard.literal.8": "טוען שדות…",
   "auto.features.agent.panel.components.minimizedpill.literal.1": "פתח/י את הסוכן",
   "auto.features.agent.panel.components.minimizedpill.literal.3": "סוכן",
+  "auto.features.agent.panel.components.resultcards.module": "מודול",
+  "auto.features.agent.panel.components.resultcards.more": "עוד {p1}",
+  "auto.features.agent.panel.components.resultcards.open": "פתח",
+  "auto.features.agent.panel.components.resultcards.rows": "שורות",
   "auto.features.agent.panel.components.searchresultscard.count_many": "{p1} תוצאות",
   "auto.features.agent.panel.components.searchresultscard.count_one": "תוצאה אחת",
   "auto.features.agent.panel.components.searchresultscard.count_truncated": "{p1} מתוך {p2} תוצאות",
@@ -3236,6 +3267,11 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.agent.panel.components.submitsummarycard.1": "פתח/י",
   "auto.features.agent.panel.components.submitsummarycard.literal.1": "הגשה נכשלה",
   "auto.features.agent.panel.components.submitsummarycard.template.1": "ה{p1} הוגשה",
+  "auto.features.agent.panel.components.testresultscard.empty": "אין תוצאות בדיקה עדיין",
+  "auto.features.agent.panel.components.testresultscard.fixed": "תוקן",
+  "auto.features.agent.panel.components.testresultscard.optimized": "משופר",
+  "auto.features.agent.panel.components.testresultscard.passed": "{p1}/{p2} עברו",
+  "auto.features.agent.panel.components.testresultscard.regressed": "נסוג",
   "auto.features.agent.panel.components.toolcallrow.1": "ניסיון חוזר",
   "auto.features.agent.panel.components.toolcallrow.2": "פועל כעת…",
   "auto.features.agent.panel.components.toolcallrow.3": "ועוד ",
@@ -11700,9 +11736,18 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.app.optimizations.id.page.template.4": "The {p1} was cancelled by the user.",
   "auto.app.submit.layout.template.1": "Create a new prompt optimization with DSPy — choose {p1}, upload {p2}, and improve performance",
   "auto.app.tagger.layout.template.1": "Tagging settings — classify, tag, and extract information from {p1}",
+  "auto.features.agent.panel.components.analyticssummarycard.avg_improvement": "Avg improvement",
+  "auto.features.agent.panel.components.analyticssummarycard.avg_runtime": "Avg runtime",
+  "auto.features.agent.panel.components.analyticssummarycard.sampled": "Based on a partial sample",
+  "auto.features.agent.panel.components.analyticssummarycard.success_rate": "Success rate",
+  "auto.features.agent.panel.components.analyticssummarycard.summary": "{p1} {p2} · {p3} success",
+  "auto.features.agent.panel.components.analyticssummarycard.total": "Total {p1}",
   "auto.features.agent.panel.components.approvalcard.literal.1": "Hide technical details",
   "auto.features.agent.panel.components.approvalcard.literal.2": "Show technical details",
   "auto.features.agent.panel.components.approvalcard.literal.3": "Cancel",
+  "auto.features.agent.panel.components.comparejobscard.missing": "{p1} not found",
+  "auto.features.agent.panel.components.comparejobscard.status": "Status",
+  "auto.features.agent.panel.components.comparejobscard.type": "Type",
   "auto.features.agent.panel.components.conversationdrawer.delete": "Delete",
   "auto.features.agent.panel.components.conversationdrawer.empty": "No saved conversations yet",
   "auto.features.agent.panel.components.conversationdrawer.no_results": "No search results",
@@ -11752,6 +11797,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.agent.panel.components.inferenceformcard.literal.8": "Loading fields…",
   "auto.features.agent.panel.components.minimizedpill.literal.1": "Open the agent",
   "auto.features.agent.panel.components.minimizedpill.literal.3": "Agent",
+  "auto.features.agent.panel.components.resultcards.module": "Module",
+  "auto.features.agent.panel.components.resultcards.more": "+{p1} more",
+  "auto.features.agent.panel.components.resultcards.open": "Open",
+  "auto.features.agent.panel.components.resultcards.rows": "Rows",
   "auto.features.agent.panel.components.searchresultscard.count_many": "{p1} results",
   "auto.features.agent.panel.components.searchresultscard.count_one": "1 result",
   "auto.features.agent.panel.components.searchresultscard.count_truncated": "{p1} of {p2} results",
@@ -11763,6 +11812,11 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.agent.panel.components.submitsummarycard.1": "Open",
   "auto.features.agent.panel.components.submitsummarycard.literal.1": "Submission failed",
   "auto.features.agent.panel.components.submitsummarycard.template.1": "The {p1} was submitted",
+  "auto.features.agent.panel.components.testresultscard.empty": "No test results yet",
+  "auto.features.agent.panel.components.testresultscard.fixed": "Fixed",
+  "auto.features.agent.panel.components.testresultscard.optimized": "Optimized",
+  "auto.features.agent.panel.components.testresultscard.passed": "{p1}/{p2} passed",
+  "auto.features.agent.panel.components.testresultscard.regressed": "Regressed",
   "auto.features.agent.panel.components.toolcallrow.1": "Retry",
   "auto.features.agent.panel.components.toolcallrow.2": "Running now…",
   "auto.features.agent.panel.components.toolcallrow.3": "and ",

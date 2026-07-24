@@ -6,8 +6,12 @@ import { TERMS } from "@/shared/lib/terms";
 
 import { UUID_RE } from "../lib/entry-format";
 
+import { AnalyticsSummaryCard } from "./AnalyticsSummaryCard";
+import { CompareJobsCard } from "./CompareJobsCard";
+import { JobSummaryCard } from "./JobSummaryCard";
 import { SearchResultsCard } from "./SearchResultsCard";
 import { SubmitSummaryCard } from "./SubmitSummaryCard";
+import { TestResultsCard } from "./TestResultsCard";
 
 export interface ToolRenderer {
   card?: (call: AgentToolCall) => React.ReactNode;
@@ -276,6 +280,7 @@ const RENDERERS: Record<string, ToolRenderer> = {
   },
 
   compare_jobs_optimizations_compare_post: {
+    card: (call) => <CompareJobsCard call={call} />,
     summary: (call) => {
       const n = pickIds(getArgs(call)).length;
       return byStatus(call, {
@@ -347,6 +352,18 @@ const RENDERERS: Record<string, ToolRenderer> = {
 
   public_search_dashboard_search_post: {
     card: (call) => <SearchResultsCard call={call} />,
+  },
+
+  get_job_summary_optimizations: {
+    card: (call) => <JobSummaryCard call={call} />,
+  },
+
+  get_analytics_summary_analytics_summary_get: {
+    card: (call) => <AnalyticsSummaryCard call={call} />,
+  },
+
+  get_test_results_optimizations: {
+    card: (call) => <TestResultsCard call={call} />,
   },
 
 };
