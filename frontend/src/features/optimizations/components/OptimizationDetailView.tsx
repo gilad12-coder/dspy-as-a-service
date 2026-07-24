@@ -1001,7 +1001,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
         >
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-2 min-w-0">
-              <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex flex-col items-start gap-1.5">
                 <StatusBadge status={job.status} />
                 {job.name && (
                   <h2 className="text-lg sm:text-xl font-bold tracking-tight" dir="auto">
