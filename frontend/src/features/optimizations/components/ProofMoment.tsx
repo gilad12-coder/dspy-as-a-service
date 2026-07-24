@@ -1,20 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { BadgeCheck, Undo2 } from "lucide-react";
 import type { GuaranteeBasis } from "@/shared/types/api";
 import { FadeIn } from "@/shared/ui/motion";
 import { formatCredits } from "@/features/billing";
-import { useSettingsModal } from "@/features/settings";
 import { useLocale } from "@/shared/providers";
 import { formatImprovement } from "@/shared/lib";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { proofBannerVariant, readBilling } from "../lib/proof-banner";
-
-// Quiet text links for the proof card footer — warm taupe that settles to the
-// foreground on hover, gold focus ring to match the app's affordances.
-const PROOF_LINK_CLASS =
-  "rounded text-[#7C6350] underline-offset-4 transition-colors hover:text-[#1C1612] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45";
 
 /**
  * The proof moment — the trust climax on a finished run.
@@ -33,15 +26,12 @@ export function ProofMoment({
   improvement,
   guarantee,
   details,
-  optimizationId,
 }: {
   improvement: number | undefined;
   guarantee?: GuaranteeBasis | null;
   details?: Record<string, unknown>;
-  optimizationId?: string;
 }) {
   const { locale } = useLocale();
-  const { openTo } = useSettingsModal();
   const billing = readBilling(details);
   const variant = proofBannerVariant(billing, improvement);
   if (billing == null || variant == null) return null;
@@ -87,16 +77,6 @@ export function ProofMoment({
                   p2: credits,
                 })}
               </p>
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
-                <button type="button" onClick={() => openTo("billing")} className={PROOF_LINK_CLASS}>
-                  {msg("billing.action.view_wallet")}
-                </button>
-                {optimizationId && (
-                  <Link href={`/optimizations/${optimizationId}`} className={PROOF_LINK_CLASS}>
-                    {msg("optimization.proof.view_optimization")}
-                  </Link>
-                )}
-              </div>
             </div>
           </div>
         </div>

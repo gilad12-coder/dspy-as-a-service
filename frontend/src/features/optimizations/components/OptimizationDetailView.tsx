@@ -1186,7 +1186,6 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                 improvement={job.result?.metric_improvement ?? undefined}
                 guarantee={job.result?.guarantee}
                 details={job.result?.details}
-                optimizationId={job.optimization_id}
               />
             </div>
           )}
