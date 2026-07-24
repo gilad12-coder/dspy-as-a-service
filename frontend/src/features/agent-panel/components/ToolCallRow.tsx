@@ -166,9 +166,8 @@ export function ToolCallRow({
             className="overflow-hidden"
           >
             <div className="px-3 pb-3 pt-1 space-y-2.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <RawName tool={call.tool} />
-                {isRetry && (
+              {isRetry && (
+                <div className="flex items-center gap-2 flex-wrap">
                   <span
                     className="inline-flex items-center gap-1 text-[0.625rem] text-muted-foreground/70"
                     title={msg("auto.features.agent.panel.components.toolcallrow.literal.2")}
@@ -176,8 +175,8 @@ export function ToolCallRow({
                     <RefreshCw className="size-2.5" aria-hidden="true" />
                     {msg("auto.features.agent.panel.components.toolcallrow.1")}
                   </span>
-                )}
-              </div>
+                </div>
+              )}
               {showReasonInBody && (
                 <div className="text-[0.75rem] leading-snug text-muted-foreground/85">
                   {call.reason}
@@ -378,18 +377,6 @@ function CopyButton({ text }: { text: string }) {
     >
       <CopyGlyph copied={copied} className="size-3" />
     </button>
-  );
-}
-
-function RawName({ tool }: { tool: string }) {
-  return (
-    <div
-      className="inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[0.625rem] text-muted-foreground/70 bg-muted/40"
-      dir="ltr"
-      title={msg("auto.features.agent.panel.components.toolcallrow.literal.11")}
-    >
-      {tool}
-    </div>
   );
 }
 

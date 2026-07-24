@@ -269,6 +269,7 @@
   "auto.features.agent.panel.components.walletcard.summary": "{p1} credits · {p2}",
   "auto.features.agent.panel.components.walletcard.plan_free": "Free",
   "auto.features.agent.panel.components.walletcard.plan_premium": "Premium",
+  "auto.features.agent.panel.components.walletcard.plan_label": "Plan",
   "auto.features.agent.panel.components.walletcard.free_grant": "Free grant",
   "auto.features.agent.panel.components.walletcard.paid_balance": "Paid balance",
   "auto.features.agent.panel.components.walletcard.recent": "Recent activity",

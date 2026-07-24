@@ -103,7 +103,10 @@ export function WalletCard({ call }: WalletCardProps) {
         <span dir="ltr" className="text-[0.625rem] text-muted-foreground/55">
           ≈ {fmtUsd(total)}
         </span>
-        <span className="ms-auto">
+        <span className="ms-auto inline-flex items-center gap-1.5">
+          <span className="text-[0.625rem] text-muted-foreground/60">
+            {msg("auto.features.agent.panel.components.walletcard.plan_label")}
+          </span>
           <PlanChip premium={premium} />
         </span>
       </div>

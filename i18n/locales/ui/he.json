@@ -269,6 +269,7 @@
   "auto.features.agent.panel.components.walletcard.summary": "{p1} קרדיטים · {p2}",
   "auto.features.agent.panel.components.walletcard.plan_free": "חינם",
   "auto.features.agent.panel.components.walletcard.plan_premium": "פרימיום",
+  "auto.features.agent.panel.components.walletcard.plan_label": "מסלול",
   "auto.features.agent.panel.components.walletcard.free_grant": "מענק חינם",
   "auto.features.agent.panel.components.walletcard.paid_balance": "יתרה בתשלום",
   "auto.features.agent.panel.components.walletcard.recent": "פעילות אחרונה",
