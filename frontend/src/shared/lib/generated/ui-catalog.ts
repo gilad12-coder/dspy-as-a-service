@@ -507,7 +507,12 @@ export type MessageKey =
   | "auto.features.agent.panel.lib.tool.meta.literal.76"
   | "auto.features.agent.panel.lib.tool.meta.literal.77"
   | "auto.features.agent.panel.lib.tool.meta.literal.78"
+  | "auto.features.agent.panel.lib.tool.meta.literal.79"
   | "auto.features.agent.panel.lib.tool.meta.literal.8"
+  | "auto.features.agent.panel.lib.tool.meta.literal.80"
+  | "auto.features.agent.panel.lib.tool.meta.literal.81"
+  | "auto.features.agent.panel.lib.tool.meta.literal.82"
+  | "auto.features.agent.panel.lib.tool.meta.literal.83"
   | "auto.features.agent.panel.lib.tool.meta.literal.9"
   | "auto.features.agent.panel.lib.tool.meta.template.1"
   | "auto.features.agent.panel.lib.tool.meta.template.10"
@@ -3477,7 +3482,12 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.agent.panel.lib.tool.meta.literal.76": "העלאת דאטאסט",
   "auto.features.agent.panel.lib.tool.meta.literal.77": "תוצאות סריקה",
   "auto.features.agent.panel.lib.tool.meta.literal.78": "בדיקת זוג",
+  "auto.features.agent.panel.lib.tool.meta.literal.79": "ספריית דאטאסטים",
   "auto.features.agent.panel.lib.tool.meta.literal.8": "הרץ/הריצי",
+  "auto.features.agent.panel.lib.tool.meta.literal.80": "מציג את יתרת הקרדיטים שלך, המסלול הנוכחי והשימוש האחרון.",
+  "auto.features.agent.panel.lib.tool.meta.literal.81": "מציג את סשני התיוג שלך וכמה דוגמאות תויגו בכל אחד.",
+  "auto.features.agent.panel.lib.tool.meta.literal.82": "מדפדף בדאטאסטים השמורים בספרייה שלך כדי לעשות שימוש חוזר באחד מהם.",
+  "auto.features.agent.panel.lib.tool.meta.literal.83": "פותח בורר בצ׳אט לשימוש חוזר בדאטאסט ששמרת — בלי להעלות מחדש.",
   "auto.features.agent.panel.lib.tool.meta.literal.9": "השם החדש יוצג בכל מקום במקום השם הנוכחי.",
   "auto.features.agent.panel.lib.tool.meta.template.1": "מחיקת {p1}",
   "auto.features.agent.panel.lib.tool.meta.template.10": "הרץ/הריצי {p1}",
@@ -12038,7 +12048,12 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.agent.panel.lib.tool.meta.literal.76": "Dataset upload",
   "auto.features.agent.panel.lib.tool.meta.literal.77": "Grid search results",
   "auto.features.agent.panel.lib.tool.meta.literal.78": "Pair check",
+  "auto.features.agent.panel.lib.tool.meta.literal.79": "Dataset library",
   "auto.features.agent.panel.lib.tool.meta.literal.8": "Run",
+  "auto.features.agent.panel.lib.tool.meta.literal.80": "Shows your remaining credits, current plan, and recent usage.",
+  "auto.features.agent.panel.lib.tool.meta.literal.81": "Lists your tagging sessions and how many examples are tagged in each.",
+  "auto.features.agent.panel.lib.tool.meta.literal.82": "Browses the datasets saved in your library so you can reuse one.",
+  "auto.features.agent.panel.lib.tool.meta.literal.83": "Opens a picker in the chat to reuse a dataset you've already saved — no re-upload.",
   "auto.features.agent.panel.lib.tool.meta.literal.9": "The new name will appear everywhere in place of the current one.",
   "auto.features.agent.panel.lib.tool.meta.template.1": "Delete {p1}",
   "auto.features.agent.panel.lib.tool.meta.template.10": "Run {p1}",

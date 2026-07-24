@@ -7,6 +7,7 @@ import {
   Database,
   FileSearch,
   GitCompare,
+  Library,
   ListChecks,
   Pencil,
   Pin,
@@ -19,6 +20,7 @@ import {
   Square,
   Tags,
   Trash2,
+  Wallet,
   Wand2,
   type LucideIcon,
 } from "lucide-react";
@@ -263,6 +265,34 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     severity: "info",
     icon: Sparkles,
   },
+  get_wallet_for_agent: {
+    title: () => msg("auto.features.agent.panel.components.walletcard.title"),
+    description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.80"),
+    confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.62"),
+    severity: "info",
+    icon: Wallet,
+  },
+  list_tagging_sessions_for_agent: {
+    title: () => msg("auto.features.agent.panel.components.taggingsessionscard.title"),
+    description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.81"),
+    confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.62"),
+    severity: "info",
+    icon: Tags,
+  },
+  list_datasets_for_agent: {
+    title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.79"),
+    description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.82"),
+    confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.62"),
+    severity: "info",
+    icon: Database,
+  },
+  request_user_dataset_from_library: {
+    title: () => msg("auto.features.agent.panel.components.librarydatasetcard.title"),
+    description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.83"),
+    confirmLabel: () => msg("auto.features.agent.panel.components.librarydatasetcard.pick"),
+    severity: "info",
+    icon: Library,
+  },
 };
 
 // Read-only / lookup tools (no TOOL_META entry, no approval card) fall through
@@ -309,14 +339,9 @@ const TOOL_TITLES: Record<string, LocaleString> = {
   request_user_dataset_datasets_request_upload_post: () => msg(
     "auto.features.agent.panel.lib.tool.meta.literal.76",
   ),
-  request_user_dataset_from_library: () =>
-    msg("auto.features.agent.panel.components.librarydatasetcard.title"),
   request_user_pair_inference: () => msg("auto.features.agent.panel.lib.tool.meta.literal.70"),
   get_grid_search_result_optimizations: () => msg("auto.features.agent.panel.lib.tool.meta.literal.77"),
   get_pair_test_results_optimizations: () => msg("auto.features.agent.panel.lib.tool.meta.literal.78"),
-  get_wallet_for_agent: () => msg("auto.features.agent.panel.components.walletcard.title"),
-  list_tagging_sessions_for_agent: () =>
-    msg("auto.features.agent.panel.components.taggingsessionscard.title"),
 };
 
 function prettifyToolName(tool: string): string {
