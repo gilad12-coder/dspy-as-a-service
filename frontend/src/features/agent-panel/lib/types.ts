@@ -26,6 +26,10 @@ export interface WizardState {
   metric_code?: string;
   model_configured?: boolean;
   staged_dataset_id?: string;
+  // Id of a saved library dataset the run submits by reference (durable),
+  // set when the user picks from the library instead of uploading. Mutually
+  // exclusive with staged_dataset_id.
+  source_dataset_id?: string;
   job_name?: string;
   job_description?: string;
   job_type?: "run" | "grid_search";

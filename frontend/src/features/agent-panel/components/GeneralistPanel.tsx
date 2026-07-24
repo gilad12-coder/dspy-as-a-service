@@ -52,6 +52,7 @@ import {
   DatasetUploadCard,
   type ConfirmedDataset,
 } from "./DatasetUploadCard";
+import { LibraryDatasetCard, type ConfirmedLibraryDataset } from "./LibraryDatasetCard";
 import { InferenceFormCard } from "./InferenceFormCard";
 import { CodeAuthoringCard } from "./CodeAuthoringCard";
 import { MinimizedPill } from "./MinimizedPill";
@@ -62,6 +63,7 @@ import { TrustToggle } from "./TrustToggle";
 import { getToolRenderer } from "./tool-renderers";
 
 const REQUEST_DATASET_TOOL = "request_user_dataset_datasets_request_upload_post";
+const REQUEST_LIBRARY_TOOL = "request_user_dataset_from_library";
 const REQUEST_INFERENCE_TOOL = "request_user_inference";
 const REQUEST_CODE_TOOL = "request_code_authoring";
 
@@ -520,6 +522,44 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
     [agent, wizardCtx],
   );
 
+  const handleLibraryPick = React.useCallback(
+    (callId: string, picked: ConfirmedLibraryDataset) => {
+      confirmedDatasetCallsRef.current.add(callId);
+      // By-reference twin of handleDatasetConfirm: no staging call — the run
+      // materializes rows from ``source_dataset_id`` on submit. Set the same
+      // gate fields so the next turn's wizard_state unlocks submit, and carry
+      // the library id so the backend injects it into the submit request.
+      if (wizardCtx) {
+        wizardCtx.setField("source_dataset_id", picked.sourceDatasetId, "user");
+        wizardCtx.setField("dataset_columns", picked.columns, "user");
+        wizardCtx.setField("column_roles", picked.columnRoles, "user");
+        wizardCtx.setField("dataset_ready", true, "user");
+        wizardCtx.setField("columns_configured", true, "user");
+      }
+      const mappingLine = picked.columns
+        .map((c) => {
+          const role = picked.columnRoles[c];
+          if (role === "ignore") return null;
+          return `- ${c} → ${role}`;
+        })
+        .filter(Boolean)
+        .join("\n");
+      const note = formatMsg(
+        "auto.features.agent.panel.components.generalistpanel.dataset_note",
+        { p1: picked.name, p2: picked.rowCount, p3: mappingLine },
+      );
+      const wizardOverride: WizardState = {
+        source_dataset_id: picked.sourceDatasetId,
+        dataset_ready: true,
+        columns_configured: true,
+        dataset_columns: picked.columns,
+        column_roles: picked.columnRoles,
+      };
+      agent.send(note, wizardOverride);
+    },
+    [agent, wizardCtx],
+  );
+
   const handleSubmit = React.useCallback(() => {
     const trimmed = draft.trim();
     if (!trimmed) return;
@@ -580,6 +620,15 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
           />
         );
       }
+      if (call.tool === REQUEST_LIBRARY_TOOL) {
+        return (
+          <LibraryDatasetCard
+            call={call}
+            alreadyConfirmed={confirmedDatasetCallsRef.current.has(call.id)}
+            onConfirm={(picked) => handleLibraryPick(call.id, picked)}
+          />
+        );
+      }
       if (call.tool === REQUEST_INFERENCE_TOOL) {
         return <InferenceFormCard call={call} disabled={streaming} />;
       }
@@ -593,7 +642,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       const summary = renderer?.summary?.(call) ?? null;
       return <ToolCallRow call={call} isRetry={ctx.isRetry} summary={summary} />;
     },
-    [handleDatasetConfirm, streaming, codeAgent],
+    [handleDatasetConfirm, handleLibraryPick, streaming, codeAgent],
   );
 
   const emptyState = (

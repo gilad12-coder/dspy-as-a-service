@@ -395,6 +395,13 @@ def test_read_only_reach_tools_always_available() -> None:
         assert _needs_approval(name, "ask") is False
 
 
+def test_dataset_library_tools_always_available() -> None:
+    """The saved-dataset library read + by-reference picker are always exposed."""
+    allowed = tools_for(WizardState())
+    assert "list_datasets_for_agent" in allowed
+    assert "request_user_dataset_from_library" in allowed
+
+
 def test_yolo_never_gates() -> None:
     """Yolo trust-mode never gates any tool."""
     for name in ("delete_job_optimizations", "submit_job_run_post", "rename_job_optimizations"):
@@ -564,6 +571,42 @@ async def test_submit_without_snapshot_code_leaves_agent_args() -> None:
     await tool.func._async_body(signature_code="agent_sig", metric_code="agent_metric")
     assert seen["signature_code"] == "agent_sig"
     assert seen["metric_code"] == "agent_metric"
+
+
+@pytest.mark.asyncio
+async def test_submit_injects_source_dataset_id() -> None:
+    """A library-dataset run injects source_dataset_id when no dataset is supplied."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        source_dataset_id="lib_42",
+        wizard_state=cast(WizardState, {"source_dataset_id": "lib_42"}),
+    )
+    await tool.func._async_body()
+    assert seen["source_dataset_id"] == "lib_42"
+
+
+@pytest.mark.asyncio
+async def test_submit_staged_dataset_wins_over_source() -> None:
+    """Staged and library ids are mutually exclusive: staged injects, source does not."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        staged_dataset_id="ds_1",
+        source_dataset_id="lib_1",
+        wizard_state=cast(WizardState, {}),
+    )
+    await tool.func._async_body()
+    assert seen["staged_dataset_id"] == "ds_1"
+    assert "source_dataset_id" not in seen
 
 
 @pytest.mark.asyncio

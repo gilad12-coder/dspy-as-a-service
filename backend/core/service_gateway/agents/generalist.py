@@ -265,6 +265,7 @@ class _ApprovalGatedTool:
         emit: Callable[[dict], None],
         outer_loop: asyncio.AbstractEventLoop,
         staged_dataset_id: str | None = None,
+        source_dataset_id: str | None = None,
         wizard_state: WizardState | None = None,
         authoring_flag: _TurnAuthoringFlag | None = None,
         needs_approval: Callable[[str, TrustMode], bool] | None = None,
@@ -289,6 +290,11 @@ class _ApprovalGatedTool:
                 Anthropic Files API convention where uploaded files are
                 bound to the thread and tools pick them up automatically
                 instead of the LLM relaying the id on every turn.
+            source_dataset_id: Id of a saved library dataset the user picked
+                for this conversation; auto-injected into submit-tool calls
+                that supply no dataset. The by-reference twin of
+                ``staged_dataset_id`` — the two are mutually exclusive, so
+                whichever the wizard carries is the one that lands.
             wizard_state: Turn-start wizard snapshot, used to validate the
                 field order of ``update_wizard_state`` patches in real time
                 (so the agent can't populate a later-step field before its
@@ -311,6 +317,7 @@ class _ApprovalGatedTool:
         self._emit = emit
         self._outer_loop = outer_loop
         self._staged_dataset_id = staged_dataset_id
+        self._source_dataset_id = source_dataset_id
         self._wizard_state = wizard_state or {}
         self._authoring_flag = authoring_flag or _TurnAuthoringFlag()
         self._needs_approval = needs_approval or _needs_approval
@@ -369,6 +376,18 @@ class _ApprovalGatedTool:
                 and not kwargs.get("dataset")
             ):
                 kwargs["staged_dataset_id"] = self._staged_dataset_id
+            # By-reference twin: a library dataset the user picked. Only inject
+            # when no other dataset source is present — ``RunRequest`` requires
+            # exactly one of dataset / staged_dataset_id / source_dataset_id, and
+            # the two id fields are mutually exclusive by construction (the
+            # wizard carries one or the other, never both).
+            if (
+                self._source_dataset_id
+                and not kwargs.get("source_dataset_id")
+                and not kwargs.get("staged_dataset_id")
+                and not kwargs.get("dataset")
+            ):
+                kwargs["source_dataset_id"] = self._source_dataset_id
             # Privacy is private-by-default, matching the wizard. The submit
             # request models default ``is_private=False`` (public), so an agent
             # run that never set it would silently publish to Explore — force the
@@ -537,6 +556,7 @@ def _wrap_tool_with_approval(
     emit: Callable[[dict], None],
     outer_loop: asyncio.AbstractEventLoop,
     staged_dataset_id: str | None = None,
+    source_dataset_id: str | None = None,
     wizard_state: WizardState | None = None,
     authoring_flag: _TurnAuthoringFlag | None = None,
     needs_approval: Callable[[str, TrustMode], bool] | None = None,
@@ -554,6 +574,8 @@ def _wrap_tool_with_approval(
             sync ``Tool.__call__`` from worker threads with no loop.
         staged_dataset_id: Optional staged-dataset id auto-injected into
             submit tool calls that omit it.
+        source_dataset_id: Optional library-dataset id auto-injected into
+            submit tool calls that supply no dataset (by-reference runs).
         wizard_state: Turn-start wizard snapshot used to validate
             ``update_wizard_state`` field ordering.
         authoring_flag: Turn-scoped flag shared across all wrappers in the
@@ -573,6 +595,7 @@ def _wrap_tool_with_approval(
         emit=emit,
         outer_loop=outer_loop,
         staged_dataset_id=staged_dataset_id,
+        source_dataset_id=source_dataset_id,
         wizard_state=wizard_state,
         authoring_flag=authoring_flag,
         needs_approval=needs_approval,
@@ -595,6 +618,10 @@ class WizardState(TypedDict, total=False):
     metric_code: str
     model_configured: bool
     staged_dataset_id: str
+    # Id of a saved library dataset the run submits by reference (durable),
+    # set when the user picks from the dataset library instead of uploading.
+    # Mutually exclusive with ``staged_dataset_id`` (an evicted upload).
+    source_dataset_id: str
     optimizer_name: str
     module_name: str
     job_type: str
@@ -652,6 +679,12 @@ _ALWAYS_TOOLS = frozenset(
         # chat. The card handles parsing + column-role confirmation
         # client-side and dispatches wizard:dataset-staged on confirm.
         "request_user_dataset_datasets_request_upload_post",
+        # Saved dataset library: a read tool to surface the caller's datasets,
+        # and a UI-trigger picker whose selection hydrates the wizard with a
+        # source_dataset_id — a durable by-reference run, unlike the evicted
+        # staged upload above.
+        "list_datasets_for_agent",
+        "request_user_dataset_from_library",
         # Generalized wizard patch — any editable field, partial updates.
         "update_wizard_state",
         # Semantic + structured search across every public optimization. The
@@ -1469,6 +1502,7 @@ async def _drive_generalist_agent(
         listing = await session.list_tools()
         allowed_names = tools_for(wizard_state)
         staged_id = wizard_state.get("staged_dataset_id") or None
+        source_id = wizard_state.get("source_dataset_id") or None
         # The MCP session is bound to THIS loop. ``streamify`` will dispatch
         # tool calls from a worker thread (asyncify), so the wrapper has
         # to marshal each call back here via run_coroutine_threadsafe.
@@ -1484,6 +1518,7 @@ async def _drive_generalist_agent(
                 emit=emit,
                 outer_loop=outer_loop,
                 staged_dataset_id=staged_id,
+                source_dataset_id=source_id,
                 wizard_state=wizard_state,
                 authoring_flag=authoring_flag,
             )

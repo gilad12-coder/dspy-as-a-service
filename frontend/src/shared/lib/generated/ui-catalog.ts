@@ -296,6 +296,10 @@ export type MessageKey =
   | "auto.features.agent.panel.components.inferenceformcard.literal.6"
   | "auto.features.agent.panel.components.inferenceformcard.literal.7"
   | "auto.features.agent.panel.components.inferenceformcard.literal.8"
+  | "auto.features.agent.panel.components.librarydatasetcard.error"
+  | "auto.features.agent.panel.components.librarydatasetcard.pick"
+  | "auto.features.agent.panel.components.librarydatasetcard.picked"
+  | "auto.features.agent.panel.components.librarydatasetcard.title"
   | "auto.features.agent.panel.components.minimizedpill.literal.1"
   | "auto.features.agent.panel.components.minimizedpill.literal.3"
   | "auto.features.agent.panel.components.resultcards.module"
@@ -3261,6 +3265,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.agent.panel.components.inferenceformcard.literal.6": "אין שדות קלט זמינים.",
   "auto.features.agent.panel.components.inferenceformcard.literal.7": "ההרצה נכשלה.",
   "auto.features.agent.panel.components.inferenceformcard.literal.8": "טוען שדות…",
+  "auto.features.agent.panel.components.librarydatasetcard.error": "טעינת הדאטאסט נכשלה",
+  "auto.features.agent.panel.components.librarydatasetcard.pick": "בחר מהספרייה",
+  "auto.features.agent.panel.components.librarydatasetcard.picked": "נבחר: {p1}",
+  "auto.features.agent.panel.components.librarydatasetcard.title": "בחירת דאטאסט",
   "auto.features.agent.panel.components.minimizedpill.literal.1": "פתח/י את הסוכן",
   "auto.features.agent.panel.components.minimizedpill.literal.3": "סוכן",
   "auto.features.agent.panel.components.resultcards.module": "מודול",
@@ -11817,6 +11825,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.agent.panel.components.inferenceformcard.literal.6": "No input fields available.",
   "auto.features.agent.panel.components.inferenceformcard.literal.7": "The run failed.",
   "auto.features.agent.panel.components.inferenceformcard.literal.8": "Loading fields…",
+  "auto.features.agent.panel.components.librarydatasetcard.error": "Couldn't load the dataset",
+  "auto.features.agent.panel.components.librarydatasetcard.pick": "Choose from library",
+  "auto.features.agent.panel.components.librarydatasetcard.picked": "Selected: {p1}",
+  "auto.features.agent.panel.components.librarydatasetcard.title": "Choose a dataset",
   "auto.features.agent.panel.components.minimizedpill.literal.1": "Open the agent",
   "auto.features.agent.panel.components.minimizedpill.literal.3": "Agent",
   "auto.features.agent.panel.components.resultcards.module": "Module",

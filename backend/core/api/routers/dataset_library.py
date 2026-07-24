@@ -387,7 +387,9 @@ def create_dataset_library_router(*, job_store) -> APIRouter:
     @router.get(
         "/datasets/library",
         response_model=DatasetListResponse,
+        operation_id="list_datasets_for_agent",
         summary="List the caller's saved datasets (and those shared with them)",
+        tags=["agent"],
     )
     def list_datasets(
         current_user: AuthenticatedUserDep,

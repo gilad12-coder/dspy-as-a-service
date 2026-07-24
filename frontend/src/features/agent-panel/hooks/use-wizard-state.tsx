@@ -31,7 +31,8 @@ type WizardKey =
   | "shuffle"
   | "is_private"
   | "optimizer_kwargs"
-  | "staged_dataset_id";
+  | "staged_dataset_id"
+  | "source_dataset_id";
 type WriteSource = "user" | "agent";
 
 interface WizardStateContextValue {
@@ -200,6 +201,9 @@ export function extractWizardPatch(result: unknown): Partial<WizardState> {
 
   if (typeof wrap.staged_dataset_id === "string" && wrap.staged_dataset_id) {
     patch.staged_dataset_id = wrap.staged_dataset_id;
+  }
+  if (typeof wrap.source_dataset_id === "string" && wrap.source_dataset_id) {
+    patch.source_dataset_id = wrap.source_dataset_id;
   }
 
   if (typeof wrap.signature_code === "string") patch.signature_code = wrap.signature_code;

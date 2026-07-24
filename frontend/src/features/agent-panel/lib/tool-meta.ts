@@ -309,6 +309,8 @@ const TOOL_TITLES: Record<string, LocaleString> = {
   request_user_dataset_datasets_request_upload_post: () => msg(
     "auto.features.agent.panel.lib.tool.meta.literal.76",
   ),
+  request_user_dataset_from_library: () =>
+    msg("auto.features.agent.panel.components.librarydatasetcard.title"),
   get_grid_search_result_optimizations: () => msg("auto.features.agent.panel.lib.tool.meta.literal.77"),
   get_pair_test_results_optimizations: () => msg("auto.features.agent.panel.lib.tool.meta.literal.78"),
   get_wallet_for_agent: () => msg("auto.features.agent.panel.components.walletcard.title"),
