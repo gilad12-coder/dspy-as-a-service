@@ -22,6 +22,8 @@ import {
   Play,
   Pause,
   HardDrive,
+  Rocket,
+  Grid2x2,
 } from "lucide-react";
 import { toast } from "react-toastify";
 
@@ -1037,10 +1039,21 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                 {job.optimization_id}
               </code>
               <div className="flex items-center gap-3 flex-wrap text-sm text-muted-foreground">
-                <Badge variant="secondary" className="text-[0.6875rem]">
-                  {job.optimization_type === "grid_search"
-                    ? msg("auto.app.optimizations.id.page.literal.2")
-                    : msg("auto.app.optimizations.id.page.literal.3")}
+                <Badge
+                  variant="outline"
+                  className="gap-1.5 border-[#C8A882]/45 bg-[#C8A882]/15 font-semibold text-[0.6875rem] text-[#3D2E22] [&>svg]:text-[#8a6d44]"
+                >
+                  {job.optimization_type === "grid_search" ? (
+                    <>
+                      <Grid2x2 />
+                      {msg("auto.app.optimizations.id.page.literal.2")}
+                    </>
+                  ) : (
+                    <>
+                      <Rocket />
+                      {msg("auto.app.optimizations.id.page.literal.3")}
+                    </>
+                  )}
                 </Badge>
                 <LiveElapsedBadge
                   isActive={isActive}
