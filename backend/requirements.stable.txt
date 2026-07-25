@@ -9,14 +9,17 @@
 # core.service_gateway.react_compat, so the same source runs on either line.
 # The DEFAULT line (3.3 preview) lives in requirements.txt.
 #
-# prometheus-fastapi-instrumentator is held at 7.1.0 (overridden down from the
-# 8.0.2 the bare resolve picks) to match uv.lock / requirements.txt — the
-# install_metrics() call in core.api.observability uses only the long-standing
-# 7.x API, so both lines stay on one instrumentator version.
+# prometheus-fastapi-instrumentator tracks 8.0.2 to match uv.lock /
+# requirements.txt — both lines stay on one instrumentator version. It was
+# previously held down at 7.1.0, but 7.x caps starlette below 1.0 and starlette
+# had to move to 1.3.1 to clear high-severity advisories, so the hold no longer
+# holds. install_metrics() in core.api.observability drives the instrumentator
+# through the Instrumentator(...).instrument().expose() chain, which is
+# unchanged in 8.x.
 #
 # Regenerate after changing dependencies:
 #    uv pip compile pyproject.toml --no-header \
-#        --override <(printf 'dspy==3.2.1\ngepa==0.1.1\nprometheus-fastapi-instrumentator==7.1.0\n') -o requirements.stable.txt
+#        --override <(printf 'dspy==3.2.1\ngepa==0.1.1\nprometheus-fastapi-instrumentator==8.0.2\n') -o requirements.stable.txt
 aiofile==3.11.1
     # via py-key-value-aio
 aiohappyeyeballs==2.6.2
@@ -241,7 +244,7 @@ prometheus-client==0.25.0
     # via
     #   skynet (pyproject.toml)
     #   prometheus-fastapi-instrumentator
-prometheus-fastapi-instrumentator==7.1.0
+prometheus-fastapi-instrumentator==8.0.2
     # via skynet (pyproject.toml)
 propcache==0.5.2
     # via

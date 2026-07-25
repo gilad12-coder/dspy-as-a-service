@@ -6,8 +6,10 @@
 # For the STABLE line (dspy==3.2.1) use requirements.stable.txt instead — the
 # agent layer bridges classic ReAct vs ReActV2 (core.service_gateway.react_compat)
 # so the same source runs on either. Regenerate from the lock after changing
-# dependencies so the two stay in sync:
-#    uv export --no-emit-project --no-hashes -o requirements.txt
+# dependencies so the two stay in sync — the `requirements-sync` CI job fails
+# if they drift:
+#    uv export --no-emit-project --no-hashes --no-header -o requirements.txt
+#    # then restore this header block
 aiofile==3.9.0
     # via py-key-value-aio
 aiohappyeyeballs==2.6.1
@@ -111,7 +113,9 @@ frozenlist==1.8.0
 fsspec==2026.3.0
     # via huggingface-hub
 gepa==0.1.1
-    # via dspy
+    # via
+    #   dspy
+    #   skynet
 greenlet==3.4.0 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'
     # via sqlalchemy
 griffelib==2.0.2
@@ -232,7 +236,7 @@ prometheus-client==0.25.0
     # via
     #   prometheus-fastapi-instrumentator
     #   skynet
-prometheus-fastapi-instrumentator==7.1.0
+prometheus-fastapi-instrumentator==8.0.2
     # via skynet
 propcache==0.4.1
     # via
@@ -303,6 +307,7 @@ requests==2.33.1
     # via
     #   dspy
     #   skynet
+    #   stripe
     #   tiktoken
 rich==15.0.0
     # via
@@ -338,6 +343,8 @@ starlette==1.3.1
     #   mcp
     #   prometheus-fastapi-instrumentator
     #   sse-starlette
+stripe==12.5.1
+    # via skynet
 tenacity==9.1.4
     # via dspy
 tiktoken==0.12.0
@@ -353,6 +360,7 @@ typer==0.23.1
     # via huggingface-hub
 typing-extensions==4.15.0
     # via
+    #   aiohttp
     #   aiosignal
     #   alembic
     #   anyio
@@ -368,6 +376,7 @@ typing-extensions==4.15.0
     #   referencing
     #   sqlalchemy
     #   starlette
+    #   stripe
     #   typing-inspection
 typing-inspection==0.4.2
     # via

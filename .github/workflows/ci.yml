@@ -28,6 +28,20 @@ jobs:
       # nightly concern and is intentionally not gated here.
       - name: Core test suite
         run: uv run pytest core/ -q
+      # requirements.txt is the pip install path's copy of uv.lock. When only
+      # one of the two moves, the pip-path image silently ships a different
+      # dependency set than CI ever tested — that drift is how starlette landed
+      # on a version the pinned instrumentator rejects, and how `stripe` went
+      # missing from the export entirely. Compare pins only, so the hand-written
+      # header block above the export is free to differ.
+      - name: requirements.txt in sync with uv.lock
+        run: |
+          uv export --no-emit-project --no-hashes --no-header -o /tmp/req-expected.txt >/dev/null
+          if ! diff -u <(grep -vE '^\s*#|^\s*$' requirements.txt) \
+                       <(grep -vE '^\s*#|^\s*$' /tmp/req-expected.txt); then
+            echo "::error::requirements.txt is out of sync with uv.lock. Regenerate: uv export --no-emit-project --no-hashes --no-header -o requirements.txt (then restore the header block)"
+            exit 1
+          fi
 
   frontend:
     name: frontend · typecheck + lint + unit
