@@ -43,6 +43,70 @@ jobs:
             exit 1
           fi
 
+  # Everything above installs through uv. The Dockerfile's other path
+  # (PKG_MANAGER=pip) installs the compiled requirements files with --no-deps,
+  # which means pip never re-resolves and never notices a package the file
+  # forgot to list — `stripe` was absent from requirements.txt while
+  # core/billing/service.py imported it unguarded, so a pip-path image would
+  # have died on the billing import with nothing in CI to catch it. Build the
+  # image both ways and import the modules that actually pull the runtime deps.
+  # The stable line matters most here: its compile is not reproducible on
+  # demand, so the requirements-sync guard cannot cover it and this is its only
+  # gate.
+  docker-pip-path:
+    name: docker · pip path (${{ matrix.dspy_line }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dspy_line: [preview, stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (PKG_MANAGER=pip)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          build-args: |
+            PKG_MANAGER=pip
+            DSPY_LINE=${{ matrix.dspy_line }}
+          load: true
+          tags: skynet-backend:pip-${{ matrix.dspy_line }}
+          cache-from: type=gha,scope=pip-${{ matrix.dspy_line }}
+          cache-to: type=gha,mode=max,scope=pip-${{ matrix.dspy_line }}
+      # `pip check` is the sharp end: --no-deps means pip installed the file
+      # verbatim without ever validating it, so this is the first thing in the
+      # pipeline that reads the wheels' own metadata. It catches both failure
+      # modes we actually hit — a package the file forgot ("skynet requires
+      # stripe, which is not installed") and two pins that cannot coexist
+      # ("prometheus-fastapi-instrumentator 7.1.0 has requirement
+      # starlette<1.0.0, but you have starlette 1.3.1").
+      # The stable line pins gepa 0.1.1 over dspy 3.2.1's hard gepa[dspy]==0.0.27
+      # requirement on purpose (see requirements.stable.txt's header), so that one
+      # line is filtered. Everything else pip check emits is a real defect.
+      - name: Dependency set is complete and self-consistent
+        run: |
+          out=$(docker run --rm skynet-backend:pip-${{ matrix.dspy_line }} pip check 2>&1 || true)
+          echo "$out"
+          if echo "$out" | grep -v 'has requirement gepa\[dspy\]==0.0.27' | grep -qE 'requires|has requirement'; then
+            echo "::error::pip check found real dependency problems in the ${{ matrix.dspy_line }} pip-path image"
+            exit 1
+          fi
+      # Importing the modules that pull the third-party surface also catches a
+      # missing package, and covers anything pip metadata does not describe.
+      # main/worker_main are deliberately excluded: they build the app at import
+      # time and open a real Postgres connection, which this job has no business
+      # standing up.
+      - name: Import smoke test
+        run: |
+          docker run --rm skynet-backend:pip-${{ matrix.dspy_line }} python -c "
+          import core.api.app
+          import core.billing.service
+          import core.worker.subprocess_runner
+          import core.service_gateway.optimization
+          print('pip-path image imports OK')
+          "
+
   frontend:
     name: frontend · typecheck + lint + unit
     runs-on: ubuntu-latest
