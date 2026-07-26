@@ -24,14 +24,23 @@ logging before a run ever starts.
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import threading
 from collections.abc import Callable
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 MAX_LOGGED_METRICS = 20
 MAX_METRIC_NAME_LENGTH = 50
+# Aggregates union names across examples, so a metric that derives names from
+# example content (against the documented contract) could mint 20 fresh names
+# per row. Cap the union so the result — and the UI columns built from it —
+# stays bounded no matter what the metric does.
+MAX_AGGREGATE_METRIC_NAMES = 50
+_ERROR_TEXT_CAP = 500
 
 # Word characters (unicode-aware — Hebrew column names become Hebrew metric
 # names) plus the punctuation a metric name plausibly needs ("f1_score",
@@ -125,9 +134,16 @@ class LoggedScoreRecorder:
         self._metric = metric
         self._lock = threading.Lock()
         self._by_example: dict[int, dict[str, float]] = {}
+        self._errors: dict[int, str] = {}
 
     def __call__(self, example: Any, prediction: Any, *args: Any, **kwargs: Any) -> Any:
         """Invoke the wrapped metric, capturing scores it logs for ``example``.
+
+        A metric crash is recorded (see :meth:`error_for`) and re-raised
+        unchanged, so the evaluator's own failure handling — dspy.Evaluate
+        scores the row 0 — still applies; the recorded text is what lets the
+        per-example results say "the metric crashed" instead of rendering a
+        silent zero.
 
         Args:
             example: The DSPy ``Example`` being scored.
@@ -141,6 +157,11 @@ class LoggedScoreRecorder:
         reset_logged_metrics()
         try:
             return self._metric(example, prediction, *args, **kwargs)
+        except Exception as exc:
+            text = f"{type(exc).__name__}: {exc}"[:_ERROR_TEXT_CAP]
+            with self._lock:
+                self._errors[id(example)] = text
+            raise
         finally:
             logged = drain_logged_metrics()
             if logged:
@@ -156,6 +177,15 @@ class LoggedScoreRecorder:
         with self._lock:
             return dict(self._by_example.get(id(example), {}))
 
+    def error_for(self, example: Any) -> str | None:
+        """Return the crash text recorded while scoring ``example``, if any.
+
+        Args:
+            example: The same example object the metric was invoked with.
+        """
+        with self._lock:
+            return self._errors.get(id(example))
+
 
 def aggregate_logged_metrics(rows: list[dict[str, Any]]) -> dict[str, float]:
     """Macro-average per-example logged scores into one value per name.
@@ -170,7 +200,8 @@ def aggregate_logged_metrics(rows: list[dict[str, Any]]) -> dict[str, float]:
             ``"logged_metrics"`` map.
 
     Returns:
-        Mapping of metric name to its mean over the rows that logged it.
+        Mapping of metric name to its mean over the rows that logged it,
+        capped at :data:`MAX_AGGREGATE_METRIC_NAMES` names (first-seen wins).
     """
     sums: dict[str, float] = {}
     counts: dict[str, int] = {}
@@ -183,4 +214,13 @@ def aggregate_logged_metrics(rows: list[dict[str, Any]]) -> dict[str, float]:
                 continue
             sums[name] = sums.get(name, 0.0) + float(value)
             counts[name] = counts.get(name, 0) + 1
-    return {name: sums[name] / counts[name] for name in sums}
+    names = list(sums)
+    if len(names) > MAX_AGGREGATE_METRIC_NAMES:
+        logger.warning(
+            "aggregate_logged_metrics: %d distinct names, keeping the first %d — "
+            "log a fixed, small set of names",
+            len(names),
+            MAX_AGGREGATE_METRIC_NAMES,
+        )
+        names = names[:MAX_AGGREGATE_METRIC_NAMES]
+    return {name: sums[name] / counts[name] for name in names}

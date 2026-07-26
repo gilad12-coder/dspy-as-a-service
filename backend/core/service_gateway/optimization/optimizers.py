@@ -25,7 +25,7 @@ from ...exceptions import ServiceError
 from ...models import ModelConfig
 from ..language_models import build_language_model
 from .data import DatasetSplits
-from .logged_scores import LoggedScoreRecorder
+from .logged_scores import LoggedScoreRecorder, reset_logged_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,10 @@ def _perfect_prediction_score(metric: Any, example: Any, output_fields: list[str
 
     perfect_outputs = {field: example.get(field) for field in output_fields}
     perfect_pred = dspy.Prediction(**perfect_outputs)
+    # Fresh log_metrics slot: residue from earlier same-thread metric calls
+    # could trip the per-example name cap inside the metric, and the except
+    # below would misread that crash as "scored 0 on a perfect prediction".
+    reset_logged_metrics()
     try:
         result = metric(example, perfect_pred, trace=None)
     except Exception:
@@ -273,6 +277,11 @@ def evaluate_on_test(
             logged = recorder.scores_for(example) if recorder is not None else {}
             if logged:
                 row["logged_metrics"] = logged
+            # A metric crash was scored 0 by dspy.Evaluate; carry the crash
+            # text so the row can say why instead of rendering a silent zero.
+            metric_error = recorder.error_for(example) if recorder is not None else None
+            if metric_error:
+                row["error"] = metric_error
             per_example.append(row)
         except Exception:
             per_example.append({"index": i, "outputs": {}, "score": 0.0, "pass": False})

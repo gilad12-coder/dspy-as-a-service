@@ -44,6 +44,7 @@ from core.constants import (
     PROGRESS_OPTIMIZED,
 )
 
+from ..logged_scores import reset_logged_metrics
 from ..retrying_react import RetryingReActV2
 from ..timing import (
     STAGE_BASELINE,
@@ -495,6 +496,9 @@ def _build_feedback_map(
         ) -> Any:
             """Score one predictor invocation and wrap it as score+feedback."""
             trace_for_pred = [(predictor, predictor_inputs, predictor_output)]
+            # Fresh log_metrics slot per call — same residue guard as
+            # MinibatchRecorder; react runs don't aggregate logged scores yet.
+            reset_logged_metrics()
             outcome = metric(
                 module_inputs,
                 module_outputs,

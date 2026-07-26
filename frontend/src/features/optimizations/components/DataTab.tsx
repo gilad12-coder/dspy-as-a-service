@@ -251,13 +251,14 @@ export function DataTab({
 
   // Named scores the metric logged per row via log_metrics — one column per
   // name after the prediction columns. Union across rows so a name logged on
-  // only some rows still gets a column.
+  // only some rows still gets a column; capped so a metric that (against the
+  // contract) mints per-example names can't explode the table.
   const loggedMetricNames = useMemo(() => {
     const names = new Set<string>();
     for (const result of Object.values(currentResults)) {
       for (const name of Object.keys(result.logged_metrics ?? {})) names.add(name);
     }
-    return [...names];
+    return [...names].slice(0, 30);
   }, [currentResults]);
 
   const rows = useMemo(() => {
@@ -543,17 +544,20 @@ export function DataTab({
                                 <div
                                   className="flex flex-col items-center gap-0.5"
                                   title={
-                                    ev.logged_metrics
-                                      ? Object.entries(ev.logged_metrics)
-                                          .map(([k, v]) => `${k}: ${Number(v.toFixed(3))}`)
-                                          .join(" · ")
-                                      : undefined
+                                    ev.error
+                                      ? ev.error
+                                      : ev.logged_metrics
+                                        ? Object.entries(ev.logged_metrics)
+                                            .map(([k, v]) => `${k}: ${Number(v.toFixed(3))}`)
+                                            .join(" · ")
+                                        : undefined
                                   }
                                 >
                                   <span
                                     className="text-[0.625rem] font-mono tabular-nums font-medium"
                                     style={{ color: scoreColor(ev.score) }}
                                   >
+                                    {ev.error ? "⚠ " : ""}
                                     {ev.score.toFixed(2)}
                                   </span>
                                   <div className="w-full h-1.5 rounded-full overflow-hidden bg-muted">
