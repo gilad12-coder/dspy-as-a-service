@@ -18,6 +18,8 @@ export const TOOLTIPS_EN: Record<TooltipKey, string> = {
     "The gap between the optimized score and the baseline score. The larger it is, the more the optimization improved the result",
   "score.progression":
     "How the score changed from attempt to attempt while the optimizer searched for a better prompt",
+  "score.logged_metrics":
+    "Scores your metric recorded with log_metrics — e.g. precision and recall — averaged over the test set, before and after optimization",
 
   "lm.calls_count": "The number of calls to the language model during optimization",
   "lm.avg_response_time": "The average time it took the model to respond to each call",

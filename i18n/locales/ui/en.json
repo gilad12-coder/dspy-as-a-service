@@ -2061,6 +2061,7 @@
   "optimization.cancel.sent": "Cancellation request sent",
   "optimization.delete.failed": "Delete failed",
   "optimization.file.parse_error": "Error parsing the file",
+  "optimization.logged_metrics.title": "Score breakdown",
   "optimization.pair.restart": "Restart",
   "optimization.pair.restart.failed": "Couldn't restart the pair",
   "optimization.pair.restart.success": "Pair restarting",

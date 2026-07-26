@@ -369,8 +369,27 @@ class GenerateMetricCode(dspy.Signature):
     * **Structured JSON** — parse and compare field-by-field.
 
     If the signature has MULTIPLE output fields, compute a per-field
-    sub-score, average into the final score, AND include every field's
-    verdict in the feedback so GEPA sees which component failed.
+    sub-score, average into the final score, log each sub-score via
+    ``log_metrics`` (below), AND include every field's verdict in the
+    feedback so GEPA sees which component failed.
+
+    ## Named component scores — log_metrics
+
+    A global ``log_metrics(**scores)`` is available inside the metric
+    (no import needed). It reports the components hiding behind the
+    single scalar — each name is averaged across the test set and shown
+    on the run result next to the overall score:
+
+        ``log_metrics(precision=p, recall=r, f1=f1)``
+
+    * Log whenever the scalar is a composite: precision / recall / F1
+      for classification, per-field sub-scores on multi-output
+      signatures, partial-credit components.
+    * Use a FIXED, small set of snake_case names (at most 20 distinct
+      names); values must be finite numbers. Never derive a name from
+      example content.
+    * ``log_metrics`` only reports — it never changes the score you
+      return.
 
     ## Keep it concise
 

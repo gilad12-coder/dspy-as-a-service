@@ -24,6 +24,7 @@ import dspy
 
 from ...exceptions import ServiceError
 from ...models import ColumnMapping, SplitFractions
+from .logged_scores import log_metrics
 
 
 @dataclass
@@ -336,7 +337,10 @@ def load_metric_from_code(code: str) -> Callable[..., Any]:
         ServiceError: When the code has a syntax error or defines no callable.
     """
 
-    namespace: dict[str, Any] = {"dspy": dspy}
+    # log_metrics: the named-score side channel (see logged_scores.py) —
+    # metric code calls it to surface precision/recall-style components
+    # alongside the single scalar the optimizer consumes.
+    namespace: dict[str, Any] = {"dspy": dspy, "log_metrics": log_metrics}
     try:
         # exec: user-supplied metric code. Same security boundary as
         # load_signature_from_code — isolated when called from
@@ -353,7 +357,10 @@ def load_metric_from_code(code: str) -> Callable[..., Any]:
         raise ServiceError(f"metric_code has a syntax error: {exc}") from exc
     metric = namespace.get("metric")
     if not callable(metric):
-        callables = [obj for obj in namespace.values() if callable(obj)]
+        # The injected log_metrics helper is itself callable — exclude it so a
+        # metric under any other name still satisfies the single-callable
+        # fallback.
+        callables = [obj for obj in namespace.values() if callable(obj) and obj is not log_metrics]
         if len(callables) == 1:
             metric = callables[0]
     if not callable(metric):

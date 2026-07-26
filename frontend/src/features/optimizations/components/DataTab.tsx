@@ -515,7 +515,16 @@ export function DataTab({
                               }
                             >
                               {ev ? (
-                                <div className="flex flex-col items-center gap-0.5">
+                                <div
+                                  className="flex flex-col items-center gap-0.5"
+                                  title={
+                                    ev.logged_metrics
+                                      ? Object.entries(ev.logged_metrics)
+                                          .map(([k, v]) => `${k}: ${Number(v.toFixed(3))}`)
+                                          .join(" · ")
+                                      : undefined
+                                  }
+                                >
                                   <span
                                     className="text-[0.625rem] font-mono tabular-nums font-medium"
                                     style={{ color: scoreColor(ev.score) }}

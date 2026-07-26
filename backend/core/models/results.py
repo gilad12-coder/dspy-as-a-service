@@ -78,6 +78,11 @@ class RunResponse(BaseModel):
     run_log: list[JobLogEntry] = Field(default_factory=list)
     baseline_test_results: list[dict[str, Any]] = Field(default_factory=list)
     optimized_test_results: list[dict[str, Any]] = Field(default_factory=list)
+    # Named scores the metric logged via log_metrics (precision/recall-style
+    # components), macro-averaged over the test rows that logged each name.
+    # Empty when the metric never logs.
+    baseline_logged_metrics: dict[str, float] = Field(default_factory=dict)
+    optimized_logged_metrics: dict[str, float] = Field(default_factory=dict)
 
 
 class PairResult(BaseModel):
@@ -101,6 +106,9 @@ class PairResult(BaseModel):
     error: str | None = None
     baseline_test_results: list[dict[str, Any]] = Field(default_factory=list)
     optimized_test_results: list[dict[str, Any]] = Field(default_factory=list)
+    # Same macro-averaged log_metrics aggregates as on RunResponse, per pair.
+    baseline_logged_metrics: dict[str, float] = Field(default_factory=dict)
+    optimized_logged_metrics: dict[str, float] = Field(default_factory=dict)
 
 
 class GridSearchResponse(BaseModel):

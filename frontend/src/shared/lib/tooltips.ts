@@ -31,6 +31,7 @@ export const TOOLTIPS = {
   "score.optimized": `${TERMS_HE.optimizedScore} אחרי ${TERMS_HE.optimization}: איך ה${TERMS_HE.program} הצליחה עם הפרומפט והדוגמאות שנבחרו`,
   "score.improvement": `הפער בין ה${TERMS_HE.optimizedScore} ל${TERMS_HE.baselineScore}. ככל שהוא גדול יותר, ה${TERMS_HE.optimization} שיפרה יותר את התוצאה`,
   "score.progression": `איך ה${TERMS_HE.score} השתנה מניסיון לניסיון בזמן שה${TERMS_HE.optimizer} חיפש פרומפט טוב יותר`,
+  "score.logged_metrics": `מדדים שה${TERMS_HE.metric} תיעדה עם log_metrics — למשל precision ו-recall — בממוצע על פני סט הבדיקה, לפני ואחרי ה${TERMS_HE.optimization}`,
 
   "lm.calls_count": `מספר הקריאות ל${TERMS_HE.model} השפה במהלך ה${TERMS_HE.optimization}`,
   "lm.avg_response_time": `הזמן הממוצע שלקח ל${TERMS_HE.model} לענות לכל קריאה`,

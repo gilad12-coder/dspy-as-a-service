@@ -36,6 +36,14 @@ const GridOverview = dynamic(() => import("./GridOverview").then((m) => m.GridOv
 });
 
 /**
+ * Compact formatting for log_metrics values: raw user-scale numbers (unlike
+ * the 0–100 score cards), capped at 3 decimals with trailing zeros dropped.
+ */
+function formatLoggedValue(value: number | undefined): string {
+  return value == null ? "—" : String(Number(value.toFixed(3)));
+}
+
+/**
  * One live-telemetry metric: a muted icon + label over the value, sized to fill
  * an equal share of the panel width. The icon inherits the label's muted color
  * so it reads as quiet wayfinding, not decoration.
@@ -128,6 +136,15 @@ function OverviewTabImpl({
   const scoresReady =
     runResult != null && baseline != null && optimized != null && !activePair?.error;
   const lmActivity: LMActivity | null = (runResult?.lm_activity as LMActivity | undefined) ?? null;
+
+  // Named scores the metric logged via log_metrics, macro-averaged server-side
+  // over the test split. Optimized-first union so the returned program's
+  // logging order leads; baseline-only names still render.
+  const baselineLogged = runResult?.baseline_logged_metrics ?? {};
+  const optimizedLogged = runResult?.optimized_logged_metrics ?? {};
+  const loggedMetricNames = Array.from(
+    new Set([...Object.keys(optimizedLogged), ...Object.keys(baselineLogged)]),
+  );
 
   // The score cards stream the real evaluated metrics as they land — the
   // baseline from baseline_evaluated, the optimized score from
@@ -344,6 +361,55 @@ function OverviewTabImpl({
             </StaggerItem>
           </StaggerContainer>
         </div>
+      )}
+
+      {renderRunBlocks && loggedMetricNames.length > 0 && (
+        <FadeIn delay={0.1}>
+          <div className="rounded-xl border border-[#E3DCD0] bg-[#FBF9F4] px-4 py-3.5">
+            <p className="text-[0.6875rem] text-muted-foreground font-medium tracking-wide">
+              <HelpTip text={tip("score.logged_metrics")}>
+                {msg("optimization.logged_metrics.title")}
+              </HelpTip>
+            </p>
+            <div className="mt-1 divide-y divide-[#E3DCD0]/60">
+              {loggedMetricNames.map((name) => {
+                const baselineValue = baselineLogged[name];
+                const optimizedValue = optimizedLogged[name];
+                const delta =
+                  baselineValue != null && optimizedValue != null
+                    ? optimizedValue - baselineValue
+                    : undefined;
+                return (
+                  <div key={name} className="flex items-center justify-between gap-3 py-1.5">
+                    <span dir="auto" className="min-w-0 truncate font-mono text-xs text-[#1C1612]">
+                      {name}
+                    </span>
+                    <span
+                      dir="ltr"
+                      className="flex shrink-0 items-baseline gap-2 font-mono text-xs tabular-nums"
+                    >
+                      <span className="text-[#8C7A6B]">{formatLoggedValue(baselineValue)}</span>
+                      <span aria-hidden="true" className="text-[#A89680]">
+                        →
+                      </span>
+                      <span className="font-semibold text-primary">
+                        {formatLoggedValue(optimizedValue)}
+                      </span>
+                      {delta != null && (
+                        <span
+                          className={`w-14 text-end ${delta >= 0 ? "text-stone-600" : "text-red-600"}`}
+                        >
+                          {delta >= 0 ? "+" : ""}
+                          {formatLoggedValue(delta)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </FadeIn>
       )}
 
       {renderRunBlocks && (

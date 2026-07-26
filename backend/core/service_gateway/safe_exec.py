@@ -27,7 +27,7 @@ import multiprocessing as mp
 import threading
 import traceback
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import dspy
@@ -40,6 +40,7 @@ from .optimization.data import (
     load_signature_from_code,
     load_transform_from_code,
 )
+from .optimization.logged_scores import drain_logged_metrics, reset_logged_metrics
 
 _DEFAULT_PARSE_TIMEOUT_SECONDS = 30.0
 _DEFAULT_PROBE_TIMEOUT_SECONDS = 45.0
@@ -137,6 +138,10 @@ class MetricProbeResult:
 
     ``score`` is the metric's numeric output as a float (the ``.score`` of a
     prediction, or the numeric value itself), or ``None`` when unavailable.
+
+    ``logged_metrics`` holds whatever the metric recorded via ``log_metrics``
+    during the probe call — contract violations inside ``log_metrics`` raise
+    and therefore surface as ``result_kind == "error"`` instead.
     """
 
     result_kind: str
@@ -144,6 +149,7 @@ class MetricProbeResult:
     has_score_attr: bool
     error: str | None
     score: float | None
+    logged_metrics: dict[str, float] = field(default_factory=dict)
 
 
 def _run_in_subprocess(
@@ -456,6 +462,7 @@ def _probe_worker(
                 prepared_payload[field_name] = image_type(url=value)
         example = dspy.Example(**prepared_payload).with_inputs(*input_field_names)
         prediction = dspy.Prediction(**prediction_payload)
+        reset_logged_metrics()
         try:
             result = metric(example, prediction, trace=None)
         except BaseException as call_exc:
@@ -467,9 +474,11 @@ def _probe_worker(
                     "has_score_attr": False,
                     "error": str(call_exc),
                     "score": None,
+                    "logged_metrics": {},
                 }
             )
             return
+        logged_metrics = drain_logged_metrics()
 
         if result is None:
             kind = "none"
@@ -499,6 +508,7 @@ def _probe_worker(
                 "has_score_attr": hasattr(result, "score"),
                 "error": None,
                 "score": score,
+                "logged_metrics": logged_metrics,
             }
         )
     except BaseException as exc:  # code failed to parse or dspy setup failed — report, don't raise
@@ -554,4 +564,5 @@ def probe_metric_on_sample(
         has_score_attr=bool(result["has_score_attr"]),
         error=result.get("error"),
         score=float(raw_score) if raw_score is not None else None,
+        logged_metrics=dict(result.get("logged_metrics") or {}),
     )

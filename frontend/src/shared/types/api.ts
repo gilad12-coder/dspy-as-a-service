@@ -366,6 +366,8 @@ export interface EvalExampleResult {
   score: number;
   pass: boolean;
   error?: string | null;
+  // Named scores the metric logged via log_metrics while scoring this row.
+  logged_metrics?: Record<string, number>;
 }
 
 export interface LMStageStats {
@@ -423,6 +425,8 @@ export interface PairResult {
   error?: string | null;
   baseline_test_results?: EvalExampleResult[];
   optimized_test_results?: EvalExampleResult[];
+  baseline_logged_metrics?: Record<string, number>;
+  optimized_logged_metrics?: Record<string, number>;
 }
 
 export interface RunResult {
@@ -445,6 +449,10 @@ export interface RunResult {
   run_log?: OptimizationLogEntry[];
   baseline_test_results?: EvalExampleResult[];
   optimized_test_results?: EvalExampleResult[];
+  // log_metrics aggregates: each name macro-averaged over the test rows that
+  // logged it, for the baseline and optimized evaluations respectively.
+  baseline_logged_metrics?: Record<string, number>;
+  optimized_logged_metrics?: Record<string, number>;
 }
 
 export interface GridSearchResult {

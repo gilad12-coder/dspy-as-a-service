@@ -25,6 +25,7 @@ from ...exceptions import ServiceError
 from ...models import ModelConfig
 from ..language_models import build_language_model
 from .data import DatasetSplits
+from .logged_scores import LoggedScoreRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +211,8 @@ def evaluate_on_test(
         The aggregate score as a float (or ``None`` when ``test_examples``
         is empty). When ``collect_per_example=True``, returns
         ``(score, list[dict])`` where each dict contains ``index``,
-        ``outputs``, ``score``, and ``pass``.
+        ``outputs``, ``score``, ``pass``, and — when the metric called
+        ``log_metrics`` — a ``logged_metrics`` name→value map.
 
     Raises:
         ServiceError: If the evaluator returns a non-numeric score.
@@ -219,9 +221,10 @@ def evaluate_on_test(
     if not test_examples:
         return (None, []) if collect_per_example else None
 
+    recorder = LoggedScoreRecorder(metric) if collect_per_example else None
     evaluator = dspy.Evaluate(
         devset=test_examples,
-        metric=metric,
+        metric=recorder if recorder is not None else metric,
         display_progress=True,
     )
     eval_result = evaluator(program)
@@ -266,7 +269,11 @@ def evaluate_on_test(
             outputs = {}
             for k in example.labels():
                 outputs[k] = getattr(prediction, k, None) if prediction else None
-            per_example.append({"index": i, "outputs": outputs, "score": ex_score, "pass": ex_score > 0})
+            row: dict[str, Any] = {"index": i, "outputs": outputs, "score": ex_score, "pass": ex_score > 0}
+            logged = recorder.scores_for(example) if recorder is not None else {}
+            if logged:
+                row["logged_metrics"] = logged
+            per_example.append(row)
         except Exception:
             per_example.append({"index": i, "outputs": {}, "score": 0.0, "pass": False})
 
