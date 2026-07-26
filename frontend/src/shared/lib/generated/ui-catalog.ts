@@ -2124,6 +2124,9 @@ export type MessageKey =
   | "onboarding.upload.title"
   | "optimization.access_banner.editor"
   | "optimization.access_banner.viewer"
+  | "optimization.artifact.description"
+  | "optimization.artifact.downloads.title"
+  | "optimization.artifact.tab"
   | "optimization.cancel.failed"
   | "optimization.cancel.sent"
   | "optimization.delete.failed"
@@ -3696,7 +3699,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.dashboard.lib.status.badges.2": "ריצה",
   "auto.features.dashboard.lib.transform.chart.data.literal.1": "סריקה",
   "auto.features.dashboard.lib.transform.chart.data.literal.2": "ריצה",
-  "auto.features.optimizations.components.codetab.1": "קוד המקור של הפרומפט ההתחלתי, פונקציית המדידה והפרומפט המשופר.",
+  "auto.features.optimizations.components.codetab.1": "קוד המקור של הפרומפט ההתחלתי ופונקציית המדידה.",
   "auto.features.optimizations.components.codetab.2": "קוד",
   "auto.features.optimizations.components.codetab.3": "פרומפט התחלתי",
   "auto.features.optimizations.components.codetab.4": "פונקציית מדידה",
@@ -5101,6 +5104,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "onboarding.upload.title": "עכשיו, הנתונים שלכם",
   "optimization.access_banner.editor": "שיתפו איתך · הרשאת עריכה",
   "optimization.access_banner.viewer": "שיתפו איתך · הרשאת צפייה",
+  "optimization.artifact.description": "מה שההרצה ייצרה — הפרומפט המשופר וקובצי התוכנית להורדה.",
+  "optimization.artifact.downloads.title": "הורדות",
+  "optimization.artifact.tab": "תוצר",
   "optimization.cancel.failed": "ביטול נכשל",
   "optimization.cancel.sent": "בקשת ביטול נשלחה",
   "optimization.delete.failed": "מחיקה נכשלה",
@@ -12264,7 +12270,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.dashboard.lib.status.badges.2": "Run",
   "auto.features.dashboard.lib.transform.chart.data.literal.1": "Grid search",
   "auto.features.dashboard.lib.transform.chart.data.literal.2": "Run",
-  "auto.features.optimizations.components.codetab.1": "The source code of the initial prompt, the metric, and the optimized prompt.",
+  "auto.features.optimizations.components.codetab.1": "The source code of the initial prompt and the metric.",
   "auto.features.optimizations.components.codetab.2": "Code",
   "auto.features.optimizations.components.codetab.3": "Initial prompt",
   "auto.features.optimizations.components.codetab.4": "Metric",
@@ -13669,6 +13675,9 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "onboarding.upload.title": "Now, your data",
   "optimization.access_banner.editor": "Shared with you · Editor access",
   "optimization.access_banner.viewer": "Shared with you · Viewer access",
+  "optimization.artifact.description": "What the run produced — the optimized prompt and the program files to download.",
+  "optimization.artifact.downloads.title": "Downloads",
+  "optimization.artifact.tab": "Artifact",
   "optimization.cancel.failed": "Cancellation failed",
   "optimization.cancel.sent": "Cancellation request sent",
   "optimization.delete.failed": "Delete failed",

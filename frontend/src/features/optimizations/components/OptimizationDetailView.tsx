@@ -24,6 +24,7 @@ import {
   HardDrive,
   Rocket,
   Grid2x2,
+  Package,
 } from "lucide-react";
 import { toast } from "react-toastify";
 
@@ -82,6 +83,7 @@ import { ShareDialog } from "./ShareDialog";
 import { StatusBadge } from "@/shared/ui/status-badge";
 import { ConfigTab } from "./ConfigTab";
 import { CodeTab } from "./CodeTab";
+import { ArtifactTab } from "./ArtifactTab";
 import { StageInfoModal } from "./StageInfoModal";
 import { PairSelectionStrip } from "./PairSelectionStrip";
 import { OverviewTab } from "./OverviewTab";
@@ -832,6 +834,13 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
     ? (activePair.program_artifact?.react_overlay ?? null)
     : (job?.result?.program_artifact?.react_overlay ?? null);
 
+  // Artifact tab appears once the run has produced something durable — an
+  // optimized prompt, tuned react tools, or downloadable program files.
+  const artifactFiles = isPairContext
+    ? (activePair.program_artifact ?? null)
+    : (job?.result?.program_artifact ?? job?.grid_result?.best_pair?.program_artifact ?? null);
+  const showArtifactTab = !!(optimizedPrompt || reactOverlay || artifactFiles);
+
   // Demos passed to the serve playground — pair-scoped in pair view.
   const playgroundDemos = isPairContext
     ? (activePair.program_artifact?.optimized_prompt?.demos ?? [])
@@ -1387,6 +1396,12 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                 <Code className="size-3.5" />
                 {msg("auto.app.optimizations.id.page.17")}
               </TabsTrigger>
+              {showArtifactTab && (
+                <TabsTrigger value="artifact" className={tabCls}>
+                  <Package className="size-3.5" />
+                  {msg("optimization.artifact.tab")}
+                </TabsTrigger>
+              )}
               {showLogsTab && (
                 <TabsTrigger value="logs" className={tabCls}>
                   <Terminal className="size-3.5" />
@@ -1471,13 +1486,20 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
             )}
 
             <TabsContent value="code" className="space-y-6 mt-4">
-              <CodeTab
-                signatureCode={signatureCode ?? ""}
-                metricCode={metricCode ?? ""}
-                optimizedPrompt={optimizedPrompt}
-                reactOverlay={reactOverlay}
-              />
+              <CodeTab signatureCode={signatureCode ?? ""} metricCode={metricCode ?? ""} />
             </TabsContent>
+
+            {showArtifactTab && (
+              <TabsContent value="artifact" className="space-y-6 mt-4">
+                <ArtifactTab
+                  job={job}
+                  activePair={activePair}
+                  optimizedPrompt={optimizedPrompt}
+                  reactOverlay={reactOverlay}
+                  isShare={isShare}
+                />
+              </TabsContent>
+            )}
 
             {showLogsTab && (
               <TabsContent value="logs">

@@ -249,6 +249,17 @@ export function DataTab({
 
   const currentResults = testResults[programType] ?? {};
 
+  // Named scores the metric logged per row via log_metrics — one column per
+  // name after the prediction columns. Union across rows so a name logged on
+  // only some rows still gets a column.
+  const loggedMetricNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const result of Object.values(currentResults)) {
+      for (const name of Object.keys(result.logged_metrics ?? {})) names.add(name);
+    }
+    return [...names];
+  }, [currentResults]);
+
   const rows = useMemo(() => {
     if (!dataset) return [];
     if (split === "all")
@@ -485,6 +496,20 @@ export function DataTab({
                             onResize={colResize.setColumnWidth}
                           />
                         ))}
+                      {split === "test" &&
+                        evalCount > 0 &&
+                        loggedMetricNames.map((name) => (
+                          <ColumnHeader
+                            key={`lm-${name}`}
+                            label={name}
+                            sortKey={`_lm_${name}`}
+                            currentSort={sortKey}
+                            sortDir={sortDir}
+                            onSort={toggleSort}
+                            width={colResize.widths[`_lm_${name}`]}
+                            onResize={colResize.setColumnWidth}
+                          />
+                        ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -600,6 +625,34 @@ export function DataTab({
                                   title={formatCellValue(pred, true)}
                                 >
                                   {formatCellValue(pred)}
+                                </TableCell>
+                              );
+                            })}
+                          {split === "test" &&
+                            evalCount > 0 &&
+                            loggedMetricNames.map((name) => {
+                              const key = `_lm_${name}`;
+                              const value = ev?.logged_metrics?.[name];
+                              return (
+                                <TableCell
+                                  key={key}
+                                  className="text-xs font-mono tabular-nums truncate overflow-hidden"
+                                  style={{
+                                    ...(colResize.widths[key]
+                                      ? {
+                                          width: colResize.widths[key],
+                                          maxWidth: colResize.widths[key],
+                                        }
+                                      : {}),
+                                    // Rate-like values (0–1) reuse the score scale;
+                                    // anything else keeps neutral ink.
+                                    color:
+                                      value != null && value >= 0 && value <= 1
+                                        ? scoreColor(value)
+                                        : undefined,
+                                  }}
+                                >
+                                  {value != null ? String(Number(value.toFixed(3))) : ""}
                                 </TableCell>
                               );
                             })}

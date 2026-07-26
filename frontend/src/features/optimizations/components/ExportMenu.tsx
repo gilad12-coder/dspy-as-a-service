@@ -30,12 +30,25 @@ function escapeCsvField(value: string | number | null | undefined): string {
   return s;
 }
 
-function exportPromptAsJson(prompt: OptimizedPredictor, optimizationId: string) {
+export function exportPromptAsJson(prompt: OptimizedPredictor, optimizationId: string) {
   downloadFile(
     JSON.stringify(prompt, null, 2),
     `prompt_${optimizationId.slice(0, 8)}.json`,
     "application/json",
   );
+}
+
+/** Decode the artifact's base64 pickle and hand it to the browser as a .pkl download. */
+export function downloadProgramPickle(pickleBase64: string, optimizationId: string) {
+  const blob = new Blob([Uint8Array.from(atob(pickleBase64), (c) => c.charCodeAt(0))], {
+    type: "application/octet-stream",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `program_${optimizationId.slice(0, 8)}.pkl`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function exportLogsAsCsv(logs: OptimizationLogEntry[], optimizationId: string) {
@@ -139,15 +152,7 @@ export function ExportMenu({
                       job.grid_result?.best_pair?.program_artifact?.program_pickle_base64;
                     if (!b64) return;
                     try {
-                      const blob = new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], {
-                        type: "application/octet-stream",
-                      });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `program_${job.optimization_id.slice(0, 8)}.pkl`;
-                      a.click();
-                      setTimeout(() => URL.revokeObjectURL(url), 0);
+                      downloadProgramPickle(b64, job.optimization_id);
                     } catch {
                       toast.error(msg("optimization.file.parse_error"));
                     }
