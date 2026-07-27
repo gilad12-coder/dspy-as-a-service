@@ -1,29 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -36.75 281.5 281.5">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 475 92">
   <title>Skynet</title>
-  <!-- The AnimatedWordmark's letterforms (default variants), stacked SKY / NET
-       so the wordmark fills a square tab icon instead of a thin strip. -->
+  <!-- The AnimatedWordmark's letterforms (default variants) on a single line,
+       matching the in-app SKYNET logo lockup exactly. -->
   <style>
-    path { fill: #3D2E22; }
+    path { fill: #000000; }
     @media (prefers-color-scheme: dark) { path { fill: #FAF8F5; } }
   </style>
-  <g>
-    <path d="M34.9,92C54,92,69.5,80.5,69.5,61.1C69.5,43,56,30.3,34.9,30.3v13.4c-9.7,0-16.9-4.3-16.9-13.1 c0-8.8,6.2-14,17.4-14c9.2,0,14.7,3.8,16.1,8.8h17C67.2,11.4,54,0,35,0C14.9,0,0.6,12.6,0.6,31c0,18.4,14.9,29.5,34.3,29.5V47.8 c10.3,0,17.4,4.6,17.4,13.7c0,9-7.2,14.1-17.3,14.1c-9.1,0-15.4-4-17.3-9.5H0C2.5,80.6,15.8,92,34.9,92z"/>
-    <g transform="translate(79.5,0)">
-      <path d="M 0 2.1 h 22 v 87.9 h -22 Z M 20 52 L 55 2.1 h 22 L 20 62 Z M 36 45 L 65 90 h -25 L 20 50 Z"/>
-    </g>
-    <g transform="translate(166.5,0)">
-      <path d="M36.8,90 h18.4 V52.9 L83,2.2 h-21.2 l-25,46.9 V90 z M20.7,40.6 h20.7 L20.7,2.2 h-20.7 L20.7,40.6 z"/>
-    </g>
+  <path d="M34.9,92C54,92,69.5,80.5,69.5,61.1C69.5,43,56,30.3,34.9,30.3v13.4c-9.7,0-16.9-4.3-16.9-13.1 c0-8.8,6.2-14,17.4-14c9.2,0,14.7,3.8,16.1,8.8h17C67.2,11.4,54,0,35,0C14.9,0,0.6,12.6,0.6,31c0,18.4,14.9,29.5,34.3,29.5V47.8 c10.3,0,17.4,4.6,17.4,13.7c0,9-7.2,14.1-17.3,14.1c-9.1,0-15.4-4-17.3-9.5H0C2.5,80.6,15.8,92,34.9,92z"/>
+  <g transform="translate(75,0)">
+    <path d="M 0 2.1 h 22 v 87.9 h -22 Z M 20 52 L 55 2.1 h 22 L 20 62 Z M 36 45 L 65 90 h -25 L 20 50 Z"/>
   </g>
-  <g transform="translate(0,116)">
-    <g transform="translate(8.5,0)">
-      <path d="M 0 2.1 h 22 v 87.9 h -22 Z M 52 2.1 h 22 v 87.9 h -22 Z M 0 2.1 l 74 87.9 h -22 l -52 -87.9 Z"/>
-    </g>
-    <g transform="translate(92.5,0)">
-      <path d="M 0 2.1 h 62 v 20 h -40 v 14 h 32 v 18 h -32 v 16 h 42 v 20 h -64 Z"/>
-    </g>
-    <g transform="translate(166.5,0)">
-      <path d="M27.6,90 L46.9,90 L46.9,19.5 L74.5,19.5 L74.5,2.1 L0,2.1 L0,19.5 L27.6,19.5 Z"/>
-    </g>
+  <g transform="translate(155,0)">
+    <path d="M36.8,90 h18.4 V52.9 L83,2.2 h-21.2 l-25,46.9 V90 z M20.7,40.6 h20.7 L20.7,2.2 h-20.7 L20.7,40.6 z"/>
+  </g>
+  <g transform="translate(245,0)">
+    <path d="M 0 2.1 h 22 v 87.9 h -22 Z M 52 2.1 h 22 v 87.9 h -22 Z M 0 2.1 l 74 87.9 h -22 l -52 -87.9 Z"/>
+  </g>
+  <g transform="translate(325,0)">
+    <path d="M 0 2.1 h 62 v 20 h -40 v 14 h 32 v 18 h -32 v 16 h 42 v 20 h -64 Z"/>
+  </g>
+  <g transform="translate(395,0)">
+    <path d="M27.6,90 L46.9,90 L46.9,19.5 L74.5,19.5 L74.5,2.1 L0,2.1 L0,19.5 L27.6,19.5 Z"/>
   </g>
 </svg>
