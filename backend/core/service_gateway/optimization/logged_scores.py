@@ -224,3 +224,110 @@ def aggregate_logged_metrics(rows: list[dict[str, Any]]) -> dict[str, float]:
         )
         names = names[:MAX_AGGREGATE_METRIC_NAMES]
     return {name: sums[name] / counts[name] for name in names}
+
+
+def combined_test_metrics(rows: list[dict[str, Any]]) -> dict[str, float]:
+    """Merge computed classification metrics under the metric's own logged values.
+
+    The metric's ``log_metrics`` values win on a name collision — a metric
+    that logs its own ``precision`` knows its task better than the generic
+    confusion-matrix computation.
+
+    Args:
+        rows: Per-example result dicts from a test-set evaluation.
+
+    Returns:
+        One flat name→value map for the result payload's ``*_logged_metrics``.
+    """
+    return {**classification_metrics(rows), **aggregate_logged_metrics(rows)}
+
+
+CLASSIFICATION_MAX_CLASSES = 20
+"""Above this many distinct gold values a field is prose, not a class column."""
+
+# Two-class vocabularies with an unambiguous positive class. For these,
+# positive-class precision/recall is reported (what an analyst expects of a
+# binary classifier); any other label set gets a macro average instead.
+_BINARY_POSITIVE_BY_CLASSES: dict[frozenset[str], str] = {
+    frozenset({"1", "0"}): "1",
+    frozenset({"yes", "no"}): "yes",
+    frozenset({"true", "false"}): "true",
+}
+
+
+def _canon_label(value: Any) -> str:
+    """Normalize a label for comparison the way generated metrics do (case-insensitive exact match)."""
+    return str(value).strip().lower()
+
+
+def _pr_for_class(pairs: list[tuple[str, str]], cls: str) -> tuple[float, float]:
+    """Compute one class's precision and recall over (gold, predicted) pairs."""
+    tp = sum(1 for g, p in pairs if g == cls and p == cls)
+    fp = sum(1 for g, p in pairs if g != cls and p == cls)
+    fn = sum(1 for g, p in pairs if g == cls and p != cls)
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    return precision, recall
+
+
+def classification_metrics(rows: list[dict[str, Any]]) -> dict[str, float]:
+    """Corpus-level precision/recall for categorical output fields.
+
+    Unlike :func:`aggregate_logged_metrics` (a macro average of whatever the
+    metric chose to log per example), these are true corpus metrics built from
+    the stored ``(gold, outputs)`` pairs: positive-class precision/recall for a
+    binary field (1/0, yes/no, true/false), macro-averaged one-vs-rest for a
+    multiclass field. Fields that don't look categorical — missing gold, more
+    than :data:`CLASSIFICATION_MAX_CLASSES` distinct values, a single class,
+    or non-scalar values — are skipped, so regression/freeform runs report
+    nothing here.
+
+    Args:
+        rows: Per-example result dicts carrying ``"gold"`` and ``"outputs"``.
+
+    Returns:
+        ``{"precision": …, "recall": …}`` when exactly one output field
+        qualifies; ``"precision (<field>)"``-style names when several do;
+        empty when none does.
+    """
+    pairs_by_field: dict[str, list[tuple[str, str]]] = {}
+    for row in rows:
+        gold = row.get("gold")
+        outputs = row.get("outputs")
+        if not isinstance(gold, dict) or not isinstance(outputs, dict):
+            continue
+        for field, gold_value in gold.items():
+            predicted = outputs.get(field)
+            if gold_value is None or predicted is None:
+                continue
+            if isinstance(gold_value, (dict, list)) or isinstance(predicted, (dict, list)):
+                continue
+            pairs_by_field.setdefault(field, []).append(
+                (_canon_label(gold_value), _canon_label(predicted))
+            )
+
+    per_field: dict[str, tuple[float, float]] = {}
+    for field, pairs in pairs_by_field.items():
+        classes = {g for g, _ in pairs}
+        if not 2 <= len(classes) <= CLASSIFICATION_MAX_CLASSES:
+            continue
+        positive = _BINARY_POSITIVE_BY_CLASSES.get(frozenset(classes))
+        if positive is not None:
+            per_field[field] = _pr_for_class(pairs, positive)
+            continue
+        scores = [_pr_for_class(pairs, cls) for cls in sorted(classes)]
+        per_field[field] = (
+            sum(p for p, _ in scores) / len(scores),
+            sum(r for _, r in scores) / len(scores),
+        )
+
+    if not per_field:
+        return {}
+    if len(per_field) == 1:
+        precision, recall = next(iter(per_field.values()))
+        return {"precision": precision, "recall": recall}
+    result: dict[str, float] = {}
+    for field, (precision, recall) in per_field.items():
+        result[f"precision ({field})"] = precision
+        result[f"recall ({field})"] = recall
+    return result

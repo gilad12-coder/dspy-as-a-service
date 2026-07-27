@@ -10,6 +10,7 @@ import { msg, type MessageKey } from "@/shared/lib/messages";
 import { exportAnnotations } from "../lib/export-csv";
 import { FLAG_CONFIDENCE, flaggedRowIds } from "../lib/assist";
 import type { Annotation, AssistState, DataRow, TaggerConfig } from "../lib/types";
+import { isBinaryNo, isBinaryYes } from "../lib/types";
 
 type ResultsFilter = "all" | "flagged" | "low";
 
@@ -31,8 +32,8 @@ function displayLabel(config: TaggerConfig, ann: Annotation): string {
     return ann.map((id) => cats.find((c) => c.id === id)?.label ?? id).join(", ");
   }
   if (config.mode === "binary") {
-    if (ann === "yes") return msg("tagger.assist.label.yes");
-    if (ann === "no") return msg("tagger.assist.label.no");
+    if (isBinaryYes(ann)) return msg("tagger.assist.label.yes");
+    if (isBinaryNo(ann)) return msg("tagger.assist.label.no");
   }
   return String(ann);
 }

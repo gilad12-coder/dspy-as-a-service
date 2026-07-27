@@ -485,6 +485,13 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
     """
     router = APIRouter()
 
+    # The shared DB engine backs cross-replica approval handoff: a confirm
+    # that lands on a replica that doesn't hold the stream's in-process future
+    # persists the decision for the owning replica's poll loop.
+    engine = getattr(job_store, "engine", None) if job_store is not None else None
+    if engine is not None:
+        get_approval_registry().bind_engine(engine)
+
     @router.post(
         "/optimizations/generalist-agent",
         summary="Stream generalist-agent events for one user turn",
@@ -607,11 +614,12 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
             A :class:`ConfirmApprovalResponse` with ``resolved=True`` on success.
 
         Raises:
-            DomainError: 404 when the call id is unknown or already resolved —
-                the client should treat that as a race and surface it as a UI
-                warning.
+            DomainError: 404 when the call id is unknown locally and no durable
+                store is bound (store-less deployments) — the client surfaces
+                it as a UI warning. With a store, an unmatched confirm is
+                persisted for the replica that owns the stream to pick up.
         """
-        resolved = get_approval_registry().resolve(req.call_id, req.approved)
+        resolved = get_approval_registry().resolve_or_persist(req.call_id, req.approved)
         if not resolved:
             raise DomainError("agent.approval.unknown_call_id", status=404)
         return ConfirmApprovalResponse(resolved=True)

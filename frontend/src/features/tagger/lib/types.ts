@@ -43,6 +43,23 @@ export interface DataRow {
 
 export type Annotation = string | string[] | undefined;
 
+/** Stored binary labels — "1" (yes) / "0" (no). */
+export type BinaryLabel = "1" | "0";
+export const BINARY_YES: BinaryLabel = "1";
+export const BINARY_NO: BinaryLabel = "0";
+
+/**
+ * Whether an annotation is the binary positive/negative label. Sessions saved
+ * before the 1/0 vocabulary stored "yes"/"no", so reads accept both forms.
+ */
+export function isBinaryYes(ann: Annotation): boolean {
+  return ann === BINARY_YES || ann === "yes";
+}
+
+export function isBinaryNo(ann: Annotation): boolean {
+  return ann === BINARY_NO || ann === "no";
+}
+
 /** Assist level chosen at setup. Manual sessions carry no assist state at all. */
 export type TaggerAssistMode = "manual" | "copilot" | "autopilot";
 

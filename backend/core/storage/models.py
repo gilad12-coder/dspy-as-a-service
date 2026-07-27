@@ -55,6 +55,26 @@ class ApiTokenModel(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class AgentApprovalModel(Base):
+    """Cross-replica handoff for a generalist-agent tool approval decision.
+
+    The SSE stream awaiting an approval and the confirm POST resolving it can
+    land on different backend replicas; the in-process future only works when
+    they share a process. A confirm that finds no local future writes its
+    decision here, and the awaiting replica's poll loop picks it up (and
+    deletes the row). Rows are short-lived — consumed within seconds, purged
+    opportunistically after the approval timeout.
+    """
+
+    __tablename__ = "agent_approvals"
+
+    call_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    approved: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
 class UserModel(Base):
     """A Skynet-native account for email/password sign-in.
 

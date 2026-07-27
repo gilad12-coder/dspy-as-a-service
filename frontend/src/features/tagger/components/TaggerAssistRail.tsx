@@ -13,6 +13,7 @@ import type {
   ReviewRound,
   TaggerConfig,
 } from "../lib/types";
+import { isBinaryYes } from "../lib/types";
 import { agreementGate, agreementOver, labelsAgree } from "../lib/assist";
 
 interface Props {
@@ -43,7 +44,9 @@ function displayLabel(config: TaggerConfig, value: Annotation | AssistPrediction
     return value.map((id) => byId.get(id) ?? id).join(" · ");
   }
   if (config.mode === "binary") {
-    return value === "yes" ? msg("tagger.assist.label.yes") : msg("tagger.assist.label.no");
+    return isBinaryYes(value as Annotation)
+      ? msg("tagger.assist.label.yes")
+      : msg("tagger.assist.label.no");
   }
   return String(value);
 }

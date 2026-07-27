@@ -234,6 +234,18 @@ class Settings(BaseSettings):
         ),
         alias="LM_REQUEST_TIMEOUT",
     )
+    agent_request_timeout_seconds: float = Field(
+        default=120.0,
+        ge=1.0,
+        le=600.0,
+        description=(
+            "Per-request LM timeout (seconds) for interactive agent turns (chat). "
+            "Separate from lm_request_timeout_seconds, which is sized for batch "
+            "optimization runs — a stalled provider should fail a chat turn in "
+            "minutes, not tens of minutes."
+        ),
+        alias="AGENT_REQUEST_TIMEOUT",
+    )
     job_stall_timeout_seconds: float = Field(
         default=1800.0,
         ge=0.0,

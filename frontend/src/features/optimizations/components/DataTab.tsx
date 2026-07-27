@@ -20,6 +20,7 @@ import { HelpTip } from "@/shared/ui/help-tip";
 import { msg } from "@/shared/lib/messages";
 import { tip } from "@/shared/lib/tooltips";
 import { getOptimizationDataset, getTestResults, getPairTestResults } from "@/shared/lib/api";
+import { useUserPrefs } from "@/features/settings";
 import type {
   OptimizationDatasetResponse,
   OptimizationStatusResponse,
@@ -85,6 +86,14 @@ export function DataTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [split, setSplit] = useState<Split>("test");
+  // Simple mode collapses the split machinery: only the scored (test) rows are
+  // shown and the four-way selector disappears — the val-vs-test distinction is
+  // an advanced-mode concept.
+  const { prefs } = useUserPrefs();
+  const advanced = prefs.advancedMode;
+  useEffect(() => {
+    if (!advanced && split !== "test") setSplit("test");
+  }, [advanced, split]);
   const [programType, setProgramType] = useState<ProgramType>("optimized");
   const [testResults, setTestResults] = useState<Record<string, Record<number, EvalExampleResult>>>(
     { optimized: {}, baseline: {} },
@@ -315,7 +324,9 @@ export function DataTab({
   return (
     <div className="space-y-4 mt-4">
       <FadeIn>
-        <p className="text-sm text-muted-foreground">{msg("optimizations.datatab.description")}</p>
+        <p className="text-sm text-muted-foreground">
+          {msg(advanced ? "optimizations.datatab.description" : "optimizations.datatab.description_simple")}
+        </p>
       </FadeIn>
       {/* Test evaluation bar — shows cached results */}
       {split === "test" && (
@@ -381,8 +392,9 @@ export function DataTab({
 
       <FadeIn delay={0.3}>
         <div className="flex items-center gap-3 flex-wrap">
-          {(() => {
-            const splits: Array<[Split, string]> = [
+          {advanced &&
+            (() => {
+              const splits: Array<[Split, string]> = [
               ["all", msg("auto.features.optimizations.components.datatab.literal.4")],
               ["train", msg("auto.features.optimizations.components.datatab.literal.5")],
               ["val", msg("auto.features.optimizations.components.datatab.literal.6")],

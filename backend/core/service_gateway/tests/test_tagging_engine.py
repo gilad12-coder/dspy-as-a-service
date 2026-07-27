@@ -41,11 +41,13 @@ _FREE = {"mode": "freetext", "inputColumns": ["text"], "prompt": "Extract the ci
 
 
 def test_normalize_binary_maps_variants() -> None:
-    """Binary labels normalize yes/no spellings and reject junk."""
-    assert normalize_label(_BINARY, "Yes") == "yes"
-    assert normalize_label(_BINARY, "NO") == "no"
-    assert normalize_label(_BINARY, "true") == "yes"
-    assert normalize_label(_BINARY, "כן") == "yes"
+    """Binary labels normalize yes/no spellings to 1/0 and reject junk."""
+    assert normalize_label(_BINARY, "Yes") == "1"
+    assert normalize_label(_BINARY, "NO") == "0"
+    assert normalize_label(_BINARY, "true") == "1"
+    assert normalize_label(_BINARY, "כן") == "1"
+    assert normalize_label(_BINARY, "1") == "1"
+    assert normalize_label(_BINARY, "0") == "0"
     assert normalize_label(_BINARY, "maybe") is None
 
 

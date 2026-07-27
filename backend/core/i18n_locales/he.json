@@ -37,7 +37,7 @@
     "prediction": "תשובה",
     "model": "מודל",
     "provider": "ספק",
-    "reflectionModel": "מודל רפלקציה",
+    "reflectionModel": "מודל משוב",
     "generationModel": "מודל מג׳נרט",
     "generationModelShort": "מג׳נרט",
     "generationModelPlural": "מודלי מג׳נרט",

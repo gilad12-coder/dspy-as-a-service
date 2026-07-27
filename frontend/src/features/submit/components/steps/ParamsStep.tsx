@@ -18,11 +18,14 @@ import { cn } from "@/shared/lib/utils";
 import { tip } from "@/shared/lib/tooltips";
 import { TERMS } from "@/shared/lib/terms";
 import { msg } from "@/shared/lib/messages";
+import { useUserPrefs } from "@/features/settings";
 
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 import { SplitRecommendationCard } from "../SplitRecommendationCard";
 
 export function ParamsStep({ w }: { w: SubmitWizardContext }) {
+  const { prefs } = useUserPrefs();
+  const advanced = prefs.advancedMode;
   const {
     split,
     updateSplit,
@@ -56,6 +59,9 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        {/* Simple mode leaves the split to the server recommendation (splitMode
+            defaults to auto) and hides the whole train/val/test surface. */}
+        {advanced && (
         <div className="space-y-3" data-tutorial="data-splits">
           <div className="flex items-center justify-between">
             <Label className="font-semibold">
@@ -141,8 +147,9 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
             </div>
           )}
         </div>
+        )}
 
-        <Separator />
+        {advanced && <Separator />}
 
         <div className="space-y-4">
           <Label className="font-semibold">

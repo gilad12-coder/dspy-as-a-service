@@ -36,7 +36,7 @@ export const TOOLTIPS = {
   "lm.calls_count": `מספר הקריאות ל${TERMS_HE.model} השפה במהלך ה${TERMS_HE.optimization}`,
   "lm.avg_response_time": `הזמן הממוצע שלקח ל${TERMS_HE.model} לענות לכל קריאה`,
 
-  "lm_activity.section": `פעילות מודלי השפה לפי שלב — כמה קריאות בוצעו וכמה זמן לקחו, מה${TERMS_HE.generationModelShort} וממודל הרפלקציה בנפרד`,
+  "lm_activity.section": `פעילות מודלי השפה לפי שלב — כמה קריאות בוצעו וכמה זמן לקחו, מה${TERMS_HE.generationModelShort} וממודל המשוב בנפרד`,
   "lm_activity.stage.baseline": `קריאות שבוצעו בעת מדידת ה${TERMS_HE.baselineScore} — לפני שה${TERMS_HE.optimizer} התחיל לפעול`,
   "lm_activity.stage.training": `קריאות שבוצעו במהלך ה${TERMS_HE.optimization} עצמה — כשהאופטימייזר בנה מועמדים לפרומפט`,
   "lm_activity.stage.evaluation": `קריאות שבוצעו בעת מדידת ה${TERMS_HE.optimizedScore} — אחרי שה${TERMS_HE.optimization} הסתיימה`,
@@ -77,7 +77,7 @@ export const TOOLTIPS = {
   "react.optimized_tools": `הכלים שהסוכן (ReAct) מפעיל בלולאה, עם התיאורים והארגומנטים שה${TERMS_HE.optimizer} חידד במהלך ה${TERMS_HE.optimization}`,
 
   "config.section.summary": `ה${TERMS_HE.module}, ה${TERMS_HE.optimizer}, והפרמטרים שנבחרו ל${TERMS_HE.optimizationTypeRun} זו`,
-  "config.section.models": `מודלי השפה שהוגדרו — ${TERMS_HE.generationModelShort} לייצור תשובות, רפלקציה לניתוח שגיאות`,
+  "config.section.models": `מודלי השפה שהוגדרו — ${TERMS_HE.generationModelShort} לייצור תשובות, מודל משוב לניתוח שגיאות`,
   "config.section.data": `חלוקת ה${TERMS_HE.dataset} ל${TERMS_HE.splitTrain}, ${TERMS_HE.splitVal} ו${TERMS_HE.splitTest}, והגדרות ערבוב`,
 
   "grid.generation_models": `המודלים שמייצרים תשובות. כל ${TERMS_HE.pair} בסריקה משתמש ב${TERMS_HE.generationModel} אחר`,
@@ -100,7 +100,7 @@ export const TOOLTIPS = {
 
   "submit.depth":
     "כמה רחב החיפוש של GEPA: קל רץ מהר עם פחות ניסיונות; מעמיק בודק יותר אפשרויות ולוקח יותר זמן",
-  "submit.reflection_minibatch": `כמה דוגמאות ה${TERMS_HE.model} בודק בכל סבב רפלקציה כדי למצוא דפוסי שגיאה`,
+  "submit.reflection_minibatch": `כמה דוגמאות ה${TERMS_HE.model} בודק בכל סבב משוב כדי למצוא דפוסי שגיאה`,
   "submit.eval_rounds": "כמה פעמים להריץ הערכה מלאה כדי לבדוק מועמדים לפרומפט",
   "submit.merge": "כשפעיל, GEPA יכול לבצע merge ולשלב רעיונות מכמה מועמדים טובים לפרומפט אחד",
 

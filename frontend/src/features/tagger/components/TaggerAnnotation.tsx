@@ -35,11 +35,13 @@ import { exportAnnotations, buildLibraryRows } from "../lib/export-csv";
 import type {
   AnnotationProvenance,
   AssistPrediction,
+  BinaryLabel,
   DataField,
   DataRow,
   Annotation,
   TaggerConfig,
 } from "../lib/types";
+import { BINARY_NO, BINARY_YES, isBinaryNo, isBinaryYes } from "../lib/types";
 import { isStorageQuotaError, saveDataset } from "@/shared/lib/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
@@ -69,7 +71,7 @@ interface Props {
   onNavigate: (dir: 1 | -1) => void;
   onGoTo: (idx: number) => void;
   onJumpUntagged: () => void;
-  onToggleBinary: (id: string, value: "yes" | "no") => void;
+  onToggleBinary: (id: string, value: BinaryLabel) => void;
   onToggleCategory: (id: string, catId: string) => void;
   onSetFreetext: (id: string, text: string) => void;
   onBack: () => void;
@@ -248,10 +250,10 @@ export function TaggerAnnotation({
       } else if (config.mode === "binary") {
         if (e.key === "y" || e.key === "Y") {
           e.preventDefault();
-          onToggleBinary(id, "yes");
+          onToggleBinary(id, BINARY_YES);
         } else if (e.key === "n" || e.key === "N") {
           e.preventDefault();
-          onToggleBinary(id, "no");
+          onToggleBinary(id, BINARY_NO);
         }
       } else if (config.mode === "multiclass") {
         const num = parseInt(e.key);
@@ -326,40 +328,40 @@ export function TaggerAnnotation({
           {config.mode === "binary" && (
             <div className="flex flex-1 min-h-0 flex-col gap-2">
               <Button
-                variant={currentAnn === "yes" ? "default" : "outline"}
-                onClick={() => onToggleBinary(id, "yes")}
+                variant={isBinaryYes(currentAnn) ? "default" : "outline"}
+                onClick={() => onToggleBinary(id, BINARY_YES)}
                 disabled={readOnly}
                 className={cn(
                   "flex-1 text-base font-medium rounded-xl gap-2 focus-visible:ring-0 focus-visible:border-transparent",
-                  currentAnn === "yes" &&
+                  isBinaryYes(currentAnn) &&
                     "bg-emerald-600/15 hover:bg-emerald-600/20 border-emerald-600/40 text-emerald-700",
-                  aiPick === "yes" && "border-primary/45 bg-primary/5",
+                  isBinaryYes(aiPick) && "border-primary/45 bg-primary/5",
                 )}
               >
                 <Badge variant="ghost" size="sm" className="opacity-40 font-mono">
                   {msg("auto.features.tagger.components.taggerannotation.4")}
                 </Badge>
                 {msg("auto.features.tagger.components.taggerannotation.5")}
-                {aiPick === "yes" && (
+                {isBinaryYes(aiPick) && (
                   <Sparkles className="size-3.5 text-primary/70" aria-hidden="true" />
                 )}
               </Button>
               <Button
-                variant={currentAnn === "no" ? "default" : "outline"}
-                onClick={() => onToggleBinary(id, "no")}
+                variant={isBinaryNo(currentAnn) ? "default" : "outline"}
+                onClick={() => onToggleBinary(id, BINARY_NO)}
                 disabled={readOnly}
                 className={cn(
                   "flex-1 text-base font-medium rounded-xl gap-2 focus-visible:ring-0 focus-visible:border-transparent",
-                  currentAnn === "no" &&
+                  isBinaryNo(currentAnn) &&
                     "bg-red-500/15 hover:bg-red-500/20 border-red-500/40 text-red-600",
-                  aiPick === "no" && "border-primary/45 bg-primary/5",
+                  isBinaryNo(aiPick) && "border-primary/45 bg-primary/5",
                 )}
               >
                 <Badge variant="ghost" size="sm" className="opacity-40 font-mono">
                   {msg("auto.features.tagger.components.taggerannotation.6")}
                 </Badge>
                 {msg("auto.features.tagger.components.taggerannotation.7")}
-                {aiPick === "no" && (
+                {isBinaryNo(aiPick) && (
                   <Sparkles className="size-3.5 text-primary/70" aria-hidden="true" />
                 )}
               </Button>

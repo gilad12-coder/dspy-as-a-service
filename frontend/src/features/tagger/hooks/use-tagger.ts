@@ -29,6 +29,7 @@ import { streamInterviewTurn } from "../lib/assist-stream";
 import type {
   DataRow,
   Annotation,
+  BinaryLabel,
   Category,
   TaggerConfig,
   AnnotationMode,
@@ -428,7 +429,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     }
   }, [frameData, annotations, effectiveConfig]);
 
-  const toggleBinary = useCallback((id: string, value: "yes" | "no") => {
+  const toggleBinary = useCallback((id: string, value: BinaryLabel) => {
     (document.activeElement as HTMLElement)?.blur();
     setAnnotations((prev) => {
       const next = { ...prev };
@@ -458,7 +459,10 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   const setFreetext = useCallback((id: string, text: string) => {
     setAnnotations((prev) => {
       const next = { ...prev };
-      if (text.trim()) next[id] = text.trim();
+      // Store the raw text: the textarea is controlled, so trimming here would
+      // delete the trailing space the user just typed and make multi-word tags
+      // impossible. Blank-only input still counts as untagged.
+      if (text.trim()) next[id] = text;
       else delete next[id];
       return next;
     });
@@ -508,7 +512,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   );
 
   const assistToggleBinary = useCallback(
-    (id: string, value: "yes" | "no") => {
+    (id: string, value: BinaryLabel) => {
       toggleBinary(id, value);
       // annotationsRef updates in an effect; mirror the toggle's outcome now.
       annotationsRef.current = { ...annotationsRef.current };

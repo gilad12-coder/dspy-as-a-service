@@ -62,6 +62,15 @@ def test_profile_dataset_detects_numeric_target() -> None:
     assert profile.target.class_histogram == {}
 
 
+def test_profile_dataset_two_value_numeric_target_is_categorical() -> None:
+    """A 1/0 label column parsed as numbers is a binary class, not a regression target."""
+    rows = [{"q": f"q{i}", "a": i % 2} for i in range(10)]
+    profile = profile_dataset(rows, _mapping())
+
+    assert profile.target is not None
+    assert profile.target.kind == "categorical"
+
+
 def test_profile_dataset_detects_freeform_target() -> None:
     """Long-text target values produce a freeform profile."""
     long_text = "a" * 80

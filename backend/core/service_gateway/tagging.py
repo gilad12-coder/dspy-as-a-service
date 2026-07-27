@@ -351,17 +351,17 @@ def task_description(config: dict[str, Any]) -> str:
         question = str(config.get("question") or "").strip()
         if question:
             return (
-                f'Binary labeling. For each row answer the question: "{question}". The label is exactly "yes" or "no".'
+                f'Binary labeling. For each row answer the question: "{question}". The label is exactly "1" (yes) or "0" (no).'
             )
         if config.get("_assist_mode"):
             return (
                 "Binary labeling, but the yes/no classification criterion has not been defined. "
                 "Your first question must ask the user what each row should be classified for. "
-                'The final label is exactly "yes" or "no".'
+                'The final label is exactly "1" (yes) or "0" (no).'
             )
         return (
             "Binary labeling. Apply the rubric's classification criterion to each row. "
-            'The label is exactly "yes" or "no".'
+            'The label is exactly "1" (yes) or "0" (no).'
         )
     if mode == "multiclass":
         names = [str(c.get("label", "")).strip() for c in config.get("categories") or []]
@@ -451,7 +451,8 @@ def normalize_label(config: dict[str, Any], raw: Any) -> str | list[str] | None:
         raw: The model's label (string, or list of category names).
 
     Returns:
-        ``"yes"``/``"no"`` for binary, a non-empty list of category ids for
+        ``"1"``/``"0"`` for binary (the legacy yes/no vocabulary still parses,
+        the stored form is 1/0), a non-empty list of category ids for
         multiclass, a non-empty string for freetext — or ``None`` when the
         label cannot be mapped.
     """
@@ -461,9 +462,9 @@ def normalize_label(config: dict[str, Any], raw: Any) -> str | list[str] | None:
         # The Hebrew yes/no ("\u05db\u05df" / "\u05dc\u05d0") are input-normalization
         # tokens, escaped so the i18n catalog-boundary check stays clean.
         if text in {"yes", "y", "true", "1", "\u05db\u05df"}:
-            return "yes"
+            return "1"
         if text in {"no", "n", "false", "0", "\u05dc\u05d0"}:
-            return "no"
+            return "0"
         return None
     if mode == "multiclass":
         names = raw if isinstance(raw, list) else [raw]

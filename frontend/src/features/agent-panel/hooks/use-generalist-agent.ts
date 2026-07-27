@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "react-toastify";
 import { readPref } from "@/features/settings";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
@@ -501,7 +502,14 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
       const pa = pendingApproval;
       if (!pa) return;
       setPendingApproval(null);
-      await confirmGeneralistApproval(pa.id, approved);
+      const resolved = await confirmGeneralistApproval(pa.id, approved);
+      if (!resolved) {
+        // The confirm never reached the stream's process (network blip or a
+        // different replica) — silently dropping it leaves the tool hanging
+        // with no feedback. Restore the card so the user can retry.
+        setPendingApproval(pa);
+        toast.error(msg("agent.approval.confirm_failed"));
+      }
     },
     [pendingApproval],
   );

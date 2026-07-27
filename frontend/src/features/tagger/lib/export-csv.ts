@@ -39,7 +39,9 @@ function buildRows(
       const cats = config.categories ?? [];
       annStr = ann.map((catId) => cats.find((c) => c.id === catId)?.label ?? catId).join("; ");
     } else if (typeof ann === "string") {
-      annStr = ann;
+      // Free-text annotations are stored raw while typing (a trim there would
+      // eat the trailing space mid-word); tidy the edges only at export.
+      annStr = ann.trim();
     }
     row[annotCol] = annStr;
     if (withProvenance) {

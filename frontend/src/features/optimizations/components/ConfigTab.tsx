@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { FadeIn } from "@/shared/ui/motion";
+import { useUserPrefs } from "@/features/settings";
 import { HelpTip } from "@/shared/ui/help-tip";
 import type {
   ModelConfig,
@@ -186,6 +187,8 @@ export function ConfigTab({
   payload: OptimizationPayloadResponse | null;
   activePair?: PairResult;
 }) {
+  const { prefs } = useUserPrefs();
+  const advanced = prefs.advancedMode;
   // Merge job-level data with full payload for richer config display
   const p = (payload?.payload ?? {}) as Record<string, unknown>;
   const splitFractions = (p.split_fractions ??
@@ -427,6 +430,8 @@ export function ConfigTab({
                 <ArrowUpRight className="size-4 shrink-0 text-muted-foreground/60 transition-colors group-hover/srclink:text-foreground" />
               </Link>
             )}
+            {/* The train/val/test breakdown is advanced-mode machinery. */}
+            {advanced && (
             <div className="space-y-2">
               <p className="text-[0.625rem] font-semibold tracking-[0.08em] uppercase text-[#A89680]">
                 <HelpTip text={tip("data.split_explanation")}>
@@ -483,6 +488,7 @@ export function ConfigTab({
                 </span>
               </div>
             </div>
+            )}
             <div className="grid grid-cols-2 gap-2.5">
               <InfoCard
                 label={

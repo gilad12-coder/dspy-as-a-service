@@ -80,21 +80,29 @@ export function setApiAuthTokenRefresher(
 
 /**
  * Run a one-shot bearer-token refresh after a 401 and hand back a fresh
- * token to retry with. Returns `undefined` when there is no refresher, the
- * refresh failed, or the refreshed token is unchanged (so the caller should
- * surface the original 401 instead of looping).
+ * token to retry with. Returns `undefined` when there is no refresher or the
+ * refresh failed (the caller surfaces the original 401 — it never loops).
+ * Concurrent 401s share a single in-flight refresh: without that, the second
+ * caller's refresh returns the token the first caller just cached, reads it
+ * as "unchanged" and wrongly surfaces its 401 instead of retrying.
  */
-async function refreshAuthTokenOn401(): Promise<string | undefined> {
-  if (!_authTokenRefresher) return undefined;
-  let fresh: string | undefined;
-  try {
-    fresh = await _authTokenRefresher();
-  } catch {
-    return undefined;
-  }
-  if (!fresh || fresh === _authToken) return undefined;
-  _authToken = fresh;
-  return fresh;
+let _refreshInFlight: Promise<string | undefined> | null = null;
+
+function refreshAuthTokenOn401(): Promise<string | undefined> {
+  if (!_authTokenRefresher) return Promise.resolve(undefined);
+  _refreshInFlight ??= (async () => {
+    try {
+      const fresh = await _authTokenRefresher!();
+      if (!fresh) return undefined;
+      _authToken = fresh;
+      return fresh;
+    } catch {
+      return undefined;
+    } finally {
+      _refreshInFlight = null;
+    }
+  })();
+  return _refreshInFlight;
 }
 
 /**

@@ -19,6 +19,8 @@ from core.service_gateway.optimization.logged_scores import (
     MAX_LOGGED_METRICS,
     LoggedScoreRecorder,
     aggregate_logged_metrics,
+    classification_metrics,
+    combined_test_metrics,
     drain_logged_metrics,
     log_metrics,
     reset_logged_metrics,
@@ -360,3 +362,50 @@ def test_probe_reports_logging_contract_violation_as_error() -> None:
     assert probe.error is not None
     assert "log_metrics" in probe.error
     assert probe.logged_metrics == {}
+
+
+def _row(gold: str, predicted: str) -> dict:
+    """Build a minimal per-example row with a single ``label`` output field."""
+    return {"gold": {"label": gold}, "outputs": {"label": predicted}}
+
+
+def test_classification_metrics_binary_positive_class() -> None:
+    """A 1/0 field reports positive-class precision/recall under plain names."""
+    rows = [_row("1", "1"), _row("1", "0"), _row("0", "1"), _row("0", "0")]
+    metrics = classification_metrics(rows)
+    assert metrics == {"precision": 0.5, "recall": 0.5}
+
+
+def test_classification_metrics_multiclass_macro() -> None:
+    """A multiclass field macro-averages one-vs-rest precision and recall."""
+    rows = [_row("a", "a"), _row("a", "a"), _row("b", "a"), _row("c", "c")]
+    metrics = classification_metrics(rows)
+    # a: p=2/3 r=1; b: p=0 r=0; c: p=1 r=1 → macro p=5/9, r=2/3.
+    assert metrics["precision"] == pytest.approx(5 / 9)
+    assert metrics["recall"] == pytest.approx(2 / 3)
+
+
+def test_classification_metrics_skips_freeform_and_single_class() -> None:
+    """High-cardinality and single-class fields report nothing."""
+    unique = [_row(f"g{i}", f"g{i}") for i in range(30)]
+    assert classification_metrics(unique) == {}
+    single = [_row("1", "1"), _row("1", "1")]
+    assert classification_metrics(single) == {}
+
+
+def test_classification_metrics_normalizes_case_and_legacy_yes_no() -> None:
+    """Labels compare case-insensitively; a yes/no field picks yes as positive."""
+    rows = [_row("Yes", "yes"), _row("no", "YES"), _row("no", "no")]
+    metrics = classification_metrics(rows)
+    assert metrics == {"precision": 0.5, "recall": 1.0}
+
+
+def test_combined_test_metrics_prefers_metric_logged_values() -> None:
+    """The metric's own log_metrics values win over computed ones on collision."""
+    rows = [
+        {**_row("1", "1"), "logged_metrics": {"precision": 0.9}},
+        {**_row("0", "1"), "logged_metrics": {"precision": 0.9}},
+    ]
+    merged = combined_test_metrics(rows)
+    assert merged["precision"] == pytest.approx(0.9)
+    assert merged["recall"] == pytest.approx(1.0)

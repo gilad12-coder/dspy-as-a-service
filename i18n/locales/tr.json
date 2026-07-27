@@ -44,7 +44,7 @@
     "prediction": "tahmin",
     "program": "program",
     "provider": "sağlayıcı",
-    "reflectionModel": "yansıma modeli",
+    "reflectionModel": "geri bildirim modeli",
     "row": "satır",
     "rowPlural": "satırlar",
     "score": "puan",

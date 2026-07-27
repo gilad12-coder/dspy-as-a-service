@@ -25,7 +25,7 @@ export const TOOLTIPS_EN: Record<TooltipKey, string> = {
   "lm.avg_response_time": "The average time it took the model to respond to each call",
 
   "lm_activity.section":
-    "Language model activity by stage — how many calls were made and how long they took, for the generation and reflection models separately",
+    "Language model activity by stage — how many calls were made and how long they took, for the generation and feedback models separately",
   "lm_activity.stage.baseline":
     "Calls made while measuring the baseline score — before the optimizer started working",
   "lm_activity.stage.training":
@@ -35,7 +35,7 @@ export const TOOLTIPS_EN: Record<TooltipKey, string> = {
   "lm_activity.column.generation":
     "Calls made to the generation model — the model that produces answers",
   "lm_activity.column.reflection":
-    "Calls made to the reflection model — the model that analyzes errors and suggests improvements",
+    "Calls made to the feedback model — the model that analyzes errors and suggests improvements",
   "lm_activity.cell.calls": "The number of calls made in this stage",
   "lm_activity.cell.avg_ms": "The average time per call in this stage",
   "lm_activity.total_row": "Total calls and average time across all stages",
@@ -83,13 +83,13 @@ export const TOOLTIPS_EN: Record<TooltipKey, string> = {
 
   "config.section.summary": "The module, the optimizer, and the parameters chosen for this run",
   "config.section.models":
-    "The language models configured — generation for producing answers, reflection for analyzing errors",
+    "The language models configured — generation for producing answers, feedback for analyzing errors",
   "config.section.data": "Splitting the dataset into train, val and test, and shuffle settings",
 
   "grid.generation_models":
     "The models that produce answers. Each pair in the grid search uses a different generation model",
   "grid.reflection_models":
-    "The models that analyze errors and suggest improvements. Each pair uses a different reflection model",
+    "The models that analyze errors and suggest improvements. Each pair uses a different feedback model",
   "grid.score_comparison":
     "Comparison of the baseline score and the optimized score for each model pair",
   "grid.quality_speed_combined":
@@ -112,7 +112,7 @@ export const TOOLTIPS_EN: Record<TooltipKey, string> = {
   "submit.depth":
     "How wide GEPA's search is: light runs fast with fewer attempts; deeper checks more options and takes more time",
   "submit.reflection_minibatch":
-    "How many examples the model checks in each reflection round to find error patterns",
+    "How many examples the model checks in each feedback round to find error patterns",
   "submit.eval_rounds": "How many times to run a full evaluation to check prompt candidates",
   "submit.merge":
     "When enabled, GEPA can merge and combine ideas from several good candidates into one prompt",
@@ -157,7 +157,7 @@ export const TOOLTIPS_EN: Record<TooltipKey, string> = {
   "compare.winner_runtime":
     "The total duration of the winning run, from launch until the optimization finished",
   "compare.winner_models":
-    "The language model pair of the winning run — generation model that produces output, and reflection model that improves the instructions",
+    "The language model pair of the winning run — generation model that produces output, and feedback model that improves the instructions",
 
   "analytics.score_comparison":
     "Comparison of the baseline score versus the optimized score for every completed optimization",

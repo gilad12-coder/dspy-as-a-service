@@ -22,6 +22,15 @@ model_list:
 
 litellm_settings:
   drop_params: true
+  # Retry fast transient upstream failures (429/5xx) at the proxy instead of
+  # passing every one straight through to the turn/run. Kept low: the backend
+  # retries too, and slow failures are bounded by the client-side timeouts.
+  num_retries: 2
+  # Hard per-request ceiling matching the backend's job-scale LM timeout
+  # (LM_REQUEST_TIMEOUT, 600s) so a stalled provider can't pin a proxy worker
+  # longer than any client would wait. Interactive turns time out client-side
+  # far earlier (AGENT_REQUEST_TIMEOUT, 120s).
+  request_timeout: 600
   # Loads custom_callbacks.py, whose import patches streamed chunks to keep the
   # concrete model OpenRouter's Auto Router served (the backend's per-turn
   # "Auto · <model>" reveal). The callback object itself is a no-op.

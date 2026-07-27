@@ -271,9 +271,19 @@ def evaluate_on_test(
                 ex_score > 0,
             )
             outputs = {}
+            gold = {}
             for k in example.labels():
                 outputs[k] = getattr(prediction, k, None) if prediction else None
-            row: dict[str, Any] = {"index": i, "outputs": outputs, "score": ex_score, "pass": ex_score > 0}
+                # Gold rides along so corpus-level classification metrics
+                # (precision/recall) can be computed from the stored rows.
+                gold[k] = getattr(example, k, None)
+            row: dict[str, Any] = {
+                "index": i,
+                "outputs": outputs,
+                "gold": gold,
+                "score": ex_score,
+                "pass": ex_score > 0,
+            }
             logged = recorder.scores_for(example) if recorder is not None else {}
             if logged:
                 row["logged_metrics"] = logged

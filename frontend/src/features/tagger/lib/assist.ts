@@ -86,7 +86,15 @@ export function labelsAgree(mode: AnnotationMode, final: Annotation, predicted: 
   if (mode === "freetext") {
     return tokenSimilarity(String(final), String(predicted)) >= FREETEXT_MATCH;
   }
-  return final === predicted;
+  // Binary: canonicalize so a legacy "yes"/"no" label agrees with a fresh
+  // "1"/"0" prediction (sessions saved before the 1/0 vocabulary).
+  return canonBinary(final) === canonBinary(predicted);
+}
+
+function canonBinary(value: Annotation): Annotation {
+  if (value === "yes") return "1";
+  if (value === "no") return "0";
+  return value;
 }
 
 /**

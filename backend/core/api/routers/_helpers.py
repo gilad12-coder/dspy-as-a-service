@@ -224,6 +224,11 @@ async def stream_with_llm_metering(
                 logger.exception("LLM turn metering failed for %s", username)
 
 
+# Idle gap after which the SSE serializer emits a comment line to keep the
+# connection alive through proxy/LB idle timeouts (commonly 30-60s).
+SSE_KEEPALIVE_SECONDS = 15.0
+
+
 async def sse_from_events(
     source: AsyncIterable[dict[str, Any]],
 ) -> AsyncIterator[str]:
@@ -235,16 +240,39 @@ async def sse_from_events(
     ``"event: <name>\\ndata: <json>\\n\\n"``. Centralising it here lets
     route handlers stay free of nested ``event_generator`` closures.
 
+    A ``: keep-alive`` comment is emitted whenever the source stays quiet for
+    ``SSE_KEEPALIVE_SECONDS`` — a model with a long time-to-first-token
+    otherwise leaves the connection idle long enough for an intermediary
+    (ingress/LB idle timeout) to silently drop it mid-turn.
+
     Args:
         source: Async iterable yielding ``{"event": str, "data": dict}`` mappings.
 
     Yields:
         SSE-formatted strings ready for ``StreamingResponse``.
     """
-    async for event in source:
-        name = event["event"]
-        payload = json.dumps(event["data"], ensure_ascii=False, default=str)
-        yield f"event: {name}\ndata: {payload}\n\n"
+    iterator = aiter(source)
+    next_event: asyncio.Task | None = None
+    try:
+        while True:
+            if next_event is None:
+                next_event = asyncio.ensure_future(anext(iterator))
+            done, _ = await asyncio.wait({next_event}, timeout=SSE_KEEPALIVE_SECONDS)
+            if not done:
+                yield ": keep-alive\n\n"
+                continue
+            try:
+                event = next_event.result()
+            except StopAsyncIteration:
+                next_event = None
+                return
+            next_event = None
+            name = event["event"]
+            payload = json.dumps(event["data"], ensure_ascii=False, default=str)
+            yield f"event: {name}\ndata: {payload}\n\n"
+    finally:
+        if next_event is not None:
+            next_event.cancel()
 
 
 def strip_api_key(d: dict) -> dict:

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Check, ChevronDown, Eye, Search, Loader2, RefreshCw } from "lucide-react";
-import { formatMsg, msg } from "@/shared/lib/messages";
+import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
 import {
@@ -40,6 +40,30 @@ interface ModelPickerProps {
 interface EnrichedModel extends CatalogModel {
   fromDiscovery?: boolean;
 }
+
+type ModelPurpose = "all" | "vision" | "reasoning" | "multilingual" | "onprem";
+
+// Model families with a first-class multilingual focus. The catalog is dynamic
+// (whatever OpenRouter serves) and carries no per-model purpose metadata, so
+// this id heuristic is the categorization lever — extend the list as needed.
+const MULTILINGUAL_FAMILIES = ["qwen", "glm", "aya", "command", "gemma", "mistral"];
+
+const PURPOSE_PREDICATES: Record<Exclude<ModelPurpose, "all">, (m: EnrichedModel) => boolean> = {
+  vision: (m) => Boolean(m.supports_vision),
+  reasoning: (m) => Boolean(m.supports_thinking),
+  multilingual: (m) => MULTILINGUAL_FAMILIES.some((f) => m.value.toLowerCase().includes(f)),
+  // The backend labels internal-gateway endpoints "On-prem gateway" in
+  // data_center — the only signal that a model is served in-house.
+  onprem: (m) => (m.data_center ?? "").toLowerCase().includes("on-prem"),
+};
+
+const PURPOSE_LABEL_KEYS: Record<ModelPurpose, MessageKey> = {
+  all: "submit.modelpicker.purpose.all",
+  vision: "submit.modelpicker.purpose.vision",
+  reasoning: "submit.modelpicker.purpose.reasoning",
+  multilingual: "submit.modelpicker.purpose.multilingual",
+  onprem: "submit.modelpicker.purpose.onprem",
+};
 
 function formatCtx(tokens?: number): string {
   if (!tokens) return "";
@@ -191,13 +215,25 @@ export function ModelPicker({
     return [...discoveredEntries, ...filtered];
   }, [activeCatalog, byokMode, byokProviderSet, discovered, providerFilter]);
 
+  // Purpose chips render only for categories the current catalog actually
+  // has — a deploy with no on-prem gateway never shows an empty "On-prem".
+  const [purpose, setPurpose] = React.useState<ModelPurpose>("all");
+  const purposeOptions = React.useMemo(() => {
+    const present = (Object.keys(PURPOSE_PREDICATES) as Array<Exclude<ModelPurpose, "all">>).filter(
+      (p) => allModels.some(PURPOSE_PREDICATES[p]),
+    );
+    return present.length > 0 ? (["all", ...present] as ModelPurpose[]) : [];
+  }, [allModels]);
+
   const filtered = React.useMemo(() => {
+    const byPurpose =
+      purpose === "all" ? allModels : allModels.filter(PURPOSE_PREDICATES[purpose]);
     const q = query.trim().toLowerCase();
-    if (!q) return allModels;
-    return allModels.filter(
+    if (!q) return byPurpose;
+    return byPurpose.filter(
       (m) => m.value.toLowerCase().includes(q) || m.label.toLowerCase().includes(q),
     );
-  }, [allModels, query]);
+  }, [allModels, purpose, query]);
 
   // Group by provider *and* data center: a provider that fans out across
   // several endpoints (e.g. a public API plus an on-prem gateway) gets one
@@ -320,6 +356,32 @@ export function ModelPicker({
             </button>
           )}
         </div>
+
+        {purposeOptions.length > 1 && (
+          <div
+            role="group"
+            aria-label={msg("submit.modelpicker.purpose.aria")}
+            className="flex flex-wrap gap-1 border-b border-border/50 px-3 py-2"
+          >
+            {purposeOptions.map((p) => (
+              <button
+                key={p}
+                type="button"
+                role="radio"
+                aria-checked={purpose === p}
+                onClick={() => setPurpose(p)}
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium transition-colors duration-150 cursor-pointer",
+                  purpose === p
+                    ? "border-foreground/25 bg-accent text-foreground"
+                    : "border-border/50 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {msg(PURPOSE_LABEL_KEYS[p])}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="max-h-60 overflow-y-auto py-1">
           {discoveryError && discoverUrl && (

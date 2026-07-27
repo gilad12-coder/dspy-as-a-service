@@ -28,6 +28,7 @@ import { TERMS } from "@/shared/lib/terms";
 import { ModelChip } from "@/shared/ui/model-chip";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { formatCredits, useCredits } from "@/features/billing";
+import { useUserPrefs } from "@/features/settings";
 import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
 import { chargeableBracket } from "../../lib/cost-bracket";
@@ -85,6 +86,8 @@ function SummaryAllAvailableRow({ count }: { count: number }) {
 }
 
 export function SummaryStep({ w }: { w: SubmitWizardContext }) {
+  const { prefs } = useUserPrefs();
+  const advanced = prefs.advancedMode;
   const {
     summaryTab,
     setSummaryTab,
@@ -290,6 +293,9 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                       </div>
                     </div>
                   )}
+                  {/* Split breakdown is advanced-mode machinery. */}
+                  {advanced && (
+                  <>
                   <Separator />
                   <div className="space-y-3">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -320,6 +326,8 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                       </div>
                     </div>
                   </div>
+                  </>
+                  )}
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Shuffle className="size-3.5" />

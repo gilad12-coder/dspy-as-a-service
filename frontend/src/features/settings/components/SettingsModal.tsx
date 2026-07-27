@@ -26,6 +26,7 @@ import {
   RotateCcw,
   Server,
   Shield,
+  SlidersHorizontal,
   ShieldCheck,
   Sparkles,
   Table as TableIcon,
@@ -290,6 +291,14 @@ function AccountTab() {
         <span className="text-xs uppercase tracking-wide font-semibold text-muted-foreground">
           {isAdmin ? msg("settings.account.role.admin") : msg("settings.account.role.user")}
         </span>
+      </SettingsRow>
+
+      <SettingsRow
+        icon={SlidersHorizontal}
+        label={msg("settings.account.advanced_mode.label")}
+        description={msg("settings.account.advanced_mode.description")}
+      >
+        <Switch checked={prefs.advancedMode} onCheckedChange={(v) => setPref("advancedMode", v)} />
       </SettingsRow>
 
       <SettingsRow

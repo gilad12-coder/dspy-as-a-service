@@ -7,7 +7,10 @@ from typing import cast
 
 import dspy
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
+from core.service_gateway.agents import generalist as generalist_module
 from core.service_gateway.agents.code import _SubmitArgExtractor
 from core.service_gateway.agents.generalist import (
     ApprovalRegistry,
@@ -19,6 +22,7 @@ from core.service_gateway.agents.generalist import (
     tools_for,
     validate_wizard_patch_order,
 )
+from core.storage.models import Base
 
 
 def test_empty_state_hides_dataset_and_submit_tools() -> None:
@@ -854,3 +858,59 @@ def test_system_prompt_forbids_submit_in_authoring_turn() -> None:
     prompt = GeneralistSig.__doc__ or ""
     assert "NEVER call ``submit_job_run_post`` in the SAME turn as" in prompt
     assert "request_code_authoring" in prompt
+
+
+def _approval_engine():
+    """In-memory shared-across-threads SQLite engine with the ORM schema."""
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    return engine
+
+
+def test_resolve_or_persist_without_engine_rejects_unknown_id() -> None:
+    """Store-less registries keep the old contract: unknown id is unresolved."""
+    registry = ApprovalRegistry()
+    assert registry.resolve_or_persist("nope", True) is False
+
+
+@pytest.mark.asyncio
+async def test_confirm_on_another_replica_reaches_waiting_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A decision persisted by one replica resolves another replica's wait loop."""
+    monkeypatch.setattr(generalist_module, "_DURABLE_POLL_SECONDS", 0.01)
+    engine = _approval_engine()
+    streaming = ApprovalRegistry()
+    streaming.bind_engine(engine)
+    confirming = ApprovalRegistry()
+    confirming.bind_engine(engine)
+
+    fut = streaming.register("call-cross")
+    # The confirming replica holds no future for this id — it must persist.
+    assert confirming.resolve_or_persist("call-cross", True) is True
+    assert await streaming.wait_for_decision("call-cross", fut) is True
+    # The decision row is consumed on delivery.
+    assert streaming._take_durable("call-cross") is None
+
+
+@pytest.mark.asyncio
+async def test_wait_for_decision_expires_as_declined(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A confirm that never arrives expires the wait as a decline, not a hang."""
+    monkeypatch.setattr(generalist_module, "APPROVAL_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(generalist_module, "_DURABLE_POLL_SECONDS", 0.01)
+    registry = ApprovalRegistry()
+    fut = registry.register("call-lost")
+    assert await registry.wait_for_decision("call-lost", fut) is False
+
+
+@pytest.mark.asyncio
+async def test_local_resolve_still_wins_instantly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The in-process fast path resolves without touching the durable store."""
+    registry = ApprovalRegistry()
+    fut = registry.register("call-local")
+    task = asyncio.create_task(registry.wait_for_decision("call-local", fut))
+    await asyncio.sleep(0)
+    assert registry.resolve_or_persist("call-local", False) is True
+    assert await task is False

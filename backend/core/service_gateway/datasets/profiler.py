@@ -328,7 +328,8 @@ def _infer_target_kind(values: list[Any]) -> str:
     """Classify the target column as ``categorical`` / ``numeric`` / ``freeform``.
 
     Empty lists fall back to ``freeform``. Lists of pure numerics are
-    ``numeric``. Strings are ``categorical`` when:
+    ``numeric``, unless only two distinct values appear (a binary class
+    column). Strings are ``categorical`` when:
 
     - the average value length is short (otherwise they're prose), AND
     - either there are very few distinct values (cheap path), or there
@@ -348,6 +349,10 @@ def _infer_target_kind(values: list[Any]) -> str:
     n = len(values)
     numeric_count = sum(1 for v in values if isinstance(v, (int, float)) and not isinstance(v, bool))
     if numeric_count == n:
+        # Two distinct numeric values are a binary class column (1/0 labels,
+        # e.g. from the tagger's exports), not a regression target.
+        if len({_stringify(v) for v in values}) <= 2:
+            return "categorical"
         return "numeric"
 
     avg_len = sum(len(_stringify(v)) for v in values) / n

@@ -13,6 +13,11 @@ export interface AgentShortcut {
 }
 
 export interface UserPrefs {
+  // The abstraction dial: off (default) hides expert machinery — the
+  // train/val/test split controls and per-split result views — behind simple
+  // before/after framing; on shows the full detail. A capability gate, unlike
+  // expandAdvanced below.
+  advancedMode: boolean;
   // Layout preference, not a capability gate: advanced sections are always
   // reachable; this only pre-expands them everywhere.
   expandAdvanced: boolean;
@@ -41,6 +46,7 @@ export interface UserPrefs {
 }
 
 export const PREF_KEYS: Record<keyof UserPrefs, string> = {
+  advancedMode: "skynet.prefs.advanced-mode",
   expandAdvanced: "skynet.prefs.expand-advanced",
   liteMode: "skynet.prefs.lite-mode",
   wizardCodeAssist: "skynet.prefs.wizard.code-assist",
@@ -63,6 +69,7 @@ export const DEFAULT_AGENT_SHORTCUT: AgentShortcut = {
 };
 
 export const DEFAULT_PREFS: UserPrefs = {
+  advancedMode: false,
   expandAdvanced: false,
   liteMode: false,
   wizardCodeAssist: "auto",
@@ -76,22 +83,13 @@ export const DEFAULT_PREFS: UserPrefs = {
   taggerAssistModel: { name: "" },
 };
 
-// The retired global "advanced mode" toggle. Users who had it on expect the
-// advanced sections open, so it seeds expandAdvanced once and is then removed.
-const LEGACY_ADVANCED_MODE_KEY = "skynet.prefs.advanced-mode";
-
+// `skynet.prefs.advanced-mode` once belonged to a retired toggle that a
+// migration folded into expandAdvanced and deleted. The migration is gone —
+// advancedMode reclaims the key as a real capability gate, and a stale legacy
+// "true" from a browser the migration never reached simply re-enables advanced
+// mode for what was an advanced user.
 export function migrateLegacyPrefs(): void {
-  if (typeof window === "undefined") return;
-  try {
-    const legacy = window.localStorage.getItem(LEGACY_ADVANCED_MODE_KEY);
-    if (legacy === null) return;
-    if (legacy === "true" && window.localStorage.getItem(PREF_KEYS.expandAdvanced) === null) {
-      window.localStorage.setItem(PREF_KEYS.expandAdvanced, "true");
-    }
-    window.localStorage.removeItem(LEGACY_ADVANCED_MODE_KEY);
-  } catch {
-    /* noop */
-  }
+  /* No pending migrations. Kept so callers don't churn when one appears. */
 }
 
 export function readPref<K extends keyof UserPrefs>(key: K): UserPrefs[K] {

@@ -10,6 +10,7 @@ import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { FieldsView } from "./TaggerAnnotation";
 import type { Annotation, DataRow, TaggerConfig } from "../lib/types";
+import { isBinaryNo, isBinaryYes } from "../lib/types";
 
 interface Props {
   config: TaggerConfig;
@@ -122,7 +123,7 @@ export function TaggerAutotagLive({ config, data, annotations, status }: Props) 
                   <div
                     className={cn(
                       "flex flex-1 items-center justify-center rounded-xl border text-base font-medium",
-                      ann === "yes"
+                      isBinaryYes(ann)
                         ? "border-emerald-600/40 bg-emerald-600/15 text-emerald-700"
                         : "border-border/50 text-muted-foreground/50",
                     )}
@@ -132,7 +133,7 @@ export function TaggerAutotagLive({ config, data, annotations, status }: Props) 
                   <div
                     className={cn(
                       "flex flex-1 items-center justify-center rounded-xl border text-base font-medium",
-                      ann === "no"
+                      isBinaryNo(ann)
                         ? "border-red-500/40 bg-red-500/15 text-red-600"
                         : "border-border/50 text-muted-foreground/50",
                     )}

@@ -33,6 +33,7 @@ import logging
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any, Literal, TypedDict
 
@@ -40,18 +41,21 @@ import dspy
 from dspy.streaming import StatusMessageProvider
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from sqlalchemy import delete
+from sqlalchemy.orm import Session
 
 from ...config import settings
 from ...exceptions import ServiceError
 from ...i18n import t
 from ...models import ModelConfig
+from ...storage.models import AgentApprovalModel
 from ..language_models import (
     apply_model_reasoning_config,
     build_language_model,
     served_model_from,
 )
+from ..optimization.retrying_react import RetryingReActV2
 from ..optimization.training_ground.registry import hash_tool_schema
-from ..react_compat import REACT_CLASS
 from .code import ReactReplyStream, _format_agent_error, _reply_language
 from .constants import REASONING_FIELD
 
@@ -84,7 +88,21 @@ def _build_generalist_lm() -> dspy.LM:
             base_url=settings.generalist_agent_base_url or None,
         )
     )
+    _apply_interactive_timeout(config)
     return build_language_model(config, disable_cache=True)
+
+
+def _apply_interactive_timeout(config: ModelConfig) -> None:
+    """Give a chat-turn LM an interactive timeout instead of the job-scale one.
+
+    ``build_language_model`` defaults to ``lm_request_timeout_seconds`` (sized
+    for batch optimization runs) with watchdog-derived retries — on a stalled
+    provider that is tens of minutes of dead air for a chat turn. ``extra``
+    merges over those defaults, so seed it with the chat-scale knobs unless the
+    caller pinned its own.
+    """
+    config.extra.setdefault("timeout", settings.agent_request_timeout_seconds)
+    config.extra.setdefault("num_retries", 2)
 
 
 logger = logging.getLogger(__name__)
@@ -123,18 +141,44 @@ _SAFE_MUTATIONS: frozenset[str] = frozenset(
 )
 
 
+# Upper bound on how long a tool waits for the user's approval decision. The
+# registry is per-process, so a confirm POST that lands on another replica (or
+# a client that vanished) can never resolve the future — without a bound the
+# stream hangs forever with a spinning tool pill. Long enough for a human who
+# stepped away; on expiry the tool is treated as declined.
+APPROVAL_TIMEOUT_SECONDS = 900.0
+
+
+# How often the awaiting stream checks the durable store for a decision that
+# a confirm landing on another replica persisted. The in-process future still
+# resolves same-pod confirms instantly; this only bounds cross-pod latency.
+_DURABLE_POLL_SECONDS = 1.5
+
+
 class ApprovalRegistry:
-    """In-memory ``call_id → Future[bool]`` store for pending approvals.
+    """``call_id → Future[bool]`` store for pending tool approvals.
 
     The generalist SSE stream emits a ``pending_approval`` event carrying
     a ``call_id``; the paired ``POST /optimizations/generalist-agent/confirm``
-    endpoint calls :meth:`resolve` with the same id to unblock the tool.
-    In-process for v1; swap for Redis when we need cross-worker consistency.
+    endpoint calls :meth:`resolve_or_persist` with the same id to unblock the
+    tool. The in-process future is the fast path; when the confirm lands on a
+    different replica (the registry is per-process), the decision is written
+    to the shared ``agent_approvals`` table and :meth:`wait_for_decision`'s
+    poll loop on the streaming replica picks it up.
     """
 
     def __init__(self) -> None:
         """Initialize the in-memory pending-approvals map."""
         self._pending: dict[str, asyncio.Future[bool]] = {}
+        self._engine = None
+
+    def bind_engine(self, engine: Any) -> None:
+        """Attach the app database engine that backs cross-replica handoff.
+
+        Args:
+            engine: SQLAlchemy engine for the shared application database.
+        """
+        self._engine = engine
 
     def register(self, call_id: str) -> asyncio.Future[bool]:
         """Register ``call_id`` and return a future the tool awaits until resolved.
@@ -176,6 +220,98 @@ class ApprovalRegistry:
         fut = self._pending.pop(call_id, None)
         if fut is not None and not fut.done():
             fut.cancel()
+
+    def resolve_or_persist(self, call_id: str, approved: bool) -> bool:
+        """Resolve locally, else persist the decision for the owning replica.
+
+        Args:
+            call_id: The pending tool call's identifier.
+            approved: The user's decision.
+
+        Returns:
+            True when the decision was delivered locally or persisted; False
+            only when the id is unknown here and no durable store is bound.
+        """
+        if self.resolve(call_id, approved):
+            return True
+        if self._engine is None:
+            return False
+        self._persist(call_id, approved)
+        return True
+
+    def _persist(self, call_id: str, approved: bool) -> None:
+        """Write (or overwrite) a decision row, purging stale leftovers.
+
+        Args:
+            call_id: The pending tool call's identifier.
+            approved: The user's decision.
+        """
+        now = datetime.now(UTC)
+        with Session(self._engine) as session:
+            row = session.get(AgentApprovalModel, call_id)
+            if row is None:
+                session.add(AgentApprovalModel(call_id=call_id, approved=approved, created_at=now))
+            else:
+                row.approved = approved
+            # Rows are normally consumed within seconds; anything older than
+            # the approval timeout belongs to a stream that already gave up.
+            cutoff = now - timedelta(seconds=APPROVAL_TIMEOUT_SECONDS)
+            session.execute(delete(AgentApprovalModel).where(AgentApprovalModel.created_at < cutoff))
+            session.commit()
+
+    def _take_durable(self, call_id: str) -> bool | None:
+        """Consume a persisted decision for ``call_id``, if one arrived.
+
+        Args:
+            call_id: The pending tool call's identifier.
+
+        Returns:
+            The decision, or None when no row exists yet.
+        """
+        with Session(self._engine) as session:
+            row = session.get(AgentApprovalModel, call_id)
+            if row is None:
+                return None
+            approved = bool(row.approved)
+            session.delete(row)
+            session.commit()
+            return approved
+
+    async def wait_for_decision(self, call_id: str, fut: asyncio.Future[bool]) -> bool:
+        """Await the user's decision from either delivery path, bounded.
+
+        Races the in-process future (same-replica confirm, instant) against a
+        poll of the durable store (cross-replica confirm). Expires as declined
+        after :data:`APPROVAL_TIMEOUT_SECONDS` so a lost confirm can never
+        hang the stream forever.
+
+        Args:
+            call_id: The pending tool call's identifier.
+            fut: The future returned by :meth:`register` for this call.
+
+        Returns:
+            The user's decision, or False on expiry.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + APPROVAL_TIMEOUT_SECONDS
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                self.cancel(call_id)
+                return False
+            try:
+                # shield(): a poll-interval timeout must not cancel the shared
+                # future — the next loop iteration keeps awaiting it.
+                return await asyncio.wait_for(
+                    asyncio.shield(fut), timeout=min(_DURABLE_POLL_SECONDS, remaining)
+                )
+            except TimeoutError:
+                if self._engine is None:
+                    continue
+                decision = await asyncio.to_thread(self._take_durable, call_id)
+                if decision is not None:
+                    self.cancel(call_id)
+                    return decision
 
 
 _global_registry = ApprovalRegistry()
@@ -484,7 +620,9 @@ class _ApprovalGatedTool:
                     }
                 )
                 try:
-                    approved = await fut
+                    # Bounded wait racing the local future against the durable
+                    # store — see ApprovalRegistry.wait_for_decision.
+                    approved = await self._registry.wait_for_decision(call_id, fut)
                 except asyncio.CancelledError:
                     self._registry.cancel(call_id)
                     self._emit(
@@ -1544,7 +1682,11 @@ async def _drive_generalist_agent(
                 },
             }
         )
-        react = REACT_CLASS(GeneralistSig, tools=dspy_tools, max_iters=8)
+        # RetryingReActV2, not the stock class: the default generalist model is
+        # minimax-class, which occasionally breaks the turn protocol and raises
+        # AdapterParseError — the retrying loop resamples the turn instead of
+        # failing the whole chat reply.
+        react = RetryingReActV2(GeneralistSig, tools=dspy_tools, max_iters=8)
         # The user's ``assistant_message`` rides a ``submit`` tool call on ReActV2
         # or a separate ``extract`` predictor on classic ReAct; ``ReactReplyStream``
         # wires the right listeners and decodes whichever shape into reply deltas.
@@ -1656,7 +1798,9 @@ async def run_generalist_agent(
                     or None
                 }
             )
-            lm = build_language_model(apply_model_reasoning_config(override), disable_cache=True)
+            override = apply_model_reasoning_config(override)
+            _apply_interactive_timeout(override)
+            lm = build_language_model(override, disable_cache=True)
         else:
             lm = _build_generalist_lm()
     except ServiceError as exc:
