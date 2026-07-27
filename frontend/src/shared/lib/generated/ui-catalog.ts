@@ -2125,7 +2125,6 @@ export type MessageKey =
   | "optimization.access_banner.editor"
   | "optimization.access_banner.viewer"
   | "optimization.artifact.description"
-  | "optimization.artifact.downloads.title"
   | "optimization.artifact.tab"
   | "optimization.cancel.failed"
   | "optimization.cancel.sent"
@@ -5105,7 +5104,6 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "optimization.access_banner.editor": "שיתפו איתך · הרשאת עריכה",
   "optimization.access_banner.viewer": "שיתפו איתך · הרשאת צפייה",
   "optimization.artifact.description": "מה שההרצה ייצרה — הפרומפט המשופר וקובצי התוכנית להורדה.",
-  "optimization.artifact.downloads.title": "הורדות",
   "optimization.artifact.tab": "תוצר",
   "optimization.cancel.failed": "ביטול נכשל",
   "optimization.cancel.sent": "בקשת ביטול נשלחה",
@@ -13676,7 +13674,6 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "optimization.access_banner.editor": "Shared with you · Editor access",
   "optimization.access_banner.viewer": "Shared with you · Viewer access",
   "optimization.artifact.description": "What the run produced — the optimized prompt and the program files to download.",
-  "optimization.artifact.downloads.title": "Downloads",
   "optimization.artifact.tab": "Artifact",
   "optimization.cancel.failed": "Cancellation failed",
   "optimization.cancel.sent": "Cancellation request sent",

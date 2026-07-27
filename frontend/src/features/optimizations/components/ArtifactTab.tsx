@@ -1,9 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { FileCode, FileJson, Package, Sparkles, Wrench } from "lucide-react";
-import { toast } from "react-toastify";
-import { Button } from "@/shared/ui/primitives/button";
+import { Sparkles, Wrench } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
@@ -14,14 +12,13 @@ import type {
   PairResult,
   ReactOverlay,
 } from "@/shared/types/api";
-import { downloadProgramExport } from "@/shared/lib/api";
 import { tip } from "@/shared/lib/tooltips";
 import { msg } from "@/shared/lib/messages";
 import { CopyButton } from "./ui-primitives";
-import { downloadProgramPickle, exportPromptAsJson } from "./ExportMenu";
+import { ExportMenu } from "./ExportMenu";
 
-// What the run produced, gathered in one place: downloadable program files
-// (runnable ZIP, pickle, prompt JSON) plus the optimized prompt and — for
+// What the run produced, gathered in one place: the export menu (runnable
+// ZIP, pickle, prompt JSON, logs CSV) plus the optimized prompt and — for
 // react runs — the tuned tool roster. The code tab stays inputs-only
 // (signature + metric source); this tab is the outputs.
 export function ArtifactTab({
@@ -41,15 +38,13 @@ export function ArtifactTab({
   // the /program-export endpoint serves for single-run (non-grid) jobs only —
   // and it is an authed endpoint, so the public share view hides it.
   const hasProgram = !isShare && !!job.result?.program_artifact?.program_state_json;
-  const pickleBase64 =
-    activePair?.program_artifact?.program_pickle_base64 ??
-    job.result?.program_artifact?.program_pickle_base64 ??
-    job.grid_result?.best_pair?.program_artifact?.program_pickle_base64 ??
-    null;
-  const hasDownloads = hasProgram || !!pickleBase64 || !!optimizedPrompt;
-
-  const extCls = "font-mono text-[0.625rem] text-muted-foreground/60";
-  const iconCls = "size-4 shrink-0 text-muted-foreground/60";
+  const pickleBase64 = activePair?.program_artifact?.program_pickle_base64 ?? null;
+  const hasPickle =
+    !!pickleBase64 ||
+    !!job.result?.program_artifact?.program_pickle_base64 ||
+    !!job.grid_result?.best_pair?.program_artifact?.program_pickle_base64;
+  const hasExports =
+    hasProgram || hasPickle || !!optimizedPrompt || (job.logs?.length ?? 0) > 0;
 
   return (
     <>
@@ -57,75 +52,20 @@ export function ArtifactTab({
         <p className="text-sm text-muted-foreground">{msg("optimization.artifact.description")}</p>
       </FadeIn>
 
-      {hasDownloads && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Package className="size-4" />
-              {msg("optimization.artifact.downloads.title")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2.5">
-              {hasProgram && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={async () => {
-                    try {
-                      await downloadProgramExport(job.optimization_id);
-                    } catch (err) {
-                      toast.error(
-                        err instanceof Error ? err.message : msg("optimization.file.parse_error"),
-                      );
-                    }
-                  }}
-                >
-                  <FileCode className={iconCls} />
-                  {msg("auto.features.optimizations.components.exportmenu.8")}
-                  <span className={extCls}>
-                    {msg("auto.features.optimizations.components.exportmenu.9")}
-                  </span>
-                </Button>
-              )}
-              {pickleBase64 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => {
-                    try {
-                      downloadProgramPickle(pickleBase64, job.optimization_id);
-                    } catch {
-                      toast.error(msg("optimization.file.parse_error"));
-                    }
-                  }}
-                >
-                  <Package className={iconCls} />
-                  {msg("auto.features.optimizations.components.exportmenu.2")}
-                  <span className={extCls}>
-                    {msg("auto.features.optimizations.components.exportmenu.3")}
-                  </span>
-                </Button>
-              )}
-              {optimizedPrompt && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => exportPromptAsJson(optimizedPrompt, job.optimization_id)}
-                >
-                  <FileJson className={iconCls} />
-                  {msg("auto.features.optimizations.components.exportmenu.4")}
-                  <span className={extCls}>
-                    {msg("auto.features.optimizations.components.exportmenu.5")}
-                  </span>
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      {hasExports && (
+        <div className="flex items-center gap-3 p-5 rounded-xl border border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10 shadow-[0_0_20px_rgba(var(--primary),0.06)]">
+          <p className="flex-1 text-sm font-medium">
+            {activePair
+              ? msg("auto.features.optimizations.components.pairdetailview.2")
+              : msg("auto.app.optimizations.id.page.9")}
+          </p>
+          <ExportMenu
+            job={job}
+            optimizedPrompt={optimizedPrompt}
+            pickleBase64={pickleBase64}
+            isShare={isShare}
+          />
+        </div>
       )}
 
       {optimizedPrompt && (

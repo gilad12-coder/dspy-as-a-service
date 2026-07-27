@@ -2058,7 +2058,6 @@
   "optimization.access_banner.editor": "Shared with you · Editor access",
   "optimization.access_banner.viewer": "Shared with you · Viewer access",
   "optimization.artifact.description": "What the run produced — the optimized prompt and the program files to download.",
-  "optimization.artifact.downloads.title": "Downloads",
   "optimization.artifact.tab": "Artifact",
   "optimization.cancel.failed": "Cancellation failed",
   "optimization.cancel.sent": "Cancellation request sent",

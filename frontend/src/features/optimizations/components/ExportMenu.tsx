@@ -67,9 +67,15 @@ function exportLogsAsCsv(logs: OptimizationLogEntry[], optimizationId: string) {
 export function ExportMenu({
   job,
   optimizedPrompt,
+  pickleBase64,
+  isShare,
 }: {
   job: OptimizationStatusResponse;
   optimizedPrompt: OptimizedPredictor | null;
+  /** Pair-scoped pickle override; falls back to the run / grid-best artifact. */
+  pickleBase64?: string | null;
+  /** The /program-export endpoint is authed, so the public share view hides the ZIP item. */
+  isShare?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -82,13 +88,15 @@ export function ExportMenu({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const hasPkl = !!(
-    job.result?.program_artifact?.program_pickle_base64 ||
-    job.grid_result?.best_pair?.program_artifact?.program_pickle_base64
-  );
+  const pklB64 =
+    pickleBase64 ??
+    job.result?.program_artifact?.program_pickle_base64 ??
+    job.grid_result?.best_pair?.program_artifact?.program_pickle_base64 ??
+    null;
+  const hasPkl = !!pklB64;
   // The runnable export reconstructs from state JSON + signature_code, which the
   // /program-export endpoint serves for single-run (non-grid) jobs only.
-  const hasProgram = !!job.result?.program_artifact?.program_state_json;
+  const hasProgram = !isShare && !!job.result?.program_artifact?.program_state_json;
   const itemCls =
     "w-full flex items-center gap-2.5 px-3.5 py-2 text-[0.75rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
   const iconCls = "size-4 shrink-0 text-muted-foreground/60";
@@ -147,12 +155,9 @@ export function ExportMenu({
                   role="menuitem"
                   onClick={() => {
                     setOpen(false);
-                    const b64 =
-                      job.result?.program_artifact?.program_pickle_base64 ??
-                      job.grid_result?.best_pair?.program_artifact?.program_pickle_base64;
-                    if (!b64) return;
+                    if (!pklB64) return;
                     try {
-                      downloadProgramPickle(b64, job.optimization_id);
+                      downloadProgramPickle(pklB64, job.optimization_id);
                     } catch {
                       toast.error(msg("optimization.file.parse_error"));
                     }

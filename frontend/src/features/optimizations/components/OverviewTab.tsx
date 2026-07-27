@@ -10,6 +10,7 @@ import type { LMActivity, OptimizationStatusResponse, PairResult } from "@/share
 import { type PipelineStage } from "../constants";
 import { detectPairStage, detectStage } from "../lib/detect-stage";
 import { formatDuration, formatImprovement, formatPercent } from "@/shared/lib";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { tip } from "@/shared/lib/tooltips";
 import { TERMS } from "@/shared/lib/terms";
 import type { ScorePoint } from "../lib/extract-scores";
@@ -145,6 +146,7 @@ function OverviewTabImpl({
   const loggedMetricNames = Array.from(
     new Set([...Object.keys(optimizedLogged), ...Object.keys(baselineLogged)]),
   );
+  const isRtl = getActiveDir() === "rtl";
 
   // The score cards stream the real evaluated metrics as they land — the
   // baseline from baseline_evaluated, the optimized score from
@@ -371,7 +373,7 @@ function OverviewTabImpl({
                 {msg("optimization.logged_metrics.title")}
               </HelpTip>
             </p>
-            <div className="mt-1 divide-y divide-[#E3DCD0]/60">
+            <div className="mt-1.5 divide-y divide-[#E3DCD0]/60">
               {loggedMetricNames.map((name) => {
                 const baselineValue = baselineLogged[name];
                 const optimizedValue = optimizedLogged[name];
@@ -384,23 +386,31 @@ function OverviewTabImpl({
                     <span dir="auto" className="min-w-0 truncate font-mono text-xs text-[#1C1612]">
                       {name}
                     </span>
-                    <span
-                      dir="ltr"
-                      className="flex shrink-0 items-baseline gap-2 font-mono text-xs tabular-nums"
-                    >
-                      <span className="text-[#8C7A6B]">{formatLoggedValue(baselineValue)}</span>
-                      <span aria-hidden="true" className="text-[#A89680]">
-                        →
+                    {/* Follows the page direction so baseline sits on the
+                        reading side (right in RTL), mirroring the score cards
+                        above; the arrow glyph flips with it. Values keep an
+                        inner dir="ltr" so a leading minus/plus never migrates
+                        to the wrong side, while the outer spans use logical
+                        alignment (toward the arrow / toward the far edge) to
+                        hold a steady column across rows. */}
+                    <span className="flex shrink-0 items-baseline gap-2 font-mono text-xs tabular-nums">
+                      <span className="min-w-12 text-end text-[#8C7A6B]">
+                        <span dir="ltr">{formatLoggedValue(baselineValue)}</span>
                       </span>
-                      <span className="font-semibold text-primary">
-                        {formatLoggedValue(optimizedValue)}
+                      <span aria-hidden="true" className="text-[#A89680]">
+                        {isRtl ? "←" : "→"}
+                      </span>
+                      <span className="min-w-12 text-start font-semibold text-primary">
+                        <span dir="ltr">{formatLoggedValue(optimizedValue)}</span>
                       </span>
                       {delta != null && (
                         <span
                           className={`w-14 text-end ${delta >= 0 ? "text-stone-600" : "text-red-600"}`}
                         >
-                          {delta >= 0 ? "+" : ""}
-                          {formatLoggedValue(delta)}
+                          <span dir="ltr">
+                            {delta >= 0 ? "+" : ""}
+                            {formatLoggedValue(delta)}
+                          </span>
                         </span>
                       )}
                     </span>

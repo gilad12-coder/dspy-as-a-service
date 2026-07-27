@@ -77,7 +77,6 @@ import { extractScoresFromLogs } from "../lib/extract-scores";
 import { reconstructGridResult } from "../lib/reconstruct-grid";
 import { DataTab } from "./DataTab";
 import { LogsTab } from "./LogsTab";
-import { ExportMenu } from "./ExportMenu";
 import { DeleteJobDialog } from "./DeleteJobDialog";
 import { ShareDialog } from "./ShareDialog";
 import { StatusBadge } from "@/shared/ui/status-badge";
@@ -947,20 +946,6 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
   const showLogsTab = job.optimization_type !== "grid_search" || isPairContext;
   const showLmActivityTab = viewLmActivity != null;
 
-  // Export-ready banner — pair-aware. Pair shows when it has its own artifact
-  // (no error). Standalone shows when the run terminated successfully with any
-  // artifact/log data to export.
-  const showExportBanner = isPairContext
-    ? !activePair.error && !!activePair.program_artifact
-    : isTerminal &&
-      job.status !== "cancelled" &&
-      !!(
-        optimizedPrompt ||
-        (job.logs && job.logs.length > 0) ||
-        job.result?.program_artifact?.program_pickle_base64 ||
-        job.grid_result?.best_pair?.program_artifact?.program_pickle_base64
-      );
-
   const pairCount = effectiveJob?.grid_result?.pair_results.length ?? 0;
   const isBestPair =
     isPairContext && effectiveJob?.grid_result?.best_pair?.pair_index === activePair.pair_index;
@@ -1317,21 +1302,6 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                   })}
               </p>
             </div>
-          </div>
-        </FadeIn>
-      )}
-
-      {showExportBanner && (
-        <FadeIn delay={0.25}>
-          <div className="flex items-center gap-3 p-5 rounded-xl border border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10 shadow-[0_0_20px_rgba(var(--primary),0.06)]">
-            <div className="flex-1">
-              <p className="text-sm font-medium">
-                {isPairContext
-                  ? msg("auto.features.optimizations.components.pairdetailview.2")
-                  : msg("auto.app.optimizations.id.page.9")}
-              </p>
-            </div>
-            <ExportMenu job={job} optimizedPrompt={optimizedPrompt} />
           </div>
         </FadeIn>
       )}
