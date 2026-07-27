@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +12,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import { msg } from "@/shared/lib/messages";
 import { I18N_KEY, tI18n } from "@/shared/lib/i18n";
 import { INSUFFICIENT_CREDITS_EVENT } from "@/shared/lib/api";
+import { useSettingsModal } from "@/features/settings";
 
 /**
  * Global paywall for the credit gate. Mounted once at the app root: the central
@@ -27,6 +27,7 @@ import { INSUFFICIENT_CREDITS_EVENT } from "@/shared/lib/api";
  */
 export function InsufficientCreditsModalHost() {
   const [open, setOpen] = React.useState(false);
+  const { openTo } = useSettingsModal();
 
   React.useEffect(() => {
     const onBlocked = () => setOpen(true);
@@ -42,8 +43,14 @@ export function InsufficientCreditsModalHost() {
           <DialogDescription>{tI18n(I18N_KEY.BILLING_INSUFFICIENT_CREDITS)}</DialogDescription>
         </DialogHeader>
 
-        <Button asChild onClick={() => setOpen(false)} className="w-full">
-          <Link href="/upgrade">{msg("billing.action.add_credits")}</Link>
+        <Button
+          onClick={() => {
+            setOpen(false);
+            openTo("billing");
+          }}
+          className="w-full"
+        >
+          {msg("billing.action.add_credits")}
         </Button>
       </DialogContent>
     </Dialog>

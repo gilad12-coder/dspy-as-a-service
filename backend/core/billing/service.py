@@ -266,15 +266,16 @@ class StripeBillingService:
         return stripe
 
     def _return_url(self, status: str) -> str:
-        """Build a Checkout/portal return URL on the public app origin.
+        """Build a Checkout return URL on the public app origin.
 
         Args:
-            status: Query value appended as ``?status=`` (``success``/``cancel``).
+            status: Query value appended as ``?billing=`` (``success``/``cancel``).
 
         Returns:
-            An absolute URL back to the in-app upgrade surface.
+            An absolute URL back to the app root, where the credit provider
+            picks up the ``billing`` param and syncs the wallet.
         """
-        return f"{settings.app_public_url.rstrip('/')}/upgrade?status={status}"
+        return f"{settings.app_public_url.rstrip('/')}/?billing={status}"
 
     def get_or_create_customer(self, username: str) -> str:
         """Return the account's Stripe customer id, creating it on first use.

@@ -1,19 +1,113 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import { Coins, RefreshCw, Sparkles } from "lucide-react";
+import { motion } from "framer-motion";
+import { Coins, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { toast } from "react-toastify";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
-import { useSettingsModal } from "@/features/settings";
 import { SettingsRow } from "@/shared/ui/settings-row";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { Input } from "@/shared/ui/primitives/input";
 import { Button } from "@/shared/ui/primitives/button";
+import { createCheckoutSession } from "@/shared/lib/api";
 import { useCredits } from "../providers/credit-provider";
-import { CREDIT_USD_VALUE, formatCredits, formatUsd } from "../lib/credit";
+import {
+  CREDIT_PACKS,
+  CREDIT_USD_VALUE,
+  formatCredits,
+  formatUsd,
+  type CreditPack,
+} from "../lib/credit";
+
+// Slide transition for the credit-pack selector's shared-layout pill — matches the
+// runs-source segmented control in explore/SearchBar so the two read identically.
+const PILL_TRANSITION = { type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1] } as const;
+
+/** Whole-dollar USD (no cents) for the buy button — "$20", not "$20.00". */
+function formatUsdWhole(usd: number, locale: string): string {
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(usd);
+}
+
+/**
+ * Inline credit-pack purchase — pick a pack, buy through Stripe. Lives directly
+ * in the wallet tab now that the standalone /upgrade page is gone: prepaid
+ * packs are the only plan, so buying is a settings row, not a pricing page.
+ */
+function AddCreditsControls() {
+  const { locale } = useLocale();
+  const [pack, setPack] = React.useState<CreditPack>(
+    () => CREDIT_PACKS.find((p) => p.popular) ?? CREDIT_PACKS[0]!,
+  );
+  const [buying, setBuying] = React.useState(false);
+
+  const onBuy = async () => {
+    setBuying(true);
+    try {
+      const { url } = await createCheckoutSession(pack.id);
+      window.location.assign(url);
+    } catch {
+      setBuying(false);
+      toast.error(msg("billing.checkout.error"));
+    }
+  };
+
+  return (
+    <>
+      <div
+        role="group"
+        aria-label={msg("billing.plans.credits.pack_aria")}
+        className="relative flex shrink-0 gap-0.5 rounded-full border border-border/50 bg-muted/40 p-0.5"
+      >
+        {CREDIT_PACKS.map((p) => {
+          const active = p.id === pack.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => setPack(p)}
+              className={cn(
+                "relative rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums transition-colors duration-150 cursor-pointer",
+                active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {/* Shared-layout pill slides between packs instead of the selected
+                  background snapping — mirrors the runs-source segmented control. */}
+              {active && (
+                <motion.span
+                  layoutId="credit-pack-pill"
+                  className="absolute inset-0 rounded-full bg-background shadow-sm"
+                  transition={PILL_TRANSITION}
+                  aria-hidden="true"
+                />
+              )}
+              <span dir="ltr" className="relative z-10">
+                {formatCredits(p.credits, locale)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onBuy}
+        disabled={buying}
+        className="border-[#C8A882]/70 text-[#8a6d44] hover:bg-[#C8A882]/10 hover:text-[#8a6d44]"
+      >
+        {buying ? <Loader2 className="animate-spin" /> : <Sparkles aria-hidden="true" />}
+        {formatMsg("billing.upgrade.buy", { p1: formatUsdWhole(pack.usd, locale) })}
+      </Button>
+    </>
+  );
+}
 
 /**
  * Wallet — the `billing` settings tab.
@@ -25,7 +119,6 @@ import { CREDIT_USD_VALUE, formatCredits, formatUsd } from "../lib/credit";
 export function WalletTab() {
   const { wallet, totalCredits, setAutoReload, status, syncing } = useCredits();
   const { locale } = useLocale();
-  const { setOpen } = useSettingsModal();
 
   // Auto-reload amount is a free-type field — any credit amount works. `customDraft`
   // holds the raw input string so the field can be cleared mid-edit without snapping
@@ -134,17 +227,7 @@ export function WalletTab() {
           label={msg("billing.action.add_credits")}
           description={msg("billing.plans.credits.summary")}
         >
-          <Button
-            asChild
-            variant="outline"
-            size="sm"
-            className="border-[#C8A882]/70 text-[#8a6d44] hover:bg-[#C8A882]/10 hover:text-[#8a6d44]"
-          >
-            <Link href="/upgrade" onClick={() => setOpen(false)}>
-              <Sparkles aria-hidden="true" />
-              {msg("billing.action.add_credits")}
-            </Link>
-          </Button>
+          <AddCreditsControls />
         </SettingsRow>
       </div>
     </div>

@@ -122,7 +122,7 @@ export function formatResetDate(iso: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(iso));
 }
 
-/** Prepaid packs offered on the wallet + upgrade surfaces. Bigger packs carry more bonus credits. */
+/** Prepaid packs offered on the wallet settings tab. Bigger packs carry more bonus credits. */
 export const CREDIT_PACKS: CreditPack[] = [
   { id: "starter", credits: 500, usd: 5 },
   { id: "plus", credits: 2200, usd: 20, popular: true },

@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "react-toastify";
+import { msg } from "@/shared/lib/messages";
 import { getWallet, type BillingWalletResponse } from "@/shared/lib/api";
 import {
   STUB_WALLET,
@@ -34,7 +36,7 @@ interface CreditContextValue {
   /**
    * Enter the post-checkout `syncing` state and poll the wallet until the webhook
    * lands (the balance changes) or a short budget elapses. Call on a Stripe
-   * `?status=success` return so the chip never shows a false zero.
+   * `?billing=success` return so the chip never shows a false zero.
    */
   beginSync: () => void;
 }
@@ -143,6 +145,23 @@ export function CreditProvider({
     };
     poll();
   }, [wallet.paidBalanceCredits]);
+
+  // Stripe Checkout returns to `/?billing=success|cancel` (there is no
+  // standalone add-credits page). On success, toast and enter the syncing
+  // state; either way strip the param so a reload doesn't re-toast. beginSync's
+  // identity changes as the wallet loads, but re-runs bail on the cleared param.
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("billing");
+    if (!status) return;
+    if (status === "success") {
+      toast.success(msg("billing.upgrade.success_toast"));
+      beginSync();
+    }
+    params.delete("billing");
+    const query = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : ""));
+  }, [beginSync]);
 
   const setAutoReload = React.useCallback((patch: Partial<AutoReload>) => {
     setWallet((w) => ({ ...w, autoReload: { ...w.autoReload, ...patch } }));

@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { preload } from "react-dom";
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
-import Script from "next/script";
 import { AppShell } from "@/shared/layout/app-shell";
 import { TooltipProvider } from "@/shared/ui/primitives/tooltip";
 import {
@@ -199,15 +198,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang={locale} dir={dirForLocale(locale)} suppressHydrationWarning>
       <head>
-        <Script id="skynet-locale" strategy="beforeInteractive">
-          {serializeLocale(locale)}
-        </Script>
-        <Script id="skynet-messages" strategy="beforeInteractive">
-          {serializeMessages(messages)}
-        </Script>
-        <Script id="skynet-runtime-env" strategy="beforeInteractive">
-          {serializeRuntimeEnv(runtimeEnv)}
-        </Script>
+        {/* Plain <script> tags, not next/script: `beforeInteractive` with inline
+            children makes React 19 warn ("scripts inside components are never
+            executed when rendering on the client"). These run straight from the
+            server-rendered HTML during parse — exactly the pre-hydration timing
+            the shims need — and the serializers escape `<` so a value can never
+            close the tag. */}
+        <script id="skynet-locale" dangerouslySetInnerHTML={{ __html: serializeLocale(locale) }} />
+        <script
+          id="skynet-messages"
+          dangerouslySetInnerHTML={{ __html: serializeMessages(messages) }}
+        />
+        <script
+          id="skynet-runtime-env"
+          dangerouslySetInnerHTML={{ __html: serializeRuntimeEnv(runtimeEnv) }}
+        />
         {apiOrigin && <link rel="dns-prefetch" href={apiOrigin} />}
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdSafe }} />
       </head>
@@ -226,6 +231,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                             <SettingsModalProvider>
                               <AppShell>{children}</AppShell>
                               <SettingsModal />
+                              {/* Inside SettingsModalProvider: its CTA opens the
+                                  wallet settings tab now that /upgrade is gone. */}
+                              <InsufficientCreditsModalHost />
                             </SettingsModalProvider>
                             <TutorialOverlay />
                             <TutorialMenu />
@@ -240,7 +248,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </SessionProvider>
           <TelemetryProvider />
           <StorageQuotaModalHost />
-          <InsufficientCreditsModalHost />
           <ToastContainer />
         </LocaleProvider>
       </body>

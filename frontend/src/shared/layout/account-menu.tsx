@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { LogOut, MoreHorizontal, Settings, Sparkles } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { msg } from "@/shared/lib/messages";
@@ -72,7 +71,7 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
   const isRtl = dir === "rtl";
   // The collapsed-rail tooltip reads toward the content area: right in LTR, left in RTL.
   const tooltipSide = isRtl ? "left" : "right";
-  const { setOpen: setSettingsOpen } = useSettingsModal();
+  const { setOpen: setSettingsOpen, openTo: openSettingsTo } = useSettingsModal();
   const [open, setOpen] = React.useState(false);
 
   if (!session?.user) return null;
@@ -165,10 +164,17 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
 
         <div role="separator" className="my-1 h-px bg-border/60" />
 
-        <Link href="/upgrade" onClick={close} className={MENU_ITEM}>
+        <button
+          type="button"
+          onClick={() => {
+            close();
+            openSettingsTo("billing");
+          }}
+          className={MENU_ITEM}
+        >
           <Sparkles className="size-4 text-[#C8A882]" aria-hidden="true" />
           {msg("app.shell.account.upgrade")}
-        </Link>
+        </button>
         <button
           type="button"
           onClick={() => {

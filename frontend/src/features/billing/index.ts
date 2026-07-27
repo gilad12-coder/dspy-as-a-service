@@ -4,7 +4,6 @@ export { CreditBalanceChip } from "./components/CreditBalanceChip";
 export { WalletTab } from "./components/WalletTab";
 export { UsageTab } from "./components/UsageTab";
 export { ByokKeysSection } from "./components/ByokKeysSection";
-export { UpgradeView } from "./components/UpgradeView";
 export { TokenSourceToggle } from "./components/TokenSourceToggle";
 export { InsufficientCreditsModalHost } from "./components/InsufficientCreditsModalHost";
 export { litellmProviderForByok } from "./lib/byok";

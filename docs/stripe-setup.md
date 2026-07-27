@@ -110,10 +110,10 @@ manual step — the migration is for existing databases.)
 ## 6. Test it
 
 1. Restart the backend so it picks up the new env.
-2. In the app: **Add credits** page → buy a pack.
+2. In the app: settings → **Billing** tab → pick a pack → buy.
 3. On the Stripe Checkout page use a test card: `4242 4242 4242 4242`, any
    future expiry, any CVC, any ZIP.
-4. You're redirected back to `/upgrade?status=success`. Within a second or two
+4. You're redirected back to `/?billing=success`. Within a second or two
    `stripe listen` (or the dashboard endpoint) delivers
    `checkout.session.completed`, the webhook credits the ledger, and the wallet
    balance updates on the next fetch.
