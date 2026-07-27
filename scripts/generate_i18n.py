@@ -391,6 +391,17 @@ def _load_ui_catalogs() -> dict[str, dict[str, str]]:
                 f"{UI_CATALOG_DIR / f'{locale}.json'} has keys absent from "
                 f"{UI_BASE_LOCALE}.json: {unknown[:10]}"
             )
+    # English is the first fallback for every non-Hebrew locale, so a base key
+    # missing from en.json leaks Hebrew into all of them. Mirror the backend
+    # en-terms rule and fail fast; other overlays may stay partial (they
+    # degrade to English, never Hebrew).
+    missing_en = sorted(base_keys - set(catalogs.get("en", {})))
+    if missing_en:
+        raise ValueError(
+            f"{UI_CATALOG_DIR / 'en.json'} is missing English translations for "
+            f"{len(missing_en)} base key(s), e.g. {missing_en[:5]}. Add the English "
+            f"value(s) so no locale falls back to Hebrew."
+        )
     return catalogs
 
 

@@ -68,6 +68,7 @@
     "winningCandidate": "最良候補"
   },
   "messages": {
+    "billing.insufficient_credits": "残高がありません。マネージドコンピュートで実行するにはクレジットを追加してください。",
     "workflow.validation_failed": "ワークフローの検証に失敗しました: {error}",
     "accounts.email_taken": "そのメールアドレスはすでに登録されています。",
     "accounts.invalid_credentials": "メールアドレスまたはパスワードが正しくありません。",

@@ -68,6 +68,7 @@
     "winningCandidate": "최우수 후보"
   },
   "messages": {
+    "billing.insufficient_credits": "잔액이 비어 있습니다. 관리형 컴퓨팅에서 실행하려면 크레딧을 추가하세요.",
     "workflow.validation_failed": "워크플로 검증에 실패했습니다: {error}",
     "accounts.email_taken": "이미 등록된 이메일 주소입니다.",
     "accounts.invalid_credentials": "이메일 또는 비밀번호가 올바르지 않습니다.",

@@ -68,6 +68,7 @@
     "winningCandidate": "candidato vencedor"
   },
   "messages": {
+    "billing.insufficient_credits": "O seu saldo está vazio. Adicione créditos para executar em computação gerida.",
     "workflow.validation_failed": "Falha na validação do fluxo de trabalho: {error}",
     "accounts.email_taken": "Esse endereço de email já está registado.",
     "accounts.invalid_credentials": "Email ou palavra-passe incorretos.",

@@ -68,6 +68,7 @@
     "winningCandidate": "विजेता उम्मीदवार"
   },
   "messages": {
+    "billing.insufficient_credits": "आपका बैलेंस खाली है। मैनेज्ड कंप्यूट पर चलाने के लिए क्रेडिट जोड़ें।",
     "workflow.validation_failed": "वर्कफ़्लो सत्यापन विफल रहा: {error}",
     "accounts.email_taken": "यह ईमेल पता पहले से पंजीकृत है।",
     "accounts.invalid_credentials": "गलत ईमेल या पासवर्ड।",

@@ -68,6 +68,7 @@
     "winningCandidate": "переможний кандидат"
   },
   "messages": {
+    "billing.insufficient_credits": "Ваш баланс порожній. Додайте кредити, щоб виконувати на керованих обчисленнях.",
     "workflow.validation_failed": "Перевірка робочого процесу не пройдена: {error}",
     "accounts.email_taken": "Ця адреса електронної пошти вже зареєстрована.",
     "accounts.invalid_credentials": "Неправильна електронна пошта або пароль.",

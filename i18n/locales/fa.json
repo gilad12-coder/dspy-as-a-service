@@ -68,6 +68,7 @@
     "winningCandidate": "نامزد برنده"
   },
   "messages": {
+    "billing.insufficient_credits": "موجودی شما خالی است. برای اجرا روی محاسبات مدیریت‌شده، اعتبار اضافه کنید.",
     "workflow.validation_failed": "اعتبارسنجی گردش کار ناموفق بود: {error}",
     "accounts.email_taken": "این آدرس ایمیل قبلاً ثبت شده است.",
     "accounts.invalid_credentials": "ایمیل یا گذرواژه نادرست است.",

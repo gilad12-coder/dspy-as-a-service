@@ -68,6 +68,7 @@
     "winningCandidate": "胜出候选项"
   },
   "messages": {
+    "billing.insufficient_credits": "你的余额已用尽。请添加额度以在托管算力上运行。",
     "workflow.validation_failed": "工作流验证失败：{error}",
     "accounts.email_taken": "该电子邮件地址已被注册。",
     "accounts.invalid_credentials": "电子邮件或密码不正确。",

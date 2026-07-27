@@ -68,6 +68,7 @@
     "winningCandidate": "Gewinnerkandidat"
   },
   "messages": {
+    "billing.insufficient_credits": "Ihr Guthaben ist aufgebraucht. Laden Sie Credits auf, um auf verwalteter Rechenleistung auszuführen.",
     "workflow.validation_failed": "Workflow-Validierung fehlgeschlagen: {error}",
     "accounts.email_taken": "Diese E-Mail-Adresse ist bereits registriert.",
     "accounts.invalid_credentials": "E-Mail oder Passwort ist falsch.",
