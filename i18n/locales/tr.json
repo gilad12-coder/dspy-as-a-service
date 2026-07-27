@@ -69,7 +69,6 @@
   },
   "messages": {
     "workflow.validation_failed": "İş akışı doğrulaması başarısız oldu: {error}",
-    "billing.insufficient_credits": "Bakiyeniz boş. Yönetilen işlem gücünde çalıştırmak için kredi ekleyin ya da ücretsiz hakkınızın yenilenmesini bekleyin.",
     "accounts.email_taken": "Bu e-posta adresi zaten kayıtlı.",
     "accounts.invalid_credentials": "E-posta veya parola hatalı.",
     "accounts.invalid_email": "Geçersiz e-posta adresi.",

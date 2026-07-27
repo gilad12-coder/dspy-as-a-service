@@ -29,7 +29,7 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "auth.invalid_token": "Authentication token is invalid or expired.",
     "auth.missing_token": "Authentication token is required.",
     "auth.not_configured": "Backend authentication is not configured.",
-    "billing.insufficient_credits": "Your balance is empty. Add credits or start Premium to run on managed compute.",
+    "billing.insufficient_credits": "Your balance is empty. Add credits to run on managed compute.",
     "billing.byok_not_configured": "The BYOK key vault is not configured on this deployment, so provider keys can't be saved.",
     "billing.byok_unknown_provider": "Unknown provider '{provider}'.",
     "billing.byok_empty_secret": "A provider key can't be empty.",

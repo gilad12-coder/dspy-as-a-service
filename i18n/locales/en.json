@@ -82,7 +82,7 @@
     "auth.invalid_token": "Authentication token is invalid or expired.",
     "auth.missing_token": "Authentication token is required.",
     "auth.not_configured": "Backend authentication is not configured.",
-    "billing.insufficient_credits": "Your balance is empty. Add credits or start Premium to run on managed compute.",
+    "billing.insufficient_credits": "Your balance is empty. Add credits to run on managed compute.",
     "code_agent.upstream_failed": "Code agent failed: {error}",
     "dataset.column_roles_invalid": "Invalid role values (must be 'input', 'output', or 'ignore'): {bad}",
     "dataset.column_roles_need_input": "At least one column must have role 'input'.",

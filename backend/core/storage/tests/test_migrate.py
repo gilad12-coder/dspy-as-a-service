@@ -86,7 +86,7 @@ def _grant(engine: Engine) -> int:
 
 
 def _seed(engine: Engine, grant: int) -> None:
-    """Insert one non-Premium billing row with the given remaining grant.
+    """Insert one billing row with the given remaining grant.
 
     Args:
         engine: Engine on the live-Postgres target.

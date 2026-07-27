@@ -1,14 +1,14 @@
-"""Stripe-backed billing service: customers, checkout, subscriptions, webhooks.
+"""Stripe-backed billing service: customers, pack checkout, webhooks.
 
 This module is the only place that talks to Stripe. The web app calls the
 billing router, which delegates here. Stripe is the source of truth for money
-(charges and subscription state); the local ``billing_customers`` /
-``credit_ledger`` tables are a synced cache plus an audit trail, reconciled by
+(pack charges); the local ``billing_customers`` / ``credit_ledger`` tables are
+a synced cache plus an audit trail, reconciled by
 :meth:`StripeBillingService.handle_webhook` on every event Stripe delivers.
 
 Reads (the wallet) work whether or not Stripe is configured, so a deploy
-without keys degrades to a read-only free tier. Mutations (checkout, subscribe,
-portal) require ``settings.is_stripe_configured`` and raise
+without keys degrades to a read-only free tier. Mutations (checkout) require
+``settings.is_stripe_configured`` and raise
 ``DomainError("billing.not_configured", 503)`` otherwise — never a 500.
 """
 
@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import stripe
@@ -41,23 +41,11 @@ from .pricing import ModelUsage, credits_for_usage
 PACK_CREDITS: dict[str, int] = {"starter": 500, "plus": 2200, "pro": 6500}
 
 # One-time lifetime allowance every new account gets to try the platform on mini
-# models. Granted once (lazily, on the first wallet read or run) and never renewed
-# — unlike the Premium allotment below, which recurs. Under per-model pricing a
-# credit is real marked-up provider cost, so 500 credits is ~$3.3 of mini
-# inference; beyond it the account buys credit packs or subscribes.
+# models. Granted once (lazily, on the first wallet read or run) and never
+# renewed. Under per-model pricing a credit is real marked-up provider cost, so
+# 500 credits is ~$3.3 of mini inference; beyond it the account buys credit
+# packs — pay-as-you-go is the only plan.
 FREE_GRANT_CREDITS = 500
-
-# Renewing allowance for an active Premium subscriber — the monthly credit
-# allotment the subscription buys, replacing (not stacking on) the free grant.
-# Re-priceable here: the margin lever is the token→credit markup, not this count.
-PREMIUM_GRANT_CREDITS = 2500
-
-# The Premium allotment renews on a per-subscriber 30-day window (anchored to the
-# Stripe billing period on activation) rather than a calendar month, so renewals
-# scatter instead of all landing on the 1st. Non-cumulative: a renewal tops back
-# up to PREMIUM_GRANT_CREDITS and any leftover expires. The free grant does NOT
-# use this — it is one-time. Evaluated lazily on wallet read / debit.
-GRANT_WINDOW_DAYS = 30
 
 # Prefix on the placeholder ``stripe_customer_id`` of a billing row created by a
 # local debit for an account that never reached Stripe. ``get_or_create_customer``
@@ -73,15 +61,6 @@ PLATFORM_FEE_FRACTION = 0.0
 # Ceiling handed to fee-less BYOK runs: far above any real run's full cost,
 # small enough to stay a safe int everywhere credits are summed.
 _BYOK_UNCAPPED_CEILING = 10**9
-
-# Stripe subscription statuses that count an account as having active Premium.
-_ACTIVE_SUBSCRIPTION_STATUSES = frozenset({"active", "trialing", "past_due"})
-
-# How long a Founder's Rate subscriber's price is held. The offer promises the
-# rate is locked for 12 months; the lock instant is stamped into the
-# subscription metadata at checkout so the held-through date is auditable and
-# surfaced back to the subscriber.
-FOUNDERS_LOCK_DAYS = 365
 
 # Most recent ledger rows the usage dashboard carries back per window. The
 # per-day/per-model rollups span every row in range; only the raw activity list
@@ -106,30 +85,12 @@ class LedgerRow:
 
 
 @dataclass(frozen=True)
-class FoundersRateStatus:
-    """The Founder's Rate availability as the upgrade page reads it.
-
-    ``open`` is whether new subscriptions are still accepted (the deadline gate),
-    ``closes_at`` is the ISO-8601 close instant, and ``price_locked_until`` is the
-    ISO-8601 instant through which a subscriber locking in *now* keeps the rate.
-    """
-
-    open: bool
-    closes_at: str
-    price_locked_until: str
-
-
-@dataclass(frozen=True)
 class WalletSnapshot:
     """The account's billing state as a single read for the wallet surfaces."""
 
     paid_balance_credits: int
     free_grant_remaining: int
     free_grant_total: int
-    free_grant_resets_at: str | None
-    premium_active: bool
-    subscription_status: str | None
-    subscription_current_period_end: str | None
     usage: list[LedgerRow] = field(default_factory=list)
 
 
@@ -252,38 +213,6 @@ def cost_ceiling_budget(spendable: int, token_source: str) -> int:
     return budget
 
 
-def _grant_allotment(customer: BillingCustomerModel | None) -> int:
-    """Return the account's grant size — the Premium allotment or the free grant.
-
-    The size a grant is seeded/renewed to: :data:`PREMIUM_GRANT_CREDITS` (renewing)
-    for an account whose subscription is in an active state, else the one-time
-    free-tier :data:`FREE_GRANT_CREDITS`. A missing row (``None``) is a free account.
-
-    Args:
-        customer: The account's billing row, or ``None`` when it has none yet.
-
-    Returns:
-        The credit allotment the account's grant renews to.
-    """
-    if customer is None:
-        return FREE_GRANT_CREDITS
-    if customer.subscription_status in _ACTIVE_SUBSCRIPTION_STATUSES:
-        return PREMIUM_GRANT_CREDITS
-    return FREE_GRANT_CREDITS
-
-
-def _grant_window_end(now: datetime) -> datetime:
-    """Return the instant the free grant next tops up, a fixed window past ``now``.
-
-    Args:
-        now: Reference instant the window is anchored to.
-
-    Returns:
-        ``now`` advanced by :data:`GRANT_WINDOW_DAYS`, in UTC.
-    """
-    return now + timedelta(days=GRANT_WINDOW_DAYS)
-
-
 class StripeBillingService:
     """Mediates between the billing API, the billing tables, and Stripe."""
 
@@ -298,49 +227,28 @@ class StripeBillingService:
         self._engine = engine
 
     def _resolve_grant(self, customer: BillingCustomerModel | None, now: datetime) -> int:
-        """Seed the one-time free grant / renew the Premium allotment; return remaining.
+        """Seed the one-time free grant if unseeded; return the remaining credits.
 
-        Seeds an unseeded row (NULL ``grant_remaining`` — a new account) to a full
-        grant: the one-time :data:`FREE_GRANT_CREDITS` for a free account (with no
-        reset anchor, since it never renews), or the :data:`PREMIUM_GRANT_CREDITS`
-        allotment for an active subscriber (anchored ``GRANT_WINDOW_DAYS`` out). The
-        free grant is lifetime — once seeded it only ever draws down. Only an active
-        Premium allotment renews: when its window has elapsed it tops back up to the
-        allotment (leftover expires — non-cumulative) and the anchor advances.
-        Mutates ``customer`` in place; the caller commits. A missing row (``None``)
-        reads a full free grant without persisting — the row is created on the first
-        real mutation (debit / top-up).
+        Seeds an unseeded row (NULL ``grant_remaining`` — a new account) to the
+        one-time :data:`FREE_GRANT_CREDITS`. The grant is lifetime — once seeded
+        it only ever draws down; there is no renewal. Mutates ``customer`` in
+        place; the caller commits. A missing row (``None``) reads a full free
+        grant without persisting — the row is created on the first real mutation
+        (debit / top-up).
 
         Args:
             customer: The account's billing row, or ``None`` when it has none yet.
-            now: Reference instant for the renewal-window comparison.
+            now: Instant stamped as ``updated_at`` when the seed mutates the row.
 
         Returns:
-            Credits remaining in the account's current grant.
+            Credits remaining in the account's grant.
         """
         if customer is None:
             return FREE_GRANT_CREDITS
-        allotment = _grant_allotment(customer)
-        is_premium = customer.subscription_status in _ACTIVE_SUBSCRIPTION_STATUSES
         if customer.grant_remaining is None:
-            # ``grant_remaining`` (not ``grant_reset_at``) is the unseeded sentinel:
-            # a seeded free account intentionally has a NULL reset anchor, so keying
-            # off the anchor would re-seed — and re-grant — the free credits on every
-            # read.
-            customer.grant_remaining = allotment
-            customer.grant_reset_at = _grant_window_end(now) if is_premium else None
+            customer.grant_remaining = FREE_GRANT_CREDITS
             customer.updated_at = now
-            return allotment
-        # Only the Premium allotment renews; the free grant is one-time and stays
-        # put (draws down to zero) until the account subscribes or buys credits.
-        if is_premium and customer.grant_reset_at is not None:
-            reset_at = customer.grant_reset_at
-            if reset_at.tzinfo is None:
-                reset_at = reset_at.replace(tzinfo=UTC)
-            if now > reset_at:
-                customer.grant_remaining = allotment
-                customer.grant_reset_at = _grant_window_end(now)
-                customer.updated_at = now
+            return FREE_GRANT_CREDITS
         return int(customer.grant_remaining)
 
     def _stripe(self) -> Any:
@@ -445,168 +353,30 @@ class StripeBillingService:
         )
         return str(checkout.url)
 
-    def create_subscription_checkout(self, username: str) -> str:
-        """Create a Checkout Session for the Premium subscription and return its URL.
-
-        When a metered overage price is configured it is added as a second,
-        quantity-less line item so the subscription can be billed for token usage.
-
-        Args:
-            username: Subscriber identity, stamped into session metadata.
-
-        Returns:
-            The hosted Stripe Checkout URL for the recurring subscription.
-
-        Raises:
-            DomainError: 503 when Stripe / the Premium price id is unconfigured.
-        """
-        price_id = settings.stripe_price_premium
-        if not price_id:
-            raise DomainError("billing.not_configured", status=503)
-        stripe_mod = self._stripe()
-        customer_id = self.get_or_create_customer(username)
-        line_items: list[dict[str, Any]] = [{"price": price_id, "quantity": 1}]
-        # The metered overage price rides on the same subscription so per-run token
-        # usage (reported via report_run_usage) actually bills the subscriber. A
-        # metered price is quantity-less — passing a quantity makes Checkout reject it.
-        metered_price = settings.stripe_price_metered
-        if metered_price:
-            line_items.append({"price": metered_price})
-        checkout = stripe_mod.checkout.Session.create(
-            customer=customer_id,
-            mode="subscription",
-            line_items=line_items,
-            success_url=self._return_url("success"),
-            cancel_url=self._return_url("cancel"),
-            client_reference_id=username,
-            metadata={"username": username},
-        )
-        return str(checkout.url)
-
-    def founders_rate_status(self, now: datetime | None = None) -> FoundersRateStatus:
-        """Return whether the Founder's Rate is still open and its lock window.
-
-        The deadline gate is config-driven (:attr:`settings.founders_rate_closes_at`)
-        — a placeholder far-future default until the real close date is set — so no
-        date is hardcoded. ``open`` is ``now <= closes_at``; once the deadline
-        passes the offer is unavailable to new subscribers. ``price_locked_until``
-        is a subscriber-locking-in-now date (``now + FOUNDERS_LOCK_DAYS``), the
-        12-month price hold the offer promises.
-
-        Args:
-            now: Reference instant; defaults to the current UTC time.
-
-        Returns:
-            A :class:`FoundersRateStatus` for the upgrade-page deadline line and gate.
-        """
-        now = now or datetime.now(UTC)
-        closes_at = settings.founders_rate_closes_at_dt
-        return FoundersRateStatus(
-            open=now <= closes_at,
-            closes_at=closes_at.isoformat(),
-            price_locked_until=(now + timedelta(days=FOUNDERS_LOCK_DAYS)).isoformat(),
-        )
-
-    def create_founders_checkout(self, username: str) -> str:
-        """Create a Checkout Session for the Founder's Rate subscription.
-
-        Gated by the config-driven deadline: once the close date has passed, the
-        offer is unavailable and this raises rather than minting a checkout. The
-        12-month price-lock is recorded as subscription metadata (``founders_rate``
-        and ``price_locked_until``) so the held-through date travels with the
-        subscription in Stripe and is auditable. The Founder's Rate has its own
-        Stripe price; when unconfigured it falls back to the Premium price so the
-        offer still works on a partly-provisioned deploy.
-
-        Args:
-            username: Subscriber identity, stamped into session metadata.
-
-        Returns:
-            The hosted Stripe Checkout URL for the recurring Founder's Rate.
-
-        Raises:
-            DomainError: 410 when the offer's deadline has passed; 503 when Stripe
-                (and no fallback Premium price) is unconfigured.
-        """
-        now = datetime.now(UTC)
-        if now > settings.founders_rate_closes_at_dt:
-            raise DomainError("billing.founders_closed", status=410)
-        price_id = settings.stripe_price_founders or settings.stripe_price_premium
-        if not price_id:
-            raise DomainError("billing.not_configured", status=503)
-        stripe_mod = self._stripe()
-        customer_id = self.get_or_create_customer(username)
-        locked_until = (now + timedelta(days=FOUNDERS_LOCK_DAYS)).isoformat()
-        metadata = {
-            "username": username,
-            "founders_rate": "true",
-            "price_locked_until": locked_until,
-        }
-        line_items: list[dict[str, Any]] = [{"price": price_id, "quantity": 1}]
-        # The metered overage price rides on the same subscription so per-run token
-        # usage bills the subscriber. A metered price is quantity-less.
-        metered_price = settings.stripe_price_metered
-        if metered_price:
-            line_items.append({"price": metered_price})
-        checkout = stripe_mod.checkout.Session.create(
-            customer=customer_id,
-            mode="subscription",
-            line_items=line_items,
-            success_url=self._return_url("success"),
-            cancel_url=self._return_url("cancel"),
-            client_reference_id=username,
-            metadata=metadata,
-            subscription_data={"metadata": metadata},
-        )
-        return str(checkout.url)
-
-    def create_billing_portal(self, username: str) -> str:
-        """Create a Stripe Billing Portal session and return its URL.
-
-        The portal is where a subscriber updates their card, views invoices, or
-        cancels Premium — Stripe hosts it, so no billing-management UI is built.
-
-        Args:
-            username: Account whose portal session is created.
-
-        Returns:
-            The hosted Billing Portal URL.
-
-        Raises:
-            DomainError: 503 when Stripe is not configured.
-        """
-        stripe_mod = self._stripe()
-        customer_id = self.get_or_create_customer(username)
-        portal = stripe_mod.billing_portal.Session.create(customer=customer_id, return_url=self._return_url("portal"))
-        return str(portal.url)
-
     def get_wallet(self, username: str) -> WalletSnapshot:
         """Return the account's wallet snapshot from the billing tables.
 
         A pure DB read — no Stripe call — so it serves even when Stripe is
-        unconfigured (balance 0, no subscription). The free grant reflects real
-        spend: run completions debit it via :meth:`debit_run`. The free grant is
-        one-time (seeded once, never renewed), so ``free_grant_resets_at`` is
-        ``None`` for a free account; only an active Premium allotment renews, and
-        its reset instant is the Stripe subscription period end. A read that
-        mutates an existing row (seed, or a Premium renewal) is persisted; a
-        brand-new account reads a full grant without creating a row until its
-        first real mutation.
+        unconfigured (balance 0). The free grant reflects real spend: run
+        completions debit it via :meth:`debit_run`. The grant is one-time
+        (seeded once, never renewed). A read that seeds an existing row is
+        persisted; a brand-new account reads a full grant without creating a
+        row until its first real mutation.
 
         Args:
             username: Account to summarize.
 
         Returns:
-            A :class:`WalletSnapshot` of paid balance, free grant, subscription
-            state, and the most recent ledger rows.
+            A :class:`WalletSnapshot` of paid balance, free grant, and the most
+            recent ledger rows.
         """
         now = datetime.now(UTC)
         with Session(self._engine) as session:
             customer = session.get(BillingCustomerModel, username)
             grant_remaining = self._resolve_grant(customer, now)
-            # Capture the seed/reset mutation before the ledger query autoflushes
+            # Capture the seed mutation before the ledger query autoflushes
             # it — once flushed, ``is_modified`` reads clean and the commit below
-            # would be skipped, dropping the reset on session close.
+            # would be skipped, dropping the seed on session close.
             grant_dirty = customer is not None and session.is_modified(customer)
             rows = (
                 session.query(CreditLedgerModel)
@@ -626,32 +396,12 @@ class StripeBillingService:
                 )
                 for row in rows
             ]
-            status = customer.subscription_status if customer else None
-            period_end = (
-                customer.subscription_current_period_end
-                if customer and customer.subscription_current_period_end
-                else None
-            )
-            premium_active = status in _ACTIVE_SUBSCRIPTION_STATUSES if status else False
-            # Only a Premium allotment renews — anchored to the subscription period
-            # (falling back to the stored window). The free grant is one-time, so a
-            # non-premium account reports no reset instant.
-            resets_at: datetime | None = None
-            if premium_active:
-                if period_end is not None:
-                    resets_at = period_end
-                elif customer is not None and customer.grant_reset_at is not None:
-                    resets_at = customer.grant_reset_at
             if grant_dirty:
                 session.commit()
             return WalletSnapshot(
                 paid_balance_credits=customer.credit_balance if customer else 0,
                 free_grant_remaining=grant_remaining,
-                free_grant_total=_grant_allotment(customer),
-                free_grant_resets_at=resets_at.isoformat() if resets_at is not None else None,
-                premium_active=premium_active,
-                subscription_status=status,
-                subscription_current_period_end=period_end.isoformat() if period_end else None,
+                free_grant_total=FREE_GRANT_CREDITS,
                 usage=usage,
             )
 
@@ -755,11 +505,10 @@ class StripeBillingService:
     def spendable_credits(self, username: str) -> int:
         """Return the account's total spendable credits (free grant + paid balance).
 
-        Resolves the grant first (seeding a new account's one-time free grant, or
-        applying a due Premium renewal), so the figure is never stale. A mutated
-        row (seed or renewal) is persisted. This is the figure the submit gate
-        checks: ``> 0`` means a managed run may start. A brand-new account reads a
-        full grant without a row being created.
+        Resolves the grant first (seeding a new account's one-time free grant),
+        so the figure is never stale. A seeded row is persisted. This is the
+        figure the submit gate checks: ``> 0`` means a managed run may start. A
+        brand-new account reads a full grant without a row being created.
 
         Args:
             username: Account to read.
@@ -794,8 +543,8 @@ class StripeBillingService:
         Skynet's platform fee (:func:`run_cost_credits`), since the provider tokens
         were already paid on the user's own key — so credits still meter the
         platform on a BYOK run without double-charging for inference. The grant is
-        resolved first (seeding a new account, or applying a due Premium renewal)
-        so the debit lands against a current grant. Idempotency is the caller's
+        resolved first (seeding a new account's one-time free grant) so the
+        debit lands against a current grant. Idempotency is the caller's
         responsibility: the worker debits inside its once-only completion claim, so
         a redelivered/re-run job never double-charges. A run costing zero credits
         writes nothing.
@@ -901,18 +650,9 @@ class StripeBillingService:
         obj = event["data"]["object"]
         if event_type == "checkout.session.completed":
             self._on_checkout_completed(session, str(event["id"]), obj)
-        elif event_type in (
-            "customer.subscription.created",
-            "customer.subscription.updated",
-            "customer.subscription.deleted",
-        ):
-            self._on_subscription_change(session, obj)
 
     def _on_checkout_completed(self, session: Session, event_id: str, obj: Any) -> None:
         """Credit a completed one-time pack purchase to the buyer's balance.
-
-        Subscription-mode sessions are ignored here — the subscription's own
-        ``customer.subscription.created`` event carries the authoritative state.
 
         Args:
             session: Open session (caller commits).
@@ -945,79 +685,4 @@ class StripeBillingService:
                 description=f"Top-up · {pack_id}" if pack_id else "Top-up",
                 stripe_event_id=event_id,
             )
-        )
-
-    def _on_subscription_change(self, session: Session, obj: Any) -> None:
-        """Sync a subscription's status onto the matching customer row.
-
-        Args:
-            session: Open session (caller commits).
-            obj: The Subscription object from the event.
-        """
-        customer_id = str(obj.get("customer") or "")
-        if not customer_id:
-            return
-        row = (
-            session.query(BillingCustomerModel)
-            .filter(BillingCustomerModel.stripe_customer_id == customer_id)
-            .one_or_none()
-        )
-        if row is None:
-            return
-        items = (obj.get("items") or {}).get("data") or []
-        price_id = items[0]["price"]["id"] if items else None
-        # current_period_end sits on the subscription in older API versions and on
-        # the subscription item in newer ones (2025-03+); read whichever is present.
-        period_end_ts = obj.get("current_period_end") or (items[0].get("current_period_end") if items else None)
-        was_active = row.subscription_status in _ACTIVE_SUBSCRIPTION_STATUSES
-        row.subscription_status = str(obj.get("status") or "")
-        row.subscription_price_id = price_id
-        row.subscription_current_period_end = (
-            datetime.fromtimestamp(int(period_end_ts), tz=UTC) if period_end_ts else None
-        )
-        # A fresh activation delivers the Premium monthly allotment immediately
-        # (top up to it, never clawing back a larger balance), so a new subscriber
-        # doesn't wait for the next rolling-window reset — every later renewal is
-        # handled lazily by the premium-aware reset in ``_resolve_grant``. Anchored
-        # to the billing period so the first premium window aligns to the cycle.
-        if not was_active and row.subscription_status in _ACTIVE_SUBSCRIPTION_STATUSES:
-            row.grant_remaining = max(int(row.grant_remaining or 0), PREMIUM_GRANT_CREDITS)
-            if row.subscription_current_period_end is not None:
-                row.grant_reset_at = row.subscription_current_period_end
-        row.updated_at = datetime.now(UTC)
-
-    def report_run_usage(self, username: str, credits: int) -> None:
-        """Meter a finished run's credit cost to Stripe Billing Meters.
-
-        Called once per successful optimization by the worker (see
-        :class:`core.worker.engine.BackgroundWorker`). Pushes the run's per-model
-        credit cost — one meter unit per credit — as an event Stripe aggregates
-        against the account's metered price (the usage-based overage path).
-        Metering credits, not raw tokens, keeps the meter in step with the
-        per-model ledger so overage and credit burn agree; the Stripe per-unit
-        price is set to one credit ($0.01). Only Premium subscribers whose
-        subscription carries the metered price are actually charged; for everyone
-        else the event is recorded as analytics and never billed.
-
-        Lookup-only by design: usage is reported solely for accounts that already
-        have a billing customer (bought a pack or subscribed). A user who never
-        touched billing gets no Stripe customer created here, avoiding customer
-        sprawl for the free tier that would never be billed anyway.
-
-        Args:
-            username: Account the usage is billed to.
-            credits: The run's credit cost to meter; ignored when non-positive or
-                when Stripe is unconfigured.
-        """
-        if credits <= 0 or settings.stripe_secret_key is None:
-            return
-        with Session(self._engine) as session:
-            customer = session.get(BillingCustomerModel, username)
-            customer_id = customer.stripe_customer_id if customer else None
-        if not customer_id:
-            return
-        stripe_mod = self._stripe()
-        stripe_mod.billing.MeterEvent.create(
-            event_name=settings.stripe_meter_event_name,
-            payload={"stripe_customer_id": customer_id, "value": str(credits)},
         )

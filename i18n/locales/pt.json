@@ -69,7 +69,6 @@
   },
   "messages": {
     "workflow.validation_failed": "Falha na validação do fluxo de trabalho: {error}",
-    "billing.insufficient_credits": "Seu saldo está zerado. Adicione créditos ou aguarde a renovação do bônus gratuito para executar em computação gerenciada.",
     "accounts.email_taken": "Esse endereço de email já está registado.",
     "accounts.invalid_credentials": "Email ou palavra-passe incorretos.",
     "accounts.invalid_email": "Endereço de email inválido.",

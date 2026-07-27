@@ -1,12 +1,13 @@
 /**
  * Credit-wallet domain model shared by the billing UI surfaces.
  *
- * Skynet runs on pay-as-you-go prepaid credits: every new account gets a one-time
- * free grant, and beyond it users buy credit packs or start Premium. Credits are
- * spendable on any model — the free/paid line is about balance, not catalog
- * access. Credits are the unit of account; the dollar value is always shown
- * alongside (`CREDIT_USD_VALUE`). Pricing is break-even (MARKUP 1.09 covering
- * payment-processing fees only, zero BYOK fee): the platform takes no margin.
+ * Skynet runs on pay-as-you-go prepaid credits — the only plan: every new
+ * account gets a one-time free grant, and beyond it users buy credit packs.
+ * Credits are spendable on any model — the free/paid line is about balance, not
+ * catalog access. Credits are the unit of account; the dollar value is always
+ * shown alongside (`CREDIT_USD_VALUE`). Pricing is break-even (MARKUP 1.20:
+ * payment fees plus a small CPU/storage margin, zero BYOK fee): the platform
+ * takes no profit.
  *
  * Everything here is framework-agnostic (no React / `next/*`) so it imports from
  * server components, client components, and the provider alike. The values are
@@ -34,8 +35,6 @@ export const LOW_BALANCE_USD = 0.5;
 export interface FreeGrant {
   creditsRemaining: number;
   creditsTotal: number;
-  /** ISO-8601 instant a Premium allotment renews; `null` for the one-time free grant. */
-  resetsAt: string | null;
 }
 
 /** One row of the usage ledger. `label`/`model` are backend-supplied, not translated. */
@@ -76,8 +75,6 @@ export interface CreditWallet {
   freeGrant: FreeGrant;
   /** Which token source the account is actively running jobs on. */
   mode: TokenSourceMode;
-  /** Whether an active Premium subscription is in effect. */
-  premiumActive: boolean;
   autoReload: AutoReload;
   /** Most-recent-first ledger rows. */
   usage: UsageEntry[];
@@ -120,7 +117,7 @@ export function formatUsd(usd: number, locale: string): string {
   }).format(usd);
 }
 
-/** Locale-aware medium date (e.g. `Jul 1, 2026`) for the grant reset line. */
+/** Locale-aware medium date (e.g. `Jul 1, 2026`) for ledger/settings date lines. */
 export function formatResetDate(iso: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(iso));
 }
@@ -140,9 +137,8 @@ export const CREDIT_PACKS: CreditPack[] = [
  */
 export const STUB_WALLET: CreditWallet = {
   paidBalanceCredits: 1240,
-  freeGrant: { creditsRemaining: 480, creditsTotal: 500, resetsAt: null },
+  freeGrant: { creditsRemaining: 480, creditsTotal: 500 },
   mode: "managed",
-  premiumActive: false,
   autoReload: { enabled: false, thresholdCredits: 200, topUpCredits: 2200 },
   usage: [
     {

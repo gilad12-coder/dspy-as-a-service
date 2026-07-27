@@ -17,7 +17,6 @@ interface WalletCardProps {
 interface FreeGrant {
   credits_remaining?: number;
   credits_total?: number;
-  resets_at?: string | null;
 }
 
 interface UsageEntry {
@@ -31,7 +30,6 @@ interface UsageEntry {
 interface WalletResult {
   paid_balance_credits?: number;
   free_grant?: FreeGrant;
-  premium_active?: boolean;
   usage?: UsageEntry[];
 }
 
@@ -59,23 +57,16 @@ function fmtUsd(credits: number): string {
   return `$${(credits * CREDIT_USD).toFixed(2)}`;
 }
 
-function planLabel(premium: boolean): string {
-  return premium
-    ? msg("auto.features.agent.panel.components.walletcard.plan_premium")
-    : msg("auto.features.agent.panel.components.walletcard.plan_free");
-}
-
 function buildSummary(w: WalletResult | null, isRunning: boolean): string | null {
   if (isRunning || !w) return null;
   return formatMsg("auto.features.agent.panel.components.walletcard.summary", {
     p1: fmtCredits(totalCredits(w)),
-    p2: planLabel(Boolean(w.premium_active)),
   });
 }
 
 /**
  * Result card for ``get_wallet_for_agent`` — the caller's spendable credits
- * (free grant + paid balance) as a headline with its USD value, the plan, a
+ * (free grant + paid balance) as a headline with its USD value, a
  * free-grant / paid-balance split, and the most recent ledger entries.
  */
 export function WalletCard({ call }: WalletCardProps) {
@@ -87,7 +78,6 @@ export function WalletCard({ call }: WalletCardProps) {
   }
 
   const total = totalCredits(wallet);
-  const premium = Boolean(wallet.premium_active);
   const grant = wallet.free_grant ?? {};
   const usage = wallet.usage ?? [];
 
@@ -102,12 +92,6 @@ export function WalletCard({ call }: WalletCardProps) {
         </span>
         <span dir="ltr" className="text-[0.625rem] text-muted-foreground/55">
           ≈ {fmtUsd(total)}
-        </span>
-        <span className="ms-auto inline-flex items-center gap-1.5">
-          <span className="text-[0.625rem] text-muted-foreground/60">
-            {msg("auto.features.agent.panel.components.walletcard.plan_label")}
-          </span>
-          <PlanChip premium={premium} />
         </span>
       </div>
 
@@ -149,22 +133,6 @@ export function WalletCard({ call }: WalletCardProps) {
   );
 
   return <ToolCallRow call={call} summary={summary} customBody={customBody} />;
-}
-
-function PlanChip({ premium }: { premium: boolean }) {
-  const label = planLabel(premium);
-  return (
-    <span
-      className="inline-flex items-center rounded-full px-2 py-0.5 text-[0.625rem] font-medium leading-none"
-      style={
-        premium
-          ? { backgroundColor: "var(--success-dim)", color: "var(--success)" }
-          : undefined
-      }
-    >
-      <span className={premium ? undefined : "text-muted-foreground/70"}>{label}</span>
-    </span>
-  );
 }
 
 function CreditDelta({ credits }: { credits: number }) {

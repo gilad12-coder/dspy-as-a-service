@@ -92,10 +92,7 @@ class BillingCustomerModel(Base):
     ``users`` row — are billed too. ``stripe_customer_id`` is the durable link to
     Stripe. ``credit_balance`` is the denormalized spendable purchased-credit
     total, kept in step with ``credit_ledger`` on every mutation so a balance
-    read is a single fast integer. The ``subscription_*``
-    columns mirror the account's Premium subscription as last reported by a
-    Stripe webhook (the sync-Stripe-to-DB pattern): the DB is a cache of Stripe,
-    never the source of truth for subscription state.
+    read is a single fast integer.
     """
 
     __tablename__ = "billing_customers"
@@ -110,20 +107,12 @@ class BillingCustomerModel(Base):
         default=0,
         server_default="0",
     )
-    # ``grant_remaining`` is what is left of the account's credit grant. The free
-    # grant is one-time (500 credits, seeded once and never renewed), so a free
-    # account's ``grant_reset_at`` is NULL. Only an active Premium allotment renews:
-    # ``grant_reset_at`` is when it next tops back up to PREMIUM_GRANT_CREDITS (a
-    # +30d / subscription-period anchor). Both are NULL until the first wallet read
-    # or run seeds them; renewal is lazy-evaluated on read, never cron'd.
+    # ``grant_remaining`` is what is left of the account's one-time free credit
+    # grant (500 credits, seeded once and never renewed). NULL until the first
+    # wallet read or run seeds it; seeding is lazy-evaluated on read, never
+    # cron'd.
     grant_remaining: Mapped[int | None] = mapped_column(
         BigInteger().with_variant(Integer(), "sqlite"), nullable=True
-    )
-    grant_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    subscription_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    subscription_price_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    subscription_current_period_end: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)

@@ -8,10 +8,11 @@ token volume (the post-run charge), so the two reconcile by construction — onl
 their inputs differ.
 
 Model choice moves a run's price, and :data:`MARKUP` is the single re-priceable
-margin lever (mirrored by the Stripe per-unit price) — currently 1.09, i.e.
-break-even pass-through: payment-processing fees are covered, no profit margin. The module is
-a leaf — it depends only on LiteLLM's static price table — so both the billing
-service and any estimator can import it without cycles.
+margin lever (mirrored by the Stripe per-unit price) — currently 1.20: payment
+fees plus a small infra margin, so the platform breaks even on the CPU and
+storage behind a run without taking profit. The module is a leaf — it depends
+only on LiteLLM's static price table — so both the billing service and any
+estimator can import it without cycles.
 """
 
 from __future__ import annotations
@@ -29,13 +30,15 @@ CREDIT_USD_VALUE = 0.01
 # Margin multiplier applied to raw provider cost before converting to credits.
 # This is the single re-priceable margin lever for runs (it replaces the markup
 # that used to be implicit in the flat token→credit rate). Tune here; keep it in
-# step with the Stripe metered per-unit price so ledger and invoice agree.
-# 1.09 = break-even pricing: covers the percentage costs of moving the money —
-# OpenRouter's ~5.5% deposit fee on managed tokens and Stripe's ~2.9% cut of
-# what users pay (1.055 / 0.971 ≈ 1.09) — with zero profit margin on top.
-# Stripe's fixed $0.30 per purchase is deliberately not covered (it amortizes
-# to noise on normal pack sizes).
-MARKUP = 1.09
+# step with the Stripe per-unit price so ledger and invoice agree.
+# 1.20 = break-even pricing: ~9% covers the percentage costs of moving the
+# money — OpenRouter's ~5.5% deposit fee on managed tokens and Stripe's ~2.9%
+# cut of what users pay (1.055 / 0.971 ≈ 1.09) — and the remaining ~10% is a
+# small infra margin so the CPU and storage a run consumes (optimization
+# workers, artifact/DB storage) are covered too. No profit on top. Stripe's
+# fixed $0.30 per purchase is deliberately not covered (it amortizes to noise
+# on normal pack sizes).
+MARKUP = 1.20
 
 # Fallback per-token cost (USD) for a model LiteLLM does not price — a mid-tier
 # standard rate so an unknown model estimates and charges sanely rather than at

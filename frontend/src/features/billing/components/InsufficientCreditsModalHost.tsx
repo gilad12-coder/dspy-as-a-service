@@ -21,9 +21,9 @@ import { INSUFFICIENT_CREDITS_EVENT } from "@/shared/lib/api";
  * so every blocked flow surfaces the same paywall instead of a per-call toast
  * (submit producers suppress their own toast via `isInsufficientCreditsError`).
  *
- * The body copy is the backend's own gate message — it already names both ways
- * out (buy credits, or start Premium) — so there is nothing to fetch; the modal
- * is purely presentational.
+ * The body copy is the backend's own gate message — it already names the way
+ * out (add credits) — so there is nothing to fetch; the modal is purely
+ * presentational.
  */
 export function InsufficientCreditsModalHost() {
   const [open, setOpen] = React.useState(false);

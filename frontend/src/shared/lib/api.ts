@@ -521,8 +521,6 @@ export async function revokeApiToken(): Promise<void> {
 export interface BillingFreeGrant {
   credits_remaining: number;
   credits_total: number;
-  /** ISO-8601 instant a Premium allotment renews; `null` for the one-time free grant. */
-  resets_at: string | null;
 }
 
 export interface BillingUsageEntry {
@@ -538,13 +536,10 @@ export interface BillingUsageEntry {
 export interface BillingWalletResponse {
   paid_balance_credits: number;
   free_grant: BillingFreeGrant;
-  premium_active: boolean;
-  subscription_status: string | null;
-  subscription_current_period_end: string | null;
   usage: BillingUsageEntry[];
 }
 
-/** Fetch the caller's credit wallet + subscription state. Reads work even without Stripe. */
+/** Fetch the caller's credit wallet. Reads work even without Stripe. */
 export function getWallet() {
   return request<BillingWalletResponse>("/billing/wallet");
 }
@@ -595,28 +590,6 @@ export function createCheckoutSession(packId: string) {
     method: "POST",
     body: JSON.stringify({ pack_id: packId }),
   });
-}
-
-/** The Founder's Rate availability: the deadline gate and the 12-month price-lock window. */
-export interface FoundersRateResponse {
-  open: boolean;
-  closes_at: string;
-  price_locked_until: string;
-}
-
-/** Read the Founder's Rate availability (open/closed + lock window). Works without Stripe. */
-export function getFoundersRate() {
-  return request<FoundersRateResponse>("/billing/founders");
-}
-
-/** Start a Stripe Checkout session for the Founder's Rate subscription; redirect to `.url`. */
-export function createFoundersCheckout() {
-  return request<{ url: string }>("/billing/founders/subscribe", { method: "POST" });
-}
-
-/** Open the Stripe Billing Portal (manage card / invoices / cancel); redirect to `.url`. */
-export function openBillingPortal() {
-  return request<{ url: string }>("/billing/portal", { method: "POST" });
 }
 
 /** One stored BYOK provider connection as the backend reports it — masked, never the secret. */

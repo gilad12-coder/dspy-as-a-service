@@ -33,8 +33,8 @@ interface CreditContextValue {
   refresh: () => void;
   /**
    * Enter the post-checkout `syncing` state and poll the wallet until the webhook
-   * lands (the balance/subscription changes) or a short budget elapses. Call on a
-   * Stripe `?status=success` return so the chip never shows a false zero.
+   * lands (the balance changes) or a short budget elapses. Call on a Stripe
+   * `?status=success` return so the chip never shows a false zero.
    */
   beginSync: () => void;
 }
@@ -53,9 +53,7 @@ function applyWalletResponse(prev: CreditWallet, r: BillingWalletResponse): Cred
     freeGrant: {
       creditsRemaining: r.free_grant.credits_remaining,
       creditsTotal: r.free_grant.credits_total,
-      resetsAt: r.free_grant.resets_at,
     },
-    premiumActive: r.premium_active,
     usage: r.usage.map((u) => ({
       id: u.id,
       at: u.at,
@@ -82,7 +80,7 @@ export function useCredits(): CreditContextValue {
 /**
  * Provide the credit wallet to the client tree.
  *
- * Fetches the real wallet (paid balance, free grant, Premium state, ledger)
+ * Fetches the real wallet (paid balance, free grant, ledger)
  * from the billing backend on mount and after every `refresh()` — e.g. when a
  * Stripe Checkout returns. `STUB_WALLET` is the seed and the fallback: if the
  * fetch fails (no backend, signed-out) the demo wallet stays, so the UI never
@@ -124,13 +122,13 @@ export function CreditProvider({
   const beginSync = React.useCallback(() => {
     setSyncing(true);
     let attempt = 0;
-    const baseline = JSON.stringify({ p: wallet.paidBalanceCredits, s: wallet.premiumActive });
+    const baseline = wallet.paidBalanceCredits;
     const poll = () => {
       attempt += 1;
       void getWallet()
         .then((r) => {
           setWallet((prev) => applyWalletResponse(prev, r));
-          return JSON.stringify({ p: r.paid_balance_credits, s: r.premium_active }) !== baseline;
+          return r.paid_balance_credits !== baseline;
         })
         .catch(() => false)
         .then((landed) => {
@@ -144,7 +142,7 @@ export function CreditProvider({
         });
     };
     poll();
-  }, [wallet.paidBalanceCredits, wallet.premiumActive]);
+  }, [wallet.paidBalanceCredits]);
 
   const setAutoReload = React.useCallback((patch: Partial<AutoReload>) => {
     setWallet((w) => ({ ...w, autoReload: { ...w.autoReload, ...patch } }));

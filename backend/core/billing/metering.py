@@ -1,11 +1,10 @@
 """Per-run LLM usage metering for the interactive surfaces.
 
-Optimization jobs already meter through the worker (debit + Stripe meter event
-at completion); this module gives the interactive surfaces — agent turns,
-interview turns, tagging predictions — the same seam. A surface hands over the
-``MeteredLM`` objects a run used; the helper harvests their per-model token
-usage, prices it, writes the debit (with measured token counts stamped on the
-ledger row), and reports the credits to the Stripe billing meter, all
+Optimization jobs already debit through the worker at completion; this module
+gives the interactive surfaces — agent turns, interview turns, tagging
+predictions — the same seam. A surface hands over the ``MeteredLM`` objects a
+run used; the helper harvests their per-model token usage, prices it, and
+writes the debit (with measured token counts stamped on the ledger row), all
 best-effort: a metering failure logs and never breaks the user-facing turn.
 """
 
@@ -43,15 +42,15 @@ def meter_llm_run(
     description: str,
     model: str | None = None,
 ) -> int:
-    """Debit and Stripe-meter the tokens a finished interactive run consumed.
+    """Debit the tokens a finished interactive run consumed.
 
     Harvests per-model usage from ``language_models``, keys an auto-routed
     run's usage by the concrete model the router served (so pricing hits the
-    real price row instead of the router's unpriced group id), debits the
-    account, and reports the credits to the Stripe billing meter. A run with
-    no tracked usage (mocked LM, zero calls) writes nothing. Never raises —
-    the turn already succeeded for the user, so billing failures are logged
-    and swallowed rather than surfaced as an error on a delivered reply.
+    real price row instead of the router's unpriced group id), and debits the
+    account. A run with no tracked usage (mocked LM, zero calls) writes
+    nothing. Never raises — the turn already succeeded for the user, so
+    billing failures are logged and swallowed rather than surfaced as an
+    error on a delivered reply.
 
     Args:
         engine: SQLAlchemy engine backing the billing tables; ``None`` skips
@@ -92,8 +91,4 @@ def meter_llm_run(
     except Exception:
         logger.exception("failed to debit LLM usage for %s (%s)", username, description)
         return 0
-    try:
-        service.report_run_usage(username, credits)
-    except Exception:
-        logger.exception("failed to report LLM usage to Stripe for %s", username)
     return credits

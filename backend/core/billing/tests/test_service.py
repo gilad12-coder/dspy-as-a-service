@@ -1,19 +1,16 @@
-"""Tests for ``StripeBillingService``: metered overage, the credit ledger, and gate.
+"""Tests for ``StripeBillingService``: the credit ledger and the submit gate.
 
-Covers ``report_run_usage`` (whether/with-what-units a meter event is pushed),
-``create_subscription_checkout`` (whether the metered price rides on the
-subscription), and the Phase-0 credit-ledger backbone — the one-time free grant
-and the renewing Premium allotment, run debiting (grant before paid balance), and
-the ``spendable_credits`` figure the submit gate reads. Each test
-stands up an in-memory SQLite engine with the billing tables and patches the
-``stripe`` module so no network call is made.
+Covers the credit-ledger backbone — the one-time free grant, run debiting
+(grant before paid balance), the ``spendable_credits`` figure the submit gate
+reads, the usage rollup, and webhook idempotency. Each test stands up an
+in-memory SQLite engine with the billing tables and patches the ``stripe``
+module so no network call is made.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -25,10 +22,7 @@ from sqlalchemy.orm import Session
 from core.api.errors import DomainError
 from core.billing.pricing import ModelUsage, credits_for_usage
 from core.billing.service import (
-    FOUNDERS_LOCK_DAYS,
     FREE_GRANT_CREDITS,
-    GRANT_WINDOW_DAYS,
-    PREMIUM_GRANT_CREDITS,
     StripeBillingService,
     cost_ceiling_budget,
     platform_fee_credits_for_usage,
@@ -69,7 +63,7 @@ def configured(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _seed_customer(engine: object, username: str) -> None:
-    """Insert a billing customer row so the account is metered-eligible.
+    """Insert a billing customer row with a real-looking Stripe link.
 
     Args:
         engine: The SQLite engine to write to.
@@ -78,162 +72,6 @@ def _seed_customer(engine: object, username: str) -> None:
     with Session(engine) as session:
         session.add(BillingCustomerModel(username=username, stripe_customer_id=f"cus_{username}", credit_balance=0))
         session.commit()
-
-
-def test_report_run_usage_noop_when_stripe_unconfigured(engine: object, monkeypatch: pytest.MonkeyPatch) -> None:
-    """No meter event is pushed when no Stripe secret key is configured."""
-    monkeypatch.setattr(settings, "stripe_secret_key", None)
-    _seed_customer(engine, "u@x.com")
-    service = StripeBillingService(engine=engine)
-    with patch("stripe.billing.MeterEvent.create") as create:
-        service.report_run_usage("u@x.com", 5000)
-    create.assert_not_called()
-
-
-def test_report_run_usage_noop_without_billing_customer(engine: object, configured: None) -> None:
-    """Usage for an account that never touched billing is not metered (no customer sprawl)."""
-    service = StripeBillingService(engine=engine)
-    with patch("stripe.billing.MeterEvent.create") as create:
-        service.report_run_usage("nobody@x.com", 5000)
-    create.assert_not_called()
-    with Session(engine) as session:
-        assert session.get(BillingCustomerModel, "nobody@x.com") is None
-
-
-def test_report_run_usage_noop_for_zero_credits(engine: object, configured: None) -> None:
-    """A run that cost nothing reports no meter event."""
-    _seed_customer(engine, "u@x.com")
-    service = StripeBillingService(engine=engine)
-    with patch("stripe.billing.MeterEvent.create") as create:
-        service.report_run_usage("u@x.com", 0)
-    create.assert_not_called()
-
-
-def test_report_run_usage_meters_credits_for_customer(engine: object, configured: None) -> None:
-    """Credits are metered one-to-one (one unit per credit) for the right customer."""
-    _seed_customer(engine, "u@x.com")
-    service = StripeBillingService(engine=engine)
-    with patch("stripe.billing.MeterEvent.create") as create:
-        service.report_run_usage("u@x.com", 7)
-    create.assert_called_once()
-    kwargs = create.call_args.kwargs
-    assert kwargs["event_name"] == settings.stripe_meter_event_name
-    assert kwargs["payload"]["stripe_customer_id"] == "cus_u@x.com"
-    assert kwargs["payload"]["value"] == "7"
-
-
-def test_subscription_checkout_includes_metered_item(
-    engine: object, configured: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A configured metered price rides on the subscription as a quantity-less item."""
-    monkeypatch.setattr(settings, "stripe_price_premium", "price_premium")
-    monkeypatch.setattr(settings, "stripe_price_metered", "price_metered")
-    _seed_customer(engine, "u@x.com")
-    service = StripeBillingService(engine=engine)
-    with patch("stripe.checkout.Session.create") as create:
-        create.return_value = SimpleNamespace(url="https://checkout.test/abc")
-        url = service.create_subscription_checkout("u@x.com")
-    assert url == "https://checkout.test/abc"
-    assert create.call_args.kwargs["line_items"] == [
-        {"price": "price_premium", "quantity": 1},
-        {"price": "price_metered"},
-    ]
-
-
-def test_subscription_checkout_omits_metered_when_unconfigured(
-    engine: object, configured: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """With no metered price configured, only the flat Premium item is sent."""
-    monkeypatch.setattr(settings, "stripe_price_premium", "price_premium")
-    monkeypatch.setattr(settings, "stripe_price_metered", "")
-    _seed_customer(engine, "u@x.com")
-    service = StripeBillingService(engine=engine)
-    with patch("stripe.checkout.Session.create") as create:
-        create.return_value = SimpleNamespace(url="https://checkout.test/abc")
-        service.create_subscription_checkout("u@x.com")
-    assert create.call_args.kwargs["line_items"] == [{"price": "price_premium", "quantity": 1}]
-
-
-def test_founders_rate_open_before_close_date(engine: object, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Before the close date the offer is open and reports a 12-month lock window."""
-    monkeypatch.setattr(settings, "founders_rate_closes_at", "2099-12-31T23:59:59Z")
-    service = StripeBillingService(engine=engine)
-    now = datetime(2026, 6, 28, tzinfo=UTC)
-    status = service.founders_rate_status(now=now)
-    assert status.open is True
-    assert status.price_locked_until == (now + timedelta(days=FOUNDERS_LOCK_DAYS)).isoformat()
-
-
-def test_founders_rate_closed_after_close_date(engine: object, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Past the configured deadline the offer reports closed."""
-    monkeypatch.setattr(settings, "founders_rate_closes_at", "2026-07-31T23:59:59Z")
-    service = StripeBillingService(engine=engine)
-    status = service.founders_rate_status(now=datetime(2026, 8, 1, tzinfo=UTC))
-    assert status.open is False
-
-
-def test_founders_checkout_stamps_price_lock_metadata(
-    engine: object, configured: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A Founder's Rate checkout carries the lock metadata onto the subscription."""
-    monkeypatch.setattr(settings, "founders_rate_closes_at", "2099-12-31T23:59:59Z")
-    monkeypatch.setattr(settings, "stripe_price_founders", "price_founders")
-    monkeypatch.setattr(settings, "stripe_price_metered", "")
-    _seed_customer(engine, "u@x.com")
-    service = StripeBillingService(engine=engine)
-    with patch("stripe.checkout.Session.create") as create:
-        create.return_value = SimpleNamespace(url="https://checkout.test/f")
-        url = service.create_founders_checkout("u@x.com")
-    assert url == "https://checkout.test/f"
-    kwargs = create.call_args.kwargs
-    assert kwargs["mode"] == "subscription"
-    assert kwargs["line_items"] == [{"price": "price_founders", "quantity": 1}]
-    assert kwargs["metadata"]["founders_rate"] == "true"
-    assert "price_locked_until" in kwargs["metadata"]
-    assert kwargs["subscription_data"]["metadata"]["founders_rate"] == "true"
-    # No explicit payment_method_types — Stripe picks from the Dashboard config.
-    assert "payment_method_types" not in kwargs
-
-
-def test_founders_checkout_falls_back_to_premium_price(
-    engine: object, configured: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """With no dedicated Founder's price, the Premium price backs the subscription."""
-    monkeypatch.setattr(settings, "founders_rate_closes_at", "2099-12-31T23:59:59Z")
-    monkeypatch.setattr(settings, "stripe_price_founders", "")
-    monkeypatch.setattr(settings, "stripe_price_premium", "price_premium")
-    monkeypatch.setattr(settings, "stripe_price_metered", "")
-    _seed_customer(engine, "u@x.com")
-    service = StripeBillingService(engine=engine)
-    with patch("stripe.checkout.Session.create") as create:
-        create.return_value = SimpleNamespace(url="https://checkout.test/f")
-        service.create_founders_checkout("u@x.com")
-    assert create.call_args.kwargs["line_items"] == [{"price": "price_premium", "quantity": 1}]
-
-
-def test_founders_checkout_rejected_after_deadline(
-    engine: object, configured: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Past the deadline a checkout attempt is gated with a 410, no Stripe call."""
-    monkeypatch.setattr(settings, "founders_rate_closes_at", "2020-01-01T00:00:00Z")
-    monkeypatch.setattr(settings, "stripe_price_founders", "price_founders")
-    service = StripeBillingService(engine=engine)
-    with patch("stripe.checkout.Session.create") as create, pytest.raises(DomainError) as exc:
-        service.create_founders_checkout("u@x.com")
-    assert exc.value.status_code == 410
-    create.assert_not_called()
-
-
-def _as_utc(value: datetime) -> datetime:
-    """Coerce a possibly-naive timestamp to UTC (SQLite drops tzinfo on read).
-
-    Args:
-        value: A datetime read back from the SQLite billing tables.
-
-    Returns:
-        The same instant tagged UTC when it was naive.
-    """
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def _grant_remaining(engine: object, username: str) -> int | None:
@@ -261,15 +99,13 @@ def test_wallet_reports_full_grant_for_new_account(engine: object) -> None:
 
 
 def test_wallet_seeds_one_time_free_grant_on_first_read(engine: object) -> None:
-    """Reading a free row with no grant seeds the one-time grant and no reset anchor."""
+    """Reading a row with no grant seeds the one-time grant and persists it."""
     _seed_customer(engine, "u@x.com")
     snapshot = StripeBillingService(engine=engine).get_wallet("u@x.com")
     assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS
-    assert snapshot.free_grant_resets_at is None
     with Session(engine) as session:
         customer = session.get(BillingCustomerModel, "u@x.com")
     assert customer.grant_remaining == FREE_GRANT_CREDITS
-    assert customer.grant_reset_at is None
 
 
 def test_debit_run_draws_from_grant_first(engine: object) -> None:
@@ -301,7 +137,6 @@ def test_debit_run_overflows_grant_into_paid_balance(engine: object) -> None:
                 stripe_customer_id="cus_u",
                 credit_balance=100,
                 grant_remaining=10,
-                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
             )
         )
         session.commit()
@@ -339,8 +174,7 @@ def test_debit_run_zero_cost_writes_nothing(engine: object) -> None:
 
 
 def test_free_grant_is_one_time_and_never_resets(engine: object) -> None:
-    """A free grant never tops up — even past a stale anchor the leftover stands."""
-    past = datetime.now(UTC) - timedelta(days=1)
+    """A partially-spent free grant stays put on read — it never tops back up."""
     with Session(engine) as session:
         session.add(
             BillingCustomerModel(
@@ -348,27 +182,6 @@ def test_free_grant_is_one_time_and_never_resets(engine: object) -> None:
                 stripe_customer_id="cus_u",
                 credit_balance=0,
                 grant_remaining=40,
-                grant_reset_at=past,
-            )
-        )
-        session.commit()
-    snapshot = StripeBillingService(engine=engine).get_wallet("u@x.com")
-    assert snapshot.free_grant_remaining == 40
-    assert snapshot.free_grant_resets_at is None
-    assert _grant_remaining(engine, "u@x.com") == 40
-
-
-def test_grant_does_not_reset_before_window_elapses(engine: object) -> None:
-    """Inside the window the partially-spent grant is preserved (no early top-up)."""
-    future = datetime.now(UTC) + timedelta(days=10)
-    with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username="u@x.com",
-                stripe_customer_id="cus_u",
-                credit_balance=0,
-                grant_remaining=40,
-                grant_reset_at=future,
             )
         )
         session.commit()
@@ -386,7 +199,6 @@ def test_spendable_credits_sums_grant_and_paid_balance(engine: object) -> None:
                 stripe_customer_id="cus_u",
                 credit_balance=70,
                 grant_remaining=30,
-                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
             )
         )
         session.commit()
@@ -402,7 +214,6 @@ def test_spendable_credits_zero_when_grant_and_balance_exhausted(engine: object)
                 stripe_customer_id="cus_u",
                 credit_balance=0,
                 grant_remaining=0,
-                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
             )
         )
         session.commit()
@@ -412,13 +223,6 @@ def test_spendable_credits_zero_when_grant_and_balance_exhausted(engine: object)
 def test_spendable_credits_full_for_new_account(engine: object) -> None:
     """A brand-new account has a full grant of spendable credits (gate passes)."""
     assert StripeBillingService(engine=engine).spendable_credits("new@x.com") == FREE_GRANT_CREDITS
-
-
-def _balance(engine: object, username: str) -> tuple[int, int]:
-    """Read (grant_remaining, paid_balance) for an account."""
-    with Session(engine) as session:
-        c = session.get(BillingCustomerModel, username)
-        return (0, 0) if c is None else (int(c.grant_remaining or 0), int(c.credit_balance))
 
 
 def test_debit_run_byok_charges_only_platform_fee(engine: object) -> None:
@@ -465,102 +269,6 @@ def test_cost_ceiling_budget_byok_is_fee_aware_and_larger(engine: object) -> Non
     assert budget > 100
     assert budget >= 10**9
     assert platform_fee_credits_for_usage(_usages(10_000_000)) == 0
-
-
-def test_wallet_reports_premium_grant_total_for_subscriber(engine: object) -> None:
-    """An active Premium account's grant total is the larger Premium allotment."""
-    with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username="pro@x.com",
-                stripe_customer_id="cus_pro",
-                credit_balance=0,
-                grant_remaining=2000,
-                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
-                subscription_status="active",
-            )
-        )
-        session.commit()
-    snapshot = StripeBillingService(engine=engine).get_wallet("pro@x.com")
-    assert snapshot.free_grant_total == PREMIUM_GRANT_CREDITS
-    assert snapshot.free_grant_remaining == 2000
-    assert snapshot.premium_active is True
-
-
-def test_premium_grant_resets_to_premium_allotment(engine: object) -> None:
-    """Past the window, a Premium account tops up to the Premium allotment, not 500."""
-    past = datetime.now(UTC) - timedelta(days=1)
-    with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username="pro@x.com",
-                stripe_customer_id="cus_pro",
-                credit_balance=0,
-                grant_remaining=10,
-                grant_reset_at=past,
-                subscription_status="active",
-            )
-        )
-        session.commit()
-    snapshot = StripeBillingService(engine=engine).get_wallet("pro@x.com")
-    assert snapshot.free_grant_remaining == PREMIUM_GRANT_CREDITS
-
-
-def test_subscription_activation_grants_premium_allotment_immediately(engine: object) -> None:
-    """A fresh activation tops the grant up to the Premium allotment right away."""
-    with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username="up@x.com",
-                stripe_customer_id="cus_up",
-                credit_balance=0,
-                grant_remaining=300,
-                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
-            )
-        )
-        session.commit()
-    period_end = int(datetime(2026, 8, 1, tzinfo=UTC).timestamp())
-    sub = {
-        "customer": "cus_up",
-        "status": "active",
-        "items": {"data": [{"price": {"id": "price_premium"}, "current_period_end": period_end}]},
-    }
-    service = StripeBillingService(engine=engine)
-    with Session(engine) as session:
-        service._on_subscription_change(session, sub)
-        session.commit()
-    grant, _paid = _balance(engine, "up@x.com")
-    assert grant == PREMIUM_GRANT_CREDITS
-    with Session(engine) as session:
-        customer = session.get(BillingCustomerModel, "up@x.com")
-    assert _as_utc(customer.grant_reset_at) == datetime(2026, 8, 1, tzinfo=UTC)
-
-
-def test_subscription_update_while_active_does_not_refill_grant(engine: object) -> None:
-    """An update event on an already-active sub must not top the grant back up."""
-    with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username="act@x.com",
-                stripe_customer_id="cus_act",
-                credit_balance=0,
-                grant_remaining=100,
-                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
-                subscription_status="active",
-            )
-        )
-        session.commit()
-    period_end = int(datetime(2026, 9, 1, tzinfo=UTC).timestamp())
-    sub = {
-        "customer": "cus_act",
-        "status": "active",
-        "items": {"data": [{"price": {"id": "price_premium"}, "current_period_end": period_end}]},
-    }
-    service = StripeBillingService(engine=engine)
-    with Session(engine) as session:
-        service._on_subscription_change(session, sub)
-        session.commit()
-    assert _balance(engine, "act@x.com")[0] == 100
 
 
 def _add_ledger(

@@ -1,6 +1,7 @@
-"""Managed-credit billing routes: wallet, checkout, subscription, portal, webhook.
+"""Managed-credit billing routes: wallet, usage, pack checkout, webhook.
 
-Backs the in-app wallet, the upgrade/paywall page, and the Premium subscription.
+Backs the in-app wallet and the add-credits/paywall page — pay-as-you-go
+prepaid credits are the only plan.
 Authenticated routes resolve the caller via the shared session-JWT/PAT
 dependency and key every operation on ``user.username`` (the lowercased email).
 The webhook route is deliberately unauthenticated — Stripe can't present a
@@ -51,14 +52,10 @@ def _parse_instant(value: str | None, default: datetime) -> datetime:
 
 
 class FreeGrantResponse(BaseModel):
-    """The account's credit grant: one-time for free, monthly for Premium."""
+    """The account's one-time free credit grant."""
 
     credits_remaining: int = Field(description="Credits left in the grant.")
-    credits_total: int = Field(description="Full grant size (500 free, or the Premium allotment).")
-    resets_at: str | None = Field(
-        default=None,
-        description="ISO-8601 instant a Premium allotment next renews; null for the one-time free grant.",
-    )
+    credits_total: int = Field(description="Full grant size (500).")
 
 
 class UsageEntryResponse(BaseModel):
@@ -73,17 +70,10 @@ class UsageEntryResponse(BaseModel):
 
 
 class WalletResponse(BaseModel):
-    """The caller's wallet: purchased balance, free grant, subscription, recent ledger."""
+    """The caller's wallet: purchased balance, free grant, recent ledger."""
 
     paid_balance_credits: int = Field(description="Purchased credit balance, on top of the free grant.")
     free_grant: FreeGrantResponse
-    premium_active: bool = Field(description="Whether an active Premium subscription is in effect.")
-    subscription_status: str | None = Field(
-        default=None, description="Raw Stripe subscription status, or null when none."
-    )
-    subscription_current_period_end: str | None = Field(
-        default=None, description="ISO-8601 end of the current paid period, or null."
-    )
     usage: list[UsageEntryResponse] = Field(
         default_factory=list, description="Most-recent-first ledger rows."
     )
@@ -139,16 +129,6 @@ class CheckoutSessionResponse(BaseModel):
     url: str = Field(description="Absolute Stripe-hosted Checkout or portal URL.")
 
 
-class FoundersRateResponse(BaseModel):
-    """The Founder's Rate availability: the deadline gate and the price-lock window."""
-
-    open: bool = Field(description="Whether new Founder's Rate subscriptions are still accepted.")
-    closes_at: str = Field(description="ISO-8601 instant the offer stops accepting subscribers.")
-    price_locked_until: str = Field(
-        description="ISO-8601 instant through which a subscriber locking in now keeps the rate."
-    )
-
-
 class WebhookAck(BaseModel):
     """Acknowledgement that a webhook event was received and applied."""
 
@@ -194,8 +174,8 @@ def create_billing_router(*, job_store) -> APIRouter:
         job_store: Job-store instance whose ORM engine backs the billing tables.
 
     Returns:
-        A FastAPI ``APIRouter`` exposing wallet, checkout, subscribe, portal, and
-        the Stripe webhook receiver.
+        A FastAPI ``APIRouter`` exposing wallet, usage, pack checkout, and the
+        Stripe webhook receiver.
     """
     router = APIRouter()
     service = StripeBillingService(engine=job_store.engine)
@@ -205,11 +185,11 @@ def create_billing_router(*, job_store) -> APIRouter:
         "/billing/wallet",
         response_model=WalletResponse,
         operation_id="get_wallet_for_agent",
-        summary="Return the caller's credit wallet and subscription state",
+        summary="Return the caller's credit wallet",
         tags=["agent"],
     )
     def get_wallet(user: AuthenticatedUserDep) -> WalletResponse:
-        """Return the caller's purchased balance, free grant, subscription, and ledger.
+        """Return the caller's purchased balance, free grant, and recent ledger.
 
         Args:
             user: Authenticated caller whose wallet is read.
@@ -223,11 +203,7 @@ def create_billing_router(*, job_store) -> APIRouter:
             free_grant=FreeGrantResponse(
                 credits_remaining=snapshot.free_grant_remaining,
                 credits_total=snapshot.free_grant_total,
-                resets_at=snapshot.free_grant_resets_at,
             ),
-            premium_active=snapshot.premium_active,
-            subscription_status=snapshot.subscription_status,
-            subscription_current_period_end=snapshot.subscription_current_period_end,
             usage=[
                 UsageEntryResponse(
                     id=row.id,
@@ -318,83 +294,6 @@ def create_billing_router(*, job_store) -> APIRouter:
             The hosted Checkout URL to redirect the buyer to.
         """
         url = service.create_pack_checkout(user.username, body.pack_id)
-        return CheckoutSessionResponse(url=url)
-
-    @router.post(
-        "/billing/subscribe",
-        response_model=CheckoutSessionResponse,
-        summary="Start a Stripe Checkout session for the Premium subscription",
-    )
-    def create_subscription(user: AuthenticatedUserDep) -> CheckoutSessionResponse:
-        """Create a subscription Checkout session for Premium.
-
-        Args:
-            user: Authenticated subscriber.
-
-        Returns:
-            The hosted Checkout URL for the recurring subscription.
-        """
-        url = service.create_subscription_checkout(user.username)
-        return CheckoutSessionResponse(url=url)
-
-    @router.get(
-        "/billing/founders",
-        response_model=FoundersRateResponse,
-        summary="Return the Founder's Rate availability and price-lock window",
-    )
-    def get_founders_rate(user: AuthenticatedUserDep) -> FoundersRateResponse:
-        """Return whether the Founder's Rate is still open and its 12-month lock window.
-
-        A pure config read (the deadline gate) — no Stripe call — so it serves on a
-        key-less deploy. The caller is resolved only to keep the route consistent
-        with the rest of the wallet surface.
-
-        Args:
-            user: Authenticated caller (unused beyond auth).
-
-        Returns:
-            The offer's open/closed state, close date, and price-lock-until date.
-        """
-        status = service.founders_rate_status()
-        return FoundersRateResponse(
-            open=status.open,
-            closes_at=status.closes_at,
-            price_locked_until=status.price_locked_until,
-        )
-
-    @router.post(
-        "/billing/founders/subscribe",
-        response_model=CheckoutSessionResponse,
-        summary="Start a Stripe Checkout session for the Founder's Rate",
-    )
-    def create_founders_subscription(user: AuthenticatedUserDep) -> CheckoutSessionResponse:
-        """Create a Founder's Rate subscription Checkout session.
-
-        Args:
-            user: Authenticated subscriber; the 12-month price-lock is stamped onto
-                the subscription metadata at checkout.
-
-        Returns:
-            The hosted Checkout URL for the recurring Founder's Rate.
-        """
-        url = service.create_founders_checkout(user.username)
-        return CheckoutSessionResponse(url=url)
-
-    @router.post(
-        "/billing/portal",
-        response_model=CheckoutSessionResponse,
-        summary="Open the Stripe Billing Portal for the caller",
-    )
-    def open_portal(user: AuthenticatedUserDep) -> CheckoutSessionResponse:
-        """Create a Stripe Billing Portal session (manage card / invoices / cancel).
-
-        Args:
-            user: Authenticated account whose portal session is created.
-
-        Returns:
-            The hosted Billing Portal URL.
-        """
-        url = service.create_billing_portal(user.username)
         return CheckoutSessionResponse(url=url)
 
     @router.post(

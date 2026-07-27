@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Coins, Crown, RefreshCw, Sparkles } from "lucide-react";
+import { Coins, RefreshCw, Sparkles } from "lucide-react";
 import { toast } from "react-toastify";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -12,7 +12,6 @@ import { SettingsRow } from "@/shared/ui/settings-row";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { Input } from "@/shared/ui/primitives/input";
 import { Button } from "@/shared/ui/primitives/button";
-import { openBillingPortal } from "@/shared/lib/api";
 import { useCredits } from "../providers/credit-provider";
 import { CREDIT_USD_VALUE, formatCredits, formatUsd } from "../lib/credit";
 
@@ -20,8 +19,8 @@ import { CREDIT_USD_VALUE, formatCredits, formatUsd } from "../lib/credit";
  * Wallet — the `billing` settings tab.
  *
  * A calm, left-aligned balance block (not a centered hero metric), the opt-in
- * auto-reload control, and the Premium row. Spend history lives in its own Usage
- * tab. Balances read in credits only — no dollar equivalent is shown.
+ * auto-reload control, and the add-credits row. Spend history lives in its own
+ * Usage tab. Balances read in credits only — no dollar equivalent is shown.
  */
 export function WalletTab() {
   const { wallet, totalCredits, setAutoReload, status, syncing } = useCredits();
@@ -66,18 +65,6 @@ export function WalletTab() {
     },
     [customDraft, topUpCredits, locale],
   );
-
-  // Premium subscribe / manage both redirect to Stripe-hosted pages; the backend
-  // creates the session and returns its URL. A failure (e.g. billing unconfigured)
-  // surfaces as one toast rather than a dead button.
-  const goToStripe = React.useCallback(async (start: () => Promise<{ url: string }>) => {
-    try {
-      const { url } = await start();
-      window.location.assign(url);
-    } catch {
-      toast.error(msg("billing.checkout.error"));
-    }
-  }, []);
 
   return (
     <div className="flex flex-col gap-5">
@@ -143,33 +130,21 @@ export function WalletTab() {
         </SettingsRow>
 
         <SettingsRow
-          icon={Crown}
-          label={msg("billing.premium.title")}
-          description={
-            wallet.premiumActive ? msg("billing.premium.active") : msg("billing.premium.desc")
-          }
+          icon={Sparkles}
+          label={msg("billing.action.add_credits")}
+          description={msg("billing.plans.credits.summary")}
         >
-          {wallet.premiumActive ? (
-            <button
-              type="button"
-              onClick={() => goToStripe(openBillingPortal)}
-              className="inline-flex items-center text-sm font-semibold text-[#3D2E22] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 rounded"
-            >
-              {msg("billing.premium.manage")}
-            </button>
-          ) : (
-            <Button
-              asChild
-              variant="outline"
-              size="sm"
-              className="border-[#C8A882]/70 text-[#8a6d44] hover:bg-[#C8A882]/10 hover:text-[#8a6d44]"
-            >
-              <Link href="/upgrade" onClick={() => setOpen(false)}>
-                <Sparkles aria-hidden="true" />
-                {msg("billing.premium.subscribe")}
-              </Link>
-            </Button>
-          )}
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="border-[#C8A882]/70 text-[#8a6d44] hover:bg-[#C8A882]/10 hover:text-[#8a6d44]"
+          >
+            <Link href="/upgrade" onClick={() => setOpen(false)}>
+              <Sparkles aria-hidden="true" />
+              {msg("billing.action.add_credits")}
+            </Link>
+          </Button>
         </SettingsRow>
       </div>
     </div>

@@ -1,20 +1,13 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, Loader2, Zap } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { toast } from "react-toastify";
-import { formatMsg, msg } from "@/shared/lib/messages";
+import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
-import {
-  createCheckoutSession,
-  createFoundersCheckout,
-  getFoundersRate,
-  openBillingPortal,
-  type FoundersRateResponse,
-} from "@/shared/lib/api";
+import { createCheckoutSession } from "@/shared/lib/api";
 import { useCredits } from "../providers/credit-provider";
 import { CREDIT_PACKS, formatCredits, type CreditPack } from "../lib/credit";
 
@@ -24,17 +17,6 @@ const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 // runs-source segmented control in explore/SearchBar so the two read identically.
 const PILL_TRANSITION = { type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1] } as const;
 
-// Monthly price of the Founder's Rate, in USD. Mirrors the Stripe price; the
-// Premium column shows it as the big number above "/ month".
-const FOUNDERS_USD_PER_MONTH = 20;
-
-// Credit allotment per tier, mirroring the backend constants (FREE_GRANT_CREDITS
-// / PREMIUM_GRANT_CREDITS in core/billing/service.py). The Free column surfaces
-// the one-time lifetime grant a new account gets; the Premium column surfaces the
-// monthly allotment a subscription buys, which replaces (not stacks on) it.
-const FREE_GRANT_CREDITS = 500;
-const PREMIUM_MONTHLY_CREDITS = 2500;
-
 /** Whole-dollar USD (no cents) for the big price number — "$20", not "$20.00". */
 function formatUsdWhole(usd: number, locale: string): string {
   return new Intl.NumberFormat(locale, {
@@ -42,112 +24,6 @@ function formatUsdWhole(usd: number, locale: string): string {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(usd);
-}
-
-interface Feature {
-  label: string;
-  /** A leading "Everything in Free, plus:" header row, rendered without a check. */
-  header?: boolean;
-}
-
-/**
- * The shared plan-card shell — one column of the pricing grid.
- *
- * Anatomy mirrors a pricing-modal column: a label row (name + optional badge or
- * an in-card control), a headline + one-line summary, the price block, the CTA,
- * the check-feature list, and a disclaimer footer pinned to the bottom so the
- * three cards' CTAs and footers align regardless of feature count.
- */
-function PlanCard({
-  name,
-  badge,
-  control,
-  headline,
-  summary,
-  price,
-  cta,
-  features,
-  highlight,
-  index,
-}: {
-  name: string;
-  badge?: string;
-  control?: React.ReactNode;
-  headline: string;
-  summary: string;
-  price: React.ReactNode;
-  cta: React.ReactNode;
-  features: Feature[];
-  highlight?: boolean;
-  index: number;
-}) {
-  const reduce = useReducedMotion();
-  return (
-    <motion.div
-      initial={reduce ? false : { opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: EASE_OUT, delay: 0.07 * index }}
-      className={cn(
-        "relative flex h-full w-full max-w-96 justify-self-center flex-col rounded-2xl border bg-card p-6 md:min-h-[30rem]",
-        highlight
-          ? "border-[#C8A882]/70 ring-1 ring-[#C8A882]/40 shadow-[0_8px_30px_rgba(200,168,130,0.18)]"
-          : "border-border/60 shadow-[0_4px_8px_rgba(0,0,0,0.04)]",
-      )}
-    >
-      {/* Soft gold halo behind the featured column — static (no animation), so it
-          reads as emphasis, not decoration, and respects reduced motion by design. */}
-      {highlight && (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -inset-px -z-10 rounded-2xl bg-[radial-gradient(120%_60%_at_50%_0%,rgba(200,168,130,0.16),transparent_70%)]"
-        />
-      )}
-
-      <div className="flex min-h-8 items-start justify-between gap-2">
-        <h3 className="text-lg font-semibold tracking-tight text-foreground">{name}</h3>
-        {badge ? (
-          <span className="rounded-full bg-[#C8A882]/15 px-2 py-0.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-[#8a6d44]">
-            {badge}
-          </span>
-        ) : (
-          control
-        )}
-      </div>
-
-      <div className="mt-5 flex flex-col gap-1.5">
-        <p className="text-xl font-semibold text-foreground">{headline}</p>
-        <p className="min-h-[2.5rem] text-sm leading-snug text-muted-foreground">{summary}</p>
-      </div>
-
-      <div className="mt-4 min-h-[3.25rem]">{price}</div>
-
-      <div className="mt-4">{cta}</div>
-
-      <ul className="mt-6 flex flex-col gap-3.5">
-        {features.map((f, i) =>
-          f.header ? (
-            <li key={i} className="text-[0.9375rem] font-medium text-foreground">
-              {f.label}
-            </li>
-          ) : (
-            <li
-              key={i}
-              className="flex items-start gap-3 text-[0.9375rem] leading-5 text-foreground"
-            >
-              <Check
-                className={cn(
-                  "mt-0.5 size-4 shrink-0",
-                  highlight ? "text-[#C8A882]" : "text-muted-foreground",
-                )}
-                aria-hidden="true"
-              />
-              <span>{f.label}</span>
-            </li>
-          ),
-        )}
-      </ul>
-    </motion.div>
-  );
 }
 
 /** Big price number + suffix. The amount is LTR-islanded; the suffix follows locale flow. */
@@ -167,144 +43,15 @@ function Price({ amount, suffix }: { amount: string; suffix?: string }) {
 
 const PRIMARY_CTA =
   "inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#3D2E22] px-4 py-2.5 text-sm font-semibold text-[#FAF8F5] transition-colors duration-200 cursor-pointer hover:bg-[#2A1F17] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 disabled:cursor-wait disabled:opacity-70";
-const SECONDARY_CTA =
-  "inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border/70 px-4 py-2.5 text-sm font-semibold text-foreground transition-colors duration-200 cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 disabled:cursor-wait disabled:opacity-70";
-const DISABLED_CTA =
-  "inline-flex w-full cursor-not-allowed items-center justify-center rounded-lg border border-border/50 px-4 py-2.5 text-sm font-medium text-muted-foreground";
-
-/** Free column — the always-on baseline. Its CTA is the inert "current plan" marker. */
-function FreeCard({ premiumActive, index }: { premiumActive: boolean; index: number }) {
-  const { locale } = useLocale();
-  const features: Feature[] = [
-    { label: formatMsg("billing.plans.free.f1", { p1: formatCredits(FREE_GRANT_CREDITS, locale) }) },
-    { label: msg("billing.plans.free.f2") },
-    { label: msg("billing.plans.free.f4") },
-  ];
-  return (
-    <PlanCard
-      index={index}
-      name={msg("billing.plans.free.name")}
-      headline={msg("billing.plans.free.headline")}
-      summary={msg("billing.plans.free.summary")}
-      price={<Price amount={msg("billing.plans.price_free")} />}
-      cta={
-        <button type="button" disabled className={DISABLED_CTA}>
-          {premiumActive ? msg("billing.plans.free.included") : msg("billing.plans.free.cta")}
-        </button>
-      }
-      features={features}
-    />
-  );
-}
 
 /**
- * Premium column — the featured plan and the home of the Founder's Rate logic.
- *
- * Carries the deadline gate (config-driven on the backend): an active subscriber
- * sees a manage action, an open offer the gold CTA into the Stripe subscription,
- * and a closed offer an inert button.
+ * Pay-as-you-go card — the whole pricing surface, since prepaid credits are the
+ * only plan. An in-card pack selector: pick a pack, the price updates, and the
+ * CTA buys exactly that pack through Stripe.
  */
-function PremiumCard({
-  founders,
-  premiumActive,
-  index,
-}: {
-  founders: FoundersRateResponse | null;
-  premiumActive: boolean;
-  index: number;
-}) {
+function CreditsCard() {
   const { locale } = useLocale();
-  const [working, setWorking] = React.useState(false);
-  const open = founders ? founders.open : true;
-
-  const goToStripe = React.useCallback(async (start: () => Promise<{ url: string }>) => {
-    setWorking(true);
-    try {
-      const { url } = await start();
-      window.location.assign(url);
-    } catch {
-      setWorking(false);
-      toast.error(msg("billing.checkout.error"));
-    }
-  }, []);
-
-  const features: Feature[] = [
-    { label: msg("billing.plans.premium.everything_free"), header: true },
-    {
-      label: formatMsg("billing.founders.stack_credits", {
-        p1: formatCredits(PREMIUM_MONTHLY_CREDITS, locale),
-      }),
-    },
-    { label: msg("billing.founders.stack_lock") },
-  ];
-
-  let cta: React.ReactNode;
-  if (premiumActive) {
-    cta = (
-      <button
-        type="button"
-        onClick={() => goToStripe(openBillingPortal)}
-        disabled={working}
-        className={SECONDARY_CTA}
-      >
-        {working ? <Loader2 className="size-4 animate-spin" /> : msg("billing.founders.manage")}
-      </button>
-    );
-  } else if (open) {
-    cta = (
-      <button
-        type="button"
-        onClick={() => goToStripe(createFoundersCheckout)}
-        disabled={working}
-        className={PRIMARY_CTA}
-      >
-        {working ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : (
-          <Zap className="size-4" aria-hidden="true" />
-        )}
-        {msg("billing.founders.cta")}
-      </button>
-    );
-  } else {
-    cta = (
-      <button type="button" disabled className={DISABLED_CTA}>
-        {msg("billing.founders.closed")}
-      </button>
-    );
-  }
-
-  return (
-    <PlanCard
-      index={index}
-      highlight
-      name={msg("billing.plans.premium.name")}
-      badge={msg("billing.plans.premium.badge")}
-      headline={msg("billing.plans.premium.headline")}
-      summary={msg("billing.plans.premium.summary")}
-      price={
-        premiumActive ? (
-          <Price amount={msg("billing.founders.active_short")} />
-        ) : (
-          <Price
-            amount={formatUsdWhole(FOUNDERS_USD_PER_MONTH, locale)}
-            suffix={msg("billing.plans.per_month")}
-          />
-        )
-      }
-      cta={cta}
-      features={features}
-    />
-  );
-}
-
-/**
- * Pay-as-you-go column — prepaid credit packs with an in-card pack selector that
- * mirrors the reference's in-column usage toggle: pick a pack, the price and the
- * "≈ N runs" line update, and the CTA buys exactly that pack through Stripe.
- */
-function CreditsCard({ index }: { index: number }) {
-  const { locale } = useLocale();
+  const reduce = useReducedMotion();
   const [pack, setPack] = React.useState<CreditPack>(
     () => CREDIT_PACKS.find((p) => p.popular) ?? CREDIT_PACKS[0]!,
   );
@@ -360,56 +107,67 @@ function CreditsCard({ index }: { index: number }) {
     </div>
   );
 
-  const features: Feature[] = [
-    { label: msg("billing.plans.credits.f1") },
-    { label: msg("billing.plans.credits.f2") },
-  ];
+  const features = [msg("billing.plans.credits.f1"), msg("billing.plans.credits.f2")];
 
   return (
-    <PlanCard
-      index={index}
-      name={msg("billing.plans.credits.name")}
-      control={control}
-      headline={msg("billing.plans.credits.headline")}
-      summary={msg("billing.plans.credits.summary")}
-      price={
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: EASE_OUT }}
+      className="flex w-full max-w-96 flex-col rounded-2xl border border-border/60 bg-card p-6 shadow-[0_4px_8px_rgba(0,0,0,0.04)]"
+    >
+      <div className="flex min-h-8 items-start justify-between gap-2">
+        <h3 className="text-lg font-semibold tracking-tight text-foreground">
+          {msg("billing.plans.credits.name")}
+        </h3>
+        {control}
+      </div>
+
+      <div className="mt-5 flex flex-col gap-1.5">
+        <p className="text-xl font-semibold text-foreground">
+          {msg("billing.plans.credits.headline")}
+        </p>
+        <p className="text-sm leading-snug text-muted-foreground">
+          {msg("billing.plans.credits.summary")}
+        </p>
+      </div>
+
+      <div className="mt-4">
         <Price
           amount={formatUsdWhole(pack.usd, locale)}
           suffix={msg("billing.plans.price_onetime")}
         />
-      }
-      cta={
-        <button type="button" onClick={onBuy} disabled={buying} className={SECONDARY_CTA}>
+      </div>
+
+      <div className="mt-4">
+        <button type="button" onClick={onBuy} disabled={buying} className={PRIMARY_CTA}>
           {buying ? <Loader2 className="size-4 animate-spin" /> : null}
           {msg("billing.action.add_credits")}
         </button>
-      }
-      features={features}
-    />
+      </div>
+
+      <ul className="mt-6 flex flex-col gap-3.5">
+        {features.map((label, i) => (
+          <li key={i} className="flex items-start gap-3 text-[0.9375rem] leading-5 text-foreground">
+            <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span>{label}</span>
+          </li>
+        ))}
+      </ul>
+    </motion.div>
   );
 }
 
 /**
- * Upgrade page — the in-app pricing surface, laid out as a plan-comparison grid.
+ * Upgrade page — the in-app add-credits surface.
  *
- * A centered title, then three columns:
- * Free (the baseline), Premium (the featured Founder's Rate), and
- * Pay-as-you-go (prepaid credit packs with an in-card pack selector). Below the
- * grid, a quiet BYOK exit. All Stripe wiring — founders rate gate, founders /
- * pack / portal checkouts, and the post-checkout `?status=success` balance sync
- * [FG-3] — is preserved from the prior layout.
+ * A centered title over the single pay-as-you-go card (prepaid credit packs
+ * with an in-card pack selector). The Stripe wiring — pack checkout and the
+ * post-checkout `?status=success` balance sync [FG-3] — is preserved from the
+ * prior plan-grid layout.
  */
 export function UpgradeView() {
-  const { beginSync, wallet } = useCredits();
-  const [founders, setFounders] = React.useState<FoundersRateResponse | null>(null);
-
-  React.useEffect(() => {
-    getFoundersRate()
-      .then(setFounders)
-      .catch(() => {
-        /* keep the optimistic-open default — no backend or signed-out */
-      });
-  }, []);
+  const { beginSync } = useCredits();
 
   // Stripe redirects back to /upgrade?status=success|cancel. On success, enter
   // the post-checkout `syncing` state [FG-3] — the chip shimmers over the prior
@@ -427,21 +185,14 @@ export function UpgradeView() {
   }, [beginSync]);
 
   return (
-    <div className="@container mx-auto flex w-full max-w-[78rem] flex-col gap-8 px-4 py-10 sm:py-14">
+    <div className="mx-auto flex w-full max-w-[78rem] flex-col items-center gap-8 px-4 py-10 sm:py-14">
       <header className="text-center">
         <h1 className="text-[clamp(1.75rem,4vw,2.25rem)] font-semibold tracking-tight text-foreground">
-          {msg("billing.plans.heading")}
+          {msg("billing.upgrade.title")}
         </h1>
       </header>
 
-      {/* Size against the shell's actual content area: three plans stay on one
-          row at normal desktop widths, then collapse to two centered columns
-          and finally one card per row as the available space narrows. */}
-      <div className="grid grid-cols-1 gap-6 @2xl:grid-cols-2 @2xl:[&>*:last-child]:col-span-2 @4xl:grid-cols-3 @4xl:[&>*:last-child]:col-span-1">
-        <FreeCard premiumActive={wallet.premiumActive} index={0} />
-        <PremiumCard founders={founders} premiumActive={wallet.premiumActive} index={1} />
-        <CreditsCard index={2} />
-      </div>
+      <CreditsCard />
     </div>
   );
 }

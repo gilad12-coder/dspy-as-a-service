@@ -1,11 +1,11 @@
 """Tests for the worker's billing hooks at run completion.
 
-Covers ``_report_run_usage_best_effort`` (Stripe metering) and
-``_debit_run_credits`` (the local credit-ledger debit). Both must never affect
-job status. Metering is a no-op unless the store exposes a SQL engine, Stripe is
-configured, the caller is known, and the run reported token usage; the local
-debit drops the Stripe-configured requirement (the ledger is the credit source of
-truth even on a key-less deploy) but otherwise gates the same way.
+Covers ``_debit_run_credits`` (the local credit-ledger debit) and
+``_stamp_billing_outcome`` (the cost receipt on the persisted result). Both
+must never affect job status. The debit is a no-op unless the store exposes a
+SQL engine, the caller is known, and the run reported token usage — Stripe
+configuration is deliberately not required, since the ledger is the credit
+source of truth even on a key-less deploy.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
-from pydantic import SecretStr
 
 from core.billing.pricing import ModelUsage
 from core.config import settings
@@ -41,25 +40,6 @@ class _Store:
         self.updates.append({"id": optimization_id, **fields})
 
 
-class _SyncThread:
-    """Thread stand-in that runs its target inline on ``start`` for assertions."""
-
-    def __init__(self, target: Any = None, args: tuple = (), **_kwargs: Any) -> None:
-        """Capture the target and its args.
-
-        Args:
-            target: Callable the real thread would run.
-            args: Positional args for ``target``.
-            **_kwargs: Ignored ``Thread`` kwargs (``name``, ``daemon``).
-        """
-        self._target = target
-        self._args = args
-
-    def start(self) -> None:
-        """Invoke the target synchronously."""
-        self._target(*self._args)
-
-
 def _worker(store: _Store) -> BackgroundWorker:
     """Build a worker over ``store`` without starting any threads.
 
@@ -70,58 +50,6 @@ def _worker(store: _Store) -> BackgroundWorker:
         An unstarted ``BackgroundWorker``.
     """
     return BackgroundWorker(job_store=cast(JobStore, store), num_workers=1, poll_interval=1.0)
-
-
-@pytest.fixture
-def configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Set a fake Stripe secret key so the hook is not short-circuited."""
-    monkeypatch.setattr(settings, "stripe_secret_key", SecretStr("sk_test_dummy"))
-
-
-def test_hook_meters_credits_for_successful_run(configured: None) -> None:
-    """With an engine, Stripe configured, and a cost, the run's credits are metered."""
-    engine = object()
-    worker = _worker(_Store(engine=engine))
-    with (
-        patch("core.worker.engine.threading.Thread", _SyncThread),
-        patch("core.worker.engine.StripeBillingService") as billing_cls,
-    ):
-        worker._report_run_usage_best_effort("u@x.com", 42)
-    billing_cls.assert_called_once_with(engine=engine)
-    billing_cls.return_value.report_run_usage.assert_called_once_with("u@x.com", 42)
-
-
-def test_hook_noop_without_engine(configured: None) -> None:
-    """A store without a SQL engine (legacy/in-memory) meters nothing."""
-    worker = _worker(_Store(engine=None))
-    with patch("core.worker.engine.threading.Thread") as thread:
-        worker._report_run_usage_best_effort("u@x.com", 42)
-    thread.assert_not_called()
-
-
-def test_hook_noop_when_stripe_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No engine work is dispatched when Stripe is unconfigured."""
-    monkeypatch.setattr(settings, "stripe_secret_key", None)
-    worker = _worker(_Store(engine=object()))
-    with patch("core.worker.engine.threading.Thread") as thread:
-        worker._report_run_usage_best_effort("u@x.com", 42)
-    thread.assert_not_called()
-
-
-def test_hook_noop_without_cost(configured: None) -> None:
-    """A run that cost nothing (zero credits) meters nothing."""
-    worker = _worker(_Store(engine=object()))
-    with patch("core.worker.engine.threading.Thread") as thread:
-        worker._report_run_usage_best_effort("u@x.com", 0)
-    thread.assert_not_called()
-
-
-def test_meter_run_usage_swallows_failures(configured: None) -> None:
-    """A Stripe failure on the daemon thread never propagates to the worker."""
-    worker = _worker(_Store(engine=object()))
-    with patch("core.worker.engine.StripeBillingService") as billing_cls:
-        billing_cls.return_value.report_run_usage.side_effect = RuntimeError("stripe down")
-        worker._meter_run_usage(object(), "u@x.com", 5000)  # must not raise
 
 
 def test_debit_hook_charges_credits_for_successful_run() -> None:

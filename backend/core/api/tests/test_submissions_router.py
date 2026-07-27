@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -13,7 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from ...billing.service import GRANT_WINDOW_DAYS, cost_ceiling_budget
+from ...billing.service import cost_ceiling_budget
 from ...constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
@@ -988,9 +987,7 @@ def test_submit_run_returns_402_when_credits_exhausted(monkeypatch: pytest.Monke
                 username="alice",
                 stripe_customer_id="cus_alice",
                 credit_balance=0,
-                grant_remaining=0,
-                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
-            )
+                grant_remaining=0,            )
         )
         session.commit()
 
@@ -1017,9 +1014,7 @@ def test_submit_run_allowed_with_remaining_credits(monkeypatch: pytest.MonkeyPat
                 username="alice",
                 stripe_customer_id="cus_alice",
                 credit_balance=0,
-                grant_remaining=50,
-                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
-            )
+                grant_remaining=50,            )
         )
         session.commit()
 
@@ -1057,9 +1052,7 @@ def test_submit_run_managed_any_model_allowed_and_ceiling_capped(
                 username="alice",
                 stripe_customer_id="cus_alice",
                 credit_balance=0,
-                grant_remaining=200,
-                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
-            )
+                grant_remaining=200,            )
         )
         session.commit()
     store = _FakeJobStore()
@@ -1163,9 +1156,7 @@ def test_submit_run_byok_blocked_without_credits(monkeypatch: pytest.MonkeyPatch
                 username="alice",
                 stripe_customer_id="cus_alice",
                 credit_balance=0,
-                grant_remaining=0,
-                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
-            )
+                grant_remaining=0,            )
         )
         session.add(
             BillingProviderKeyModel(
@@ -1205,9 +1196,7 @@ def test_submit_run_byok_ceiling_capped_to_fee_aware_budget(
                 username="alice",
                 stripe_customer_id="cus_alice",
                 credit_balance=0,
-                grant_remaining=200,
-                grant_reset_at=datetime.now(UTC) + timedelta(days=GRANT_WINDOW_DAYS),
-            )
+                grant_remaining=200,            )
         )
         session.add(
             BillingProviderKeyModel(

@@ -746,10 +746,9 @@ class BackgroundWorker:
                             baseline_score=_baseline,
                             optimized_score=_optimized,
                         )
-                        # Both the local credit debit and the Stripe metering share
-                        # the once-only completion claim so a redelivered/re-run job
-                        # is never double-billed. Success only — a failed (e.g.
-                        # all-pairs-failed) run is not billed.
+                        # The credit debit shares the once-only completion claim so
+                        # a redelivered/re-run job is never double-billed. Success
+                        # only — a failed (e.g. all-pairs-failed) run is not billed.
                         if final_status == "success":
                             billed = self._debit_run_credits(
                                 _username,
@@ -769,7 +768,6 @@ class BackgroundWorker:
                                 estimated_low=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_LOW),
                                 estimated_high=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_HIGH),
                             )
-                            self._report_run_usage_best_effort(_username, billed)
                     if final_status == "success":
                         self._schedule_embedding_indexing(optimization_id)
                 except KeyError:
@@ -1166,47 +1164,6 @@ class BackgroundWorker:
             self._job_store.update_job(optimization_id, result=result_dict)
         except Exception as exc:  # isolation boundary: stamping must never impact job status
             logger.debug("Billing-outcome stamp for %s failed: %s", optimization_id, exc)
-
-    def _report_run_usage_best_effort(self, username: str, credits: int) -> None:
-        """Meter a finished run's credit cost to Stripe, off the worker hot path.
-
-        Meters the run's per-model credit cost (the same figure the local debit
-        charged) on a daemon thread so a slow or hung Stripe call cannot stall the
-        worker. A no-op when the store exposes no SQL engine (legacy/in-memory),
-        Stripe is unconfigured, the caller is anonymous, or the run cost nothing —
-        billing must never affect job status.
-
-        Args:
-            username: Account the run is billed to.
-            credits: The run's credit cost to meter (the debited amount).
-        """
-        engine = getattr(self._job_store, "engine", None)
-        if engine is None or not username or settings.stripe_secret_key is None:
-            return
-        if not isinstance(credits, int) or credits <= 0:
-            return
-        threading.Thread(
-            target=self._meter_run_usage,
-            args=(engine, username, credits),
-            name=f"meter-{username[:8]}",
-            daemon=True,
-        ).start()
-
-    def _meter_run_usage(self, engine: Any, username: str, credits: int) -> None:
-        """Report run credits to Stripe, swallowing failures so they never reach the worker.
-
-        A Stripe outage or an unconfigured meter only surfaces on this daemon
-        thread; the job is already marked success by the time this runs.
-
-        Args:
-            engine: SQLAlchemy engine backing the billing tables.
-            username: Account the run is billed to.
-            credits: The run's credit cost to meter.
-        """
-        try:
-            StripeBillingService(engine=engine).report_run_usage(username, credits)
-        except Exception as exc:  # isolation boundary: metering must never impact job status
-            logger.debug("Metered usage report for %s failed: %s", username, exc)
 
     def _terminate_run_process(self, run_process: mp.process.BaseProcess, optimization_id: str) -> None:
         """Terminate a still-running job subprocess, escalating to SIGKILL after a 3-second grace period.

@@ -11,7 +11,6 @@ import { dirForLocale } from "@/shared/lib/locale";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { useSettingsModal } from "@/features/settings";
-import { useCredits } from "@/features/billing";
 
 /** Two-letter monogram from a display name or email — the avatar fallback when there's no image. */
 function initials(name: string): string {
@@ -74,7 +73,6 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
   // The collapsed-rail tooltip reads toward the content area: right in LTR, left in RTL.
   const tooltipSide = isRtl ? "left" : "right";
   const { setOpen: setSettingsOpen } = useSettingsModal();
-  const { wallet } = useCredits();
   const [open, setOpen] = React.useState(false);
 
   if (!session?.user) return null;
@@ -83,9 +81,6 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
   const email = session.user.email ?? "";
   // Skip the email line when there's no display name — `name` already falls back to it.
   const showEmail = Boolean(email) && email !== name;
-  const planLabel = wallet.premiumActive
-    ? msg("app.shell.account.plan_premium")
-    : msg("app.shell.account.plan_free");
 
   const close = () => setOpen(false);
 
@@ -106,7 +101,7 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
       <Avatar image={session.user.image} label={name} size={28} />
       {/* Physical edge from the UI dir, not logical `text-start`: the name keeps
           dir="auto" so it shapes and truncates by its own script, which would make
-          `start` resolve to the name's direction and split it from the plan label
+          `start` resolve to the name's direction and split it from the email line
           onto the opposite edge in a mixed-script UI (e.g. a Latin name, Hebrew UI). */}
       <span className={cn("flex min-w-0 flex-1 flex-col", isRtl ? "text-right" : "text-left")}>
         <span
@@ -115,7 +110,11 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
         >
           {name}
         </span>
-        <span className="truncate text-xs leading-tight text-muted-foreground">{planLabel}</span>
+        {showEmail && (
+          <span dir="ltr" className="truncate text-xs leading-tight text-muted-foreground">
+            {email}
+          </span>
+        )}
       </span>
       <MoreHorizontal
         className="size-4 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-muted-foreground"
