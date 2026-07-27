@@ -91,7 +91,6 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
           <TaggerResultsTable
             config={tagger.config}
             data={tagger.data}
-            columns={tagger.columns}
             annotations={tagger.annotations}
             assist={tagger.assist}
             onOpenRow={(index) => {
@@ -283,7 +282,6 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
           <TaggerResultsTable
             config={tagger.config}
             data={tagger.data}
-            columns={tagger.columns}
             annotations={tagger.annotations}
             assist={tagger.assist}
             onOpenRow={(index) => {
