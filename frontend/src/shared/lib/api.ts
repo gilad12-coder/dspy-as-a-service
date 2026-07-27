@@ -549,11 +549,10 @@ export function getWallet() {
   return request<BillingWalletResponse>("/billing/wallet");
 }
 
-/** One day's run spend, billed vs refunded (the usage dashboard's time series). */
+/** One day's billed run spend (the usage dashboard's time series). */
 export interface BillingUsageDay {
   date: string;
   billed_credits: number;
-  refunded_credits: number;
 }
 
 /** One model's share of run spend over the window. */
@@ -572,7 +571,6 @@ export interface BillingUsageResponse {
   start: string;
   end: string;
   billed_credits: number;
-  refunded_credits: number;
   runs: number;
   by_day: BillingUsageDay[];
   by_model: BillingUsageModel[];

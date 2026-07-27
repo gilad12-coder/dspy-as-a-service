@@ -38,18 +38,6 @@ class ModelTokenUsage(BaseModel):
     output_tokens: int = 0
 
 
-# Baseline-vs-optimized scores on the slice the "No lift, no charge" guarantee
-# is adjudicated against. ``basis`` is "test" when a held-out test split was
-# reserved (the strongest, unbiased proof) or "val" when the dataset was too
-# small for a test split and the guarantee falls back to the valset gain. Pydantic
-# class docstrings are part of the OpenAPI contract — see AGENTS.md — so this
-# annotation lives in a comment, not the class body.
-class GuaranteeBasis(BaseModel):
-    basis: str
-    baseline: float | None = None
-    optimized: float | None = None
-
-
 class RunResponse(BaseModel):
     """Result of a single optimization run."""
 
@@ -60,9 +48,6 @@ class RunResponse(BaseModel):
     baseline_test_metric: float | None = None
     optimized_test_metric: float | None = None
     metric_improvement: float | None = None
-    # Scores the guarantee is judged on (test split, or valset fallback). None on
-    # a run that produced no comparable baseline/optimized pair.
-    guarantee: GuaranteeBasis | None = None
     optimization_metadata: dict[str, Any] = Field(default_factory=dict)
     details: dict[str, Any] = Field(default_factory=dict)
     program_artifact_path: str | None = None
@@ -131,6 +116,3 @@ class GridSearchResponse(BaseModel):
     # Per-model usage summed across all pairs — the basis the worker charges the
     # whole grid from (each pair priced on its own gen/refl models).
     usage_by_model: list[ModelTokenUsage] = Field(default_factory=list)
-    # Scores the guarantee is judged on — the best pair's baseline/optimized on
-    # the test split (or valset fallback). None when no pair produced a pair.
-    guarantee: GuaranteeBasis | None = None

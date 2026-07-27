@@ -21,14 +21,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import stripe
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..api.errors import DomainError
 from ..config import settings
 from ..constants import (
-    GUARANTEE_BASIS_TEST,
-    GUARANTEE_BASIS_VAL,
     TOKEN_SOURCE_BYOK,
     TOKEN_SOURCE_MANAGED,
 )
@@ -36,7 +33,6 @@ from ..storage.models import (
     BillingCustomerModel,
     BillingWebhookEventModel,
     CreditLedgerModel,
-    GuaranteeRunModel,
 )
 from .pricing import ModelUsage, credits_for_usage
 
@@ -69,11 +65,9 @@ GRANT_WINDOW_DAYS = 30
 LOCAL_CUSTOMER_PREFIX = "local:"
 
 # Share of a run's credit cost that is Skynet's platform fee (vs. pass-through
-# compute). On a no-lift BYOK run the provider tokens are already spent on the
-# user's own key, so only this fee is refundable; a managed no-lift run refunds
-# the whole cost. Lives here so the fee is re-priceable without touching the
-# guarantee logic. 0.0 = at-cost pricing: BYOK runs are free (the user already
-# pays their provider directly; the platform takes no cut).
+# compute) — the only amount a BYOK run is charged, since the provider tokens
+# are paid on the user's own key. 0.0 = at-cost pricing: BYOK runs are free
+# (the user already pays their provider directly; the platform takes no cut).
 PLATFORM_FEE_FRACTION = 0.0
 
 # Ceiling handed to fee-less BYOK runs: far above any real run's full cost,
@@ -141,11 +135,10 @@ class WalletSnapshot:
 
 @dataclass(frozen=True)
 class UsageDayRow:
-    """One calendar day's run spend, split into billed and refunded credits."""
+    """One calendar day's billed run spend, in credits."""
 
     date: str
     billed_credits: int
-    refunded_credits: int
 
 
 @dataclass(frozen=True)
@@ -171,15 +164,13 @@ class UsageSnapshot:
     Aggregates the credit ledger over ``[start, end]`` into the totals, per-day,
     and per-model series the dashboard charts, plus the most recent raw ledger
     rows for the activity list. ``billed_credits`` is gross run spend (the
-    absolute value of negative run rows); ``refunded_credits`` is the credit
-    returned by no-lift guarantees (positive run rows). Top-ups and grants are
-    excluded from the spend rollups but still surface in ``entries``.
+    absolute value of negative run rows). Top-ups and grants are excluded from
+    the spend rollups but still surface in ``entries``.
     """
 
     start: str
     end: str
     billed_credits: int
-    refunded_credits: int
     runs: int
     by_day: list[UsageDayRow] = field(default_factory=list)
     by_model: list[UsageModelRow] = field(default_factory=list)
@@ -191,8 +182,8 @@ def platform_fee_credits_for_usage(usages: Iterable[ModelUsage]) -> int:
 
     The :data:`PLATFORM_FEE_FRACTION` share of the run's full per-model cost
     (:func:`core.billing.pricing.credits_for_usage`). The only amount a **BYOK**
-    run is charged or refunded, since the provider tokens were paid on the user's
-    own key. At least one credit when the run cost anything.
+    run is charged, since the provider tokens were paid on the user's own key.
+    At least one credit when the run cost anything.
 
     Args:
         usages: Per-model token usage for the run.
@@ -213,9 +204,7 @@ def run_cost_credits(usages: Iterable[ModelUsage], token_source: str) -> int:
     A managed run is charged its full per-model token cost
     (:func:`core.billing.pricing.credits_for_usage`); a BYOK run is charged only
     Skynet's platform fee (:func:`platform_fee_credits_for_usage`), since the
-    provider tokens were paid on the user's own key. The shared basis for both
-    the live debit and the guarantee refund, so the refund always equals the
-    charge.
+    provider tokens were paid on the user's own key.
 
     Args:
         usages: Per-model token usage for the run.
@@ -670,10 +659,9 @@ class StripeBillingService:
         """Aggregate the account's credit ledger over a date window for the dashboard.
 
         A pure DB read — no Stripe call. Sums run rows in ``[start, end]`` into
-        gross billed spend, refunded credit, a run count, a per-day
-        billed/refunded series (ascending by date), and a per-model spend series
-        (descending by credits); top-ups and grants are excluded from those
-        rollups. The most recent :data:`USAGE_ENTRY_LIMIT` raw ledger rows in the
+        gross billed spend, a run count, a per-day billed series (ascending by
+        date), and a per-model spend series (descending by credits); top-ups
+        and grants are excluded from those rollups. The most recent :data:`USAGE_ENTRY_LIMIT` raw ledger rows in the
         window ride along as ``entries`` for the activity list and the per-run
         breakdown, while the rollups span every row in range regardless of that
         cap.
@@ -711,30 +699,27 @@ class StripeBillingService:
                 .all()
             )
         billed = 0
-        refunded = 0
         runs = 0
-        per_day: dict[str, list[int]] = {}
+        per_day: dict[str, int] = {}
         per_model: dict[str | None, list[int]] = {}
+        # Only debits count as spend; a positive ``run`` row (a legacy
+        # correction) is ignored by the rollups but still rides in ``entries``.
         for row in rows:
-            if row.kind != "run":
+            if row.kind != "run" or row.delta_credits >= 0:
                 continue
-            day = per_day.setdefault(row.created_at.date().isoformat(), [0, 0])
-            if row.delta_credits < 0:
-                spent = -row.delta_credits
-                billed += spent
-                runs += 1
-                day[0] += spent
-                model = per_model.setdefault(row.model, [0, 0, 0, 0])
-                model[0] += spent
-                model[1] += 1
-                model[2] += row.input_tokens or 0
-                model[3] += row.output_tokens or 0
-            elif row.delta_credits > 0:
-                refunded += row.delta_credits
-                day[1] += row.delta_credits
+            spent = -row.delta_credits
+            billed += spent
+            runs += 1
+            day = row.created_at.date().isoformat()
+            per_day[day] = per_day.get(day, 0) + spent
+            model = per_model.setdefault(row.model, [0, 0, 0, 0])
+            model[0] += spent
+            model[1] += 1
+            model[2] += row.input_tokens or 0
+            model[3] += row.output_tokens or 0
         by_day = [
-            UsageDayRow(date=date, billed_credits=vals[0], refunded_credits=vals[1])
-            for date, vals in sorted(per_day.items())
+            UsageDayRow(date=date, billed_credits=credits)
+            for date, credits in sorted(per_day.items())
         ]
         by_model = [
             UsageModelRow(
@@ -761,7 +746,6 @@ class StripeBillingService:
             start=start.isoformat(),
             end=end.isoformat(),
             billed_credits=billed,
-            refunded_credits=refunded,
             runs=runs,
             by_day=by_day,
             by_model=by_model,
@@ -872,189 +856,6 @@ class StripeBillingService:
             )
             session.commit()
         return cost
-
-    def _refund_run(
-        self, session: Session, username: str, credits: int, *, model: str | None, description: str
-    ) -> None:
-        """Write an offsetting positive ``run`` row and restore the balance.
-
-        The credit side of an auto-refund: returns ``credits`` to the account by
-        replenishing the free grant first (mirroring how :meth:`debit_run` drew
-        it down — grant before paid balance) and any remainder to the purchased
-        balance, then appends a positive ``run`` ledger row so the wallet shows
-        the refund as a legible line. Caller commits.
-
-        Args:
-            session: Open session the refund is written into (caller commits).
-            username: Account being refunded.
-            credits: Positive credit amount to restore.
-            model: Model id stamped on the refund row, or ``None``.
-            description: Human label for the ledger row.
-        """
-        now = datetime.now(UTC)
-        customer = session.get(BillingCustomerModel, username)
-        if customer is None:
-            customer = BillingCustomerModel(
-                username=username,
-                stripe_customer_id=f"{LOCAL_CUSTOMER_PREFIX}{username}",
-                credit_balance=0,
-                created_at=now,
-                updated_at=now,
-            )
-            session.add(customer)
-        self._resolve_grant(customer, now)
-        # Restore the grant up to its full allowance first (it was drawn first on
-        # debit), then send any overflow to the purchased balance.
-        allotment = _grant_allotment(customer)
-        grant = int(customer.grant_remaining or 0)
-        to_grant = min(allotment - grant, credits) if grant < allotment else 0
-        to_grant = max(to_grant, 0)
-        customer.grant_remaining = grant + to_grant
-        customer.credit_balance = int(customer.credit_balance) + (credits - to_grant)
-        customer.updated_at = now
-        session.add(
-            CreditLedgerModel(
-                username=username,
-                delta_credits=credits,
-                kind="run",
-                description=description,
-                model=model,
-            )
-        )
-
-    def adjudicate_guarantee(
-        self,
-        username: str,
-        task_fingerprint: str,
-        optimization_id: str,
-        guarantee: dict[str, Any] | None,
-        *,
-        token_source: str,
-        usages: Iterable[ModelUsage],
-        model: str | None,
-        description: str,
-    ) -> int:
-        """Apply the "No lift, no charge" guarantee to a finished run.
-
-        The guarantee is available to everyone, but coverage depth is the Premium
-        differentiator: a **Premium** account is covered on the first run of every
-        task, while a **free** account gets a single **lifetime** guarantee — its
-        first covered run only — after which its runs bill normally.
-
-        Only the **first** run per ``(username, task_fingerprint)`` is covered:
-        an atomic insert claims that one-time slot, so a redelivered or re-run
-        job — and every later run on the same task — bills normally and returns
-        ``0`` here. On the covered run, lift is read from ``guarantee`` (the
-        baseline-vs-optimized scores on the test split, or the valset fallback
-        when the dataset was too small): any improvement counts as lift and the
-        run stays billed. No lift triggers an auto-refund — a managed run gets
-        the **whole** run cost back, a BYOK run only Skynet's platform fee (the
-        provider tokens were spent on the user's own key) — written as an
-        offsetting ``run`` row that restores the balance, and the slot is flagged
-        ``refunded``. A missing ``guarantee`` (no comparable baseline/optimized
-        pair) leaves the run billed but still consumes the slot, so the account's
-        one covered run is spent honestly rather than retried for free.
-
-        Args:
-            username: Account the run was billed to.
-            task_fingerprint: Content hash identifying the task (same value the
-                submit path computes from signature + metric + dataset).
-            optimization_id: The run claiming or skipping the guarantee slot.
-            guarantee: ``{"basis", "baseline", "optimized"}`` from the result, or
-                ``None`` when the run produced no comparable pair.
-            token_source: ``"managed"`` or ``"byok"`` — sets the refund scope.
-            usages: Per-model token usage; sizes the refund (equal to the charge).
-            model: Model id stamped on the refund row, or ``None``.
-            description: Human label for the refund ledger row.
-
-        Returns:
-            The credits refunded (``0`` when the run was billed: it had lift,
-            wasn't the first run on the task, or had no comparable scores).
-        """
-        if not username or not task_fingerprint:
-            return 0
-        with Session(self._engine) as session:
-            # Premium is covered per task; a free account gets one lifetime slot,
-            # so a non-subscriber that already holds any slot bills normally from
-            # then on. A subscriber skips this cap and only collides (below) on a
-            # re-run of the same task.
-            customer = session.get(BillingCustomerModel, username)
-            is_premium = (
-                customer is not None
-                and customer.subscription_status in _ACTIVE_SUBSCRIPTION_STATUSES
-            )
-            if not is_premium:
-                prior = (
-                    session.query(GuaranteeRunModel)
-                    .filter(GuaranteeRunModel.username == username)
-                    .first()
-                )
-                if prior is not None:
-                    return 0
-            session.add(
-                GuaranteeRunModel(
-                    username=username,
-                    task_fingerprint=task_fingerprint,
-                    optimization_id=optimization_id,
-                )
-            )
-            try:
-                # Flush the claim alone so a re-run's PK collision surfaces here
-                # (this account already spent this task's covered run) and we bail
-                # before touching the ledger.
-                session.flush()
-            except IntegrityError:
-                session.rollback()
-                return 0
-
-            # Refund only on a definitive no-lift signal. A run with lift — or one
-            # with no comparable baseline/optimized pair to judge — bills, but
-            # still consumes the account's one covered slot for this task.
-            if not self._is_no_lift(guarantee):
-                session.commit()
-                return 0
-
-            refund = run_cost_credits(usages, token_source)
-            if refund <= 0:
-                session.commit()
-                return 0
-
-            self._refund_run(session, username, refund, model=model, description=description)
-            claim = session.get(GuaranteeRunModel, (username, task_fingerprint))
-            if claim is not None:
-                claim.refunded = True
-            session.commit()
-        return refund
-
-    @staticmethod
-    def _is_no_lift(guarantee: dict[str, Any] | None) -> bool:
-        """Return whether the guarantee scores definitively show no lift.
-
-        Lift is ``optimized > baseline`` on the run's adjudication basis (test
-        split, or valset fallback); any real improvement counts — the test-split
-        basis is what keeps "any improvement" honest rather than a noise gotcha.
-        Returns ``True`` only when a valid basis carries both scores and the
-        optimized score did not exceed the baseline. A missing or malformed
-        guarantee block (no comparable pair) is *not* treated as no-lift — the
-        run can't be proven a failure, so it bills.
-
-        Args:
-            guarantee: ``{"basis", "baseline", "optimized"}`` from the result, or
-                ``None``.
-
-        Returns:
-            ``True`` only when both scores are present and optimized did not beat
-            baseline.
-        """
-        if not isinstance(guarantee, dict):
-            return False
-        if guarantee.get("basis") not in (GUARANTEE_BASIS_TEST, GUARANTEE_BASIS_VAL):
-            return False
-        baseline = guarantee.get("baseline")
-        optimized = guarantee.get("optimized")
-        if not isinstance(baseline, (int, float)) or not isinstance(optimized, (int, float)):
-            return False
-        return optimized <= baseline
 
     def handle_webhook(self, payload: bytes, sig_header: str | None) -> None:
         """Verify and apply a Stripe webhook event, exactly once.

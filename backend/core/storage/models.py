@@ -190,34 +190,6 @@ class BillingWebhookEventModel(Base):
     )
 
 
-class GuaranteeRunModel(Base):
-    """One ``(user, task)`` pair that has spent its single guaranteed run.
-
-    Backs the "No lift, no charge" guarantee's anti-gaming rule: only the
-    **first** optimization of a given task carries the guarantee, so re-runs on
-    an already-good program bill normally and can't fish for repeated free
-    compute. A row is inserted the first time an account runs a task; its
-    presence is what makes a later run on the same task ineligible. The pair
-    ``(username, task_fingerprint)`` is the primary key — ``task_fingerprint``
-    is the same content hash the submit path computes from signature + metric +
-    dataset, so the same task always maps to the same row regardless of the
-    optimization id. ``optimization_id`` records which run claimed the slot, and
-    ``refunded`` flips true when that run had no lift and was auto-refunded.
-    """
-
-    __tablename__ = "guarantee_runs"
-
-    username: Mapped[str] = mapped_column(String(255), primary_key=True)
-    task_fingerprint: Mapped[str] = mapped_column(String(64), primary_key=True)
-    optimization_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    refunded: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false"
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-
-
 class BillingProviderKeyModel(Base):
     """One stored BYOK provider connection for an account, encrypted at rest.
 

@@ -178,7 +178,6 @@ function FreeCard({ premiumActive, index }: { premiumActive: boolean; index: num
   const features: Feature[] = [
     { label: formatMsg("billing.plans.free.f1", { p1: formatCredits(FREE_GRANT_CREDITS, locale) }) },
     { label: msg("billing.plans.free.f2") },
-    { label: msg("billing.plans.free.f5") },
     { label: msg("billing.plans.free.f4") },
   ];
   return (
@@ -203,8 +202,7 @@ function FreeCard({ premiumActive, index }: { premiumActive: boolean; index: num
  *
  * Carries the deadline gate (config-driven on the backend): an active subscriber
  * sees a manage action, an open offer the gold CTA into the Stripe subscription,
- * and a closed offer an inert button. The no-lift-no-charge guarantee leads the
- * feature list — it's the reason to subscribe.
+ * and a closed offer an inert button.
  */
 function PremiumCard({
   founders,
@@ -232,7 +230,6 @@ function PremiumCard({
 
   const features: Feature[] = [
     { label: msg("billing.plans.premium.everything_free"), header: true },
-    { label: msg("billing.founders.stack_guarantee") },
     {
       label: formatMsg("billing.founders.stack_credits", {
         p1: formatCredits(PREMIUM_MONTHLY_CREDITS, locale),
@@ -396,7 +393,7 @@ function CreditsCard({ index }: { index: number }) {
  * Upgrade page — the in-app pricing surface, laid out as a plan-comparison grid.
  *
  * A centered title, then three columns:
- * Free (the baseline), Premium (the featured Founder's Rate, guarantee-led), and
+ * Free (the baseline), Premium (the featured Founder's Rate), and
  * Pay-as-you-go (prepaid credit packs with an in-card pack selector). Below the
  * grid, a quiet BYOK exit. All Stripe wiring — founders rate gate, founders /
  * pack / portal checkouts, and the post-checkout `?status=success` balance sync

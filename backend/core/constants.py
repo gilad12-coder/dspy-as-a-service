@@ -48,12 +48,12 @@ PAYLOAD_OVERVIEW_OPTIMIZER_KWARGS = "optimizer_kwargs"
 PAYLOAD_OVERVIEW_COMPILE_KWARGS = "compile_kwargs"
 PAYLOAD_OVERVIEW_TASK_FINGERPRINT = "task_fingerprint"
 # Token source the run bills against: "managed" (Skynet credits) or "byok"
-# (the user's own provider key). Threaded from the wizard so the "No lift, no
-# charge" guarantee is enforced server-side, not advisory.
+# (the user's own provider key). Threaded from the wizard so billing mode is
+# enforced server-side, not advisory.
 PAYLOAD_OVERVIEW_TOKEN_SOURCE = "token_source"
 # Low/high ends of the projected credit bracket the wizard showed at submit.
-# Persisted so the post-run proof moment can reconcile the estimate against the
-# actual charge; advisory only — never gates or bills.
+# Persisted alongside the billing stamp so the estimate can be reconciled
+# against the actual charge; advisory only — never gates or bills.
 PAYLOAD_OVERVIEW_ESTIMATED_LOW = "estimated_credits_low"
 PAYLOAD_OVERVIEW_ESTIMATED_HIGH = "estimated_credits_high"
 PAYLOAD_OVERVIEW_IS_PRIVATE = "is_private"
@@ -110,12 +110,6 @@ OPTIMIZATION_TYPE_TAGGING = "tagging_autotag"
 # own provider key and is never billed.
 TOKEN_SOURCE_MANAGED = "managed"
 TOKEN_SOURCE_BYOK = "byok"
-
-# Which slice the "No lift, no charge" guarantee is adjudicated on. "test" is the
-# held-out split the optimizer never saw (unbiased proof); "val" is the fallback
-# when the dataset was too small to reserve a test split.
-GUARANTEE_BASIS_TEST = "test"
-GUARANTEE_BASIS_VAL = "val"
 
 PAYLOAD_OVERVIEW_TOTAL_PAIRS = "total_pairs"
 PAYLOAD_OVERVIEW_GENERATION_MODELS = "generation_models"

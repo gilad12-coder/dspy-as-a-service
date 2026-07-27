@@ -197,16 +197,16 @@ interface OptimizationRequestBase {
   is_private?: boolean;
   // How the run's tokens are billed: "managed" (Skynet credits) or "byok" (the
   // user's own key — not billed). Threaded from the wizard's token-source toggle
-  // so the guarantee is enforced server-side, not advisory. Defaults to "managed".
+  // so billing mode is enforced server-side, not advisory. Defaults to "managed".
   token_source?: "managed" | "byok";
   // User-set Max Cost Ceiling in credits [FG-1]. A DSPy job's token use isn't
   // linear, so the wizard shows a projected bracket instead of a tight estimate
   // and lets the user cap the run here; the backend hard-stops the job once spend
   // exceeds the budget this cap buys. Omitted when no ceiling is set.
   max_cost_credits?: number;
-  // Projected credit bracket the wizard showed at submit [FG-1], persisted so the
-  // post-run proof moment can reconcile estimate vs. actual ("estimated 180–320 →
-  // billed 210"). Carries the chargeable bracket for the run's token source
+  // Projected credit bracket the wizard showed at submit [FG-1], persisted with
+  // the billing stamp so the estimate can be reconciled against the actual
+  // charge. Carries the chargeable bracket for the run's token source
   // (managed: full per-model cost; byok: platform fee). Omitted when unestimated.
   estimated_credits_low?: number;
   estimated_credits_high?: number;
@@ -381,29 +381,16 @@ export interface LMActivity {
 }
 
 /**
- * Baseline-vs-optimized scores the "No lift, no charge" guarantee is judged on.
- * `basis` is `"test"` when a held-out test split was reserved (the strongest,
- * unbiased proof the optimizer never saw the data) or `"val"` when the dataset
- * was too small and the guarantee fell back to the valset gain.
- */
-export interface GuaranteeBasis {
-  basis: "test" | "val";
-  baseline?: number | null;
-  optimized?: number | null;
-}
-
-/**
- * How a finished run settled against the credit ledger. `outcome` is `"billed"`
- * when the run charged (the receipt that the lift was real) or `"refunded"` when
- * the guarantee returned the credits (the run was free); `credits` is that
- * amount. Stamped by the worker under `RunResult.details.billing`.
+ * What a finished run cost against the credit ledger: every run bills, and
+ * `credits` is the charged amount. Stamped by the worker under
+ * `RunResult.details.billing`.
  */
 export interface RunBillingOutcome {
-  outcome: "billed" | "refunded";
+  outcome: "billed";
   credits: number;
-  // The projected credit bracket persisted at submit, echoed back so the proof
-  // moment can reconcile estimate vs. actual. Absent on runs submitted before an
-  // estimate was persisted (older runs), in which case no reconciliation shows.
+  // The projected credit bracket persisted at submit, echoed back so the
+  // estimate can be reconciled against the actual charge. Absent on runs
+  // submitted before an estimate was persisted (older runs).
   estimated_low?: number;
   estimated_high?: number;
 }
@@ -437,7 +424,6 @@ export interface RunResult {
   baseline_test_metric?: number | null;
   optimized_test_metric?: number | null;
   metric_improvement?: number | null;
-  guarantee?: GuaranteeBasis | null;
   optimization_metadata?: Record<string, unknown>;
   details?: Record<string, unknown>;
   program_artifact_path?: string | null;

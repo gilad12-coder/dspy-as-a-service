@@ -96,7 +96,7 @@ export function useSubmitWizard() {
   const { data: session } = useSession();
   const { prefs } = useUserPrefs();
   // The active token-source mode (managed credits vs the user's own key). Sent
-  // on every submit so the guarantee is enforced server-side, not just shown in
+  // on every submit so billing mode is enforced server-side, not just shown in
   // the wizard.
   const { wallet } = useCredits();
 
@@ -1865,8 +1865,8 @@ export function useSubmitWizard() {
         librarySourceRef.current && librarySourceRef.current.parsed === parsedDataset
           ? librarySourceRef.current.id
           : null;
-      // Persist the chargeable bracket the user just saw so the post-run proof
-      // moment can reconcile it against the actual charge. Same bracket the cost
+      // Persist the chargeable bracket the user just saw so it can be
+      // reconciled against the actual charge. Same bracket the cost
       // surface and review recap showed (managed: full per-model; byok: fee).
       const estimate = chargeableBracket(costBracket, wallet.mode);
       const base = {

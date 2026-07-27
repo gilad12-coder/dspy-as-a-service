@@ -27,8 +27,6 @@ from ...constants import (
     DETAIL_TEST,
     DETAIL_TRAIN,
     DETAIL_VAL,
-    GUARANTEE_BASIS_TEST,
-    GUARANTEE_BASIS_VAL,
     META_COMPILE_KWARGS,
     META_MODEL_IDENTIFIER,
     META_MODULE_KWARGS,
@@ -58,7 +56,7 @@ from ...models import (
     SplitCounts,
 )
 from ...models.artifacts import ProgramArtifact, ReactOverlay
-from ...models.results import GuaranteeBasis, ModelTokenUsage
+from ...models.results import ModelTokenUsage
 from ...registry import (
     ResolverError,
     ServiceRegistry,
@@ -303,50 +301,6 @@ def _build_lm_activity(
         for stage, (calls, avg_ms) in refl_timing.stage_summary().items():
             reflection[stage] = LMStageStats(calls=calls, avg_response_time_ms=avg_ms)
     return LMActivity(generation=generation, reflection=reflection)
-
-
-def _guarantee_basis(
-    *,
-    baseline_program: Any,
-    optimized_program: Any,
-    splits: Any,
-    metric: Any,
-    test_baseline: float | None,
-    test_optimized: float | None,
-) -> GuaranteeBasis | None:
-    """Resolve the baseline/optimized scores the lift guarantee is judged on.
-
-    The guarantee is adjudicated on the held-out **test** split whenever one was
-    reserved — the unbiased slice the optimizer never saw. When the dataset was
-    too small to carve out a test split, it falls back to scoring both programs
-    on the **valset** so a tiny first-run still gets a guarantee (clearly
-    labelled ``basis="val"``) rather than being refused. Returns ``None`` only
-    when neither split can produce a comparable pair (e.g. an empty valset),
-    which leaves the run uncovered rather than guessing.
-
-    Args:
-        baseline_program: The unoptimized program (pre-compile).
-        optimized_program: The compiled program.
-        splits: The train/val/test split bundle.
-        metric: The scoring callable both programs are evaluated with.
-        test_baseline: Baseline test score already computed by the caller, or
-            ``None`` when no test split exists.
-        test_optimized: Optimized test score already computed by the caller, or
-            ``None`` when no test split exists.
-
-    Returns:
-        A :class:`GuaranteeBasis` labelling the basis and carrying the scores,
-        or ``None`` when no comparable pair is available.
-    """
-    if splits.test and test_baseline is not None and test_optimized is not None:
-        return GuaranteeBasis(basis=GUARANTEE_BASIS_TEST, baseline=test_baseline, optimized=test_optimized)
-    if not splits.val:
-        return None
-    val_baseline = evaluate_on_test(baseline_program, splits.val, metric)
-    val_optimized = evaluate_on_test(optimized_program, splits.val, metric)
-    if val_baseline is None or val_optimized is None:
-        return None
-    return GuaranteeBasis(basis=GUARANTEE_BASIS_VAL, baseline=val_baseline, optimized=val_optimized)
 
 
 @dataclass
@@ -936,20 +890,6 @@ class DspyService:
                             {DETAIL_OPTIMIZED: optimized_test_metric},
                         )
 
-                # Adjudicate the guarantee on the unbiased test split, or fall
-                # back to the valset for a dataset too small to reserve one. Done
-                # under the dspy context (the fallback re-scores both programs)
-                # and before the baseline-swap below so it reflects the true
-                # baseline-vs-optimized comparison, not the kept-baseline floor.
-                guarantee = _guarantee_basis(
-                    baseline_program=program,
-                    optimized_program=compiled_program,
-                    splits=splits,
-                    metric=metric,
-                    test_baseline=baseline_test_metric,
-                    test_optimized=optimized_test_metric,
-                )
-
                 best_program = compiled_program
                 if (
                     baseline_test_metric is not None
@@ -1005,7 +945,6 @@ class DspyService:
             baseline_test_metric=baseline_test_metric,
             optimized_test_metric=optimized_test_metric,
             metric_improvement=metric_improvement,
-            guarantee=guarantee,
             optimization_metadata=optimization_metadata,
             details=details,
             program_artifact_path=program_artifact.path if program_artifact else None,
@@ -1255,14 +1194,6 @@ class DspyService:
             baseline_test_metric=baseline_scalar,
             optimized_test_metric=optimized_scalar,
             metric_improvement=metric_improvement,
-            # React scores the seed and best candidate against ``test`` when a
-            # test split exists, else the valset — mirror that basis label so the
-            # guarantee reads from the same scores shown on the result.
-            guarantee=GuaranteeBasis(
-                basis=GUARANTEE_BASIS_TEST if splits.test else GUARANTEE_BASIS_VAL,
-                baseline=baseline_scalar,
-                optimized=optimized_scalar,
-            ),
             optimization_metadata=optimization_metadata,
             details=details,
             program_artifact_path=program_artifact.path if program_artifact else None,
@@ -1502,23 +1433,6 @@ class DspyService:
             grid_runtime,
         )
 
-        # The guarantee reads the winning pair's test-split scores. Grid pairs
-        # only score baseline/optimized when a test split exists, so a dataset
-        # too small for one leaves the grid uncovered (guarantee None) rather
-        # than fabricating a basis the pairs never evaluated.
-        guarantee = None
-        if (
-            best_pair is not None
-            and split_counts.test
-            and best_pair.baseline_test_metric is not None
-            and best_pair.optimized_test_metric is not None
-        ):
-            guarantee = GuaranteeBasis(
-                basis=GUARANTEE_BASIS_TEST,
-                baseline=best_pair.baseline_test_metric,
-                optimized=best_pair.optimized_test_metric,
-            )
-
         return GridSearchResponse(
             module_name=payload.module_name,
             optimizer_name=payload.optimizer_name,
@@ -1532,7 +1446,6 @@ class DspyService:
             runtime_seconds=round(grid_runtime, 2),
             total_tokens=grid_total_tokens,
             usage_by_model=grid_usage_by_model,
-            guarantee=guarantee,
         )
 
     def validate_grid_search_payload(self, payload: GridSearchRequest) -> None:

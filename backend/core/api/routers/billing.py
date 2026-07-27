@@ -90,11 +90,10 @@ class WalletResponse(BaseModel):
 
 
 class UsageDayResponse(BaseModel):
-    """One day's run spend, split into billed and refunded credits."""
+    """One day's billed run spend, in credits."""
 
     date: str = Field(description="Calendar day (YYYY-MM-DD, UTC).")
     billed_credits: int = Field(description="Gross run credits billed that day.")
-    refunded_credits: int = Field(description="Run credits refunded that day by the guarantee.")
 
 
 class UsageModelResponse(BaseModel):
@@ -117,7 +116,6 @@ class UsageResponse(BaseModel):
     start: str = Field(description="ISO-8601 inclusive window start.")
     end: str = Field(description="ISO-8601 inclusive window end.")
     billed_credits: int = Field(description="Gross run credits billed across the window.")
-    refunded_credits: int = Field(description="Run credits refunded across the window.")
     runs: int = Field(description="Billed runs across the window.")
     by_day: list[UsageDayResponse] = Field(
         default_factory=list, description="Per-day spend series, ascending by date."
@@ -276,14 +274,9 @@ def create_billing_router(*, job_store) -> APIRouter:
             start=snapshot.start,
             end=snapshot.end,
             billed_credits=snapshot.billed_credits,
-            refunded_credits=snapshot.refunded_credits,
             runs=snapshot.runs,
             by_day=[
-                UsageDayResponse(
-                    date=day.date,
-                    billed_credits=day.billed_credits,
-                    refunded_credits=day.refunded_credits,
-                )
+                UsageDayResponse(date=day.date, billed_credits=day.billed_credits)
                 for day in snapshot.by_day
             ],
             by_model=[

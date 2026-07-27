@@ -34,13 +34,12 @@ from core.billing.service import (
     platform_fee_credits_for_usage,
 )
 from core.config import settings
-from core.constants import GUARANTEE_BASIS_TEST, GUARANTEE_BASIS_VAL, TOKEN_SOURCE_BYOK, TOKEN_SOURCE_MANAGED
+from core.constants import TOKEN_SOURCE_BYOK, TOKEN_SOURCE_MANAGED
 from core.storage.models import (
     Base,
     BillingCustomerModel,
     BillingWebhookEventModel,
     CreditLedgerModel,
-    GuaranteeRunModel,
 )
 
 
@@ -78,28 +77,6 @@ def _seed_customer(engine: object, username: str) -> None:
     """
     with Session(engine) as session:
         session.add(BillingCustomerModel(username=username, stripe_customer_id=f"cus_{username}", credit_balance=0))
-        session.commit()
-
-
-def _seed_premium(engine: object, username: str) -> None:
-    """Insert an active-subscription billing row so the account is Premium-eligible.
-
-    The no-lift guarantee is a Premium benefit, so guarantee tests seed an active
-    subscriber here; a plain :func:`_seed_customer` row is a free account.
-
-    Args:
-        engine: The SQLite engine to write to.
-        username: Account to mark as an active Premium subscriber.
-    """
-    with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username=username,
-                stripe_customer_id=f"cus_{username}",
-                credit_balance=0,
-                subscription_status="active",
-            )
-        )
         session.commit()
 
 
@@ -437,203 +414,11 @@ def test_spendable_credits_full_for_new_account(engine: object) -> None:
     assert StripeBillingService(engine=engine).spendable_credits("new@x.com") == FREE_GRANT_CREDITS
 
 
-def _lift(baseline: float, optimized: float, *, basis: str = GUARANTEE_BASIS_TEST) -> dict:
-    """Build a guarantee block with the given basis and scores."""
-    return {"basis": basis, "baseline": baseline, "optimized": optimized}
-
-
 def _balance(engine: object, username: str) -> tuple[int, int]:
     """Read (grant_remaining, paid_balance) for an account."""
     with Session(engine) as session:
         c = session.get(BillingCustomerModel, username)
         return (0, 0) if c is None else (int(c.grant_remaining or 0), int(c.credit_balance))
-
-
-def test_guarantee_refunds_full_run_on_no_lift_managed(engine: object) -> None:
-    """A managed first run with no lift is fully refunded and the slot is flagged."""
-    service = StripeBillingService(engine=engine)
-    _seed_premium(engine, "u@x.com")
-    usages = _usages(200_000)
-    expected = credits_for_usage(usages)
-    # Debit first (mirrors the worker's debit before adjudication).
-    service.debit_run("u@x.com", usages, model="m1", description="r")
-    assert _balance(engine, "u@x.com")[0] == PREMIUM_GRANT_CREDITS - expected
-    refunded = service.adjudicate_guarantee(
-        "u@x.com",
-        "task-abc",
-        "opt-1",
-        _lift(0.7, 0.7),
-        token_source=TOKEN_SOURCE_MANAGED,
-        usages=usages,
-        model="m1",
-        description="No lift — refunded",
-    )
-    assert refunded == expected
-    assert _balance(engine, "u@x.com")[0] == PREMIUM_GRANT_CREDITS  # restored
-    with Session(engine) as session:
-        claim = session.get(GuaranteeRunModel, ("u@x.com", "task-abc"))
-        assert claim is not None
-        assert claim.refunded is True
-        rows = session.query(CreditLedgerModel).filter_by(username="u@x.com").all()
-    assert sorted(r.delta_credits for r in rows) == [-expected, expected]
-
-
-def test_guarantee_refunds_only_platform_fee_on_byok_no_lift(engine: object) -> None:
-    """A BYOK no-lift run refunds only Skynet's platform fee — zero at-cost pricing."""
-    service = StripeBillingService(engine=engine)
-    _seed_premium(engine, "u@x.com")
-    usages = _usages(200_000)
-    refunded = service.adjudicate_guarantee(
-        "u@x.com",
-        "task-byok",
-        "opt-1",
-        _lift(0.5, 0.5),
-        token_source=TOKEN_SOURCE_BYOK,
-        usages=usages,
-        model=None,
-        description="No lift — refunded",
-    )
-    assert refunded == platform_fee_credits_for_usage(usages)
-    # At-cost pricing: a BYOK run was never charged, so nothing is refunded.
-    assert refunded == 0
-
-
-def test_guarantee_no_refund_when_run_has_lift(engine: object) -> None:
-    """Any improvement on the basis counts as lift — the run stays billed."""
-    service = StripeBillingService(engine=engine)
-    _seed_premium(engine, "u@x.com")
-    refunded = service.adjudicate_guarantee(
-        "u@x.com",
-        "task-lift",
-        "opt-1",
-        _lift(0.6, 0.61),
-        token_source=TOKEN_SOURCE_MANAGED,
-        usages=_usages(100_000),
-        model=None,
-        description="No lift — refunded",
-    )
-    assert refunded == 0
-    with Session(engine) as session:
-        claim = session.get(GuaranteeRunModel, ("u@x.com", "task-lift"))
-        assert claim is not None
-        assert claim.refunded is False
-        assert session.query(CreditLedgerModel).filter_by(username="u@x.com").count() == 0
-
-
-def test_guarantee_only_covers_first_run_per_task(engine: object) -> None:
-    """A re-run on the same task bills regardless — only the first run is covered."""
-    service = StripeBillingService(engine=engine)
-    _seed_premium(engine, "u@x.com")
-    usages = _usages(200_000)
-    first = service.adjudicate_guarantee(
-        "u@x.com",
-        "task-dup",
-        "opt-1",
-        _lift(0.7, 0.7),
-        token_source=TOKEN_SOURCE_MANAGED,
-        usages=usages,
-        model=None,
-        description="No lift — refunded",
-    )
-    assert first == credits_for_usage(usages)
-    second = service.adjudicate_guarantee(
-        "u@x.com",
-        "task-dup",
-        "opt-2",
-        _lift(0.7, 0.7),
-        token_source=TOKEN_SOURCE_MANAGED,
-        usages=usages,
-        model=None,
-        description="No lift — refunded",
-    )
-    assert second == 0
-    with Session(engine) as session:
-        # Only the first run's slot exists, still pointing at opt-1.
-        claim = session.get(GuaranteeRunModel, ("u@x.com", "task-dup"))
-        assert claim.optimization_id == "opt-1"
-
-
-def test_guarantee_valset_basis_judges_lift(engine: object) -> None:
-    """The valset fallback basis is honored when no test split was reserved."""
-    service = StripeBillingService(engine=engine)
-    _seed_premium(engine, "u@x.com")
-    refunded = service.adjudicate_guarantee(
-        "u@x.com",
-        "task-val",
-        "opt-1",
-        _lift(0.8, 0.8, basis=GUARANTEE_BASIS_VAL),
-        token_source=TOKEN_SOURCE_MANAGED,
-        usages=_usages(100_000),
-        model=None,
-        description="No lift — refunded",
-    )
-    assert refunded == credits_for_usage(_usages(100_000))
-
-
-def test_guarantee_billed_when_no_comparable_scores(engine: object) -> None:
-    """A run with no guarantee block still spends its slot but is not refunded."""
-    service = StripeBillingService(engine=engine)
-    _seed_premium(engine, "u@x.com")
-    refunded = service.adjudicate_guarantee(
-        "u@x.com",
-        "task-none",
-        "opt-1",
-        None,
-        token_source=TOKEN_SOURCE_MANAGED,
-        usages=_usages(100_000),
-        model=None,
-        description="No lift — refunded",
-    )
-    assert refunded == 0
-    with Session(engine) as session:
-        assert session.get(GuaranteeRunModel, ("u@x.com", "task-none")) is not None
-
-
-def test_guarantee_covers_free_account_once(engine: object) -> None:
-    """A free account gets one lifetime guarantee; a later run bills normally.
-
-    The no-lift refund is available to everyone, but a non-subscriber claims at
-    most one slot ever — its first covered run. A second run, even on a new task,
-    is billed and never claims a second slot.
-    """
-    service = StripeBillingService(engine=engine)
-    _seed_customer(engine, "free@x.com")  # a row, but no active subscription
-    usages = _usages(200_000)
-    first = service.adjudicate_guarantee(
-        "free@x.com", "task-one", "opt-1", _lift(0.7, 0.7),
-        token_source=TOKEN_SOURCE_MANAGED, usages=usages, model=None,
-        description="No lift — refunded",
-    )
-    assert first == credits_for_usage(usages)
-    second = service.adjudicate_guarantee(
-        "free@x.com", "task-two", "opt-2", _lift(0.5, 0.5),
-        token_source=TOKEN_SOURCE_MANAGED, usages=usages, model=None,
-        description="No lift — refunded",
-    )
-    assert second == 0
-    with Session(engine) as session:
-        rows = session.query(GuaranteeRunModel).filter_by(username="free@x.com").all()
-        assert len(rows) == 1
-        assert rows[0].task_fingerprint == "task-one"
-
-
-def test_guarantee_covers_premium_account_on_each_new_task(engine: object) -> None:
-    """Premium is covered on the first run of every task, not one lifetime run."""
-    service = StripeBillingService(engine=engine)
-    _seed_premium(engine, "pro@x.com")
-    usages = _usages(200_000)
-    a = service.adjudicate_guarantee(
-        "pro@x.com", "task-a", "opt-a", _lift(0.7, 0.7),
-        token_source=TOKEN_SOURCE_MANAGED, usages=usages, model=None,
-        description="No lift — refunded",
-    )
-    b = service.adjudicate_guarantee(
-        "pro@x.com", "task-b", "opt-b", _lift(0.5, 0.5),
-        token_source=TOKEN_SOURCE_MANAGED, usages=usages, model=None,
-        description="No lift — refunded",
-    )
-    assert a == credits_for_usage(usages)
-    assert b == credits_for_usage(usages)  # a second task is still covered on Premium
 
 
 def test_debit_run_byok_charges_only_platform_fee(engine: object) -> None:
@@ -820,13 +605,14 @@ def _add_ledger(
 
 
 def test_get_usage_aggregates_runs_by_day_and_model(engine: object) -> None:
-    """get_usage sums billed/refunded spend, counts runs, and rolls up by day and model."""
+    """get_usage sums billed spend, counts runs, and rolls up by day and model."""
     user = "u@x.com"
     now = datetime.now(UTC)
     day1 = now - timedelta(days=1)
     day2 = now - timedelta(days=2)
     _add_ledger(engine, user, delta=-300, kind="run", model="openai/gpt-5.5", when=day1)
     _add_ledger(engine, user, delta=-50, kind="run", model="anthropic/claude", when=day1)
+    # A positive run row (legacy correction) is ignored by the rollups.
     _add_ledger(engine, user, delta=120, kind="run", model="openai/gpt-5.5", when=day1)
     _add_ledger(engine, user, delta=-100, kind="run", model="openai/gpt-5.5", when=day2)
     _add_ledger(engine, user, delta=2200, kind="topup", model=None, when=day1)
@@ -835,9 +621,9 @@ def test_get_usage_aggregates_runs_by_day_and_model(engine: object) -> None:
     snapshot = service.get_usage(user, now - timedelta(days=3), now)
 
     assert snapshot.billed_credits == 450
-    assert snapshot.refunded_credits == 120
     assert snapshot.runs == 3
-    # Top-ups are excluded from the spend rollups but still ride along in entries.
+    # Top-ups and positive run rows are excluded from the spend rollups but
+    # still ride along in entries.
     assert len(snapshot.entries) == 5
     assert [m.model for m in snapshot.by_model] == ["openai/gpt-5.5", "anthropic/claude"]
     assert snapshot.by_model[0].credits == 400
@@ -845,7 +631,6 @@ def test_get_usage_aggregates_runs_by_day_and_model(engine: object) -> None:
     assert [d.date for d in snapshot.by_day] == [day2.date().isoformat(), day1.date().isoformat()]
     day1_row = next(d for d in snapshot.by_day if d.date == day1.date().isoformat())
     assert day1_row.billed_credits == 350
-    assert day1_row.refunded_credits == 120
 
 
 def test_debit_run_stamps_token_counts(engine: object) -> None:

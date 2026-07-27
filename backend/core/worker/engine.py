@@ -38,7 +38,6 @@ from ..constants import (
     PAYLOAD_OVERVIEW_MODEL_NAME,
     PAYLOAD_OVERVIEW_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
-    PAYLOAD_OVERVIEW_TASK_FINGERPRINT,
     PAYLOAD_OVERVIEW_TOKEN_SOURCE,
     PAYLOAD_OVERVIEW_USERNAME,
     TOKEN_SOURCE_BYOK,
@@ -759,23 +758,14 @@ class BackgroundWorker:
                                 model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
                                 token_source=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED,
                             )
-                            # Adjudicate the guarantee after the debit so a no-lift
-                            # first run can write its offsetting refund against the
-                            # just-debited cost. Shares the once-only completion
-                            # claim, so a re-run never double-refunds.
-                            refunded = self._apply_guarantee_best_effort(
-                                _username, result_dict, overview, optimization_id
-                            )
                             # Stamp the billing outcome onto the persisted result so
-                            # the result screen can frame billing as proof: a billed
-                            # run is the receipt the lift was real, a refunded run
-                            # shows the credits restored. Re-persisted because the two
-                            # billing calls run after the first completion write.
+                            # the result screen can show what the run cost.
+                            # Re-persisted because the debit runs after the first
+                            # completion write.
                             self._stamp_billing_outcome(
                                 optimization_id,
                                 result_dict,
                                 billed=billed,
-                                refunded=refunded,
                                 estimated_low=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_LOW),
                                 estimated_high=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_HIGH),
                             )
@@ -1128,112 +1118,39 @@ class BackgroundWorker:
             logger.debug("Credit debit for %s failed: %s", username, exc)
             return 0
 
-    def _apply_guarantee_best_effort(
-        self,
-        username: str,
-        result_dict: dict[str, Any] | None,
-        overview: dict[str, Any],
-        optimization_id: str,
-    ) -> int:
-        """Adjudicate the "No lift, no charge" guarantee for a finished run.
-
-        Reads the run's adjudication scores (``result_dict['guarantee']`` — test
-        split, or valset fallback), the task fingerprint and token-source mode
-        (both from the overview), and hands them to
-        :meth:`StripeBillingService.adjudicate_guarantee`, which covers only the
-        first run per ``(user, task)``: a no-lift first run lands an offsetting
-        refund (full cost for managed, platform fee for BYOK) while re-runs and
-        runs with lift bill normally. Runs inline (mirroring the debit) so the
-        wallet reflects a refund the moment the run lands, but wrapped so a
-        billing-DB hiccup can never flip job status. A no-op when the store
-        exposes no SQL engine, the caller is anonymous, the task fingerprint is
-        absent, or the run reported no token usage.
-
-        Args:
-            username: Account the run was billed to.
-            result_dict: The serialized run/grid result; carries ``guarantee``
-                and ``usage_by_model`` (falling back to ``total_tokens``).
-            overview: The job's payload overview (task fingerprint, token source,
-                run name, model).
-            optimization_id: The finished run claiming or skipping the slot.
-
-        Returns:
-            The credits refunded (``0`` when the run billed, wasn't covered, or
-            adjudication was skipped/failed).
-        """
-        engine = getattr(self._job_store, "engine", None)
-        if engine is None or not username or not isinstance(result_dict, dict):
-            return 0
-        task_fingerprint = overview.get(PAYLOAD_OVERVIEW_TASK_FINGERPRINT)
-        if not task_fingerprint:
-            return 0
-        usages = _usages_from_result(result_dict, overview.get(PAYLOAD_OVERVIEW_MODEL_NAME))
-        if not usages:
-            return 0
-        token_source = overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED
-        run_name = overview.get(PAYLOAD_OVERVIEW_NAME) or "Run"
-        try:
-            refunded = StripeBillingService(engine=engine).adjudicate_guarantee(
-                username,
-                str(task_fingerprint),
-                str(optimization_id),
-                result_dict.get("guarantee"),
-                token_source=str(token_source),
-                usages=usages,
-                model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
-                description=f"No lift — refunded · {run_name}",
-            )
-            if refunded:
-                logger.info(
-                    "Guarantee refund of %d credits applied for %s (task=%s)",
-                    refunded,
-                    username,
-                    task_fingerprint,
-                )
-            return refunded
-        except Exception as exc:  # isolation boundary: a guarantee failure must never impact job status
-            logger.debug("Guarantee adjudication for %s failed: %s", username, exc)
-            return 0
-
     def _stamp_billing_outcome(
         self,
         optimization_id: str,
         result_dict: dict[str, Any] | None,
         *,
         billed: int,
-        refunded: int,
         estimated_low: int | None = None,
         estimated_high: int | None = None,
     ) -> None:
-        """Record the run's billing outcome on its result for the proof screen.
+        """Record the run's billed cost on its result for the result screen.
 
-        Writes ``result['details']['billing']`` — ``{outcome, credits}`` where
-        ``outcome`` is ``"refunded"`` when the guarantee returned credits (the run
-        was free) or ``"billed"`` otherwise, and ``credits`` is the amount restored
-        (refund) or charged (bill). When the run was submitted with a projected
-        bracket, ``estimated_low``/``estimated_high`` are echoed alongside so the
-        proof screen can reconcile the estimate against the actual charge. The
-        result screen reads this to frame billing as proof: a charge is the receipt
-        the lift was real, a refund the evidence the guarantee held. Only stamps
-        single-run results (a grid envelope has no per-run ``details``) and only
-        when a credit amount exists, so a free-grant run that cost nothing adds no
-        row. Re-persists the result via the job store because the billing calls run
-        after the first completion write; wrapped so a store hiccup can never flip
-        job status.
+        Writes ``result['details']['billing']`` — ``{outcome: "billed", credits}``
+        where ``credits`` is the amount charged. When the run was submitted with a
+        projected bracket, ``estimated_low``/``estimated_high`` are echoed
+        alongside so the estimate can be reconciled against the actual charge.
+        Only stamps single-run results (a grid envelope has no per-run
+        ``details``) and only when a credit amount exists, so a free-grant run
+        that cost nothing adds no row. Re-persists the result via the job store
+        because the debit runs after the first completion write; wrapped so a
+        store hiccup can never flip job status.
 
         Args:
             optimization_id: The finished run whose result is updated.
             result_dict: The serialized run result; mutated in place and re-saved.
             billed: Credits charged by :meth:`_debit_run_credits`.
-            refunded: Credits returned by :meth:`_apply_guarantee_best_effort`.
             estimated_low: Low end of the projected credit bracket, or None when
                 the run carried no estimate.
             estimated_high: High end of the projected credit bracket, or None.
         """
         if not isinstance(result_dict, dict) or "pair_results" in result_dict:
             return
-        outcome = "refunded" if refunded > 0 else "billed"
-        credits = refunded if refunded > 0 else billed
+        outcome = "billed"
+        credits = billed
         if credits <= 0:
             return
         try:

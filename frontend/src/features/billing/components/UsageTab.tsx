@@ -10,7 +10,6 @@ import {
   Plus,
   RefreshCw,
   Sparkles,
-  Undo2,
   type LucideIcon,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -50,7 +49,7 @@ type RangeKey = PresetRange | "custom";
 /** Time bucket for the spend-over-time chart. */
 type GroupBy = "day" | "week";
 /** Which slice of the ledger the activity list shows. */
-type LedgerFilter = "all" | "refunds" | "costs";
+type LedgerFilter = "all" | "costs";
 
 const RANGE_DAYS: Record<PresetRange, number | null> = { "7d": 7, "30d": 30, "90d": 90, all: null };
 
@@ -69,7 +68,6 @@ const GROUP_LABEL: Record<GroupBy, MessageKey> = {
 
 const LEDGER_FILTERS: ReadonlyArray<{ value: LedgerFilter; labelKey: MessageKey }> = [
   { value: "all", labelKey: "billing.wallet.filter_all" },
-  { value: "refunds", labelKey: "billing.wallet.filter_refunds" },
   { value: "costs", labelKey: "billing.wallet.filter_costs" },
 ];
 
@@ -82,8 +80,8 @@ const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 // Warm monochrome ramp (matches --chart-1..5): billed spend anchors to the
-// darkest step, refunds to a lighter one, so the two series stay legible without
-// reaching for color outside the palette.
+// darkest step so the series stays legible without reaching for color outside
+// the palette.
 const MODEL_RAMP = [
   "var(--color-chart-1)",
   "var(--color-chart-2)",
@@ -92,19 +90,17 @@ const MODEL_RAMP = [
   "var(--color-chart-5)",
 ];
 const BILLED_FILL = "var(--color-chart-1)";
-const REFUND_FILL = "var(--color-chart-4)";
 
 // Mirrors the wallet ledger pill so every segmented control in billing slides alike.
 const PILL_TRANSITION = { type: "tween", duration: 0.16, ease: [0.22, 1, 0.36, 1] } as const;
 
 const ENTRY_CAP = 200;
 
-/** A spend-over-time bucket: a billed/refunded pair under one axis label. */
+/** A spend-over-time bucket: billed credits under one axis label. */
 interface Bucket {
   key: string;
   label: string;
   billed: number;
-  refunded: number;
 }
 
 /** Resolve a range key to its ISO bounds (and ms, for the client-side fallback). */
@@ -150,37 +146,29 @@ function deriveUsage(
     return at >= startMs && at <= endMs;
   });
   let billed = 0;
-  let refunded = 0;
   let runs = 0;
-  const perDay = new Map<string, { billed: number; refunded: number }>();
+  const perDay = new Map<string, number>();
   const perModel = new Map<string | null, { credits: number; runs: number }>();
   for (const entry of inRange) {
-    if (entry.kind !== "run") continue;
-    const day = perDay.get(entry.at.slice(0, 10)) ?? { billed: 0, refunded: 0 };
-    if (entry.credits < 0) {
-      const spent = -entry.credits;
-      billed += spent;
-      runs += 1;
-      day.billed += spent;
-      const model = perModel.get(entry.model) ?? { credits: 0, runs: 0 };
-      model.credits += spent;
-      model.runs += 1;
-      perModel.set(entry.model, model);
-    } else if (entry.credits > 0) {
-      refunded += entry.credits;
-      day.refunded += entry.credits;
-    }
-    perDay.set(entry.at.slice(0, 10), day);
+    if (entry.kind !== "run" || entry.credits >= 0) continue;
+    const spent = -entry.credits;
+    billed += spent;
+    runs += 1;
+    const day = entry.at.slice(0, 10);
+    perDay.set(day, (perDay.get(day) ?? 0) + spent);
+    const model = perModel.get(entry.model) ?? { credits: 0, runs: 0 };
+    model.credits += spent;
+    model.runs += 1;
+    perModel.set(entry.model, model);
   }
   return {
     start: startIso,
     end: endIso,
     billed_credits: billed,
-    refunded_credits: refunded,
     runs,
     by_day: [...perDay.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, value]) => ({ date, billed_credits: value.billed, refunded_credits: value.refunded })),
+      .map(([date, value]) => ({ date, billed_credits: value })),
     by_model: [...perModel.entries()]
       .sort(([, a], [, b]) => b.credits - a.credits)
       .map(([model, value]) => ({ model, credits: value.credits, runs: value.runs })),
@@ -209,17 +197,14 @@ function bucketDays(
   mode: GroupBy,
   locale: string,
 ): Bucket[] {
-  const map = new Map<string, { billed: number; refunded: number }>();
+  const map = new Map<string, number>();
   for (const day of byDay) {
     const key = mode === "week" ? weekKey(day.date) : day.date;
-    const slot = map.get(key) ?? { billed: 0, refunded: 0 };
-    slot.billed += day.billed_credits;
-    slot.refunded += day.refunded_credits;
-    map.set(key, slot);
+    map.set(key, (map.get(key) ?? 0) + day.billed_credits);
   }
   return [...map.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => ({ key, label: formatDay(key, locale), billed: value.billed, refunded: value.refunded }));
+    .map(([key, billed]) => ({ key, label: formatDay(key, locale), billed }));
 }
 
 /** Quote a CSV cell only when it carries a comma, quote, or newline. */
@@ -418,7 +403,7 @@ function StatCard({
   );
 }
 
-/** Billed vs refunded credits over time. Lite mode falls back to a table. */
+/** Billed credits over time. Lite mode falls back to a table. */
 function SpendChart({ buckets }: { buckets: Bucket[] }) {
   const lite = useLiteMode();
   if (buckets.length === 0) return <ChartEmptyState message={msg("usage.empty.title")} />;
@@ -429,7 +414,6 @@ function SpendChart({ buckets }: { buckets: Bucket[] }) {
         columns={[
           { key: "label", label: msg("usage.col.day") },
           { key: "billed", label: msg("usage.series.billed"), align: "end" },
-          { key: "refunded", label: msg("usage.series.refunded"), align: "end" },
         ]}
       />
     );
@@ -461,14 +445,6 @@ function SpendChart({ buckets }: { buckets: Bucket[] }) {
             dataKey="billed"
             name={msg("usage.series.billed")}
             fill={BILLED_FILL}
-            radius={[3, 3, 0, 0]}
-            maxBarSize={26}
-            animationDuration={300}
-          />
-          <Bar
-            dataKey="refunded"
-            name={msg("usage.series.refunded")}
-            fill={REFUND_FILL}
             radius={[3, 3, 0, 0]}
             maxBarSize={26}
             animationDuration={300}
@@ -662,8 +638,8 @@ function LedgerRow({ entry, locale }: { entry: BillingUsageEntry; locale: string
  * Usage — the `usage` settings tab.
  *
  * A full personal spend dashboard over the managed-credit ledger: a date-ranged
- * window, three headline stats (spent · runs · refunded), a billed-vs-refunded
- * time series, per-model and per-run breakdowns, and the raw activity list. Data
+ * window, headline stats (spent · runs), a billed-spend time series, per-model
+ * and per-run breakdowns, and the raw activity list. Data
  * comes from the backend `GET /billing/usage` rollup; if that read fails the tab
  * derives the same shape client-side from the wallet's recent ledger so the
  * surface still renders.
@@ -722,7 +698,6 @@ export function UsageTab() {
 
   const entries = data?.entries ?? [];
   const visibleEntries = React.useMemo(() => {
-    if (usageFilter === "refunds") return entries.filter((entry) => entry.credits > 0);
     if (usageFilter === "costs") return entries.filter((entry) => entry.credits < 0);
     return entries;
   }, [entries, usageFilter]);
@@ -804,8 +779,7 @@ export function UsageTab() {
     );
   }
 
-  const totallyEmpty =
-    !loading && entries.length === 0 && data.billed_credits === 0 && data.refunded_credits === 0;
+  const totallyEmpty = !loading && entries.length === 0 && data.billed_credits === 0;
 
   if (totallyEmpty) {
     return (
@@ -845,28 +819,10 @@ export function UsageTab() {
           value={formatCredits(data.runs, locale)}
           secondary={avgPerRun}
         />
-        <StatCard
-          icon={Undo2}
-          label={msg("usage.stat.refunded")}
-          value={formatCredits(data.refunded_credits, locale)}
-          secondary={formatUsd(creditsToUsd(data.refunded_credits), locale)}
-        />
       </div>
 
       <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <PanelHeading>{msg("usage.panel.over_time")}</PanelHeading>
-          <div className="flex items-center gap-3 text-[0.6875rem] text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-full" style={{ backgroundColor: BILLED_FILL }} aria-hidden="true" />
-              {msg("usage.series.billed")}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-full" style={{ backgroundColor: REFUND_FILL }} aria-hidden="true" />
-              {msg("usage.series.refunded")}
-            </span>
-          </div>
-        </div>
+        <PanelHeading>{msg("usage.panel.over_time")}</PanelHeading>
         <SpendChart buckets={buckets} />
       </div>
 
