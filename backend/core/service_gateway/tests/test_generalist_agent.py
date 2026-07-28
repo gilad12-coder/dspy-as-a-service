@@ -584,6 +584,38 @@ async def test_submit_without_snapshot_code_leaves_agent_args() -> None:
 
 
 @pytest.mark.asyncio
+async def test_submit_injects_wizard_description() -> None:
+    """Submit carries the wizard's job_description — stripped and clipped to 280."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        wizard_state=cast(WizardState, {"job_description": "  " + "x" * 300 + "  "}),
+    )
+    await tool.func._async_body()
+    assert seen["description"] == "x" * 280
+
+
+@pytest.mark.asyncio
+async def test_submit_keeps_agent_supplied_description() -> None:
+    """An agent-supplied description wins over the wizard snapshot's."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        wizard_state=cast(WizardState, {"job_description": "from the wizard"}),
+    )
+    await tool.func._async_body(description="from the agent")
+    assert seen["description"] == "from the agent"
+
+
+@pytest.mark.asyncio
 async def test_submit_injects_source_dataset_id() -> None:
     """A library-dataset run injects source_dataset_id when no dataset is supplied."""
     tool, seen = _make_recording_tool("submit_job_run_post")

@@ -530,6 +530,15 @@ class _ApprovalGatedTool:
             # snapshot value, defaulting to private, so a run only goes public
             # when the user explicitly asked for it.
             kwargs["is_private"] = bool(self._wizard_state.get("is_private", True))
+            # The wizard's description rides the same rails as privacy: set via
+            # ``update_wizard_state`` (or typed in the Basics step), it lands on
+            # submit even when the agent omits the arg. An agent-supplied
+            # ``description`` wins. Clipped to the submit model's 280-char cap —
+            # the wizard patch accepts up to 500.
+            if not kwargs.get("description"):
+                snapshot_desc = str(self._wizard_state.get("job_description") or "").strip()
+                if snapshot_desc:
+                    kwargs["description"] = snapshot_desc[:280]
             # Signature/Metric (or, for a workflow run, the authored graph) are
             # produced and validated by ``request_code_authoring`` and mirrored
             # into the wizard snapshot. The agent has historically re-typed its
@@ -750,6 +759,11 @@ class WizardState(TypedDict, total=False):
     """
 
     job_name: str
+    # Run description authored in the wizard (Basics step) or patched by the
+    # agent via ``update_wizard_state``; injected into submit calls that omit
+    # ``description`` so an agent-driven run keeps the description the wizard
+    # carries.
+    job_description: str
     dataset_ready: bool
     columns_configured: bool
     signature_code: str
@@ -1352,6 +1366,12 @@ class GeneralistSig(dspy.Signature):
       thing. Do NOT patch ``signature_code`` / ``metric_code`` here — they
       are authored only by ``request_code_authoring`` (see below); the
       ``update_wizard_state`` endpoint REJECTS those two fields.
+    * When you NAME a run, describe it too: set ``job_description`` (one
+      or two plain sentences — the task, the data, the goal, in
+      ``reply_language``) in the SAME ``update_wizard_state`` patch as
+      ``job_name``. It shows on the wizard's Basics step and lands as the
+      run's description on submit automatically — a run you drive should
+      never ship with a name but no description.
     * HARD RULE — one ``update_wizard_state`` call per turn. If you are
       patching N fields this turn, bundle them into a single ``patch``
       object on one call. Splitting "set optimizer, then set model, then
