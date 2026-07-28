@@ -262,6 +262,22 @@ class PostgresGridPairResultStore:
             )
             session.commit()
 
+    def delete_one(self, optimization_id: str, pair_index: int) -> None:
+        """Remove a single pair's stored result (e.g. before re-running it).
+
+        Args:
+            optimization_id: Grid job owning the pair.
+            pair_index: The pair whose result is dropped.
+        """
+        with Session(self._engine) as session:
+            session.execute(
+                delete(GridPairResultModel).where(
+                    GridPairResultModel.optimization_id == optimization_id,
+                    GridPairResultModel.pair_index == pair_index,
+                )
+            )
+            session.commit()
+
     def has_any(self, optimization_id: str) -> bool:
         """Return whether the grid has any completed-pair result stored.
 

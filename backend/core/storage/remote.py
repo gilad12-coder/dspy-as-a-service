@@ -13,10 +13,10 @@ from typing import Any, cast
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from sqlalchemy import Engine, case, create_engine, func, or_, text
+from sqlalchemy import Engine, and_, case, create_engine, func, or_, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, defer, sessionmaker
+from sqlalchemy.orm import Session, aliased, defer, sessionmaker
 
 from ..config import settings
 from ..constants import (
@@ -220,15 +220,35 @@ def _user_facing_jobs():
     claim them, but they are not optimization runs: every listing and count
     surface skips them unless a caller filters for the type explicitly. The
     NULL branch is kept because ``optimization_type`` is nullable (legacy
-    rows) and a bare ``!=`` would silently drop those rows too.
+    rows) and a bare ``!=`` would silently drop those rows too. Distributed
+    grid-pair child rows are scheduling internals of their parent grid and
+    are excluded the same way (see also :func:`_top_level_jobs`, applied
+    even when a caller filters by type).
 
     Returns:
         A SQLAlchemy boolean clause for ``query.filter``.
     """
-    return or_(
-        JobModel.optimization_type.is_(None),
-        JobModel.optimization_type != OPTIMIZATION_TYPE_TAGGING,
+    return and_(
+        or_(
+            JobModel.optimization_type.is_(None),
+            JobModel.optimization_type != OPTIMIZATION_TYPE_TAGGING,
+        ),
+        _top_level_jobs(),
     )
+
+
+def _top_level_jobs():
+    """SQL filter excluding distributed grid-pair child rows.
+
+    Child rows share the jobs table (so the claim/lease/orphan machinery
+    applies to them verbatim) but belong to their parent grid in every
+    user-facing sense: listings, counts, and dashboards must never show
+    them, even when the caller filters for ``grid_search`` explicitly.
+
+    Returns:
+        A SQLAlchemy boolean clause for ``query.filter``.
+    """
+    return JobModel.parent_optimization_id.is_(None)
 
 
 class RemoteDBJobStore:
@@ -480,6 +500,8 @@ class RemoteDBJobStore:
                 "code_version": job.code_version,
                 "stored_bytes": job.stored_bytes or 0,
                 "accumulated_runtime_seconds": job.accumulated_runtime_seconds or 0.0,
+                "parent_optimization_id": job.parent_optimization_id,
+                "pair_index": job.pair_index,
             },
         )
 
@@ -808,11 +830,41 @@ class RemoteDBJobStore:
                 session.query(JobEmbeddingModel).filter(JobEmbeddingModel.optimization_id == optimization_id).delete()
             session.query(GepaCheckpointModel).filter(GepaCheckpointModel.optimization_id == optimization_id).delete()
             session.query(GridPairResultModel).filter(GridPairResultModel.optimization_id == optimization_id).delete()
+            self._delete_grid_pair_children(session, optimization_id)
             session.query(JobModel).filter(JobModel.optimization_id == optimization_id).delete()
             session.commit()
         finally:
             session.close()
         self._evict_job_counters([optimization_id])
+
+    @staticmethod
+    def _delete_grid_pair_children(session: Session, parent_optimization_id: str) -> None:
+        """Delete a grid parent's pair-child rows and their per-child stores.
+
+        Explicit (rather than relying on the ``ON DELETE CASCADE`` self-FK)
+        so SQLite test runs without foreign-key enforcement clean up exactly
+        like Postgres. Child logs/progress need no handling — a pair child
+        writes those onto its PARENT's id.
+
+        Args:
+            session: The open session the caller commits.
+            parent_optimization_id: The grid parent whose children go away.
+        """
+        child_ids = [
+            row[0]
+            for row in session.query(JobModel.optimization_id)
+            .filter(JobModel.parent_optimization_id == parent_optimization_id)
+            .all()
+        ]
+        if not child_ids:
+            return
+        session.query(GepaCheckpointModel).filter(GepaCheckpointModel.optimization_id.in_(child_ids)).delete(
+            synchronize_session=False
+        )
+        session.query(GridPairResultModel).filter(GridPairResultModel.optimization_id.in_(child_ids)).delete(
+            synchronize_session=False
+        )
+        session.query(JobModel).filter(JobModel.optimization_id.in_(child_ids)).delete(synchronize_session=False)
 
     def _evict_job_counters(self, optimization_ids: list[str]) -> None:
         """Drop the per-job in-memory bookkeeping for deleted jobs.
@@ -897,6 +949,8 @@ class RemoteDBJobStore:
             session.query(GridPairResultModel).filter(GridPairResultModel.optimization_id.in_(optimization_ids)).delete(
                 synchronize_session=False
             )
+            for parent_id in optimization_ids:
+                self._delete_grid_pair_children(session, parent_id)
             deleted = (
                 session.query(JobModel)
                 .filter(JobModel.optimization_id.in_(optimization_ids))
@@ -1001,6 +1055,168 @@ class RemoteDBJobStore:
             optimization_id: Grid job whose pair results are freed.
         """
         self._grid_pair_results.delete_all(optimization_id)
+
+    def delete_grid_pair_result(self, optimization_id: str, pair_index: int) -> None:
+        """Drop one pair's stored result (targeted per-pair re-run).
+
+        Args:
+            optimization_id: Grid job owning the pair.
+            pair_index: The pair whose stored result is dropped.
+        """
+        self._grid_pair_results.delete_one(optimization_id, pair_index)
+
+    def list_finalizable_grid_parents(self, limit: int = 10) -> list[str]:
+        """Return running grid parents whose pair children are ALL terminal.
+
+        The normal finalizer is the last pair child to finish; this query
+        backstops the crash window where that child wrote its terminal status
+        and died before assembling the parent result — without it the grid
+        would sit at ``running`` forever with nothing left to run.
+
+        Args:
+            limit: Maximum parents to return per sweep.
+
+        Returns:
+            Parent optimization ids ready for result assembly.
+        """
+        session = self._get_session()
+        try:
+            any_child = aliased(JobModel)
+            live_child = aliased(JobModel)
+            has_children = (
+                session.query(any_child.optimization_id)
+                .filter(any_child.parent_optimization_id == JobModel.optimization_id)
+                .exists()
+            )
+            has_live_children = (
+                session.query(live_child.optimization_id)
+                .filter(
+                    live_child.parent_optimization_id == JobModel.optimization_id,
+                    live_child.status.notin_(["success", "failed", "cancelled"]),
+                )
+                .exists()
+            )
+            rows = (
+                session.query(JobModel.optimization_id)
+                .filter(JobModel.status == "running")
+                .filter(has_children)
+                .filter(~has_live_children)
+                .limit(limit)
+                .all()
+            )
+            return [row[0] for row in rows]
+        finally:
+            session.close()
+
+    def create_grid_pair_jobs(
+        self,
+        parent_optimization_id: str,
+        pair_count: int,
+        *,
+        username: str | None,
+        payload_overview: dict[str, Any],
+    ) -> list[str]:
+        """Fan a distributed grid search out into one claimable row per pair.
+
+        Each child row carries only a tiny reference payload — the dataset
+        stays on the parent row and is re-read at claim time — plus the
+        overview keys the worker pipeline dispatches on. Children inherit the
+        parent's username (fairness/quota accounting) and the current code
+        version, and are removed with the parent via the cascading self-FK.
+
+        The children and the parent's flip to ``running`` commit in ONE
+        transaction: a crash before the commit leaves the parent ``pending``
+        (claimable through the legacy in-child grid path — the run still
+        happens), while after it the parent is unclaimable and only the pair
+        rows carry the work. There is no window where both paths could run
+        the same grid. Calling again for a parent that already has children
+        inserts nothing but still re-parks the parent — the resume path
+        re-pends the children and relies on this call to flip the parent
+        back to ``running``.
+
+        Args:
+            parent_optimization_id: The grid parent whose pairs are fanned out.
+            pair_count: Total number of (generation, reflection) pairs.
+            username: The submitting user, copied onto every child row.
+            payload_overview: Minimal overview stamped on each child (at least
+                the optimization-type and token-source keys the worker reads).
+
+        Returns:
+            The child optimization ids, ordered by pair index.
+        """
+        now = datetime.now(UTC)
+        session = self._get_session()
+        try:
+            existing = (
+                session.query(JobModel.optimization_id)
+                .filter(JobModel.parent_optimization_id == parent_optimization_id)
+                .order_by(JobModel.pair_index.asc())
+                .all()
+            )
+            if existing:
+                child_ids = [row[0] for row in existing]
+            else:
+                child_ids = [str(uuid4()) for _ in range(pair_count)]
+                for index, child_id in enumerate(child_ids):
+                    session.add(
+                        JobModel(
+                            optimization_id=child_id,
+                            status="pending",
+                            created_at=now,
+                            latest_metrics={},
+                            payload={
+                                "parent_optimization_id": parent_optimization_id,
+                                "pair_index": index,
+                            },
+                            payload_overview=dict(payload_overview),
+                            optimization_type="grid_search",
+                            attempts=0,
+                            code_version=self._current_code_version,
+                            username=username,
+                            parent_optimization_id=parent_optimization_id,
+                            pair_index=index,
+                        )
+                    )
+            # The parent was claimed to reach this fan-out: clear its lease so
+            # it can't be orphan-swept back to pending, and park it at
+            # ``running`` — unclaimable, updated only by pair completions.
+            session.query(JobModel).filter(JobModel.optimization_id == parent_optimization_id).update(
+                {
+                    "status": "running",
+                    "message": f"Distributed across {pair_count} pair jobs",
+                    "started_at": now,
+                    "completed_at": None,
+                    "claimed_by": None,
+                    "claimed_at": None,
+                    "lease_expires_at": None,
+                }
+            )
+            session.commit()
+            return child_ids
+        finally:
+            session.close()
+
+    def get_grid_pair_children(self, parent_optimization_id: str) -> list[JobRecord]:
+        """Return the child pair rows of a distributed grid, ordered by pair index.
+
+        Args:
+            parent_optimization_id: The grid parent whose children are read.
+
+        Returns:
+            Child ``JobRecord``s (payload omitted — it is only a tiny
+            reference dict, but list callers never need it).
+        """
+        session = self._get_session()
+        try:
+            rows = (
+                session.query(JobModel)
+                .filter(JobModel.parent_optimization_id == parent_optimization_id)
+                .order_by(JobModel.pair_index.asc())
+                .all()
+            )
+            return [self._job_to_dict(row, include_payload=False) for row in rows]
+        finally:
+            session.close()
 
     def has_grid_pair_results(self, optimization_id: str) -> bool:
         """Return whether the grid has any completed-pair result stored.
@@ -1117,6 +1333,12 @@ class RemoteDBJobStore:
                 session.query(JobEmbeddingModel).filter(JobEmbeddingModel.optimization_id == optimization_id).delete()
             session.query(GepaCheckpointModel).filter(GepaCheckpointModel.optimization_id == optimization_id).delete()
             session.query(GridPairResultModel).filter(GridPairResultModel.optimization_id == optimization_id).delete()
+            # A distributed grid's pair children belong to the discarded
+            # attempt: drop them so the re-claimed parent fans out fresh rows
+            # instead of "resuming" stale terminal children. Deleted
+            # explicitly (not via the FK cascade) so SQLite test runs without
+            # foreign-key enforcement behave like Postgres.
+            self._delete_grid_pair_children(session, optimization_id)
             job.status = "pending"  # type: ignore[assignment]
             job.started_at = None  # type: ignore[assignment]
             job.completed_at = None  # type: ignore[assignment]
@@ -1530,10 +1752,22 @@ class RemoteDBJobStore:
         session = self._get_session()
         try:
             now = datetime.now(UTC)
+            # A distributed grid parent sits at ``running`` with NO lease by
+            # design — its pair children carry the leases. Sweeping it would
+            # re-pend a job no worker should ever claim, so any row that has
+            # children is excluded; the children themselves are ordinary
+            # leased rows and recover through this same sweep.
+            child = aliased(JobModel)
+            has_children = (
+                session.query(child.optimization_id)
+                .filter(child.parent_optimization_id == JobModel.optimization_id)
+                .exists()
+            )
             orphaned = (
                 session.query(JobModel)
                 .filter(JobModel.status.in_(["running", "validating"]))
                 .filter((JobModel.lease_expires_at.is_(None)) | (JobModel.lease_expires_at < now))
+                .filter(~has_children)
                 .all()
             )
             for job in orphaned:
@@ -2292,7 +2526,7 @@ class RemoteDBJobStore:
             if username:
                 q = q.filter(JobModel.username == username)
             if optimization_type:
-                q = q.filter(JobModel.optimization_type == optimization_type)
+                q = q.filter(JobModel.optimization_type == optimization_type, _top_level_jobs())
             else:
                 q = q.filter(_user_facing_jobs())
             jobs = q.offset(offset).limit(limit).all()
@@ -2473,7 +2707,7 @@ class RemoteDBJobStore:
             if status:
                 q = q.filter(JobModel.status == status)
             if optimization_type:
-                q = q.filter(JobModel.optimization_type == optimization_type)
+                q = q.filter(JobModel.optimization_type == optimization_type, _top_level_jobs())
             else:
                 q = q.filter(_user_facing_jobs())
             jobs = q.order_by(JobModel.created_at.desc()).offset(offset).limit(limit).all()
@@ -2509,7 +2743,7 @@ class RemoteDBJobStore:
             if status:
                 q = q.filter(JobModel.status == status)
             if optimization_type:
-                q = q.filter(JobModel.optimization_type == optimization_type)
+                q = q.filter(JobModel.optimization_type == optimization_type, _top_level_jobs())
             else:
                 q = q.filter(_user_facing_jobs())
             return q.scalar() or 0
@@ -2587,7 +2821,7 @@ class RemoteDBJobStore:
             if username:
                 q = q.filter(JobModel.username == username)
             if optimization_type:
-                q = q.filter(JobModel.optimization_type == optimization_type)
+                q = q.filter(JobModel.optimization_type == optimization_type, _top_level_jobs())
             else:
                 q = q.filter(_user_facing_jobs())
             return q.scalar() or 0

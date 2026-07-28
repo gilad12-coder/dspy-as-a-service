@@ -440,6 +440,15 @@ class JobModel(Base):
     accumulated_runtime_seconds: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.0, server_default="0"
     )
+    # Distributed grid search: a (generation, reflection) pair fanned out as
+    # its own claimable row points at its grid parent here and carries its
+    # global pair index. NULL for every user-visible job — child rows are
+    # scheduling internals, hidden from listings and deleted with the parent
+    # via the cascading self-FK.
+    parent_optimization_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("jobs.optimization_id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    pair_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         Index("ix_jobs_status_created_at", "status", "created_at"),

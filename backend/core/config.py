@@ -291,11 +291,22 @@ class Settings(BaseSettings):
         ge=1,
         le=16,
         description=(
-            "Concurrent (generation, reflection) pairs per grid-search job. "
-            "Total LM concurrency in the job child is still capped by "
+            "Concurrent (generation, reflection) pairs per grid-search job "
+            "child. Total LM concurrency in the child is still capped by "
             "job_lm_max_concurrency regardless of this value."
         ),
         alias="GRID_PAIR_MAX_WORKERS",
+    )
+    grid_distributed_pairs: bool = Field(
+        default=True,
+        description=(
+            "Fan a multi-pair grid search out as one claimable job row per "
+            "pair so pairs spread across the whole worker fleet instead of "
+            "sharing one child process. Off = classic all-pairs-in-one-child "
+            "execution; flipping the flag never re-shapes a grid already in "
+            "flight."
+        ),
+        alias="GRID_DISTRIBUTED_PAIRS",
     )
     job_run_start_method: Literal["fork", "spawn", "forkserver"] = Field(
         default="fork", description="Multiprocessing start method for job execution"

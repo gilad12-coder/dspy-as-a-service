@@ -202,6 +202,10 @@ def run_service_in_subprocess(
         optimization_type = payload_dict.pop("_optimization_type", OPTIMIZATION_TYPE_RUN)
         gepa_log_dir_path = payload_dict.pop("_gepa_log_dir", None)
         completed_pairs = payload_dict.pop("_completed_pairs", None)
+        # Distributed grid pair: this child holds one pair of a larger grid and
+        # must report the pair's GLOBAL index / the grid's real pair count.
+        pair_index_base = int(payload_dict.pop("_pair_index_base", 0) or 0)
+        grid_total_pairs = payload_dict.pop("_grid_total_pairs", None)
         progress_callback = partial(_emit_progress_event, event_queue)
 
         if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
@@ -214,6 +218,8 @@ def run_service_in_subprocess(
                 progress_callback=progress_callback,
                 gepa_log_dir_path=gepa_log_dir_path,
                 completed_pairs=completed_pairs,
+                pair_index_base=pair_index_base,
+                total_pairs_override=int(grid_total_pairs) if grid_total_pairs is not None else None,
             )
         else:
             run_payload = RunRequest.model_validate(payload_dict)

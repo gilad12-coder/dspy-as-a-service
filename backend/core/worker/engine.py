@@ -40,15 +40,18 @@ from ..constants import (
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_TOKEN_SOURCE,
     PAYLOAD_OVERVIEW_USERNAME,
+    PROGRESS_GRID_PAIR_COMPLETED,
+    PROGRESS_GRID_PAIR_FAILED,
     TOKEN_SOURCE_BYOK,
     TOKEN_SOURCE_MANAGED,
 )
 from ..i18n import CANCELLATION_REASON
-from ..models import GridSearchRequest, RunRequest
+from ..models import GridSearchRequest, GridSearchResponse, PairResult, RunRequest, SplitCounts
 from ..notifications import notify_job_completed
 from ..registry import ServiceRegistry
 from ..service_gateway import DspyService
 from ..service_gateway.embedding_pipeline import embed_finished_job
+from ..service_gateway.optimization.core import _merge_usage_rows
 from ..service_gateway.optimization.trajectory import GEPA_STATE_FILENAME, GRID_PAIR_RESULT_FILENAME
 from ..storage import JobStore
 from .constants import EVENT_ERROR, EVENT_LOG, EVENT_PROGRESS, EVENT_RESULT
@@ -57,6 +60,17 @@ from .subprocess_runner import run_service_in_subprocess, set_fork_service
 from .tagging_job import TaggingAutotagPayload, run_autotag_job
 
 logger = logging.getLogger(__name__)
+
+# Sentinel pair index for the grid "envelope" row a distributed pair child
+# stores alongside its PairResult: split counts and metric/module names the
+# finalizer needs but individual pair results don't carry. Real pair indices
+# are >= 0, and the resume path ignores out-of-range keys, so the sentinel can
+# never collide with a pair.
+GRID_ENVELOPE_PAIR_INDEX = -1
+
+# A pair child is terminal only in one of these; ``paused`` never applies to
+# grid children (grids are not pausable).
+_PAIR_TERMINAL_STATUSES = ("success", "failed", "cancelled")
 
 
 def _usages_from_result(result_dict: dict[str, Any] | None, fallback_model: str | None) -> list[ModelUsage]:
@@ -409,10 +423,14 @@ class BackgroundWorker:
                     time.sleep(self._poll_interval)
                     idle_cycles += 1
                     # Heartbeat every ~5 min so observability dashboards
-                    # can distinguish "idle but alive" from "stuck".
+                    # can distinguish "idle but alive" from "stuck". Worker 0
+                    # also backstops distributed grids whose last finisher
+                    # died before assembling the parent result.
                     if idle_cycles % 150 == 0:
                         logger.info("Worker %d heartbeat, idle cycles: %d", worker_id, idle_cycles)
                         self._touch_activity(worker_id)
+                        if worker_id == 0:
+                            self._finalize_stuck_grids()
                     continue
 
                 idle_cycles = 0
@@ -455,6 +473,10 @@ class BackgroundWorker:
         logger.info("Processing job %s", optimization_id)
 
         overview: dict[str, Any] = {}  # pre-init so BaseException handler has a defined value even if early error
+        # Pair-child context, resolved after the payload loads; the exception
+        # handler reads these to route notifications and finalize the parent.
+        pair_parent_id: str | None = None
+        pair_index_val = 0
 
         with self._queue_lock:
             cancel_event = self._cancel_events.get(optimization_id)
@@ -482,8 +504,32 @@ class BackgroundWorker:
                 self._process_tagging_job(optimization_id, worker_id, cancel_event, payload_dict)
                 return
 
-            if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
+            pair_parent_id = job_data.get("parent_optimization_id")
+            pair_index_val = int(job_data.get("pair_index") or 0)
+
+            if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH and pair_parent_id is not None:
+                # Distributed pair child: its stored payload is a tiny
+                # reference; the real single-pair payload (dataset included)
+                # derives from the parent row at claim time.
+                derived = self._derive_pair_payload(pair_parent_id, pair_index_val)
+                if derived is None:
+                    # Parent deleted or no longer running (cancelled, failed,
+                    # already finalized): this pair must not spend anything.
+                    with contextlib.suppress(Exception):
+                        self._job_store.update_job(
+                            optimization_id,
+                            status="cancelled",
+                            message="Parent grid is no longer running",
+                            completed_at=datetime.now(UTC).isoformat(),
+                        )
+                    self._maybe_finalize_grid(pair_parent_id)
+                    return
+                payload_dict, grid_payload = derived
+            elif optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
                 grid_payload = GridSearchRequest.model_validate(payload_dict)
+                if self._should_distribute_grid(optimization_id, grid_payload):
+                    self._fan_out_grid(optimization_id, grid_payload, overview)
+                    return
             else:
                 run_payload = RunRequest.model_validate(payload_dict)
 
@@ -553,8 +599,20 @@ class BackgroundWorker:
                     payload_dict["_gepa_log_dir"] = str(gepa_dir)
                     if is_grid:
                         # Resume: hand the child the pairs that already finished so
-                        # it keeps them and runs only the rest.
+                        # it keeps them and runs only the rest. For a pair child
+                        # this reads the CHILD's own store — global-indexed, so a
+                        # requeued pair resumes exactly like a requeued grid.
                         payload_dict["_completed_pairs"] = self._job_store.get_grid_pair_results(optimization_id)
+
+                # Events (progress, logs, latest metrics) from a pair child land
+                # on the PARENT id the user watches; the child row keeps only
+                # scheduling state. The subprocess reports global pair indices
+                # via the base/total keys so those events line up.
+                events_target = optimization_id
+                if pair_parent_id is not None:
+                    events_target = pair_parent_id
+                    payload_dict["_pair_index_base"] = pair_index_val
+                    payload_dict["_grid_total_pairs"] = payload_dict.pop("_parent_total_pairs", 1)
 
                 # BYOK bridge: for a run that bills the user's own provider key,
                 # resolve each model's key from the vault and stamp it onto the
@@ -601,13 +659,14 @@ class BackgroundWorker:
                 # first; this only catches genuine wedges that produce nothing.
                 stall_timeout = settings.job_stall_timeout_seconds
                 last_event_at = time.monotonic()
+                progress_rewrite = self._pair_progress_rewrite(pair_parent_id) if pair_parent_id else None
                 while run_process.is_alive():
                     _raise_if_cancelled(cancel_event, optimization_id)
                     self._touch_activity(worker_id)
                     self._raise_if_store_cancelled(optimization_id)
                     run_process.join(timeout=self._cancel_poll_interval)
                     drained_result, drained_error, drained_count = self._drain_subprocess_events(
-                        optimization_id, event_queue
+                        events_target, event_queue, progress_rewrite=progress_rewrite
                     )
                     if drained_result is not None:
                         result_dict = drained_result
@@ -624,7 +683,9 @@ class BackgroundWorker:
                     if gepa_dir is not None:
                         self._persist_gepa_checkpoint(optimization_id, gepa_dir, checkpoint_tracker, is_grid=is_grid)
 
-                drained_result, drained_error, _ = self._drain_subprocess_events(optimization_id, event_queue)
+                drained_result, drained_error, _ = self._drain_subprocess_events(
+                    events_target, event_queue, progress_rewrite=progress_rewrite
+                )
                 if drained_result is not None:
                     result_dict = drained_result
                 if drained_error is not None:
@@ -637,9 +698,10 @@ class BackgroundWorker:
                     if traceback_text:
                         logger.error("Optimization %s subprocess traceback:\n%s", optimization_id, traceback_text)
                         # Persist traceback so users can see it via GET /jobs/{id}/logs
+                        # (a pair child's traceback belongs on the parent the user reads).
                         with contextlib.suppress(Exception):
                             self._job_store.append_log(
-                                optimization_id,
+                                events_target,
                                 level="ERROR",
                                 logger_name="dspy.subprocess",
                                 message=traceback_text,
@@ -679,6 +741,8 @@ class BackgroundWorker:
                 _raise_if_cancelled(cancel_event, optimization_id)
 
                 # Grid search with all pairs failed is a failure, not a success.
+                # A pair child's 1-pair grid rides the same check: its single
+                # failed pair marks the CHILD row failed.
                 final_status = "success"
                 final_message = "Optimization completed successfully"
                 if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH and isinstance(result_dict, dict):
@@ -694,6 +758,13 @@ class BackgroundWorker:
                         )
                         if first_error:
                             final_message = f"{final_message}: {first_error}"
+
+                # A pair child durably records its PairResult (and the grid
+                # envelope) onto the PARENT before its own terminal write, so
+                # the finalizer can assemble the grid even if this process
+                # dies right after the status lands.
+                if pair_parent_id is not None and isinstance(result_dict, dict):
+                    self._record_pair_outcome(pair_parent_id, result_dict)
 
                 try:
                     current = self._job_store.get_job(optimization_id)
@@ -712,7 +783,10 @@ class BackgroundWorker:
                         "status": final_status,
                         "message": final_message,
                         "completed_at": datetime.now(UTC).isoformat(),
-                        "result": result_dict,
+                        # A pair child's result already lives in the parent's
+                        # pair-result store; storing it again on the hidden
+                        # child row would triple the artifact bytes.
+                        "result": None if pair_parent_id is not None else result_dict,
                     }
                     cas = getattr(self._job_store, "update_job_if_status", None)
                     if cas is not None:
@@ -734,6 +808,13 @@ class BackgroundWorker:
                                 self._job_store.delete_grid_pair_results(optimization_id)
                             else:
                                 self._job_store.delete_gepa_checkpoint(optimization_id)
+                    if pair_parent_id is not None:
+                        # Parent-level side effects (user notification, credit
+                        # debit, billing stamp, embedding) happen ONCE at grid
+                        # finalization — a pair child only checks whether it
+                        # was the last sibling standing.
+                        self._maybe_finalize_grid(pair_parent_id)
+                        return
                     _username = overview.get(PAYLOAD_OVERVIEW_USERNAME, "")
                     _baseline = result_dict.get("baseline_test_metric") if isinstance(result_dict, dict) else None
                     _optimized = result_dict.get("optimized_test_metric") if isinstance(result_dict, dict) else None
@@ -822,7 +903,11 @@ class BackgroundWorker:
                 persisted_status = None
                 with contextlib.suppress(Exception):
                     persisted_status = self._job_store.get_job(optimization_id).get("status")
-                if persisted_status != "paused" and self._job_store.claim_completion_notification(optimization_id):
+                if (
+                    pair_parent_id is None
+                    and persisted_status != "paused"
+                    and self._job_store.claim_completion_notification(optimization_id)
+                ):
                     notify_job_completed(optimization_id=optimization_id, username=_username, status="cancelled")
             else:
                 # Failed jobs are retained so users can inspect the error
@@ -833,13 +918,19 @@ class BackgroundWorker:
                     )
                 except Exception:  # isolation boundary: a DB hiccup must not prevent the notification below
                     logger.exception("Optimization %s: failed to update status to %s", optimization_id, final_status)
-                if self._job_store.claim_completion_notification(optimization_id):
+                if pair_parent_id is None and self._job_store.claim_completion_notification(optimization_id):
                     notify_job_completed(
                         optimization_id=optimization_id,
                         username=_username,
                         status=final_status,
                         message=error_message,
                     )
+            # A pair child's terminal state may have been the grid's last:
+            # run the finalize check on every exit path (it no-ops unless all
+            # siblings are terminal and the parent is still running).
+            if pair_parent_id is not None and not is_shutdown:
+                with contextlib.suppress(Exception):
+                    self._maybe_finalize_grid(pair_parent_id)
             if is_shutdown:
                 raise
 
@@ -909,6 +1000,11 @@ class BackgroundWorker:
             return
 
         self._running = True
+        # Boot backstop: a fleet restart may have interrupted the last pair
+        # finisher of a distributed grid mid-handoff; sweep once before the
+        # idle-loop cadence takes over.
+        with contextlib.suppress(Exception):
+            self._finalize_stuck_grids()
         for i in range(self._num_workers):
             # Non-daemon: the SIGTERM handler joins these threads explicitly so
             # in-flight subprocesses get a chance to terminate cleanly.
@@ -1190,6 +1286,8 @@ class BackgroundWorker:
         self,
         optimization_id: str,
         event_queue: Any,
+        *,
+        progress_rewrite: Any | None = None,
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, int]:
         """Drain all pending events from the subprocess queue, routing each by type.
 
@@ -1200,8 +1298,12 @@ class BackgroundWorker:
         swallowed so a DB hiccup cannot abort an otherwise-healthy optimization.
 
         Args:
-            optimization_id: ID of the running job (for log routing).
+            optimization_id: ID the events are persisted under — the job itself,
+                or a pair child's PARENT grid (the id the user watches).
             event_queue: The shared multiprocessing queue to drain.
+            progress_rewrite: Optional ``(event_name, metrics) -> metrics`` hook
+                applied before persisting a progress event; pair children use it
+                to correct grid-wide counters their single-pair view can't know.
 
         Returns:
             ``(result_dict, error_dict, drained_count)`` — the first two may be
@@ -1225,10 +1327,13 @@ class BackgroundWorker:
             event_type = event.get("type")
             if event_type == EVENT_PROGRESS:
                 try:
+                    metrics = event.get("metrics") or {}
+                    if progress_rewrite is not None:
+                        metrics = progress_rewrite(event.get("event"), metrics)
                     self._job_store.record_progress(
                         optimization_id,
                         event.get("event"),
-                        event.get("metrics") or {},
+                        metrics,
                     )
                 except Exception:
                     logger.exception("Optimization %s: failed to persist subprocess progress event", optimization_id)
@@ -1422,6 +1527,406 @@ class BackgroundWorker:
             logger.exception("Optimization %s pair %s: failed to persist pair result", optimization_id, pair_index)
             return False
         return True
+
+    def _should_distribute_grid(self, optimization_id: str, grid_payload: GridSearchRequest) -> bool:
+        """Decide whether a claimed grid fans out into per-pair jobs.
+
+        Multi-pair grids distribute when the flag is on and the store supports
+        pair rows. A parent that ALREADY has children takes the distributed
+        path regardless of the flag — flipping the flag mid-flight must never
+        strand or double-run a grid that started distributed.
+
+        Args:
+            optimization_id: The claimed grid parent.
+            grid_payload: Its validated payload.
+
+        Returns:
+            ``True`` when the grid should run as distributed pair jobs.
+        """
+        if not hasattr(self._job_store, "create_grid_pair_jobs"):
+            return False
+        total = len(grid_payload.generation_models) * len(grid_payload.reflection_models)
+        if total <= 1:
+            return False
+        if settings.grid_distributed_pairs:
+            return True
+        try:
+            return bool(self._job_store.get_grid_pair_children(optimization_id))
+        except Exception:
+            return False
+
+    def _fan_out_grid(
+        self, optimization_id: str, grid_payload: GridSearchRequest, overview: dict[str, Any]
+    ) -> None:
+        """Fan a claimed grid parent out into claimable per-pair jobs.
+
+        First claim: creates one child row per (generation, reflection) pair
+        and parks the parent at ``running`` (atomically, in the store). Reclaim
+        after a resume/crash: re-pends every child that hasn't succeeded —
+        their own checkpoints give per-pair resume — then re-parks the parent.
+        The child-requeue happens BEFORE the parent flip so a crash between
+        the two leaves the parent claimable and the sequence simply re-runs.
+
+        Args:
+            optimization_id: The claimed grid parent.
+            grid_payload: Its validated payload.
+            overview: The parent's payload overview (token source, username).
+        """
+        store = self._job_store
+        total = len(grid_payload.generation_models) * len(grid_payload.reflection_models)
+        children = store.get_grid_pair_children(optimization_id)
+        requeued = 0
+        if children:
+            for child in children:
+                if child.get("status") != "success":
+                    store.requeue_for_resume(child["optimization_id"], bump_attempts=False)
+                    requeued += 1
+        child_overview = {
+            PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE: OPTIMIZATION_TYPE_GRID_SEARCH,
+            PAYLOAD_OVERVIEW_USERNAME: overview.get(PAYLOAD_OVERVIEW_USERNAME) or grid_payload.username or "",
+            PAYLOAD_OVERVIEW_TOKEN_SOURCE: overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED,
+            PAYLOAD_OVERVIEW_NAME: overview.get(PAYLOAD_OVERVIEW_NAME) or "",
+        }
+        child_ids = store.create_grid_pair_jobs(
+            optimization_id,
+            total,
+            username=grid_payload.username,
+            payload_overview=child_overview,
+        )
+        if children:
+            logger.info(
+                "Grid %s resumed as distributed pairs: %d/%d children re-queued",
+                optimization_id,
+                requeued,
+                len(children),
+            )
+        else:
+            logger.info("Grid %s distributed into %d pair jobs", optimization_id, len(child_ids))
+
+    def _derive_pair_payload(
+        self, parent_optimization_id: str, pair_index: int
+    ) -> tuple[dict[str, Any], GridSearchRequest] | None:
+        """Build a pair child's real single-pair payload from its parent row.
+
+        The child row stores only a tiny reference; the dataset and every other
+        field live once, on the parent. Pair enumeration matches
+        ``run_grid_search`` exactly (generation-major), so ``pair_index``
+        selects the same (generation, reflection) combination the classic
+        in-child path would have run.
+
+        Args:
+            parent_optimization_id: The grid parent to derive from.
+            pair_index: This child's global pair index.
+
+        Returns:
+            ``(payload_dict, validated_payload)`` ready for the normal job
+            pipeline, or ``None`` when the parent is gone / not running /
+            malformed — the child must then cancel itself without spending.
+        """
+        try:
+            parent = self._job_store.get_job(parent_optimization_id)
+        except KeyError:
+            return None
+        except Exception:
+            logger.exception("Pair child of %s: failed to load parent", parent_optimization_id)
+            return None
+        if parent.get("status") != "running":
+            return None
+        parent_payload = parent.get("payload")
+        if not isinstance(parent_payload, dict):
+            return None
+        raw_gens = parent_payload.get("generation_models") or []
+        raw_refs = parent_payload.get("reflection_models") or []
+        total = len(raw_gens) * len(raw_refs)
+        if not raw_refs or not 0 <= pair_index < total:
+            return None
+        child_dict = dict(parent_payload)
+        child_dict["generation_models"] = [raw_gens[pair_index // len(raw_refs)]]
+        child_dict["reflection_models"] = [raw_refs[pair_index % len(raw_refs)]]
+        # Consumed by the spawn wiring in _process_job; pydantic ignores it.
+        child_dict["_parent_total_pairs"] = total
+        try:
+            return child_dict, GridSearchRequest.model_validate(child_dict)
+        except Exception:
+            logger.exception("Pair child of %s: derived payload failed validation", parent_optimization_id)
+            return None
+
+    def _pair_progress_rewrite(self, parent_optimization_id: str) -> Any:
+        """Build the progress-metric corrector for one pair child's events.
+
+        A pair child's single-pair view reports ``completed_so_far=1`` /
+        ``failed_so_far=0-or-1``; the dashboard needs grid-wide counters, so
+        the pair-terminal events get them recomputed from sibling statuses
+        (plus this event's own outcome — the emitting child is not terminal
+        in the DB yet). Only the two pair-terminal events are touched.
+
+        Args:
+            parent_optimization_id: The grid parent whose siblings are counted.
+
+        Returns:
+            A ``(event_name, metrics) -> metrics`` callable for the drain.
+        """
+
+        def rewrite(event_name: Any, metrics: dict[str, Any]) -> dict[str, Any]:
+            """Patch grid-wide counters onto pair-terminal events."""
+            if event_name not in (PROGRESS_GRID_PAIR_COMPLETED, PROGRESS_GRID_PAIR_FAILED):
+                return metrics
+            try:
+                siblings = self._job_store.get_grid_pair_children(parent_optimization_id)
+            except Exception:
+                return metrics
+            done_ok = sum(1 for s in siblings if s.get("status") == "success")
+            done_bad = sum(1 for s in siblings if s.get("status") in ("failed", "cancelled"))
+            if event_name == PROGRESS_GRID_PAIR_COMPLETED:
+                done_ok += 1
+            else:
+                done_bad += 1
+            return {**metrics, "completed_so_far": done_ok, "failed_so_far": done_bad}
+
+        return rewrite
+
+    def _record_pair_outcome(self, parent_optimization_id: str, result_dict: dict[str, Any]) -> None:
+        """Durably record a pair child's outcome onto its parent grid.
+
+        Stores the child's single ``PairResult`` (success OR soft-failure —
+        both carry the global ``pair_index``) plus the grid envelope (split
+        counts, metric/module names) the finalizer needs. Runs BEFORE the
+        child's terminal status write so a crash between the two can only
+        lose the status (the sweeper re-runs the child), never the result.
+
+        Args:
+            parent_optimization_id: The grid parent to record onto.
+            result_dict: The child's serialized 1-pair ``GridSearchResponse``.
+        """
+        try:
+            pair_rows = result_dict.get("pair_results") or []
+            pair_row = pair_rows[0] if pair_rows and isinstance(pair_rows[0], dict) else None
+            if pair_row is None:
+                return
+            self._job_store.save_grid_pair_result(
+                parent_optimization_id, int(pair_row.get("pair_index") or 0), pair_row
+            )
+            self._job_store.save_grid_pair_result(
+                parent_optimization_id,
+                GRID_ENVELOPE_PAIR_INDEX,
+                {
+                    "split_counts": result_dict.get("split_counts"),
+                    "metric_name": result_dict.get("metric_name"),
+                    "module_name": result_dict.get("module_name"),
+                    "optimizer_name": result_dict.get("optimizer_name"),
+                },
+            )
+        except Exception:
+            logger.exception("Pair child of %s: failed to record pair outcome", parent_optimization_id)
+
+    def _maybe_finalize_grid(self, parent_optimization_id: str) -> None:
+        """Assemble and complete a distributed grid once every pair is terminal.
+
+        Runs after every pair child's terminal transition (and from the
+        stuck-grid backstop). No-ops unless ALL siblings are terminal and the
+        parent is still ``running``. The terminal write is CAS-guarded against
+        ``running`` so two racing finalizers (or a finalize racing a cancel)
+        produce exactly one outcome, and the notification + credit debit ride
+        the same once-only completion claim as a classic job.
+        """
+        store = self._job_store
+        if not hasattr(store, "get_grid_pair_children"):
+            return
+        try:
+            children = store.get_grid_pair_children(parent_optimization_id)
+            if not children:
+                return
+            if any(c.get("status") not in _PAIR_TERMINAL_STATUSES for c in children):
+                return
+            parent = store.get_job(parent_optimization_id)
+        except KeyError:
+            return
+        except Exception:
+            logger.exception("Grid %s: finalize pre-check failed", parent_optimization_id)
+            return
+        if parent.get("status") != "running":
+            return
+
+        try:
+            result_dict, final_status, final_message = self._assemble_grid_result(parent, children)
+        except Exception:
+            logger.exception("Grid %s: result assembly failed", parent_optimization_id)
+            result_dict = None
+            final_status = "failed"
+            final_message = "Grid finalization failed; see worker logs"
+
+        completion_fields: dict[str, Any] = {
+            "status": final_status,
+            "message": final_message,
+            "completed_at": datetime.now(UTC).isoformat(),
+            "result": result_dict,
+        }
+        cas = getattr(store, "update_job_if_status", None)
+        if cas is not None:
+            if not cas(parent_optimization_id, ("running",), **completion_fields):
+                return
+        else:
+            store.update_job(parent_optimization_id, **completion_fields)
+        logger.info("Grid %s finalized: status=%s", parent_optimization_id, final_status)
+        # NOTE: unlike the in-child grid path, the parent's stored pair
+        # results are KEPT after success — they are the durable per-pair
+        # archive that seeds targeted re-runs and resumes.
+
+        overview = parent.get("payload_overview", {})
+        if isinstance(overview, str):
+            with contextlib.suppress(Exception):
+                overview = json.loads(overview)
+        if not isinstance(overview, dict):
+            overview = {}
+        _username = overview.get(PAYLOAD_OVERVIEW_USERNAME, "")
+        if store.claim_completion_notification(parent_optimization_id):
+            notify_job_completed(
+                optimization_id=parent_optimization_id,
+                username=_username,
+                status=final_status,
+                message=final_message,
+            )
+            if final_status == "success" and isinstance(result_dict, dict):
+                billed = self._debit_run_credits(
+                    _username,
+                    result_dict,
+                    run_name=overview.get(PAYLOAD_OVERVIEW_NAME) or "",
+                    model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
+                    token_source=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED,
+                )
+                self._stamp_billing_outcome(
+                    parent_optimization_id,
+                    result_dict,
+                    billed=billed,
+                    estimated_low=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_LOW),
+                    estimated_high=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_HIGH),
+                )
+        if final_status == "success":
+            self._schedule_embedding_indexing(parent_optimization_id)
+
+    def _assemble_grid_result(
+        self, parent: dict[str, Any], children: list[dict[str, Any]]
+    ) -> tuple[dict[str, Any], str, str]:
+        """Rebuild the parent ``GridSearchResponse`` from stored pair outcomes.
+
+        Mirrors the tail of ``run_grid_search``: stored ``PairResult`` rows are
+        taken verbatim; a child that died without recording one (hard crash,
+        cancel, attempts exhausted) synthesizes an errored pair from its row so
+        every index is accounted for — a grid can complete with missing pairs
+        only as explicit failures, never silently.
+
+        Args:
+            parent: The parent ``JobRecord`` (payload included).
+            children: The terminal pair-child rows.
+
+        Returns:
+            ``(result_dict, final_status, final_message)`` for the parent's
+            terminal write.
+        """
+        store = self._job_store
+        parent_id = str(parent.get("optimization_id"))
+        payload = parent.get("payload") if isinstance(parent.get("payload"), dict) else {}
+        raw_gens = payload.get("generation_models") or []
+        raw_refs = payload.get("reflection_models") or []
+        total = len(raw_gens) * len(raw_refs) if raw_gens and raw_refs else len(children)
+
+        stored = dict(store.get_grid_pair_results(parent_id))
+        envelope = stored.pop(GRID_ENVELOPE_PAIR_INDEX, None) or {}
+        children_by_index = {int(c.get("pair_index") or 0): c for c in children}
+
+        pair_results: list[PairResult] = []
+        for k in range(total):
+            raw = stored.get(k)
+            if isinstance(raw, dict):
+                pair_results.append(PairResult.model_validate(raw))
+                continue
+            gen_name = ""
+            ref_name = ""
+            if raw_refs:
+                gen_raw = raw_gens[k // len(raw_refs)] if k // len(raw_refs) < len(raw_gens) else {}
+                ref_raw = raw_refs[k % len(raw_refs)]
+                gen_name = str(gen_raw.get("name") or "") if isinstance(gen_raw, dict) else ""
+                ref_name = str(ref_raw.get("name") or "") if isinstance(ref_raw, dict) else ""
+            child = children_by_index.get(k, {})
+            if child.get("status") == "cancelled":
+                error = "Pair cancelled"
+            else:
+                error = str(child.get("message") or "Pair failed without a recorded result")
+            pair_results.append(
+                PairResult(pair_index=k, generation_model=gen_name, reflection_model=ref_name, error=error)
+            )
+
+        successful = [p for p in pair_results if p.error is None and p.optimized_test_metric is not None]
+        best_pair = (
+            max(
+                successful,
+                key=lambda p: p.optimized_test_metric if p.optimized_test_metric is not None else float("-inf"),
+            )
+            if successful
+            else None
+        )
+        completed_count = len([p for p in pair_results if p.error is None])
+        failed_count = len([p for p in pair_results if p.error is not None])
+        pair_token_counts = [p.total_tokens for p in pair_results if p.total_tokens is not None]
+        runtime_seconds: float | None = None
+        started_raw = parent.get("started_at")
+        if isinstance(started_raw, str):
+            with contextlib.suppress(ValueError):
+                started = datetime.fromisoformat(started_raw)
+                # SQLite round-trips naive timestamps; the rows are UTC either way.
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=UTC)
+                runtime_seconds = round((datetime.now(UTC) - started).total_seconds(), 2)
+        split_raw = envelope.get("split_counts")
+        split_counts = (
+            SplitCounts.model_validate(split_raw)
+            if isinstance(split_raw, dict)
+            else SplitCounts(train=0, val=0, test=0)
+        )
+        response = GridSearchResponse(
+            module_name=str(envelope.get("module_name") or payload.get("module_name") or ""),
+            optimizer_name=str(envelope.get("optimizer_name") or payload.get("optimizer_name") or ""),
+            metric_name=envelope.get("metric_name"),
+            split_counts=split_counts,
+            total_pairs=total,
+            completed_pairs=completed_count,
+            failed_pairs=failed_count,
+            pair_results=pair_results,
+            best_pair=best_pair,
+            runtime_seconds=runtime_seconds,
+            total_tokens=sum(pair_token_counts) if pair_token_counts else None,
+            usage_by_model=_merge_usage_rows([row for p in pair_results for row in p.usage_by_model]),
+        )
+
+        final_status = "success"
+        final_message = "Optimization completed successfully"
+        if completed_count == 0 and total > 0:
+            final_status = "failed"
+            final_message = f"All {total} model pairs failed"
+            first_error = next((p.error for p in pair_results if p.error), None)
+            if first_error:
+                final_message = f"{final_message}: {first_error}"
+        return response.model_dump(mode="json"), final_status, final_message
+
+    def _finalize_stuck_grids(self) -> None:
+        """Backstop: finalize grids whose last pair finisher died mid-handoff.
+
+        The normal finalizer is the last pair child to reach a terminal
+        status; if that pod crashed between the child's status write and the
+        parent assembly, the grid would sit at ``running`` with nothing left
+        to run. Idle workers sweep for exactly that shape and finish the job.
+        """
+        lister = getattr(self._job_store, "list_finalizable_grid_parents", None)
+        if lister is None:
+            return
+        try:
+            parents = lister()
+        except Exception:
+            logger.exception("Stuck-grid sweep failed")
+            return
+        for parent_id in parents:
+            with contextlib.suppress(Exception):
+                self._maybe_finalize_grid(parent_id)
 
     def seconds_since_last_activity(self) -> float | None:
         """Return seconds since the most recent worker activity, or ``None`` if none recorded yet.

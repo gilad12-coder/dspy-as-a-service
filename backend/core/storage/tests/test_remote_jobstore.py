@@ -16,6 +16,7 @@ here with a clear reason:
 from __future__ import annotations
 
 import inspect
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
@@ -871,6 +872,110 @@ def test_claim_next_job_stays_fifo_within_one_user(store: SQLiteJobStore) -> Non
     claimed = [store.claim_next_job("pod", lease_seconds=60.0)["optimization_id"] for _ in range(3)]
 
     assert claimed == ["fifo-0", "fifo-1", "fifo-2"]
+
+
+def _seed_grid_parent_with_children(store: SQLiteJobStore, parent_id: str = "grid-p") -> list[str]:
+    """Create a grid parent with payload/overview and fan out two pair children."""
+    store.create_job(parent_id, username="alice")
+    store.set_payload_overview(parent_id, {"optimization_type": "grid_search", "username": "alice"})
+    store.update_job(
+        parent_id,
+        payload={"generation_models": [{"name": "g"}], "reflection_models": [{"name": "r1"}, {"name": "r2"}]},
+    )
+    return store.create_grid_pair_jobs(
+        parent_id, 2, username="alice", payload_overview={"optimization_type": "grid_search"}
+    )
+
+
+def test_create_grid_pair_jobs_parks_parent_and_is_idempotent(store: SQLiteJobStore) -> None:
+    """Fan-out creates claimable children once and parks the parent unclaimed."""
+    child_ids = _seed_grid_parent_with_children(store)
+
+    parent = store.get_job("grid-p")
+    assert parent["status"] == "running"
+    children = store.get_grid_pair_children("grid-p")
+    assert [c["pair_index"] for c in children] == [0, 1]
+    assert all(c["status"] == "pending" for c in children)
+
+    again = store.create_grid_pair_jobs("grid-p", 2, username="alice", payload_overview={})
+    assert again == child_ids
+    assert len(store.get_grid_pair_children("grid-p")) == 2
+
+
+def test_grid_pair_children_hidden_from_listings_and_counts(store: SQLiteJobStore) -> None:
+    """Child rows never surface in user-facing lists or counts, typed or not."""
+    _seed_grid_parent_with_children(store)
+
+    listed = {j["optimization_id"] for j in store.list_jobs(username="alice")}
+    assert listed == {"grid-p"}
+    typed = {j["optimization_id"] for j in store.list_jobs(username="alice", optimization_type="grid_search")}
+    assert typed == {"grid-p"}
+    assert store.count_jobs(username="alice") == 1
+    assert store.count_jobs(username="alice", optimization_type="grid_search") == 1
+
+
+def test_recover_orphaned_jobs_skips_distributed_parent(store: SQLiteJobStore) -> None:
+    """The lease-less running parent is never swept; its children still are."""
+    child_ids = _seed_grid_parent_with_children(store)
+    claimed = store.claim_next_job("pod", lease_seconds=0.001)
+    assert claimed is not None
+    assert claimed["optimization_id"] in child_ids
+    time.sleep(0.01)
+
+    recovered = store.recover_orphaned_jobs()
+
+    assert recovered == 1
+    assert store.get_job("grid-p")["status"] == "running"
+    assert store.get_job(claimed["optimization_id"])["status"] == "pending"
+
+
+def test_requeue_for_rerun_drops_pair_children(store: SQLiteJobStore) -> None:
+    """A from-scratch re-run discards the previous attempt's pair rows."""
+    _seed_grid_parent_with_children(store)
+    store.update_job("grid-p", status="failed")
+
+    assert store.requeue_for_rerun("grid-p") is True
+
+    assert store.get_grid_pair_children("grid-p") == []
+    assert store.get_job("grid-p")["status"] == "pending"
+
+
+def test_delete_job_removes_pair_children(store: SQLiteJobStore) -> None:
+    """Deleting a grid parent removes its child rows and their stores."""
+    child_ids = _seed_grid_parent_with_children(store)
+    store.save_grid_pair_result(child_ids[0], 0, {"pair_index": 0})
+
+    store.delete_job("grid-p")
+
+    assert not store.job_exists("grid-p")
+    for child_id in child_ids:
+        assert not store.job_exists(child_id)
+    assert store.get_grid_pair_results(child_ids[0]) == {}
+
+
+def test_list_finalizable_grid_parents(store: SQLiteJobStore) -> None:
+    """Only running parents whose children are ALL terminal are listed."""
+    child_ids = _seed_grid_parent_with_children(store)
+    store.update_job(child_ids[0], status="success")
+
+    assert store.list_finalizable_grid_parents() == []
+
+    store.update_job(child_ids[1], status="failed")
+    assert store.list_finalizable_grid_parents() == ["grid-p"]
+
+    store.update_job("grid-p", status="success")
+    assert store.list_finalizable_grid_parents() == []
+
+
+def test_delete_grid_pair_result_drops_single_row(store: SQLiteJobStore) -> None:
+    """The targeted per-pair delete leaves sibling results in place."""
+    store.create_job("grid-single", username="alice")
+    store.save_grid_pair_result("grid-single", 0, {"pair_index": 0})
+    store.save_grid_pair_result("grid-single", 1, {"pair_index": 1})
+
+    store.delete_grid_pair_result("grid-single", 0)
+
+    assert set(store.get_grid_pair_results("grid-single")) == {1}
 
 
 def test_update_job_unknown_field_raises_value_error(store: SQLiteJobStore) -> None:

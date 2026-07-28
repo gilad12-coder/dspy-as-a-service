@@ -1291,6 +1291,8 @@ class DspyService:
         progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
         gepa_log_dir_path: str | None = None,
         completed_pairs: dict[int, dict[str, Any]] | None = None,
+        pair_index_base: int = 0,
+        total_pairs_override: int | None = None,
     ) -> GridSearchResponse:
         """Run one optimization per (generation_model, reflection_model) pair and return all results.
 
@@ -1301,6 +1303,14 @@ class DspyService:
         On resume, ``completed_pairs`` (``pair_index`` → stored ``PairResult``) are
         kept as-is and skipped, and ``gepa_log_dir_path`` is the worker-owned base
         dir whose ``pair_<i>`` subdirs seed each in-flight pair's GEPA checkpoint.
+
+        A distributed grid runs each pair in its own job child: the child holds
+        a single-pair payload but must report GLOBAL indices so its events and
+        checkpoints line up with the parent grid the user watches.
+        ``pair_index_base`` offsets every pair index (events, log tagging, pair
+        dirs, ``PairResult.pair_index``, resume keys) and ``total_pairs_override``
+        is the parent's real pair count for event display; both default to the
+        identity for the classic all-pairs-in-one-child path.
 
         Args:
             payload: The validated grid-search request to execute.
@@ -1314,9 +1324,10 @@ class DspyService:
         grid_start = datetime.now(UTC)
         pairs = [(gen_cfg, ref_cfg) for gen_cfg in payload.generation_models for ref_cfg in payload.reflection_models]
         total_pairs = len(pairs)
+        display_total = total_pairs_override if total_pairs_override is not None else total_pairs
         logger.info(
             "Starting grid search: %d pairs, module=%s optimizer=%s",
-            total_pairs,
+            display_total,
             payload.module_name,
             payload.optimizer_name,
         )
@@ -1353,14 +1364,17 @@ class DspyService:
             val=len(splits.val),
             test=len(splits.test),
         )
-        if progress_callback:
+        # A distributed grid's children all compute identical splits (same
+        # payload + seed); only the child owning global pair 0 emits the
+        # splits/valset events so the parent's stream carries them once.
+        if progress_callback and pair_index_base == 0:
             progress_callback(
                 PROGRESS_SPLITS_READY,
                 {
                     DETAIL_TRAIN: split_counts.train,
                     DETAIL_VAL: split_counts.val,
                     DETAIL_TEST: split_counts.test,
-                    "total_pairs": total_pairs,
+                    "total_pairs": display_total,
                 },
             )
             emit_valset_event(splits.val, progress_callback)
@@ -1368,19 +1382,30 @@ class DspyService:
         pair_results: list[PairResult] = [None] * total_pairs  # type: ignore[list-item]
         completed = completed_pairs or {}
         # Resume: keep already-finished pairs verbatim so they are neither re-run
-        # nor lost, and run only the rest.
+        # nor lost, and run only the rest. Stored keys are GLOBAL indices.
         for idx, stored in completed.items():
-            if 0 <= idx < total_pairs:
-                pair_results[idx] = PairResult.model_validate(stored)
-        pending = [(i, gen_cfg, ref_cfg) for i, (gen_cfg, ref_cfg) in enumerate(pairs) if i not in completed]
+            local = idx - pair_index_base
+            if 0 <= local < total_pairs:
+                pair_results[local] = PairResult.model_validate(stored)
+        pending = [
+            (i, gen_cfg, ref_cfg)
+            for i, (gen_cfg, ref_cfg) in enumerate(pairs)
+            if (pair_index_base + i) not in completed
+        ]
 
         # Split the job-wide cost ceiling (in credits) evenly across pairs so
-        # concurrent pairs can't collectively exceed the user's cap; 0 = no ceiling.
+        # concurrent pairs can't collectively exceed the user's cap; 0 = no
+        # ceiling. Divided by the PARENT's pair count so a distributed child
+        # holding one pair still gets 1/Nth of the grid-wide cap.
         pair_max_credits = (
-            payload.max_cost_credits // total_pairs if payload.max_cost_credits is not None and total_pairs > 0 else 0
+            payload.max_cost_credits // display_total
+            if payload.max_cost_credits is not None and display_total > 0
+            else 0
         )
+        # Events display the parent's real pair count; local mechanics (result
+        # slots, ceiling split) already use the child-local values above.
         grid_ctx = _GridPairContext(
-            total_pairs=total_pairs,
+            total_pairs=display_total,
             module_factory=module_factory,
             module_kwargs=module_kwargs,
             payload=payload,
@@ -1404,8 +1429,11 @@ class DspyService:
         if pending:
             max_workers = min(len(pending), app_settings.grid_pair_max_workers)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Workers receive the GLOBAL index (events, log tags, pair dirs,
+                # PairResult.pair_index); the futures map keeps the local slot.
                 futures = {
-                    executor.submit(_run_grid_pair, grid_ctx, i, gen_cfg, ref_cfg): i for i, gen_cfg, ref_cfg in pending
+                    executor.submit(_run_grid_pair, grid_ctx, pair_index_base + i, gen_cfg, ref_cfg): i
+                    for i, gen_cfg, ref_cfg in pending
                 }
                 for future in as_completed(futures):
                     idx = futures[future]

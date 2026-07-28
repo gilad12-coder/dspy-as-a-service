@@ -36,6 +36,8 @@ class JobRecord(TypedDict, total=False):
     log_count: int
     stored_bytes: int
     accumulated_runtime_seconds: float
+    parent_optimization_id: str | None
+    pair_index: int | None
 
 
 class ProgressEventRecord(TypedDict):
