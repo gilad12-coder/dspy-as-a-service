@@ -543,6 +543,11 @@ table.guide-table tbody tr td:hover {
   text-decoration: none !important;
 }
 
+/* Tables without click-to-copy cells: no copy-hint underline. */
+table.no-copy-underline tbody tr td:hover {
+  text-decoration: none !important;
+}
+
 /* Subtle hover lift on cards */
 [data-slot="card"] {
   transition:

@@ -1,10 +1,8 @@
-import { toast } from "react-toastify";
 import {
   ChevronLeft,
   ChevronRight,
   Crown,
   Eye,
-  ExternalLink,
   Pencil,
   Plus,
   Send,
@@ -204,7 +202,7 @@ export function JobsTab({
           >
             <Table
               style={{ minWidth: "640px" }}
-              className="table-stack [&_thead_th]:ps-1 [&_thead_th]:pe-2 [&_thead_th]:py-2 [&_thead_th]:text-[0.6875rem] [&_thead_th_button]:px-1 [&_thead_svg]:size-2.5 [&_tbody_td]:px-1.5"
+              className="table-stack no-copy-underline [&_thead_th]:ps-1 [&_thead_th]:pe-2 [&_thead_th]:py-2 [&_thead_th]:text-[0.6875rem] [&_thead_th_button]:px-1 [&_thead_svg]:size-2.5 [&_tbody_td]:px-1.5"
             >
               <TableHeader className="bg-muted/20 [&_tr]:border-b-border/40">
                 <TableRow>
@@ -367,7 +365,6 @@ export function JobsTab({
                     width={colResize.widths["optimized_test_metric"] ?? DEFAULT_COL_WIDTHS.optimized_test_metric}
                     onResize={colResize.setColumnWidth}
                   />
-                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody className="transition-opacity duration-200">
@@ -377,26 +374,20 @@ export function JobsTab({
                     <TableRow
                       key={job.optimization_id}
                       data-selected={isSelected}
-                      className="group border-border/30 transition-colors duration-150 data-[selected=true]:bg-primary/[0.08] hover:bg-foreground/[0.025] data-[selected=true]:hover:bg-primary/[0.12] cursor-pointer [&_td:first-child]:cursor-default [&_td:last-child]:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      className="group border-border/30 transition-colors duration-150 data-[selected=true]:bg-primary/[0.08] hover:bg-foreground/[0.025] data-[selected=true]:hover:bg-primary/[0.12] cursor-pointer [&_td:first-child]:cursor-default"
                       style={{
                         animation: `fadeSlideIn 0.25s ease-out ${idx * 0.03}s both`,
                       }}
                       onClick={(e) => {
+                        // Convenience target only — the ID button remains the
+                        // accessible/keyboard path. The checkbox cell is
+                        // excluded so a missed checkbox click can't navigate.
                         const target = e.target as HTMLElement;
                         if (target.closest("button, a, input")) return;
                         const td = target.closest("td");
-                        if (!td) return;
-                        const parent = td.parentElement;
-                        if (td === parent?.lastElementChild) return;
-                        if (td === parent?.firstElementChild) return;
-                        const text = td.textContent?.trim();
-                        if (!text) return;
-                        navigator.clipboard
-                          .writeText(text)
-                          .then(() => toast.success(msg("clipboard.copied")))
-                          .catch(() => {});
+                        if (!td || td === td.parentElement?.firstElementChild) return;
+                        onOpenJob(job.optimization_id);
                       }}
-                      data-tutorial="job-link"
                     >
                       <TableCell className="w-10 px-3">
                         <input
@@ -413,19 +404,52 @@ export function JobsTab({
                       </TableCell>
                       <TableCell
                         className="px-2 max-w-[100px]"
-                        title={job.optimization_id}
                         data-label={msg("auto.features.dashboard.components.jobstab.template.1")}
                       >
                         {/* ``min-w-0`` lets the flex item shrink so the
                             cell's overflow-hidden + text-ellipsis can
-                            actually fire on the span below; without it
+                            actually fire on the button below; without it
                             the flex child claims its content's intrinsic
                             width and overflows past the cell boundary. */}
                         <div className="flex items-center gap-1.5 min-w-0">
                           {ACTIVE_STATUSES.has(job.status) && <PingDot className="shrink-0" />}
-                          <span className="font-mono text-xs text-primary truncate">
-                            {formatId(job.optimization_id)}
-                          </span>
+                          {/* Rests as plain mono text; on hover it becomes a
+                              rectangular code-token chip (Badge's glossy inset
+                              over a primary wash), and press dips the scale
+                              like the app's buttons. The always-on transparent
+                              border and padding (offset by the negative
+                              logical margin) mean the chip appears with zero
+                              layout shift. ``dir="ltr"`` keeps hex IDs that
+                              start with a digit from bidi-reordering in RTL
+                              locales. */}
+                          <TooltipButton
+                            tooltip={
+                              <span className="flex flex-col gap-0.5">
+                                <span>
+                                  {formatMsg(
+                                    "auto.features.dashboard.components.jobstab.template.3",
+                                    { p1: TERMS.optimization },
+                                  )}
+                                </span>
+                                <span className="font-mono text-[0.6875rem] opacity-80" dir="ltr">
+                                  {job.optimization_id}
+                                </span>
+                              </span>
+                            }
+                          >
+                            <button
+                              type="button"
+                              dir="ltr"
+                              onClick={() => onOpenJob(job.optimization_id)}
+                              className="font-mono text-xs text-primary truncate min-w-0 -ms-1.5 rounded-md border border-transparent px-1.5 py-0.5 cursor-pointer transition-[background-color,border-color,box-shadow,transform] duration-150 hover:bg-primary/10 hover:border-primary/30 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] active:bg-primary/15 active:scale-[0.98] focus-visible:outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                              aria-label={formatMsg(
+                                "auto.features.dashboard.components.jobstab.template.3",
+                                { p1: TERMS.optimization },
+                              )}
+                            >
+                              {formatId(job.optimization_id)}
+                            </button>
+                          </TooltipButton>
                         </div>
                       </TableCell>
                       <TableCell
@@ -513,25 +537,6 @@ export function JobsTab({
                         data-label={msg("auto.features.dashboard.components.jobstab.literal.8")}
                       >
                         {formatScore(job)}
-                      </TableCell>
-                      <TableCell className="px-2">
-                        <div className="flex items-center gap-0.5">
-                          <TooltipButton
-                            tooltip={msg("auto.features.dashboard.components.jobstab.9")}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => onOpenJob(job.optimization_id)}
-                              className="p-1 rounded hover:bg-accent/60 text-muted-foreground hover:text-foreground transition-all cursor-pointer"
-                              aria-label={formatMsg(
-                                "auto.features.dashboard.components.jobstab.template.3",
-                                { p1: TERMS.optimization },
-                              )}
-                            >
-                              <ExternalLink className="size-3.5" />
-                            </button>
-                          </TooltipButton>
-                        </div>
                       </TableCell>
                     </TableRow>
                   );
