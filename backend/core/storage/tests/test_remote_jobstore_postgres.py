@@ -214,3 +214,30 @@ def test_parallel_progress_writers_finish_quickly(store: RemoteDBJobStore) -> No
         assert store.get_progress_count(ids[1]) == 100
     finally:
         store.delete_jobs(ids)
+
+
+def test_claim_orders_by_user_in_flight_then_age(store: RemoteDBJobStore) -> None:
+    """Live-SQL check of the fairness ordering: fewest-in-flight user first.
+
+    Exercises the correlated ``ORDER BY`` subquery + ``FOR UPDATE SKIP
+    LOCKED`` combination on the real dialect. Alice's burst is older, but
+    once her first job is in flight, Bob's younger job must claim next;
+    Alice's second job follows. Runs after the drain test so no stray
+    pending rows can interleave with the exact-order assertions.
+    """
+    prefix = f"fairness-test-{uuid.uuid4().hex[:8]}"
+    ids = [f"{prefix}-a1", f"{prefix}-a2", f"{prefix}-b1"]
+    for oid, username in zip(ids, (f"{prefix}-alice", f"{prefix}-alice", f"{prefix}-bob"), strict=True):
+        store.create_job(oid, username=username)
+        store.update_job(oid, payload={"ok": True})
+
+    try:
+        claimed = []
+        for _ in range(3):
+            row = store.claim_next_job("pod-fair", lease_seconds=60.0)
+            assert row is not None
+            claimed.append(row["optimization_id"])
+
+        assert claimed == [f"{prefix}-a1", f"{prefix}-b1", f"{prefix}-a2"]
+    finally:
+        store.delete_jobs(ids)

@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import dspy
 import pytest
 
+from core.config import settings
 from core.exceptions import ServiceError
 from core.models import ModelConfig
 from core.service_gateway.optimization.data import DatasetSplits
@@ -379,6 +380,74 @@ def test_instantiate_optimizer_does_not_override_metric_if_already_in_kwargs() -
     )
 
     assert captured["metric"] is custom_metric
+
+
+def test_instantiate_optimizer_injects_gepa_num_threads_default() -> None:
+    """GEPA gets the configured parallel-eval default when no ``num_threads`` is supplied."""
+    captured: dict = {}
+
+    class _GepaFactory:
+        def __init__(self, num_threads: Any = None, **kw: Any) -> None:
+            captured["num_threads"] = num_threads
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=fake_language_model(),
+    )
+
+    assert captured["num_threads"] == settings.gepa_eval_num_threads
+
+
+def test_instantiate_optimizer_keeps_user_supplied_gepa_num_threads() -> None:
+    """An explicit ``num_threads`` in optimizer_kwargs beats the injected default."""
+    captured: dict = {}
+
+    class _GepaFactory:
+        def __init__(self, num_threads: Any = None, **kw: Any) -> None:
+            captured["num_threads"] = num_threads
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={"num_threads": 3},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=fake_language_model(),
+    )
+
+    assert captured["num_threads"] == 3
+
+
+def test_instantiate_optimizer_does_not_inject_num_threads_for_non_gepa() -> None:
+    """Non-GEPA factories never receive an unrequested ``num_threads`` kwarg."""
+    captured: dict = {}
+
+    class _PlainFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_PlainFactory,
+        optimizer_name="my_opt",
+        optimizer_kwargs={},
+        metric=_dummy_metric,
+        reflection_model=None,
+    )
+
+    assert "num_threads" not in captured
 
 
 def test_instantiate_optimizer_gepa_requires_reflection_model_or_raises() -> None:

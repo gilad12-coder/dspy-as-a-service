@@ -224,6 +224,31 @@ class LmUsageTotals:
     split_found: bool = False
 
 
+# None (the default everywhere, including the API process) means unmetered —
+# the gate costs nothing until a job child installs it.
+_job_lm_gate: threading.BoundedSemaphore | None = None
+
+
+def activate_job_lm_budget(max_concurrency: int) -> None:
+    """Install a process-wide ceiling on concurrent LM calls.
+
+    Called once per job child (``run_service_in_subprocess``) so grid pair
+    threads times GEPA eval threads — plus any user-supplied ``num_threads``
+    — can never put more than ``max_concurrency`` LM calls in flight at once.
+    Excess callers block in ``MeteredLM.forward`` until a permit frees; the
+    per-call timeout still bounds each held permit, so the gate cannot wedge
+    a run. Only the sync path is gated: optimizers evaluate on threads, and
+    the async agent/serve surfaces run in the API process where no budget is
+    installed.
+
+    Args:
+        max_concurrency: Ceiling on in-flight LM calls; ``<= 0`` removes the
+            gate.
+    """
+    global _job_lm_gate
+    _job_lm_gate = threading.BoundedSemaphore(max_concurrency) if max_concurrency > 0 else None
+
+
 class MeteredLM(dspy.LM):
     """``dspy.LM`` that aggregates usage instead of retaining call history.
 
@@ -246,6 +271,22 @@ class MeteredLM(dspy.LM):
         self.usage_totals = LmUsageTotals()
         self.last_request_model: str | None = None
         self.last_response_model: str | None = None
+
+    def forward(self, *args: object, **kwargs: object) -> object:
+        """Run the LM call, honouring the job-child LM concurrency budget.
+
+        Args:
+            *args: Positional arguments forwarded to ``dspy.LM.forward``.
+            **kwargs: Keyword arguments forwarded to ``dspy.LM.forward``.
+
+        Returns:
+            The upstream ``dspy.LM.forward`` result.
+        """
+        gate = _job_lm_gate
+        if gate is None:
+            return super().forward(*args, **kwargs)
+        with gate:
+            return super().forward(*args, **kwargs)
 
     def update_history(self, entry: object) -> None:
         """Fold one call's usage into the running totals and discard the entry.

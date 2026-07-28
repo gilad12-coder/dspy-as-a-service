@@ -259,6 +259,44 @@ class Settings(BaseSettings):
         ),
         alias="JOB_STALL_TIMEOUT",
     )
+    gepa_eval_num_threads: int = Field(
+        default=8,
+        ge=1,
+        le=64,
+        description=(
+            "Eval/rollout thread count injected into GEPA when the submission "
+            "doesn't set num_threads. GEPA's own default is sequential "
+            "candidate evaluation, and runs are LM-latency-bound, so parallel "
+            "eval cuts wall-clock roughly linearly. An explicit user-supplied "
+            "num_threads always wins; job_lm_max_concurrency bounds the "
+            "multiplied total either way."
+        ),
+        alias="GEPA_EVAL_NUM_THREADS",
+    )
+    job_lm_max_concurrency: int = Field(
+        default=16,
+        ge=0,
+        le=256,
+        description=(
+            "Per-job-child ceiling on concurrent LM calls. Grid pair threads "
+            "times GEPA eval threads multiply, and a user can pass any "
+            "num_threads in optimizer kwargs; this gate keeps one job from "
+            "spraying the provider with enough parallel calls to trip rate "
+            "limits and fail the run. 0 disables the gate."
+        ),
+        alias="JOB_LM_MAX_CONCURRENCY",
+    )
+    grid_pair_max_workers: int = Field(
+        default=4,
+        ge=1,
+        le=16,
+        description=(
+            "Concurrent (generation, reflection) pairs per grid-search job. "
+            "Total LM concurrency in the job child is still capped by "
+            "job_lm_max_concurrency regardless of this value."
+        ),
+        alias="GRID_PAIR_MAX_WORKERS",
+    )
     job_run_start_method: Literal["fork", "spawn", "forkserver"] = Field(
         default="fork", description="Multiprocessing start method for job execution"
     )

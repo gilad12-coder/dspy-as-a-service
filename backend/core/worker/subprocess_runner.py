@@ -18,10 +18,12 @@ from typing import Any
 
 import dspy
 
+from ..config import settings
 from ..constants import OPTIMIZATION_TYPE_GRID_SEARCH, OPTIMIZATION_TYPE_RUN
 from ..models import GridSearchRequest, RunRequest
 from ..registry import ServiceRegistry
 from ..service_gateway import DspyService
+from ..service_gateway.language_models import activate_job_lm_budget
 from ..service_gateway.optimization.llm_error import (
     LlmErrorCapture,
     enrich_error_message,
@@ -162,6 +164,10 @@ def run_service_in_subprocess(
     except Exception:
         with contextlib.suppress(Exception):
             dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
+    # Cap this child's in-flight LM calls: grid pair threads x GEPA eval
+    # threads multiply, and without a ceiling a single job can spray the
+    # provider hard enough to trip rate limits and fail the run.
+    activate_job_lm_budget(settings.job_lm_max_concurrency)
     service = _FORK_SERVICE if start_method == "fork" and _FORK_SERVICE is not None else DspyService(ServiceRegistry())
     log_handler = SubprocessLogHandler(event_queue)
     log_handler.setLevel(logging.DEBUG)

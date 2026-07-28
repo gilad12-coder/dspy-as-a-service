@@ -1057,6 +1057,9 @@ class DspyService:
             else student_lm
         )
         max_metric_calls = _resolve_max_metric_calls(payload.optimizer_kwargs)
+        # Same parallel-eval default the scalar GEPA path gets via
+        # build_optimizer; the react adapter's own default is sequential.
+        num_threads = int(payload.optimizer_kwargs.get("num_threads") or app_settings.gepa_eval_num_threads)
         seed = payload.seed if payload.seed is not None else (self.default_seed or 0)
 
         gen_timing = GenLMTimingCallback(student_lm)
@@ -1099,6 +1102,7 @@ class DspyService:
                 reflection_lm=reflection_lm,
                 max_metric_calls=max_metric_calls,
                 seed=seed,
+                num_threads=num_threads,
                 run_dir=trajectory_log_dir,
                 progress_callback=progress_callback,
                 timing_callbacks=(gen_timing,),
@@ -1398,7 +1402,7 @@ class DspyService:
             )
 
         if pending:
-            max_workers = min(len(pending), 4)
+            max_workers = min(len(pending), app_settings.grid_pair_max_workers)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {
                     executor.submit(_run_grid_pair, grid_ctx, i, gen_cfg, ref_cfg): i for i, gen_cfg, ref_cfg in pending

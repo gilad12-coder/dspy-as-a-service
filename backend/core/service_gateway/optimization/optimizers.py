@@ -13,6 +13,7 @@ from typing import Any, Literal, overload
 
 import dspy
 
+from ...config import settings
 from ...constants import (
     COMPILE_TRAINSET_KEY,
     COMPILE_VALSET_KEY,
@@ -432,6 +433,13 @@ def instantiate_optimizer(
         k in kwargs for k in ("auto", "max_full_evals", "max_metric_calls")
     ):
         kwargs["auto"] = "light"
+    # GEPA's own num_threads default is None — fully sequential candidate
+    # evaluation — and runs are LM-latency-bound, so that default dominates
+    # wall-clock. Inject a parallel default; an explicit user value wins, and
+    # the per-job LM gate (activate_job_lm_budget) bounds the total across
+    # pair threads x eval threads either way.
+    if optimizer_key == OPTIMIZER_NAME_GEPA and "num_threads" not in kwargs:
+        kwargs["num_threads"] = settings.gepa_eval_num_threads
     if (
         optimizer_key == OPTIMIZER_NAME_GEPA
         and log_dir is not None
@@ -456,12 +464,13 @@ def instantiate_optimizer(
     # the single most useful instantiation breadcrumb — was previously invisible
     # in job_logs. Reports which injections were applied, not just key names.
     logger.info(
-        "Creating optimizer %s (metric=%s reflection_lm=%s auto=%s log_dir=%s)",
+        "Creating optimizer %s (metric=%s reflection_lm=%s auto=%s log_dir=%s num_threads=%s)",
         optimizer_name,
         OPTIMIZER_METRIC_KEY in kwargs,
         OPTIMIZER_REFLECTION_LM_KEY in kwargs,
         kwargs.get("auto"),
         OPTIMIZER_LOG_DIR_KEY in kwargs,
+        kwargs.get("num_threads"),
     )
     return factory(**kwargs)
 

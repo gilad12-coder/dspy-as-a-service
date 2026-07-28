@@ -835,6 +835,44 @@ def test_claim_next_job_skips_pending_row_without_payload(store: SQLiteJobStore)
     assert row["optimization_id"] == "claim-nopayload"
 
 
+def test_claim_next_job_prefers_user_with_fewer_jobs_in_flight(store: SQLiteJobStore) -> None:
+    """A one-user burst doesn't monopolize claims while another user waits.
+
+    Alice submits first and already has one job claimed; Bob's younger job
+    must be claimed next because Alice has more work in flight — plain FIFO
+    would hand Alice the slot and starve Bob behind her whole burst.
+    """
+    store.create_job("fair-alice-1", username="alice")
+    store.update_job("fair-alice-1", payload={"ok": True})
+    store.create_job("fair-alice-2", username="alice")
+    store.update_job("fair-alice-2", payload={"ok": True})
+    store.create_job("fair-bob-1", username="bob")
+    store.update_job("fair-bob-1", payload={"ok": True})
+
+    first = store.claim_next_job("pod", lease_seconds=60.0)
+    assert first is not None
+    assert first["optimization_id"] == "fair-alice-1"
+
+    second = store.claim_next_job("pod", lease_seconds=60.0)
+    assert second is not None
+    assert second["optimization_id"] == "fair-bob-1"
+
+    third = store.claim_next_job("pod", lease_seconds=60.0)
+    assert third is not None
+    assert third["optimization_id"] == "fair-alice-2"
+
+
+def test_claim_next_job_stays_fifo_within_one_user(store: SQLiteJobStore) -> None:
+    """With a single user queued, claims stay strictly oldest-first."""
+    for i in range(3):
+        store.create_job(f"fifo-{i}", username="alice")
+        store.update_job(f"fifo-{i}", payload={"ok": True})
+
+    claimed = [store.claim_next_job("pod", lease_seconds=60.0)["optimization_id"] for _ in range(3)]
+
+    assert claimed == ["fifo-0", "fifo-1", "fifo-2"]
+
+
 def test_update_job_unknown_field_raises_value_error(store: SQLiteJobStore) -> None:
     """Update job unknown field raises value error."""
     store.create_job("uf-1")

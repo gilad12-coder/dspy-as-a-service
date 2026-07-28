@@ -1569,13 +1569,22 @@ class RemoteDBJobStore:
         worker_id: str,
         lease_seconds: float,
     ) -> JobRecord | None:
-        """Atomically claim the oldest pending job using FOR UPDATE SKIP LOCKED.
+        """Atomically claim the next pending job using FOR UPDATE SKIP LOCKED.
 
         Two pods running this method concurrently are guaranteed to see
         disjoint result sets — Postgres' ``SKIP LOCKED`` causes each session
         to silently jump over rows the other has already row-locked. The
         outer ``UPDATE`` then writes the lease metadata, completing the claim
         in one round trip.
+
+        Ordering is fair across users, not plain FIFO: pending jobs are
+        ranked by how many jobs their owner already has in flight
+        (``validating``/``running``), then by age. One user submitting a
+        burst can no longer monopolize every worker slot while a second
+        user's single job waits behind the whole burst. The scheme is
+        work-conserving — with only one user queued, their jobs still fill
+        every slot in FIFO order — and starvation-free, because a job's
+        rank only ever improves as its owner's running jobs finish.
 
         Only rows whose ``payload`` has been written are eligible. A submission
         inserts the row as ``pending`` (``create_job``) *before* the worker
@@ -1618,7 +1627,11 @@ class RemoteDBJobStore:
                 WHERE status = 'pending'
                   AND payload IS NOT NULL
                   AND (code_version IS NULL OR code_version = :code_version)
-                ORDER BY created_at ASC
+                ORDER BY (
+                    SELECT COUNT(*) FROM jobs r
+                    WHERE r.status IN ('validating', 'running')
+                      AND r.username IS NOT DISTINCT FROM jobs.username
+                ) ASC, created_at ASC
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
@@ -1657,16 +1670,25 @@ class RemoteDBJobStore:
         try:
             now = datetime.now(UTC)
             lease_until = now + timedelta(seconds=lease_seconds)
-            job = (
+            candidates = (
                 session.query(JobModel)
                 .filter(JobModel.status == "pending")
                 .filter(JobModel.payload.isnot(None))
                 .filter(or_(JobModel.code_version.is_(None), JobModel.code_version == self._current_code_version))
                 .order_by(JobModel.created_at.asc())
-                .first()
+                .all()
             )
-            if job is None:
+            if not candidates:
                 return None
+            # Same least-in-flight-per-user ordering as the Postgres path;
+            # min() is stable, so ties keep FIFO order within a user.
+            in_flight: dict[str | None, int] = dict(
+                session.query(JobModel.username, func.count())
+                .filter(JobModel.status.in_(["validating", "running"]))
+                .group_by(JobModel.username)
+                .all()
+            )
+            job = min(candidates, key=lambda row: in_flight.get(row.username, 0))
             job.status = "validating"  # type: ignore[assignment]
             job.claimed_by = worker_id  # type: ignore[assignment]
             job.claimed_at = now  # type: ignore[assignment]

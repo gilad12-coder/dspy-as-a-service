@@ -7,13 +7,17 @@ billing/telemetry readers see exactly the numbers the old history walk
 produced — including the fallback path for plain/mocked LMs.
 """
 
+import threading
+import time
 from types import SimpleNamespace
 
+import dspy
 from dspy.clients.base_lm import GLOBAL_HISTORY
 
 from core.service_gateway.language_models import (
     LmUsageTotals,
     MeteredLM,
+    activate_job_lm_budget,
     lm_call_count,
     total_tokens_from_history,
     usage_by_model_from_history,
@@ -116,3 +120,67 @@ def test_copy_shares_usage_totals():
     assert isinstance(clone.usage_totals, LmUsageTotals)
     assert lm.usage_totals.calls == 1
     assert total_tokens_from_history(lm) == 10
+
+
+def test_job_lm_budget_serializes_concurrent_forward_calls(monkeypatch):
+    """With a budget of 1, a second ``forward`` waits for the first's permit."""
+    state = {"active": 0, "max": 0}
+    lock = threading.Lock()
+    release = threading.Event()
+
+    def fake_forward(self, *args, **kwargs):
+        """Track overlapping entries while holding until released."""
+        with lock:
+            state["active"] += 1
+            state["max"] = max(state["max"], state["active"])
+        release.wait(timeout=5)
+        with lock:
+            state["active"] -= 1
+        return "ok"
+
+    monkeypatch.setattr(dspy.LM, "forward", fake_forward)
+    activate_job_lm_budget(1)
+    try:
+        lm = _metered()
+        threads = [threading.Thread(target=lm.forward) for _ in range(2)]
+        for t in threads:
+            t.start()
+        # Let the second thread reach the gate; it must block outside
+        # fake_forward while the first holds the single permit.
+        time.sleep(0.05)
+        with lock:
+            assert state["active"] == 1
+        release.set()
+        for t in threads:
+            t.join(timeout=5)
+        assert state["max"] == 1
+    finally:
+        activate_job_lm_budget(0)
+
+
+def test_job_lm_budget_zero_disables_the_gate(monkeypatch):
+    """A non-positive budget removes the gate entirely; calls overlap freely."""
+    state = {"active": 0, "max": 0}
+    lock = threading.Lock()
+    barrier = threading.Barrier(2, timeout=5)
+
+    def fake_forward(self, *args, **kwargs):
+        """Rendezvous both calls inside the LM to prove they overlap."""
+        with lock:
+            state["active"] += 1
+            state["max"] = max(state["max"], state["active"])
+        barrier.wait()
+        with lock:
+            state["active"] -= 1
+        return "ok"
+
+    monkeypatch.setattr(dspy.LM, "forward", fake_forward)
+    activate_job_lm_budget(0)
+    lm = _metered()
+    threads = [threading.Thread(target=lm.forward) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+
+    assert state["max"] == 2
