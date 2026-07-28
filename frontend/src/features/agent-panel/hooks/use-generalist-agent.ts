@@ -361,11 +361,15 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
               return next;
             });
           },
-          onError: (message) => {
+          onError: (message, code) => {
             if (controller.signal.aborted) return;
             setStatus("error");
             setStatusLabel(msg("auto.features.agent.panel.hooks.use.generalist.agent.literal.6"));
-            setError(message);
+            // Known machine codes get a localized message; anything else
+            // shows the backend's text as-is.
+            setError(
+              code === "context_too_long" ? msg("agent.error.context_too_long") : message,
+            );
             setMessages((prev) => {
               const last = prev[prev.length - 1];
               if (!last || last.role !== "assistant") return prev;

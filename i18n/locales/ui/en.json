@@ -2688,6 +2688,7 @@
   "agent.model_menu.label": "Choose a model",
   "agent.model_menu.model": "Model",
   "agent.approval.confirm_failed": "The approval didn't go through — try again",
+  "agent.error.context_too_long": "The conversation is too long for the model's context window — start a new chat or shorten your message",
   "agent.composer.attach": "Attach a dataset",
   "agent.composer.record": "Dictate",
   "agent.composer.record_finish": "Finish and transcribe",

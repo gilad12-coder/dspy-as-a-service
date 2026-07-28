@@ -77,6 +77,57 @@ def _format_agent_error(exc: BaseException) -> str:
     return f"{name}: {text}" if name not in text else text
 
 
+# Provider phrasings for a prompt that overflowed the model's context window;
+# matched case-insensitively across the exception chain because the overflow
+# often surfaces as a plain provider 400 rather than litellm's typed error.
+_CONTEXT_OVERFLOW_PATTERNS = (
+    "context window",
+    "context length",
+    "context_length_exceeded",
+    "prompt is too long",
+    "input is too long",
+    "too many tokens",
+    "maximum prompt length",
+)
+
+
+def _agent_error_payload(exc: BaseException) -> dict[str, str]:
+    """Build the ``error`` SSE event data for an agent failure.
+
+    Alongside the human-readable text, attaches a stable machine ``code`` the
+    frontend maps to a localized message. Currently classified:
+    ``context_too_long`` — the turn overflowed the model's context window
+    (litellm's ``ContextWindowExceededError`` or an equivalent provider
+    message anywhere in the exception chain).
+
+    Args:
+        exc: The exception (possibly a ``BaseExceptionGroup``) raised by the agent.
+
+    Returns:
+        Event data with ``error`` text and, when classified, a ``code``.
+    """
+    payload = {"error": _format_agent_error(exc)}
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    while stack:
+        leaf = stack.pop()
+        if id(leaf) in seen:
+            continue
+        seen.add(id(leaf))
+        text = str(leaf).lower()
+        if type(leaf).__name__ == "ContextWindowExceededError" or any(
+            pattern in text for pattern in _CONTEXT_OVERFLOW_PATTERNS
+        ):
+            payload["code"] = "context_too_long"
+            break
+        if isinstance(leaf, BaseExceptionGroup):
+            stack.extend(leaf.exceptions)
+        stack.extend(
+            linked for linked in (leaf.__cause__, leaf.__context__) if linked is not None
+        )
+    return payload
+
+
 def _validate_signature_code(code: str) -> str:
     """Smoke-test a signature snippet.
 
@@ -2720,7 +2771,7 @@ async def _run_code_agent_orchestration(
         await queue.put({"event": "done", "data": payload})
     except Exception as exc:
         logger.exception("Code agent failed")
-        await queue.put({"event": "error", "data": {"error": _format_agent_error(exc)}})
+        await queue.put({"event": "error", "data": _agent_error_payload(exc)})
     finally:
         await queue.put(None)
 

@@ -2688,6 +2688,7 @@
   "agent.model_menu.label": "בחירת מודל",
   "agent.model_menu.model": "מודל",
   "agent.approval.confirm_failed": "אישור הפעולה לא נקלט — נסו שוב",
+  "agent.error.context_too_long": "השיחה ארוכה מדי עבור חלון ההקשר של המודל — התחילו שיחה חדשה או קצרו את ההודעה",
   "agent.composer.attach": "צירוף דאטהסט",
   "agent.composer.record": "הכתבה קולית",
   "agent.composer.record_finish": "סיום ההקלטה ותמלול",

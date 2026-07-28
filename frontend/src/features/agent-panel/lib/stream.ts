@@ -49,7 +49,7 @@ export interface GeneralistAgentHandlers {
     model: string | null;
     served_model: string | null;
   }) => void;
-  onError: (message: string) => void;
+  onError: (message: string, code?: string) => void;
   signal?: AbortSignal;
 }
 
@@ -148,6 +148,7 @@ export async function streamGeneralistAgent(
       case "error":
         handlers.onError(
           String(data.error ?? msg("auto.features.agent.panel.lib.stream.literal.2")),
+          typeof data.code === "string" ? data.code : undefined,
         );
         break;
     }

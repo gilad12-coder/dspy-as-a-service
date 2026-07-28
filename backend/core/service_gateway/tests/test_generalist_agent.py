@@ -6,12 +6,13 @@ import asyncio
 from typing import cast
 
 import dspy
+import litellm
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from core.service_gateway.agents import generalist as generalist_module
-from core.service_gateway.agents.code import _SubmitArgExtractor
+from core.service_gateway.agents.code import _agent_error_payload, _SubmitArgExtractor
 from core.service_gateway.agents.generalist import (
     ApprovalRegistry,
     GeneralistSig,
@@ -946,3 +947,37 @@ async def test_local_resolve_still_wins_instantly(monkeypatch: pytest.MonkeyPatc
     await asyncio.sleep(0)
     assert registry.resolve_or_persist("call-local", False) is True
     assert await task is False
+
+
+def test_agent_error_payload_flags_litellm_context_overflow() -> None:
+    """litellm's typed context-window error carries the machine code."""
+    exc = litellm.ContextWindowExceededError(
+        "The prompt exceeds the model limit", model="gpt-4o", llm_provider="openai"
+    )
+    payload = _agent_error_payload(exc)
+    assert payload["code"] == "context_too_long"
+    assert payload["error"]
+
+
+def test_agent_error_payload_flags_provider_overflow_message() -> None:
+    """An untyped provider 400 mentioning context length is classified too."""
+    exc = RuntimeError(
+        "BadRequestError: This model's maximum context length is 128000 tokens, "
+        "however you requested 191694 tokens"
+    )
+    assert _agent_error_payload(exc)["code"] == "context_too_long"
+
+
+def test_agent_error_payload_walks_groups_and_causes() -> None:
+    """The classifier sees through exception groups and __cause__ chains."""
+    inner = ValueError("prompt is too long: 250000 tokens > 200000 maximum")
+    wrapper = RuntimeError("agent turn failed")
+    wrapper.__cause__ = inner
+    group = BaseExceptionGroup("unhandled errors in a TaskGroup", [wrapper])
+    assert _agent_error_payload(group)["code"] == "context_too_long"
+
+
+def test_agent_error_payload_plain_error_has_no_code() -> None:
+    """Unclassified failures keep the text-only payload."""
+    payload = _agent_error_payload(RuntimeError("boom"))
+    assert payload == {"error": "RuntimeError: boom"}

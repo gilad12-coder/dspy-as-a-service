@@ -56,7 +56,7 @@ from ..language_models import (
 )
 from ..optimization.retrying_react import RetryingReActV2
 from ..optimization.training_ground.registry import hash_tool_schema
-from .code import ReactReplyStream, _format_agent_error, _reply_language
+from .code import ReactReplyStream, _agent_error_payload, _format_agent_error, _reply_language
 from .constants import REASONING_FIELD
 
 
@@ -1876,4 +1876,4 @@ async def run_generalist_agent(
         raise
     except Exception as exc:
         logger.exception("generalist agent failed")
-        yield {"event": "error", "data": {"error": _format_agent_error(exc)}}
+        yield {"event": "error", "data": _agent_error_payload(exc)}

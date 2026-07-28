@@ -10,6 +10,7 @@ export type MessageKey =
   | "agent.composer.recording"
   | "agent.composer.transcribe_failed"
   | "agent.composer.transcribing"
+  | "agent.error.context_too_long"
   | "agent.model_menu.auto"
   | "agent.model_menu.auto_hint"
   | "agent.model_menu.auto_intelligent"
@@ -2815,6 +2816,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "agent.composer.recording": "מקליט...",
   "agent.composer.transcribe_failed": "התמלול נכשל — אפשר לנסות שוב",
   "agent.composer.transcribing": "מתמלל...",
+  "agent.error.context_too_long": "השיחה ארוכה מדי עבור חלון ההקשר של המודל — התחילו שיחה חדשה או קצרו את ההודעה",
   "agent.model_menu.auto": "אוטומטי",
   "agent.model_menu.auto_hint": "בוחר את המודל המתאים לכל בקשה",
   "agent.model_menu.auto_intelligent": "אוטומטי · אינטליגנטי",
@@ -11233,6 +11235,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "agent.composer.recording": "Recording...",
   "agent.composer.transcribe_failed": "Transcription failed — try again",
   "agent.composer.transcribing": "Transcribing...",
+  "agent.error.context_too_long": "The conversation is too long for the model's context window — start a new chat or shorten your message",
   "agent.model_menu.auto": "Auto",
   "agent.model_menu.auto_hint": "Picks the best model each turn",
   "agent.model_menu.auto_intelligent": "Auto · Intelligent",
