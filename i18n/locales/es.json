@@ -12,7 +12,6 @@
     "error": "error",
     "example": "ejemplo",
     "examplePlural": "ejemplos",
-    "expectedScore": "puntuación esperada",
     "exploreTitle": "búsqueda pública",
     "finalScore": "puntuación final",
     "generationModel": "modelo de generación",
@@ -27,7 +26,6 @@
     "modelPlural": "modelos",
     "module": "módulo",
     "notificationNewOpt": "nueva optimización",
-    "observedScore": "puntuación observada",
     "optimization": "optimización",
     "optimizationPlural": "optimizaciones",
     "optimizationTypeGrid": "búsqueda en cuadrícula",
@@ -35,7 +33,6 @@
     "optimizationTypeRunPlural": "ejecuciones",
     "optimizedScore": "puntuación optimizada",
     "optimizer": "optimizador",
-    "optimizerPlural": "optimizadores",
     "outputColumn": "columna de salida",
     "outputColumnTarget": "columna objetivo",
     "pair": "par",
@@ -64,7 +61,6 @@
     "statusValidating": "validando",
     "task": "tarea",
     "type": "tipo",
-    "user": "usuario",
     "winningCandidate": "candidato ganador"
   },
   "messages": {

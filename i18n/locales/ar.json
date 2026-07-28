@@ -12,7 +12,6 @@
     "error": "خطأ",
     "example": "مثال",
     "examplePlural": "أمثلة",
-    "expectedScore": "النتيجة المتوقّعة",
     "exploreTitle": "بحث عام",
     "finalScore": "النتيجة النهائية",
     "generationModel": "نموذج التوليد",
@@ -27,7 +26,6 @@
     "modelPlural": "نماذج",
     "module": "وحدة",
     "notificationNewOpt": "تحسين جديد",
-    "observedScore": "النتيجة المرصودة",
     "optimization": "تحسين",
     "optimizationPlural": "عمليات التحسين",
     "optimizationTypeGrid": "بحث شبكي",
@@ -35,7 +33,6 @@
     "optimizationTypeRunPlural": "عمليات تشغيل",
     "optimizedScore": "النتيجة بعد التحسين",
     "optimizer": "مُحسِّن",
-    "optimizerPlural": "مُحسِّنات",
     "outputColumn": "عمود الإخراج",
     "outputColumnTarget": "العمود الهدف",
     "pair": "زوج",
@@ -64,7 +61,6 @@
     "statusValidating": "قيد التحقّق",
     "task": "مهمة",
     "type": "نوع",
-    "user": "مستخدم",
     "winningCandidate": "المرشّح الفائز"
   },
   "messages": {

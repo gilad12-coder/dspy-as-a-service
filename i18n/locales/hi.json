@@ -12,7 +12,6 @@
     "error": "त्रुटि",
     "example": "उदाहरण",
     "examplePlural": "उदाहरण",
-    "expectedScore": "अपेक्षित स्कोर",
     "exploreTitle": "सार्वजनिक खोज",
     "finalScore": "अंतिम स्कोर",
     "generationModel": "जनरेशन मॉडल",
@@ -27,7 +26,6 @@
     "modelPlural": "मॉडल",
     "module": "मॉड्यूल",
     "notificationNewOpt": "नया ऑप्टिमाइज़ेशन",
-    "observedScore": "देखा गया स्कोर",
     "optimization": "ऑप्टिमाइज़ेशन",
     "optimizationPlural": "ऑप्टिमाइज़ेशन",
     "optimizationTypeGrid": "ग्रिड खोज",
@@ -35,7 +33,6 @@
     "optimizationTypeRunPlural": "रन",
     "optimizedScore": "ऑप्टिमाइज़्ड स्कोर",
     "optimizer": "ऑप्टिमाइज़र",
-    "optimizerPlural": "ऑप्टिमाइज़र",
     "outputColumn": "आउटपुट कॉलम",
     "outputColumnTarget": "लक्ष्य कॉलम",
     "pair": "जोड़ी",
@@ -64,7 +61,6 @@
     "statusValidating": "मान्य किया जा रहा है",
     "task": "कार्य",
     "type": "प्रकार",
-    "user": "उपयोगकर्ता",
     "winningCandidate": "विजेता उम्मीदवार"
   },
   "messages": {

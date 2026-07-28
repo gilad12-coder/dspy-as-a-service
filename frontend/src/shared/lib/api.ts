@@ -1203,16 +1203,6 @@ export async function renameTaggerSession(sessionId: string, name: string) {
   return res;
 }
 
-/** Pin or unpin a saved session (``pinned`` is the desired next state). */
-export async function setTaggerSessionPinned(sessionId: string, pinned: boolean) {
-  const res = await request<TaggerSessionSummary>(`/tagging-sessions/${sessionId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ pinned }),
-  });
-  invalidateCache("/tagging-sessions");
-  return res;
-}
-
 /** Delete a saved session. */
 export async function deleteTaggerSession(sessionId: string) {
   const res = await request<{ id: string; deleted: boolean }>(`/tagging-sessions/${sessionId}`, {

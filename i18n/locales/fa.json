@@ -12,7 +12,6 @@
     "error": "خطا",
     "example": "نمونه",
     "examplePlural": "نمونه‌ها",
-    "expectedScore": "امتیاز مورد انتظار",
     "exploreTitle": "جستجوی عمومی",
     "finalScore": "امتیاز نهایی",
     "generationModel": "مدل تولید",
@@ -27,7 +26,6 @@
     "modelPlural": "مدل‌ها",
     "module": "ماژول",
     "notificationNewOpt": "بهینه‌سازی جدید",
-    "observedScore": "امتیاز مشاهده‌شده",
     "optimization": "بهینه‌سازی",
     "optimizationPlural": "بهینه‌سازی‌ها",
     "optimizationTypeGrid": "جستجوی شبکه‌ای",
@@ -35,7 +33,6 @@
     "optimizationTypeRunPlural": "اجراها",
     "optimizedScore": "امتیاز بهینه‌شده",
     "optimizer": "بهینه‌ساز",
-    "optimizerPlural": "بهینه‌سازها",
     "outputColumn": "ستون خروجی",
     "outputColumnTarget": "ستون هدف",
     "pair": "جفت",
@@ -64,7 +61,6 @@
     "statusValidating": "در حال اعتبارسنجی",
     "task": "وظیفه",
     "type": "نوع",
-    "user": "کاربر",
     "winningCandidate": "نامزد برنده"
   },
   "messages": {

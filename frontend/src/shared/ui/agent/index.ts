@@ -5,11 +5,4 @@ export { Composer } from "./composer";
 export { ComposerModelMenu } from "./composer-model-menu";
 export { MessageActions } from "./message-actions";
 export { QuestionChoices, QuestionChoicesSkeleton } from "./question-choices";
-export type {
-  AgentMessage,
-  AgentStatus,
-  AgentThinking,
-  AgentToolCall,
-  AgentToolStatus,
-  QuestionChoice,
-} from "./types";
+export type { AgentMessage, AgentThinking, AgentToolCall } from "./types";

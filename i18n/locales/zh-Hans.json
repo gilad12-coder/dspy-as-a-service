@@ -12,7 +12,6 @@
     "error": "错误",
     "example": "样例",
     "examplePlural": "样例",
-    "expectedScore": "预期分数",
     "exploreTitle": "公开搜索",
     "finalScore": "最终分数",
     "generationModel": "生成模型",
@@ -27,7 +26,6 @@
     "modelPlural": "模型",
     "module": "模块",
     "notificationNewOpt": "新优化",
-    "observedScore": "观测分数",
     "optimization": "优化",
     "optimizationPlural": "优化",
     "optimizationTypeGrid": "网格搜索",
@@ -35,7 +33,6 @@
     "optimizationTypeRunPlural": "运行",
     "optimizedScore": "优化后分数",
     "optimizer": "优化器",
-    "optimizerPlural": "优化器",
     "outputColumn": "输出列",
     "outputColumnTarget": "目标列",
     "pair": "组合",
@@ -64,7 +61,6 @@
     "statusValidating": "验证中",
     "task": "任务",
     "type": "类型",
-    "user": "用户",
     "winningCandidate": "胜出候选项"
   },
   "messages": {

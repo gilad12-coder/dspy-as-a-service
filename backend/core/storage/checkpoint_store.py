@@ -8,7 +8,7 @@ iteration with no budget double-spend, instead of restarting from scratch.
 
 Both seams are keyed by ``(optimization_id, pair_index)``: a single run uses the
 sentinel ``pair_index = -1``; a grid search runs one GEPA optimization per model
-pair, so it keeps a checkpoint per in-flight pair plus a :class:`GridPairResult`
+pair, so it keeps a checkpoint per in-flight pair plus a stored pair result
 for each pair that already finished — a resumed grid keeps the finished pairs and
 re-runs only the rest. The bytes go through these stores — mirroring the
 dataset-library blob seam — so they can later move behind an object store without
@@ -39,16 +39,6 @@ class GepaCheckpoint:
     pair_index: int
     iteration: int
     data: bytes
-    stored_bytes: int
-
-
-@dataclass(frozen=True)
-class GridPairResult:
-    """One completed grid pair's serialized :class:`PairResult` and its size."""
-
-    optimization_id: str
-    pair_index: int
-    result: dict[str, Any]
     stored_bytes: int
 
 

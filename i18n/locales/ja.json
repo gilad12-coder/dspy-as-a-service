@@ -12,7 +12,6 @@
     "error": "エラー",
     "example": "サンプル",
     "examplePlural": "サンプル",
-    "expectedScore": "期待スコア",
     "exploreTitle": "公開検索",
     "finalScore": "最終スコア",
     "generationModel": "生成モデル",
@@ -27,7 +26,6 @@
     "modelPlural": "モデル",
     "module": "モジュール",
     "notificationNewOpt": "新規最適化",
-    "observedScore": "実測スコア",
     "optimization": "最適化",
     "optimizationPlural": "最適化",
     "optimizationTypeGrid": "グリッドサーチ",
@@ -35,7 +33,6 @@
     "optimizationTypeRunPlural": "実行",
     "optimizedScore": "最適化後スコア",
     "optimizer": "オプティマイザ",
-    "optimizerPlural": "オプティマイザ",
     "outputColumn": "出力列",
     "outputColumnTarget": "ターゲット列",
     "pair": "ペア",
@@ -64,7 +61,6 @@
     "statusValidating": "検証中",
     "task": "タスク",
     "type": "種類",
-    "user": "ユーザー",
     "winningCandidate": "最良候補"
   },
   "messages": {

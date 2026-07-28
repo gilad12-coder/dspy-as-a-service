@@ -12,7 +12,6 @@
     "error": "ошибка",
     "example": "пример",
     "examplePlural": "примеры",
-    "expectedScore": "ожидаемая оценка",
     "exploreTitle": "публичный поиск",
     "finalScore": "итоговая оценка",
     "generationModel": "модель генерации",
@@ -27,7 +26,6 @@
     "modelPlural": "модели",
     "module": "модуль",
     "notificationNewOpt": "новая оптимизация",
-    "observedScore": "наблюдаемая оценка",
     "optimization": "оптимизация",
     "optimizationPlural": "оптимизации",
     "optimizationTypeGrid": "поиск по сетке",
@@ -35,7 +33,6 @@
     "optimizationTypeRunPlural": "запуски",
     "optimizedScore": "оптимизированная оценка",
     "optimizer": "оптимизатор",
-    "optimizerPlural": "оптимизаторы",
     "outputColumn": "выходной столбец",
     "outputColumnTarget": "целевой столбец",
     "pair": "пара",
@@ -64,7 +61,6 @@
     "statusValidating": "проверка",
     "task": "задача",
     "type": "тип",
-    "user": "пользователь",
     "winningCandidate": "победивший кандидат"
   },
   "messages": {

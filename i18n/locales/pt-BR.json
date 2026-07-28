@@ -4,8 +4,7 @@
   "terms": {
     "cancellationReason": "Cancelado pelo usuário",
     "pauseReason": "Em pausa pelo usuário",
-    "statusValidating": "validando",
-    "user": "usuário"
+    "statusValidating": "validando"
   },
   "messages": {
     "accounts.invalid_credentials": "Email ou senha incorretos.",

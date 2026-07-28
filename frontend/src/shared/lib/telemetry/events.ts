@@ -19,5 +19,3 @@ export const TelemetryEvent = {
   SettingsOpened: "settings_opened",
   SettingsTabChanged: "settings_tab_changed",
 } as const;
-
-export type TelemetryEventName = (typeof TelemetryEvent)[keyof typeof TelemetryEvent];

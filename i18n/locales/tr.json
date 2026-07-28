@@ -12,7 +12,6 @@
     "error": "hata",
     "example": "örnek",
     "examplePlural": "örnekler",
-    "expectedScore": "beklenen puan",
     "exploreTitle": "genel arama",
     "finalScore": "nihai puan",
     "generationModel": "üretim modeli",
@@ -27,7 +26,6 @@
     "modelPlural": "modeller",
     "module": "modül",
     "notificationNewOpt": "yeni optimizasyon",
-    "observedScore": "gözlemlenen puan",
     "optimization": "optimizasyon",
     "optimizationPlural": "optimizasyonlar",
     "optimizationTypeGrid": "ızgara arama",
@@ -35,7 +33,6 @@
     "optimizationTypeRunPlural": "çalıştırmalar",
     "optimizedScore": "optimize edilmiş puan",
     "optimizer": "optimize edici",
-    "optimizerPlural": "optimize ediciler",
     "outputColumn": "çıktı sütunu",
     "outputColumnTarget": "hedef sütun",
     "pair": "çift",
@@ -64,7 +61,6 @@
     "statusValidating": "doğrulanıyor",
     "task": "görev",
     "type": "tür",
-    "user": "kullanıcı",
     "winningCandidate": "kazanan aday"
   },
   "messages": {

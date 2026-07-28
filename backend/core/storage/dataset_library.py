@@ -346,39 +346,6 @@ class DatasetLibraryStore:
         )
         return result
 
-    def create_dataset(
-        self,
-        *,
-        owner_username: str,
-        name: str,
-        source: str,
-        rows: list[dict[str, Any]],
-        column_schema: dict[str, Any],
-    ) -> tuple[DatasetRecord, bool]:
-        """Stage and persist a new dataset, deduping byte-identical re-saves.
-
-        Convenience wrapper over :meth:`stage`/:meth:`commit_staged` with no
-        size/quota gate — callers that must enforce caps should compose the two
-        directly. When the owner already holds a dataset with the same content
-        hash, the existing record is returned instead of storing a second copy.
-
-        Args:
-            owner_username: Lowercased dataset owner.
-            name: Display name for the library entry.
-            source: Producing surface (``'upload'`` / ``'tagger'`` / ``'optimization'``).
-            rows: The dataset rows to store.
-            column_schema: Saved column roles/kinds/order for wizard pre-fill.
-
-        Returns:
-            A ``(record, created)`` pair — ``created`` is ``False`` when an
-            existing byte-identical dataset was returned instead.
-        """
-        staged = self.stage(rows, column_schema)
-        existing = self.find_by_hash(owner_username, staged.digest)
-        if existing is not None:
-            return existing, False
-        return self.commit_staged(owner_username=owner_username, name=name, source=source, staged=staged), True
-
     def get_dataset(self, dataset_id: str) -> DatasetRecord | None:
         """Return one dataset's metadata, or ``None`` when unknown.
 

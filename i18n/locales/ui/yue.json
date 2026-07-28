@@ -45,7 +45,6 @@
   "settings.account.signed_out": "未登入",
   "settings.admin.storage.default": "预设",
   "settings.admin.storage.default_budget": "预设：{value}",
-  "settings.open": "打开设定",
   "settings.saved": "设定已储存",
   "settings.subtitle": "调整你嘅偏好设定同预设值",
   "settings.tab.account": "户口",
@@ -63,9 +62,6 @@
   "settings.keys.base_url_placeholder": "自訂基礎 URL（可選）",
   "settings.keys.base_url_hint": "將呢個密鑰指向自訂嘅 OpenAI 相容端點。留空則用供應商預設值。",
   "settings.keys.json_advanced": "進階 — 由 JSON 匯入",
-  "settings.keys.json_hint": "貼上連線嘅 JSON 陣列 — 每個物件包含 provider 同 api_key（api_base 同 label 可選）。",
-  "settings.keys.json_import": "匯入",
-  "settings.keys.json_error": "匯入失敗。貼上物件嘅 JSON 陣列，每個都要有 provider 同 api_key。",
   "settings.keys.json_imported": "已匯入 {count} 個連線。",
   "settings.tab.providers": "供應商"
 }

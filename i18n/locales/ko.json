@@ -12,7 +12,6 @@
     "error": "오류",
     "example": "예제",
     "examplePlural": "예제",
-    "expectedScore": "예상 점수",
     "exploreTitle": "공개 검색",
     "finalScore": "최종 점수",
     "generationModel": "생성 모델",
@@ -27,7 +26,6 @@
     "modelPlural": "모델",
     "module": "모듈",
     "notificationNewOpt": "새 최적화",
-    "observedScore": "관측 점수",
     "optimization": "최적화",
     "optimizationPlural": "최적화",
     "optimizationTypeGrid": "그리드 검색",
@@ -35,7 +33,6 @@
     "optimizationTypeRunPlural": "실행",
     "optimizedScore": "최적화 점수",
     "optimizer": "옵티마이저",
-    "optimizerPlural": "옵티마이저",
     "outputColumn": "출력 열",
     "outputColumnTarget": "대상 열",
     "pair": "페어",
@@ -64,7 +61,6 @@
     "statusValidating": "검증 중",
     "task": "작업",
     "type": "유형",
-    "user": "사용자",
     "winningCandidate": "최우수 후보"
   },
   "messages": {

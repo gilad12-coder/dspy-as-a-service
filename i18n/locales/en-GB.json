@@ -7,8 +7,7 @@
     "optimization": "optimisation",
     "optimizationPlural": "optimisations",
     "optimizedScore": "optimised score",
-    "optimizer": "optimiser",
-    "optimizerPlural": "optimisers"
+    "optimizer": "optimiser"
   },
   "messages": {
     "dataset.split.rationale.large": "Dataset is large ({total} examples). Capped val at {val_count} and test at {test_count} examples — enough for stable scores without wasting optimisation time.",

@@ -12,7 +12,6 @@
     "error": "помилка",
     "example": "приклад",
     "examplePlural": "приклади",
-    "expectedScore": "очікувана оцінка",
     "exploreTitle": "публічний пошук",
     "finalScore": "підсумкова оцінка",
     "generationModel": "модель генерації",
@@ -27,7 +26,6 @@
     "modelPlural": "моделі",
     "module": "модуль",
     "notificationNewOpt": "нова оптимізація",
-    "observedScore": "спостережувана оцінка",
     "optimization": "оптимізація",
     "optimizationPlural": "оптимізації",
     "optimizationTypeGrid": "пошук по сітці",
@@ -35,7 +33,6 @@
     "optimizationTypeRunPlural": "запуски",
     "optimizedScore": "оптимізована оцінка",
     "optimizer": "оптимізатор",
-    "optimizerPlural": "оптимізатори",
     "outputColumn": "вихідний стовпець",
     "outputColumnTarget": "цільовий стовпець",
     "pair": "пара",
@@ -64,7 +61,6 @@
     "statusValidating": "перевіряється",
     "task": "завдання",
     "type": "тип",
-    "user": "користувач",
     "winningCandidate": "переможний кандидат"
   },
   "messages": {
