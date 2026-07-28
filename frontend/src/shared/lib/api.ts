@@ -593,10 +593,12 @@ export function getUsage(start?: string, end?: string) {
 }
 
 /** Start a Stripe Checkout session for a credit pack; redirect the browser to `.url`. */
-export function createCheckoutSession(packId: string) {
+export function createCheckoutSession(purchase: { packId: string } | { credits: number }) {
   return request<{ url: string }>("/billing/checkout", {
     method: "POST",
-    body: JSON.stringify({ pack_id: packId }),
+    body: JSON.stringify(
+      "packId" in purchase ? { pack_id: purchase.packId } : { credits: purchase.credits },
+    ),
   });
 }
 

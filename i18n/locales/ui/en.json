@@ -1637,6 +1637,8 @@
   "billing.mode.manage_keys": "Manage keys",
   "billing.mode.managed": "Skynet credits",
   "billing.mode.managed_hint": "Runs are billed to your Skynet credits.",
+  "billing.plans.credits.custom": "Custom",
+  "billing.plans.credits.custom_amount_aria": "Custom credit amount",
   "billing.plans.credits.pack_aria": "Choose a credit pack",
   "billing.plans.credits.summary": "Prepaid credits, no subscription — they never expire.",
   "billing.popover.byok_active": "Running on your own API key",

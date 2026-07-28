@@ -40,6 +40,14 @@ from .pricing import ModelUsage, credits_for_usage
 # the dollar price lives in Stripe (the price id), the credits granted live here.
 PACK_CREDITS: dict[str, int] = {"starter": 500, "plus": 2200, "pro": 6500}
 
+# Bounds for a custom (user-chosen) top-up. One credit is worth exactly one
+# cent, so a credit count doubles as a Stripe ``unit_amount``; the floor keeps
+# the charge above Stripe's $0.50 minimum and the ceiling keeps a typo'd
+# amount from becoming a four-figure charge. Mirrored by the frontend's
+# CUSTOM_CREDITS_MIN/MAX.
+CUSTOM_CREDITS_MIN = 50
+CUSTOM_CREDITS_MAX = 100_000
+
 # One-time lifetime allowance every new account gets to try the platform on mini
 # models. Granted once (lazily, on the first wallet read or run) and never
 # renewed. Under per-model pricing a credit is real marked-up provider cost, so
@@ -339,13 +347,62 @@ class StripeBillingService:
         credits = PACK_CREDITS.get(pack_id, 0)
         if not price_id or credits <= 0:
             raise DomainError("billing.unknown_pack", status=400, pack_id=pack_id)
+        return self._create_checkout(username, {"price": price_id, "quantity": 1}, pack_id, credits)
+
+    def create_custom_checkout(self, username: str, credits: int) -> str:
+        """Create a one-time Checkout Session for a user-chosen credit amount.
+
+        One credit is one cent, so ``credits`` is passed to Stripe verbatim as
+        the ad-hoc ``unit_amount``; the webhook credits the account from the
+        session metadata exactly as for a fixed pack.
+
+        Args:
+            username: Buyer identity; stamped into session metadata so the
+                webhook can credit the right account.
+            credits: Credit amount to buy, within
+                :data:`CUSTOM_CREDITS_MIN`..:data:`CUSTOM_CREDITS_MAX`.
+
+        Returns:
+            The hosted Stripe Checkout URL to redirect the buyer to.
+
+        Raises:
+            DomainError: 400 when ``credits`` is out of bounds; 503 when
+                Stripe is not configured.
+        """
+        if not CUSTOM_CREDITS_MIN <= credits <= CUSTOM_CREDITS_MAX:
+            raise DomainError("billing.invalid_amount", status=400, credits=credits)
+        line_item = {
+            "price_data": {
+                "currency": "usd",
+                "unit_amount": credits,
+                "product_data": {"name": f"Skynet credits · {credits}"},
+            },
+            "quantity": 1,
+        }
+        return self._create_checkout(username, line_item, "custom", credits)
+
+    def _create_checkout(self, username: str, line_item: dict[str, Any], pack_id: str, credits: int) -> str:
+        """Create the Stripe Checkout Session shared by pack and custom top-ups.
+
+        Args:
+            username: Buyer identity; stamped into session metadata so the
+                webhook can credit the right account.
+            line_item: The single Stripe line item to charge (a fixed price id
+                or ad-hoc ``price_data``).
+            pack_id: Pack id (or ``"custom"``) recorded in metadata for the
+                ledger description.
+            credits: Credits the webhook grants once the session completes.
+
+        Returns:
+            The hosted Stripe Checkout URL.
+        """
         stripe_mod = self._stripe()
         customer_id = self.get_or_create_customer(username)
         metadata = {"username": username, "pack_id": pack_id, "credits": str(credits)}
         checkout = stripe_mod.checkout.Session.create(
             customer=customer_id,
             mode="payment",
-            line_items=[{"price": price_id, "quantity": 1}],
+            line_items=[line_item],
             success_url=self._return_url("success"),
             cancel_url=self._return_url("cancel"),
             client_reference_id=username,

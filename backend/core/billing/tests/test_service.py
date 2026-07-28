@@ -22,6 +22,8 @@ from sqlalchemy.orm import Session
 from core.api.errors import DomainError
 from core.billing.pricing import ModelUsage, credits_for_usage
 from core.billing.service import (
+    CUSTOM_CREDITS_MAX,
+    CUSTOM_CREDITS_MIN,
     FREE_GRANT_CREDITS,
     StripeBillingService,
     cost_ceiling_budget,
@@ -468,3 +470,40 @@ def test_webhook_is_idempotent_on_redelivery(engine: object, webhook_ready: None
         assert session.get(BillingCustomerModel, "u@x.com").credit_balance == 500
         rows = session.query(CreditLedgerModel).filter_by(username="u@x.com", kind="topup").all()
         assert len(rows) == 1
+
+
+def test_custom_checkout_rejects_out_of_bounds_amount(engine: object) -> None:
+    """Amounts outside the custom bounds are a 400 before any Stripe call."""
+    service = StripeBillingService(engine=engine)
+    for credits in (CUSTOM_CREDITS_MIN - 1, 0, -5, CUSTOM_CREDITS_MAX + 1):
+        with pytest.raises(DomainError) as exc:
+            service.create_custom_checkout("u@x.com", credits)
+        assert exc.value.status_code == 400
+        assert exc.value.code == "billing.invalid_amount"
+
+
+def test_custom_checkout_builds_ad_hoc_price_and_metadata(
+    engine: object, configured: None
+) -> None:
+    """A custom top-up charges credits-as-cents and stamps webhook metadata."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    captured: dict[str, object] = {}
+
+    def _create(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return type("Obj", (), {"url": "https://stripe.test/c/cs_123"})()
+
+    with patch("stripe.checkout.Session.create", side_effect=_create):
+        url = service.create_custom_checkout("u@x.com", 1234)
+    assert url == "https://stripe.test/c/cs_123"
+    line_items = captured["line_items"]
+    assert isinstance(line_items, list)
+    price_data = line_items[0]["price_data"]
+    assert price_data["unit_amount"] == 1234
+    assert price_data["currency"] == "usd"
+    metadata = captured["metadata"]
+    assert isinstance(metadata, dict)
+    assert metadata["credits"] == "1234"
+    assert metadata["pack_id"] == "custom"
+    assert metadata["username"] == "u@x.com"

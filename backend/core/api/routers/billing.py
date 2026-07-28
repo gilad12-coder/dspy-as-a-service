@@ -20,7 +20,9 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from ...billing import ProviderKeyVault, StripeBillingService
+from ...billing.service import CUSTOM_CREDITS_MAX, CUSTOM_CREDITS_MIN
 from ..auth import AuthenticatedUser, get_authenticated_user
+from ..errors import DomainError
 
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
 
@@ -118,9 +120,19 @@ class UsageResponse(BaseModel):
     )
 
 
-# Request to start a credit-pack checkout. pack_id is one of starter/plus/pro.
+# Request to start a credit checkout: either a named pack (starter/plus/pro)
+# or a custom credit amount. Exactly one of the two selects the purchase;
+# ``credits`` wins when both are sent.
 class CheckoutRequest(BaseModel):
-    pack_id: str = Field(description="Credit pack to buy: 'starter', 'plus', or 'pro'.")
+    pack_id: str | None = Field(
+        default=None, description="Credit pack to buy: 'starter', 'plus', or 'pro'."
+    )
+    credits: int | None = Field(
+        default=None,
+        ge=CUSTOM_CREDITS_MIN,
+        le=CUSTOM_CREDITS_MAX,
+        description="Custom credit amount to buy instead of a pack (1 credit = $0.01).",
+    )
 
 
 class CheckoutSessionResponse(BaseModel):
@@ -281,19 +293,27 @@ def create_billing_router(*, job_store) -> APIRouter:
     @router.post(
         "/billing/checkout",
         response_model=CheckoutSessionResponse,
-        summary="Start a Stripe Checkout session for a credit pack",
+        summary="Start a Stripe Checkout session for a credit pack or custom amount",
     )
     def create_checkout(body: CheckoutRequest, user: AuthenticatedUserDep) -> CheckoutSessionResponse:
-        """Create a one-time Checkout session for a credit pack.
+        """Create a one-time Checkout session for a credit pack or custom amount.
 
         Args:
-            body: The pack to buy.
+            body: The pack — or custom credit amount — to buy.
             user: Authenticated buyer; credits land on their account via webhook.
 
         Returns:
             The hosted Checkout URL to redirect the buyer to.
+
+        Raises:
+            DomainError: 400 when neither a pack nor a credit amount is given.
         """
-        url = service.create_pack_checkout(user.username, body.pack_id)
+        if body.credits is not None:
+            url = service.create_custom_checkout(user.username, body.credits)
+        elif body.pack_id:
+            url = service.create_pack_checkout(user.username, body.pack_id)
+        else:
+            raise DomainError("billing.invalid_amount", status=400)
         return CheckoutSessionResponse(url=url)
 
     @router.post(

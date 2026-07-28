@@ -1685,6 +1685,8 @@ export type MessageKey =
   | "billing.mode.manage_keys"
   | "billing.mode.managed"
   | "billing.mode.managed_hint"
+  | "billing.plans.credits.custom"
+  | "billing.plans.credits.custom_amount_aria"
   | "billing.plans.credits.pack_aria"
   | "billing.plans.credits.summary"
   | "billing.popover.byok_active"
@@ -4488,6 +4490,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "billing.mode.manage_keys": "ניהול מפתחות",
   "billing.mode.managed": "קרדיטים של Skynet",
   "billing.mode.managed_hint": "ההרצות מחויבות מהקרדיטים שלך ב-Skynet.",
+  "billing.plans.credits.custom": "מותאם",
+  "billing.plans.credits.custom_amount_aria": "כמות קרדיטים מותאמת אישית",
   "billing.plans.credits.pack_aria": "בחירת חבילת קרדיטים",
   "billing.plans.credits.summary": "קרדיטים מראש, ללא מנוי — והם לא פגים.",
   "billing.popover.byok_active": "פועל עם מפתח ה-API שלך",
@@ -12904,6 +12908,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "billing.mode.manage_keys": "Manage keys",
   "billing.mode.managed": "Skynet credits",
   "billing.mode.managed_hint": "Runs are billed to your Skynet credits.",
+  "billing.plans.credits.custom": "Custom",
+  "billing.plans.credits.custom_amount_aria": "Custom credit amount",
   "billing.plans.credits.pack_aria": "Choose a credit pack",
   "billing.plans.credits.summary": "Prepaid credits, no subscription — they never expire.",
   "billing.popover.byok_active": "Running on your own API key",

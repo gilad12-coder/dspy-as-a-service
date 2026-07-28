@@ -1637,6 +1637,8 @@
   "billing.mode.manage_keys": "ניהול מפתחות",
   "billing.mode.managed": "קרדיטים של Skynet",
   "billing.mode.managed_hint": "ההרצות מחויבות מהקרדיטים שלך ב-Skynet.",
+  "billing.plans.credits.custom": "מותאם",
+  "billing.plans.credits.custom_amount_aria": "כמות קרדיטים מותאמת אישית",
   "billing.plans.credits.pack_aria": "בחירת חבילת קרדיטים",
   "billing.plans.credits.summary": "קרדיטים מראש, ללא מנוי — והם לא פגים.",
   "billing.popover.byok_active": "פועל עם מפתח ה-API שלך",

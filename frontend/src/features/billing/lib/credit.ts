@@ -28,6 +28,14 @@ export type LedgerKind = "run" | "topup" | "grant";
 /** Platform value of one credit, in USD. The user-facing "$ equivalent" of a credit balance. */
 export const CREDIT_USD_VALUE = 0.01;
 
+/**
+ * Bounds for a custom (user-chosen) top-up, mirroring the backend's
+ * CUSTOM_CREDITS_MIN/MAX. The floor clears Stripe's $0.50 charge minimum;
+ * the ceiling keeps a typo'd amount from becoming a four-figure charge.
+ */
+export const CUSTOM_CREDITS_MIN = 50;
+export const CUSTOM_CREDITS_MAX = 100_000;
+
 /** Below this much spendable value the wallet reads as "running low" (calm, not alarming). */
 export const LOW_BALANCE_USD = 0.5;
 
