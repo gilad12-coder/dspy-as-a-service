@@ -107,6 +107,7 @@ import { useUserPrefs } from "../hooks/use-user-prefs";
 import { useSettingsModal } from "../hooks/use-settings-modal";
 import { ShortcutRecorder } from "./ShortcutRecorder";
 import { PrivacyTab } from "./PrivacyTab";
+import { SecurityTab } from "./SecurityTab";
 import { SettingsRow } from "@/shared/ui/settings-row";
 
 function WizardTab() {
@@ -1254,6 +1255,7 @@ const SETTINGS_TAB_ORDER = [
   "agent",
   "admin",
   "account",
+  "security",
   "privacy",
   "billing",
   "usage",
@@ -1272,6 +1274,7 @@ const SETTINGS_TAB_META: Record<
   agent: { icon: Bot, labelKey: "settings.tab.agent" },
   admin: { icon: HardDrive, labelKey: "settings.tab.admin" },
   account: { icon: User, labelKey: "settings.tab.account" },
+  security: { icon: ShieldCheck, labelKey: "settings.tab.security" },
   privacy: { icon: Lock, labelKey: "settings.tab.privacy" },
   billing: { icon: CreditCard, labelKey: "settings.tab.billing" },
   usage: { icon: BarChart3, labelKey: "settings.tab.usage" },
@@ -1406,6 +1409,9 @@ export function SettingsModal() {
               )}
               <TabsContent value="account">
                 <AccountTab />
+              </TabsContent>
+              <TabsContent value="security">
+                <SecurityTab />
               </TabsContent>
               <TabsContent value="privacy">
                 <PrivacyTab />

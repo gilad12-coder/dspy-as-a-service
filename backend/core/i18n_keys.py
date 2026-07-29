@@ -12,9 +12,15 @@ from enum import StrEnum
 class I18nKey(StrEnum):
     """Stable identifiers for catalog ``messages`` entries (formatted via ``t()``)."""
 
+    ACCOUNTS_EMAIL_DELIVERY_UNAVAILABLE = 'accounts.email_delivery_unavailable'
+    ACCOUNTS_EMAIL_SEND_FAILED = 'accounts.email_send_failed'
     ACCOUNTS_EMAIL_TAKEN = 'accounts.email_taken'
     ACCOUNTS_INVALID_CREDENTIALS = 'accounts.invalid_credentials'
     ACCOUNTS_INVALID_EMAIL = 'accounts.invalid_email'
+    ACCOUNTS_INVALID_SECOND_FACTOR = 'accounts.invalid_second_factor'
+    ACCOUNTS_TOTP_SETUP_REQUIRED = 'accounts.totp_setup_required'
+    ACCOUNTS_TWO_FACTOR_REQUIRED = 'accounts.two_factor_required'
+    ACCOUNTS_TWO_FACTOR_UNAVAILABLE = 'accounts.two_factor_unavailable'
     ACCOUNTS_WEAK_PASSWORD = 'accounts.weak_password'
     ADMIN_FORBIDDEN = 'admin.forbidden'
     ADMIN_INVALID_USERNAME = 'admin.invalid_username'
@@ -132,6 +138,9 @@ class I18nKey(StrEnum):
     SUBMISSION_VISION_REQUIRED = 'submission.vision_required'
     SUBMIT_NO_MODELS_AVAILABLE = 'submit.no_models_available'
     USER_STORAGE_QUOTA_EXCEEDED = 'user.storage.quota_exceeded'
+    WEBAUTHN_CHALLENGE_EXPIRED = 'webauthn.challenge_expired'
+    WEBAUTHN_INVALID_CREDENTIAL = 'webauthn.invalid_credential'
+    WEBAUTHN_NOT_FOUND = 'webauthn.not_found'
     WIZARD_CODE_VIA_AUTHORING_ONLY = 'wizard.code_via_authoring_only'
     WIZARD_COLUMN_ROLES_NOT_OBJECT = 'wizard.column_roles_not_object'
     WIZARD_FIELD_MUST_BE_LIST = 'wizard.field_must_be_list'

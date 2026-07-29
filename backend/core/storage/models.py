@@ -102,6 +102,74 @@ class UserModel(Base):
     use_case: Mapped[str | None] = mapped_column(String(32), nullable=True)
     experience_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
     job_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Two-factor state for password sign-ins. A non-null ``totp_secret`` means
+    # TOTP is enabled; ``totp_pending_secret`` holds the secret between setup
+    # and the first verified code, so an abandoned setup never locks the
+    # account. ``recovery_codes`` is a JSON array of scrypt hashes, each
+    # consumed on use.
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_pending_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    email_2fa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    recovery_codes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class WebAuthnCredentialModel(Base):
+    """A registered passkey (WebAuthn credential) owned by one identity.
+
+    ``user_email`` is a plain indexed column rather than a foreign key to
+    ``users``: OAuth identities (Google/GitHub) have no ``users`` row yet can
+    still register passkeys, since the email is the cross-provider identity.
+    ``credential_id`` and ``public_key`` are stored base64url-encoded exactly
+    as the WebAuthn ceremony emits them; ``sign_count`` tracks the
+    authenticator's signature counter for clone detection.
+    """
+
+    __tablename__ = "webauthn_credentials"
+
+    credential_id: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    user_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    public_key: Mapped[str] = mapped_column(Text, nullable=False)
+    sign_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    transports: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    nickname: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WebAuthnChallengeModel(Base):
+    """Single-use server-issued challenge for an in-flight WebAuthn ceremony.
+
+    Stored server-side (not in a cookie) so registration and sign-in stay
+    stateless across backend replicas. Keyed by the base64url challenge
+    itself — the verify step extracts the challenge echoed in the client's
+    ``clientDataJSON``, consumes the row, and rejects anything unknown or past
+    ``expires_at``. Expired rows are purged opportunistically on each insert.
+    """
+
+    __tablename__ = "webauthn_challenges"
+
+    challenge: Mapped[str] = mapped_column(String(255), primary_key=True)
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False)
+    user_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TwoFactorEmailCodeModel(Base):
+    """The active emailed one-time sign-in code for a local account.
+
+    One row per email (re-sending replaces it), holding only the scrypt hash
+    of the 6-digit code. ``attempts`` counts failed verifies so a code dies
+    after a handful of guesses well before ``expires_at``.
+    """
+
+    __tablename__ = "two_factor_email_codes"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class BillingCustomerModel(Base):

@@ -3,19 +3,13 @@
 import { useEffect, useState } from "react";
 import { signIn, getProviders } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Github } from "lucide-react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { Loader2, Github, Fingerprint, ArrowLeft } from "lucide-react";
+import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
 import { Input } from "@/shared/ui/primitives/input";
 import { Label } from "@/shared/ui/primitives/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/ui/primitives/select";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { LanguageSwitcher } from "@/shared/ui/language-switcher";
 import { msg } from "@/shared/lib/messages";
@@ -25,6 +19,9 @@ import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import { LoginHalo } from "./LoginHalo";
 
 const ENTER_EASE = [0.16, 1, 0.3, 1] as const;
+
+const TWOFA_LINK_CLASS =
+  "block cursor-pointer text-xs font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline";
 
 /**
  * Resolve where to send the user after login. next-auth's middleware appends a
@@ -86,8 +83,20 @@ function GoogleMark({ className }: { className?: string }) {
 
 type AuthMode = "signin" | "signup";
 
+type TwoFactorMethod = "totp" | "email" | "recovery";
+
+interface TwoFactorState {
+  /** Methods the backend reported as usable ("totp" / "email"). */
+  methods: string[];
+  /** The entry mode the code input currently targets. */
+  mode: TwoFactorMethod;
+  /** Whether an emailed code was already requested this attempt. */
+  emailSent: boolean;
+}
+
 export function LoginView() {
   const router = useRouter();
+  const prefersReduced = useReducedMotion();
   const [mode, setMode] = useState<"loading" | "sso" | "ready">("loading");
   const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [oauth, setOauth] = useState<{ google: boolean; github: boolean }>({
@@ -96,11 +105,17 @@ export function LoginView() {
   });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [useCase, setUseCase] = useState("");
-  const [experience, setExperience] = useState("");
-  const [jobRole, setJobRole] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [twoFactor, setTwoFactor] = useState<TwoFactorState | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [sendingCode, setSendingCode] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [passkeySupported, setPasskeySupported] = useState(false);
+
+  useEffect(() => {
+    setPasskeySupported(browserSupportsWebAuthn());
+  }, []);
 
   useEffect(() => {
     // If the providers endpoint errors (network blip, mis-deployed [...nextauth]
@@ -141,6 +156,16 @@ export function LoginView() {
     void signIn(provider, { callbackUrl: postLoginTarget() });
   }
 
+  /**
+   * Soft-nav to the post-login target so we don't hard-reload and double-fetch
+   * the dashboard, and a recipient bounced here from a /share/<token> link
+   * lands back on it.
+   */
+  function finishLogin() {
+    router.push(postLoginTarget());
+    router.refresh();
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const cleanEmail = email.trim().toLowerCase();
@@ -153,13 +178,7 @@ export function LoginView() {
         const res = await fetch("/api/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: cleanEmail,
-            password,
-            use_case: useCase,
-            experience_level: experience,
-            job_role: jobRole,
-          }),
+          body: JSON.stringify({ email: cleanEmail, password }),
         });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -177,6 +196,21 @@ export function LoginView() {
         redirect: false,
       });
       if (result?.error) {
+        // A 2FA-protected account answers the correct password with a typed
+        // "code required" signal carrying its usable methods — pivot the card
+        // to the verification step instead of surfacing an error.
+        const code = result.code ?? "";
+        if (code.startsWith("2fa_required:")) {
+          const methods = code.slice("2fa_required:".length).split(" ").filter(Boolean);
+          setTwoFactor({
+            methods,
+            mode: methods.includes("totp") ? "totp" : "email",
+            emailSent: false,
+          });
+          setTwoFactorCode("");
+          setLoading(false);
+          return;
+        }
         track(TelemetryEvent.LoginFailed, {
           method: authMode === "signup" ? "signup" : "credentials",
         });
@@ -185,35 +219,130 @@ export function LoginView() {
         return;
       }
       if (authMode === "signup") {
-        track(TelemetryEvent.SignupSucceeded, {
-          use_case: useCase,
-          experience_level: experience,
-          job_role: jobRole,
-        });
+        track(TelemetryEvent.SignupSucceeded);
       } else {
         track(TelemetryEvent.LoginSucceeded, { method: "credentials" });
       }
-      // Soft-nav so we don't hard-reload and double-fetch the dashboard. Honor
-      // the post-login target so a recipient bounced here from a /share/<token>
-      // link lands back on it.
-      router.push(postLoginTarget());
-      router.refresh();
+      finishLogin();
     } catch {
       setError(msg("auth.login.error"));
       setLoading(false);
     }
   }
 
+  async function handleTwoFactorSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const code = twoFactorCode.trim();
+    if (!twoFactor || !code) return;
+    setError("");
+    setLoading(true);
+    try {
+      const codeField =
+        twoFactor.mode === "totp"
+          ? { totpCode: code }
+          : twoFactor.mode === "email"
+            ? { emailCode: code }
+            : { recoveryCode: code };
+      const result = await signIn("credentials", {
+        email: email.trim().toLowerCase(),
+        password,
+        ...codeField,
+        redirect: false,
+      });
+      if (result?.error) {
+        track(TelemetryEvent.LoginFailed, { method: "credentials_2fa" });
+        setError(
+          (result.code ?? "").startsWith("2fa")
+            ? msg("auth.login.twofa_invalid")
+            : msg("auth.login.invalid_credentials"),
+        );
+        setLoading(false);
+        return;
+      }
+      track(TelemetryEvent.LoginSucceeded, { method: "credentials_2fa" });
+      finishLogin();
+    } catch {
+      setError(msg("auth.login.error"));
+      setLoading(false);
+    }
+  }
+
+  async function sendEmailCode() {
+    if (!twoFactor) return;
+    setError("");
+    setSendingCode(true);
+    try {
+      const res = await fetch("/api/2fa/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      });
+      if (!res.ok) {
+        setError(msg("auth.login.twofa_send_failed"));
+        return;
+      }
+      setTwoFactor({ ...twoFactor, mode: "email", emailSent: true });
+      setTwoFactorCode("");
+    } catch {
+      setError(msg("auth.login.twofa_send_failed"));
+    } finally {
+      setSendingCode(false);
+    }
+  }
+
+  function switchTwoFactorMode(nextMode: TwoFactorMethod) {
+    if (!twoFactor) return;
+    setTwoFactor({ ...twoFactor, mode: nextMode });
+    setTwoFactorCode("");
+    setError("");
+  }
+
+  function leaveTwoFactor() {
+    setTwoFactor(null);
+    setTwoFactorCode("");
+    setError("");
+  }
+
+  async function handlePasskey() {
+    setError("");
+    setPasskeyLoading(true);
+    try {
+      const optionsRes = await fetch("/api/webauthn/options", { method: "POST" });
+      if (!optionsRes.ok) {
+        setError(msg("auth.login.passkey_failed"));
+        return;
+      }
+      const options = await optionsRes.json();
+      const assertion = await startAuthentication(options);
+      const result = await signIn("passkey", {
+        assertion: JSON.stringify(assertion),
+        redirect: false,
+      });
+      if (result?.error) {
+        track(TelemetryEvent.LoginFailed, { method: "passkey" });
+        setError(msg("auth.login.passkey_failed"));
+        return;
+      }
+      track(TelemetryEvent.LoginSucceeded, { method: "passkey" });
+      finishLogin();
+    } catch (err) {
+      // The browser throws NotAllowedError when the user dismisses the
+      // platform prompt — that's a cancel, not a failure worth flagging.
+      if ((err as Error)?.name !== "NotAllowedError") {
+        setError(msg("auth.login.passkey_failed"));
+      }
+    } finally {
+      setPasskeyLoading(false);
+    }
+  }
+
   const isWorking = mode === "loading" || mode === "sso";
-  // OAuth is a sign-IN affordance only: "continue with Google/GitHub" makes no
-  // sense under the "create an account" tab, where we instead collect a richer
-  // profile. So the social buttons show on the signin tab exclusively.
+  // OAuth and passkeys are sign-IN affordances only: "continue with Google"
+  // or "sign in with a passkey" make no sense under the "create an account"
+  // tab, so both show on the signin tab exclusively.
   const showOAuth = (oauth.google || oauth.github) && authMode === "signin";
-  const credentialsFilled = !!email.trim() && password.length > 0;
-  // Sign-up additionally requires the two profile fields that drive product
-  // behavior (use-case + experience); role is optional.
-  const canSubmit =
-    !loading && credentialsFilled && (authMode === "signin" || (!!useCase && !!experience));
+  const showPasskey = passkeySupported && authMode === "signin";
+  const canSubmit = !loading && !!email.trim() && password.length > 0;
 
   return (
     <div className="relative flex min-h-dvh w-full items-center justify-center px-4 py-10">
@@ -253,239 +382,292 @@ export function LoginView() {
             <LoginHeader />
             <Card className="mt-9 w-full">
               <CardContent className="px-6">
-                <div
-                  role="tablist"
-                  aria-label={msg("auth.login.form_aria")}
-                  className="mb-5 flex rounded-lg bg-accent/60 p-1"
-                >
-                  {(["signin", "signup"] as const).map((tab) => (
+                {twoFactor ? (
+                  <div>
                     <button
-                      key={tab}
                       type="button"
-                      role="tab"
-                      aria-selected={authMode === tab}
-                      onClick={() => switchMode(tab)}
-                      className={cn(
-                        "flex-1 cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-200",
-                        authMode === tab
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
+                      onClick={leaveTwoFactor}
+                      className="mb-4 flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                     >
-                      {msg(tab === "signin" ? "auth.login.tab_signin" : "auth.login.tab_signup")}
+                      <ArrowLeft className="size-3.5 rtl:-scale-x-100" aria-hidden="true" />
+                      {msg("auth.login.twofa_back")}
                     </button>
-                  ))}
-                </div>
-
-                {showOAuth && (
+                    <p className="text-sm font-semibold text-foreground">
+                      {msg("auth.login.twofa_heading")}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {twoFactor.mode === "totp"
+                        ? msg("auth.login.twofa_totp_hint")
+                        : twoFactor.mode === "email"
+                          ? twoFactor.emailSent
+                            ? msg("auth.login.twofa_email_sent")
+                            : msg("auth.login.twofa_email_hint")
+                          : msg("auth.login.twofa_recovery_hint")}
+                    </p>
+                    {twoFactor.mode === "email" && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={sendingCode}
+                        onClick={() => void sendEmailCode()}
+                        className="mt-3 gap-2"
+                      >
+                        {sendingCode && <Loader2 className="size-3.5 animate-spin" />}
+                        {msg(
+                          twoFactor.emailSent ? "auth.login.twofa_resend" : "auth.login.twofa_send",
+                        )}
+                      </Button>
+                    )}
+                    <form onSubmit={handleTwoFactorSubmit} className="mt-4 space-y-3.5">
+                      <div>
+                        <Label
+                          htmlFor="twofa-code"
+                          className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                        >
+                          {msg("auth.login.twofa_code_label")}
+                        </Label>
+                        <Input
+                          id="twofa-code"
+                          value={twoFactorCode}
+                          onChange={(e) => setTwoFactorCode(e.target.value)}
+                          placeholder={twoFactor.mode === "recovery" ? "XXXX-XXXX" : "123456"}
+                          autoFocus
+                          autoComplete="one-time-code"
+                          inputMode={twoFactor.mode === "recovery" ? "text" : "numeric"}
+                          dir="ltr"
+                          className="h-11 text-left"
+                        />
+                      </div>
+                      <AnimatePresence>
+                        {error && (
+                          <motion.p
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="text-sm text-destructive"
+                            role="alert"
+                          >
+                            {error}
+                          </motion.p>
+                        )}
+                      </AnimatePresence>
+                      <Button
+                        type="submit"
+                        size="lg"
+                        disabled={loading || !twoFactorCode.trim()}
+                        className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                      >
+                        {loading && <Loader2 className="size-4 animate-spin" />}
+                        {msg("auth.login.twofa_verify")}
+                      </Button>
+                    </form>
+                    <div className="mt-4 space-y-1.5">
+                      {twoFactor.mode !== "totp" && twoFactor.methods.includes("totp") && (
+                        <button
+                          type="button"
+                          onClick={() => switchTwoFactorMode("totp")}
+                          className={TWOFA_LINK_CLASS}
+                        >
+                          {msg("auth.login.twofa_use_totp")}
+                        </button>
+                      )}
+                      {twoFactor.mode !== "email" && twoFactor.methods.includes("email") && (
+                        <button
+                          type="button"
+                          onClick={() => switchTwoFactorMode("email")}
+                          className={TWOFA_LINK_CLASS}
+                        >
+                          {msg("auth.login.twofa_use_email")}
+                        </button>
+                      )}
+                      {twoFactor.mode !== "recovery" && (
+                        <button
+                          type="button"
+                          onClick={() => switchTwoFactorMode("recovery")}
+                          className={TWOFA_LINK_CLASS}
+                        >
+                          {msg("auth.login.twofa_use_recovery")}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
                   <>
-                    <div className="space-y-2.5">
-                      {oauth.google && (
-                        <Button
+                    <div
+                      role="tablist"
+                      aria-label={msg("auth.login.form_aria")}
+                      className="mb-5 flex rounded-lg bg-accent/60 p-1"
+                    >
+                      {(["signin", "signup"] as const).map((tab) => (
+                        <button
+                          key={tab}
                           type="button"
-                          variant="outline"
-                          size="lg"
-                          onClick={() => handleOAuth("google")}
-                          className="h-11 w-full gap-2.5 text-[0.9375rem] font-medium"
+                          role="tab"
+                          aria-selected={authMode === tab}
+                          onClick={() => switchMode(tab)}
+                          className={cn(
+                            "relative flex-1 cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-200",
+                            authMode === tab
+                              ? "text-foreground"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
                         >
-                          <GoogleMark className="size-[18px]" />
-                          {msg("auth.login.with_google")}
-                        </Button>
-                      )}
-                      {oauth.github && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="lg"
-                          onClick={() => handleOAuth("github")}
-                          className="h-11 w-full gap-2.5 text-[0.9375rem] font-medium"
+                          {/* Shared-layoutId pill: the same id on whichever tab is
+                              active lets Framer SLIDE the highlight between the two
+                              instead of snapping, mirroring the settings rail. */}
+                          {authMode === tab && (
+                            <motion.div
+                              layoutId="login-tab-active"
+                              className="absolute inset-0 rounded-md bg-background shadow-sm"
+                              transition={
+                                prefersReduced
+                                  ? { duration: 0 }
+                                  : { type: "spring", stiffness: 400, damping: 32 }
+                              }
+                            />
+                          )}
+                          <span className="relative z-10">
+                            {msg(
+                              tab === "signin" ? "auth.login.tab_signin" : "auth.login.tab_signup",
+                            )}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {(showOAuth || showPasskey) && (
+                      <>
+                        <div className="space-y-2.5">
+                          {oauth.google && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="lg"
+                              onClick={() => handleOAuth("google")}
+                              className="h-11 w-full gap-2.5 text-[0.9375rem] font-medium"
+                            >
+                              <GoogleMark className="size-[18px]" />
+                              {msg("auth.login.with_google")}
+                            </Button>
+                          )}
+                          {oauth.github && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="lg"
+                              onClick={() => handleOAuth("github")}
+                              className="h-11 w-full gap-2.5 text-[0.9375rem] font-medium"
+                            >
+                              <Github className="size-[18px]" />
+                              {msg("auth.login.with_github")}
+                            </Button>
+                          )}
+                          {showPasskey && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="lg"
+                              disabled={passkeyLoading}
+                              onClick={() => void handlePasskey()}
+                              className="h-11 w-full gap-2.5 text-[0.9375rem] font-medium"
+                            >
+                              {passkeyLoading ? (
+                                <Loader2 className="size-[18px] animate-spin" />
+                              ) : (
+                                <Fingerprint className="size-[18px]" />
+                              )}
+                              {msg("auth.login.passkey")}
+                            </Button>
+                          )}
+                        </div>
+                        <div className="my-5 flex items-center gap-3" aria-hidden="true">
+                          <span className="h-px flex-1 bg-border" />
+                          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            {msg("auth.login.divider")}
+                          </span>
+                          <span className="h-px flex-1 bg-border" />
+                        </div>
+                      </>
+                    )}
+
+                    <form onSubmit={handleSubmit} className="space-y-3.5">
+                      <div>
+                        <Label
+                          htmlFor="login-email"
+                          className="mb-1.5 block text-xs font-medium text-muted-foreground"
                         >
-                          <Github className="size-[18px]" />
-                          {msg("auth.login.with_github")}
-                        </Button>
-                      )}
-                    </div>
-                    <div className="my-5 flex items-center gap-3" aria-hidden="true">
-                      <span className="h-px flex-1 bg-border" />
-                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        {msg("auth.login.divider")}
-                      </span>
-                      <span className="h-px flex-1 bg-border" />
-                    </div>
+                          {msg("auth.login.email")}
+                        </Label>
+                        <Input
+                          id="login-email"
+                          type="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder={msg("auth.login.email_placeholder")}
+                          autoFocus
+                          autoComplete="email"
+                          dir="ltr"
+                          className="h-11 text-left"
+                        />
+                      </div>
+
+                      <div>
+                        <Label
+                          htmlFor="login-password"
+                          className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                        >
+                          {msg("auth.login.password")}
+                        </Label>
+                        <Input
+                          id="login-password"
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder={msg("auth.login.password_placeholder")}
+                          autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+                          dir="ltr"
+                          className="h-11 text-left"
+                        />
+                        {authMode === "signup" && (
+                          <p className="mt-1.5 text-xs text-muted-foreground">
+                            {msg("auth.login.password_hint")}
+                          </p>
+                        )}
+                      </div>
+
+                      <AnimatePresence>
+                        {error && (
+                          <motion.p
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="text-sm text-destructive"
+                            role="alert"
+                          >
+                            {error}
+                          </motion.p>
+                        )}
+                      </AnimatePresence>
+
+                      <Button
+                        type="submit"
+                        size="lg"
+                        disabled={!canSubmit}
+                        className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                      >
+                        {loading && <Loader2 className="size-4 animate-spin" />}
+                        {msg(
+                          authMode === "signin"
+                            ? "auth.login.signin_submit"
+                            : "auth.login.signup_submit",
+                        )}
+                      </Button>
+                    </form>
                   </>
                 )}
-
-                <form onSubmit={handleSubmit} className="space-y-3.5">
-                  <div>
-                    <Label
-                      htmlFor="login-email"
-                      className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                    >
-                      {msg("auth.login.email")}
-                    </Label>
-                    <Input
-                      id="login-email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder={msg("auth.login.email_placeholder")}
-                      autoFocus
-                      autoComplete="email"
-                      dir="ltr"
-                      className="h-11 text-left"
-                    />
-                  </div>
-
-                  <div>
-                    <Label
-                      htmlFor="login-password"
-                      className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                    >
-                      {msg("auth.login.password")}
-                    </Label>
-                    <Input
-                      id="login-password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder={msg("auth.login.password_placeholder")}
-                      autoComplete={authMode === "signup" ? "new-password" : "current-password"}
-                      dir="ltr"
-                      className="h-11 text-left"
-                    />
-                    {authMode === "signup" && (
-                      <p className="mt-1.5 text-xs text-muted-foreground">
-                        {msg("auth.login.password_hint")}
-                      </p>
-                    )}
-                  </div>
-
-                  <AnimatePresence initial={false}>
-                    {authMode === "signup" && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="space-y-3.5 overflow-hidden"
-                      >
-                        <p className="pt-0.5 text-xs font-medium text-foreground/70">
-                          {msg("auth.login.profile_heading")}
-                        </p>
-
-                        <div>
-                          <Label
-                            htmlFor="signup-usecase"
-                            className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                          >
-                            {msg("auth.login.usecase_label")}
-                          </Label>
-                          <Select value={useCase} onValueChange={setUseCase}>
-                            <SelectTrigger
-                              id="signup-usecase"
-                              className="w-full data-[size=default]:h-11"
-                            >
-                              <SelectValue placeholder={msg("auth.login.select_placeholder")} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="classification">
-                                {msg("auth.login.uc_classification")}
-                              </SelectItem>
-                              <SelectItem value="extraction">
-                                {msg("auth.login.uc_extraction")}
-                              </SelectItem>
-                              <SelectItem value="rag_agents">{msg("auth.login.uc_rag")}</SelectItem>
-                              <SelectItem value="generation">
-                                {msg("auth.login.uc_generation")}
-                              </SelectItem>
-                              <SelectItem value="other">{msg("auth.login.uc_other")}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div>
-                          <Label
-                            htmlFor="signup-experience"
-                            className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                          >
-                            {msg("auth.login.experience_label")}
-                          </Label>
-                          <Select value={experience} onValueChange={setExperience}>
-                            <SelectTrigger
-                              id="signup-experience"
-                              className="w-full data-[size=default]:h-11"
-                            >
-                              <SelectValue placeholder={msg("auth.login.select_placeholder")} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="new">{msg("auth.login.exp_new")}</SelectItem>
-                              <SelectItem value="familiar">
-                                {msg("auth.login.exp_familiar")}
-                              </SelectItem>
-                              <SelectItem value="expert">{msg("auth.login.exp_expert")}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div>
-                          <Label
-                            htmlFor="signup-role"
-                            className="mb-1.5 block text-xs font-medium text-muted-foreground"
-                          >
-                            {msg("auth.login.role_label")}
-                          </Label>
-                          <Select value={jobRole} onValueChange={setJobRole}>
-                            <SelectTrigger
-                              id="signup-role"
-                              className="w-full data-[size=default]:h-11"
-                            >
-                              <SelectValue placeholder={msg("auth.login.select_placeholder")} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="engineer">
-                                {msg("auth.login.role_engineer")}
-                              </SelectItem>
-                              <SelectItem value="researcher">
-                                {msg("auth.login.role_researcher")}
-                              </SelectItem>
-                              <SelectItem value="pm">{msg("auth.login.role_pm")}</SelectItem>
-                              <SelectItem value="other">{msg("auth.login.role_other")}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  <AnimatePresence>
-                    {error && (
-                      <motion.p
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="text-sm text-destructive"
-                        role="alert"
-                      >
-                        {error}
-                      </motion.p>
-                    )}
-                  </AnimatePresence>
-
-                  <Button
-                    type="submit"
-                    size="lg"
-                    disabled={!canSubmit}
-                    className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
-                  >
-                    {loading && <Loader2 className="size-4 animate-spin" />}
-                    {msg(
-                      authMode === "signin"
-                        ? "auth.login.signin_submit"
-                        : "auth.login.signup_submit",
-                    )}
-                  </Button>
-                </form>
               </CardContent>
             </Card>
           </div>

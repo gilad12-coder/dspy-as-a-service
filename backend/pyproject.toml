@@ -46,6 +46,10 @@ dependencies = [
     "requests>=2.31",
     "stripe>=11,<13",
     "ldap3>=2.9",
+    # Account security: TOTP two-factor codes and WebAuthn passkey ceremonies
+    # (core.api.routers.account_security).
+    "pyotp>=2.9",
+    "webauthn>=2.5,<3",
     "python-dotenv>=1.0",
     "scalar-fastapi>=1.8",
     "scipy>=1.15.3",

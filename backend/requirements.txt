@@ -54,6 +54,8 @@ cachetools==7.0.5
     #   py-key-value-aio
 caio==0.9.25
     # via aiofile
+cbor2==5.9.0
+    # via webauthn
 certifi==2026.2.25
     # via
     #   httpcore
@@ -79,7 +81,9 @@ cryptography==48.0.1
     #   authlib
     #   joserfc
     #   pyjwt
+    #   pyopenssl
     #   secretstorage
+    #   webauthn
 cyclopts==4.10.2
     # via fastmcp
 diskcache==5.6.3
@@ -247,7 +251,12 @@ psycopg2-binary==2.9.11
 py-key-value-aio==0.4.4
     # via fastmcp
 pyasn1==0.6.4
-    # via ldap3
+    # via
+    #   ldap3
+    #   pyasn1-modules
+    #   webauthn
+pyasn1-modules==0.4.2
+    # via webauthn
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
 pydantic==2.12.5
@@ -271,6 +280,10 @@ pygments==2.20.0
     # via rich
 pyjwt==2.13.0
     # via mcp
+pyopenssl==26.2.0
+    # via webauthn
+pyotp==2.10.0
+    # via skynet
 pyperclip==1.11.0
     # via fastmcp
 python-dotenv==1.2.2
@@ -373,6 +386,7 @@ typing-extensions==4.15.0
     #   py-key-value-aio
     #   pydantic
     #   pydantic-core
+    #   pyopenssl
     #   referencing
     #   sqlalchemy
     #   starlette
@@ -395,6 +409,8 @@ uvicorn==0.44.0
     #   skynet
 watchfiles==1.1.1
     # via fastmcp
+webauthn==2.8.0
+    # via skynet
 websockets==16.0
     # via fastmcp
 yarl==1.23.0

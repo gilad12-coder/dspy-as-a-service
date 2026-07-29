@@ -1,6 +1,5 @@
 {
   "app.meta.description": "Prompt optimisation with DSPy — automatically improve the performance of language models",
-  "auth.login.exp_new": "New to prompt optimisation",
   "auth.login.meta_description": "Sign in to Skynet, a prompt-optimisation platform",
   "auto.app.optimizations.id.page.20": "Run the optimised program in real time — enter input and get a prediction.",
   "auto.app.submit.layout.template.1": "Create a new prompt optimisation with DSPy — choose {p1}, upload {p2}, and improve performance",

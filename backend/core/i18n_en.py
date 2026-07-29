@@ -22,6 +22,12 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "agent.approval.unknown_call_id": "No pending approval for the given call_id.",
     "agent.status.tool_end": "Tool finished.",
     "agent.status.tool_start": "Agent invoking tool…",
+    "accounts.email_delivery_unavailable": "Email delivery isn't configured on this server.",
+    "accounts.email_send_failed": "Couldn't send the verification email. Try again.",
+    "accounts.invalid_second_factor": "That verification code is incorrect or has expired.",
+    "accounts.totp_setup_required": "Start authenticator setup before verifying a code.",
+    "accounts.two_factor_required": "Enter a verification code to finish signing in.",
+    "accounts.two_factor_unavailable": "Two-factor authentication isn't available for this account.",
     "admin.forbidden": "Admin privileges are required for this operation.",
     "admin.invalid_username": "Username must not be blank.",
     "admin.quota_save_failed": "Failed to save quota override.",
@@ -166,6 +172,9 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "wizard.model_not_json_object": "{field} must be a JSON object.",
     "wizard.model_number_required": "{field}.{key} must be a number.",
     "wizard.optimizer_kwargs_not_object": "optimizer_kwargs must be an object.",
+    "webauthn.challenge_expired": "The passkey request expired — try again.",
+    "webauthn.invalid_credential": "This passkey couldn't be verified.",
+    "webauthn.not_found": "Passkey not found.",
     "wizard.code_via_authoring_only": (
         "{field} cannot be set through update_wizard_state. Signature and "
         "Metric code are authored only via request_code_authoring, which "

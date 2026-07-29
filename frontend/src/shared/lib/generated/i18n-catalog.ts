@@ -64,9 +64,15 @@ export const TERMS = {
 } as const;
 
 export const I18N_MESSAGES = {
+  "accounts.email_delivery_unavailable": "שליחת אימייל אינה מוגדרת בשרת הזה.",
+  "accounts.email_send_failed": "לא ניתן לשלוח את אימייל האימות. נסו שוב.",
   "accounts.email_taken": "כתובת האימייל כבר רשומה.",
   "accounts.invalid_credentials": "האימייל או הסיסמה שגויים.",
   "accounts.invalid_email": "כתובת אימייל לא תקינה.",
+  "accounts.invalid_second_factor": "קוד האימות שגוי או שפג תוקפו.",
+  "accounts.totp_setup_required": "יש להתחיל את הגדרת אפליקציית האימות לפני אימות קוד.",
+  "accounts.two_factor_required": "יש להזין קוד אימות כדי להשלים את ההתחברות.",
+  "accounts.two_factor_unavailable": "אימות דו-שלבי אינו זמין עבור החשבון הזה.",
   "accounts.weak_password": "הסיסמה חייבת לכלול לפחות 8 תווים.",
   "admin.forbidden": "רק מנהלים יכולים לבצע את הפעולה הזו.",
   "admin.invalid_username": "הזן/הזיני שם משתמש.",
@@ -184,6 +190,9 @@ export const I18N_MESSAGES = {
   "submission.vision_required": "ה{term.dataset} מכיל עמודות תמונה ({fields}) אך ה{term.model} שנבחר ('{model}') אינו תומך בקלט תמונות. בחר/י {term.model} עם תמיכה ב־vision.",
   "submit.no_models_available": "אין {term.modelPlural} זמינים בקטלוג — הגדר/הגדירי קודם API key של ספק.",
   "user.storage.quota_exceeded": "חרגת ממכסת האחסון שלך ({used_mb}MB מתוך {quota_mb}MB). פנה/י מקום ונסה/י שוב.",
+  "webauthn.challenge_expired": "פג תוקף בקשת מפתח הגישה — נסו שוב.",
+  "webauthn.invalid_credential": "לא ניתן לאמת את מפתח הגישה הזה.",
+  "webauthn.not_found": "מפתח הגישה לא נמצא.",
   "wizard.code_via_authoring_only": "אי אפשר לעדכן את {field} דרך update_wizard_state. את קוד ה-Signature וה-Metric כותבים רק דרך request_code_authoring, שמאמת את התוצאה לפני שהיא נכנסת ל-wizard.",
   "wizard.column_roles_not_object": "column_roles חייב להיות אובייקט.",
   "wizard.field_must_be_list": "{field} חייב להיות רשימה.",
@@ -688,9 +697,15 @@ export const TERMS_EN: Partial<Record<TermKey, string>> = {
 };
 
 export const I18N_MESSAGES_EN: Partial<Record<I18nMessageKey, string>> = {
+  "accounts.email_delivery_unavailable": "Email delivery isn't configured on this server.",
+  "accounts.email_send_failed": "Couldn't send the verification email. Try again.",
   "accounts.email_taken": "That email address is already registered.",
   "accounts.invalid_credentials": "Incorrect email or password.",
   "accounts.invalid_email": "Invalid email address.",
+  "accounts.invalid_second_factor": "That verification code is incorrect or has expired.",
+  "accounts.totp_setup_required": "Start authenticator setup before verifying a code.",
+  "accounts.two_factor_required": "Enter a verification code to finish signing in.",
+  "accounts.two_factor_unavailable": "Two-factor authentication isn't available for this account.",
   "accounts.weak_password": "Password must be at least 8 characters.",
   "admin.forbidden": "Admin privileges are required for this operation.",
   "admin.invalid_username": "Username must not be blank.",
@@ -808,6 +823,9 @@ export const I18N_MESSAGES_EN: Partial<Record<I18nMessageKey, string>> = {
   "submission.vision_required": "Dataset contains image columns ({fields}) but the selected model ('{model}') does not support image inputs. Pick a vision-capable model.",
   "submit.no_models_available": "No models available in the catalog — configure a provider API key first.",
   "user.storage.quota_exceeded": "Storage quota exceeded ({used_mb}MB of {quota_mb}MB used). Free up space and try again.",
+  "webauthn.challenge_expired": "The passkey request expired — try again.",
+  "webauthn.invalid_credential": "This passkey couldn't be verified.",
+  "webauthn.not_found": "Passkey not found.",
   "wizard.code_via_authoring_only": "{field} cannot be set through update_wizard_state. Signature and Metric code are authored only via request_code_authoring, which validates the result before it reaches the wizard.",
   "wizard.column_roles_not_object": "column_roles must be an object.",
   "wizard.field_must_be_list": "{field} must be a list.",
@@ -3461,9 +3479,15 @@ export const I18N_MESSAGES_BY_LOCALE: Record<string, Record<string, string>> = {
 };
 
 export const I18N_KEY = {
+  ACCOUNTS_EMAIL_DELIVERY_UNAVAILABLE: "accounts.email_delivery_unavailable",
+  ACCOUNTS_EMAIL_SEND_FAILED: "accounts.email_send_failed",
   ACCOUNTS_EMAIL_TAKEN: "accounts.email_taken",
   ACCOUNTS_INVALID_CREDENTIALS: "accounts.invalid_credentials",
   ACCOUNTS_INVALID_EMAIL: "accounts.invalid_email",
+  ACCOUNTS_INVALID_SECOND_FACTOR: "accounts.invalid_second_factor",
+  ACCOUNTS_TOTP_SETUP_REQUIRED: "accounts.totp_setup_required",
+  ACCOUNTS_TWO_FACTOR_REQUIRED: "accounts.two_factor_required",
+  ACCOUNTS_TWO_FACTOR_UNAVAILABLE: "accounts.two_factor_unavailable",
   ACCOUNTS_WEAK_PASSWORD: "accounts.weak_password",
   ADMIN_FORBIDDEN: "admin.forbidden",
   ADMIN_INVALID_USERNAME: "admin.invalid_username",
@@ -3581,6 +3605,9 @@ export const I18N_KEY = {
   SUBMISSION_VISION_REQUIRED: "submission.vision_required",
   SUBMIT_NO_MODELS_AVAILABLE: "submit.no_models_available",
   USER_STORAGE_QUOTA_EXCEEDED: "user.storage.quota_exceeded",
+  WEBAUTHN_CHALLENGE_EXPIRED: "webauthn.challenge_expired",
+  WEBAUTHN_INVALID_CREDENTIAL: "webauthn.invalid_credential",
+  WEBAUTHN_NOT_FOUND: "webauthn.not_found",
   WIZARD_CODE_VIA_AUTHORING_ONLY: "wizard.code_via_authoring_only",
   WIZARD_COLUMN_ROLES_NOT_OBJECT: "wizard.column_roles_not_object",
   WIZARD_FIELD_MUST_BE_LIST: "wizard.field_must_be_list",

@@ -75,6 +75,8 @@ cachetools==7.1.4
     #   py-key-value-aio
 caio==0.9.25
     # via aiofile
+cbor2==5.9.0
+    # via webauthn
 certifi==2026.6.17
     # via
     #   httpcore
@@ -97,6 +99,8 @@ cryptography==48.0.1
     #   authlib
     #   joserfc
     #   pyjwt
+    #   pyopenssl
+    #   webauthn
 cyclopts==4.19.0
     # via fastmcp-slim
 diskcache==5.6.3
@@ -268,7 +272,12 @@ psycopg2-binary==2.9.12
 py-key-value-aio==0.4.5
     # via fastmcp-slim
 pyasn1==0.6.4
-    # via ldap3
+    # via
+    #   ldap3
+    #   pyasn1-modules
+    #   webauthn
+pyasn1-modules==0.4.2
+    # via webauthn
 pycparser==3.0
     # via cffi
 pydantic==2.13.4
@@ -295,6 +304,10 @@ pygments==2.20.0
     #   rich-rst
 pyjwt==2.13.0
     # via mcp
+pyopenssl==26.2.0
+    # via webauthn
+pyotp==2.10.0
+    # via skynet (pyproject.toml)
 pyperclip==1.11.0
     # via fastmcp-slim
 python-dotenv==1.2.2
@@ -418,6 +431,8 @@ uvicorn==0.49.0
     #   mcp
 watchfiles==1.2.0
     # via fastmcp-slim
+webauthn==2.8.0
+    # via skynet (pyproject.toml)
 websockets==16.0
     # via fastmcp-slim
 xxhash==3.7.0

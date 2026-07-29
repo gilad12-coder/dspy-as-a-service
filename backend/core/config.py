@@ -90,6 +90,36 @@ class Settings(BaseSettings):
         alias="APP_PUBLIC_URL",
         description="Public origin of the web app, used to build Stripe Checkout success/cancel return URLs.",
     )
+    smtp_host: str | None = Field(
+        default=None,
+        alias="SMTP_HOST",
+        description="SMTP relay host for outbound mail (email one-time sign-in codes). Unset disables email-based 2FA with a typed error.",
+    )
+    smtp_port: int = Field(default=587, alias="SMTP_PORT", description="SMTP relay port.")
+    smtp_username: str | None = Field(
+        default=None, alias="SMTP_USERNAME", description="SMTP auth username; unset sends unauthenticated."
+    )
+    smtp_password: SecretStr | None = Field(
+        default=None, alias="SMTP_PASSWORD", description="SMTP auth password."
+    )
+    smtp_from: str | None = Field(
+        default=None,
+        alias="SMTP_FROM",
+        description="From address for outbound mail; falls back to SMTP_USERNAME.",
+    )
+    smtp_starttls: bool = Field(
+        default=True, alias="SMTP_STARTTLS", description="Upgrade the SMTP connection with STARTTLS."
+    )
+    webauthn_rp_id: str | None = Field(
+        default=None,
+        alias="WEBAUTHN_RP_ID",
+        description="WebAuthn relying-party id (the site's registrable domain, e.g. 'skynet.example.com'). Unset derives it from APP_PUBLIC_URL's hostname.",
+    )
+    webauthn_origins: str = Field(
+        default="",
+        alias="WEBAUTHN_ORIGINS",
+        description="Comma-separated browser origins accepted in passkey ceremonies. Unset allows APP_PUBLIC_URL plus the localhost dev origins.",
+    )
     byok_vault_key: SecretStr | None = Field(
         default=None,
         alias="BYOK_VAULT_KEY",

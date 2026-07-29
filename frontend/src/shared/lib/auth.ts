@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import type { Provider } from "next-auth/providers";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
@@ -62,7 +62,10 @@ const ADMIN_GROUPS = new Set(
 const scope = process.env.AUTH_SSO_SCOPE ?? "openid profile email groups";
 const groupClaim = process.env.AUTH_GROUP_CLAIM ?? "groups";
 const backendAuthSecret = process.env.BACKEND_AUTH_SECRET ?? process.env.AUTH_SECRET;
-const backendTokenTtlSeconds = Number.parseInt(process.env.BACKEND_AUTH_TOKEN_TTL_SECONDS ?? "900", 10);
+const backendTokenTtlSeconds = Number.parseInt(
+  process.env.BACKEND_AUTH_TOKEN_TTL_SECONDS ?? "900",
+  10,
+);
 
 // The credentials provider reaches the backend over this base URL; API_URL is
 // the runtime-overridable server-side value, with the build-time
@@ -74,28 +77,83 @@ const githubConfigured = !!process.env.AUTH_GITHUB_ID && !!process.env.AUTH_GITH
 
 type BackendAccount = { email: string; name: string; role: string };
 
+type CredentialsOutcome =
+  | { kind: "ok"; account: BackendAccount }
+  | { kind: "2fa_required"; methods: string }
+  | { kind: "2fa_invalid" }
+  | { kind: "failed" };
+
 /**
- * Verify email/password credentials against the backend's internal /auth/login.
- * Returns the resolved account on success, or null on bad credentials, a missing
- * shared secret, or any network error — the caller collapses null into a generic
- * "login failed" so the form never leaks which case occurred.
+ * Verify email/password (+ optional second-factor code) against the backend's
+ * internal /auth/login. Distinguishes the two 2FA outcomes — code missing
+ * (with the account's usable methods) vs code wrong — so the login form can
+ * pivot to its code step; every other failure collapses into a generic
+ * "failed" that never leaks which case occurred.
  */
 async function verifyBackendCredentials(
   email: string,
   password: string,
-): Promise<BackendAccount | null> {
-  if (!backendAuthSecret) return null;
+  codes: { totpCode: string; emailCode: string; recoveryCode: string },
+): Promise<CredentialsOutcome> {
+  if (!backendAuthSecret) return { kind: "failed" };
   try {
     const res = await fetch(`${backendBaseUrl}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Internal-Auth": backendAuthSecret },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({
+        email,
+        password,
+        totp_code: codes.totpCode,
+        email_code: codes.emailCode,
+        recovery_code: codes.recoveryCode,
+      }),
+    });
+    if (res.ok) return { kind: "ok", account: (await res.json()) as BackendAccount };
+    const body = (await res.json().catch(() => ({}))) as {
+      code?: unknown;
+      params?: { methods?: unknown };
+    };
+    if (body.code === "accounts.two_factor_required") {
+      return { kind: "2fa_required", methods: String(body.params?.methods ?? "totp") };
+    }
+    if (body.code === "accounts.invalid_second_factor") return { kind: "2fa_invalid" };
+    return { kind: "failed" };
+  } catch {
+    return { kind: "failed" };
+  }
+}
+
+/**
+ * Verify a WebAuthn assertion against the backend's internal /auth/webauthn/verify.
+ * The backend checks the signature against the stored credential and resolves
+ * the owning identity; null on any failure.
+ */
+async function verifyBackendPasskey(assertion: string): Promise<BackendAccount | null> {
+  if (!backendAuthSecret) return null;
+  let credential: unknown;
+  try {
+    credential = JSON.parse(assertion);
+  } catch {
+    return null;
+  }
+  try {
+    const res = await fetch(`${backendBaseUrl}/auth/webauthn/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Internal-Auth": backendAuthSecret },
+      body: JSON.stringify({ credential }),
     });
     if (!res.ok) return null;
     return (await res.json()) as BackendAccount;
   } catch {
     return null;
   }
+}
+
+/** Build a CredentialsSignin whose ``code`` survives to the client signIn result. */
+function credentialsError(code: string): CredentialsSignin {
+  const error = new CredentialsSignin();
+  error.code = code;
+  return error;
 }
 
 const providers: Provider[] = [];
@@ -108,7 +166,11 @@ function readClaim(profile: Record<string, unknown>, path: string): unknown {
 }
 
 function normalizeStringList(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String).map((s) => s.trim()).filter(Boolean);
+  if (Array.isArray(value))
+    return value
+      .map(String)
+      .map((s) => s.trim())
+      .filter(Boolean);
   if (typeof value === "string") {
     return value
       .split(",")
@@ -131,7 +193,12 @@ function base64url(value: Buffer | string) {
   return Buffer.from(value).toString("base64url");
 }
 
-function signBackendToken(token: { name?: unknown; email?: unknown; role?: unknown; groups?: unknown }) {
+function signBackendToken(token: {
+  name?: unknown;
+  email?: unknown;
+  role?: unknown;
+  groups?: unknown;
+}) {
   if (!backendAuthSecret) return undefined;
   const displayName = typeof token.name === "string" ? token.name : undefined;
   const email = typeof token.email === "string" ? token.email : undefined;
@@ -227,12 +294,49 @@ if (adfsConfigured) {
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        totpCode: { label: "Authenticator code", type: "text" },
+        emailCode: { label: "Email code", type: "text" },
+        recoveryCode: { label: "Recovery code", type: "text" },
       },
       async authorize(credentials) {
         const email = (credentials?.email as string)?.trim().toLowerCase();
         const password = credentials?.password as string;
         if (!email || !password) return null;
-        const account = await verifyBackendCredentials(email, password);
+        const str = (v: unknown): string => (typeof v === "string" ? v : "");
+        const result = await verifyBackendCredentials(email, password, {
+          totpCode: str(credentials?.totpCode),
+          emailCode: str(credentials?.emailCode),
+          recoveryCode: str(credentials?.recoveryCode),
+        });
+        // The 2FA outcomes ride the CredentialsSignin ``code`` so the login
+        // form can pivot to (or stay on) its verification-code step; the
+        // methods list travels inside the code string.
+        if (result.kind === "2fa_required") {
+          throw credentialsError(`2fa_required:${result.methods}`);
+        }
+        if (result.kind === "2fa_invalid") throw credentialsError("2fa_invalid");
+        if (result.kind !== "ok") return null;
+        return {
+          id: result.account.email,
+          name: result.account.name,
+          email: result.account.email,
+          groups: [],
+          role: result.account.role,
+        };
+      },
+    }),
+  );
+  providers.push(
+    Credentials({
+      id: "passkey",
+      name: "Passkey",
+      credentials: {
+        assertion: { label: "Assertion", type: "text" },
+      },
+      async authorize(credentials) {
+        const assertion = credentials?.assertion;
+        if (typeof assertion !== "string" || !assertion) return null;
+        const account = await verifyBackendPasskey(assertion);
         if (!account) return null;
         return {
           id: account.email,

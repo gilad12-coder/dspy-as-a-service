@@ -526,6 +526,81 @@ export async function revokeApiToken(): Promise<void> {
   }
 }
 
+export interface PasskeyInfo {
+  credential_id: string;
+  nickname: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface SecurityStatus {
+  has_password: boolean;
+  totp_enabled: boolean;
+  email_2fa_enabled: boolean;
+  email_2fa_available: boolean;
+  passkeys: PasskeyInfo[];
+}
+
+export interface TotpSetup {
+  secret: string;
+  otpauth_url: string;
+}
+
+/** Fetch the caller's 2FA enrollment state and registered passkeys. */
+export function getSecurityStatus() {
+  return request<SecurityStatus>("/auth/security");
+}
+
+/** Begin authenticator-app enrollment; returns the secret + otpauth URI. */
+export function setupTotp() {
+  return request<TotpSetup>("/auth/security/totp/setup", { method: "POST" });
+}
+
+/** Confirm the first authenticator code; returns the one-time recovery codes. */
+export function enableTotp(code: string) {
+  return request<{ recovery_codes: string[] }>("/auth/security/totp/enable", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+/** Disable TOTP after re-proving a current (or recovery) code. */
+export function disableTotp(code: string) {
+  return request<{ ok: boolean }>("/auth/security/totp/disable", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+/** Toggle emailed one-time sign-in codes for the caller's local account. */
+export function setEmailCodes(enabled: boolean) {
+  return request<{ ok: boolean }>("/auth/security/email-codes", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+/** Fetch WebAuthn creation options to register a new passkey. */
+export function getPasskeyRegistrationOptions() {
+  return request<Record<string, unknown>>("/auth/security/passkeys/options", { method: "POST" });
+}
+
+/** Store a browser-created passkey credential under the caller's identity. */
+export function registerPasskey(credential: unknown, nickname: string) {
+  return request<PasskeyInfo>("/auth/security/passkeys", {
+    method: "POST",
+    body: JSON.stringify({ credential, nickname }),
+  });
+}
+
+/** Remove one of the caller's passkeys. */
+export function deletePasskey(credentialId: string) {
+  return request<{ ok: boolean }>(
+    `/auth/security/passkeys/${encodeURIComponent(credentialId)}`,
+    { method: "DELETE" },
+  );
+}
+
 export interface BillingFreeGrant {
   credits_remaining: number;
   credits_total: number;

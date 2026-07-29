@@ -24,6 +24,7 @@ from ...config import settings
 from ...storage.models import UserModel
 from ..errors import DomainError
 from ..passwords import hash_password, verify_password
+from ..two_factor import enforce_second_factor
 
 _MIN_PASSWORD_LENGTH = 8
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -42,10 +43,14 @@ class RegisterRequest(BaseModel):
     job_role: str = Field(default="", description="Optional job function from sign-up.")
 
 
-# Credentials supplied when signing in to a Skynet-native account.
+# Credentials supplied when signing in to a Skynet-native account. At most one
+# of the three second-factor codes is honored (TOTP > email > recovery).
 class LoginRequest(BaseModel):
     email: str = Field(description="Account email.")
     password: str = Field(description="Plaintext password to verify.")
+    totp_code: str = Field(default="", description="Authenticator-app code when TOTP 2FA is enabled.")
+    email_code: str = Field(default="", description="Emailed one-time code when email 2FA is enabled.")
+    recovery_code: str = Field(default="", description="Single-use recovery code standing in for a lost factor.")
 
 
 # The resolved account the frontend turns into a session — never carries a secret.
@@ -193,7 +198,10 @@ def create_accounts_router(*, job_store) -> APIRouter:
 
         Raises:
             DomainError: 403 on a bad internal secret; 401 when the email is
-                unknown or the password does not match.
+                unknown, the password does not match, or the account's second
+                factor is missing (``accounts.two_factor_required``, carrying
+                the usable methods in ``params``) or wrong
+                (``accounts.invalid_second_factor``).
         """
         _require_internal_auth(x_internal_auth)
         email = _normalise_email(body.email)
@@ -201,6 +209,13 @@ def create_accounts_router(*, job_store) -> APIRouter:
             row = session.get(UserModel, email)
             if row is None or not verify_password(body.password, str(row.password_hash)):
                 raise DomainError("accounts.invalid_credentials", status=401)
+            enforce_second_factor(
+                session,
+                row,
+                totp_code=body.totp_code,
+                email_code=body.email_code,
+                recovery_code=body.recovery_code,
+            )
             row.last_login_at = datetime.now(UTC)
             name = str(row.name)
             session.commit()
