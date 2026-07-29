@@ -185,6 +185,7 @@
     "agent_memory.note_empty": "ריק. זיכרון הוא שורת טקסט אחת.",
     "agent_memory.note_multiline": "זיכרון הוא שורה אחת: אחד את השורות, או רשום אותן בנפרד.",
     "agent_memory.note_too_long": "ארוך מדי: {length} תווים, המגבלה היא {limit}. דחוס עוד.",
+    "agent_memory.setting_out_of_range": "{name} חייב להיות בין {min} ל-{max}.",
     "agent_memory.wrong_block": "בלוק שגוי: {block}. בלוקים נדחסים לפי הסדר; הבא הוא {next_block}.",
     "wizard.column_roles_not_object": "column_roles חייב להיות אובייקט.",
     "wizard.invalid_role_values": "ערכי תפקיד לא תקינים (חייבים להיות אחד מ-{allowed}): {bad}",

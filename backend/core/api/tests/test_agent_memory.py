@@ -19,7 +19,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from ...storage.models import AgentMemoryModel, AgentMemorySummaryModel
+from ...storage.models import AgentMemoryModel, AgentMemorySettingsModel, AgentMemorySummaryModel
 from .. import agent_memory
 from ..agent_memory import cover, note, wake_document
 from ..auth import AuthenticatedUser, get_authenticated_user
@@ -47,7 +47,7 @@ def engine() -> Engine:
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
-    for model in (AgentMemoryModel, AgentMemorySummaryModel):
+    for model in (AgentMemoryModel, AgentMemorySummaryModel, AgentMemorySettingsModel):
         model.__table__.create(engine)
     return engine
 
@@ -284,6 +284,71 @@ def test_zoom_rejects_bad_and_beyond_blocks(client: TestClient) -> None:
     resp = client.get("/agent/memory/zoom", params={"block": "4-5"})
     assert resp.status_code == 422
     assert resp.json()["code"] == "agent_memory.block_beyond_log"
+
+
+def test_settings_defaults_and_roundtrip(client: TestClient) -> None:
+    """Knobs start at defaults; overrides persist and null resets them."""
+    body = client.get("/agent/memory/settings").json()
+    assert body["wake_lines"] == {"value": 64, "override": None, "default": 64, "min": 16, "max": 160}
+    assert body["entry_chars"]["value"] == 280
+    assert body["recall_chars"]["value"] == 4000
+    body = client.put("/agent/memory/settings", json={"wake_lines": 32}).json()
+    assert body["wake_lines"]["value"] == 32
+    assert body["wake_lines"]["override"] == 32
+    assert body["entry_chars"]["override"] is None
+    body = client.put("/agent/memory/settings", json={"wake_lines": None}).json()
+    assert body["wake_lines"] == {"value": 64, "override": None, "default": 64, "min": 16, "max": 160}
+
+
+def test_settings_out_of_range(client: TestClient) -> None:
+    """A value outside its knob's range 422s naming the knob and bounds."""
+    resp = client.put("/agent/memory/settings", json={"wake_lines": 4})
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["code"] == "agent_memory.setting_out_of_range"
+    assert body["params"] == {"name": "wake_lines", "min": 16, "max": 160}
+    resp = client.put("/agent/memory/settings", json={"entry_chars": 500})
+    assert resp.status_code == 422
+
+
+def test_entry_chars_knob_gates_notes(client: TestClient) -> None:
+    """Lowering entry_chars tightens note validation to the override."""
+    client.put("/agent/memory/settings", json={"entry_chars": 100})
+    resp = client.post("/agent/memory/note", json={"text": "x" * 150})
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["code"] == "agent_memory.note_too_long"
+    assert body["params"] == {"length": 150, "limit": 100}
+    assert _note(client, "x" * 100)["saved_as"] == 0
+
+
+def test_wake_lines_knob_bounds_the_wake_document(client: TestClient, engine: Engine) -> None:
+    """A lowered wake budget renders fewer, coarser lines once settled."""
+    request = None
+    for i in range(32):
+        request = _note(client, f"memory number {i}")["compression_request"] or request
+    _settle_all(client, request)
+    with Session(engine) as session:
+        full = wake_document(session, _USER)
+    client.put("/agent/memory/settings", json={"wake_lines": 16})
+    with Session(engine) as session:
+        small = wake_document(session, _USER)
+    assert len(full.splitlines()) > len(small.splitlines())
+    # Header + at most 16 cover lines; everything is settled, so no fallback.
+    assert len(small.splitlines()) <= 17
+    assert "#0-3 summary of 0-3" in small
+
+
+def test_recall_chars_knob_caps_output(client: TestClient) -> None:
+    """A lowered recall budget keeps only the newest matches and says so."""
+    for i in range(30):
+        _note(client, f"acme note {i} " + "y" * 80)
+    client.put("/agent/memory/settings", json={"recall_chars": 1000})
+    result = client.get("/agent/memory/recall", params={"pattern": "acme"}).json()["result"]
+    assert "Newest" in result
+    assert "of 30 matches. Narrow the regex." in result
+    assert "acme note 29" in result
+    assert "acme note 0 " not in result
 
 
 def test_memory_is_per_user(client: TestClient, engine: Engine) -> None:

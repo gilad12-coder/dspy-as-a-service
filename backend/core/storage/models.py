@@ -873,6 +873,27 @@ class AgentMemorySummaryModel(Base):
     )
 
 
+class AgentMemorySettingsModel(Base):
+    """Per-user overrides for the agent-memory size knobs (OptMem config).
+
+    One row per user who changed anything; a NULL column (or no row at all)
+    means that knob follows the tool default in
+    :mod:`core.api.agent_memory` — mirroring OptMem's config file, where a
+    commented-out line means "follow the tool". Values are validated against
+    the knob bounds at write time, so reads trust the row.
+    """
+
+    __tablename__ = "agent_memory_settings"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    wake_lines: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entry_chars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recall_chars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
 class TaggingSessionModel(Base):
     """Persisted text-labeling (tagger) session — one row per saved session.
 

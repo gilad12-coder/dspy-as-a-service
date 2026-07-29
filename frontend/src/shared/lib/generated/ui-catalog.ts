@@ -1995,6 +1995,14 @@ export type MessageKey =
   | "settings.agent.default_model.label"
   | "settings.agent.dictation.description"
   | "settings.agent.dictation.label"
+  | "settings.agent.memory.entry.description"
+  | "settings.agent.memory.entry.label"
+  | "settings.agent.memory.recall.description"
+  | "settings.agent.memory.recall.label"
+  | "settings.agent.memory.reset"
+  | "settings.agent.memory.save_failed"
+  | "settings.agent.memory.wake.description"
+  | "settings.agent.memory.wake.label"
   | "settings.agent.shortcut.change"
   | "settings.agent.shortcut.description"
   | "settings.agent.shortcut.hint"
@@ -4845,6 +4853,14 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.agent.default_model.label": "מודל ברירת מחדל",
   "settings.agent.dictation.description": "הצגת כפתור המיקרופון בתיבת הכתיבה",
   "settings.agent.dictation.label": "הכתבה קולית",
+  "settings.agent.memory.entry.description": "האורך המרבי של זיכרון בודד, בתווים",
+  "settings.agent.memory.entry.label": "אורך זיכרון מרבי",
+  "settings.agent.memory.recall.description": "כמה טקסט חיפוש בזיכרון מחזיר, בתווים",
+  "settings.agent.memory.recall.label": "תקציב חיפוש בזיכרון",
+  "settings.agent.memory.reset": "איפוס לברירת המחדל",
+  "settings.agent.memory.save_failed": "שמירת הגדרות הזיכרון נכשלה",
+  "settings.agent.memory.wake.description": "כמה שורות זיכרון הסוכן מתעורר איתן בכל תור",
+  "settings.agent.memory.wake.label": "גודל הקשר הזיכרון",
   "settings.agent.shortcut.change": "שנה/שני",
   "settings.agent.shortcut.description": "קיצור לפתיחה וסגירה של פאנל הסוכן",
   "settings.agent.shortcut.hint": "חלק מהקיצורים לא יעבדו כי הם שמורים לדפדפן.",
@@ -13274,6 +13290,14 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "settings.agent.default_model.label": "Default model",
   "settings.agent.dictation.description": "Show the microphone button in the message composer",
   "settings.agent.dictation.label": "Voice dictation",
+  "settings.agent.memory.entry.description": "The longest a single memory may be, in characters",
+  "settings.agent.memory.entry.label": "Memory length limit",
+  "settings.agent.memory.recall.description": "How much text a memory search returns, in characters",
+  "settings.agent.memory.recall.label": "Memory search budget",
+  "settings.agent.memory.reset": "Reset to default",
+  "settings.agent.memory.save_failed": "Couldn't save memory settings",
+  "settings.agent.memory.wake.description": "How many lines of memory the agent wakes up with on every turn",
+  "settings.agent.memory.wake.label": "Memory context size",
   "settings.agent.shortcut.change": "Change",
   "settings.agent.shortcut.description": "Shortcut to open and close the agent panel",
   "settings.agent.shortcut.hint": "Some shortcuts won't work because they're reserved by the browser.",

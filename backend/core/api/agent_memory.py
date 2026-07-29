@@ -18,13 +18,14 @@ never in the UI.
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import dataclass
 
 import regex
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..storage.models import AgentMemoryModel, AgentMemorySummaryModel
+from ..storage.models import AgentMemoryModel, AgentMemorySettingsModel, AgentMemorySummaryModel
 from .errors import DomainError
 
 MEMO_CHARS = 280
@@ -36,12 +37,51 @@ WAKE_LINES = 64
 # ones compress their two half-summaries instead.
 RAW_MAX = 16
 RECALL_CHARS = 4000
+# The configurable knobs (OptMem's ``memo config`` surface): default and the
+# legal range, keyed by their ``agent_memory_settings`` column. ``entry_chars``
+# tops out at the VARCHAR(280) record width, exactly as OptMem caps
+# ENTRY_CHARS at its fixed-width records.
+KNOBS: dict[str, tuple[int, int, int]] = {
+    "wake_lines": (WAKE_LINES, 16, 160),
+    "entry_chars": (MEMO_CHARS, 80, 280),
+    "recall_chars": (RECALL_CHARS, 1000, 8000),
+}
 _PATTERN_CHARS = 200
 # Per-row match budget. Rows are ≤280 chars, so any pattern that needs more
 # than this is catastrophically backtracking — cut it off instead of letting
 # one hostile pattern pin a worker thread.
 _REGEX_TIMEOUT_SECONDS = 0.05
 _NOTE_RETRIES = 3
+
+
+@dataclass(frozen=True)
+class MemoryConfig:
+    """Effective size knobs for one user's memory."""
+
+    wake_lines: int
+    entry_chars: int
+    recall_chars: int
+
+
+def load_config(session: Session, username: str) -> MemoryConfig:
+    """Resolve ``username``'s knobs: their overrides over the tool defaults.
+
+    Defaults are read from the module globals at call time (not captured at
+    import), so a test that patches ``WAKE_LINES`` sees the patched value.
+
+    Args:
+        session: Open ORM session.
+        username: Memory owner.
+
+    Returns:
+        The effective :class:`MemoryConfig`.
+    """
+    row = session.get(AgentMemorySettingsModel, username)
+    return MemoryConfig(
+        wake_lines=(row.wake_lines if row and row.wake_lines else WAKE_LINES),
+        entry_chars=(row.entry_chars if row and row.entry_chars else MEMO_CHARS),
+        recall_chars=(row.recall_chars if row and row.recall_chars else RECALL_CHARS),
+    )
 
 
 def _cover(total: int, alpha: float) -> list[tuple[int, int]]:
@@ -128,25 +168,26 @@ def log_len(session: Session, username: str) -> int:
     )
 
 
-def check_text(text: str) -> str:
+def check_text(text: str, limit: int = MEMO_CHARS) -> str:
     """Validate one memory (or summary) line and return it stripped.
 
     Args:
         text: Candidate memory text.
+        limit: The caller's effective entry-length knob.
 
     Returns:
         The stripped single-line text.
 
     Raises:
-        DomainError: 422 when empty, multi-line, or over :data:`MEMO_CHARS`.
+        DomainError: 422 when empty, multi-line, or over ``limit``.
     """
     text = text.strip()
     if not text:
         raise DomainError("agent_memory.note_empty", status=422)
     if "\n" in text or "\r" in text:
         raise DomainError("agent_memory.note_multiline", status=422)
-    if len(text) > MEMO_CHARS:
-        raise DomainError("agent_memory.note_too_long", status=422, length=len(text), limit=MEMO_CHARS)
+    if len(text) > limit:
+        raise DomainError("agent_memory.note_too_long", status=422, length=len(text), limit=limit)
     return text
 
 
@@ -238,7 +279,7 @@ def pending_count(session: Session, username: str, total: int) -> int:
     return n
 
 
-def _nap_prompt(session: Session, username: str, lo: int, hi: int, left: int) -> str:
+def _nap_prompt(session: Session, username: str, lo: int, hi: int, left: int, limit: int) -> str:
     """Render the compression request for block ``[lo, hi)``.
 
     Args:
@@ -247,6 +288,7 @@ def _nap_prompt(session: Session, username: str, lo: int, hi: int, left: int) ->
         lo: Block start (inclusive).
         hi: Block end (exclusive).
         left: How many compressions remain after this one.
+        limit: The caller's effective entry-length knob, quoted in the prompt.
 
     Returns:
         An agent-facing instruction naming the block, its source lines, and
@@ -267,20 +309,21 @@ def _nap_prompt(session: Session, username: str, lo: int, hi: int, left: int) ->
     elif left > 1:
         tail = f"\n{left} compressions remain after this one."
     return (
-        f"Compress memories #{lo}-{hi - 1} into one line of at most {MEMO_CHARS} characters.\n"
+        f"Compress memories #{lo}-{hi - 1} into one line of at most {limit} characters.\n"
         "Keep what has lasting effect, drop what does not. Invent nothing.\n\n"
         f"{body}\n{tail}\n"
         f'Call: memory_nap(block="{lo}-{hi - 1}", summary="<your line>")'
     )
 
 
-def next_nap(session: Session, username: str, total: int) -> str | None:
+def next_nap(session: Session, username: str, total: int, config: MemoryConfig) -> str | None:
     """Return the compression request for the next pending block, if any."""
     todo = pending(session, username, total, limit=1)
     if not todo:
         return None
     lo, hi = todo[0]
-    return _nap_prompt(session, username, lo, hi, pending_count(session, username, total) - 1)
+    left = pending_count(session, username, total) - 1
+    return _nap_prompt(session, username, lo, hi, left, config.entry_chars)
 
 
 def note(session: Session, username: str, text: str) -> tuple[int, str | None]:
@@ -298,7 +341,8 @@ def note(session: Session, username: str, text: str) -> tuple[int, str | None]:
     Raises:
         DomainError: 422 on invalid text.
     """
-    text = check_text(text)
+    config = load_config(session, username)
+    text = check_text(text, config.entry_chars)
     # Ids are assigned from the dense row count; a concurrent note by the
     # same user collides on the (username, seq) PK, so retry with a fresh
     # count instead of a lock.
@@ -312,7 +356,7 @@ def note(session: Session, username: str, text: str) -> tuple[int, str | None]:
             session.rollback()
             if attempt == _NOTE_RETRIES - 1:
                 raise
-    return seq, next_nap(session, username, seq + 1)
+    return seq, next_nap(session, username, seq + 1, config)
 
 
 def save_nap(session: Session, username: str, block: str, summary: str) -> tuple[str, str | None]:
@@ -332,6 +376,7 @@ def save_nap(session: Session, username: str, block: str, summary: str) -> tuple
         DomainError: 422 on a malformed block id, invalid summary text, or a
             block that is not the next pending one.
     """
+    config = load_config(session, username)
     lo, hi = parse_block(block)
     total = log_len(session, username)
     todo = pending(session, username, total, limit=1)
@@ -349,7 +394,10 @@ def save_nap(session: Session, username: str, block: str, summary: str) -> tuple
         size = hi - lo
         session.add(
             AgentMemorySummaryModel(
-                username=username, block_size=size, block_index=lo // size, content=check_text(summary)
+                username=username,
+                block_size=size,
+                block_index=lo // size,
+                content=check_text(summary, config.entry_chars),
             )
         )
         try:
@@ -360,7 +408,7 @@ def save_nap(session: Session, username: str, block: str, summary: str) -> tuple
             # first wins, matching OptMem's append-once tree files.
             session.rollback()
             status = f"#{lo}-{hi - 1} was settled meanwhile."
-    return status, next_nap(session, username, total)
+    return status, next_nap(session, username, total, config)
 
 
 def _render_block(session: Session, username: str, lo: int, hi: int) -> list[str]:
@@ -389,7 +437,7 @@ def wake_document(session: Session, username: str) -> str:
         username: Memory owner.
 
     Returns:
-        The whole log tiled into at most ~:data:`WAKE_LINES` lines (raw
+        The whole log tiled into at most ~``wake_lines`` lines (raw
         ``#i date text`` entries and ``#lo-hi summary`` nodes, oldest
         first), followed by the next pending compression request, if any.
     """
@@ -399,12 +447,13 @@ def wake_document(session: Session, username: str) -> str:
             "No memories yet. When something with lasting effect happens, record it with "
             'memory_note(text="<one line>").'
         )
+    config = load_config(session, username)
     lines: list[str] = []
-    for lo, hi in cover(total, WAKE_LINES):
+    for lo, hi in cover(total, config.wake_lines):
         lines.extend(_render_block(session, username, lo, hi))
     memories = "1 memory" if total == 1 else f"{total} memories"
     doc = f"Your memory, oldest first ({memories}):\n" + "\n".join(lines)
-    nap = next_nap(session, username, total)
+    nap = next_nap(session, username, total, config)
     if nap:
         doc += "\n\n" + nap
     return doc
@@ -419,8 +468,8 @@ def recall(session: Session, username: str, pattern: str) -> str:
         pattern: Case-insensitive regular expression.
 
     Returns:
-        The newest matching ``#seq date text`` lines that fit
-        :data:`RECALL_CHARS`, followed by a match count (or ``"No match."``).
+        The newest matching ``#seq date text`` lines that fit the caller's
+        ``recall_chars`` knob, followed by a match count (or ``"No match."``).
 
     Raises:
         DomainError: 422 on an invalid, oversized, or catastrophically
@@ -432,6 +481,7 @@ def recall(session: Session, username: str, pattern: str) -> str:
         pat = regex.compile(pattern, regex.IGNORECASE)
     except regex.error as exc:
         raise DomainError("agent_memory.bad_pattern", status=422) from exc
+    config = load_config(session, username)
     hits, size = 0, 0
     out: deque[str] = deque()
     query = (
@@ -448,7 +498,7 @@ def recall(session: Session, username: str, pattern: str) -> str:
             hits += 1
             out.append(line)
             size += len(line) + 1
-            while size > RECALL_CHARS:
+            while size > config.recall_chars:
                 size -= len(out.popleft()) + 1
     except TimeoutError as exc:
         raise DomainError("agent_memory.bad_pattern", status=422) from exc

@@ -28,6 +28,7 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "agent_memory.note_empty": "Empty. A memory is one line of text.",
     "agent_memory.note_multiline": "A memory is one line: merge the lines, or note them separately.",
     "agent_memory.note_too_long": "Too long: {length} characters, limit {limit}. Compress it further.",
+    "agent_memory.setting_out_of_range": "{name} must be between {min} and {max}.",
     "agent_memory.wrong_block": "Wrong block: {block}. Blocks are compressed in order; the next is {next_block}.",
     "accounts.email_delivery_unavailable": "Email delivery isn't configured on this server.",
     "accounts.email_send_failed": "Couldn't send the verification email. Try again.",

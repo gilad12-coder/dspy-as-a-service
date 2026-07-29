@@ -34,6 +34,7 @@ class I18nKey(StrEnum):
     AGENT_MEMORY_NOTE_EMPTY = 'agent_memory.note_empty'
     AGENT_MEMORY_NOTE_MULTILINE = 'agent_memory.note_multiline'
     AGENT_MEMORY_NOTE_TOO_LONG = 'agent_memory.note_too_long'
+    AGENT_MEMORY_SETTING_OUT_OF_RANGE = 'agent_memory.setting_out_of_range'
     AGENT_MEMORY_WRONG_BLOCK = 'agent_memory.wrong_block'
     ANALYTICS_OTHER_BUCKET = 'analytics.other_bucket'
     AUTH_INVALID_TOKEN = 'auth.invalid_token'

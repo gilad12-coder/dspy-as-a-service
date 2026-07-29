@@ -8,8 +8,11 @@ The fifth operation, ``wake``, is not a tool — the router serving the agent
 turn injects :func:`core.api.agent_memory.wake_document` as the
 ``memory_context`` signature input on every turn.
 
-All routes are ``tags=["agent"]`` (projected as MCP tools) and keyed by the
-authenticated caller — memory is strictly per-user and never shared.
+The tool routes are ``tags=["agent"]`` (projected as MCP tools); the
+settings pair (GET/PUT ``/agent/memory/settings`` — OptMem's ``config``
+surface, driving the knobs in the settings modal's Agent tab) stays
+REST-only. Everything is keyed by the authenticated caller — memory is
+strictly per-user and never shared.
 """
 
 from __future__ import annotations
@@ -21,8 +24,10 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..agent_memory import MEMO_CHARS, note, recall, save_nap, zoom
+from ...storage.models import AgentMemorySettingsModel
+from ..agent_memory import KNOBS, MEMO_CHARS, note, recall, save_nap, zoom
 from ..auth import AuthenticatedUser, get_authenticated_user
+from ..errors import DomainError
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +73,32 @@ class MemoryTextResponse(BaseModel):
     result: str
 
 
+class MemoryKnobInfo(BaseModel):
+    """One memory size knob: its effective value, override state, and range."""
+
+    value: int
+    override: int | None
+    default: int
+    min: int
+    max: int
+
+
+class MemorySettingsResponse(BaseModel):
+    """The caller's memory size knobs (OptMem's ``config`` surface)."""
+
+    wake_lines: MemoryKnobInfo
+    entry_chars: MemoryKnobInfo
+    recall_chars: MemoryKnobInfo
+
+
+class MemorySettingsUpdate(BaseModel):
+    """Partial knob update: omitted = unchanged, null = back to default."""
+
+    wake_lines: int | None = None
+    entry_chars: int | None = None
+    recall_chars: int | None = None
+
+
 def create_agent_memory_router(*, job_store) -> APIRouter:
     """Build the agent-memory router.
 
@@ -78,6 +109,80 @@ def create_agent_memory_router(*, job_store) -> APIRouter:
         A FastAPI ``APIRouter`` exposing the four memory tools.
     """
     router = APIRouter()
+
+    def _settings_response(session: Session, username: str) -> MemorySettingsResponse:
+        """Assemble the knob snapshot for ``username`` from row + defaults."""
+        row = session.get(AgentMemorySettingsModel, username)
+        knobs = {}
+        for name, (default, lo, hi) in KNOBS.items():
+            override = getattr(row, name) if row is not None else None
+            knobs[name] = MemoryKnobInfo(
+                value=override or default,
+                override=override,
+                default=default,
+                min=lo,
+                max=hi,
+            )
+        return MemorySettingsResponse(**knobs)
+
+    @router.get(
+        "/agent/memory/settings",
+        response_model=MemorySettingsResponse,
+        summary="Return the caller's memory size knobs",
+    )
+    def get_memory_settings(user: AuthenticatedUserDep) -> MemorySettingsResponse:
+        """Return each knob's effective value, override, default, and range.
+
+        Args:
+            user: Authenticated caller whose settings are read.
+
+        Returns:
+            The knob snapshot; pure defaults when nothing was ever changed.
+        """
+        with Session(job_store.engine) as session:
+            return _settings_response(session, user.username)
+
+    @router.put(
+        "/agent/memory/settings",
+        response_model=MemorySettingsResponse,
+        summary="Update the caller's memory size knobs",
+    )
+    def update_memory_settings(
+        req: MemorySettingsUpdate, user: AuthenticatedUserDep
+    ) -> MemorySettingsResponse:
+        """Apply a partial knob update and return the resulting snapshot.
+
+        A field omitted from the body is left unchanged; an explicit null
+        clears the override so the knob follows the tool default again —
+        OptMem's ``memo config NAME=`` semantics. Changing a knob only
+        selects what is rendered or accepted from now on; no stored memory
+        is touched or recomputed.
+
+        Args:
+            req: The partial update (any subset of the three knobs).
+            user: Authenticated caller whose settings are written.
+
+        Returns:
+            The full knob snapshot after the update.
+
+        Raises:
+            DomainError: 422 when a supplied value falls outside its range.
+        """
+        supplied = req.model_dump(exclude_unset=True)
+        with Session(job_store.engine) as session:
+            row = session.get(AgentMemorySettingsModel, user.username)
+            if row is None:
+                row = AgentMemorySettingsModel(username=user.username)
+                session.add(row)
+            for name, value in supplied.items():
+                _, lo, hi = KNOBS[name]
+                if value is not None and not lo <= value <= hi:
+                    raise DomainError(
+                        "agent_memory.setting_out_of_range", status=422, name=name, min=lo, max=hi
+                    )
+                setattr(row, name, value)
+            session.commit()
+            return _settings_response(session, user.username)
 
     @router.post(
         "/agent/memory/note",
