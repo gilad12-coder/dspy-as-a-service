@@ -38,6 +38,7 @@ from ...service_gateway.agents.generalist import (
 )
 from ...service_gateway.embedding_pipeline import queue_conversation_embed
 from ...storage.models import AgentConversationModel, AgentMessageModel
+from ..agent_memory import wake_document
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..model_catalog import require_known_model
@@ -549,8 +550,28 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
                 return None, None
             return cid, ttl
 
+        def _wake_memory() -> str:
+            """Render the caller's permanent-memory context off the event loop.
+
+            Memory must never break a chat turn: with no ``job_store`` the
+            context is simply blank, and any render failure is logged and
+            swallowed the same way persistence failures are.
+
+            Returns:
+                The wake document, or ``""`` when unavailable.
+            """
+            if job_store is None:
+                return ""
+            try:
+                with Session(job_store.engine) as session:
+                    return wake_document(session, current_user.username)
+            except Exception:
+                logger.exception("Failed to wake agent memory")
+                return ""
+
         await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         conversation_id, title = await asyncio.to_thread(_setup_turn)
+        memory_context = await asyncio.to_thread(_wake_memory)
 
         wizard_state: WizardState = {**req.wizard_state}  # type: ignore[typeddict-item]
         requested_model, auto_tier = resolve_auto_tier(req.model)
@@ -568,6 +589,7 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
             wizard_state=wizard_state,
             chat_history=[t.model_dump() for t in req.chat_history],
             user_message=req.user_message,
+            memory_context=memory_context,
             trust_mode=req.trust_mode,
             auth_header=authorization,
             locale=req.locale,

@@ -81,6 +81,7 @@ from .routers.account_security import create_account_security_router
 from .routers.accounts import create_accounts_router
 from .routers.admin import create_admin_router
 from .routers.agent_history import create_agent_history_router
+from .routers.agent_memory import create_agent_memory_router
 from .routers.analytics import create_analytics_router
 from .routers.api_tokens import create_api_tokens_router
 from .routers.billing import create_billing_router
@@ -1257,6 +1258,7 @@ def create_app(
     app.include_router(create_transcription_router(), tags=["Transcription"])
     app.include_router(create_code_agent_router(job_store=job_store), tags=["Code Validation"])
     app.include_router(create_generalist_agent_router(job_store=job_store), tags=["Optimizations"])
+    app.include_router(create_agent_memory_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_agent_history_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_api_tokens_router(job_store=job_store), tags=["Settings"])
     app.include_router(create_billing_router(job_store=job_store), tags=["Billing"])

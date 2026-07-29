@@ -832,6 +832,47 @@ class AgentStagedDatasetModel(Base):
     __table_args__ = (Index("ix_agent_staged_datasets_user_created", "username", "created_at"),)
 
 
+class AgentMemoryModel(Base):
+    """One memory in a user's permanent agent memory log (OptMem port).
+
+    The log is append-only: ``seq`` is a dense 0-based counter per user, and
+    position IS identity — summary blocks in
+    :class:`AgentMemorySummaryModel` address ranges of these rows by ``seq``
+    alone, so rows are never updated or deleted.
+    """
+
+    __tablename__ = "agent_memories"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    content: Mapped[str] = mapped_column(String(280), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class AgentMemorySummaryModel(Base):
+    """Agent-authored summary of one aligned power-of-two block of memories.
+
+    Block ``(block_size, block_index)`` covers memories
+    ``[block_index * block_size, (block_index + 1) * block_size)`` and is the
+    compression of its two halves. Each level is a dense prefix — blocks are
+    built strictly in order — so a per-level row count says exactly how far
+    that level got. Rows are a rebuildable cache over the log, never a source
+    of truth.
+    """
+
+    __tablename__ = "agent_memory_summaries"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    block_size: Mapped[int] = mapped_column(Integer, primary_key=True)
+    block_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    content: Mapped[str] = mapped_column(String(280), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
 class TaggingSessionModel(Base):
     """Persisted text-labeling (tagger) session — one row per saved session.
 

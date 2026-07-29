@@ -342,6 +342,10 @@ const TOOL_TITLES: Record<string, LocaleString> = {
   request_user_pair_inference: () => msg("auto.features.agent.panel.lib.tool.meta.literal.70"),
   get_grid_search_result_optimizations: () => msg("auto.features.agent.panel.lib.tool.meta.literal.77"),
   get_pair_test_results_optimizations: () => msg("auto.features.agent.panel.lib.tool.meta.literal.78"),
+  memory_note: () => msg("auto.features.agent.panel.lib.tool.meta.literal.84"),
+  memory_nap: () => msg("auto.features.agent.panel.lib.tool.meta.literal.85"),
+  memory_recall: () => msg("auto.features.agent.panel.lib.tool.meta.literal.86"),
+  memory_zoom: () => msg("auto.features.agent.panel.lib.tool.meta.literal.87"),
 };
 
 function prettifyToolName(tool: string): string {

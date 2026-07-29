@@ -503,6 +503,10 @@ export type MessageKey =
   | "auto.features.agent.panel.lib.tool.meta.literal.81"
   | "auto.features.agent.panel.lib.tool.meta.literal.82"
   | "auto.features.agent.panel.lib.tool.meta.literal.83"
+  | "auto.features.agent.panel.lib.tool.meta.literal.84"
+  | "auto.features.agent.panel.lib.tool.meta.literal.85"
+  | "auto.features.agent.panel.lib.tool.meta.literal.86"
+  | "auto.features.agent.panel.lib.tool.meta.literal.87"
   | "auto.features.agent.panel.lib.tool.meta.literal.9"
   | "auto.features.agent.panel.lib.tool.meta.template.1"
   | "auto.features.agent.panel.lib.tool.meta.template.10"
@@ -3349,6 +3353,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.agent.panel.lib.tool.meta.literal.81": "מציג את סשני התיוג שלך וכמה דוגמאות תויגו בכל אחד.",
   "auto.features.agent.panel.lib.tool.meta.literal.82": "מדפדף בדאטאסטים השמורים בספרייה שלך כדי לעשות שימוש חוזר באחד מהם.",
   "auto.features.agent.panel.lib.tool.meta.literal.83": "פותח בורר בצ׳אט לשימוש חוזר בדאטאסט ששמרת — בלי להעלות מחדש.",
+  "auto.features.agent.panel.lib.tool.meta.literal.84": "שומר זיכרון",
+  "auto.features.agent.panel.lib.tool.meta.literal.85": "מסדר את הזיכרון",
+  "auto.features.agent.panel.lib.tool.meta.literal.86": "מחפש בזיכרון",
+  "auto.features.agent.panel.lib.tool.meta.literal.87": "קורא מהזיכרון",
   "auto.features.agent.panel.lib.tool.meta.literal.9": "השם החדש יוצג בכל מקום במקום השם הנוכחי.",
   "auto.features.agent.panel.lib.tool.meta.template.1": "מחיקת {p1}",
   "auto.features.agent.panel.lib.tool.meta.template.10": "הרץ/הריצי {p1}",
@@ -11774,6 +11782,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.agent.panel.lib.tool.meta.literal.81": "Lists your tagging sessions and how many examples are tagged in each.",
   "auto.features.agent.panel.lib.tool.meta.literal.82": "Browses the datasets saved in your library so you can reuse one.",
   "auto.features.agent.panel.lib.tool.meta.literal.83": "Opens a picker in the chat to reuse a dataset you've already saved — no re-upload.",
+  "auto.features.agent.panel.lib.tool.meta.literal.84": "Remembering",
+  "auto.features.agent.panel.lib.tool.meta.literal.85": "Organizing memory",
+  "auto.features.agent.panel.lib.tool.meta.literal.86": "Searching memory",
+  "auto.features.agent.panel.lib.tool.meta.literal.87": "Reading memory",
   "auto.features.agent.panel.lib.tool.meta.literal.9": "The new name will appear everywhere in place of the current one.",
   "auto.features.agent.panel.lib.tool.meta.template.1": "Delete {p1}",
   "auto.features.agent.panel.lib.tool.meta.template.10": "Run {p1}",
