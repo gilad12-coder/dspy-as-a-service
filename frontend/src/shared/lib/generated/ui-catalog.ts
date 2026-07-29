@@ -117,6 +117,10 @@ export type MessageKey =
   | "auth.login.meta_description"
   | "auth.login.passkey"
   | "auth.login.passkey_failed"
+  | "auth.login.passkey_offer_accept"
+  | "auth.login.passkey_offer_description"
+  | "auth.login.passkey_offer_skip"
+  | "auth.login.passkey_offer_title"
   | "auth.login.password"
   | "auth.login.password_hint"
   | "auth.login.password_placeholder"
@@ -2975,6 +2979,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auth.login.meta_description": "התחברות ל-Skynet, מערכת לאופטימיזציית פרומפטים",
   "auth.login.passkey": "התחברות עם מפתח גישה",
   "auth.login.passkey_failed": "ההתחברות עם מפתח הגישה נכשלה — נסו שוב",
+  "auth.login.passkey_offer_accept": "הגדרת Face ID / Touch ID",
+  "auth.login.passkey_offer_description": "מגדירים פעם אחת את Face ID או Touch ID במכשיר הזה, ובכניסה הבאה לא צריך סיסמה.",
+  "auth.login.passkey_offer_skip": "לא עכשיו",
+  "auth.login.passkey_offer_title": "כניסה מהירה בפעם הבאה",
   "auth.login.password": "סיסמה",
   "auth.login.password_hint": "לפחות 8 תווים",
   "auth.login.password_placeholder": "הסיסמה שלך",
@@ -11412,6 +11420,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auth.login.meta_description": "Sign in to Skynet, a prompt-optimization platform",
   "auth.login.passkey": "Sign in with a passkey",
   "auth.login.passkey_failed": "Passkey sign-in didn't work — try again",
+  "auth.login.passkey_offer_accept": "Set up Face ID / Touch ID",
+  "auth.login.passkey_offer_description": "Set up Face ID or Touch ID on this device once, and your next sign-in won't need a password.",
+  "auth.login.passkey_offer_skip": "Not now",
+  "auth.login.passkey_offer_title": "Faster sign-in next time",
   "auth.login.password": "Password",
   "auth.login.password_hint": "At least 8 characters",
   "auth.login.password_placeholder": "Your password",
