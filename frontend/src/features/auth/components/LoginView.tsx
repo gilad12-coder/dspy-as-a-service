@@ -20,6 +20,9 @@ import { LoginHalo } from "./LoginHalo";
 
 const ENTER_EASE = [0.16, 1, 0.3, 1] as const;
 
+// Mirrors the backend's _MIN_PASSWORD_LENGTH (accounts.weak_password, 422).
+const MIN_PASSWORD_LENGTH = 8;
+
 const TWOFA_LINK_CLASS =
   "block cursor-pointer text-xs font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline";
 
@@ -630,11 +633,21 @@ export function LoginView() {
                           dir="ltr"
                           className="h-11 text-left"
                         />
-                        {authMode === "signup" && (
-                          <p className="mt-1.5 text-xs text-muted-foreground">
-                            {msg("auth.login.password_hint")}
-                          </p>
-                        )}
+                        <AnimatePresence initial={false}>
+                          {authMode === "signup" &&
+                            password.length > 0 &&
+                            password.length < MIN_PASSWORD_LENGTH && (
+                              <motion.p
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="mt-1.5 text-xs text-muted-foreground"
+                              >
+                                {msg("auth.login.password_hint")}
+                              </motion.p>
+                            )}
+                        </AnimatePresence>
                       </div>
 
                       <AnimatePresence>
