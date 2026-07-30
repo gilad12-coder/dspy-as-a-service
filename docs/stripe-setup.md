@@ -60,7 +60,8 @@ STRIPE_PRICE_PACK_PLUS=price_...
 STRIPE_PRICE_PACK_PRO=price_...
 ```
 
-> The **credits** each pack grants (500 / 2200 / 6500) live in
+> The **credits** each pack grants (500 / 2000 / 5000 — at par, one credit per
+> cent) live in
 > `core/billing/service.py::PACK_CREDITS`. Stripe only holds the dollar price, so
 > you can re-price or change the markup without touching Stripe.
 

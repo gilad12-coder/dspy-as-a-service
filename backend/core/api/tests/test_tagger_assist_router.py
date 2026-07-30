@@ -24,7 +24,7 @@ from sqlalchemy.pool import StaticPool
 
 from ...constants import OPTIMIZATION_TYPE_TAGGING
 from ...service_gateway import tagging
-from ...storage.models import Base, TaggingSessionModel
+from ...storage.models import Base, BillingCustomerModel, TaggingSessionModel
 from ...storage.remote import RemoteDBJobStore
 from ...worker.tagging_job import TaggingAutotagPayload, run_autotag_job
 from .. import model_catalog, model_router
@@ -121,6 +121,19 @@ def _client(
     """
     store = store or _MemStore()
     worker = worker or _FakeWorker()
+    # No free allowance exists, so the authed user is funded explicitly to pass
+    # the 402 credit gate on the LLM-invoking assist routes.
+    with Session(store.engine) as session:
+        if session.get(BillingCustomerModel, user.username) is None:
+            session.add(
+                BillingCustomerModel(
+                    username=user.username,
+                    stripe_customer_id=f"cus_{user.username}",
+                    credit_balance=10_000,
+                    grant_remaining=0,
+                )
+            )
+            session.commit()
     app = FastAPI()
     app.include_router(create_tagging_session_router(job_store=store))
     app.include_router(

@@ -62,9 +62,26 @@ class _FakeLm:
         self.model = model
 
 
-def test_enforce_llm_credits_passes_fresh_account(engine: Engine) -> None:
-    """A brand-new account rides its free grant through the gate."""
-    enforce_llm_credits(_StubStore(engine), "new@x.io")
+def test_enforce_llm_credits_rejects_fresh_account(engine: Engine) -> None:
+    """A brand-new account has no free allowance and is refused with a 402."""
+    with pytest.raises(DomainError) as err:
+        enforce_llm_credits(_StubStore(engine), "new@x.io")
+    assert err.value.status_code == 402
+
+
+def test_enforce_llm_credits_passes_funded_account(engine: Engine) -> None:
+    """An account with a purchased balance rides through the gate."""
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="rich@x.io",
+                stripe_customer_id="cus_rich",
+                credit_balance=500,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
+    enforce_llm_credits(_StubStore(engine), "rich@x.io")
 
 
 def test_enforce_llm_credits_rejects_depleted_account(engine: Engine) -> None:

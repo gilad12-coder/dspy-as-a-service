@@ -38,7 +38,9 @@ from .pricing import ModelUsage, credits_for_usage
 
 # Credits granted per one-time pack. Mirrors the frontend CREDIT_PACKS catalog;
 # the dollar price lives in Stripe (the price id), the credits granted live here.
-PACK_CREDITS: dict[str, int] = {"starter": 500, "plus": 2200, "pro": 6500}
+# Packs are at par — one credit per cent paid, exactly the Stripe unit_amount —
+# so no pack sells spendable value below what it costs (no bonus-credit subsidy).
+PACK_CREDITS: dict[str, int] = {"starter": 500, "plus": 2000, "pro": 5000}
 
 # Bounds for a custom (user-chosen) top-up. One credit is worth exactly one
 # cent, so a credit count doubles as a Stripe ``unit_amount``; the floor keeps
@@ -48,23 +50,25 @@ PACK_CREDITS: dict[str, int] = {"starter": 500, "plus": 2200, "pro": 6500}
 CUSTOM_CREDITS_MIN = 50
 CUSTOM_CREDITS_MAX = 100_000
 
-# One-time lifetime allowance every new account gets to try the platform on mini
-# models. Granted once (lazily, on the first wallet read or run) and never
-# renewed. Under per-model pricing a credit is real marked-up provider cost, so
-# 500 credits is ~$3.3 of mini inference; beyond it the account buys credit
-# packs — pay-as-you-go is the only plan.
-FREE_GRANT_CREDITS = 500
+# One-time allowance a new account gets. 0 = strictly at-cost pricing: every
+# credit spent was paid for, so the platform never subsidizes tokens or compute.
+# Accounts whose grant was seeded while this was non-zero keep their remaining
+# credits (the seed logic only fills a NULL column, never tops up).
+FREE_GRANT_CREDITS = 0
 
 # Prefix on the placeholder ``stripe_customer_id`` of a billing row created by a
 # local debit for an account that never reached Stripe. ``get_or_create_customer``
 # treats such a row as having no real Stripe customer yet and provisions one.
 LOCAL_CUSTOMER_PREFIX = "local:"
 
-# Share of a run's credit cost that is Skynet's platform fee (vs. pass-through
-# compute) — the only amount a BYOK run is charged, since the provider tokens
-# are paid on the user's own key. 0.0 = at-cost pricing: BYOK runs are free
-# (the user already pays their provider directly; the platform takes no cut).
-PLATFORM_FEE_FRACTION = 0.0
+# Share of a run's full credit cost charged to a BYOK run — the provider tokens
+# are paid on the user's own key, but the run still consumes Skynet's CPU and
+# storage. Derived from the managed MARKUP's decomposition (~1.09 money-movement
+# × ~1.10 infra ≈ 1.20): the infra slice is 0.10×raw = 0.10/1.20 ≈ 0.0833 of the
+# full cost, grossed up for Stripe's ~2.9% cut of the money behind the fee
+# credits (÷0.971) ≈ 0.086. No OpenRouter deposit fee applies (no managed
+# tokens), and no profit on top — the fee covers exactly compute + storage.
+PLATFORM_FEE_FRACTION = 0.086
 
 # Ceiling handed to fee-less BYOK runs: far above any real run's full cost,
 # small enough to stay a safe int everywhere credits are summed.

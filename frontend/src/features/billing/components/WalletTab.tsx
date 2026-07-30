@@ -265,11 +265,7 @@ export function WalletTab() {
           />
         </SettingsRow>
 
-        <SettingsRow
-          icon={Sparkles}
-          label={msg("billing.action.add_credits")}
-          description={msg("billing.plans.credits.summary")}
-        >
+        <SettingsRow icon={Sparkles} label={msg("billing.action.add_credits")}>
           <AddCreditsControls />
         </SettingsRow>
       </div>

@@ -134,16 +134,21 @@ export function CreditBalanceChip({ className }: { className?: string }) {
                     {formatCredits(wallet.paidBalanceCredits, locale)}
                   </dd>
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted-foreground">{msg("billing.popover.free_grant")}</dt>
-                  <dd dir="ltr" className="font-medium text-foreground tabular-nums">
-                    {formatCredits(wallet.freeGrant.creditsRemaining, locale)}
-                    <span className="text-muted-foreground">
-                      {" / "}
-                      {formatCredits(wallet.freeGrant.creditsTotal, locale)}
-                    </span>
-                  </dd>
-                </div>
+                {/* Only legacy accounts still hold a grant — new accounts have
+                    none, so an empty 0/0 row would advertise a perk that no
+                    longer exists. */}
+                {wallet.freeGrant.creditsTotal > 0 && (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-muted-foreground">{msg("billing.popover.free_grant")}</dt>
+                    <dd dir="ltr" className="font-medium text-foreground tabular-nums">
+                      {formatCredits(wallet.freeGrant.creditsRemaining, locale)}
+                      <span className="text-muted-foreground">
+                        {" / "}
+                        {formatCredits(wallet.freeGrant.creditsTotal, locale)}
+                      </span>
+                    </dd>
+                  </div>
+                )}
                 {/* Low balance reads as an operational metric, not an alarm: one
                     calm factual line in the warm neutrals, no red, no urgency. */}
                 {status === "low" && (

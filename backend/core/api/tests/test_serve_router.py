@@ -739,6 +739,24 @@ def _deplete(engine: object) -> None:
         session.commit()
 
 
+def _fund(engine: object, credits: int = 10_000) -> None:
+    """Seed the test user's billing row with a purchased balance.
+
+    There is no free allowance, so any test that must pass the 402 credit gate
+    funds the account explicitly.
+    """
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice",
+                stripe_customer_id="cus_alice",
+                credit_balance=credits,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
+
+
 def _ledger_rows(engine: object) -> list[CreditLedgerModel]:
     """Return every credit-ledger row, oldest first."""
     with Session(engine) as session:
@@ -784,6 +802,7 @@ def test_serve_chat_returns_402_when_depleted(
 
 def test_serve_program_debits_the_turn(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
     """A blocking serve call books one ledger row with the measured tokens."""
+    _fund(metered_store.engine)
     lm = _UsageLm()
 
     with patch("core.api.routers.serve.build_language_model", return_value=lm), _PATCH_DSPY_CTX:
@@ -799,6 +818,7 @@ def test_serve_program_debits_the_turn(metered_client: TestClient, metered_store
 
 def test_serve_stream_debits_on_completion(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
     """A streamed serve call books its ledger row when the stream winds down."""
+    _fund(metered_store.engine)
     lm = _UsageLm()
 
     with (
@@ -817,6 +837,7 @@ def test_serve_stream_debits_on_completion(metered_client: TestClient, metered_s
 
 def test_serve_chat_debits_the_turn(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
     """A react-serve chat turn books its ledger row under the chat label."""
+    _fund(metered_store.engine)
     overlay = SimpleNamespace(tool_source={"kind": "live_mcp", "mcp_url": "http://mcp.local"})
     lm = _UsageLm()
 

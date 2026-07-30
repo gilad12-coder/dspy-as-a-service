@@ -1,14 +1,16 @@
 """Tests for ``StripeBillingService``: the credit ledger and the submit gate.
 
-Covers the credit-ledger backbone — the one-time free grant, run debiting
-(grant before paid balance), the ``spendable_credits`` figure the submit gate
-reads, the usage rollup, and webhook idempotency. Each test stands up an
+Covers the credit-ledger backbone — the at-cost pricing policy (no free
+allowance, packs at par), run debiting (legacy grant before paid balance), the
+``spendable_credits`` figure the submit gate reads, the usage rollup, and
+webhook idempotency. Each test stands up an
 in-memory SQLite engine with the billing tables and patches the ``stripe``
 module so no network call is made.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
@@ -25,6 +27,8 @@ from core.billing.service import (
     CUSTOM_CREDITS_MAX,
     CUSTOM_CREDITS_MIN,
     FREE_GRANT_CREDITS,
+    PACK_CREDITS,
+    PLATFORM_FEE_FRACTION,
     StripeBillingService,
     cost_ceiling_budget,
     platform_fee_credits_for_usage,
@@ -91,17 +95,25 @@ def _grant_remaining(engine: object, username: str) -> int | None:
         return None if customer is None else customer.grant_remaining
 
 
-def test_wallet_reports_full_grant_for_new_account(engine: object) -> None:
-    """A brand-new account reads a full grant without a row being created."""
+def test_pricing_policy_no_subsidy_no_profit() -> None:
+    """The at-cost policy: no free allowance, and packs grant exactly their price in cents."""
+    assert FREE_GRANT_CREDITS == 0
+    # One credit is one cent, so at-par packs must grant exactly the Stripe
+    # unit_amount provisioned in scripts/provision_stripe.py ($5 / $20 / $50).
+    assert PACK_CREDITS == {"starter": 500, "plus": 2000, "pro": 5000}
+
+
+def test_wallet_reports_empty_grant_for_new_account(engine: object) -> None:
+    """A brand-new account reads a zero grant without a row being created."""
     snapshot = StripeBillingService(engine=engine).get_wallet("new@x.com")
-    assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS
+    assert snapshot.free_grant_remaining == 0
     assert snapshot.paid_balance_credits == 0
     with Session(engine) as session:
         assert session.get(BillingCustomerModel, "new@x.com") is None
 
 
-def test_wallet_seeds_one_time_free_grant_on_first_read(engine: object) -> None:
-    """Reading a row with no grant seeds the one-time grant and persists it."""
+def test_wallet_seeds_grant_column_on_first_read(engine: object) -> None:
+    """Reading a row with a NULL grant seeds it to the (zero) allowance and persists it."""
     _seed_customer(engine, "u@x.com")
     snapshot = StripeBillingService(engine=engine).get_wallet("u@x.com")
     assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS
@@ -110,17 +122,26 @@ def test_wallet_seeds_one_time_free_grant_on_first_read(engine: object) -> None:
     assert customer.grant_remaining == FREE_GRANT_CREDITS
 
 
-def test_debit_run_draws_from_grant_first(engine: object) -> None:
-    """A run debit decrements the free grant before touching the paid balance."""
-    _seed_customer(engine, "u@x.com")
+def test_debit_run_draws_from_legacy_grant_first(engine: object) -> None:
+    """A run debit decrements a remaining legacy grant before touching the paid balance."""
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="u@x.com",
+                stripe_customer_id="cus_u",
+                credit_balance=0,
+                grant_remaining=50,
+            )
+        )
+        session.commit()
     service = StripeBillingService(engine=engine)
     usages = _usages(100_000)
     expected = credits_for_usage(usages)
     cost = service.debit_run("u@x.com", usages, model="openai/gpt-5.5-mini", description="run-a")
     assert cost == expected
-    assert 0 < expected < FREE_GRANT_CREDITS
+    assert 0 < expected < 50
     snapshot = service.get_wallet("u@x.com")
-    assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS - expected
+    assert snapshot.free_grant_remaining == 50 - expected
     assert snapshot.paid_balance_credits == 0
     with Session(engine) as session:
         rows = session.query(CreditLedgerModel).filter_by(username="u@x.com").all()
@@ -154,7 +175,11 @@ def test_debit_run_overflows_grant_into_paid_balance(engine: object) -> None:
 
 
 def test_debit_run_creates_local_row_for_customerless_account(engine: object) -> None:
-    """A run for an account that never touched Stripe seeds a local billing row."""
+    """A run for an account that never touched Stripe seeds a local billing row.
+
+    With no free allowance the whole cost lands on the paid balance (negative
+    until reconciled) — nothing is given away.
+    """
     service = StripeBillingService(engine=engine)
     usages = _usages(20_000)
     service.debit_run("free@x.com", usages, model=None, description="r")
@@ -162,7 +187,8 @@ def test_debit_run_creates_local_row_for_customerless_account(engine: object) ->
         customer = session.get(BillingCustomerModel, "free@x.com")
     assert customer is not None
     assert customer.stripe_customer_id.startswith("local:")
-    assert customer.grant_remaining == FREE_GRANT_CREDITS - credits_for_usage(usages)
+    assert customer.grant_remaining == 0
+    assert customer.credit_balance == -credits_for_usage(usages)
 
 
 def test_debit_run_zero_cost_writes_nothing(engine: object) -> None:
@@ -176,7 +202,7 @@ def test_debit_run_zero_cost_writes_nothing(engine: object) -> None:
 
 
 def test_free_grant_is_one_time_and_never_resets(engine: object) -> None:
-    """A partially-spent free grant stays put on read — it never tops back up."""
+    """A legacy account's partially-spent grant is honored as-is — never topped up."""
     with Session(engine) as session:
         session.add(
             BillingCustomerModel(
@@ -222,14 +248,23 @@ def test_spendable_credits_zero_when_grant_and_balance_exhausted(engine: object)
     assert StripeBillingService(engine=engine).spendable_credits("u@x.com") == 0
 
 
-def test_spendable_credits_full_for_new_account(engine: object) -> None:
-    """A brand-new account has a full grant of spendable credits (gate passes)."""
-    assert StripeBillingService(engine=engine).spendable_credits("new@x.com") == FREE_GRANT_CREDITS
+def test_spendable_credits_zero_for_new_account(engine: object) -> None:
+    """A brand-new account has no spendable credits — the submit gate trips until it buys."""
+    assert StripeBillingService(engine=engine).spendable_credits("new@x.com") == 0
 
 
 def test_debit_run_byok_charges_only_platform_fee(engine: object) -> None:
-    """A BYOK run debits only Skynet's platform fee — zero at-cost pricing."""
-    _seed_customer(engine, "u@x.com")
+    """A BYOK run debits only the infra platform fee — a fraction of the full cost."""
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="u@x.com",
+                stripe_customer_id="cus_u",
+                credit_balance=100,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
     service = StripeBillingService(engine=engine)
     usages = _usages(200_000)
     cost = service.debit_run(
@@ -239,12 +274,13 @@ def test_debit_run_byok_charges_only_platform_fee(engine: object) -> None:
         description="byok-run",
         token_source=TOKEN_SOURCE_BYOK,
     )
-    assert cost == platform_fee_credits_for_usage(usages)
-    # At-cost pricing: the provider tokens ran on the user's own key and the
-    # platform takes no cut, so the run is free and the balance untouched.
-    assert cost == 0
+    fee = platform_fee_credits_for_usage(usages)
+    assert cost == fee
+    # The provider tokens ran on the user's own key, so only the compute/storage
+    # share is charged — more than zero, well under the managed full cost.
+    assert 0 < fee < credits_for_usage(usages)
     snapshot = service.get_wallet("u@x.com")
-    assert snapshot.free_grant_remaining == FREE_GRANT_CREDITS
+    assert snapshot.paid_balance_credits == 100 - fee
 
 
 def test_debit_run_managed_still_charges_full_cost(engine: object) -> None:
@@ -263,14 +299,14 @@ def test_cost_ceiling_budget_managed_is_the_balance(engine: object) -> None:
 
 
 def test_cost_ceiling_budget_byok_is_fee_aware_and_larger(engine: object) -> None:
-    """A fee-less BYOK run gets an effectively unlimited ceiling from any balance."""
+    """A BYOK ceiling is the largest full-cost budget whose platform fee fits the balance."""
     assert cost_ceiling_budget(0, TOKEN_SOURCE_BYOK) == 0
     budget = cost_ceiling_budget(100, TOKEN_SOURCE_BYOK)
-    # At-cost pricing: the run can never touch the balance, so the ceiling is
-    # far beyond any real run while a drained account still gets nothing.
+    # The run only spends the fee fraction, so the same balance backs a
+    # proportionally larger — but finite — ceiling, maximal within the balance.
     assert budget > 100
-    assert budget >= 10**9
-    assert platform_fee_credits_for_usage(_usages(10_000_000)) == 0
+    assert math.ceil(budget * PLATFORM_FEE_FRACTION) <= 100
+    assert math.ceil((budget + 1) * PLATFORM_FEE_FRACTION) > 100
 
 
 def _add_ledger(

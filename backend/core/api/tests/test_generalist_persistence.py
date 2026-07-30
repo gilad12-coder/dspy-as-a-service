@@ -137,6 +137,24 @@ def persistence_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Eng
     return TestClient(app), engine
 
 
+def _fund(engine: Engine) -> None:
+    """Give the test identity a purchased balance to pass the 402 credit gate.
+
+    There is no free allowance, so any turn that should stream must be backed by
+    an explicitly funded account.
+    """
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice@example.com",
+                stripe_customer_id="cus_alice",
+                credit_balance=10_000,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
+
+
 def _post_turn(
     client: TestClient,
     message: str,
@@ -177,6 +195,7 @@ def test_authenticated_turn_persists_conversation_and_messages(
 ) -> None:
     """A signed-in turn writes the conversation header and both messages."""
     client, engine = persistence_client
+    _fund(engine)
 
     resp = _post_turn(client, "hi", _session_token())
 
@@ -224,7 +243,8 @@ def test_turn_forwards_chosen_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The composer menu's model rides the request into the agent engine."""
-    client, _ = persistence_client
+    client, engine = persistence_client
+    _fund(engine)
     seen: dict[str, Any] = {}
 
     async def capture_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
@@ -261,7 +281,8 @@ def test_turn_rejects_unknown_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A non-catalog model is refused before the engine ever runs."""
-    client, _ = persistence_client
+    client, engine = persistence_client
+    _fund(engine)
     monkeypatch.setattr(
         model_catalog,
         "get_catalog_cached",
@@ -305,6 +326,7 @@ def test_regenerate_replaces_final_persisted_turn(
 ) -> None:
     """Regenerating the latest reply keeps one user/assistant pair after reload."""
     client, engine = persistence_client
+    _fund(engine)
     token = _session_token()
 
     first = _post_turn(client, "hi", token)

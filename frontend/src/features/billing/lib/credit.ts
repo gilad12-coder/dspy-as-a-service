@@ -1,13 +1,13 @@
 /**
  * Credit-wallet domain model shared by the billing UI surfaces.
  *
- * Skynet runs on pay-as-you-go prepaid credits — the only plan: every new
- * account gets a one-time free grant, and beyond it users buy credit packs.
- * Credits are spendable on any model — the free/paid line is about balance, not
- * catalog access. Credits are the unit of account; the dollar value is always
- * shown alongside (`CREDIT_USD_VALUE`). Pricing is break-even (MARKUP 1.20:
- * payment fees plus a small CPU/storage margin, zero BYOK fee): the platform
- * takes no profit.
+ * Skynet runs on pay-as-you-go prepaid credits — the only plan: users buy
+ * credit packs (at par, one credit per cent) and every run spends against
+ * them; there is no free allowance. Credits are spendable on any model.
+ * Credits are the unit of account; the dollar value is always shown alongside
+ * (`CREDIT_USD_VALUE`). Pricing is strictly at-cost (MARKUP 1.20: payment
+ * fees plus the CPU/storage share; BYOK runs pay just that infra share): the
+ * platform neither subsidizes a run nor takes profit.
  *
  * Everything here is framework-agnostic (no React / `next/*`) so it imports from
  * server components, client components, and the provider alike. The values are
@@ -130,11 +130,11 @@ export function formatResetDate(iso: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(iso));
 }
 
-/** Prepaid packs offered on the wallet settings tab. Bigger packs carry more bonus credits. */
+/** Prepaid packs offered on the wallet settings tab. At par — one credit per cent, no bonus subsidy. */
 export const CREDIT_PACKS: CreditPack[] = [
   { id: "starter", credits: 500, usd: 5 },
-  { id: "plus", credits: 2200, usd: 20, popular: true },
-  { id: "pro", credits: 6500, usd: 50 },
+  { id: "plus", credits: 2000, usd: 20, popular: true },
+  { id: "pro", credits: 5000, usd: 50 },
 ];
 
 /**
@@ -145,9 +145,9 @@ export const CREDIT_PACKS: CreditPack[] = [
  */
 export const STUB_WALLET: CreditWallet = {
   paidBalanceCredits: 1240,
-  freeGrant: { creditsRemaining: 480, creditsTotal: 500 },
+  freeGrant: { creditsRemaining: 0, creditsTotal: 0 },
   mode: "managed",
-  autoReload: { enabled: false, thresholdCredits: 200, topUpCredits: 2200 },
+  autoReload: { enabled: false, thresholdCredits: 200, topUpCredits: 2000 },
   usage: [
     {
       id: "u1",
@@ -172,7 +172,7 @@ export const STUB_WALLET: CreditWallet = {
       at: "2026-06-24T14:03:00Z",
       label: "Top-up",
       model: null,
-      credits: 2200,
+      credits: 2000,
       mode: "managed",
       kind: "topup",
     },
@@ -190,18 +190,9 @@ export const STUB_WALLET: CreditWallet = {
       at: "2026-06-22T09:00:00Z",
       label: "intent-router (your key)",
       model: "google/gemini-3-pro",
-      credits: 0,
+      credits: -4,
       mode: "byok",
       kind: "run",
-    },
-    {
-      id: "u6",
-      at: "2026-06-01T00:00:00Z",
-      label: "Monthly grant",
-      model: null,
-      credits: 200,
-      mode: "managed",
-      kind: "grant",
     },
   ],
 };

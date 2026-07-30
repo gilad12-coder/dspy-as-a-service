@@ -332,13 +332,12 @@ def _expand_catalog_grid_payload(payload: GridSearchRequest) -> None:
 def _enforce_credit_balance(job_store, username: str, token_source: str) -> int | None:
     """Block a depleted account from starting a run, and report its spendable balance.
 
-    Reads the account's spendable credits (free grant + purchased balance, with
-    the rolling grant reset applied) and refuses the submission when nothing is
-    left. The free grant means a brand-new account always passes; this only fires
-    once both the grant and any purchased balance are exhausted. Both run modes are
-    gated: a managed run spends its full per-token cost, and a BYOK run still spends
-    Skynet's platform fee (the provider tokens are on the user's own key), so a zero
-    balance can cover neither. The returned balance feeds the per-run cost ceiling
+    Reads the account's spendable credits (any remaining legacy grant plus the
+    purchased balance) and refuses the submission when nothing is left. There is
+    no free allowance — a brand-new account is gated until it buys credits. Both
+    run modes are gated: a managed run spends its full per-token cost, and a BYOK
+    run still spends Skynet's platform fee (the provider tokens are on the user's
+    own key), so a zero balance can cover neither. The returned balance feeds the per-run cost ceiling
     (see :func:`_cap_cost_ceiling_to_balance`) so a run can never spend past what the
     account holds.
 

@@ -19,11 +19,11 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from ...constants import PAYLOAD_OVERVIEW_SOURCE_DATASET_ID
-from ...storage.models import Base
+from ...storage.models import Base, BillingCustomerModel
 from ...storage.remote import RemoteDBJobStore
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..converters import overview_to_base_fields, parse_overview
@@ -106,6 +106,20 @@ def _app_for(store: _MemStore, user: AuthenticatedUser, *, monkeypatch: pytest.M
     worker = _PersistingWorker(store)
     monkeypatch.setattr(_sub_mod, "get_worker", lambda *a, **kw: worker)
     monkeypatch.setattr(_sub_mod, "notify_job_started", lambda **_: None)
+
+    # No free allowance exists, so the authed user is funded explicitly to pass
+    # the 402 credit gate on run submissions.
+    with Session(store.engine) as session:
+        if session.get(BillingCustomerModel, user.username) is None:
+            session.add(
+                BillingCustomerModel(
+                    username=user.username,
+                    stripe_customer_id=f"cus_{user.username}",
+                    credit_balance=10_000,
+                    grant_remaining=0,
+                )
+            )
+            session.commit()
 
     app = FastAPI()
     app.include_router(create_submissions_router(service=_FakeService(), job_store=store))

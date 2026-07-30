@@ -1071,6 +1071,13 @@ def test_submit_run_byok_frontier_model_allowed(monkeypatch: pytest.MonkeyPatch)
     """A BYOK run on a frontier model is never locked (own key), and persists the mode."""
     engine = _billing_engine()
     with Session(engine) as session:
+        # No free allowance exists, so the account is funded to pass the credit
+        # gate (a BYOK run still spends the platform fee).
+        session.add(
+            BillingCustomerModel(
+                username="alice", stripe_customer_id="cus_alice", credit_balance=500
+            )
+        )
         # BYOK runs now require a saved connection for the model's provider.
         session.add(
             BillingProviderKeyModel(
@@ -1097,6 +1104,14 @@ def test_submit_run_byok_frontier_model_allowed(monkeypatch: pytest.MonkeyPatch)
 def test_submit_run_byok_without_connection_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
     """A BYOK run is refused at submit when the account saved no key for the provider."""
     engine = _billing_engine()
+    with Session(engine) as session:
+        # Funded so the credit gate passes and the connection check is what fires.
+        session.add(
+            BillingCustomerModel(
+                username="alice", stripe_customer_id="cus_alice", credit_balance=500
+            )
+        )
+        session.commit()
     store = _FakeJobStore()
     store.engine = engine
     client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)

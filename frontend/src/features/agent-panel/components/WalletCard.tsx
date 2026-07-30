@@ -96,15 +96,19 @@ export function WalletCard({ call }: WalletCardProps) {
       </div>
 
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-        <StatTile
-          label={msg("auto.features.agent.panel.components.walletcard.free_grant")}
-          value={
-            grant.credits_remaining == null
-              ? null
-              : `${fmtCredits(grant.credits_remaining)} / ${fmtCredits(grant.credits_total ?? 0)}`
-          }
-          valueDir="ltr"
-        />
+        {/* Only legacy accounts still hold a grant — hide the tile when the
+            account never had one. */}
+        {(grant.credits_total ?? 0) > 0 && (
+          <StatTile
+            label={msg("auto.features.agent.panel.components.walletcard.free_grant")}
+            value={
+              grant.credits_remaining == null
+                ? null
+                : `${fmtCredits(grant.credits_remaining)} / ${fmtCredits(grant.credits_total ?? 0)}`
+            }
+            valueDir="ltr"
+          />
+        )}
         <StatTile
           label={msg("auto.features.agent.panel.components.walletcard.paid_balance")}
           value={fmtCredits(wallet.paid_balance_credits ?? 0)}

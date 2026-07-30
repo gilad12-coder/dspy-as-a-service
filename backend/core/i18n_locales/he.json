@@ -141,7 +141,7 @@
     "webauthn.invalid_credential": "לא ניתן לאמת את מפתח הגישה הזה.",
     "webauthn.not_found": "מפתח הגישה לא נמצא.",
     "submit.no_models_available": "אין {term.modelPlural} זמינים בקטלוג — הגדר/הגדירי קודם API key של ספק.",
-    "billing.insufficient_credits": "המאזן שלך ריק. טען/טעני קרדיטים כדי להריץ על מחשוב מנוהל.",
+    "billing.insufficient_credits": "המאזן שלך ריק. טען/טעני קרדיטים כדי להריץ.",
     "submission.validation_failed": "אימות ההגדרות נכשל. בדוק/בדקי את האופטימייזר, המודול ומיפוי העמודות.",
     "submission.module_resolve_failed": "טעינת ה{term.module} נכשלה: {error}",
     "submission.staged_dataset_not_found": "הדאטאסט השמור ({staged_dataset_id}) לא נמצא או שייך למשתמש אחר.",
