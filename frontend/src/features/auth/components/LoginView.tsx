@@ -31,8 +31,29 @@ import { LoginHalo } from "./LoginHalo";
 
 const ENTER_EASE = [0.16, 1, 0.3, 1] as const;
 
-// Mirrors the backend's _MIN_PASSWORD_LENGTH (accounts.weak_password, 422).
+// Mirrors the backend's password_policy (the accounts.* 422s); the
+// common-password blocklist stays server-side and surfaces through
+// describeRegisterError like any other accounts.* code.
 const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 128;
+const MIN_EMAIL_LOCAL_PART = 4;
+
+type PasswordRuleKey =
+  | "auth.login.password_hint"
+  | "auth.login.password_rule_max"
+  | "auth.login.password_rule_email";
+
+/** The policy rules the typed password does not yet satisfy, for live feedback. */
+function unmetPasswordRules(password: string, email: string): PasswordRuleKey[] {
+  const rules: PasswordRuleKey[] = [];
+  if (password.length < MIN_PASSWORD_LENGTH) rules.push("auth.login.password_hint");
+  if (password.length > MAX_PASSWORD_LENGTH) rules.push("auth.login.password_rule_max");
+  const localPart = email.trim().toLowerCase().split("@", 1)[0] ?? "";
+  if (localPart.length >= MIN_EMAIL_LOCAL_PART && password.toLowerCase().includes(localPart)) {
+    rules.push("auth.login.password_rule_email");
+  }
+  return rules;
+}
 
 const TWOFA_LINK_CLASS =
   "block cursor-pointer text-xs font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline";
@@ -444,6 +465,8 @@ export function LoginView() {
   const showOAuth = (oauth.google || oauth.github) && authMode === "signin";
   const showPasskey = passkeySupported && authMode === "signin";
   const canSubmit = !loading && !!email.trim() && password.length > 0;
+  const passwordRules =
+    authMode === "signup" && password.length > 0 ? unmetPasswordRules(password, email) : [];
 
   return (
     <div className="relative flex min-h-dvh w-full items-center justify-center px-4 py-10">
@@ -768,19 +791,18 @@ export function LoginView() {
                           className="h-11 text-left"
                         />
                         <AnimatePresence initial={false}>
-                          {authMode === "signup" &&
-                            password.length > 0 &&
-                            password.length < MIN_PASSWORD_LENGTH && (
-                              <motion.p
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: "auto" }}
-                                exit={{ opacity: 0, height: 0 }}
-                                transition={{ duration: 0.2 }}
-                                className="mt-1.5 text-xs text-muted-foreground"
-                              >
-                                {msg("auth.login.password_hint")}
-                              </motion.p>
-                            )}
+                          {passwordRules.map((rule) => (
+                            <motion.p
+                              key={rule}
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="mt-1.5 text-xs text-muted-foreground"
+                            >
+                              {msg(rule)}
+                            </motion.p>
+                          ))}
                         </AnimatePresence>
                       </div>
 

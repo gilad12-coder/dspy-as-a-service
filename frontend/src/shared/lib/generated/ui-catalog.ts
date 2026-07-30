@@ -124,6 +124,8 @@ export type MessageKey =
   | "auth.login.password"
   | "auth.login.password_hint"
   | "auth.login.password_placeholder"
+  | "auth.login.password_rule_email"
+  | "auth.login.password_rule_max"
   | "auth.login.register_failed"
   | "auth.login.signin_submit"
   | "auth.login.signup_submit"
@@ -2986,6 +2988,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auth.login.password": "סיסמה",
   "auth.login.password_hint": "לפחות 8 תווים",
   "auth.login.password_placeholder": "הסיסמה שלך",
+  "auth.login.password_rule_email": "הסיסמה לא יכולה להכיל את כתובת האימייל",
+  "auth.login.password_rule_max": "עד 128 תווים",
   "auth.login.register_failed": "יצירת החשבון נכשלה. נסה/י שוב",
   "auth.login.signin_submit": "התחבר/י",
   "auth.login.signup_submit": "צור/צרי חשבון",
@@ -11427,6 +11431,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auth.login.password": "Password",
   "auth.login.password_hint": "At least 8 characters",
   "auth.login.password_placeholder": "Your password",
+  "auth.login.password_rule_email": "The password can't contain your email address",
+  "auth.login.password_rule_max": "At most 128 characters",
   "auth.login.register_failed": "Account creation failed. Please try again",
   "auth.login.signin_submit": "Sign in",
   "auth.login.signup_submit": "Create account",

@@ -20,6 +20,8 @@ from sqlalchemy.pool import StaticPool
 
 from ...config import settings
 from ...storage.models import UserModel
+from ..errors import DomainError
+from ..password_policy import validate_password
 from ..passwords import hash_password, verify_password
 from ..routers.accounts import create_accounts_router
 
@@ -146,6 +148,44 @@ def test_register_validates_email_and_password(accounts_client: TestClient) -> N
         headers=_AUTH_HEADER,
     )
     assert short_pw.status_code == 422
+
+
+def test_password_policy_rejects_each_rule() -> None:
+    """Each acceptance rule fails with its own semantic code."""
+    with pytest.raises(DomainError) as short:
+        validate_password("short", "alice@example.com")
+    assert short.value.code == "accounts.weak_password"
+    with pytest.raises(DomainError) as long_pw:
+        validate_password("x" * 129, "alice@example.com")
+    assert long_pw.value.code == "accounts.password_too_long"
+    with pytest.raises(DomainError) as common:
+        validate_password("password123", "alice@example.com")
+    assert common.value.code == "accounts.password_common"
+    with pytest.raises(DomainError) as service:
+        validate_password("MySkynet2026", "alice@example.com")
+    assert service.value.code == "accounts.password_common"
+    with pytest.raises(DomainError) as contains:
+        validate_password("Alice-loves-tea", "alice@example.com")
+    assert contains.value.code == "accounts.password_contains_email"
+
+
+def test_password_policy_accepts_strong_passwords() -> None:
+    """A passphrase, a 128-char password, and a short local part all pass."""
+    validate_password("plum trellis 09 morning", "alice@example.com")
+    validate_password("x" * 128, "alice@example.com")
+    # A 3-char local part is too generic to count as containing the email.
+    validate_password("aliveandwell99", "ali@example.com")
+
+
+def test_register_rejects_common_password(accounts_client: TestClient) -> None:
+    """The blocklist is enforced end-to-end through /auth/register."""
+    res = accounts_client.post(
+        "/auth/register",
+        json={"email": "gia@example.com", "password": "qwertyuiop"},
+        headers=_AUTH_HEADER,
+    )
+    assert res.status_code == 422
+    assert res.json()["detail"] == "That password is too common and easy to guess. Pick a different one."
 
 
 def test_login_rejects_wrong_password_and_unknown_email(accounts_client: TestClient) -> None:

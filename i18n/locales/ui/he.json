@@ -74,6 +74,8 @@
   "auth.login.passkey_offer_title": "כניסה מהירה בפעם הבאה",
   "auth.login.password": "סיסמה",
   "auth.login.password_hint": "לפחות 8 תווים",
+  "auth.login.password_rule_email": "הסיסמה לא יכולה להכיל את כתובת האימייל",
+  "auth.login.password_rule_max": "עד 128 תווים",
   "auth.login.password_placeholder": "הסיסמה שלך",
   "auth.login.register_failed": "יצירת החשבון נכשלה. נסה/י שוב",
   "auth.login.signin_submit": "התחבר/י",

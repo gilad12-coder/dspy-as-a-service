@@ -74,6 +74,8 @@
   "auth.login.passkey_offer_title": "Faster sign-in next time",
   "auth.login.password": "Password",
   "auth.login.password_hint": "At least 8 characters",
+  "auth.login.password_rule_email": "The password can't contain your email address",
+  "auth.login.password_rule_max": "At most 128 characters",
   "auth.login.password_placeholder": "Your password",
   "auth.login.register_failed": "Account creation failed. Please try again",
   "auth.login.signin_submit": "Sign in",

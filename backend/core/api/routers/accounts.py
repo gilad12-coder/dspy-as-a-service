@@ -23,10 +23,10 @@ from sqlalchemy.orm import Session
 from ...config import settings
 from ...storage.models import UserModel
 from ..errors import DomainError
+from ..password_policy import validate_password
 from ..passwords import hash_password, verify_password
 from ..two_factor import enforce_second_factor
 
-_MIN_PASSWORD_LENGTH = 8
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _USE_CASES = frozenset({"classification", "extraction", "rag_agents", "generation", "other"})
 _EXPERIENCE_LEVELS = frozenset({"new", "familiar", "expert"})
@@ -151,14 +151,14 @@ def create_accounts_router(*, job_store) -> APIRouter:
 
         Raises:
             DomainError: 403 on a bad internal secret; 422 on an invalid email
-                or too-short password; 409 when the email is already registered.
+                or a password the acceptance policy rejects; 409 when the email
+                is already registered.
         """
         _require_internal_auth(x_internal_auth)
         email = _normalise_email(body.email)
         if not _EMAIL_RE.match(email):
             raise DomainError("accounts.invalid_email", status=422)
-        if len(body.password) < _MIN_PASSWORD_LENGTH:
-            raise DomainError("accounts.weak_password", status=422)
+        validate_password(body.password, email)
         name = body.name.strip() or email
         with Session(job_store.engine) as session:
             if session.get(UserModel, email) is not None:
