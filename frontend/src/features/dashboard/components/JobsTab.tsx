@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -23,12 +25,6 @@ import { EmptyState } from "@/shared/ui/empty-state";
 import { InlineErrorRow } from "@/shared/ui/inline-error-row";
 import { PingDot } from "@/shared/ui/ping-dot";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/shared/ui/primitives/tooltip";
 import type { useColumnResize } from "@/shared/ui/excel-filter";
 import { ColumnHeader, ResetColumnsButton, type SortDir } from "@/shared/ui/excel-filter";
 import { formatDate, formatId, formatRelativeTime, moduleLabel } from "@/shared/lib";
@@ -60,6 +56,10 @@ const DEFAULT_COL_WIDTHS: Record<string, number> = {
   elapsed_seconds: 66,
   optimized_test_metric: 94,
 };
+
+// First-open delay for the row tooltip; also the grace window in which
+// hopping straight to a neighboring row reopens it without the delay.
+const TOOLTIP_DELAY_MS = 300;
 
 type ColResize = ReturnType<typeof useColumnResize>;
 
@@ -161,6 +161,68 @@ export function JobsTab({
   const rtl = getActiveDir() === "rtl";
   const PrevIcon = rtl ? ChevronRight : ChevronLeft;
   const NextIcon = rtl ? ChevronLeft : ChevronRight;
+
+  // Cursor-following tooltip for the run rows: one portal div repositioned
+  // with direct DOM writes on mousemove — routing coordinates through React
+  // state would re-render the whole table for every pixel of pointer travel.
+  // The div mounts hidden and only turns visible once positioned, so it never
+  // flashes at a stale spot.
+  const [tipJob, setTipJob] = useState<OptimizationSummaryResponse | null>(null);
+  const tipRef = useRef<HTMLDivElement | null>(null);
+  const tipCoords = useRef({ x: 0, y: 0 });
+  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tipGraceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tipRecentlyHidden = useRef(false);
+
+  const positionTip = useCallback(() => {
+    const el = tipRef.current;
+    if (!el) return;
+    const pad = 8;
+    const { x, y } = tipCoords.current;
+    const left = Math.min(
+      Math.max(x - el.offsetWidth / 2, pad),
+      window.innerWidth - el.offsetWidth - pad,
+    );
+    // Below the cursor by default; flipped above it near the viewport bottom.
+    let top = y + 16;
+    if (top + el.offsetHeight > window.innerHeight - pad) top = y - el.offsetHeight - 12;
+    el.style.transform = `translate(${left}px, ${top}px)`;
+    el.style.visibility = "visible";
+  }, []);
+
+  useEffect(() => {
+    if (tipJob) positionTip();
+  }, [tipJob, positionTip]);
+
+  useEffect(
+    () => () => {
+      if (tipTimer.current) clearTimeout(tipTimer.current);
+      if (tipGraceTimer.current) clearTimeout(tipGraceTimer.current);
+    },
+    [],
+  );
+
+  const openTip = (job: OptimizationSummaryResponse) => {
+    if (tipTimer.current) clearTimeout(tipTimer.current);
+    if (tipRecentlyHidden.current) {
+      setTipJob(job);
+      return;
+    }
+    tipTimer.current = setTimeout(() => setTipJob(job), TOOLTIP_DELAY_MS);
+  };
+
+  const closeTip = () => {
+    if (tipTimer.current) clearTimeout(tipTimer.current);
+    if (tipJob) {
+      tipRecentlyHidden.current = true;
+      if (tipGraceTimer.current) clearTimeout(tipGraceTimer.current);
+      tipGraceTimer.current = setTimeout(() => {
+        tipRecentlyHidden.current = false;
+      }, TOOLTIP_DELAY_MS);
+    }
+    setTipJob(null);
+  };
+
   return (
     <Card className="border-border/60">
       <CardContent className="pt-5">
@@ -377,199 +439,189 @@ export function JobsTab({
                 {filteredItems.map((job, idx) => {
                   const isSelected = selectedIds.has(job.optimization_id);
                   return (
-                    <TooltipProvider key={job.optimization_id} delayDuration={300}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <TableRow
-                            data-selected={isSelected}
-                            className="group border-border/30 transition-colors duration-150 data-[selected=true]:bg-primary/[0.08] cursor-pointer [&_td:first-child]:cursor-default"
-                            style={{
-                              animation: `fadeSlideIn 0.25s ease-out ${idx * 0.03}s both`,
-                            }}
-                            onClick={(e) => {
-                              // Convenience target only — the ID button remains the
-                              // accessible/keyboard path. The checkbox cell is
-                              // excluded so a missed checkbox click can't navigate.
-                              const target = e.target as HTMLElement;
-                              if (target.closest("button, a, input")) return;
-                              const td = target.closest("td");
-                              if (!td || td === td.parentElement?.firstElementChild) return;
-                              onOpenJob(job.optimization_id);
-                            }}
-                          >
-                            <TableCell className="w-10 px-3">
-                              <input
-                                type="checkbox"
-                                aria-label={formatMsg(
-                                  "auto.features.dashboard.components.jobstab.template.2",
-                                  { p1: TERMS.optimization, p2: job.optimization_id },
-                                )}
-                                className="size-4 cursor-pointer accent-primary"
-                                checked={isSelected}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={() => toggleRowSelected(job.optimization_id)}
-                              />
-                            </TableCell>
-                            <TableCell
-                              className="px-2 max-w-[100px]"
-                              data-label={msg(
-                                "auto.features.dashboard.components.jobstab.template.1",
-                              )}
-                            >
-                              {/* ``min-w-0`` lets the flex item shrink so the
+                    <TableRow
+                      key={job.optimization_id}
+                      data-selected={isSelected}
+                      className="group border-border/30 transition-colors duration-150 data-[selected=true]:bg-primary/[0.08] cursor-pointer [&_td:first-child]:cursor-default"
+                      style={{
+                        animation: `fadeSlideIn 0.25s ease-out ${idx * 0.03}s both`,
+                      }}
+                      onMouseEnter={(e) => {
+                        tipCoords.current = { x: e.clientX, y: e.clientY };
+                        openTip(job);
+                      }}
+                      onMouseMove={(e) => {
+                        tipCoords.current = { x: e.clientX, y: e.clientY };
+                        if (tipJob) positionTip();
+                      }}
+                      onMouseLeave={closeTip}
+                      onClick={(e) => {
+                        // Convenience target only — the ID button remains the
+                        // accessible/keyboard path. The checkbox cell is
+                        // excluded so a missed checkbox click can't navigate.
+                        const target = e.target as HTMLElement;
+                        if (target.closest("button, a, input")) return;
+                        const td = target.closest("td");
+                        if (!td || td === td.parentElement?.firstElementChild) return;
+                        onOpenJob(job.optimization_id);
+                      }}
+                    >
+                      <TableCell className="w-10 px-3">
+                        <input
+                          type="checkbox"
+                          aria-label={formatMsg(
+                            "auto.features.dashboard.components.jobstab.template.2",
+                            { p1: TERMS.optimization, p2: job.optimization_id },
+                          )}
+                          className="size-4 cursor-pointer accent-primary"
+                          checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => toggleRowSelected(job.optimization_id)}
+                        />
+                      </TableCell>
+                      <TableCell
+                        className="px-2 max-w-[100px]"
+                        data-label={msg("auto.features.dashboard.components.jobstab.template.1")}
+                      >
+                        {/* ``min-w-0`` lets the flex item shrink so the
                             cell's overflow-hidden + text-ellipsis can
                             actually fire on the button below; without it
                             the flex child claims its content's intrinsic
                             width and overflows past the cell boundary. */}
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                {ACTIVE_STATUSES.has(job.status) && (
-                                  <PingDot className="shrink-0" />
-                                )}
-                                {/* ``dir="ltr"`` keeps hex IDs that start with a
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {ACTIVE_STATUSES.has(job.status) && <PingDot className="shrink-0" />}
+                          {/* ``dir="ltr"`` keeps hex IDs that start with a
                               digit from bidi-reordering in RTL locales. */}
-                                <button
-                                  type="button"
-                                  dir="ltr"
-                                  onClick={() => onOpenJob(job.optimization_id)}
-                                  className="font-mono text-xs text-primary truncate min-w-0 rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                                  aria-label={formatMsg(
-                                    "auto.features.dashboard.components.jobstab.template.3",
-                                    { p1: TERMS.optimization },
-                                  )}
-                                >
-                                  {formatId(job.optimization_id)}
-                                </button>
-                              </div>
-                            </TableCell>
-                            <TableCell
-                              className="px-2 max-w-[140px] text-sm truncate overflow-hidden"
-                              title={job.name ?? ""}
-                              dir="auto"
-                              data-label={msg(
-                                "auto.features.dashboard.components.jobstab.literal.9",
-                              )}
-                            >
-                              {job.name ? (
-                                <span className="text-foreground">{job.name}</span>
-                              ) : (
-                                <span className="text-muted-foreground/60">—</span>
-                              )}
-                            </TableCell>
-                            {showSharedColumns && (
-                              <>
-                                <TableCell
-                                  className="px-2 max-w-[120px] text-sm truncate overflow-hidden"
-                                  title={job.username ?? ""}
-                                  data-label={msg("dashboard.col.owner")}
-                                >
-                                  {job.username ? (
-                                    job.username.toLowerCase() === sessionUser.toLowerCase() ? (
-                                      <span className="font-semibold text-foreground">
-                                        {msg("dashboard.owner.me")}
-                                      </span>
-                                    ) : (
-                                      <span className="font-semibold text-foreground" dir="ltr">
-                                        {job.username}
-                                      </span>
-                                    )
-                                  ) : (
-                                    <span className="text-muted-foreground/40">—</span>
-                                  )}
-                                </TableCell>
-                                <TableCell className="px-2" data-label={msg("dashboard.col.role")}>
-                                  <RoleBadge role={job.role} />
-                                </TableCell>
-                              </>
+                          <button
+                            type="button"
+                            dir="ltr"
+                            onClick={() => onOpenJob(job.optimization_id)}
+                            className="font-mono text-xs text-primary truncate min-w-0 rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            aria-label={formatMsg(
+                              "auto.features.dashboard.components.jobstab.template.3",
+                              { p1: TERMS.optimization },
                             )}
-                            <TableCell
-                              className="px-2 truncate overflow-hidden"
-                              data-label={msg(
-                                "auto.features.dashboard.components.jobstab.literal.2",
-                              )}
-                            >
-                              {typeBadge(job.optimization_type)}
-                            </TableCell>
-                            <TableCell
-                              className="px-2 truncate overflow-hidden"
-                              data-label={msg(
-                                "auto.features.dashboard.components.jobstab.literal.3",
-                              )}
-                            >
-                              <StatusBadge status={job.status} compact />
-                            </TableCell>
-                            <TableCell
-                              className="px-2 max-w-[120px] text-sm truncate overflow-hidden"
-                              title={job.module_name ?? ""}
-                              data-label={msg(
-                                "auto.features.dashboard.components.jobstab.literal.4",
-                              )}
-                            >
-                              {moduleLabel(job.module_name)}
-                            </TableCell>
-                            <TableCell
-                              className="px-2 text-sm tabular-nums truncate overflow-hidden"
-                              title={String(job.dataset_rows ?? "")}
-                              data-label={msg(
-                                "auto.features.dashboard.components.jobstab.literal.5",
-                              )}
-                            >
-                              {job.dataset_rows ?? "-"}
-                            </TableCell>
-                            <TableCell
-                              className="px-2 text-xs text-muted-foreground truncate overflow-hidden whitespace-nowrap"
-                              title={formatDate(job.created_at)}
-                              data-label={msg(
-                                "auto.features.dashboard.components.jobstab.literal.6",
-                              )}
-                            >
-                              {formatRelativeTime(job.created_at)}
-                            </TableCell>
-                            <TableCell
-                              className="px-2 text-xs tabular-nums truncate overflow-hidden whitespace-nowrap"
-                              data-label={msg(
-                                "auto.features.dashboard.components.jobstab.literal.7",
-                              )}
-                            >
-                              <LiveElapsed
-                                startedAt={job.started_at}
-                                createdAt={job.created_at}
-                                elapsedSeconds={job.elapsed_seconds}
-                                isActive={ACTIVE_STATUSES.has(job.status)}
-                              />
-                            </TableCell>
-                            <TableCell
-                              className="px-2 truncate overflow-hidden"
-                              data-label={msg(
-                                "auto.features.dashboard.components.jobstab.literal.8",
-                              )}
-                            >
-                              {formatScore(job)}
-                            </TableCell>
-                          </TableRow>
-                        </TooltipTrigger>
-                        {/* align="start" pins the tooltip under the ID column
-                            (the row's start edge) so it reads as that ID's
-                            tooltip no matter where on the row the cursor is. */}
-                        <TooltipContent side="bottom" align="start">
-                          <span className="flex flex-col gap-0.5">
-                            <span>
-                              {formatMsg("auto.features.dashboard.components.jobstab.template.3", {
-                                p1: TERMS.optimization,
-                              })}
-                            </span>
-                            <span className="font-mono text-[0.6875rem] opacity-80" dir="ltr">
-                              {job.optimization_id}
-                            </span>
-                          </span>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                          >
+                            {formatId(job.optimization_id)}
+                          </button>
+                        </div>
+                      </TableCell>
+                      <TableCell
+                        className="px-2 max-w-[140px] text-sm truncate overflow-hidden"
+                        title={job.name ?? ""}
+                        dir="auto"
+                        data-label={msg("auto.features.dashboard.components.jobstab.literal.9")}
+                      >
+                        {job.name ? (
+                          <span className="text-foreground">{job.name}</span>
+                        ) : (
+                          <span className="text-muted-foreground/60">—</span>
+                        )}
+                      </TableCell>
+                      {showSharedColumns && (
+                        <>
+                          <TableCell
+                            className="px-2 max-w-[120px] text-sm truncate overflow-hidden"
+                            title={job.username ?? ""}
+                            data-label={msg("dashboard.col.owner")}
+                          >
+                            {job.username ? (
+                              job.username.toLowerCase() === sessionUser.toLowerCase() ? (
+                                <span className="font-semibold text-foreground">
+                                  {msg("dashboard.owner.me")}
+                                </span>
+                              ) : (
+                                <span className="font-semibold text-foreground" dir="ltr">
+                                  {job.username}
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-muted-foreground/40">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="px-2" data-label={msg("dashboard.col.role")}>
+                            <RoleBadge role={job.role} />
+                          </TableCell>
+                        </>
+                      )}
+                      <TableCell
+                        className="px-2 truncate overflow-hidden"
+                        data-label={msg("auto.features.dashboard.components.jobstab.literal.2")}
+                      >
+                        {typeBadge(job.optimization_type)}
+                      </TableCell>
+                      <TableCell
+                        className="px-2 truncate overflow-hidden"
+                        data-label={msg("auto.features.dashboard.components.jobstab.literal.3")}
+                      >
+                        <StatusBadge status={job.status} compact />
+                      </TableCell>
+                      <TableCell
+                        className="px-2 max-w-[120px] text-sm truncate overflow-hidden"
+                        title={job.module_name ?? ""}
+                        data-label={msg("auto.features.dashboard.components.jobstab.literal.4")}
+                      >
+                        {moduleLabel(job.module_name)}
+                      </TableCell>
+                      <TableCell
+                        className="px-2 text-sm tabular-nums truncate overflow-hidden"
+                        title={String(job.dataset_rows ?? "")}
+                        data-label={msg("auto.features.dashboard.components.jobstab.literal.5")}
+                      >
+                        {job.dataset_rows ?? "-"}
+                      </TableCell>
+                      <TableCell
+                        className="px-2 text-xs text-muted-foreground truncate overflow-hidden whitespace-nowrap"
+                        title={formatDate(job.created_at)}
+                        data-label={msg("auto.features.dashboard.components.jobstab.literal.6")}
+                      >
+                        {formatRelativeTime(job.created_at)}
+                      </TableCell>
+                      <TableCell
+                        className="px-2 text-xs tabular-nums truncate overflow-hidden whitespace-nowrap"
+                        data-label={msg("auto.features.dashboard.components.jobstab.literal.7")}
+                      >
+                        <LiveElapsed
+                          startedAt={job.started_at}
+                          createdAt={job.created_at}
+                          elapsedSeconds={job.elapsed_seconds}
+                          isActive={ACTIVE_STATUSES.has(job.status)}
+                        />
+                      </TableCell>
+                      <TableCell
+                        className="px-2 truncate overflow-hidden"
+                        data-label={msg("auto.features.dashboard.components.jobstab.literal.8")}
+                      >
+                        {formatScore(job)}
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
           </div>
         )}
+
+        {tipJob &&
+          createPortal(
+            <div
+              ref={tipRef}
+              style={{ visibility: "hidden" }}
+              className="pointer-events-none fixed left-0 top-0 z-50 w-fit rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background animate-in fade-in-0 zoom-in-95"
+            >
+              <span className="flex flex-col gap-0.5">
+                <span>
+                  {formatMsg("auto.features.dashboard.components.jobstab.template.3", {
+                    p1: TERMS.optimization,
+                  })}
+                </span>
+                <span className="font-mono text-[0.6875rem] opacity-80" dir="ltr">
+                  {tipJob.optimization_id}
+                </span>
+              </span>
+            </div>,
+            document.body,
+          )}
 
         {data && data.total > FETCH_PAGE_SIZE && (
           <div className="flex items-center justify-center gap-3 pt-5 border-t border-border/50 mt-4">
