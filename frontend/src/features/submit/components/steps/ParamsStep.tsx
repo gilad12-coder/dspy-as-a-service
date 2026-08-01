@@ -57,9 +57,11 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
         <CardTitle className="text-lg">
           {msg("auto.features.submit.components.steps.paramsstep.1")}
         </CardTitle>
-        <CardDescription>
-          {msg("auto.features.submit.components.steps.paramsstep.2")}
-        </CardDescription>
+        {advanced && (
+          <CardDescription>
+            {msg("auto.features.submit.components.steps.paramsstep.2")}
+          </CardDescription>
+        )}
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Simple mode leaves the split to the server recommendation (splitMode
@@ -155,9 +157,11 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
         {advanced && <Separator />}
 
         <div className="space-y-4">
-          <Label className="font-semibold">
-            {msg("auto.features.submit.components.steps.paramsstep.9")}
-          </Label>
+          {advanced && (
+            <Label className="font-semibold">
+              {msg("auto.features.submit.components.steps.paramsstep.9")}
+            </Label>
+          )}
           {advanced && (
             <div className="flex items-center justify-between">
               <Label htmlFor="shuffle" className="cursor-pointer text-sm">
