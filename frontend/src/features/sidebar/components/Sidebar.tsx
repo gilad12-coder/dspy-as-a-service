@@ -16,6 +16,8 @@ import {
   Loader2,
   Grid2x2,
   ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
   Compass,
   CopyPlus,
   Database,
@@ -49,6 +51,7 @@ import { toast } from "react-toastify";
 import { useSession } from "next-auth/react";
 import { groupJobsByRecency } from "@/features/sidebar";
 import { AccountMenu } from "@/shared/layout/account-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { ShareDialog } from "@/features/optimizations";
 import { StorageMeter } from "@/features/storage";
 import { formatMsg, msg } from "@/shared/lib/messages";
@@ -89,7 +92,11 @@ const PAGE_SIZE = 20;
 const SIDEBAR_MIN_WIDTH = 210;
 const SIDEBAR_MAX_WIDTH = 420;
 const SIDEBAR_DEFAULT_WIDTH = 240;
+// Icon-rail width when collapsed: just enough to center a nav icon (and the
+// account avatar / storage icon) with comfortable padding. Fixed, not draggable.
+const SIDEBAR_COLLAPSED_WIDTH = 64;
 const SIDEBAR_WIDTH_STORAGE_KEY = "skynet.sidebar.width";
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "skynet.sidebar.collapsed";
 const DESKTOP_MQ = "(min-width: 768px)";
 
 /** Clamp a candidate sidebar width to the resizable range, rounded to a whole px. */
@@ -122,7 +129,23 @@ export function Sidebar() {
   const [loadedAll, setLoadedAll] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [width, setWidth] = React.useState(SIDEBAR_DEFAULT_WIDTH);
+  const [collapsed, setCollapsed] = React.useState(false);
   const [isDesktop, setIsDesktop] = React.useState(true);
+  // Collapse is a desktop-only affordance: the mobile drawer always shows the
+  // full rail, so gate the icon-rail on the breakpoint.
+  const isCollapsed = collapsed && isDesktop;
+  const effectiveWidth = isCollapsed ? SIDEBAR_COLLAPSED_WIDTH : width;
+  // Collapsed tooltips read toward the content area: right in LTR, left in RTL.
+  const tooltipSide = isRtl ? "left" : "right";
+  // Chevrons point the way the rail's inline-end edge travels on click: collapse
+  // pushes it toward the rail's own side, expand pushes it toward the content.
+  const ToggleIcon = isCollapsed
+    ? isRtl
+      ? ChevronsLeft
+      : ChevronsRight
+    : isRtl
+      ? ChevronsRight
+      : ChevronsLeft;
 
   // Width is a desktop affordance — the mobile drawer uses a viewport-capped
   // width regardless. Hydrate the persisted width client-side (SSR can't read
@@ -132,6 +155,7 @@ export function Sidebar() {
       const raw = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
       const n = raw ? Number(raw) : NaN;
       if (Number.isFinite(n)) setWidth(clampSidebarWidth(n));
+      setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "1");
     } catch {
       /* localStorage unavailable */
     }
@@ -150,6 +174,18 @@ export function Sidebar() {
     } catch {
       /* noop */
     }
+  }, []);
+
+  const toggleCollapsed = React.useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        /* noop */
+      }
+      return next;
+    });
   }, []);
 
   // Drag-resize. The rail is pinned to the inline-start edge (left in LTR, right
@@ -360,33 +396,64 @@ export function Sidebar() {
   // var the shell's <main> consumes for its inline margin — one source of truth,
   // updated as the rail is dragged so content and rail never overlap.
   React.useEffect(() => {
-    document.documentElement.style.setProperty("--app-sidebar-width", `${width}px`);
-  }, [width]);
+    document.documentElement.style.setProperty("--app-sidebar-width", `${effectiveWidth}px`);
+  }, [effectiveWidth]);
 
   return (
     <aside
       className="relative flex h-full shrink-0 flex-col border-e border-sidebar-border/60 bg-sidebar/80 backdrop-blur-xl overflow-hidden"
-      style={{ width: isDesktop ? `${width}px` : `min(${width}px, 88vw)` }}
+      style={{ width: isDesktop ? `${effectiveWidth}px` : `min(${width}px, 88vw)` }}
       data-tutorial="sidebar-full"
     >
       {/* Drag-to-resize grip on the rail's inline-end edge (desktop only — the
-          mobile drawer isn't resizable). Invisible until hovered, then a primary
-          hairline; the grab math is mirrored for RTL in ``startResize``. */}
-      <button
-        type="button"
-        onMouseDown={startResize}
-        aria-label={msg("auto.features.sidebar.components.sidebar.literal.15")}
-        tabIndex={-1}
-        className="group absolute inset-y-0 end-0 z-20 hidden w-1.5 cursor-col-resize md:block"
-      >
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-0 end-0 w-px bg-transparent transition-colors duration-150 group-hover:bg-primary/30 group-active:bg-primary/50"
-        />
-      </button>
+          mobile drawer isn't resizable, and a collapsed rail is a fixed width).
+          Invisible until hovered, then a primary hairline; the grab math is
+          mirrored for RTL in ``startResize``. */}
+      {!isCollapsed && (
+        <button
+          type="button"
+          onMouseDown={startResize}
+          aria-label={msg("auto.features.sidebar.components.sidebar.literal.15")}
+          tabIndex={-1}
+          className="group absolute inset-y-0 end-0 z-20 hidden w-1.5 cursor-col-resize md:block"
+        >
+          <span
+            aria-hidden="true"
+            className="absolute inset-y-0 end-0 w-px bg-transparent transition-colors duration-150 group-hover:bg-primary/30 group-active:bg-primary/50"
+          />
+        </button>
+      )}
       <div className="flex flex-col h-full">
+        {/* Collapse toggle — desktop only (the mobile drawer opens/closes via the
+            header menu button, so it has no use for an icon-rail toggle). The
+            chevrons point the way the rail's edge will move. */}
+        <div
+          className={cn(
+            "hidden md:flex items-center px-3 pt-3 pb-1",
+            isCollapsed ? "justify-center" : "justify-end",
+          )}
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                aria-label={isCollapsed ? msg("sidebar.expand") : msg("sidebar.collapse")}
+                className="inline-flex items-center justify-center rounded-lg p-1.5 text-muted-foreground/60 transition-colors duration-150 hover:bg-sidebar-accent/40 hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+              >
+                <ToggleIcon className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side={tooltipSide}>
+              {isCollapsed ? msg("sidebar.expand") : msg("sidebar.collapse")}
+            </TooltipContent>
+          </Tooltip>
+        </div>
         <nav
-          className="flex flex-col gap-1 px-3 pb-3 pt-3"
+          className={cn(
+            "flex flex-col gap-1 pb-3",
+            isCollapsed ? "px-2 pt-1" : "px-3 pt-3 md:pt-1",
+          )}
           role="navigation"
           aria-label={msg("auto.features.sidebar.components.sidebar.literal.7")}
           data-tutorial="sidebar-nav"
@@ -397,6 +464,8 @@ export function Sidebar() {
               href={item.href}
               label={item.label}
               Icon={item.icon}
+              collapsed={isCollapsed}
+              tooltipSide={tooltipSide}
               active={
                 item.href === "/"
                   ? pathname === "/"
@@ -417,12 +486,18 @@ export function Sidebar() {
           ))}
         </nav>
 
-        <div aria-hidden="true" className="mx-3 h-px bg-sidebar-border/40" />
+        <div
+          aria-hidden="true"
+          className={cn("mx-3 h-px bg-sidebar-border/40", isCollapsed && "hidden")}
+        />
 
         <div
           role="tablist"
           aria-label={msg("sidebar.tab.aria")}
-          className="relative mx-3 mt-2.5 mb-0.5 flex rounded-lg bg-muted p-1 gap-1"
+          className={cn(
+            "relative mx-3 mt-2.5 mb-0.5 flex rounded-lg bg-muted p-1 gap-1",
+            isCollapsed && "hidden",
+          )}
         >
           <div
             aria-hidden="true"
@@ -446,7 +521,12 @@ export function Sidebar() {
           ))}
         </div>
 
-        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        {/* Collapsed rail hides the run list (no icon form for a text list), but
+            the data layer keeps polling — the Dashboard nav badge count reads
+            from the same fetch — so hide rather than unmount. */}
+        <div
+          className={cn("flex-1 overflow-hidden flex flex-col min-h-0", isCollapsed && "hidden")}
+        >
           <div ref={listRef} className="flex-1 overflow-y-auto px-3 pt-2 pb-2 no-scrollbar">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
@@ -507,10 +587,14 @@ export function Sidebar() {
           </div>
         </div>
 
+        {/* Collapsed rail has no scrolling list to fill the middle, so a plain
+            spacer keeps the footer pinned to the bottom. */}
+        {isCollapsed && <div className="flex-1" aria-hidden="true" />}
+
         <div className="border-t border-sidebar-border/60">
-          <StorageMeter />
-          <div className="px-2 py-2">
-            <AccountMenu collapsed={false} />
+          <StorageMeter collapsed={isCollapsed} />
+          <div className={cn("py-2", isCollapsed ? "flex justify-center px-2" : "px-2")}>
+            <AccountMenu collapsed={isCollapsed} />
           </div>
         </div>
       </div>
@@ -572,6 +656,8 @@ function NavItem({
   Icon,
   active,
   badge,
+  collapsed,
+  tooltipSide,
   tutorialId,
   resume,
 }: {
@@ -580,6 +666,10 @@ function NavItem({
   Icon: React.ComponentType<{ className?: string }>;
   active: boolean;
   badge: number | null;
+  /** Icon-only rail: hide the label and name the entry via a hover tooltip. */
+  collapsed: boolean;
+  /** Which side the collapsed tooltip opens toward (content-ward). */
+  tooltipSide: "left" | "right";
   /** ``data-tutorial`` anchor for entries the tutorial spotlights. */
   tutorialId?: string;
   resume?: { kind: "tagger" | "optimization"; detailBase: string };
@@ -599,6 +689,42 @@ function NavItem({
         router.push(`${resume.detailBase}/${id}`);
       }
     : undefined;
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Link
+            href={href}
+            onClick={onClick}
+            {...(tutorialId ? { "data-tutorial": tutorialId } : {})}
+            aria-label={label}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "group relative flex items-center justify-center rounded-lg p-2.5 transition-colors duration-200",
+              active
+                ? "bg-primary/[0.08] text-primary ring-1 ring-primary/10"
+                : "text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground",
+            )}
+          >
+            <Icon
+              className={cn(
+                "size-5 shrink-0 transition-colors duration-200",
+                active ? "text-primary" : "group-hover:text-sidebar-foreground",
+              )}
+            />
+            {badge != null && (
+              <span className="absolute -end-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[0.5625rem] font-bold leading-4 text-primary-foreground tabular-nums">
+                {badge}
+              </span>
+            )}
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side={tooltipSide}>{label}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
   return (
     <Link
       href={href}

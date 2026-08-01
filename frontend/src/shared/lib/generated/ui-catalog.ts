@@ -2269,8 +2269,10 @@ export type MessageKey =
   | "shared.selection.delete"
   | "shared.selection.delete_skipped"
   | "shared.selection.select_named"
+  | "sidebar.collapse"
   | "sidebar.delete.failed"
   | "sidebar.delete.success"
+  | "sidebar.expand"
   | "sidebar.generic_error"
   | "sidebar.mine.empty"
   | "sidebar.mine.empty.hint"
@@ -5132,8 +5134,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "shared.selection.delete": "מחיקת הפריטים שנבחרו",
   "shared.selection.delete_skipped": "לא ניתן היה למחוק {count} פריטים",
   "shared.selection.select_named": "בחירת {name}",
+  "sidebar.collapse": "כיווץ סרגל הצד",
   "sidebar.delete.failed": "המחיקה נכשלה",
   "sidebar.delete.success": "נמחק",
+  "sidebar.expand": "הרחבת סרגל הצד",
   "sidebar.generic_error": "שגיאה",
   "sidebar.mine.empty": "עדיין אין כאן ריצות",
   "sidebar.mine.empty.hint": "הריצה הראשונה שלכם תופיע כאן",
@@ -13572,8 +13576,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "shared.selection.delete": "Delete selected",
   "shared.selection.delete_skipped": "{count} items could not be deleted",
   "shared.selection.select_named": "Select {name}",
+  "sidebar.collapse": "Collapse sidebar",
   "sidebar.delete.failed": "Delete failed",
   "sidebar.delete.success": "Deleted",
+  "sidebar.expand": "Expand sidebar",
   "sidebar.generic_error": "Error",
   "sidebar.mine.empty": "No runs here yet",
   "sidebar.mine.empty.hint": "Your first run will appear here",

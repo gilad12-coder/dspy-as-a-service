@@ -2,9 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { HardDrive } from "lucide-react";
 import { getStorageUsage, STORAGE_CHANGED_EVENT, type StorageUsageResponse } from "@/shared/lib/api";
 import { formatStorageSize } from "@/shared/lib/formatters";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 
 /**
  * Compact account-wide storage gauge for the sidebar footer: a thin bar plus an
@@ -15,9 +18,10 @@ import { formatMsg, msg } from "@/shared/lib/messages";
  * focus, and whenever a {@link STORAGE_CHANGED_EVENT} fires (a delete on the
  * storage page), so the figure stays current without a reload. Renders nothing
  * until the first figure resolves (and on error), so it never flashes an empty
- * bar in the always-visible footer.
+ * bar in the always-visible footer. When ``collapsed`` (the icon rail), it
+ * shrinks to a lone drive icon whose tooltip carries the same usage figure.
  */
-export function StorageMeter() {
+export function StorageMeter({ collapsed = false }: { collapsed?: boolean }) {
   const [usage, setUsage] = React.useState<StorageUsageResponse | null>(null);
 
   React.useEffect(() => {
@@ -47,6 +51,28 @@ export function StorageMeter() {
   if (!usage || usage.quota_bytes <= 0) return null;
 
   const usagePct = Math.min(100, (usage.used_bytes / usage.quota_bytes) * 100);
+  const usageLabel = formatMsg("storage.quota.usage", {
+    used: formatStorageSize(usage.used_bytes),
+    total: formatStorageSize(usage.quota_bytes),
+  });
+
+  if (collapsed) {
+    const tooltipSide = getActiveDir() === "rtl" ? "left" : "right";
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Link
+            href="/storage"
+            aria-label={usageLabel}
+            className="flex items-center justify-center px-2 py-2.5 transition-colors duration-150 hover:bg-sidebar-accent/40"
+          >
+            <HardDrive className="size-4 text-muted-foreground" />
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side={tooltipSide}>{usageLabel}</TooltipContent>
+      </Tooltip>
+    );
+  }
 
   return (
     <Link
@@ -60,13 +86,8 @@ export function StorageMeter() {
           style={{ width: `${usagePct}%` }}
         />
       </div>
-      <p
-        className="mt-1.5 text-start text-[0.6875rem] text-muted-foreground tabular-nums"
-      >
-        {formatMsg("storage.quota.usage", {
-          used: formatStorageSize(usage.used_bytes),
-          total: formatStorageSize(usage.quota_bytes),
-        })}
+      <p className="mt-1.5 text-start text-[0.6875rem] text-muted-foreground tabular-nums">
+        {usageLabel}
       </p>
     </Link>
   );
