@@ -168,11 +168,9 @@ export function JobsTab({
   const PrevIcon = rtl ? ChevronRight : ChevronLeft;
   const NextIcon = rtl ? ChevronLeft : ChevronRight;
 
-  // Cursor-following tooltip for the run rows: one portal div repositioned
-  // with direct DOM writes on mousemove — routing coordinates through React
-  // state would re-render the whole table for every pixel of pointer travel.
-  // The div mounts hidden and only turns visible once positioned, so it never
-  // flashes at a stale spot.
+  // The row tooltip is positioned once at the current hover point. Keeping it
+  // anchored there avoids a distracting cursor-following animation while the
+  // table is being scanned.
   const [tipJob, setTipJob] = useState<OptimizationSummaryResponse | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
   const tipCoords = useRef({ x: 0, y: 0 });
@@ -476,8 +474,7 @@ export function JobsTab({
                         openTip(job);
                       }}
                       onMouseMove={(e) => {
-                        tipCoords.current = { x: e.clientX, y: e.clientY };
-                        if (tipJob) positionTip();
+                        if (!tipJob) tipCoords.current = { x: e.clientX, y: e.clientY };
                       }}
                       onMouseLeave={closeTip}
                       onClick={(e) => {
@@ -632,7 +629,7 @@ export function JobsTab({
             <div
               ref={tipRef}
               style={{ visibility: "hidden" }}
-              className="pointer-events-none fixed left-0 top-0 z-50 w-fit rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background animate-in fade-in-0 zoom-in-95"
+              className="pointer-events-none fixed left-0 top-0 z-50 w-fit rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background"
             >
               <span className="flex flex-col gap-0.5">
                 <span>
