@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Activity, MessageSquare, Timer } from "lucide-react";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { msg } from "@/shared/lib/messages";
 import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { tip } from "@/shared/lib/tooltips";
@@ -263,6 +264,51 @@ export function LMActivityTab({ lmActivity }: { lmActivity: LMActivity | null | 
               {msg("auto.features.optimizations.components.lmactivitytab.title")}
             </h3>
           </HelpTip>
+          <ExportTableMenu
+            iconOnly
+            className="ms-auto"
+            disabled={!hasAnyCalls}
+            getData={() => {
+              const stageCol = stageLabel;
+              const genCallsCol = `${genLabel} · ${callsLabel}`;
+              const genAvgCol = `${genLabel} · ${avgMsLabel}`;
+              const reflCallsCol = `${reflLabel} · ${callsLabel}`;
+              const reflAvgCol = `${reflLabel} · ${avgMsLabel}`;
+              const columns = hasReflection
+                ? [stageCol, genCallsCol, genAvgCol, reflCallsCol, reflAvgCol]
+                : [stageCol, genCallsCol, genAvgCol];
+              const toRow = (
+                name: string,
+                gen: { calls?: number; avg_response_time_ms?: number | null } | undefined,
+                refl: { calls?: number; avg_response_time_ms?: number | null } | undefined,
+              ): Record<string, unknown> => {
+                const out: Record<string, unknown> = {
+                  [stageCol]: name,
+                  [genCallsCol]: gen?.calls ?? 0,
+                  [genAvgCol]: gen?.avg_response_time_ms ?? null,
+                };
+                if (hasReflection) {
+                  out[reflCallsCol] = refl?.calls ?? 0;
+                  out[reflAvgCol] = refl?.avg_response_time_ms ?? null;
+                }
+                return out;
+              };
+              return {
+                columns,
+                rows: [
+                  ...STAGE_KEYS.map((stage) =>
+                    toRow(msg(STAGE_MESSAGE_KEYS[stage]), generation[stage], reflection[stage]),
+                  ),
+                  toRow(
+                    msg("auto.features.optimizations.components.lmactivitytab.row_total"),
+                    genTotal,
+                    reflTotal,
+                  ),
+                ],
+                filename: "lm_activity",
+              };
+            }}
+          />
         </header>
         <div className="px-6 pb-5">
           {!hasAnyCalls ? (

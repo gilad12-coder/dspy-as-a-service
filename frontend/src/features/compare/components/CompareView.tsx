@@ -28,6 +28,7 @@ import {
   TooltipTrigger,
 } from "@/shared/ui/primitives/tooltip";
 import { Button } from "@/shared/ui/primitives/button";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
@@ -1042,6 +1043,36 @@ function PerExampleSection({ runs }: { runs: RunInfo[] }) {
                 : formatMsg("auto.app.compare.page.template.3", { p1: indices.length })}
             </span>
           </div>
+          <div className="flex items-center gap-1.5">
+            <ExportTableMenu
+              iconOnly
+              disabled={rows.length === 0}
+              getData={() => {
+                const columns = [
+                  "index",
+                  ...inputFields.map(([field]) => field),
+                  ...outputFields.map(([field]) => `expected_${field}`),
+                  ...runs.flatMap((_, i) => [`${runToken(i)}_pass`, `${runToken(i)}_score`]),
+                ];
+                return {
+                  columns,
+                  rows: rows.map((idx) => {
+                    const row = rowByIndex.get(idx);
+                    const out: Record<string, unknown> = { index: idx };
+                    for (const [field, col] of inputFields) out[field] = row ? row[col] : null;
+                    for (const [field, col] of outputFields)
+                      out[`expected_${field}`] = row ? row[col] : null;
+                    runs.forEach((r, i) => {
+                      const res = byRun[r.job.optimization_id]?.get(idx);
+                      out[`${runToken(i)}_pass`] = res ? res.pass : null;
+                      out[`${runToken(i)}_score`] = res ? res.score : null;
+                    });
+                    return out;
+                  }),
+                  filename: "compare-examples",
+                };
+              }}
+            />
           <UiTooltip>
             <TooltipTrigger asChild>
               <button
@@ -1073,6 +1104,7 @@ function PerExampleSection({ runs }: { runs: RunInfo[] }) {
                     : formatMsg("auto.app.compare.page.template.4", { p1: disagreementSet.size })}
             </TooltipContent>
           </UiTooltip>
+          </div>
         </div>
 
         {compact && <CompactRunsLegend runs={runs} />}

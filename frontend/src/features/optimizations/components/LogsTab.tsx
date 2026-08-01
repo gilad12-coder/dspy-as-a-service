@@ -15,6 +15,7 @@ import {
   ResetColumnsButton,
   type SortDir,
 } from "@/shared/ui/excel-filter";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { FadeIn } from "@/shared/ui/motion";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import type { OptimizationLogEntry } from "@/shared/types/api";
@@ -213,10 +214,43 @@ export function LogsTab({
             <VerbosityControl active={activeVerbosity} onChange={setVerbosity} />
             <ResetColumnsButton resize={logResize} />
           </div>
-          <span className="text-xs text-muted-foreground shrink-0">
-            {filtered.length}
-            {msg("auto.features.optimizations.components.logstab.1")}
-          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-muted-foreground">
+              {filtered.length}
+              {msg("auto.features.optimizations.components.logstab.1")}
+            </span>
+            <ExportTableMenu
+              iconOnly
+              disabled={filtered.length === 0}
+              getData={() => {
+                const columns = [
+                  ...(showPairCol ? ["pair_index"] : []),
+                  "timestamp",
+                  "level",
+                  "logger",
+                  "message",
+                ];
+                const rows = filtered.map((log) => {
+                  const rec: Record<string, unknown> = {};
+                  if (showPairCol) {
+                    rec.pair_index =
+                      log.pair_index != null
+                        ? (pairNames?.[log.pair_index] ??
+                          formatMsg("auto.features.optimizations.components.logstab.template.3", {
+                            p1: log.pair_index + 1,
+                          }))
+                        : "—";
+                  }
+                  rec.timestamp = formatLogTimestamp(log.timestamp);
+                  rec.level = log.level;
+                  rec.logger = log.logger;
+                  rec.message = log.message;
+                  return rec;
+                });
+                return { columns, rows, filename: "logs" };
+              }}
+            />
+          </div>
         </div>
       </FadeIn>
       {filtered.length === 0 ? (

@@ -12,6 +12,7 @@ import {
   useColumnResize,
   type SortDir,
 } from "@/shared/ui/excel-filter";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { cn } from "@/shared/lib/utils";
 import { msg, type MessageKey } from "@/shared/lib/messages";
 import { flaggedRowIds } from "../lib/assist";
@@ -185,11 +186,39 @@ export function TaggerResultsTable({
   return (
     <Card>
       <CardContent className="space-y-3 pt-6">
-        {colResize.hasResized && (
-          <div className="flex items-center">
-            <ResetColumnsButton resize={colResize} />
-          </div>
-        )}
+        <div className="flex items-center justify-end gap-2">
+          {colResize.hasResized && <ResetColumnsButton resize={colResize} />}
+          <ExportTableMenu
+            iconOnly
+            disabled={visible.length === 0}
+            getData={() => {
+              const colText = msg("tagger.results.col.text");
+              const colLabel = msg("tagger.results.col.label");
+              const colConfidence = msg("tagger.results.col.confidence");
+              const colSource = msg("tagger.results.col.source");
+              const columns = assisted
+                ? [colText, colLabel, colConfidence, colSource]
+                : [colText, colLabel];
+              return {
+                columns,
+                rows: visible.map((row) => {
+                  const provKey = row.provenance ? PROVENANCE_KEYS[row.provenance] : undefined;
+                  const out: Record<string, unknown> = {
+                    [colText]: row.text,
+                    [colLabel]: row.label,
+                  };
+                  if (assisted) {
+                    out[colConfidence] =
+                      row.confidence !== null ? `${Math.round(row.confidence * 100)}%` : "";
+                    out[colSource] = provKey ? msg(provKey) : "";
+                  }
+                  return out;
+                }),
+                filename: "tagger_results",
+              };
+            }}
+          />
+        </div>
 
         {visible.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">

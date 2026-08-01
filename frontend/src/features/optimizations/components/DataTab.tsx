@@ -15,6 +15,7 @@ import {
   type SortDir,
 } from "@/shared/ui/excel-filter";
 import { DataTabSkeleton } from "./DataTabSkeleton";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
 import { msg } from "@/shared/lib/messages";
@@ -431,6 +432,42 @@ export function DataTab({
             {filtered.length}
             {msg("auto.features.optimizations.components.datatab.4")}
           </div>
+          <ExportTableMenu
+            iconOnly
+            disabled={filtered.length === 0}
+            getData={() => {
+              const includeEval = split === "test" && evalCount > 0;
+              const scoreLabel = msg("auto.features.optimizations.components.datatab.literal.8");
+              const columns: string[] = [
+                ...(includeEval ? [scoreLabel] : []),
+                ...inputFields,
+                ...outputFields,
+                ...(includeEval ? outputFields.map((f) => `pred_${f}`) : []),
+                ...(includeEval ? loggedMetricNames : []),
+              ];
+              const rows = filtered.map((row) => {
+                const ev = currentResults[row.index];
+                const rec: Record<string, unknown> = {};
+                if (includeEval) rec[scoreLabel] = ev ? ev.score : null;
+                for (const f of inputFields) rec[f] = formatCellValue(row.row[f]);
+                for (const f of outputFields) rec[f] = formatCellValue(row.row[f]);
+                if (includeEval) {
+                  for (const f of outputFields) {
+                    const sigField = Object.entries(dataset.column_mapping.outputs).find(
+                      ([, col]) => col === f,
+                    )?.[0];
+                    rec[`pred_${f}`] = formatCellValue(ev?.outputs[sigField ?? ""]);
+                  }
+                  for (const name of loggedMetricNames) {
+                    const value = ev?.logged_metrics?.[name];
+                    rec[name] = value != null ? Number(value.toFixed(3)) : null;
+                  }
+                }
+                return rec;
+              });
+              return { columns, rows, filename: `dataset_${split}` };
+            }}
+          />
         </div>
       </FadeIn>
 

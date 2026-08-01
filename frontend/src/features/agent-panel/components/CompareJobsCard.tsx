@@ -8,6 +8,7 @@ import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
 import { formatPercent, moduleLabel } from "@/shared/lib/formatters";
 import { StatusBadge } from "@/shared/ui/status-badge";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 
 import type { AgentToolCall } from "@/shared/ui/agent/types";
 
@@ -121,6 +122,38 @@ export function CompareJobsCard({ call }: CompareJobsCardProps) {
 
   const customBody = (
     <div className="space-y-2">
+      <div className="flex justify-end">
+        <ExportTableMenu
+          iconOnly
+          getData={() => ({
+            columns: [
+              "name",
+              "status",
+              "optimization_type",
+              "module_name",
+              "optimizer_name",
+              "model_name",
+              "dataset_rows",
+              "baseline_test_metric",
+              "optimized_test_metric",
+              "metric_improvement",
+            ],
+            rows: jobs.map((j) => ({
+              name: j.name?.trim() || j.optimization_id.slice(0, 6),
+              status: j.status,
+              optimization_type: j.optimization_type ?? null,
+              module_name: j.module_name ?? null,
+              optimizer_name: j.optimizer_name ?? null,
+              model_name: j.model_name ?? null,
+              dataset_rows: j.dataset_rows ?? null,
+              baseline_test_metric: j.baseline_test_metric ?? null,
+              optimized_test_metric: j.optimized_test_metric ?? null,
+              metric_improvement: j.metric_improvement ?? null,
+            })),
+            filename: "compare-jobs",
+          })}
+        />
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[0.6875rem]">
           <thead>

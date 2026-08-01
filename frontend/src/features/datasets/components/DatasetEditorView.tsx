@@ -21,6 +21,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import {
   editDatasetRows,
   getDatasetRows,
@@ -246,6 +247,15 @@ export function DatasetEditorView() {
             {msg("datasets.editor.unsaved")}
           </Badge>
         )}
+        <ExportTableMenu
+          iconOnly
+          disabled={rows.length === 0}
+          getData={() => ({
+            columns,
+            rows: rows.map((row) => Object.fromEntries(columns.map((col) => [col, row[col]]))),
+            filename: name || "dataset",
+          })}
+        />
         <Tooltip>
           <TooltipTrigger asChild>
             <span>

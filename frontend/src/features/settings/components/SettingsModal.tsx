@@ -84,6 +84,7 @@ import {
   useColumnResize,
 } from "@/shared/ui/excel-filter";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { msg } from "@/shared/lib/messages";
 import { formatStorageSize } from "@/shared/lib/formatters";
 import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
@@ -954,6 +955,22 @@ function AdminTab() {
                 {msg("settings.admin.storage.clear_filters")}
               </button>
             )}
+            <ExportTableMenu
+              iconOnly
+              align="end"
+              className="ms-auto"
+              disabled={loading || filteredOverrides.length === 0}
+              getData={() => ({
+                columns: ["username", "budget_bytes", "used_bytes", "updated_by"],
+                rows: filteredOverrides.map((o) => ({
+                  username: o.username,
+                  budget_bytes: o.effective_bytes,
+                  used_bytes: o.used_bytes,
+                  updated_by: o.updated_by || msg("settings.admin.storage.default"),
+                })),
+                filename: "storage-quota-overrides",
+              })}
+            />
           </div>
 
           <div className="flex-1 overflow-auto">

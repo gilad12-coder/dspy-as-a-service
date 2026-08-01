@@ -1,6 +1,7 @@
+import { exportTable } from "@/shared/lib/export-table";
 import type { AnnotationProvenance, DataRow, Annotation, TaggerConfig } from "./types";
 
-type ExportFormat = "csv" | "json" | "xlsx" | "xls";
+export type ExportFormat = "csv" | "json" | "xlsx" | "xls" | "feather" | "parquet";
 
 /** Column the annotation is written under, keyed by tagging mode. */
 function annotationColumn(config: TaggerConfig): string {
@@ -141,7 +142,8 @@ export async function exportAnnotations(
   provenance?: Record<string, AnnotationProvenance>,
 ) {
   const { allCols, rows } = buildRows(data, columns, annotations, config, provenance);
-  const base = `tagging_${config.mode}_${new Date().toISOString().slice(0, 10)}`;
+  const stem = `tagging_${config.mode}`;
+  const base = `${stem}_${new Date().toISOString().slice(0, 10)}`;
 
   switch (format) {
     case "csv":
@@ -155,6 +157,12 @@ export async function exportAnnotations(
       break;
     case "xls":
       await exportExcel(allCols, rows, `${base}.xls`, "xlml");
+      break;
+    case "feather":
+    case "parquet":
+      // Columnar formats reuse the shared writer; it stamps the date onto the
+      // stem itself, so pass the undated stem to avoid a doubled date.
+      await exportTable({ columns: allCols, rows, filename: stem }, format);
       break;
   }
 }

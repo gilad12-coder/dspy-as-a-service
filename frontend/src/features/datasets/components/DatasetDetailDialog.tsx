@@ -33,6 +33,7 @@ import {
 import { StatusBadge } from "@/shared/ui/status-badge";
 import { CopyButton } from "@/shared/ui/copy-button";
 import { EmptyState } from "@/shared/ui/empty-state";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { FadeIn } from "@/shared/ui/motion";
 import {
   getDatasetRows,
@@ -415,7 +416,20 @@ export function DatasetDetailDialog({
                       <span className="min-w-0 truncate text-xs text-muted-foreground">
                         {msg("datasets.detail.row_reader.hint")}
                       </span>
-                      <ResetColumnsButton resize={colResize} />
+                      <div className="flex items-center gap-2 shrink-0">
+                        <ResetColumnsButton resize={colResize} />
+                        <ExportTableMenu
+                          iconOnly
+                          disabled={filtered.length === 0}
+                          getData={() => ({
+                            columns,
+                            rows: filtered.map((row) =>
+                              Object.fromEntries(columns.map((col) => [col, row[col]])),
+                            ),
+                            filename: dataset?.name || "dataset",
+                          })}
+                        />
+                      </div>
                     </div>
                     {filtered.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-border/60 py-8">

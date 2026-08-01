@@ -1899,6 +1899,12 @@ export type MessageKey =
   | "explore.suggest.clear"
   | "explore.suggest.popular"
   | "explore.suggest.recent"
+  | "export.table.aria"
+  | "export.table.button"
+  | "export.table.columnar"
+  | "export.table.done"
+  | "export.table.empty"
+  | "export.table.failed"
   | "model.generation.explainer"
   | "model.generation.label"
   | "model.generation.label_plural"
@@ -4769,6 +4775,12 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "explore.suggest.clear": "נקה/נקי",
   "explore.suggest.popular": "חיפושים פופולריים",
   "explore.suggest.recent": "חיפושים אחרונים",
+  "export.table.aria": "ייצוא הטבלה",
+  "export.table.button": "ייצוא",
+  "export.table.columnar": "מהיר ודחיס",
+  "export.table.done": "יוצאו {count} שורות",
+  "export.table.empty": "אין נתונים לייצוא",
+  "export.table.failed": "הייצוא נכשל",
   "model.generation.explainer": "ה{term.model} שמריץ את הפרומפט ומייצר את התשובות בפועל. הוא זה שעושה את המשימה, והפרומפט שלו הוא מה שה{term.optimization} משפרת.",
   "model.generation.label": "{term.generationModel}",
   "model.generation.label_plural": "{term.generationModelPlural}",
@@ -13216,6 +13228,12 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "explore.suggest.clear": "Clear",
   "explore.suggest.popular": "Popular searches",
   "explore.suggest.recent": "Recent searches",
+  "export.table.aria": "Export table",
+  "export.table.button": "Export",
+  "export.table.columnar": "Fast & compressible",
+  "export.table.done": "Exported {count} rows",
+  "export.table.empty": "No data to export",
+  "export.table.failed": "Export failed",
   "model.generation.explainer": "The model that runs your prompt and produces the actual answers. It's the one doing the task, and its prompt is what the optimization improves.",
   "model.generation.label": "Generation model",
   "model.generation.label_plural": "Generation models",

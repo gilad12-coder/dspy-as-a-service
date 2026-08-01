@@ -25,6 +25,7 @@ import { EmptyState } from "@/shared/ui/empty-state";
 import { InlineErrorRow } from "@/shared/ui/inline-error-row";
 import { PingDot } from "@/shared/ui/ping-dot";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import type { useColumnResize } from "@/shared/ui/excel-filter";
 import { ColumnHeader, ResetColumnsButton, type SortDir } from "@/shared/ui/excel-filter";
 import { formatDate, formatId, formatRelativeTime, moduleLabel } from "@/shared/lib";
@@ -249,6 +250,33 @@ export function JobsTab({
               {msg("auto.features.dashboard.components.jobstab.3")}
             </span>
           )}
+          <ExportTableMenu
+            iconOnly
+            className="ms-auto"
+            disabled={filteredItems.length === 0}
+            getData={() => {
+              const cols = [
+                "optimization_id",
+                "name",
+                ...(showSharedColumns ? ["username", "role"] : []),
+                "optimization_type",
+                "status",
+                "module_name",
+                "dataset_rows",
+                "created_at",
+                "elapsed_seconds",
+                "optimized_test_metric",
+              ];
+              return {
+                columns: cols,
+                rows: filteredItems.map((job) => {
+                  const rec = job as unknown as Record<string, unknown>;
+                  return Object.fromEntries(cols.map((c) => [c, rec[c]]));
+                }),
+                filename: "optimizations",
+              };
+            }}
+          />
         </div>
 
         {error && <InlineErrorRow message={error} className="mb-4" />}

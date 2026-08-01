@@ -31,7 +31,7 @@ import {
 } from "@/shared/ui/primitives/dialog";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import { cn } from "@/shared/lib/utils";
-import { exportAnnotations, buildLibraryRows } from "../lib/export-csv";
+import { exportAnnotations, buildLibraryRows, type ExportFormat } from "../lib/export-csv";
 import type {
   AnnotationProvenance,
   AssistPrediction,
@@ -101,7 +101,7 @@ export function TaggerAnnotation({
   const NextIcon = rtl ? ChevronLeft : ChevronRight;
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [exportConfirm, setExportConfirm] = useState<"csv" | "json" | "xlsx" | "xls" | null>(null);
+  const [exportConfirm, setExportConfirm] = useState<ExportFormat | null>(null);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [datasetName, setDatasetName] = useState("");
   const [savingToLibrary, setSavingToLibrary] = useState(false);
@@ -145,7 +145,7 @@ export function TaggerAnnotation({
   }, [taggedCount, data.length, showConfettiBriefly]);
 
   const doExport = useCallback(
-    (format: "csv" | "json" | "xlsx" | "xls") => {
+    (format: ExportFormat) => {
       void exportAnnotations(data, columns, annotations, config, format, provenance).then(
         showConfettiBriefly,
       );
@@ -154,7 +154,7 @@ export function TaggerAnnotation({
   );
 
   const handleExport = useCallback(
-    (format: "csv" | "json" | "xlsx" | "xls") => {
+    (format: ExportFormat) => {
       if (taggedCount < data.length) {
         setExportConfirm(format);
       } else {
@@ -514,16 +514,25 @@ export function TaggerAnnotation({
                     </button>
                   </PopoverPrimitive.Close>
                   <div className="my-1 h-px bg-border" />
-                  {(["csv", "json", "xlsx", "xls"] as const).map((fmt) => (
-                    <PopoverPrimitive.Close key={fmt} asChild>
-                      <button
-                        type="button"
-                        onClick={() => handleExport(fmt)}
-                        className="flex w-full items-center rounded-md px-3 py-1.5 text-xs font-medium text-foreground cursor-pointer transition-colors hover:bg-accent"
-                      >
-                        {fmt.toUpperCase()}
-                      </button>
-                    </PopoverPrimitive.Close>
+                  {(["csv", "json", "xlsx", "xls", "parquet", "feather"] as const).map((fmt) => (
+                    <div key={fmt}>
+                      {/* Set the columnar analytics formats apart with a small
+                          labelled divider, matching the shared table menu. */}
+                      {fmt === "parquet" && (
+                        <div className="mx-3 mt-1 mb-0.5 border-t border-border pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+                          {msg("export.table.columnar")}
+                        </div>
+                      )}
+                      <PopoverPrimitive.Close asChild>
+                        <button
+                          type="button"
+                          onClick={() => handleExport(fmt)}
+                          className="flex w-full items-center rounded-md px-3 py-1.5 text-xs font-medium text-foreground cursor-pointer transition-colors hover:bg-accent"
+                        >
+                          {fmt.toUpperCase()}
+                        </button>
+                      </PopoverPrimitive.Close>
+                    </div>
                   ))}
                 </PopoverPrimitive.Content>
               </PopoverPrimitive.Portal>
