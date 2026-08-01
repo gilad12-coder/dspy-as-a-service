@@ -20,6 +20,7 @@ import {
   Keyboard,
   Lock,
   type LucideIcon,
+  Languages,
   Mic,
   Pencil,
   PenLine,
@@ -94,6 +95,7 @@ import { ModelChip } from "@/shared/ui/model-chip";
 import { ModelConfigModal } from "@/features/submit";
 import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
+import { LanguageSwitcher } from "@/shared/ui/language-switcher";
 import {
   deleteStorageQuotaOverride,
   generateApiToken,
@@ -426,6 +428,10 @@ function AccountTab() {
         <span className="text-xs uppercase tracking-wide font-semibold text-muted-foreground">
           {isAdmin ? msg("settings.account.role.admin") : msg("settings.account.role.user")}
         </span>
+      </SettingsRow>
+
+      <SettingsRow icon={Languages} label={msg("shared.language.switch_aria")}>
+        <LanguageSwitcher />
       </SettingsRow>
 
       <SettingsRow

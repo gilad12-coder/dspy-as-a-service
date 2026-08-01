@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LogOut, MoreHorizontal, Settings, Sparkles } from "lucide-react";
+import { LogOut, MoreHorizontal, Settings } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -57,8 +57,8 @@ const MENU_ITEM =
  *
  * Mirrors a familiar account button (avatar, name, plan badge) the way ChatGPT
  * sits one at the bottom of its rail. Clicking it opens a menu *upward* with a
- * profile header row (→ account settings tab), a separator, the primary
- * destinations (Upgrade, Settings, API keys), then a separator and Log out — so
+ * profile header row (→ account settings tab), a separator, the Settings
+ * destination, then a separator and Log out — so
  * Settings lives inside this menu rather than as its own row. When the rail is
  * collapsed the trigger shrinks to the avatar alone, with a tooltip naming it.
  * All targets are real Skynet surfaces; logical alignment and a flipped chevron
@@ -71,7 +71,7 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
   const isRtl = dir === "rtl";
   // The collapsed-rail tooltip reads toward the content area: right in LTR, left in RTL.
   const tooltipSide = isRtl ? "left" : "right";
-  const { setOpen: setSettingsOpen, openTo: openSettingsTo } = useSettingsModal();
+  const { setOpen: setSettingsOpen } = useSettingsModal();
   const [open, setOpen] = React.useState(false);
 
   if (!session?.user) return null;
@@ -164,17 +164,6 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
 
         <div role="separator" className="my-1 h-px bg-border/60" />
 
-        <button
-          type="button"
-          onClick={() => {
-            close();
-            openSettingsTo("billing");
-          }}
-          className={MENU_ITEM}
-        >
-          <Sparkles className="size-4 text-[#C8A882]" aria-hidden="true" />
-          {msg("app.shell.account.upgrade")}
-        </button>
         <button
           type="button"
           onClick={() => {

@@ -8,14 +8,12 @@ import { Menu, GraduationCap, Lightbulb, Feather } from "lucide-react";
 import { useTutorialContext, ConceptsGuide, registerTutorialHook } from "@/features/tutorial";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
-import { LanguageSwitcher } from "@/shared/ui/language-switcher";
 import { useLocale } from "@/shared/providers";
 import { dirForLocale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
 import { JobsStreamProvider } from "@/shared/hooks/use-jobs-stream";
 import { PageContainer } from "@/shared/layout/page-container";
 import { useUserPrefs, LiteModeHint } from "@/features/settings";
-import { CreditBalanceChip } from "@/features/billing";
 import {
   GeneralistPanel,
   GeneralistPanelProvider,
@@ -129,7 +127,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
         className="fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-background/60 backdrop-blur-2xl backdrop-saturate-[1.8] px-4 py-2.5 border-b border-border/40 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)]"
-        dir={dir}
+        dir="ltr"
         style={{
           borderImage:
             "linear-gradient(to right, transparent, var(--border) 20%, var(--border) 80%, transparent) 1",
@@ -165,6 +163,9 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
               </TooltipContent>
             </Tooltip>
           )}
+        </div>
+
+        <div className="flex items-center gap-1.5" dir={dir}>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -195,13 +196,6 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
               {msg("app.shell.concepts_tooltip")}
             </TooltipContent>
           </Tooltip>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          {/* Credit balance reads inline-end of the language switcher — the chip's
-              own popover carries the breakdown + "Add credits" path. */}
-          <CreditBalanceChip />
-          <LanguageSwitcher />
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
