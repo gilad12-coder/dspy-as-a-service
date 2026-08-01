@@ -136,6 +136,9 @@ _SAFE_MUTATIONS: frozenset[str] = frozenset(
         "discover_models_models_discover_post",
         "set_column_roles_datasets_column_roles_post",
         "update_wizard_state",
+        # Device-scoped preferences: the frontend applies the validated patch
+        # returned by this tool to its local settings store.
+        "update_user_preferences",
         "bulk_pin_jobs_optimizations_bulk_pin_post",
     }
 )
@@ -370,7 +373,7 @@ def _serialize_tool_result(v: Any) -> Any:
         ``v`` unchanged if already JSON-friendly, the parsed JSON value
         when ``str(v)`` decodes, or the stringified form as a last resort.
     """
-    if v is None or isinstance(v, (dict, list, bool, int, float)):
+    if v is None or isinstance(v, dict | list | bool | int | float):
         return v
     s = str(v)
     try:
@@ -843,6 +846,7 @@ _ALWAYS_TOOLS = frozenset(
         "request_user_dataset_from_library",
         # Generalized wizard patch — any editable field, partial updates.
         "update_wizard_state",
+        "update_user_preferences",
         # Semantic + structured search across every public optimization. The
         # agent uses it to surface comparable runs ("find me sentiment jobs
         # that beat 0.8 with GEPA") before the user has filled the wizard.
@@ -1373,6 +1377,15 @@ class GeneralistSig(dspy.Signature):
       thing. Do NOT patch ``signature_code`` / ``metric_code`` here — they
       are authored only by ``request_code_authoring`` (see below); the
       ``update_wizard_state`` endpoint REJECTS those two fields.
+    * User preferences: when the user explicitly asks to turn a local
+      preference on or off, call ``update_user_preferences``. Supported fields
+      are ``advanced_mode``, ``expand_advanced``, ``lite_mode``,
+      ``wizard_code_assist`` (``auto`` or ``manual``), ``wizard_split_mode``
+      (``auto`` or ``manual``), ``tagger_assist``, and ``dictation_enabled``.
+      Bundle all requested changes into one call and end the turn with a
+      concise status.
+      The tool updates this browser's device-scoped settings; it does not
+      change server-wide configuration.
     * When you NAME a run, describe it too: set ``job_description`` (one
       or two plain sentences — the task, the data, the goal, in
       ``reply_language``) in the SAME ``update_wizard_state`` patch as

@@ -2019,6 +2019,12 @@ export type MessageKey =
   | "settings.agent.memory.save_failed"
   | "settings.agent.memory.wake.description"
   | "settings.agent.memory.wake.label"
+  | "settings.agent.settings_tool.confirm"
+  | "settings.agent.settings_tool.description"
+  | "settings.agent.settings_tool.title"
+  | "settings.agent.settings_tool.update_failed"
+  | "settings.agent.settings_tool.updated"
+  | "settings.agent.settings_tool.updating"
   | "settings.agent.shortcut.change"
   | "settings.agent.shortcut.description"
   | "settings.agent.shortcut.hint"
@@ -2051,6 +2057,11 @@ export type MessageKey =
   | "settings.api.revoked_toast"
   | "settings.api.title"
   | "settings.api.token_masked"
+  | "settings.group.access"
+  | "settings.group.assistants"
+  | "settings.group.preferences"
+  | "settings.group.system"
+  | "settings.group.workflows"
   | "settings.keys.add"
   | "settings.keys.added"
   | "settings.keys.base_url_hint"
@@ -2110,6 +2121,9 @@ export type MessageKey =
   | "settings.privacy.copy_email.label"
   | "settings.privacy.copy_username.label"
   | "settings.saved"
+  | "settings.search.clear"
+  | "settings.search.no_results"
+  | "settings.search.placeholder"
   | "settings.security.copy_recovery_aria"
   | "settings.security.copy_secret_aria"
   | "settings.security.disable"
@@ -4897,6 +4911,12 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.agent.memory.save_failed": "שמירת הגדרות הזיכרון נכשלה",
   "settings.agent.memory.wake.description": "כמה שורות זיכרון הסוכן מתעורר איתן בכל תור",
   "settings.agent.memory.wake.label": "גודל הקשר הזיכרון",
+  "settings.agent.settings_tool.confirm": "החלת שינויים",
+  "settings.agent.settings_tool.description": "עדכון ההעדפות המקומיות של Skynet",
+  "settings.agent.settings_tool.title": "שינוי הגדרות",
+  "settings.agent.settings_tool.update_failed": "שינוי ההגדרות נכשל",
+  "settings.agent.settings_tool.updated": "ההגדרות עודכנו",
+  "settings.agent.settings_tool.updating": "מעדכן הגדרות",
   "settings.agent.shortcut.change": "שנה/שני",
   "settings.agent.shortcut.description": "קיצור לפתיחה וסגירה של פאנל הסוכן",
   "settings.agent.shortcut.hint": "חלק מהקיצורים לא יעבדו כי הם שמורים לדפדפן.",
@@ -4929,6 +4949,11 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.api.revoked_toast": "הטוקן בוטל",
   "settings.api.title": "טוקן API",
   "settings.api.token_masked": "skyd_…{last4}",
+  "settings.group.access": "גישה ונתונים",
+  "settings.group.assistants": "עוזרים",
+  "settings.group.preferences": "העדפות",
+  "settings.group.system": "מערכת",
+  "settings.group.workflows": "תהליכי עבודה",
   "settings.keys.add": "הוספת מפתח",
   "settings.keys.added": "נוסף ב-{date}",
   "settings.keys.base_url_hint": "הפנה/הפני את המפתח לנקודת קצה תואמת-OpenAI מותאמת. השאר/השאירי ריק לברירת המחדל של הספק.",
@@ -4988,6 +5013,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.privacy.copy_email.label": "אימייל",
   "settings.privacy.copy_username.label": "שם משתמש",
   "settings.saved": "ההגדרה נשמרה",
+  "settings.search.clear": "ניקוי חיפוש ההגדרות",
+  "settings.search.no_results": "אין הגדרות התואמות לחיפוש",
+  "settings.search.placeholder": "חיפוש בהגדרות",
   "settings.security.copy_recovery_aria": "העתקת קודי השחזור",
   "settings.security.copy_secret_aria": "העתקת הסוד",
   "settings.security.disable": "כיבוי",
@@ -13352,6 +13380,12 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "settings.agent.memory.save_failed": "Couldn't save memory settings",
   "settings.agent.memory.wake.description": "How many lines of memory the agent wakes up with on every turn",
   "settings.agent.memory.wake.label": "Memory context size",
+  "settings.agent.settings_tool.confirm": "Apply changes",
+  "settings.agent.settings_tool.description": "Update your local Skynet preferences",
+  "settings.agent.settings_tool.title": "Change settings",
+  "settings.agent.settings_tool.update_failed": "Couldn't change settings",
+  "settings.agent.settings_tool.updated": "Settings updated",
+  "settings.agent.settings_tool.updating": "Updating settings",
   "settings.agent.shortcut.change": "Change",
   "settings.agent.shortcut.description": "Shortcut to open and close the agent panel",
   "settings.agent.shortcut.hint": "Some shortcuts won't work because they're reserved by the browser.",
@@ -13384,6 +13418,11 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "settings.api.revoked_toast": "Token revoked",
   "settings.api.title": "API token",
   "settings.api.token_masked": "skyd_…{last4}",
+  "settings.group.access": "Access & data",
+  "settings.group.assistants": "Assistants",
+  "settings.group.preferences": "Preferences",
+  "settings.group.system": "System",
+  "settings.group.workflows": "Workflows",
   "settings.keys.add": "Add key",
   "settings.keys.added": "Added {date}",
   "settings.keys.base_url_hint": "Point this key at a custom OpenAI-compatible endpoint. Leave blank for the provider default.",
@@ -13443,6 +13482,9 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "settings.privacy.copy_email.label": "Email",
   "settings.privacy.copy_username.label": "Username",
   "settings.saved": "Setting saved",
+  "settings.search.clear": "Clear settings search",
+  "settings.search.no_results": "No settings match your search",
+  "settings.search.placeholder": "Search settings",
   "settings.security.copy_recovery_aria": "Copy recovery codes",
   "settings.security.copy_secret_aria": "Copy secret",
   "settings.security.disable": "Disable",

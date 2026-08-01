@@ -45,6 +45,65 @@ export interface UserPrefs {
   taggerAssistModel: ModelConfig;
 }
 
+export type AgentPreferencePatch = Partial<
+  Pick<
+    UserPrefs,
+    | "advancedMode"
+    | "expandAdvanced"
+    | "liteMode"
+    | "wizardCodeAssist"
+    | "wizardSplitMode"
+    | "taggerAssist"
+    | "dictationEnabled"
+  >
+>;
+
+const AGENT_PREFERENCE_FIELDS: Record<string, keyof AgentPreferencePatch> = {
+  advanced_mode: "advancedMode",
+  expand_advanced: "expandAdvanced",
+  lite_mode: "liteMode",
+  wizard_code_assist: "wizardCodeAssist",
+  wizard_split_mode: "wizardSplitMode",
+  tagger_assist: "taggerAssist",
+  dictation_enabled: "dictationEnabled",
+};
+
+function parsePreferenceResult(value: unknown): Record<string, unknown> | null {
+  if (typeof value === "string") {
+    try {
+      return parsePreferenceResult(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.result !== undefined) return parsePreferenceResult(record.result);
+  const updates = record.updates;
+  return updates && typeof updates === "object" && !Array.isArray(updates)
+    ? (updates as Record<string, unknown>)
+    : null;
+}
+
+export function parseAgentPreferencePatch(value: unknown): AgentPreferencePatch {
+  const updates = parsePreferenceResult(value);
+  if (!updates) return {};
+
+  const patch: AgentPreferencePatch = {};
+  for (const [wireKey, rawValue] of Object.entries(updates)) {
+    const localKey = AGENT_PREFERENCE_FIELDS[wireKey];
+    if (!localKey) continue;
+    if (localKey === "wizardCodeAssist" && (rawValue === "auto" || rawValue === "manual")) {
+      Object.assign(patch, { [localKey]: rawValue });
+    } else if (localKey === "wizardSplitMode" && (rawValue === "auto" || rawValue === "manual")) {
+      Object.assign(patch, { [localKey]: rawValue });
+    } else if (typeof rawValue === "boolean") {
+      Object.assign(patch, { [localKey]: rawValue });
+    }
+  }
+  return patch;
+}
+
 export const PREF_KEYS: Record<keyof UserPrefs, string> = {
   advancedMode: "skynet.prefs.advanced-mode",
   expandAdvanced: "skynet.prefs.expand-advanced",

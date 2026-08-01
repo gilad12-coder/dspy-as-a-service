@@ -29,7 +29,7 @@ import { SubmitSplashOverlay, SUBMIT_SPLASH_HOLD_MS } from "@/shared/ui/submit-s
 import { cn } from "@/shared/lib/utils";
 import { formatMsg } from "@/shared/lib/messages";
 
-import { formatShortcut, useUserPrefs } from "@/features/settings";
+import { formatShortcut, parseAgentPreferencePatch, useUserPrefs } from "@/features/settings";
 
 import { useConversationStore } from "../hooks/use-conversation-store";
 import { useGeneralistAgent } from "../hooks/use-generalist-agent";
@@ -116,7 +116,7 @@ interface GeneralistPanelProps {
 export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   const { open, setOpen, width, setWidth, pillDock } = useGeneralistPanelState();
   const { mode: trustMode, next: cycleTrust } = useTrustMode();
-  const { prefs } = useUserPrefs();
+  const { prefs, updatePrefs } = useUserPrefs();
   const shortcutLabel = formatShortcut(prefs.agentShortcut);
   const reduceMotion = useReducedMotion();
   const hue = TRUST_MODE_HUE[trustMode];
@@ -204,6 +204,10 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
 
   const handleToolEnd = React.useCallback(
     (ev: ToolEndPayload) => {
+      if (ev.status === "ok" && ev.tool === "update_user_preferences") {
+        const patch = parseAgentPreferencePatch(ev.result);
+        if (Object.keys(patch).length > 0) updatePrefs(patch);
+      }
       if (ev.status === "ok" && SUBMIT_TOOLS.has(ev.tool)) {
         const optimizationId = extractOptimizationId(ev.result);
         if (optimizationId) startSubmitSplash(optimizationId);
@@ -212,7 +216,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       const patch = extractWizardPatch(ev.result);
       if (Object.keys(patch).length > 0) wizardCtx.applyAgentPatch(patch);
     },
-    [wizardCtx, startSubmitSplash],
+    [updatePrefs, wizardCtx, startSubmitSplash],
   );
 
   const store = useConversationStore({ enabled: open });

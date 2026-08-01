@@ -16,6 +16,7 @@ import {
   ScanSearch,
   ScrollText,
   Search,
+  SlidersHorizontal,
   Sparkles,
   Square,
   Tags,
@@ -229,6 +230,13 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.56"),
     severity: "info",
     icon: Wand2,
+  },
+  update_user_preferences: {
+    title: () => msg("settings.agent.settings_tool.title"),
+    description: () => msg("settings.agent.settings_tool.description"),
+    confirmLabel: () => msg("settings.agent.settings_tool.confirm"),
+    severity: "info",
+    icon: SlidersHorizontal,
   },
   public_search_dashboard_search_post: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.57"),

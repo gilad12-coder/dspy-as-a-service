@@ -28,6 +28,7 @@ import {
   Plus,
   RotateCcw,
   Server,
+  Search,
   Shield,
   SlidersHorizontal,
   ShieldCheck,
@@ -1402,7 +1403,6 @@ const SETTINGS_TAB_ORDER = [
   "wizard",
   "tagging",
   "agent",
-  "admin",
   "account",
   "security",
   "privacy",
@@ -1410,40 +1410,233 @@ const SETTINGS_TAB_ORDER = [
   "usage",
   "providers",
   "api",
+  "admin",
   "about",
 ] as const;
 type SettingsTab = (typeof SETTINGS_TAB_ORDER)[number];
+type SettingsMessageKey = Parameters<typeof msg>[0];
 
 const SETTINGS_TAB_META: Record<
   SettingsTab,
-  { icon: LucideIcon; labelKey: Parameters<typeof msg>[0] }
+  {
+    icon: LucideIcon;
+    labelKey: SettingsMessageKey;
+    group: "workflows" | "assistants" | "preferences" | "access" | "system";
+    keywords: readonly string[];
+    searchKeys: readonly SettingsMessageKey[];
+  }
 > = {
-  wizard: { icon: Sparkles, labelKey: "settings.tab.wizard" },
-  tagging: { icon: Tags, labelKey: "settings.tab.tagging" },
-  agent: { icon: Bot, labelKey: "settings.tab.agent" },
-  admin: { icon: HardDrive, labelKey: "settings.tab.admin" },
-  account: { icon: User, labelKey: "settings.tab.account" },
-  security: { icon: ShieldCheck, labelKey: "settings.tab.security" },
-  privacy: { icon: Lock, labelKey: "settings.tab.privacy" },
-  billing: { icon: CreditCard, labelKey: "settings.tab.billing" },
-  usage: { icon: BarChart3, labelKey: "settings.tab.usage" },
-  providers: { icon: Plug, labelKey: "settings.tab.providers" },
-  api: { icon: KeyRound, labelKey: "settings.tab.api" },
-  about: { icon: Info, labelKey: "settings.tab.about" },
+  wizard: {
+    icon: Sparkles,
+    labelKey: "settings.tab.wizard",
+    group: "workflows",
+    keywords: ["optimization", "wizard", "models", "code", "split"],
+    searchKeys: [
+      "settings.wizard.code_assist.label",
+      "settings.wizard.code_assist.auto",
+      "settings.wizard.code_assist.manual",
+      "settings.wizard.split_mode.label",
+      "settings.wizard.split_mode.auto",
+      "settings.wizard.split_mode.manual",
+    ],
+  },
+  tagging: {
+    icon: Tags,
+    labelKey: "settings.tab.tagging",
+    group: "workflows",
+    keywords: ["tagging", "labels", "copilot", "autopilot", "dataset"],
+    searchKeys: [
+      "settings.tagger.assist.label",
+      "settings.tagger.assist.description",
+      "settings.tagger.default_model.label",
+      "settings.tagger.default_model.description",
+      "tagger.assist.model.placeholder",
+    ],
+  },
+  agent: {
+    icon: Bot,
+    labelKey: "settings.tab.agent",
+    group: "assistants",
+    keywords: ["agent", "assistant", "model", "voice", "dictation", "trust", "memory"],
+    searchKeys: [
+      "settings.agent.default_model.label",
+      "settings.agent.default_model.description",
+      "settings.agent.dictation.label",
+      "settings.agent.dictation.description",
+      "settings.agent.trust.label",
+      "settings.agent.trust.description",
+      "settings.agent.trust.ask",
+      "settings.agent.trust.auto_safe",
+      "settings.agent.trust.yolo",
+      "settings.agent.shortcut.label",
+      "settings.agent.shortcut.description",
+      "settings.agent.memory.wake.label",
+      "settings.agent.memory.wake.description",
+      "settings.agent.memory.entry.label",
+      "settings.agent.memory.entry.description",
+      "settings.agent.memory.recall.label",
+      "settings.agent.memory.recall.description",
+    ],
+  },
+  account: {
+    icon: User,
+    labelKey: "settings.tab.account",
+    group: "preferences",
+    keywords: ["account", "language", "advanced", "lite", "performance", "preferences"],
+    searchKeys: [
+      "settings.account.username.label",
+      "settings.account.role.label",
+      "shared.language.switch_aria",
+      "settings.account.advanced_mode.label",
+      "settings.account.advanced_mode.description",
+      "settings.account.expand_advanced.label",
+      "settings.account.expand_advanced.description",
+      "settings.account.lite.label",
+      "settings.account.lite.description",
+    ],
+  },
+  security: {
+    icon: ShieldCheck,
+    labelKey: "settings.tab.security",
+    group: "access",
+    keywords: ["security", "two-factor", "2fa", "passkey", "authenticator", "login"],
+    searchKeys: [
+      "settings.security.totp.label",
+      "settings.security.totp.description",
+      "settings.security.email.label",
+      "settings.security.email.description",
+      "settings.security.passkeys.label",
+      "settings.security.passkeys.description",
+      "settings.security.passkeys.add",
+      "settings.security.provider_managed.label",
+      "settings.security.provider_managed.description",
+    ],
+  },
+  privacy: {
+    icon: Lock,
+    labelKey: "settings.tab.privacy",
+    group: "access",
+    keywords: ["privacy", "data", "analytics", "cache", "email"],
+    searchKeys: [
+      "settings.privacy.analytics.label",
+      "settings.privacy.analytics.description",
+      "settings.privacy.clear_cache.label",
+      "settings.privacy.clear_cache.description",
+      "settings.privacy.copy_username.label",
+      "settings.privacy.copy_email.label",
+    ],
+  },
+  billing: {
+    icon: CreditCard,
+    labelKey: "settings.tab.billing",
+    group: "access",
+    keywords: ["billing", "credits", "plan", "payment", "wallet"],
+    searchKeys: [
+      "billing.popover.title",
+      "billing.wallet.autoreload_label",
+      "billing.wallet.autoreload_amount_label",
+      "billing.action.add_credits",
+      "billing.plans.credits.custom",
+    ],
+  },
+  usage: {
+    icon: BarChart3,
+    labelKey: "settings.tab.usage",
+    group: "access",
+    keywords: ["usage", "spend", "cost", "tokens", "runs"],
+    searchKeys: [
+      "usage.action.export",
+      "usage.col.day",
+      "usage.col.model",
+      "usage.col.credits",
+      "usage.col.runs",
+      "usage.col.tokens",
+      "usage.series.billed",
+      "usage.empty.title",
+    ],
+  },
+  providers: {
+    icon: Plug,
+    labelKey: "settings.tab.providers",
+    group: "access",
+    keywords: ["providers", "api keys", "openai", "anthropic", "byok"],
+    searchKeys: [
+      "settings.keys.title",
+      "settings.keys.description",
+      "settings.keys.add",
+      "settings.keys.base_url_hint",
+      "settings.keys.save",
+    ],
+  },
+  api: {
+    icon: KeyRound,
+    labelKey: "settings.tab.api",
+    group: "access",
+    keywords: ["api", "token", "developer", "integration", "documentation"],
+    searchKeys: [
+      "settings.api.title",
+      "settings.api.docs_label",
+      "settings.api.docs_description",
+      "settings.api.generate",
+      "settings.api.revoke",
+    ],
+  },
+  admin: {
+    icon: HardDrive,
+    labelKey: "settings.tab.admin",
+    group: "system",
+    keywords: ["admin", "storage", "quota", "users"],
+    searchKeys: [
+      "settings.admin.storage.title",
+      "settings.admin.storage.default_budget",
+      "settings.admin.storage.view_list",
+      "settings.admin.storage.username",
+      "settings.admin.storage.budget",
+      "settings.admin.storage.used",
+      "settings.admin.storage.updated_by",
+      "settings.admin.storage.add_row",
+    ],
+  },
+  about: {
+    icon: Info,
+    labelKey: "settings.tab.about",
+    group: "system",
+    keywords: ["about", "version", "reset", "defaults"],
+    searchKeys: [
+      "settings.about.version.label",
+      "settings.about.api_url.label",
+      "settings.about.reset_all.label",
+      "settings.about.reset_all.description",
+      "settings.about.reset_all.action",
+    ],
+  },
 };
 
-// Vertical-rail item, styled to match the main sidebar nav exactly (Sidebar.tsx
-// `NavItem`): a full-width start-aligned row in `sidebar-foreground/60` with a
-// left-nudge hover and `text-primary` when active. The active highlight itself —
-// a primary tint + ring + logical inline-start stripe — is a shared-`layoutId`
-// `motion.div` rendered on the active trigger (see the rail map), so it SLIDES
-// between tabs like the sidebar's active pill instead of snapping. This class
-// only neutralizes the shared TabsTrigger's dark pill (bg/border/weight) so the
-// sliding overlay reads cleanly; the override lives here, not in the primitive,
-// so other tab groups keep the pill. On mobile the rail is a horizontal strip,
-// so the item drops back to auto width.
+const SETTINGS_GROUPS = [
+  { key: "workflows", labelKey: "settings.group.workflows" },
+  { key: "assistants", labelKey: "settings.group.assistants" },
+  { key: "preferences", labelKey: "settings.group.preferences" },
+  { key: "access", labelKey: "settings.group.access" },
+  { key: "system", labelKey: "settings.group.system" },
+] as const;
+
+// Vertical-rail item, styled to match the main sidebar nav while staying easy
+// to scan when the list is filtered. On mobile the rail becomes a horizontal
+// strip, so each item drops back to its intrinsic width.
 const SETTINGS_RAIL_ITEM_CLASS =
-  "h-auto w-full flex-none justify-start gap-2.5 rounded-lg px-3 py-2 font-medium text-sidebar-foreground/60 data-[state=inactive]:hover:translate-x-[-2px] data-[state=inactive]:hover:bg-sidebar-accent/40 data-[state=inactive]:hover:text-sidebar-foreground data-[state=active]:bg-transparent data-[state=active]:border-transparent data-[state=active]:font-medium data-[state=active]:text-primary data-[state=active]:hover:text-primary max-md:w-auto!";
+  "h-auto w-full flex-none justify-start gap-2.5 rounded-lg px-3 py-2 font-medium text-sidebar-foreground/60 data-[state=inactive]:hover:bg-sidebar-accent/40 data-[state=inactive]:hover:text-sidebar-foreground data-[state=active]:bg-transparent data-[state=active]:border-transparent data-[state=active]:font-medium data-[state=active]:text-primary data-[state=active]:hover:text-primary max-md:w-auto!";
+
+function SettingsPanelHeader({ tab }: { tab: SettingsTab }) {
+  const { icon: Icon, labelKey } = SETTINGS_TAB_META[tab];
+  return (
+    <div className="mb-4 flex items-center gap-3 border-b border-border/50 pb-3">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/[0.08] text-primary">
+        <Icon className="size-4" aria-hidden="true" />
+      </span>
+      <h2 className="text-base font-semibold tracking-tight text-foreground">{msg(labelKey)}</h2>
+    </div>
+  );
+}
 
 export function SettingsModal() {
   const { open, setOpen, targetTab, clearTarget } = useSettingsModal();
@@ -1451,6 +1644,8 @@ export function SettingsModal() {
   const isAdmin = session?.user?.role === "admin";
   const prefersReduced = useReducedMotion();
   const [activeTab, setActiveTab] = React.useState<SettingsTab>("wizard");
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const searchInputRef = React.useRef<HTMLInputElement | null>(null);
   const selectTab = React.useCallback((tab: SettingsTab) => {
     setActiveTab(tab);
     track(TelemetryEvent.SettingsTabChanged, { tab });
@@ -1459,9 +1654,49 @@ export function SettingsModal() {
     () => SETTINGS_TAB_ORDER.filter((tab) => isAdmin || tab !== "admin"),
     [isAdmin],
   );
+  const filteredTabs = React.useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    if (!query) return tabs;
+    return tabs.filter((tab) => {
+      const meta = SETTINGS_TAB_META[tab];
+      const localizedSettings = meta.searchKeys.map((key) => msg(key));
+      const haystack = [msg(meta.labelKey), ...meta.keywords, ...localizedSettings]
+        .join(" ")
+        .toLocaleLowerCase();
+      return haystack.includes(query);
+    });
+  }, [searchQuery, tabs]);
+  const visibleGroups = React.useMemo(
+    () =>
+      SETTINGS_GROUPS.map((group) => ({
+        ...group,
+        tabs: filteredTabs.filter((tab) => SETTINGS_TAB_META[tab].group === group.key),
+      })).filter((group) => group.tabs.length > 0),
+    [filteredTabs],
+  );
+  const activeTabVisible = filteredTabs.includes(activeTab);
   React.useEffect(() => {
     if (!tabs.includes(activeTab)) setActiveTab("wizard");
   }, [activeTab, tabs]);
+  React.useEffect(() => {
+    if (searchQuery.trim() && filteredTabs.length > 0 && !activeTabVisible) {
+      setActiveTab(filteredTabs[0]!);
+    }
+  }, [activeTabVisible, filteredTabs, searchQuery]);
+  React.useEffect(() => {
+    if (!open) setSearchQuery("");
+  }, [open]);
+  React.useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
   // Honor a deep-link (e.g. the credit chip → wallet): when something opens the
   // modal targeting a tab, jump there once, then clear so a later manual open
   // keeps whatever tab the user last left it on.
@@ -1481,105 +1716,149 @@ export function SettingsModal() {
   }, [open]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-3xl">
-        <DialogHeader className="border-b border-border/40 px-5 py-3.5 text-start">
-          <DialogTitle>{msg("settings.title")}</DialogTitle>
-          {/* Title is enough up top, ChatGPT-style; the subtitle stays for screen
-              readers but is out of the way of the rail. */}
-          <DialogDescription className="sr-only">{msg("settings.subtitle")}</DialogDescription>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-4xl">
+        <DialogHeader className="gap-3 border-b border-border/40 px-5 py-4 pe-12 text-start sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <DialogTitle>{msg("settings.title")}</DialogTitle>
+            <DialogDescription className="mt-1 text-xs">
+              {msg("settings.subtitle")}
+            </DialogDescription>
+          </div>
+          <div className="relative w-full shrink-0 sm:w-[17rem]">
+            <Search
+              className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={msg("settings.search.placeholder")}
+              aria-label={msg("settings.search.placeholder")}
+              aria-keyshortcuts="Control+K Meta+K"
+              className="h-9 rounded-lg bg-muted/35 ps-9 pe-9 text-sm"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  searchInputRef.current?.focus();
+                }}
+                className="absolute end-1 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label={msg("settings.search.clear")}
+              >
+                <X className="size-3.5" aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </DialogHeader>
 
-        {/* Vertical rail + content panel. orientation="vertical" gives the rail its
-            full-width start-aligned items and up/down keyboard nav for free; the
-            container is a column on mobile (rail becomes a horizontal scroll strip)
-            and a row on md+ (rail pinned to the start edge, content scrolls beside
-            it). Both sides scroll independently within a fixed-height body. */}
         <Tabs
           orientation="vertical"
           value={activeTab}
           onValueChange={(v) => selectTab(v as SettingsTab)}
-          className="flex h-[70vh] max-h-[600px] min-h-0 flex-col gap-0 md:flex-row"
+          className="flex h-[min(72vh,680px)] min-h-0 flex-col gap-0 md:flex-row"
         >
-          <TabsList className="relative flex h-auto w-full shrink-0 items-stretch justify-start gap-1 overflow-x-auto rounded-none border-0 border-b border-border/40 bg-transparent px-3 pb-3 pt-2 shadow-none no-scrollbar max-md:flex-row! md:w-[210px] md:overflow-x-visible md:overflow-y-auto md:border-b-0 md:border-e">
-            {tabs.map((tab) => {
-              const { icon: Icon, labelKey } = SETTINGS_TAB_META[tab];
-              return (
-                <TabsTrigger key={tab} value={tab} className={SETTINGS_RAIL_ITEM_CLASS}>
-                  {/* Shared-layoutId overlay: the same id on every active trigger lets
-                      Framer slide this highlight from the old tab to the new one,
-                      exactly like the sidebar's `sidebar-active` pill. */}
-                  {tab === activeTab && (
-                    <motion.div
-                      layoutId="settings-rail-active"
-                      className="absolute inset-0 rounded-lg bg-primary/[0.08] ring-1 ring-primary/10"
-                      style={{ borderInlineStart: "3px solid var(--primary)" }}
-                      transition={
-                        prefersReduced
-                          ? { duration: 0 }
-                          : { type: "spring", stiffness: 350, damping: 28 }
-                      }
-                    />
-                  )}
-                  <span className="relative z-10 flex flex-1 items-center gap-2.5 min-w-0">
-                    <Icon
-                      aria-hidden="true"
-                      className="size-4 shrink-0 transition-colors duration-200"
-                    />
-                    <span className="truncate flex-1">{msg(labelKey)}</span>
-                  </span>
-                </TabsTrigger>
-              );
-            })}
+          <TabsList
+            aria-label={msg("settings.title")}
+            className="relative flex h-auto w-full shrink-0 items-stretch justify-start gap-1 overflow-x-auto rounded-none border-0 border-b border-border/40 bg-transparent px-3 pb-3 pt-2 shadow-none no-scrollbar max-md:flex-row! md:w-[220px] md:overflow-x-visible md:overflow-y-auto md:border-b-0 md:border-e"
+          >
+            {visibleGroups.length > 0 ? (
+              visibleGroups.map((group) => (
+                <div key={group.key} className="contents md:block">
+                  <p className="hidden px-3 pb-1 pt-3 text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60 first:pt-1 md:block">
+                    {msg(group.labelKey)}
+                  </p>
+                  {group.tabs.map((tab) => {
+                    const { icon: Icon, labelKey } = SETTINGS_TAB_META[tab];
+                    return (
+                      <TabsTrigger key={tab} value={tab} className={SETTINGS_RAIL_ITEM_CLASS}>
+                        {tab === activeTab && (
+                          <motion.div
+                            layoutId="settings-rail-active"
+                            className="absolute inset-0 rounded-lg bg-primary/[0.08] ring-1 ring-primary/10"
+                            transition={
+                              prefersReduced
+                                ? { duration: 0 }
+                                : { type: "spring", stiffness: 350, damping: 28 }
+                            }
+                          />
+                        )}
+                        <span className="relative z-10 flex min-w-0 flex-1 items-center gap-2.5">
+                          <Icon
+                            aria-hidden="true"
+                            className="size-4 shrink-0 transition-colors duration-200"
+                          />
+                          <span className="flex-1 truncate">{msg(labelKey)}</span>
+                        </span>
+                      </TabsTrigger>
+                    );
+                  })}
+                </div>
+              ))
+            ) : (
+              <div className="flex min-h-24 w-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
+                {msg("settings.search.no_results")}
+              </div>
+            )}
           </TabsList>
 
-          <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4">
-            {/* Keyed on the active tab so each switch remounts the panel and replays
-                the entrance — a subtle fade + rise that signals the tab moved. A
-                vertical offset stays direction-neutral in RTL (no x-shift to flip). */}
+          <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4 md:px-6 md:py-5">
             <motion.div
               key={activeTab}
               initial={prefersReduced ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: prefersReduced ? 0 : 0.18, ease: [0.2, 0.8, 0.2, 1] }}
             >
-              <TabsContent value="wizard">
-                <WizardTab />
-              </TabsContent>
-              <TabsContent value="tagging">
-                <TaggingTab />
-              </TabsContent>
-              <TabsContent value="agent">
-                <AgentTab />
-              </TabsContent>
-              {isAdmin && (
-                <TabsContent value="admin">
-                  <AdminTab />
-                </TabsContent>
+              {activeTabVisible ? (
+                <>
+                  <SettingsPanelHeader tab={activeTab} />
+                  <TabsContent value="wizard">
+                    <WizardTab />
+                  </TabsContent>
+                  <TabsContent value="tagging">
+                    <TaggingTab />
+                  </TabsContent>
+                  <TabsContent value="agent">
+                    <AgentTab />
+                  </TabsContent>
+                  <TabsContent value="account">
+                    <AccountTab />
+                  </TabsContent>
+                  <TabsContent value="security">
+                    <SecurityTab />
+                  </TabsContent>
+                  <TabsContent value="privacy">
+                    <PrivacyTab />
+                  </TabsContent>
+                  <TabsContent value="billing">
+                    <WalletTab />
+                  </TabsContent>
+                  <TabsContent value="usage">
+                    <UsageTab />
+                  </TabsContent>
+                  <TabsContent value="providers">
+                    <ByokKeysSection />
+                  </TabsContent>
+                  <TabsContent value="api">
+                    <ApiTab />
+                  </TabsContent>
+                  {isAdmin && (
+                    <TabsContent value="admin">
+                      <AdminTab />
+                    </TabsContent>
+                  )}
+                  <TabsContent value="about">
+                    <AboutTab />
+                  </TabsContent>
+                </>
+              ) : (
+                <div className="flex min-h-48 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+                  <Search className="size-5 text-muted-foreground/40" aria-hidden="true" />
+                  <p className="text-sm">{msg("settings.search.no_results")}</p>
+                </div>
               )}
-              <TabsContent value="account">
-                <AccountTab />
-              </TabsContent>
-              <TabsContent value="security">
-                <SecurityTab />
-              </TabsContent>
-              <TabsContent value="privacy">
-                <PrivacyTab />
-              </TabsContent>
-              <TabsContent value="billing">
-                <WalletTab />
-              </TabsContent>
-              <TabsContent value="usage">
-                <UsageTab />
-              </TabsContent>
-              <TabsContent value="providers">
-                <ByokKeysSection />
-              </TabsContent>
-              <TabsContent value="api">
-                <ApiTab />
-              </TabsContent>
-              <TabsContent value="about">
-                <AboutTab />
-              </TabsContent>
             </motion.div>
           </div>
         </Tabs>

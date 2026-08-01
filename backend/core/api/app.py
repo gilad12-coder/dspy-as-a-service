@@ -106,6 +106,7 @@ from .routers.tagging_sessions import create_tagging_session_router
 from .routers.telemetry import create_telemetry_router
 from .routers.transcription import create_transcription_router
 from .routers.usage import create_usage_router
+from .routers.user_preferences import create_user_preferences_router
 from .routers.wizard import create_wizard_router
 from .routers.workflows import create_workflows_router
 
@@ -1276,6 +1277,7 @@ def create_app(
         tags=["Optimizations"],
     )
     app.include_router(create_usage_router(job_store=job_store), tags=["Settings"])
+    app.include_router(create_user_preferences_router(), tags=["Settings"])
     app.include_router(create_telemetry_router(job_store=job_store), tags=["Telemetry"])
     app.include_router(create_wizard_router(), tags=["Wizard"])
     app.include_router(create_workflows_router(), tags=["Workflows"])

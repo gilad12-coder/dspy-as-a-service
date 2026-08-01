@@ -259,6 +259,15 @@ const RENDERERS: Record<string, ToolRenderer> = {
       }),
   },
 
+  update_user_preferences: {
+    summary: (call) =>
+      byStatus(call, {
+        running: msg("settings.agent.settings_tool.updating"),
+        done: msg("settings.agent.settings_tool.updated"),
+        error: msg("settings.agent.settings_tool.update_failed"),
+      }),
+  },
+
   list_jobs_optimizations_get: {
     summary: (call) => {
       if (call.status === "running")

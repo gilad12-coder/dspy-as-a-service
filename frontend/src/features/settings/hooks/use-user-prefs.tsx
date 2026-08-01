@@ -9,12 +9,14 @@ import {
   migrateLegacyPrefs,
   readPref,
   writePref,
+  type AgentPreferencePatch,
   type UserPrefs,
 } from "../lib/prefs";
 
 interface UserPrefsContextValue {
   prefs: UserPrefs;
   setPref: <K extends keyof UserPrefs>(key: K, value: UserPrefs[K]) => void;
+  updatePrefs: (patch: AgentPreferencePatch) => void;
   resetAll: () => void;
 }
 
@@ -52,6 +54,16 @@ export function UserPrefsProvider({ children }: { children: React.ReactNode }) {
     toast.success(msg("settings.saved"), { autoClose: 1500, toastId: "settings-saved" });
   }, []);
 
+  const updatePrefs = React.useCallback((patch: AgentPreferencePatch) => {
+    const entries = Object.entries(patch) as Array<[keyof AgentPreferencePatch, unknown]>;
+    if (entries.length === 0) return;
+    setPrefs((prev) => ({ ...prev, ...patch }));
+    for (const [key, value] of entries) {
+      writePref(key, value as UserPrefs[typeof key]);
+    }
+    toast.success(msg("settings.saved"), { autoClose: 1500, toastId: "settings-saved" });
+  }, []);
+
   const resetAll = React.useCallback(() => {
     setPrefs(DEFAULT_PREFS);
     if (typeof window === "undefined") return;
@@ -65,8 +77,8 @@ export function UserPrefsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = React.useMemo<UserPrefsContextValue>(
-    () => ({ prefs, setPref, resetAll }),
-    [prefs, setPref, resetAll],
+    () => ({ prefs, setPref, updatePrefs, resetAll }),
+    [prefs, setPref, updatePrefs, resetAll],
   );
 
   return <UserPrefsContext.Provider value={value}>{children}</UserPrefsContext.Provider>;
