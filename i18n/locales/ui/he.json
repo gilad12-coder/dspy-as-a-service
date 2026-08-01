@@ -1834,6 +1834,8 @@
   "model.generation.label_plural": "{term.generationModelPlural}",
   "model.generation.label_short": "{term.generationModelShort}",
   "model.generation.new": "{term.generationModel} חדש",
+  "model.generation.explainer": "ה{term.model} שמריץ את הפרומפט ומייצר את התשובות בפועל. הוא זה שעושה את המשימה, והפרומפט שלו הוא מה שה{term.optimization} משפרת.",
+  "model.reflection.explainer": "ה{term.model} שקורא את התשובות שהתקבלו, מזהה איפה הן שגו, ומנסח פרומפט טוב יותר לסבב הבא. הוא לא עונה על המשימה בעצמו — כל תפקידו הוא לשפר את הפרומפט (ב-DSPy זהו מודל הרפלקציה).",
   "not_found.back_dashboard": "חזור/חזרי ללוח הבקרה",
   "not_found.description": "הכתובת שחיפשת לא קיימת או שהועברה למיקום אחר",
   "not_found.title": "הדף לא נמצא",

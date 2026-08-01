@@ -1896,10 +1896,12 @@ export type MessageKey =
   | "explore.suggest.clear"
   | "explore.suggest.popular"
   | "explore.suggest.recent"
+  | "model.generation.explainer"
   | "model.generation.label"
   | "model.generation.label_plural"
   | "model.generation.label_short"
   | "model.generation.new"
+  | "model.reflection.explainer"
   | "not_found.back_dashboard"
   | "not_found.description"
   | "not_found.title"
@@ -4759,10 +4761,12 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "explore.suggest.clear": "נקה/נקי",
   "explore.suggest.popular": "חיפושים פופולריים",
   "explore.suggest.recent": "חיפושים אחרונים",
+  "model.generation.explainer": "ה{term.model} שמריץ את הפרומפט ומייצר את התשובות בפועל. הוא זה שעושה את המשימה, והפרומפט שלו הוא מה שה{term.optimization} משפרת.",
   "model.generation.label": "{term.generationModel}",
   "model.generation.label_plural": "{term.generationModelPlural}",
   "model.generation.label_short": "{term.generationModelShort}",
   "model.generation.new": "{term.generationModel} חדש",
+  "model.reflection.explainer": "ה{term.model} שקורא את התשובות שהתקבלו, מזהה איפה הן שגו, ומנסח פרומפט טוב יותר לסבב הבא. הוא לא עונה על המשימה בעצמו — כל תפקידו הוא לשפר את הפרומפט (ב-DSPy זהו מודל הרפלקציה).",
   "not_found.back_dashboard": "חזור/חזרי ללוח הבקרה",
   "not_found.description": "הכתובת שחיפשת לא קיימת או שהועברה למיקום אחר",
   "not_found.title": "הדף לא נמצא",
@@ -13199,10 +13203,12 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "explore.suggest.clear": "Clear",
   "explore.suggest.popular": "Popular searches",
   "explore.suggest.recent": "Recent searches",
+  "model.generation.explainer": "The model that runs your prompt and produces the actual answers. It's the one doing the task, and its prompt is what the optimization improves.",
   "model.generation.label": "Generation model",
   "model.generation.label_plural": "Generation models",
   "model.generation.label_short": "Generation",
   "model.generation.new": "New generation model",
+  "model.reflection.explainer": "The model that reads those answers, works out where they went wrong, and writes a better prompt for the next round. It never answers the task itself — its only job is to improve the prompt (in DSPy, this is the reflection model).",
   "not_found.back_dashboard": "Back to dashboard",
   "not_found.description": "The address you requested doesn't exist or has moved",
   "not_found.title": "Page not found",

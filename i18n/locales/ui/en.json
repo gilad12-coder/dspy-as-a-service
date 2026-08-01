@@ -1834,6 +1834,8 @@
   "model.generation.label_plural": "Generation models",
   "model.generation.label_short": "Generation",
   "model.generation.new": "New generation model",
+  "model.generation.explainer": "The model that runs your prompt and produces the actual answers. It's the one doing the task, and its prompt is what the optimization improves.",
+  "model.reflection.explainer": "The model that reads those answers, works out where they went wrong, and writes a better prompt for the next round. It never answers the task itself — its only job is to improve the prompt (in DSPy, this is the reflection model).",
   "not_found.back_dashboard": "Back to dashboard",
   "not_found.description": "The address you requested doesn't exist or has moved",
   "not_found.title": "Page not found",
