@@ -628,6 +628,20 @@ main {
   }
 }
 
+/* Collapse/expand snap: when the Sidebar commits the discrete icon-rail toggle it
+   arms html[data-sidebar-snapping], gliding the rail's own width and <main>'s
+   reserved margin together over one matched transition instead of jumping in a
+   single frame. Continuous drags clear the flag so the rail tracks the cursor
+   1:1 (no transition). Honour reduced-motion — the snap stays instant there. */
+@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
+  html[data-sidebar-snapping] .app-sidebar-rail {
+    transition: width 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  html[data-sidebar-snapping] .app-main {
+    transition: margin-inline-start 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
 /* Radix popovers (Select, Dialog, DropdownMenu) lock scroll via
    react-remove-scroll, which tags <body data-scroll-locked> and adds
    margin/padding to compensate for the document scrollbar it hides. The root

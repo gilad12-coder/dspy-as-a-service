@@ -16,8 +16,6 @@ import {
   Loader2,
   Grid2x2,
   ChevronLeft,
-  ChevronsLeft,
-  ChevronsRight,
   Compass,
   CopyPlus,
   Database,
@@ -93,8 +91,16 @@ const SIDEBAR_MIN_WIDTH = 210;
 const SIDEBAR_MAX_WIDTH = 420;
 const SIDEBAR_DEFAULT_WIDTH = 240;
 // Icon-rail width when collapsed: just enough to center a nav icon (and the
-// account avatar / storage icon) with comfortable padding. Fixed, not draggable.
+// account avatar / storage icon) with comfortable padding.
 const SIDEBAR_COLLAPSED_WIDTH = 64;
+// Drag-to-collapse hysteresis. While expanded, the rail shrinks with the cursor
+// and rests at its min; only pulling the grip in past COLLAPSE_AT (well under
+// the min) snaps it shut. While collapsed, pushing the grip back out past
+// EXPAND_AT re-expands it. The gap between the two thresholds means a jittery
+// hand near the edge can't rapidly toggle the state — that gap is what a single
+// threshold lacked, so it flickered between the icon rail and the min width.
+const SIDEBAR_COLLAPSE_AT = 150;
+const SIDEBAR_EXPAND_AT = 196;
 const SIDEBAR_WIDTH_STORAGE_KEY = "skynet.sidebar.width";
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "skynet.sidebar.collapsed";
 const DESKTOP_MQ = "(min-width: 768px)";
@@ -130,6 +136,9 @@ export function Sidebar() {
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [width, setWidth] = React.useState(SIDEBAR_DEFAULT_WIDTH);
   const [collapsed, setCollapsed] = React.useState(false);
+  // Arms the collapse/expand width glide for the discrete snap only; continuous
+  // resize drags leave it false so the rail tracks the cursor 1:1.
+  const [snapping, setSnapping] = React.useState(false);
   const [isDesktop, setIsDesktop] = React.useState(true);
   // Collapse is a desktop-only affordance: the mobile drawer always shows the
   // full rail, so gate the icon-rail on the breakpoint.
@@ -137,15 +146,6 @@ export function Sidebar() {
   const effectiveWidth = isCollapsed ? SIDEBAR_COLLAPSED_WIDTH : width;
   // Collapsed tooltips read toward the content area: right in LTR, left in RTL.
   const tooltipSide = isRtl ? "left" : "right";
-  // Chevrons point the way the rail's inline-end edge travels on click: collapse
-  // pushes it toward the rail's own side, expand pushes it toward the content.
-  const ToggleIcon = isCollapsed
-    ? isRtl
-      ? ChevronsLeft
-      : ChevronsRight
-    : isRtl
-      ? ChevronsRight
-      : ChevronsLeft;
 
   // Width is a desktop affordance — the mobile drawer uses a viewport-capped
   // width regardless. Hydrate the persisted width client-side (SSR can't read
@@ -176,33 +176,59 @@ export function Sidebar() {
     }
   }, []);
 
-  const toggleCollapsed = React.useCallback(() => {
+  const setCollapsedPersist = React.useCallback((value: boolean) => {
     setCollapsed((prev) => {
-      const next = !prev;
+      if (prev === value) return prev;
       try {
-        window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, value ? "1" : "0");
       } catch {
         /* noop */
       }
-      return next;
+      return value;
     });
   }, []);
 
-  // Drag-resize. The rail is pinned to the inline-start edge (left in LTR, right
-  // in RTL), so the dragged inline-end edge maps to clientX in LTR and to
-  // (innerWidth - clientX) in RTL.
+  // Drag-resize doubles as the collapse control. The rail is pinned to the
+  // inline-start edge (left in LTR, right in RTL), so the dragged inline-end
+  // edge maps to clientX in LTR and to (innerWidth - clientX) in RTL.
+  //
+  // ``persistWidth`` clamps to [min, max], so while expanded the rail tracks the
+  // cursor and simply rests at its min — pulling in further does nothing until
+  // the cursor crosses COLLAPSE_AT, which snaps to the icon rail. ``dragCollapsed``
+  // holds the drag's own collapsed flag so the hysteresis compares against where
+  // this gesture last committed, not a stale render value; that's what keeps a
+  // jittery hand from toggling on a single pixel.
   const resizingRef = React.useRef(false);
   const startResize = React.useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       resizingRef.current = true;
+      let dragCollapsed = collapsed;
       const prevUserSelect = document.body.style.userSelect;
       const prevCursor = document.body.style.cursor;
       document.body.style.userSelect = "none";
       document.body.style.cursor = "col-resize";
       const onMove = (ev: MouseEvent) => {
         if (!resizingRef.current) return;
-        persistWidth(isRtl ? window.innerWidth - ev.clientX : ev.clientX);
+        const raw = isRtl ? window.innerWidth - ev.clientX : ev.clientX;
+        if (dragCollapsed) {
+          if (raw > SIDEBAR_EXPAND_AT) {
+            dragCollapsed = false;
+            // Discrete snap back to text mode — glide the width jump.
+            setSnapping(true);
+            setCollapsedPersist(false);
+            persistWidth(raw);
+          }
+        } else if (raw < SIDEBAR_COLLAPSE_AT) {
+          dragCollapsed = true;
+          // Discrete snap to the icon rail — glide the width jump.
+          setSnapping(true);
+          setCollapsedPersist(true);
+        } else {
+          // Continuous resize within range: track the cursor 1:1, no transition.
+          setSnapping(false);
+          persistWidth(raw);
+        }
       };
       const onUp = () => {
         resizingRef.current = false;
@@ -214,7 +240,7 @@ export function Sidebar() {
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [isRtl, persistWidth],
+    [collapsed, isRtl, persistWidth, setCollapsedPersist],
   );
 
   // Sidebar infinite scroll: fetchData (polling + external invalidation)
@@ -395,64 +421,54 @@ export function Sidebar() {
   // shell's flow and can't reserve its own width. Publish the live width as a CSS
   // var the shell's <main> consumes for its inline margin — one source of truth,
   // updated as the rail is dragged so content and rail never overlap.
-  React.useEffect(() => {
-    document.documentElement.style.setProperty("--app-sidebar-width", `${effectiveWidth}px`);
-  }, [effectiveWidth]);
+  //
+  // ``data-sidebar-snapping`` arms the matched rail-width / main-margin glide
+  // (globals.css) for the discrete collapse/expand snap only. useLayoutEffect,
+  // not useEffect: the attribute must be on <html> *before* the browser paints
+  // the new width, or the snap paints once — unanimated — before the transition
+  // could arm, which is exactly the jump this smooths out. Cleared on the next
+  // continuous drag and when the glide's transitionend fires.
+  React.useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--app-sidebar-width", `${effectiveWidth}px`);
+    if (snapping) root.setAttribute("data-sidebar-snapping", "");
+    else root.removeAttribute("data-sidebar-snapping");
+  }, [effectiveWidth, snapping]);
 
   return (
     <aside
-      className="relative flex h-full shrink-0 flex-col border-e border-sidebar-border/60 bg-sidebar/80 backdrop-blur-xl overflow-hidden"
+      className="app-sidebar-rail relative flex h-full shrink-0 flex-col border-e border-sidebar-border/60 bg-sidebar/80 backdrop-blur-xl overflow-hidden"
       style={{ width: isDesktop ? `${effectiveWidth}px` : `min(${width}px, 88vw)` }}
+      onTransitionEnd={(e) => {
+        // Disarm once the collapse/expand width glide lands so the next
+        // continuous drag tracks the cursor 1:1. Guard against transitionend
+        // bubbling up from descendant width animations (e.g. the storage bar).
+        if (e.target === e.currentTarget && e.propertyName === "width") setSnapping(false);
+      }}
       data-tutorial="sidebar-full"
     >
       {/* Drag-to-resize grip on the rail's inline-end edge (desktop only — the
-          mobile drawer isn't resizable, and a collapsed rail is a fixed width).
-          Invisible until hovered, then a primary hairline; the grab math is
-          mirrored for RTL in ``startResize``. */}
-      {!isCollapsed && (
-        <button
-          type="button"
-          onMouseDown={startResize}
-          aria-label={msg("auto.features.sidebar.components.sidebar.literal.15")}
-          tabIndex={-1}
-          className="group absolute inset-y-0 end-0 z-20 hidden w-1.5 cursor-col-resize md:block"
-        >
-          <span
-            aria-hidden="true"
-            className="absolute inset-y-0 end-0 w-px bg-transparent transition-colors duration-150 group-hover:bg-primary/30 group-active:bg-primary/50"
-          />
-        </button>
-      )}
+          mobile drawer isn't resizable). Also the collapse control: dragging it
+          past the threshold snaps the rail shut, and it stays grabbable on the
+          collapsed rail's edge to drag back open. Invisible until hovered, then a
+          primary hairline; the grab math is mirrored for RTL in ``startResize``. */}
+      <button
+        type="button"
+        onMouseDown={startResize}
+        aria-label={msg("auto.features.sidebar.components.sidebar.literal.15")}
+        tabIndex={-1}
+        className="group absolute inset-y-0 end-0 z-20 hidden w-1.5 cursor-col-resize md:block"
+      >
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-0 end-0 w-px bg-transparent transition-colors duration-150 group-hover:bg-primary/30 group-active:bg-primary/50"
+        />
+      </button>
       <div className="flex flex-col h-full">
-        {/* Collapse toggle — desktop only (the mobile drawer opens/closes via the
-            header menu button, so it has no use for an icon-rail toggle). The
-            chevrons point the way the rail's edge will move. */}
-        <div
-          className={cn(
-            "hidden md:flex items-center px-3 pt-3 pb-1",
-            isCollapsed ? "justify-center" : "justify-end",
-          )}
-        >
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={toggleCollapsed}
-                aria-label={isCollapsed ? msg("sidebar.expand") : msg("sidebar.collapse")}
-                className="inline-flex items-center justify-center rounded-lg p-1.5 text-muted-foreground/60 transition-colors duration-150 hover:bg-sidebar-accent/40 hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-              >
-                <ToggleIcon className="size-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side={tooltipSide}>
-              {isCollapsed ? msg("sidebar.expand") : msg("sidebar.collapse")}
-            </TooltipContent>
-          </Tooltip>
-        </div>
         <nav
           className={cn(
-            "flex flex-col gap-1 pb-3",
-            isCollapsed ? "px-2 pt-1" : "px-3 pt-3 md:pt-1",
+            "flex flex-col gap-1 pb-3 pt-3",
+            isCollapsed ? "px-2" : "px-3",
           )}
           role="navigation"
           aria-label={msg("auto.features.sidebar.components.sidebar.literal.7")}

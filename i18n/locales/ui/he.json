@@ -2197,8 +2197,6 @@
   "sidebar.delete.failed": "המחיקה נכשלה",
   "sidebar.delete.success": "נמחק",
   "sidebar.generic_error": "שגיאה",
-  "sidebar.collapse": "כיווץ סרגל הצד",
-  "sidebar.expand": "הרחבת סרגל הצד",
   "sidebar.mine.empty": "עדיין אין כאן ריצות",
   "sidebar.mine.empty.hint": "הריצה הראשונה שלכם תופיע כאן",
   "sidebar.nav.datasets": "דאטאסטים",

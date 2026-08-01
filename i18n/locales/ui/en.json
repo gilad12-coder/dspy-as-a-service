@@ -2197,8 +2197,6 @@
   "sidebar.delete.failed": "Delete failed",
   "sidebar.delete.success": "Deleted",
   "sidebar.generic_error": "Error",
-  "sidebar.collapse": "Collapse sidebar",
-  "sidebar.expand": "Expand sidebar",
   "sidebar.mine.empty": "No runs here yet",
   "sidebar.mine.empty.hint": "Your first run will appear here",
   "sidebar.nav.datasets": "Datasets",
