@@ -8,6 +8,7 @@ import { Menu, GraduationCap, Lightbulb, Feather } from "lucide-react";
 import { useTutorialContext, ConceptsGuide, registerTutorialHook } from "@/features/tutorial";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
+import { GlobalSearch } from "@/shared/layout/global-search";
 import { useLocale } from "@/shared/providers";
 import { dirForLocale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
@@ -163,6 +164,10 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
               </TooltipContent>
             </Tooltip>
           )}
+        </div>
+
+        <div className="flex flex-1 justify-center px-2">
+          <GlobalSearch />
         </div>
 
         <div className="flex items-center gap-1.5" dir={dir}>

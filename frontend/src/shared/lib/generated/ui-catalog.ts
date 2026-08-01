@@ -63,6 +63,28 @@ export type MessageKey =
   | "app.shell.logout"
   | "app.shell.menu"
   | "app.shell.menu_close"
+  | "app.shell.search.arrow_keys"
+  | "app.shell.search.button_aria"
+  | "app.shell.search.command_key"
+  | "app.shell.search.dashboard"
+  | "app.shell.search.description"
+  | "app.shell.search.enter_key"
+  | "app.shell.search.escape_key"
+  | "app.shell.search.hint"
+  | "app.shell.search.k_key"
+  | "app.shell.search.label"
+  | "app.shell.search.navigate"
+  | "app.shell.search.new_optimization_description"
+  | "app.shell.search.no_results"
+  | "app.shell.search.open"
+  | "app.shell.search.placeholder"
+  | "app.shell.search.quick_actions"
+  | "app.shell.search.results"
+  | "app.shell.search.settings"
+  | "app.shell.search.settings_description"
+  | "app.shell.search.storage"
+  | "app.shell.search.tagging_description"
+  | "app.shell.search.title"
   | "app.shell.tour_aria"
   | "app.shell.tour_tooltip"
   | "auth.halo.answer_ranking"
@@ -2121,9 +2143,6 @@ export type MessageKey =
   | "settings.privacy.copy_email.label"
   | "settings.privacy.copy_username.label"
   | "settings.saved"
-  | "settings.search.clear"
-  | "settings.search.no_results"
-  | "settings.search.placeholder"
   | "settings.security.copy_recovery_aria"
   | "settings.security.copy_secret_aria"
   | "settings.security.disable"
@@ -2955,6 +2974,28 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "app.shell.logout": "התנתק/י",
   "app.shell.menu": "תפריט",
   "app.shell.menu_close": "סגור/סגרי את התפריט",
+  "app.shell.search.arrow_keys": "↑↓",
+  "app.shell.search.button_aria": "חיפוש בכל המערכת",
+  "app.shell.search.command_key": "⌘",
+  "app.shell.search.dashboard": "לוח הבקרה",
+  "app.shell.search.description": "חיפוש מהיר בין עמודים, פעולות והגדרות",
+  "app.shell.search.enter_key": "↵",
+  "app.shell.search.escape_key": "Esc",
+  "app.shell.search.hint": "ניווט עם החצים ובחירה עם Enter",
+  "app.shell.search.k_key": "K",
+  "app.shell.search.label": "חיפוש בכל המערכת…",
+  "app.shell.search.navigate": "ניווט",
+  "app.shell.search.new_optimization_description": "יצירת ריצת אופטימיזציה חדשה",
+  "app.shell.search.no_results": "לא נמצאו עמודים או הגדרות תואמים",
+  "app.shell.search.open": "פתיחה",
+  "app.shell.search.placeholder": "חיפוש פעולות, עמודים והגדרות…",
+  "app.shell.search.quick_actions": "פעולות מהירות",
+  "app.shell.search.results": "תוצאות חיפוש",
+  "app.shell.search.settings": "הגדרות",
+  "app.shell.search.settings_description": "פתיחת קטגוריית הגדרות",
+  "app.shell.search.storage": "אחסון",
+  "app.shell.search.tagging_description": "תיוג ובדיקת נתונים",
+  "app.shell.search.title": "חיפוש Skynet",
   "app.shell.tour_aria": "סיור במערכת",
   "app.shell.tour_tooltip": "סיור מודרך במערכת",
   "auth.halo.answer_ranking": "דירוג תשובות",
@@ -5013,9 +5054,6 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.privacy.copy_email.label": "אימייל",
   "settings.privacy.copy_username.label": "שם משתמש",
   "settings.saved": "ההגדרה נשמרה",
-  "settings.search.clear": "ניקוי חיפוש ההגדרות",
-  "settings.search.no_results": "אין הגדרות התואמות לחיפוש",
-  "settings.search.placeholder": "חיפוש בהגדרות",
   "settings.security.copy_recovery_aria": "העתקת קודי השחזור",
   "settings.security.copy_secret_aria": "העתקת הסוד",
   "settings.security.disable": "כיבוי",
@@ -11424,6 +11462,28 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "app.shell.logout": "Log out",
   "app.shell.menu": "Menu",
   "app.shell.menu_close": "Close menu",
+  "app.shell.search.arrow_keys": "↑↓",
+  "app.shell.search.button_aria": "Search everything",
+  "app.shell.search.command_key": "⌘",
+  "app.shell.search.dashboard": "Dashboard",
+  "app.shell.search.description": "Quickly search pages, actions, and settings",
+  "app.shell.search.enter_key": "↵",
+  "app.shell.search.escape_key": "Esc",
+  "app.shell.search.hint": "Use the arrow keys to move and Enter to open",
+  "app.shell.search.k_key": "K",
+  "app.shell.search.label": "Search everything…",
+  "app.shell.search.navigate": "Navigate",
+  "app.shell.search.new_optimization_description": "Start a new optimization run",
+  "app.shell.search.no_results": "No matching pages or settings",
+  "app.shell.search.open": "Open",
+  "app.shell.search.placeholder": "Search actions, pages, and settings…",
+  "app.shell.search.quick_actions": "Quick actions",
+  "app.shell.search.results": "Search results",
+  "app.shell.search.settings": "Settings",
+  "app.shell.search.settings_description": "Open this settings section",
+  "app.shell.search.storage": "Storage",
+  "app.shell.search.tagging_description": "Tag and review data",
+  "app.shell.search.title": "Search Skynet",
   "app.shell.tour_aria": "Product tour",
   "app.shell.tour_tooltip": "Guided product tour",
   "auth.halo.answer_ranking": "Answer ranking",
@@ -13482,9 +13542,6 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "settings.privacy.copy_email.label": "Email",
   "settings.privacy.copy_username.label": "Username",
   "settings.saved": "Setting saved",
-  "settings.search.clear": "Clear settings search",
-  "settings.search.no_results": "No settings match your search",
-  "settings.search.placeholder": "Search settings",
   "settings.security.copy_recovery_aria": "Copy recovery codes",
   "settings.security.copy_secret_aria": "Copy secret",
   "settings.security.disable": "Disable",
