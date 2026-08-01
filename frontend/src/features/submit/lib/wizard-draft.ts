@@ -44,14 +44,13 @@ export interface WizardDraftData {
   secondModelConfig: ModelConfig | null;
   generationModels: ModelConfig[];
   reflectionModels: ModelConfig[];
-  useAllGenerationModels: boolean;
-  useAllReflectionModels: boolean;
   split: SplitFractions;
   seed: number | undefined;
   autoLevel: string;
   reflectionMinibatchSize: string;
   maxFullEvals: string;
   useMerge: boolean;
+  targetScore: string;
   shuffle: boolean;
   maxCostCredits: number | null;
 }

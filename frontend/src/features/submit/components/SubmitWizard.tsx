@@ -119,14 +119,6 @@ function SubmitWizardInner({ onStartOver }: { onStartOver: () => void }) {
         catalogModels={w.catalog?.models}
         recentConfigs={w.recentConfigs}
         onRemoveRecent={w.removeRecentConfig}
-        onSelectAllAvailable={
-          w.editingModel?.onSelectAllAvailable
-            ? () => {
-                w.editingModel?.onSelectAllAvailable?.();
-                w.setEditingModel(null);
-              }
-            : undefined
-        }
       />
 
       {/* Submit splash overlay — portal to body so it covers sidebar + header */}

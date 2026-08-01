@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Boxes, ChevronDown, Coins, KeyRound, X } from "lucide-react";
+import { ChevronDown, Coins, KeyRound, X } from "lucide-react";
 import { useCredits, useByokKeys, litellmProviderForByok } from "@/features/billing";
 import { useSettingsModal } from "@/features/settings";
 import { getByokModelCatalog, cachedByokCatalog } from "@/shared/lib/model-catalog";
@@ -36,12 +36,6 @@ interface ModelConfigModalProps {
   /** Remove a single recent config by its model name (rendered as a per-row X). */
   onRemoveRecent?: (name: string) => void;
   /**
-   * When provided, renders a pinned "all available models" sentinel row at the
-   * top of the dialog body. Clicking it closes the modal and invokes the
-   * callback — the caller is expected to flip the matching grid-search flag.
-   */
-  onSelectAllAvailable?: () => void;
-  /**
    * Hide the custom-connection section (base URL / API key) for surfaces
    * that always run through the platform endpoint — e.g. the tagger's
    * tagging model, which the server restricts to the curated catalog.
@@ -58,7 +52,6 @@ export function ModelConfigModal({
   catalogModels,
   recentConfigs,
   onRemoveRecent,
-  onSelectAllAvailable,
   showConnection = true,
 }: ModelConfigModalProps) {
   const { wallet } = useCredits();
@@ -72,9 +65,7 @@ export function ModelConfigModal({
   // fail to authenticate.
   const byokProviders = React.useMemo(
     () =>
-      keys
-        .filter((k) => k.status === "verified")
-        .map((k) => litellmProviderForByok(k.provider)),
+      keys.filter((k) => k.status === "verified").map((k) => litellmProviderForByok(k.provider)),
     [keys],
   );
   // BYOK catalog models also feed reasoning-toggle detection, since a BYOK model
@@ -160,55 +151,6 @@ export function ModelConfigModal({
         <DialogTitleRow title={roleLabel} className="px-6 pt-6" />
 
         <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-          {onSelectAllAvailable &&
-            (() => {
-              const availableCount = catalogModels?.length ?? 0;
-              const disabled = availableCount === 0;
-              return (
-                <>
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => {
-                      onSelectAllAvailable();
-                      onOpenChange(false);
-                    }}
-                    className={cn(
-                      "group flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-start transition-all",
-                      disabled
-                        ? "cursor-not-allowed border-border/40 bg-muted/20 opacity-60"
-                        : "cursor-pointer border-primary/30 bg-primary/5 hover:border-primary/50 hover:bg-primary/10",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "flex size-9 shrink-0 items-center justify-center rounded-md",
-                        disabled
-                          ? "bg-muted text-muted-foreground"
-                          : "bg-primary/10 text-primary group-hover:bg-primary/15",
-                      )}
-                    >
-                      <Boxes className="size-4" />
-                    </span>
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="text-sm font-medium text-foreground">
-                        {msg("auto.features.submit.components.modelconfigmodal.1")}
-                      </span>
-                      <span className="text-[0.6875rem] text-muted-foreground">
-                        {disabled
-                          ? msg("auto.features.submit.components.modelconfigmodal.literal.2")
-                          : formatMsg(
-                              "auto.features.submit.components.modelconfigmodal.template.1",
-                              { p1: TERMS.optimization, p2: TERMS.model, p3: availableCount },
-                            )}
-                      </span>
-                    </span>
-                  </button>
-                  <Separator />
-                </>
-              );
-            })()}
-
           {recentConfigs && recentConfigs.length > 0 && (
             <div className="space-y-1.5">
               <Label className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
@@ -505,11 +447,7 @@ export function ModelConfigModal({
           <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
             {msg("auto.features.submit.components.modelconfigmodal.10")}
           </Button>
-          <Button
-            onClick={handleSave}
-            disabled={!draft.name.trim()}
-            className="flex-1"
-          >
+          <Button onClick={handleSave} disabled={!draft.name.trim()} className="flex-1">
             {msg("auto.features.submit.components.modelconfigmodal.11")}
           </Button>
         </DialogFooter>

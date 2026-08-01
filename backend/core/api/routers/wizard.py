@@ -118,6 +118,12 @@ class WizardUpdateRequest(BaseModel):
         default=None,
         description=("Optimizer parameters. Known keys: auto, reflection_minibatch_size, max_full_evals, use_merge."),
     )
+    target_score: float | None = Field(
+        default=None,
+        gt=0,
+        le=100,
+        description="Optional GEPA validation target as a percentage (1–100).",
+    )
 
     signature_code: str | None = Field(
         default=None,
@@ -388,6 +394,9 @@ def create_wizard_router() -> APIRouter:
             if not isinstance(ok, dict):
                 raise DomainError("wizard.optimizer_kwargs_not_object", status=422)
             patch["optimizer_kwargs"] = dict(ok)
+
+        if "target_score" in supplied and supplied["target_score"] is not None:
+            patch["target_score"] = float(supplied["target_score"])
 
         # Signature/Metric code is authored ONLY via ``request_code_authoring``
         # (the inline card runs the dedicated code agent, which validates and

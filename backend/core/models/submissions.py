@@ -127,6 +127,16 @@ class _OptimizationRequestBase(BaseModel):
             "Omit (null) for no ceiling."
         ),
     )
+    target_score: float | None = Field(
+        default=None,
+        gt=0,
+        le=100,
+        description=(
+            "Optional validation score target, expressed as a percentage. GEPA stops searching "
+            "when its best validation candidate reaches this score; the existing metric-call "
+            "budget remains a safety ceiling."
+        ),
+    )
     estimated_credits_low: int | None = Field(
         default=None,
         ge=0,

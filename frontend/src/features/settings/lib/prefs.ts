@@ -13,10 +13,10 @@ export interface AgentShortcut {
 }
 
 export interface UserPrefs {
-  // The abstraction dial: off (default) hides expert machinery — the
-  // train/val/test split controls and per-split result views — behind simple
-  // before/after framing; on shows the full detail. A capability gate, unlike
-  // expandAdvanced below.
+  // The abstraction dial: off (default) hides expert machinery — grid-search
+  // sweeps, low-level optimizer tuning, train/val/test split controls, and
+  // per-split result views — behind a simple single-run flow. A capability
+  // gate, unlike expandAdvanced below.
   advancedMode: boolean;
   // Layout preference, not a capability gate: advanced sections are always
   // reachable; this only pre-expands them everywhere.

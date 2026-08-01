@@ -45,6 +45,7 @@ from core.constants import (
 )
 
 from ..logged_scores import reset_logged_metrics
+from ..optimizers import build_target_score_stopper
 from ..retrying_react import RetryingReActV2
 from ..timing import (
     STAGE_BASELINE,
@@ -577,6 +578,7 @@ def run_react_optimization(
     student_lm: dspy.LM,
     reflection_lm: dspy.LM,
     max_metric_calls: int = _AUTO_BUDGETS["medium"],
+    target_score: float | None = None,
     max_iters: int = DEFAULT_MAX_ITERS,
     seed: int = 0,
     num_threads: int | None = None,
@@ -605,6 +607,9 @@ def run_react_optimization(
             ``dspy.context``).
         reflection_lm: Reflective-proposer model used by GEPA's adapter.
         max_metric_calls: GEPA metric-call budget (default medium = 2000).
+        target_score: Optional validation score target in the API's 0–100
+            percentage scale. GEPA stops when its best validation candidate
+            reaches the target, while ``max_metric_calls`` remains a ceiling.
         max_iters: ReActV2 loop budget for the seed program.
         seed: RNG seed shared by GEPA and the adapter.
         num_threads: Eval/rollout thread count for the adapter; ``None`` keeps
@@ -647,6 +652,8 @@ def run_react_optimization(
     if progress_callback:
         progress_callback(PROGRESS_BASELINE, {DETAIL_BASELINE: _mean(baseline_scalars)})
 
+    target_stopper = build_target_score_stopper(target_score)
+    stop_callbacks = [target_stopper] if target_stopper is not None else None
     with track_stage(STAGE_TRAINING, *timing_callbacks):
         result = gepa.optimize(
             seed_candidate=seed_candidate,
@@ -655,6 +662,7 @@ def run_react_optimization(
             adapter=adapter,
             reflection_lm=(lambda x: adapter.stripped_lm_call(x)[0]),
             max_metric_calls=max_metric_calls,
+            stop_callbacks=stop_callbacks,
             seed=seed,
             run_dir=run_dir,
             # GEPA defaults both off, which left react runs without a score chart
@@ -685,6 +693,9 @@ def run_react_optimization(
         "optimized_scalars_per_example": optimized_scalars,
         "baseline_outputs_per_example": baseline_outputs,
         "optimized_outputs_per_example": optimized_outputs,
+        "target_score_reached": (
+            bool(target_stopper.reached) if target_stopper is not None else None
+        ),
         "tool_overlay": {
             "tool_descriptions": _candidate_tool_descriptions(best_candidate),
             "tool_arg_descriptions": _candidate_tool_arg_descriptions(best_candidate),

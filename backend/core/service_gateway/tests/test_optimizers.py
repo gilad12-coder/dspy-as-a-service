@@ -14,6 +14,7 @@ from core.exceptions import ServiceError
 from core.models import ModelConfig
 from core.service_gateway.optimization.data import DatasetSplits
 from core.service_gateway.optimization.optimizers import (
+    TargetScoreStopper,
     _callable_accepts_metric,
     _compile_accepts_valset,
     _extract_factory_targets,
@@ -512,6 +513,35 @@ def test_instantiate_optimizer_gepa_sets_auto_light_default() -> None:
         )
 
     assert captured["auto"] == "light"
+
+
+def test_instantiate_optimizer_gepa_injects_target_score_stopper() -> None:
+    """A percentage target becomes GEPA's native validation stop callback."""
+    captured: dict[str, Any] = {}
+    state: dict[str, Any] = {}
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+        target_score=85,
+        stop_state=state,
+    )
+
+    stopper = captured["gepa_kwargs"]["stop_callbacks"][0]
+    assert isinstance(stopper, TargetScoreStopper)
+    assert stopper.threshold == pytest.approx(0.85)
+    assert state["target_score_stopper"] is stopper
 
 
 class _FakeEvalResult:

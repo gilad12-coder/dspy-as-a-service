@@ -81,6 +81,9 @@ class PairResult(BaseModel):
     baseline_test_metric: float | None = None
     optimized_test_metric: float | None = None
     metric_improvement: float | None = None
+    target_score: float | None = None
+    target_score_reached: bool | None = None
+    stop_reason: str | None = None
     runtime_seconds: float | None = None
     num_lm_calls: int | None = None
     total_tokens: int | None = None

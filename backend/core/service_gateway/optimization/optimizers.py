@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any, Literal, overload
 
 import dspy
+from gepa.utils.stop_condition import ScoreThresholdStopper
 
 from ...config import settings
 from ...constants import (
@@ -32,6 +33,49 @@ logger = logging.getLogger(__name__)
 
 
 PREFLIGHT_SAMPLE_SIZE = 5
+
+
+class TargetScoreStopper:
+    """Stop GEPA when the best validation score reaches a percentage target."""
+
+    def __init__(self, target_score_percent: float) -> None:
+        """Create a stateful wrapper around GEPA's native score stopper.
+
+        Args:
+            target_score_percent: Validation score target in the UI's 0–100
+                percentage scale.
+        """
+        self.target_score_percent = float(target_score_percent)
+        self.threshold = self.target_score_percent / 100.0
+        self._delegate = ScoreThresholdStopper(self.threshold)
+        self.reached = False
+
+    def __call__(self, gepa_state: Any) -> bool:
+        """Return whether GEPA's current best validation score meets the target.
+
+        Args:
+            gepa_state: Current GEPA optimization state.
+
+        Returns:
+            True once the target has been reached; false otherwise.
+        """
+        self.reached = self.reached or bool(self._delegate(gepa_state))
+        return self.reached
+
+
+def build_target_score_stopper(target_score: float | None) -> TargetScoreStopper | None:
+    """Build a GEPA stopper for an optional percentage target.
+
+    Args:
+        target_score: Validation target in the 0–100 percentage scale, or
+            ``None`` to keep budget-only stopping.
+
+    Returns:
+        A stateful target stopper, or ``None`` when no target was configured.
+    """
+    if target_score is None:
+        return None
+    return TargetScoreStopper(target_score)
 
 
 def _perfect_prediction_score(metric: Any, example: Any, output_fields: list[str]) -> float:
@@ -385,6 +429,8 @@ def instantiate_optimizer(
     *,
     reflection_lm: Any | None = None,
     log_dir: str | None = None,
+    target_score: float | None = None,
+    stop_state: dict[str, Any] | None = None,
 ) -> Any:
     """Instantiate an optimizer, injecting language models and metrics as needed.
 
@@ -395,6 +441,9 @@ def instantiate_optimizer(
     - GEPA receives ``log_dir`` when supplied so it persists per-iteration
       state to ``<log_dir>/gepa_state.bin`` — required by the trajectory
       watcher that surfaces candidate genealogy to the UI.
+    - GEPA receives a native ``ScoreThresholdStopper`` through ``gepa_kwargs``
+      when ``target_score`` is supplied. The target is expressed as a 0–100
+      percentage at the API boundary and normalized to GEPA's 0–1 metric scale.
 
     Args:
         factory: The optimizer factory callable to invoke.
@@ -411,6 +460,12 @@ def instantiate_optimizer(
         log_dir: Optional directory GEPA writes ``gepa_state.bin`` into. The
             trajectory watcher polls this file to emit per-candidate
             progress events. Ignored for non-GEPA optimizers.
+        target_score: Optional validation score target in the API's 0–100
+            percentage scale. Ignored for non-GEPA optimizers; payload
+            validation rejects that combination before execution.
+        stop_state: Optional mutable mapping that receives the stateful target
+            stopper under ``target_score_stopper`` so callers can report
+            whether the target actually triggered.
 
     Returns:
         An instantiated optimizer ready for ``compile``.
@@ -446,6 +501,30 @@ def instantiate_optimizer(
         and OPTIMIZER_LOG_DIR_KEY not in kwargs
     ):
         kwargs[OPTIMIZER_LOG_DIR_KEY] = log_dir
+    if optimizer_key == OPTIMIZER_NAME_GEPA and target_score is not None:
+        target_stopper = build_target_score_stopper(target_score)
+        if target_stopper is not None:
+            gepa_kwargs = kwargs.get("gepa_kwargs")
+            if gepa_kwargs is None:
+                gepa_kwargs = {}
+            elif not isinstance(gepa_kwargs, dict):
+                raise ServiceError("GEPA's gepa_kwargs must be an object when a target score is configured.")
+            else:
+                gepa_kwargs = dict(gepa_kwargs)
+            existing_callbacks = gepa_kwargs.get("stop_callbacks")
+            if existing_callbacks is None:
+                callbacks: list[Any] = []
+            elif isinstance(existing_callbacks, (list, tuple)):
+                callbacks = list(existing_callbacks)
+            else:
+                callbacks = [existing_callbacks]
+            if any(not callable(callback) for callback in callbacks):
+                raise ServiceError("GEPA stop_callbacks must contain callable stopping conditions.")
+            callbacks.append(target_stopper)
+            gepa_kwargs["stop_callbacks"] = callbacks
+            kwargs["gepa_kwargs"] = gepa_kwargs
+            if stop_state is not None:
+                stop_state["target_score_stopper"] = target_stopper
     needs_reflection = optimizer_key in reflection_required_optimizers
     if OPTIMIZER_REFLECTION_LM_KEY not in kwargs:
         if reflection_lm is not None and needs_reflection:

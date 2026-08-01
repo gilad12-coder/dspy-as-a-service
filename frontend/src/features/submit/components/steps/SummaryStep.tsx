@@ -59,32 +59,6 @@ const SUMMARY_TABS = perLocale(() => [
   },
 ]);
 
-/**
- * Read-only row shown when a grid side is set to "all available models".
- *
- * Mirrors the sentinel chip in ModelStep but without interactions — the
- * summary tab is always pointer-events-none so this just has to carry the
- * same visual language (Boxes icon, primary tint, catalog count).
- */
-function SummaryAllAvailableRow({ count }: { count: number }) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-        <Boxes className="size-4" />
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="text-sm font-medium text-foreground">
-          {msg("auto.features.submit.components.steps.summarystep.1")}
-        </span>
-        <span className="text-[0.6875rem] text-muted-foreground">
-          {count}
-          {msg("auto.features.submit.components.steps.summarystep.2")}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 export function SummaryStep({ w }: { w: SubmitWizardContext }) {
   const { prefs } = useUserPrefs();
   const advanced = prefs.advancedMode;
@@ -107,13 +81,11 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
     secondModelConfig,
     generationModels,
     reflectionModels,
-    useAllGenerationModels,
-    useAllReflectionModels,
-    catalog,
     autoLevel,
     reflectionMinibatchSize,
     maxFullEvals,
     useMerge,
+    targetScore,
     signatureCode,
     metricCode,
     isWorkflow,
@@ -295,50 +267,55 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                   )}
                   {/* Split breakdown is advanced-mode machinery. */}
                   {advanced && (
-                  <>
-                  <Separator />
-                  <div className="space-y-3">
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Layers className="size-3.5" />
-                      {msg("auto.features.submit.components.steps.summarystep.12")}
-                      {TERMS.dataset}
-                    </span>
-                    <div className="flex h-3 rounded-full overflow-hidden">
-                      <div className="bg-[#3D2E22]" style={{ width: `${split.train * 100}%` }} />
-                      <div className="bg-[#C8A882]" style={{ width: `${split.val * 100}%` }} />
-                      <div className="bg-[#8C7A6B]" style={{ width: `${split.test * 100}%` }} />
-                    </div>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="inline-block w-2 h-2 rounded-full bg-[#3D2E22]" />
-                        {msg("auto.features.submit.components.steps.summarystep.13")}
-                        {split.train}
+                    <>
+                      <Separator />
+                      <div className="space-y-3">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Layers className="size-3.5" />
+                          {msg("auto.features.submit.components.steps.summarystep.12")}
+                          {TERMS.dataset}
+                        </span>
+                        <div className="flex h-3 rounded-full overflow-hidden">
+                          <div
+                            className="bg-[#3D2E22]"
+                            style={{ width: `${split.train * 100}%` }}
+                          />
+                          <div className="bg-[#C8A882]" style={{ width: `${split.val * 100}%` }} />
+                          <div className="bg-[#8C7A6B]" style={{ width: `${split.test * 100}%` }} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="inline-block w-2 h-2 rounded-full bg-[#3D2E22]" />
+                            {msg("auto.features.submit.components.steps.summarystep.13")}
+                            {split.train}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="inline-block w-2 h-2 rounded-full bg-[#C8A882]" />
+                            {msg("auto.features.submit.components.steps.summarystep.14")}
+                            {split.val}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="inline-block w-2 h-2 rounded-full bg-[#8C7A6B]" />
+                            {msg("auto.features.submit.components.steps.summarystep.15")}
+                            {split.test}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="inline-block w-2 h-2 rounded-full bg-[#C8A882]" />
-                        {msg("auto.features.submit.components.steps.summarystep.14")}
-                        {split.val}
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="inline-block w-2 h-2 rounded-full bg-[#8C7A6B]" />
-                        {msg("auto.features.submit.components.steps.summarystep.15")}
-                        {split.test}
-                      </div>
-                    </div>
-                  </div>
-                  </>
+                    </>
                   )}
-                  <div className="flex items-center justify-between py-2.5 border-b border-border/40">
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Shuffle className="size-3.5" />
-                      {msg("auto.features.submit.components.steps.summarystep.16")}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {shuffle
-                        ? msg("auto.features.submit.components.steps.summarystep.literal.9")
-                        : msg("auto.features.submit.components.steps.summarystep.literal.10")}
-                    </span>
-                  </div>
+                  {advanced && (
+                    <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Shuffle className="size-3.5" />
+                        {msg("auto.features.submit.components.steps.summarystep.16")}
+                      </span>
+                      <span className="text-sm font-medium">
+                        {shuffle
+                          ? msg("auto.features.submit.components.steps.summarystep.literal.9")
+                          : msg("auto.features.submit.components.steps.summarystep.literal.10")}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -361,13 +338,8 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                     </div>
                   ) : (
                     (() => {
-                      const availableCount = catalog?.models.length ?? 0;
-                      const genCount = useAllGenerationModels
-                        ? availableCount
-                        : generationModels.filter((m) => m.name).length;
-                      const refCount = useAllReflectionModels
-                        ? availableCount
-                        : reflectionModels.filter((m) => m.name).length;
+                      const genCount = generationModels.filter((m) => m.name).length;
+                      const refCount = reflectionModels.filter((m) => m.name).length;
                       const totalPairs = genCount * refCount;
                       return (
                         <div className="space-y-2">
@@ -384,25 +356,21 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                             {msg("model.generation.label_plural")}
                           </span>
                           <div className="space-y-1.5">
-                            {useAllGenerationModels ? (
-                              <SummaryAllAvailableRow count={availableCount} />
-                            ) : (
-                              generationModels
-                                .filter((m) => m.name)
-                                .map((m, i) => <ModelChip key={i} config={m} onClick={() => {}} />)
-                            )}
+                            {generationModels
+                              .filter((m) => m.name)
+                              .map((m, i) => (
+                                <ModelChip key={i} config={m} onClick={() => {}} />
+                              ))}
                           </div>
                           <span className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
                             {msg("auto.features.submit.components.steps.summarystep.18")}
                           </span>
                           <div className="space-y-1.5">
-                            {useAllReflectionModels ? (
-                              <SummaryAllAvailableRow count={availableCount} />
-                            ) : (
-                              reflectionModels
-                                .filter((m) => m.name)
-                                .map((m, i) => <ModelChip key={i} config={m} onClick={() => {}} />)
-                            )}
+                            {reflectionModels
+                              .filter((m) => m.name)
+                              .map((m, i) => (
+                                <ModelChip key={i} config={m} onClick={() => {}} />
+                              ))}
                           </div>
                         </div>
                       );
@@ -441,33 +409,46 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                           : msg("auto.features.submit.components.steps.summarystep.literal.13")}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between py-2.5 border-b border-border/40">
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Database className="size-3.5" />
-                      {msg("auto.features.submit.components.steps.summarystep.20")}
-                    </span>
-                    <span className="text-sm font-medium font-mono">
-                      {reflectionMinibatchSize || "—"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between py-2.5 border-b border-border/40">
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Layers className="size-3.5" />
-                      {msg("auto.features.submit.components.steps.summarystep.21")}
-                    </span>
-                    <span className="text-sm font-medium font-mono">{maxFullEvals || "—"}</span>
-                  </div>
-                  <div className="flex items-center justify-between py-2.5 border-b border-border/40">
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Shuffle className="size-3.5" />
-                      {msg("auto.features.submit.components.steps.summarystep.22")}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {useMerge
-                        ? msg("auto.features.submit.components.steps.summarystep.literal.14")
-                        : msg("auto.features.submit.components.steps.summarystep.literal.15")}
-                    </span>
-                  </div>
+                  {advanced && (
+                    <>
+                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Target className="size-3.5" />
+                          {msg("auto.features.submit.components.steps.summarystep.25")}
+                        </span>
+                        <span className="text-sm font-medium font-mono" dir="ltr">
+                          {targetScore ? `${targetScore}%` : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Database className="size-3.5" />
+                          {msg("auto.features.submit.components.steps.summarystep.20")}
+                        </span>
+                        <span className="text-sm font-medium font-mono">
+                          {reflectionMinibatchSize || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Layers className="size-3.5" />
+                          {msg("auto.features.submit.components.steps.summarystep.21")}
+                        </span>
+                        <span className="text-sm font-medium font-mono">{maxFullEvals || "—"}</span>
+                      </div>
+                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Shuffle className="size-3.5" />
+                          {msg("auto.features.submit.components.steps.summarystep.22")}
+                        </span>
+                        <span className="text-sm font-medium">
+                          {useMerge
+                            ? msg("auto.features.submit.components.steps.summarystep.literal.14")
+                            : msg("auto.features.submit.components.steps.summarystep.literal.15")}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

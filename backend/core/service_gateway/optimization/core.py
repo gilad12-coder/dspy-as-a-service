@@ -220,6 +220,26 @@ def _require_metric_compatible_with_optimizer(optimizer_name: str, param_names: 
         )
 
 
+def _validate_target_score(target_score: float | None, optimizer_name: str, val_fraction: float) -> None:
+    """Validate that a target score can use GEPA's validation stopper.
+
+    Args:
+        target_score: Optional UI percentage target.
+        optimizer_name: Registered optimizer name from the submission.
+        val_fraction: Validation split fraction selected for the run.
+
+    Raises:
+        ServiceError: When a target is requested for a non-GEPA optimizer or
+            when no validation split is available to score it.
+    """
+    if target_score is None:
+        return
+    if optimizer_name.lower() != OPTIMIZER_NAME_GEPA:
+        raise ServiceError("target_score is only supported for GEPA optimization.")
+    if val_fraction <= 0:
+        raise ServiceError("target_score requires a non-empty validation split.")
+
+
 def _tool_to_snapshot_spec(tool: Any) -> dict[str, Any]:
     """Serialize a ``dspy.Tool`` into a dataset-snapshot spec.
 
@@ -460,6 +480,7 @@ def _run_grid_pair(
                 trajectory_callback,
                 ctx.payload.module_name,
             )
+            stop_state: dict[str, Any] = {}
             optimizer = instantiate_optimizer(
                 ctx.optimizer_factory,
                 ctx.payload.optimizer_name,
@@ -468,6 +489,8 @@ def _run_grid_pair(
                 ref_cfg,
                 reflection_lm=reflection_lm,
                 log_dir=trajectory_log_dir,
+                target_score=ctx.payload.target_score,
+                stop_state=stop_state,
             )
             baseline = None
             baseline_test_results: list[dict] = []
@@ -552,6 +575,19 @@ def _run_grid_pair(
             baseline_test_metric=baseline,
             optimized_test_metric=optimized,
             metric_improvement=improvement,
+            target_score=ctx.payload.target_score,
+            target_score_reached=(
+                bool(getattr(stop_state.get("target_score_stopper"), "reached", False))
+                if ctx.payload.target_score is not None
+                else None
+            ),
+            stop_reason=(
+                "target_score"
+                if bool(getattr(stop_state.get("target_score_stopper"), "reached", False))
+                else "metric_call_budget"
+            )
+            if ctx.payload.target_score is not None
+            else None,
             runtime_seconds=round(pair_runtime, 2),
             num_lm_calls=pair_lm_calls,
             total_tokens=total_tokens_from_history(language_model, reflection_lm),
@@ -819,6 +855,7 @@ class DspyService:
                 progress_callback,
                 payload.module_name,
             )
+            stop_state: dict[str, Any] = {}
             optimizer = instantiate_optimizer(
                 optimizer_factory,
                 payload.optimizer_name,
@@ -827,6 +864,8 @@ class DspyService:
                 payload.reflection_model_settings,
                 reflection_lm=reflection_lm,
                 log_dir=trajectory_log_dir,
+                target_score=payload.target_score,
+                stop_state=stop_state,
             )
             with dspy.context(lm=language_model, callbacks=callbacks):
                 baseline_test_metric = None
@@ -926,6 +965,15 @@ class DspyService:
             META_MODULE_KWARGS: payload.module_kwargs,
             META_MODEL_IDENTIFIER: payload.model_settings.normalized_identifier(),
         }
+        if payload.target_score is not None:
+            target_reached = bool(getattr(stop_state.get("target_score_stopper"), "reached", False))
+            optimization_metadata.update(
+                {
+                    "target_score": payload.target_score,
+                    "target_score_reached": target_reached,
+                    "stop_reason": "target_score" if target_reached else "metric_call_budget",
+                }
+            )
 
         metric_improvement = None
         if baseline_test_metric is not None and optimized_test_metric is not None:
@@ -1101,6 +1149,7 @@ class DspyService:
                 student_lm=student_lm,
                 reflection_lm=reflection_lm,
                 max_metric_calls=max_metric_calls,
+                target_score=payload.target_score,
                 seed=seed,
                 num_threads=num_threads,
                 run_dir=trajectory_log_dir,
@@ -1145,6 +1194,15 @@ class DspyService:
             META_MODEL_IDENTIFIER: payload.model_settings.normalized_identifier(),
             "max_metric_calls": max_metric_calls,
         }
+        if payload.target_score is not None:
+            target_reached = bool(result.get("target_score_reached"))
+            optimization_metadata.update(
+                {
+                    "target_score": payload.target_score,
+                    "target_score_reached": target_reached,
+                    "stop_reason": "target_score" if target_reached else "metric_call_budget",
+                }
+            )
 
         runtime_seconds = (datetime.now(UTC) - run_start).total_seconds()
         num_lm_calls = lm_call_count(student_lm)
@@ -1499,6 +1557,7 @@ class DspyService:
         require_mapping_columns_in_dataset(payload.column_mapping, payload.dataset)
         metric_info = validate_metric_code(payload.metric_code)
         _require_metric_compatible_with_optimizer(payload.optimizer_name, metric_info.param_names)
+        _validate_target_score(payload.target_score, payload.optimizer_name, payload.split_fractions.val)
         self._get_module_factory(payload.module_name)
         optimizer_factory = self._get_optimizer_factory(payload.optimizer_name)
         validate_optimizer_signature(optimizer_factory, payload.optimizer_name)
@@ -1528,6 +1587,7 @@ class DspyService:
             payload.optimizer_name,
             len(payload.dataset),
         )
+        _validate_target_score(payload.target_score, payload.optimizer_name, payload.split_fractions.val)
 
         if payload.module_name.lower() == WORKFLOW_MODULE_NAME:
             introspection = validate_workflow(payload.workflow)

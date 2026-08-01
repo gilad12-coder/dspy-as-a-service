@@ -90,11 +90,19 @@ function isColumnRole(value: unknown): value is ColumnRole {
   return typeof value === "string" && COLUMN_ROLES.has(value);
 }
 
+function parseTargetScore(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 100 ? parsed : undefined;
+}
+
 export function useSubmitWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const { prefs } = useUserPrefs();
+  const advancedMode = prefs.advancedMode || readPref("advancedMode");
   // The active token-source mode (managed credits vs the user's own key). Sent
   // on every submit so billing mode is enforced server-side, not just shown in
   // the wizard.
@@ -107,6 +115,7 @@ export function useSubmitWizard() {
   const [summaryCodeTab, setSummaryCodeTab] = useState<string>("signature");
 
   const [jobType, setOptimizationType] = useState<"run" | "grid_search">("run");
+  const effectiveJobType = advancedMode ? jobType : "run";
   const [isPrivate, setIsPrivate] = useState(true);
 
   const username = session?.user?.name ?? "";
@@ -249,7 +258,6 @@ export function useSubmitWizard() {
     config: ModelConfig;
     onSave: (c: ModelConfig) => void;
     label: string;
-    onSelectAllAvailable?: () => void;
   } | null>(null);
 
   const { recentConfigs, saveToRecent, clearRecentConfigs, removeRecentConfig } =
@@ -261,8 +269,26 @@ export function useSubmitWizard() {
 
   const [generationModels, setGenerationModels] = useState<ModelConfig[]>([emptyModelConfig()]);
   const [reflectionModels, setReflectionModels] = useState<ModelConfig[]>([emptyModelConfig()]);
-  const [useAllGenerationModels, setUseAllGenerationModels] = useState(false);
-  const [useAllReflectionModels, setUseAllReflectionModels] = useState(false);
+
+  useEffect(() => {
+    if (advancedMode || jobType === "run") return;
+    const firstGeneration = generationModels.find((model) => model.name.trim());
+    const firstReflection = reflectionModels.find((model) => model.name.trim());
+    if (firstGeneration && !modelConfig.name.trim()) {
+      setModelConfig({ ...emptyModelConfig(), ...firstGeneration });
+    }
+    if (firstReflection && !secondModelConfig?.name?.trim()) {
+      setSecondModelConfig({ ...emptyModelConfig(), ...firstReflection });
+    }
+    setOptimizationType("run");
+  }, [
+    advancedMode,
+    generationModels,
+    jobType,
+    modelConfig.name,
+    reflectionModels,
+    secondModelConfig,
+  ]);
 
   const [split, setSplit] = useState<SplitFractions>(defaultSplit);
 
@@ -314,6 +340,7 @@ export function useSubmitWizard() {
   );
   const [maxFullEvals, setMaxFullEvals] = useState<string>(DEFAULT_MAX_FULL_EVALS);
   const [useMerge, setUseMerge] = useState(true);
+  const [targetScore, setTargetScore] = useState<string>("");
 
   // Disclosure state for the advanced wizard sections (Basics: optimization
   // type, Params: optimizer settings). Held here rather than in the step
@@ -323,23 +350,25 @@ export function useSubmitWizard() {
   const [optimizationTypeOpen, setOptimizationTypeOpen] = useState(false);
   const [optimizerSettingsOpen, setOptimizerSettingsOpen] = useState(false);
   useEffect(() => {
-    if (prefs.expandAdvanced) {
+    if (prefs.expandAdvanced && advancedMode) {
       setOptimizationTypeOpen(true);
       setOptimizerSettingsOpen(true);
     }
-  }, [prefs.expandAdvanced]);
+  }, [advancedMode, prefs.expandAdvanced]);
   useEffect(() => {
-    if (jobType !== "run") setOptimizationTypeOpen(true);
-  }, [jobType]);
+    if (advancedMode && jobType !== "run") setOptimizationTypeOpen(true);
+  }, [advancedMode, jobType]);
   useEffect(() => {
+    if (!advancedMode) return;
     if (
       reflectionMinibatchSize !== DEFAULT_REFLECTION_MINIBATCH ||
       maxFullEvals !== DEFAULT_MAX_FULL_EVALS ||
-      !useMerge
+      !useMerge ||
+      targetScore.trim() !== ""
     ) {
       setOptimizerSettingsOpen(true);
     }
-  }, [reflectionMinibatchSize, maxFullEvals, useMerge]);
+  }, [advancedMode, reflectionMinibatchSize, maxFullEvals, useMerge, targetScore]);
   const [shuffle, setShuffle] = useState(true);
   // User-set Max Cost Ceiling, in credits — null until the user opts into a cap.
   // The run is hard-stopped server-side once spend exceeds it (Phase 2 [FG-1]),
@@ -425,7 +454,7 @@ export function useSubmitWizard() {
       furthestReachedStep,
       summaryTab,
       summaryCodeTab,
-      jobType,
+      jobType: effectiveJobType,
       isPrivate,
       jobName,
       jobDescription,
@@ -448,14 +477,13 @@ export function useSubmitWizard() {
       secondModelConfig,
       generationModels,
       reflectionModels,
-      useAllGenerationModels,
-      useAllReflectionModels,
       split,
       seed,
       autoLevel,
       reflectionMinibatchSize,
       maxFullEvals,
       useMerge,
+      targetScore,
       shuffle,
       maxCostCredits,
     };
@@ -495,7 +523,7 @@ export function useSubmitWizard() {
     setFurthestReachedStep(d.furthestReachedStep);
     setSummaryTab(d.summaryTab);
     setSummaryCodeTab(d.summaryCodeTab);
-    setOptimizationType(d.jobType);
+    setOptimizationType(advancedMode ? d.jobType : "run");
     setIsPrivate(d.isPrivate);
     setJobName(d.jobName);
     setJobDescription(d.jobDescription);
@@ -522,17 +550,22 @@ export function useSubmitWizard() {
     setSecondModelConfig(d.secondModelConfig);
     setGenerationModels(d.generationModels);
     setReflectionModels(d.reflectionModels);
-    setUseAllGenerationModels(d.useAllGenerationModels);
-    setUseAllReflectionModels(d.useAllReflectionModels);
     setSplit(d.split);
     setSeed(d.seed);
     setAutoLevel(d.autoLevel);
     setReflectionMinibatchSize(d.reflectionMinibatchSize);
     setMaxFullEvals(d.maxFullEvals);
     setUseMerge(d.useMerge);
+    setTargetScore(d.targetScore ?? "");
     setShuffle(d.shuffle);
     setMaxCostCredits(d.maxCostCredits);
-  }, []);
+    if (!advancedMode && d.jobType === "grid_search") {
+      const firstGeneration = d.generationModels.find((model) => model.name.trim());
+      const firstReflection = d.reflectionModels.find((model) => model.name.trim());
+      if (firstGeneration) setModelConfig({ ...emptyModelConfig(), ...firstGeneration });
+      if (firstReflection) setSecondModelConfig({ ...emptyModelConfig(), ...firstReflection });
+    }
+  }, [advancedMode]);
 
   useEffect(
     () => () => {
@@ -573,7 +606,9 @@ export function useSubmitWizard() {
         key === "job_type" &&
         (sharedState.job_type === "run" || sharedState.job_type === "grid_search")
       ) {
-        setOptimizationType(sharedState.job_type);
+        setOptimizationType(
+          sharedState.job_type === "grid_search" && !advancedMode ? "run" : sharedState.job_type,
+        );
       } else if (key === "optimizer_name" && typeof sharedState.optimizer_name === "string") {
         setOptimizerName(sharedState.optimizer_name);
       } else if (key === "module_name" && typeof sharedState.module_name === "string") {
@@ -624,16 +659,6 @@ export function useSubmitWizard() {
             ...(m as Partial<ModelConfig>),
           })),
         );
-      } else if (
-        key === "use_all_generation_models" &&
-        typeof sharedState.use_all_generation_models === "boolean"
-      ) {
-        setUseAllGenerationModels(sharedState.use_all_generation_models);
-      } else if (
-        key === "use_all_reflection_models" &&
-        typeof sharedState.use_all_reflection_models === "boolean"
-      ) {
-        setUseAllReflectionModels(sharedState.use_all_reflection_models);
       } else if (key === "split_fractions" && sharedState.split_fractions) {
         setSplit(sharedState.split_fractions);
       } else if (
@@ -658,9 +683,15 @@ export function useSubmitWizard() {
           setMaxFullEvals(String(kw.max_full_evals));
         }
         if (typeof kw.use_merge === "boolean") setUseMerge(kw.use_merge);
+      } else if (key === "target_score") {
+        if (typeof sharedState.target_score === "number") {
+          setTargetScore(String(sharedState.target_score));
+        } else if (sharedState.target_score == null) {
+          setTargetScore("");
+        }
       }
     }
-  }, [agentPulseTick]);
+  }, [advancedMode, agentPulseTick]);
 
   // Outgoing: push relevant local state back into the shared context so the
   // agent's tool-gate (dataset_ready, columns_configured, model_configured)
@@ -686,15 +717,11 @@ export function useSubmitWizard() {
   // Max Cost Ceiling from its high end. For a grid, count the (gen × refl) pairs
   // so the bracket reflects the whole sweep.
   const gridPairs =
-    jobType === "grid_search"
+    effectiveJobType === "grid_search"
       ? Math.max(
           1,
-          (useAllGenerationModels
-            ? (catalog?.models.length ?? 1)
-            : generationModels.filter((m) => m.name.trim()).length || 1) *
-            (useAllReflectionModels
-              ? (catalog?.models.length ?? 1)
-              : reflectionModels.filter((m) => m.name.trim()).length || 1),
+          (generationModels.filter((m) => m.name.trim()).length || 1) *
+            (reflectionModels.filter((m) => m.name.trim()).length || 1),
         )
       : 1;
   const costBracket: CostBracket = useMemo(() => {
@@ -702,11 +729,11 @@ export function useSubmitWizard() {
     // gen/refl pair for a grid). Looked up in the catalog so each model's real
     // $/token moves the estimate; unresolved names price at the engine defaults.
     const taskName =
-      jobType === "grid_search"
+      effectiveJobType === "grid_search"
         ? generationModels.find((m) => m.name.trim())?.name
         : modelConfig.name;
     const reflName =
-      jobType === "grid_search"
+      effectiveJobType === "grid_search"
         ? reflectionModels.find((m) => m.name.trim())?.name
         : secondModelConfig?.name;
     const taskModel = taskName?.trim()
@@ -717,7 +744,7 @@ export function useSubmitWizard() {
       : null;
     return projectCostBracket({
       autoLevel,
-      maxFullEvals,
+      maxFullEvals: advancedMode ? maxFullEvals : DEFAULT_MAX_FULL_EVALS,
       datasetRows: parsedDataset?.rowCount ?? 0,
       pairs: gridPairs,
       taskModel,
@@ -725,9 +752,10 @@ export function useSubmitWizard() {
     });
   }, [
     autoLevel,
+    advancedMode,
     maxFullEvals,
     parsedDataset?.rowCount,
-    jobType,
+    effectiveJobType,
     modelConfig.name,
     secondModelConfig,
     generationModels,
@@ -901,20 +929,14 @@ export function useSubmitWizard() {
     if (s.job_description !== jobDescription) {
       wizardCtx.setField("job_description", jobDescription, "user");
     }
-    if (s.job_type !== jobType) {
-      wizardCtx.setField("job_type", jobType, "user");
+    if (s.job_type !== effectiveJobType) {
+      wizardCtx.setField("job_type", effectiveJobType, "user");
     }
     if (s.optimizer_name !== optimizerName) {
       wizardCtx.setField("optimizer_name", optimizerName, "user");
     }
     if (s.module_name !== moduleName) {
       wizardCtx.setField("module_name", moduleName, "user");
-    }
-    if (s.use_all_generation_models !== useAllGenerationModels) {
-      wizardCtx.setField("use_all_generation_models", useAllGenerationModels, "user");
-    }
-    if (s.use_all_reflection_models !== useAllReflectionModels) {
-      wizardCtx.setField("use_all_reflection_models", useAllReflectionModels, "user");
     }
     if (s.split_mode !== splitMode) {
       wizardCtx.setField("split_mode", splitMode, "user");
@@ -928,17 +950,24 @@ export function useSubmitWizard() {
     if (s.is_private !== isPrivate) {
       wizardCtx.setField("is_private", isPrivate, "user");
     }
+    const parsedTargetScore =
+      advancedMode && optimizerName.toLowerCase() === "gepa"
+        ? parseTargetScore(targetScore)
+        : undefined;
+    if (s.target_score !== parsedTargetScore) {
+      wizardCtx.setField("target_score", parsedTargetScore, "user");
+    }
   }, [
     jobDescription,
-    jobType,
+    effectiveJobType,
     optimizerName,
     moduleName,
-    useAllGenerationModels,
-    useAllReflectionModels,
     splitMode,
     seed,
     shuffle,
     isPrivate,
+    advancedMode,
+    targetScore,
     wizardCtx,
   ]);
 
@@ -1001,9 +1030,11 @@ export function useSubmitWizard() {
     if (!wizardCtx) return;
     const kw = buildOptimizerKwargs({
       autoLevel,
-      maxFullEvals,
-      reflectionMinibatchSize,
-      useMerge,
+      maxFullEvals: advancedMode ? maxFullEvals : DEFAULT_MAX_FULL_EVALS,
+      reflectionMinibatchSize: advancedMode
+        ? reflectionMinibatchSize
+        : DEFAULT_REFLECTION_MINIBATCH,
+      useMerge: advancedMode ? useMerge : true,
     });
     const shared = wizardCtx.state.optimizer_kwargs ?? {};
     const kwEntries = Object.entries(kw);
@@ -1013,7 +1044,7 @@ export function useSubmitWizard() {
     if (!same) {
       wizardCtx.setField("optimizer_kwargs", kw, "user");
     }
-  }, [autoLevel, maxFullEvals, reflectionMinibatchSize, useMerge, wizardCtx]);
+  }, [advancedMode, autoLevel, maxFullEvals, reflectionMinibatchSize, useMerge, wizardCtx]);
 
   // Chat-driven dataset staging: when the user attaches a CSV/JSON/XLSX
   // file in the agent panel and confirms the column roles, the panel
@@ -1164,7 +1195,11 @@ export function useSubmitWizard() {
           ? (jobData.grid_result.pair_results.find((p) => p.pair_index === clonePairIndex) ?? null)
           : null;
       setOptimizationType(
-        clonePair ? "run" : optimization_type === "grid_search" ? "grid_search" : "run",
+        clonePair
+          ? "run"
+          : advancedMode && optimization_type === "grid_search"
+            ? "grid_search"
+            : "run",
       );
 
       const displayName = jobData?.name || payload.name;
@@ -1277,8 +1312,6 @@ export function useSubmitWizard() {
             clonePair.reflection_reasoning_effort,
           ),
         );
-        setUseAllGenerationModels(false);
-        setUseAllReflectionModels(false);
       } else {
         const mc = payload.model_config as ModelConfig | undefined;
         if (mc) setModelConfig({ ...emptyModelConfig(), ...mc });
@@ -1294,8 +1327,12 @@ export function useSubmitWizard() {
         const rm = payload.reflection_models as ModelConfig[] | undefined;
         if (rm?.length) setReflectionModels(rm.map((m) => ({ ...emptyModelConfig(), ...m })));
 
-        if (payload.use_all_available_generation_models) setUseAllGenerationModels(true);
-        if (payload.use_all_available_reflection_models) setUseAllReflectionModels(true);
+        if (!advancedMode && optimization_type === "grid_search") {
+          const firstGeneration = gm?.find((model) => model.name?.trim());
+          const firstReflection = rm?.find((model) => model.name?.trim());
+          if (firstGeneration) setModelConfig({ ...emptyModelConfig(), ...firstGeneration });
+          if (firstReflection) setSecondModelConfig({ ...emptyModelConfig(), ...firstReflection });
+        }
       }
 
       const optKw = payload.optimizer_kwargs as Record<string, unknown> | undefined;
@@ -1305,6 +1342,11 @@ export function useSubmitWizard() {
           setReflectionMinibatchSize(String(optKw.reflection_minibatch_size));
         if (optKw.max_full_evals != null) setMaxFullEvals(String(optKw.max_full_evals));
         if (optKw.use_merge != null) setUseMerge(Boolean(optKw.use_merge));
+      }
+      if (typeof payload.target_score === "number") {
+        setTargetScore(String(payload.target_score));
+      } else {
+        setTargetScore("");
       }
 
       // React run config — hydrate tool source from the wire model. Scoring is
@@ -1361,7 +1403,7 @@ export function useSubmitWizard() {
         toast.error(msg("submit.clone.failed"));
       })
       .finally(() => setCloneLoading(false));
-  }, []);
+  }, [advancedMode]);
 
   const goNext = () => {
     if (step < STEPS.length - 1) {
@@ -1386,6 +1428,21 @@ export function useSubmitWizard() {
   };
 
   const currentColumnMapping = () => buildColumnMapping(columnRoles);
+
+  const validateTargetScore = (showToast: boolean): boolean => {
+    if (!advancedMode || optimizerName.toLowerCase() !== "gepa" || !targetScore.trim()) return true;
+    if (parseTargetScore(targetScore) == null) {
+      if (showToast) toast.error(msg("submit.validation.target_score_invalid"));
+      return false;
+    }
+    const effectiveFractions =
+      splitModeRef.current === "auto" && splitPlan ? splitPlan.fractions : split;
+    if (effectiveFractions.val <= 0) {
+      if (showToast) toast.error(msg("submit.validation.target_score_requires_val"));
+      return false;
+    }
+    return true;
+  };
 
   useDatasetProfiling({
     parsedDataset,
@@ -1446,7 +1503,7 @@ export function useSubmitWizard() {
           if (showToast) toast.error(msg("submit.validation.split_too_small"));
           return false;
         }
-        return true;
+        return validateTargetScore(showToast);
       }
       case 3: {
         if (moduleSelectionRequired) {
@@ -1487,7 +1544,7 @@ export function useSubmitWizard() {
         return true;
       }
       case 4: {
-        if (jobType === "run") {
+        if (effectiveJobType === "run") {
           if (!modelConfig.name.trim()) {
             if (showToast) toast.error(msg("submit.validation.model_required"));
             return false;
@@ -1504,20 +1561,13 @@ export function useSubmitWizard() {
             return false;
           }
         }
-        if (jobType === "grid_search") {
-          if (!useAllGenerationModels && generationModels.every((m) => !m.name.trim())) {
+        if (effectiveJobType === "grid_search") {
+          if (generationModels.every((m) => !m.name.trim())) {
             if (showToast) toast.error(msg("submit.validation.generation_model_required"));
             return false;
           }
-          if (!useAllReflectionModels && reflectionModels.every((m) => !m.name.trim())) {
+          if (reflectionModels.every((m) => !m.name.trim())) {
             if (showToast) toast.error(msg("submit.validation.reflection_models_required"));
-            return false;
-          }
-          if (
-            (useAllGenerationModels || useAllReflectionModels) &&
-            (catalog?.models.length ?? 0) === 0
-          ) {
-            if (showToast) toast.error(msg("submit.validation.no_models_available"));
             return false;
           }
         }
@@ -1532,11 +1582,9 @@ export function useSubmitWizard() {
           const visionByValue = new Map(catalog.models.map((m) => [m.value, m.supports_vision]));
           const isVision = (id: string): boolean => visionByValue.get(id) ?? false;
           const candidates: string[] =
-            jobType === "run"
+            effectiveJobType === "run"
               ? [modelConfig.name].filter((n) => n.trim())
-              : useAllGenerationModels
-                ? catalog.models.filter((m) => m.available).map((m) => m.value)
-                : generationModels.map((m) => m.name).filter((n) => n.trim());
+              : generationModels.map((m) => m.name).filter((n) => n.trim());
           const offenders = candidates.filter((id) => !isVision(id));
           if (offenders.length > 0) {
             if (showToast) {
@@ -1826,6 +1874,10 @@ export function useSubmitWizard() {
       goTo(3);
       return;
     }
+    if (!validateTargetScore(true)) {
+      goTo(2);
+      return;
+    }
     const needsToolSource =
       isReact || (isWorkflow && !!workflowSpec && workflowUsesTools(workflowSpec));
     if (needsToolSource && !reactConfig.mcpUrl.trim()) {
@@ -1853,10 +1905,16 @@ export function useSubmitWizard() {
     try {
       const optKw = buildOptimizerKwargs({
         autoLevel,
-        maxFullEvals,
-        reflectionMinibatchSize,
-        useMerge,
+        maxFullEvals: advancedMode ? maxFullEvals : DEFAULT_MAX_FULL_EVALS,
+        reflectionMinibatchSize: advancedMode
+          ? reflectionMinibatchSize
+          : DEFAULT_REFLECTION_MINIBATCH,
+        useMerge: advancedMode ? useMerge : true,
       });
+      const parsedTargetScore =
+        advancedMode && optimizerName.toLowerCase() === "gepa"
+          ? parseTargetScore(targetScore)
+          : undefined;
       // Submit by reference when the on-screen rows are still the library dataset
       // we loaded — the server inlines the rows and records the link back to it.
       // Any other dataset source replaced the object identity, so fall back to
@@ -1896,6 +1954,7 @@ export function useSubmitWizard() {
         estimated_credits_low: estimate.lowCredits,
         estimated_credits_high: estimate.highCredits,
         ...(maxCostCredits != null && { max_cost_credits: maxCostCredits }),
+        ...(parsedTargetScore != null && { target_score: parsedTargetScore }),
         ...(seed != null && { seed }),
         ...(Object.keys(optKw).length > 0 && { optimizer_kwargs: optKw }),
       };
@@ -1924,7 +1983,7 @@ export function useSubmitWizard() {
       };
 
       let result;
-      if (jobType === "run") {
+      if (effectiveJobType === "run") {
         if (!modelConfig.name.trim()) {
           toast.error(msg("submit.validation.model_required"));
           goTo(4);
@@ -1949,25 +2008,15 @@ export function useSubmitWizard() {
       } else {
         const validGen = generationModels.filter((m) => m.name.trim()).map(applyGlobals);
         const validRef = reflectionModels.filter((m) => m.name.trim()).map(applyGlobals);
-        if (!useAllGenerationModels && validGen.length === 0) {
+        if (validGen.length === 0) {
           toast.error(msg("submit.validation.generation_model_required"));
           goTo(4);
           setSubmitting(false);
           setSubmitPhase("idle");
           return;
         }
-        if (!useAllReflectionModels && validRef.length === 0) {
+        if (validRef.length === 0) {
           toast.error(msg("submit.validation.reflection_models_required"));
-          goTo(4);
-          setSubmitting(false);
-          setSubmitPhase("idle");
-          return;
-        }
-        if (
-          (useAllGenerationModels || useAllReflectionModels) &&
-          (catalog?.models.length ?? 0) === 0
-        ) {
-          toast.error(msg("submit.validation.no_models_available"));
           goTo(4);
           setSubmitting(false);
           setSubmitPhase("idle");
@@ -1975,16 +2024,12 @@ export function useSubmitWizard() {
         }
         result = await submitGridSearch({
           ...base,
-          generation_models: useAllGenerationModels ? [] : validGen,
-          reflection_models: useAllReflectionModels ? [] : validRef,
-          ...(useAllGenerationModels && { use_all_available_generation_models: true }),
-          ...(useAllReflectionModels && { use_all_available_reflection_models: true }),
+          generation_models: validGen,
+          reflection_models: validRef,
         });
         track(TelemetryEvent.GridSearchSubmitted, {
           generation_models: validGen.length,
           reflection_models: validRef.length,
-          use_all_generation: useAllGenerationModels,
-          use_all_reflection: useAllReflectionModels,
         });
       }
 
@@ -2175,7 +2220,7 @@ export function useSubmitWizard() {
     validateStep,
     handleNext,
     handleTabClick,
-    jobType,
+    jobType: effectiveJobType,
     setOptimizationType,
     isPrivate,
     setIsPrivate,
@@ -2255,10 +2300,6 @@ export function useSubmitWizard() {
     setGenerationModels,
     reflectionModels,
     setReflectionModels,
-    useAllGenerationModels,
-    setUseAllGenerationModels,
-    useAllReflectionModels,
-    setUseAllReflectionModels,
     split,
     updateSplit,
     splitSum,
@@ -2278,6 +2319,8 @@ export function useSubmitWizard() {
     setMaxFullEvals,
     useMerge,
     setUseMerge,
+    targetScore,
+    setTargetScore,
     maxCostCredits,
     setMaxCostCredits,
     costBracket,
@@ -2294,10 +2337,7 @@ export function useSubmitWizard() {
     // Offer "start over" only once there's something to discard — the same
     // has-progress guard the unmount cleanup uses to decide whether to park.
     canStartOver:
-      step > 0 ||
-      parsedDataset !== null ||
-      datasetFileName !== null ||
-      jobName.trim() !== "",
+      step > 0 || parsedDataset !== null || datasetFileName !== null || jobName.trim() !== "",
   };
 }
 

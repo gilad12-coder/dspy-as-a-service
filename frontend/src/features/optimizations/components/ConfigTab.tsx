@@ -242,7 +242,7 @@ export function ConfigTab({
     },
     ...reactRows,
     ...Object.entries(optKw)
-      .filter(([k]) => k !== "metric")
+      .filter(([k]) => k !== "metric" && (advanced || k === "auto"))
       .map(([k, v]) => ({
         label: labelWithTip(k),
         value: formatParamValue(k, v),
@@ -432,89 +432,91 @@ export function ConfigTab({
             )}
             {/* The train/val/test breakdown is advanced-mode machinery. */}
             {advanced && (
-            <div className="space-y-2">
-              <p className="text-[0.625rem] font-semibold tracking-[0.08em] uppercase text-[#A89680]">
-                <HelpTip text={tip("data.split_explanation")}>
-                  {msg("auto.features.optimizations.components.configtab.9")}
-                  {TERMS.dataset}
-                </HelpTip>
-              </p>
-              <div className="flex h-2.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-[#3D2E22] transition-all"
-                  style={{ width: `${splitFractions.train * 100}%` }}
-                />
-                <div
-                  className="bg-[#C8A882] transition-all"
-                  style={{ width: `${splitFractions.val * 100}%` }}
-                />
-                <div
-                  className="bg-[#8C7A6B] transition-all"
-                  style={{ width: `${splitFractions.test * 100}%` }}
-                />
-              </div>
-              <div
-                className="grid gap-1 text-xs"
-                style={{
-                  gridTemplateColumns: `${splitFractions.train}fr ${splitFractions.val}fr ${splitFractions.test}fr`,
-                }}
-              >
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="inline-block w-2 h-2 rounded-full bg-[#3D2E22] shrink-0" />
-                  <span className="truncate">
-                    {msg("auto.features.optimizations.components.configtab.10")}{" "}
-                    <span className="font-mono tabular-nums text-muted-foreground" dir="ltr">
-                      {splitFractions.train}
-                    </span>
-                  </span>
-                </span>
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="inline-block w-2 h-2 rounded-full bg-[#C8A882] shrink-0" />
-                  <span className="truncate">
-                    {msg("auto.features.optimizations.components.configtab.11")}{" "}
-                    <span className="font-mono tabular-nums text-muted-foreground" dir="ltr">
-                      {splitFractions.val}
-                    </span>
-                  </span>
-                </span>
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="inline-block w-2 h-2 rounded-full bg-[#8C7A6B] shrink-0" />
-                  <span className="truncate">
-                    {msg("auto.features.optimizations.components.configtab.12")}{" "}
-                    <span className="font-mono tabular-nums text-muted-foreground" dir="ltr">
-                      {splitFractions.test}
-                    </span>
-                  </span>
-                </span>
-              </div>
-            </div>
-            )}
-            <div className="grid grid-cols-2 gap-2.5">
-              <InfoCard
-                label={
-                  <HelpTip text={tip("data.shuffle_explanation")}>
-                    {msg("auto.features.optimizations.components.configtab.13")}
+              <div className="space-y-2">
+                <p className="text-[0.625rem] font-semibold tracking-[0.08em] uppercase text-[#A89680]">
+                  <HelpTip text={tip("data.split_explanation")}>
+                    {msg("auto.features.optimizations.components.configtab.9")}
+                    {TERMS.dataset}
                   </HelpTip>
-                }
-                value={
-                  shuffleVal
-                    ? msg("auto.features.optimizations.components.configtab.literal.16")
-                    : msg("auto.features.optimizations.components.configtab.literal.17")
-                }
-                icon={<Shuffle className="size-3.5" />}
-              />
-              {seedVal != null && (
+                </p>
+                <div className="flex h-2.5 rounded-full overflow-hidden">
+                  <div
+                    className="bg-[#3D2E22] transition-all"
+                    style={{ width: `${splitFractions.train * 100}%` }}
+                  />
+                  <div
+                    className="bg-[#C8A882] transition-all"
+                    style={{ width: `${splitFractions.val * 100}%` }}
+                  />
+                  <div
+                    className="bg-[#8C7A6B] transition-all"
+                    style={{ width: `${splitFractions.test * 100}%` }}
+                  />
+                </div>
+                <div
+                  className="grid gap-1 text-xs"
+                  style={{
+                    gridTemplateColumns: `${splitFractions.train}fr ${splitFractions.val}fr ${splitFractions.test}fr`,
+                  }}
+                >
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="inline-block w-2 h-2 rounded-full bg-[#3D2E22] shrink-0" />
+                    <span className="truncate">
+                      {msg("auto.features.optimizations.components.configtab.10")}{" "}
+                      <span className="font-mono tabular-nums text-muted-foreground" dir="ltr">
+                        {splitFractions.train}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="inline-block w-2 h-2 rounded-full bg-[#C8A882] shrink-0" />
+                    <span className="truncate">
+                      {msg("auto.features.optimizations.components.configtab.11")}{" "}
+                      <span className="font-mono tabular-nums text-muted-foreground" dir="ltr">
+                        {splitFractions.val}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="inline-block w-2 h-2 rounded-full bg-[#8C7A6B] shrink-0" />
+                    <span className="truncate">
+                      {msg("auto.features.optimizations.components.configtab.12")}{" "}
+                      <span className="font-mono tabular-nums text-muted-foreground" dir="ltr">
+                        {splitFractions.test}
+                      </span>
+                    </span>
+                  </span>
+                </div>
+              </div>
+            )}
+            {advanced && (
+              <div className="grid grid-cols-2 gap-2.5">
                 <InfoCard
                   label={
-                    <HelpTip text={tip("data.seed")}>
-                      {msg("auto.features.optimizations.components.configtab.14")}
+                    <HelpTip text={tip("data.shuffle_explanation")}>
+                      {msg("auto.features.optimizations.components.configtab.13")}
                     </HelpTip>
                   }
-                  value={seedVal}
-                  icon={<Dices className="size-3.5" />}
+                  value={
+                    shuffleVal
+                      ? msg("auto.features.optimizations.components.configtab.literal.16")
+                      : msg("auto.features.optimizations.components.configtab.literal.17")
+                  }
+                  icon={<Shuffle className="size-3.5" />}
                 />
-              )}
-            </div>
+                {seedVal != null && (
+                  <InfoCard
+                    label={
+                      <HelpTip text={tip("data.seed")}>
+                        {msg("auto.features.optimizations.components.configtab.14")}
+                      </HelpTip>
+                    }
+                    value={seedVal}
+                    icon={<Dices className="size-3.5" />}
+                  />
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

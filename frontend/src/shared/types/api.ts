@@ -204,6 +204,9 @@ interface OptimizationRequestBase {
   // and lets the user cap the run here; the backend hard-stops the job once spend
   // exceeds the budget this cap buys. Omitted when no ceiling is set.
   max_cost_credits?: number;
+  // Optional GEPA validation target, expressed as a percentage (0–100). The
+  // optimizer stops searching when its best validation candidate reaches it.
+  target_score?: number;
   // Projected credit bracket the wizard showed at submit [FG-1], persisted with
   // the billing stamp so the estimate can be reconciled against the actual
   // charge. Carries the chargeable bracket for the run's token source
@@ -223,8 +226,6 @@ export interface RunRequest extends OptimizationRequestBase {
 export interface GridSearchRequest extends OptimizationRequestBase {
   generation_models: ModelConfig[];
   reflection_models: ModelConfig[];
-  use_all_available_generation_models?: boolean;
-  use_all_available_reflection_models?: boolean;
 }
 
 export interface OptimizationSubmissionResponse {

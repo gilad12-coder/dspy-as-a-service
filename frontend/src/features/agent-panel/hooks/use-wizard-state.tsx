@@ -23,14 +23,13 @@ type WizardKey =
   | "reflection_model_config"
   | "generation_models"
   | "reflection_models"
-  | "use_all_generation_models"
-  | "use_all_reflection_models"
   | "split_fractions"
   | "split_mode"
   | "seed"
   | "shuffle"
   | "is_private"
   | "optimizer_kwargs"
+  | "target_score"
   | "staged_dataset_id"
   | "source_dataset_id";
 type WriteSource = "user" | "agent";
@@ -274,13 +273,6 @@ export function extractWizardPatch(result: unknown): Partial<WizardState> {
   ) {
     patch.reflection_models = wrap.reflection_models as Array<Record<string, unknown>>;
   }
-  if (typeof wrap.use_all_generation_models === "boolean") {
-    patch.use_all_generation_models = wrap.use_all_generation_models;
-  }
-  if (typeof wrap.use_all_reflection_models === "boolean") {
-    patch.use_all_reflection_models = wrap.use_all_reflection_models;
-  }
-
   if (
     wrap.split_fractions &&
     typeof wrap.split_fractions === "object" &&

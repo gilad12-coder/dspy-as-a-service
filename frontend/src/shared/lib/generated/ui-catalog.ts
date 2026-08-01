@@ -1039,6 +1039,8 @@ export type MessageKey =
   | "auto.features.submit.components.steps.paramsstep.13"
   | "auto.features.submit.components.steps.paramsstep.14"
   | "auto.features.submit.components.steps.paramsstep.15"
+  | "auto.features.submit.components.steps.paramsstep.16"
+  | "auto.features.submit.components.steps.paramsstep.17"
   | "auto.features.submit.components.steps.paramsstep.2"
   | "auto.features.submit.components.steps.paramsstep.4"
   | "auto.features.submit.components.steps.paramsstep.5"
@@ -1066,6 +1068,7 @@ export type MessageKey =
   | "auto.features.submit.components.steps.summarystep.22"
   | "auto.features.submit.components.steps.summarystep.23"
   | "auto.features.submit.components.steps.summarystep.24"
+  | "auto.features.submit.components.steps.summarystep.25"
   | "auto.features.submit.components.steps.summarystep.3"
   | "auto.features.submit.components.steps.summarystep.4"
   | "auto.features.submit.components.steps.summarystep.5"
@@ -2459,6 +2462,8 @@ export type MessageKey =
   | "submit.validation.signature_required"
   | "submit.validation.split_must_sum_to_one"
   | "submit.validation.split_too_small"
+  | "submit.validation.target_score_invalid"
+  | "submit.validation.target_score_requires_val"
   | "submit.validation.username_required"
   | "submit.validation.vision_required"
   | "submit.validation.workflow_invalid"
@@ -3904,6 +3909,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.submit.components.steps.paramsstep.13": "גודל מדגם למשוב",
   "auto.features.submit.components.steps.paramsstep.14": "מקסימום סבבי הערכה",
   "auto.features.submit.components.steps.paramsstep.15": "מיזוג מועמדים",
+  "auto.features.submit.components.steps.paramsstep.16": "עצירה כשהציון באימות מגיע ל־",
+  "auto.features.submit.components.steps.paramsstep.17": "אופציונלי. השאירו ריק כדי להשתמש בכל תקציב החיפוש.",
   "auto.features.submit.components.steps.paramsstep.2": "חלוקת הדאטאסט והגדרות החיפוש",
   "auto.features.submit.components.steps.paramsstep.4": "חלוקת ",
   "auto.features.submit.components.steps.paramsstep.5": "סכום: ",
@@ -3931,6 +3938,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.submit.components.steps.summarystep.22": "מיזוג מועמדים",
   "auto.features.submit.components.steps.summarystep.23": "פרומפט (Signature)",
   "auto.features.submit.components.steps.summarystep.24": "פונקציית מדידה",
+  "auto.features.submit.components.steps.summarystep.25": "יעד ציון באימות",
   "auto.features.submit.components.steps.summarystep.3": "שם ה",
   "auto.features.submit.components.steps.summarystep.4": "סוג ",
   "auto.features.submit.components.steps.summarystep.5": "מודול",
@@ -4828,9 +4836,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.about.reset_all.label": "איפוס כל ההעדפות",
   "settings.about.reset_all.success": "ההעדפות אופסו",
   "settings.about.version.label": "גרסה",
-  "settings.account.advanced_mode.description": "מציג את מנגנון החלוקה המלא — סט אימון, אימות ובדיקה — בטפסים ובתחקור התוצאות. כבוי, המערכת מנהלת את זה לבד",
+  "settings.account.advanced_mode.description": "מציג בקרות אופטימיזציה למתקדמים — סריקות מודלים, כוונון האופטימייזר ופרטי אימון/אימות/בדיקה. כבוי, Skynet שומרת על תהליך פשוט",
   "settings.account.advanced_mode.label": "מצב מתקדם",
-  "settings.account.expand_advanced.description": "אפשרויות מתקדמות ייפתחו כברירת מחדל בכל הטפסים במקום להישאר מקופלות",
+  "settings.account.expand_advanced.description": "אפשרויות מתקדמות ייפתחו כברירת מחדל באשף האופטימיזציה במקום להישאר מקופלות",
   "settings.account.expand_advanced.label": "הצגת אפשרויות מתקדמות",
   "settings.account.lite.description": "מכבה אנימציות ומחליף תצוגות כבדות בגרסאות פשוטות — לחוויה חלקה במחשבים חלשים",
   "settings.account.lite.label": "מצב lite",
@@ -5324,6 +5332,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.validation.signature_required": "הזן/הזיני קוד {term.signature}",
   "submit.validation.split_must_sum_to_one": "סכום החלוקה חייב להיות 100% — בדוק/בדקי את {term.splitTrain}, {term.splitVal} ו{term.splitTest}",
   "submit.validation.split_too_small": "ה{term.dataset} קטן מדי כדי להריץ {term.optimization} — נדרשות לפחות דוגמאות ל{term.splitVal} או ל{term.splitTest}",
+  "submit.validation.target_score_invalid": "הזינו יעד אימות בין 1 ל־100",
+  "submit.validation.target_score_requires_val": "יש להגדיר חלוקת אימות לפני שימוש ביעד ציון",
   "submit.validation.username_required": "הזן/הזיני שם משתמש",
   "submit.validation.vision_required": "העמודות {fields} מוגדרות כתמונה, אבל ה{term.model} '{model}' לא תומך בקלט תמונות",
   "submit.validation.workflow_invalid": "יש בעיות בגרף תהליך העבודה — פתחו את שלב הקוד לפרטים",
@@ -12346,6 +12356,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.submit.components.steps.paramsstep.13": "Feedback sample size",
   "auto.features.submit.components.steps.paramsstep.14": "Max evaluation rounds",
   "auto.features.submit.components.steps.paramsstep.15": "Candidate merging",
+  "auto.features.submit.components.steps.paramsstep.16": "Stop when validation score reaches",
+  "auto.features.submit.components.steps.paramsstep.17": "Optional. Leave empty to use the full search budget.",
   "auto.features.submit.components.steps.paramsstep.2": "Dataset split and search settings",
   "auto.features.submit.components.steps.paramsstep.4": "Split of the ",
   "auto.features.submit.components.steps.paramsstep.5": "Sum: ",
@@ -12373,6 +12385,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.submit.components.steps.summarystep.22": "Candidate merging",
   "auto.features.submit.components.steps.summarystep.23": "Signature",
   "auto.features.submit.components.steps.summarystep.24": "Metric",
+  "auto.features.submit.components.steps.summarystep.25": "Validation target",
   "auto.features.submit.components.steps.summarystep.3": "Name of the ",
   "auto.features.submit.components.steps.summarystep.4": "Type of the ",
   "auto.features.submit.components.steps.summarystep.5": "Module",
@@ -13270,9 +13283,9 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "settings.about.reset_all.label": "Reset all preferences",
   "settings.about.reset_all.success": "Preferences reset",
   "settings.about.version.label": "Version",
-  "settings.account.advanced_mode.description": "Shows the full data-split machinery — train, validation and test sets — in forms and result views. Off, the system manages it for you",
+  "settings.account.advanced_mode.description": "Shows expert optimization controls — model sweeps, optimizer tuning, and train/validation/test details. Off, Skynet keeps the run simple",
   "settings.account.advanced_mode.label": "Advanced mode",
-  "settings.account.expand_advanced.description": "Advanced options start expanded everywhere instead of collapsed",
+  "settings.account.expand_advanced.description": "Advanced options start expanded in the optimization wizard instead of collapsed",
   "settings.account.expand_advanced.label": "Expand advanced options",
   "settings.account.lite.description": "Disables animations and swaps heavy views for simpler ones — for a smooth experience on low-end machines",
   "settings.account.lite.label": "Lite mode",
@@ -13766,6 +13779,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.validation.signature_required": "Enter Signature code",
   "submit.validation.split_must_sum_to_one": "The split must sum to 100% — check train, val, and test",
   "submit.validation.split_too_small": "The dataset is too small to run an optimization — at least a few examples are needed for val or test",
+  "submit.validation.target_score_invalid": "Enter a validation target between 1 and 100",
+  "submit.validation.target_score_requires_val": "Set a validation split before using a validation target",
   "submit.validation.username_required": "Enter a username",
   "submit.validation.vision_required": "Columns {fields} are set as image, but the model '{model}' doesn't support image inputs",
   "submit.validation.workflow_invalid": "The workflow graph has issues — open the code step for details",
