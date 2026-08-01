@@ -54,9 +54,10 @@ export interface CodeInterviewState {
 export interface UseCodeInterviewArgs {
   /**
    * Master gate: true only while the interview should run (auto assist mode,
-   * dataset with input+output roles, module picked, user on the code step,
+   * dataset with input+output roles, module picked, user past the data step,
    * no pre-existing code work). The opening question fires when this flips
-   * true with an empty transcript.
+   * true with an empty transcript — pre-warming before the code step so the
+   * first question is ready on arrival.
    */
   enabled: boolean;
   parsedDataset: ParsedDataset | null;

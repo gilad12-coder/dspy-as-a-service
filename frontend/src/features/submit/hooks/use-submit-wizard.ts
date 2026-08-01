@@ -2136,10 +2136,12 @@ export function useSubmitWizard() {
   // ``interviewPending`` holds the seed anywhere in the wizard while an
   // interview could still happen — otherwise the pre-warm seed (which fires
   // from earlier steps) would generate code before the user ever saw a
-  // question. ``interviewEligible`` additionally requires the user to be
-  // looking at the code step with a role-mapped dataset, because the
-  // opening question costs an LLM call. Pre-existing code work (clone
-  // pre-fill, manual edits, a touched canvas) rules the interview out.
+  // question. ``interviewEligible`` additionally requires a role-mapped
+  // dataset and that the user has moved past the data step (``step >= 2``),
+  // so the opening question — which costs an LLM call — pre-warms the moment
+  // dataset setup is done and is already answered-ready by the time the code
+  // step opens. Pre-existing code work (clone pre-fill, manual edits, a
+  // touched canvas) rules the interview out.
   const interviewPossible =
     codeAssistMode === "auto" &&
     !signatureManuallyEdited &&
@@ -2148,7 +2150,7 @@ export function useSubmitWizard() {
   const interviewEligible =
     interviewPossible &&
     !moduleSelectionRequired &&
-    step === 3 &&
+    step >= 2 &&
     !!parsedDataset &&
     parsedDataset.rowCount > 0 &&
     Object.values(columnRoles).some((r) => r === "input") &&
