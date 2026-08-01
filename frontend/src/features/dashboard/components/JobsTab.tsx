@@ -38,6 +38,7 @@ import { TERMS } from "@/shared/lib/terms";
 import { FETCH_PAGE_SIZE } from "../constants";
 import { formatScore, typeBadge } from "../lib/status-badges";
 import { StatusBadge } from "@/shared/ui/status-badge";
+import { JobsExportMenu } from "./JobsExportMenu";
 
 // Default widths sized so all columns fit on screen at once (no horizontal
 // scroll) while each header still shows its full Hebrew label. This works in
@@ -243,6 +244,7 @@ export function JobsTab({
               </button>
             </>
           )}
+          <JobsExportMenu jobs={filteredItems} showSharedColumns={showSharedColumns} />
           <ResetColumnsButton resize={colResize} />
           {filteredItems.length > 0 && (
             <span className="text-[0.6875rem] text-muted-foreground tabular-nums ms-auto">
