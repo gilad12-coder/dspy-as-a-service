@@ -1906,7 +1906,7 @@
   "settings.about.reset_all.label": "Reset all preferences",
   "settings.about.reset_all.success": "Preferences reset",
   "settings.about.version.label": "Version",
-  "settings.account.advanced_mode.description": "Shows expert optimization controls — model sweeps, optimizer tuning, and train/validation/test details. Off, Skynet keeps the run simple",
+  "settings.account.advanced_mode.description": "Shows expert optimization controls — model sweeps, optimizer tuning, and train/validation/test details",
   "settings.account.advanced_mode.label": "Advanced mode",
   "settings.account.expand_advanced.description": "Advanced options start expanded in the optimization wizard instead of collapsed",
   "settings.account.expand_advanced.label": "Expand advanced options",

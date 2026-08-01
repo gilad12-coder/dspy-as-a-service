@@ -1906,7 +1906,7 @@
   "settings.about.reset_all.label": "איפוס כל ההעדפות",
   "settings.about.reset_all.success": "ההעדפות אופסו",
   "settings.about.version.label": "גרסה",
-  "settings.account.advanced_mode.description": "מציג בקרות אופטימיזציה למתקדמים — סריקות מודלים, כוונון האופטימייזר ופרטי אימון/אימות/בדיקה. כבוי, Skynet שומרת על תהליך פשוט",
+  "settings.account.advanced_mode.description": "מציג בקרות אופטימיזציה למתקדמים — סריקות מודלים, כוונון האופטימייזר ופרטי אימון/אימות/בדיקה",
   "settings.account.advanced_mode.label": "מצב מתקדם",
   "settings.account.expand_advanced.description": "אפשרויות מתקדמות ייפתחו כברירת מחדל באשף האופטימיזציה במקום להישאר מקופלות",
   "settings.account.expand_advanced.label": "הצגת אפשרויות מתקדמות",
