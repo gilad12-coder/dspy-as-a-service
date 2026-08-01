@@ -1,7 +1,7 @@
 import { exportTable } from "@/shared/lib/export-table";
 import type { AnnotationProvenance, DataRow, Annotation, TaggerConfig } from "./types";
 
-export type ExportFormat = "csv" | "json" | "xlsx" | "xls" | "feather" | "parquet";
+export type ExportFormat = "csv" | "json" | "xlsx" | "feather" | "parquet";
 
 /** Column the annotation is written under, keyed by tagging mode. */
 function annotationColumn(config: TaggerConfig): string {
@@ -90,7 +90,6 @@ async function exportExcel(
   allCols: string[],
   rows: Array<Record<string, string>>,
   filename: string,
-  bookType: "xlsx" | "xlml",
 ) {
   // Lazy-load xlsx (~900KB) so it stays out of the initial tagger-route
   // chunk — only pulled in when an Excel export is actually requested.
@@ -98,12 +97,13 @@ async function exportExcel(
   const ws = XLSX.utils.json_to_sheet(rows, { header: allCols });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Annotations");
-  const buf = XLSX.write(wb, { type: "array", bookType });
-  const mime =
-    bookType === "xlsx"
-      ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      : "application/vnd.ms-excel";
-  download(new Blob([buf], { type: mime }), filename);
+  const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+  download(
+    new Blob([buf], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    filename,
+  );
 }
 
 /**
@@ -153,10 +153,7 @@ export async function exportAnnotations(
       exportJSON(rows, `${base}.json`);
       break;
     case "xlsx":
-      await exportExcel(allCols, rows, `${base}.xlsx`, "xlsx");
-      break;
-    case "xls":
-      await exportExcel(allCols, rows, `${base}.xls`, "xlml");
+      await exportExcel(allCols, rows, `${base}.xlsx`);
       break;
     case "feather":
     case "parquet":

@@ -514,7 +514,7 @@ export function TaggerAnnotation({
                     </button>
                   </PopoverPrimitive.Close>
                   <div className="my-1 h-px bg-border" />
-                  {(["csv", "json", "xlsx", "xls", "parquet", "feather"] as const).map((fmt) => (
+                  {(["csv", "json", "xlsx", "parquet", "feather"] as const).map((fmt) => (
                     <div key={fmt}>
                       {/* Set the columnar analytics formats apart with a small
                           labelled divider, matching the shared table menu. */}

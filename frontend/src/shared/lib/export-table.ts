@@ -1,6 +1,6 @@
 /**
  * Client-side table export — turn the rows any data table already holds into a
- * downloadable file, in the same formats the tagger offers (CSV/JSON/XLSX/XLS)
+ * downloadable file, in the same formats the tagger offers (CSV/JSON/XLSX)
  * plus the columnar analytics formats a data platform is expected to speak:
  * Parquet and Feather (Arrow IPC).
  *
@@ -14,14 +14,13 @@
 import type { Vector } from "apache-arrow";
 import type { BasicType } from "hyparquet-writer";
 
-export type TableExportFormat = "csv" | "json" | "xlsx" | "xls" | "parquet" | "feather";
+export type TableExportFormat = "csv" | "json" | "xlsx" | "parquet" | "feather";
 
 /** Display order for a format picker: spreadsheet-friendly first, columnar last. */
 export const TABLE_EXPORT_FORMATS: readonly TableExportFormat[] = [
   "csv",
   "json",
   "xlsx",
-  "xls",
   "parquet",
   "feather",
 ];
@@ -156,20 +155,18 @@ async function exportExcel(
   prepared: PreparedColumn[],
   rowCount: number,
   filename: string,
-  bookType: "xlsx" | "xlml",
 ): Promise<void> {
   const XLSX = await import("xlsx");
   const header = prepared.map((c) => c.name);
   const ws = XLSX.utils.json_to_sheet(rowObjects(prepared, rowCount), { header });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-  const buf = XLSX.write(wb, { type: "array", bookType }) as ArrayBuffer;
-  const mime =
-    bookType === "xlsx"
-      ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      : "application/vnd.ms-excel";
-  const ext = bookType === "xlsx" ? "xlsx" : "xls";
-  triggerDownload(buf, mime, `${filename}.${ext}`);
+  const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+  triggerDownload(
+    buf,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    `${filename}.xlsx`,
+  );
 }
 
 async function exportFeather(prepared: PreparedColumn[], filename: string): Promise<void> {
@@ -225,9 +222,7 @@ export async function exportTable(
     case "json":
       return exportJson(prepared, rowCount, filename);
     case "xlsx":
-      return exportExcel(prepared, rowCount, filename, "xlsx");
-    case "xls":
-      return exportExcel(prepared, rowCount, filename, "xlml");
+      return exportExcel(prepared, rowCount, filename);
     case "feather":
       return exportFeather(prepared, filename);
     case "parquet":

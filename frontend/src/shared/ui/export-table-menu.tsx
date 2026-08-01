@@ -23,7 +23,6 @@ const FORMAT_META: Record<
   csv: { label: "CSV", ext: ".csv", Icon: FileText },
   json: { label: "JSON", ext: ".json", Icon: Braces },
   xlsx: { label: "Excel", ext: ".xlsx", Icon: Sheet },
-  xls: { label: "Excel 97", ext: ".xls", Icon: Sheet },
   parquet: { label: "Parquet", ext: ".parquet", Icon: Boxes },
   feather: { label: "Feather", ext: ".feather", Icon: Feather },
 };
