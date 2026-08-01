@@ -2255,6 +2255,8 @@ export type MessageKey =
   | "shared.excel_filter.cancel"
   | "shared.excel_filter.filter_column"
   | "shared.excel_filter.no_results"
+  | "shared.excel_filter.reset_filters_label"
+  | "shared.excel_filter.reset_filters_title"
   | "shared.excel_filter.reset_width_label"
   | "shared.excel_filter.reset_width_title"
   | "shared.excel_filter.search_placeholder"
@@ -5131,6 +5133,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "shared.excel_filter.cancel": "בטל/י",
   "shared.excel_filter.filter_column": "סינון עמודת {label}",
   "shared.excel_filter.no_results": "אין תוצאות",
+  "shared.excel_filter.reset_filters_label": "איפוס סינונים",
+  "shared.excel_filter.reset_filters_title": "איפוס כל הסינונים",
   "shared.excel_filter.reset_width_label": "איפוס גודל עמודות",
   "shared.excel_filter.reset_width_title": "איפוס רוחב עמודות",
   "shared.excel_filter.search_placeholder": "חיפוש…",
@@ -13584,6 +13588,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "shared.excel_filter.cancel": "Cancel",
   "shared.excel_filter.filter_column": "Filter {label} column",
   "shared.excel_filter.no_results": "No results",
+  "shared.excel_filter.reset_filters_label": "Reset filters",
+  "shared.excel_filter.reset_filters_title": "Reset all filters",
   "shared.excel_filter.reset_width_label": "Reset column sizes",
   "shared.excel_filter.reset_width_title": "Reset column widths",
   "shared.excel_filter.search_placeholder": "Search…",

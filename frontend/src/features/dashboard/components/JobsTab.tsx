@@ -27,7 +27,12 @@ import { PingDot } from "@/shared/ui/ping-dot";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import type { useColumnResize } from "@/shared/ui/excel-filter";
-import { ColumnHeader, ResetColumnsButton, type SortDir } from "@/shared/ui/excel-filter";
+import {
+  ColumnHeader,
+  ResetColumnsButton,
+  ResetFiltersButton,
+  type SortDir,
+} from "@/shared/ui/excel-filter";
 import { formatDate, formatId, formatRelativeTime, moduleLabel } from "@/shared/lib";
 import { ACTIVE_STATUSES } from "@/shared/constants/job-status";
 import { LiveElapsed } from "./LiveElapsed";
@@ -38,7 +43,6 @@ import { TERMS } from "@/shared/lib/terms";
 import { FETCH_PAGE_SIZE } from "../constants";
 import { formatScore, typeBadge } from "../lib/status-badges";
 import { StatusBadge } from "@/shared/ui/status-badge";
-import { JobsExportMenu } from "./JobsExportMenu";
 
 // Default widths sized so all columns fit on screen at once (no horizontal
 // scroll) while each header still shows its full Hebrew label. This works in
@@ -230,21 +234,12 @@ export function JobsTab({
       <CardContent className="pt-5">
         <div className="flex items-center gap-2 mb-3">
           {activeCount > 0 && (
-            <>
-              <Badge variant="secondary" className="text-xs">
-                {activeCount}
-                {msg("auto.features.dashboard.components.jobstab.1")}
-              </Badge>
-              <button
-                type="button"
-                onClick={clearAllFilters}
-                className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                {msg("auto.features.dashboard.components.jobstab.2")}
-              </button>
-            </>
+            <Badge variant="secondary" className="text-xs">
+              {activeCount}
+              {msg("auto.features.dashboard.components.jobstab.1")}
+            </Badge>
           )}
-          <JobsExportMenu jobs={filteredItems} showSharedColumns={showSharedColumns} />
+          <ResetFiltersButton filters={{ activeCount, clearAll: clearAllFilters }} />
           <ResetColumnsButton resize={colResize} />
           {filteredItems.length > 0 && (
             <span className="text-[0.6875rem] text-muted-foreground tabular-nums ms-auto">

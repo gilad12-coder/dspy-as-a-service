@@ -26,6 +26,7 @@ import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/shared/ui/
 import {
   ColumnHeader,
   ResetColumnsButton,
+  ResetFiltersButton,
   useColumnFilters,
   useColumnResize,
   type SortDir,
@@ -417,6 +418,7 @@ export function DatasetDetailDialog({
                         {msg("datasets.detail.row_reader.hint")}
                       </span>
                       <div className="flex items-center gap-2 shrink-0">
+                        <ResetFiltersButton filters={colFilters} />
                         <ResetColumnsButton resize={colResize} />
                         <ExportTableMenu
                           iconOnly

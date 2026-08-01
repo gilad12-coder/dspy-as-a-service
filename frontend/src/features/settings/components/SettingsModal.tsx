@@ -80,6 +80,7 @@ import {
 import {
   ColumnHeader,
   ResetColumnsButton,
+  ResetFiltersButton,
   type SortDir,
   useColumnFilters,
   useColumnResize,
@@ -952,15 +953,7 @@ function AdminTab() {
               </span>
             )}
             <ResetColumnsButton resize={colResize} />
-            {colFilters.activeCount > 0 && (
-              <button
-                type="button"
-                onClick={colFilters.clearAll}
-                className="text-[0.6875rem] text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                {msg("settings.admin.storage.clear_filters")}
-              </button>
-            )}
+            <ResetFiltersButton filters={colFilters} />
             <ExportTableMenu
               iconOnly
               align="end"

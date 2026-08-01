@@ -2187,6 +2187,8 @@
   "shared.excel_filter.no_results": "No results",
   "shared.excel_filter.reset_width_label": "Reset column sizes",
   "shared.excel_filter.reset_width_title": "Reset column widths",
+  "shared.excel_filter.reset_filters_label": "Reset filters",
+  "shared.excel_filter.reset_filters_title": "Reset all filters",
   "shared.excel_filter.search_placeholder": "Search…",
   "shared.excel_filter.select_all": "Select all",
   "shared.excel_filter.sort_by": "Sort by {label}",

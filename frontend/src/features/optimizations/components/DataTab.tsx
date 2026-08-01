@@ -12,6 +12,7 @@ import {
   useColumnFilters,
   useColumnResize,
   ResetColumnsButton,
+  ResetFiltersButton,
   type SortDir,
 } from "@/shared/ui/excel-filter";
 import { DataTabSkeleton } from "./DataTabSkeleton";
@@ -427,6 +428,7 @@ export function DataTab({
               </div>
             );
           })()}
+          <ResetFiltersButton filters={colFilters} />
           <ResetColumnsButton resize={colResize} />
           <div className="text-[0.625rem] text-muted-foreground tabular-nums ms-auto">
             {filtered.length}

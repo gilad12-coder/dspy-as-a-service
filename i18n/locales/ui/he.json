@@ -2187,6 +2187,8 @@
   "shared.excel_filter.no_results": "אין תוצאות",
   "shared.excel_filter.reset_width_label": "איפוס גודל עמודות",
   "shared.excel_filter.reset_width_title": "איפוס רוחב עמודות",
+  "shared.excel_filter.reset_filters_label": "איפוס סינונים",
+  "shared.excel_filter.reset_filters_title": "איפוס כל הסינונים",
   "shared.excel_filter.search_placeholder": "חיפוש…",
   "shared.excel_filter.select_all": "בחר/י הכל",
   "shared.excel_filter.sort_by": "מיון לפי {label}",

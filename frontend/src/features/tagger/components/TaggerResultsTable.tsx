@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/shared/ui/
 import {
   ColumnHeader,
   ResetColumnsButton,
+  ResetFiltersButton,
   useColumnFilters,
   useColumnResize,
   type SortDir,
@@ -187,6 +188,7 @@ export function TaggerResultsTable({
     <Card>
       <CardContent className="space-y-3 pt-6">
         <div className="flex items-center justify-end gap-2">
+          <ResetFiltersButton filters={colFilters} />
           {colResize.hasResized && <ResetColumnsButton resize={colResize} />}
           <ExportTableMenu
             iconOnly

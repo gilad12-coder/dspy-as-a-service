@@ -469,3 +469,22 @@ export function ResetColumnsButton({
     </button>
   );
 }
+
+export function ResetFiltersButton({
+  filters,
+}: {
+  filters: { activeCount: number; clearAll: () => void };
+}) {
+  if (filters.activeCount === 0) return null;
+  return (
+    <button
+      type="button"
+      onClick={filters.clearAll}
+      className="inline-flex items-center gap-1 text-[0.625rem] text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer underline underline-offset-2 decoration-muted-foreground/30 hover:decoration-foreground/40"
+      title={msg("shared.excel_filter.reset_filters_title")}
+    >
+      <RotateCcw className="size-3" />
+      <span>{msg("shared.excel_filter.reset_filters_label")}</span>
+    </button>
+  );
+}
