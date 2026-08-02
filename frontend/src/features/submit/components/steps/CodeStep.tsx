@@ -134,7 +134,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
           )}
         >
           {codeAssistMode === "auto" && (
-            <div className="relative min-h-[560px] self-stretch overflow-hidden border-b border-border/40 lg:border-b-0 lg:border-e">
+            <div className="relative min-h-[700px] self-stretch overflow-hidden border-b border-border/40 lg:border-b-0 lg:border-e">
               {interviewActive ? (
                 <CodeInterviewPanel interview={interview} className="absolute inset-0" />
               ) : (
@@ -234,7 +234,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
           )}
         >
           {codeAssistMode === "auto" && (
-            <div className="relative min-h-[560px] self-stretch overflow-hidden border-b border-border/40 lg:border-b-0 lg:border-e">
+            <div className="relative min-h-[700px] self-stretch overflow-hidden border-b border-border/40 lg:border-b-0 lg:border-e">
               {interviewActive ? (
                 <CodeInterviewPanel interview={interview} className="absolute inset-0" />
               ) : (
@@ -296,7 +296,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
                     setSignatureManuallyEdited(true);
                     setSignatureValidation(null);
                   }}
-                  height="180px"
+                  height="260px"
                   onRun={runSignatureValidation}
                   validationResult={signatureValidation}
                   streaming={codeAssistMode === "auto" && agent.signatureStatus === "writing"}
@@ -333,7 +333,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
                     setMetricManuallyEdited(true);
                     setMetricValidation(null);
                   }}
-                  height="180px"
+                  height="260px"
                   onRun={runMetricValidation}
                   validationResult={metricValidation}
                   streaming={codeAssistMode === "auto" && agent.metricStatus === "writing"}
