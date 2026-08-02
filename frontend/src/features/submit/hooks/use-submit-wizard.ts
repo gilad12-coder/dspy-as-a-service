@@ -140,24 +140,24 @@ export function useSubmitWizard() {
   const isReact = moduleName.toLowerCase() === "react";
   const isWorkflow = moduleName.toLowerCase() === "workflow";
   const moduleSelectionRequired = !moduleChosen;
-  // Bound after the agent hook is created below; chooseModule only runs on
-  // user clicks, so the ref is always populated by then.
+  // Bound after the agent/interview hooks are created below; chooseModule only
+  // runs on user clicks, so the refs are always populated by then.
   const agentResetRef = useRef<(() => void) | null>(null);
+  const interviewResetRef = useRef<(() => void) | null>(null);
   const chooseModule = useCallback(
     (name: string) => {
-      // Switching to a different module starts a fresh agent conversation —
-      // the old module's transcript and seeded artifacts no longer apply.
-      // Re-picking the same module keeps the conversation. No moduleChosen
-      // guard here: the switch-module chip reopens the picker (clearing
-      // moduleChosen) before the new pick lands, and on a first pick the
-      // reset is a no-op on an empty conversation.
-      if (name.toLowerCase() !== moduleName.toLowerCase()) {
-        agentResetRef.current?.();
-      }
+      // Picking a module restarts its setup unconditionally — even re-picking
+      // the current one: a fresh agent conversation and a re-armed Signature &
+      // Metric interview, so the interview re-opens and re-runs for the pick.
+      // (interviewActive gates on an empty agent conversation, so the agent
+      // reset is what lets the interview panel reclaim the slot.) On a first
+      // pick both resets are no-ops on empty state.
+      agentResetRef.current?.();
+      interviewResetRef.current?.();
       setModuleName(name);
       setModuleChosen(true);
     },
-    [moduleName],
+    [],
   );
   const reopenModulePicker = useCallback(() => setModuleChosen(false), []);
 
@@ -2205,6 +2205,9 @@ export function useSubmitWizard() {
   useEffect(() => {
     agentResetRef.current = agent.reset;
   }, [agent.reset]);
+  useEffect(() => {
+    interviewResetRef.current = interview.reset;
+  }, [interview.reset]);
 
   return {
     step,

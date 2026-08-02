@@ -49,6 +49,10 @@ export interface CodeInterviewState {
   retry: () => void;
   skip: () => void;
   confirm: (brief: string[]) => void;
+  /** Re-arm the interview from scratch: abort any in-flight turn and clear the
+   *  transcript, brief, and resolution so the opening question fires again.
+   *  Driven by (re)picking a module — the interview re-runs for that pick. */
+  reset: () => void;
 }
 
 export interface UseCodeInterviewArgs {
@@ -236,6 +240,24 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
     setResolved(true);
   }, []);
 
+  // Model/effort are the user's composer preferences — carried across a
+  // re-arm, unlike the transcript and brief which belong to the old run.
+  const reset = React.useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setTurns([]);
+    setBusy(false);
+    setStreamText("");
+    setThinking(null);
+    setOptions([]);
+    setPending(null);
+    setError(false);
+    setDone(false);
+    setBrief([]);
+    setResolved(false);
+    setConfirmedBrief([]);
+  }, []);
+
   const messages: AgentMessage[] = React.useMemo(() => {
     const mapped: AgentMessage[] = turns.map((t) => ({
       role: t.role,
@@ -271,5 +293,6 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
     retry,
     skip,
     confirm,
+    reset,
   };
 }
