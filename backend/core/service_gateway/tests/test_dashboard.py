@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.pool import StaticPool
 
 from core.constants import OPTIMIZATION_TYPE_TAGGING
@@ -123,6 +124,140 @@ def test_user_facing_corpus_sql_keeps_legacy_rows_and_drops_internal_rows() -> N
             .all()
         )
     assert kept == ["grid-parent", "legacy", "payload-only", "plain-run"]
+
+
+def _sqlite_jsonb_typeof(value: str | None) -> str | None:
+    """sqlite stand-in for Postgres ``jsonb_typeof`` over ``->`` output.
+
+    sqlite's ``->`` yields the JSON text of the addressed value (or NULL), so
+    parsing it and mapping Python types onto Postgres's type names is enough
+    for the corpus metric fragment, which only compares against ``'number'``.
+    """
+    if value is None:
+        return None
+    parsed = json.loads(value)
+    if isinstance(parsed, bool):
+        return "boolean"
+    if isinstance(parsed, (int, float)):
+        return "number"
+    return "other"
+
+
+def test_corpus_metric_sql_falls_back_to_job_scores_for_gain_ranking() -> None:
+    """Unembedded rows rank by their own job scores under the gain sort.
+
+    Executes the real metric-fallback SQL against an in-memory schema. The
+    embedded pair must win when present; otherwise runs read
+    ``latest_metrics`` then ``result`` and grid jobs read
+    ``result.best_pair``, mirroring the embedding pipeline's
+    ``_extract_scores``. Rows with no numeric pair anywhere (including a
+    malformed non-numeric value, which must not error) sink below every
+    scored row and fall back to recency among themselves.
+    """
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+
+    @event.listens_for(engine, "connect")
+    def _register_jsonb_typeof(dbapi_conn, _record) -> None:
+        dbapi_conn.create_function("jsonb_typeof", 1, _sqlite_jsonb_typeof)
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE jobs (optimization_id TEXT, payload_overview TEXT, "
+                "latest_metrics TEXT, result TEXT, created_at TEXT)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE job_embeddings (optimization_id TEXT, "
+                "baseline_metric REAL, optimized_metric REAL)"
+            )
+        )
+        conn.execute(
+            text("INSERT INTO jobs VALUES (:id, :overview, :metrics, :result, :created)"),
+            [
+                {
+                    "id": "papillon",
+                    "overview": None,
+                    "metrics": '{"optimized_test_metric": 89.93}',
+                    "result": '{"baseline_test_metric": 74.29, "optimized_test_metric": 89.93}',
+                    "created": "2026-07-23",
+                },
+                {
+                    "id": "flat",
+                    "overview": None,
+                    "metrics": '{"optimized_test_metric": 73.33}',
+                    "result": '{"baseline_test_metric": 73.33}',
+                    "created": "2026-07-24",
+                },
+                {
+                    "id": "regressed",
+                    "overview": None,
+                    "metrics": '{"optimized_test_metric": 93.0}',
+                    "result": '{"baseline_test_metric": 98.0}',
+                    "created": "2026-07-26",
+                },
+                {
+                    "id": "grid",
+                    "overview": '{"optimization_type": "grid_search"}',
+                    "metrics": None,
+                    "result": (
+                        '{"best_pair": {"baseline_test_metric": 50.0, '
+                        '"optimized_test_metric": 60.0}}'
+                    ),
+                    "created": "2026-07-22",
+                },
+                {
+                    "id": "embedded",
+                    "overview": None,
+                    "metrics": '{"optimized_test_metric": 11.0}',
+                    "result": '{"baseline_test_metric": 10.0}',
+                    "created": "2026-07-21",
+                },
+                {
+                    "id": "scoreless",
+                    "overview": None,
+                    "metrics": None,
+                    "result": None,
+                    "created": "2026-07-25",
+                },
+                {
+                    "id": "malformed",
+                    "overview": None,
+                    "metrics": '{"baseline_test_metric": 5.0, "optimized_test_metric": "n/a"}',
+                    "result": None,
+                    "created": "2026-07-27",
+                },
+            ],
+        )
+        conn.execute(
+            text("INSERT INTO job_embeddings VALUES ('embedded', 10.0, 30.0)")
+        )
+        ranked = (
+            conn.execute(
+                text(
+                    "SELECT j.optimization_id FROM jobs j "
+                    "LEFT JOIN job_embeddings je "
+                    "ON je.optimization_id = j.optimization_id "
+                    f"ORDER BY ({dashboard._CORPUS_OPTIMIZED_METRIC_SQL} - "
+                    f"{dashboard._CORPUS_BASELINE_METRIC_SQL}) DESC NULLS LAST, "
+                    "j.created_at DESC"
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert ranked == [
+        "embedded",
+        "papillon",
+        "grid",
+        "flat",
+        "regressed",
+        "malformed",
+        "scoreless",
+    ]
 
 
 def test_normalize_query_for_log_collapses_and_drops_short() -> None:

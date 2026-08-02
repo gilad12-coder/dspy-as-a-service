@@ -118,6 +118,58 @@ _EMPTY_JOB_EMBEDDINGS_REL = (
 _EMBEDDINGS_TABLE_PRESENT: weakref.WeakKeyDictionary[Any, bool] = weakref.WeakKeyDictionary()
 
 
+def _jobs_metric_sql(key: str) -> str:
+    """Build the jobs-side SQL fallback for one embedded metric column.
+
+    Mirrors the embedding pipeline's ``_extract_scores`` lookup order so the
+    lexical/BM25 paths rank and render unembedded rows from the same numbers
+    the pipeline would have embedded: grid jobs read ``result.best_pair``
+    first, everything else reads ``latest_metrics`` then ``result``. The
+    ``jsonb_typeof`` guard skips non-numeric values instead of failing the
+    whole search on one malformed row, matching the pipeline's ``float()``
+    try/except. ``CAST`` spelling (not ``::``) keeps the fragment executable
+    on the sqlite test harness.
+
+    Args:
+        key: Metric key (``baseline_test_metric`` or ``optimized_test_metric``).
+
+    Returns:
+        A SQL expression yielding the metric as a double precision value, or
+        NULL when no numeric source exists.
+    """
+    best_pair = (
+        f"CASE WHEN jsonb_typeof(j.result->'best_pair'->'{key}') = 'number' "
+        f"THEN CAST(j.result->'best_pair'->>'{key}' AS double precision) END"
+    )
+    latest = (
+        f"CASE WHEN jsonb_typeof(j.latest_metrics->'{key}') = 'number' "
+        f"THEN CAST(j.latest_metrics->>'{key}' AS double precision) END"
+    )
+    result = (
+        f"CASE WHEN jsonb_typeof(j.result->'{key}') = 'number' "
+        f"THEN CAST(j.result->>'{key}' AS double precision) END"
+    )
+    return (
+        f"CASE WHEN j.payload_overview->>'{PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE}' "
+        f"= '{OPTIMIZATION_TYPE_GRID_SEARCH}' "
+        f"THEN COALESCE({best_pair}, {latest}) "
+        f"ELSE COALESCE({latest}, {result}) END"
+    )
+
+
+# The embedded metric when present, else the job's own scores. Keeps the gain
+# sort and the result-card score badges meaningful on the lexical/BM25 paths,
+# where unembedded rows (embeddings disabled, table absent, or backfill still
+# running) would otherwise all carry NULL metrics and the gain ranking would
+# silently degrade to recency.
+_CORPUS_BASELINE_METRIC_SQL = (
+    f"COALESCE(je.baseline_metric, {_jobs_metric_sql('baseline_test_metric')})"
+)
+_CORPUS_OPTIMIZED_METRIC_SQL = (
+    f"COALESCE(je.optimized_metric, {_jobs_metric_sql('optimized_test_metric')})"
+)
+
+
 def _job_embeddings_table_present(job_store: Any) -> bool:
     """Return whether the ``job_embeddings`` table exists, cached per engine.
 
@@ -275,7 +327,8 @@ def _fetch_corpus_points(session: Session, je_rel: str) -> list[dict[str, Any]]:
                 "COALESCE(je.optimization_type, j.optimization_type) AS optimization_type, "
                 f"COALESCE(je.winning_model, j.payload_overview->>'{PAYLOAD_OVERVIEW_MODEL_NAME}') "
                 "AS winning_model, "
-                "je.baseline_metric, je.optimized_metric, "
+                f"{_CORPUS_BASELINE_METRIC_SQL} AS baseline_metric, "
+        f"{_CORPUS_OPTIMIZED_METRIC_SQL} AS optimized_metric, "
                 "je.summary_text, "
                 f"COALESCE(j.payload_overview->>'{PAYLOAD_OVERVIEW_NAME}', je.task_name) AS task_name, "
                 f"COALESCE(je.module_name, j.payload_overview->>'{PAYLOAD_OVERVIEW_MODULE_NAME}') "
@@ -1038,8 +1091,10 @@ def _search_lexical(
 
     Walks ``jobs LEFT JOIN job_embeddings`` so unembedded successful jobs
     are still returned — their text comes from ``payload_overview`` rather
-    than the LLM-authored summary, and structured filters fall back to the
-    payload values when the embedding row is missing.
+    than the LLM-authored summary, structured filters fall back to the
+    payload values when the embedding row is missing, and the score pair
+    (used by the gain sort and the result badges) falls back to the job's
+    own ``latest_metrics`` / ``result`` values.
 
     The relevance sort is degraded to recency, since lexical matching has
     no continuous similarity score and emitting a synthetic one would be
@@ -1135,7 +1190,8 @@ def _search_lexical(
         # either metric yields NULL and sinks via NULLS LAST, rather than a
         # baseline-less run posing as a gain equal to its raw optimized score.
         order_sql = (
-            "(je.optimized_metric - je.baseline_metric) DESC NULLS LAST, "
+            f"({_CORPUS_OPTIMIZED_METRIC_SQL} - {_CORPUS_BASELINE_METRIC_SQL}) "
+            "DESC NULLS LAST, "
             "j.created_at DESC, j.optimization_id DESC"
         )
     else:
@@ -1146,7 +1202,8 @@ def _search_lexical(
         "COALESCE(je.optimization_type, j.optimization_type) AS optimization_type, "
         f"COALESCE(je.winning_model, j.payload_overview->>'{PAYLOAD_OVERVIEW_MODEL_NAME}') "
         "AS winning_model, "
-        "je.baseline_metric, je.optimized_metric, "
+        f"{_CORPUS_BASELINE_METRIC_SQL} AS baseline_metric, "
+        f"{_CORPUS_OPTIMIZED_METRIC_SQL} AS optimized_metric, "
         "je.summary_text, "
         f"COALESCE(je.task_name, j.payload_overview->>'{PAYLOAD_OVERVIEW_NAME}') AS task_name, "
         f"COALESCE(je.module_name, j.payload_overview->>'{PAYLOAD_OVERVIEW_MODULE_NAME}') "
@@ -1342,7 +1399,8 @@ def _search_bm25(
         "COALESCE(je.optimization_type, j.optimization_type) AS optimization_type, "
         f"COALESCE(je.winning_model, j.payload_overview->>'{PAYLOAD_OVERVIEW_MODEL_NAME}') "
         "AS winning_model, "
-        "je.baseline_metric, je.optimized_metric, "
+        f"{_CORPUS_BASELINE_METRIC_SQL} AS baseline_metric, "
+        f"{_CORPUS_OPTIMIZED_METRIC_SQL} AS optimized_metric, "
         "je.summary_text, "
         f"COALESCE(je.task_name, j.payload_overview->>'{PAYLOAD_OVERVIEW_NAME}') AS task_name, "
         f"COALESCE(je.module_name, j.payload_overview->>'{PAYLOAD_OVERVIEW_MODULE_NAME}') "
