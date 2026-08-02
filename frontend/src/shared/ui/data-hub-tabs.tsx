@@ -28,6 +28,10 @@ export function DataHubTabs({ active }: { active: "datasets" | "sessions" }) {
   const prefersReducedMotion = useReducedMotion();
   const [value, setValue] = React.useState<string>(active);
 
+  React.useEffect(() => {
+    setValue(active);
+  }, [active]);
+
   const tabPillTransition = prefersReducedMotion
     ? { duration: 0 }
     : { type: "tween" as const, duration: 0.2, ease: [0.2, 0.8, 0.2, 1] as const };

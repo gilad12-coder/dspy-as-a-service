@@ -399,6 +399,16 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     return frameIds.map((id) => byId.get(id)).filter((row): row is DataRow => row !== undefined);
   }, [frameIds, data]);
 
+  const normalizedCurrentIndex =
+    frameData.length === 0
+      ? 0
+      : Math.min(Math.max(Math.trunc(currentIndex), 0), frameData.length - 1);
+
+  useEffect(() => {
+    currentIndexRef.current = normalizedCurrentIndex;
+    if (currentIndex !== normalizedCurrentIndex) setCurrentIndex(normalizedCurrentIndex);
+  }, [currentIndex, normalizedCurrentIndex]);
+
   const navigate = useCallback(
     (dir: 1 | -1) => {
       (document.activeElement as HTMLElement)?.blur();
@@ -1070,7 +1080,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     columns,
     annotations,
     assist,
-    currentIndex,
+    currentIndex: normalizedCurrentIndex,
     taggedCount,
     sessionId,
     // Frame-scoped views for the annotator surface.
