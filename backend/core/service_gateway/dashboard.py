@@ -35,10 +35,13 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..constants import (
+    OPTIMIZATION_TYPE_GRID_SEARCH,
+    OPTIMIZATION_TYPE_RUN,
     PAYLOAD_OVERVIEW_DESCRIPTION,
     PAYLOAD_OVERVIEW_MODEL_NAME,
     PAYLOAD_OVERVIEW_MODULE_NAME,
     PAYLOAD_OVERVIEW_NAME,
+    PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_OPTIMIZER_NAME,
 )
 from .embedding_pipeline.embeddings import get_embedder
@@ -54,6 +57,15 @@ SUMMARY_TEXT_MAX = 200
 _CACHE_TTL_SECONDS = 300
 _LOCK = threading.Lock()
 _CACHE: dict[str, Any] = {"fingerprint": None, "at": 0.0, "payload": None}
+
+# Explore is a catalog of user-facing optimization jobs, not the worker's
+# shared jobs table. Keep this allowlist strict so new internal job types do
+# not become publicly discoverable by default.
+_PUBLIC_CORPUS_TYPE_SQL = (
+    "COALESCE(je.optimization_type, j.optimization_type, "
+    f"j.payload_overview->>'{PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE}', '') "
+    f"IN ('{OPTIMIZATION_TYPE_RUN}', '{OPTIMIZATION_TYPE_GRID_SEARCH}')"
+)
 
 # "Shared with me" scope: restrict to optimizations the caller holds a member
 # grant on AND does not own. Mirrors RemoteJobStore.list_jobs_shared_with —
@@ -175,6 +187,7 @@ def _fetch_fingerprint(session: Session, je_rel: str) -> str:
                 f"FROM {je_rel} je "
                 "INNER JOIN jobs j ON j.optimization_id = je.optimization_id "
                 "WHERE j.status = 'success' "
+                f"AND {_PUBLIC_CORPUS_TYPE_SQL} "
                 "AND je.embedding_summary IS NOT NULL AND je.is_private = FALSE"
             )
         )
@@ -189,6 +202,7 @@ def _fetch_fingerprint(session: Session, je_rel: str) -> str:
                 "FROM jobs j "
                 f"LEFT JOIN {je_rel} je ON je.optimization_id = j.optimization_id "
                 "WHERE j.status = 'success' "
+                f"AND {_PUBLIC_CORPUS_TYPE_SQL} "
                 "AND (je.optimization_id IS NULL OR je.embedding_summary IS NULL) "
                 "AND NOT COALESCE((j.payload_overview->>'is_private')::boolean, FALSE)"
             )
@@ -266,6 +280,7 @@ def _fetch_corpus_points(session: Session, je_rel: str) -> list[dict[str, Any]]:
                 "FROM jobs j "
                 f"LEFT JOIN {je_rel} je ON je.optimization_id = j.optimization_id "
                 "WHERE j.status = 'success' "
+                f"AND {_PUBLIC_CORPUS_TYPE_SQL} "
                 "AND NOT COALESCE(je.is_private, "
                 "(j.payload_overview->>'is_private')::boolean, FALSE) "
                 "ORDER BY j.created_at DESC, j.optimization_id DESC "
@@ -402,7 +417,7 @@ def fetch_corpus_facets(
                     "FROM jobs j "
                     f"LEFT JOIN {je_rel} je "
                     "ON je.optimization_id = j.optimization_id "
-                    f"WHERE j.status = 'success' AND {scope_sql}"
+                    f"WHERE j.status = 'success' AND {_PUBLIC_CORPUS_TYPE_SQL} AND {scope_sql}"
                     ") sub"
                 ),
                 params,
@@ -745,6 +760,7 @@ def _has_unembedded_success_jobs(
                     "SELECT 1 FROM jobs j "
                     f"LEFT JOIN {je_rel} je ON je.optimization_id = j.optimization_id "
                     "WHERE j.status = 'success' "
+                    f"AND {_PUBLIC_CORPUS_TYPE_SQL} "
                     "AND (je.optimization_id IS NULL OR je.embedding_summary IS NULL) "
                     f"AND {scope_sql} "
                     "LIMIT 1"
@@ -808,6 +824,7 @@ def _search_semantic(
     )
     where_parts: list[str] = [
         "j.status = 'success'",
+        _PUBLIC_CORPUS_TYPE_SQL,
         "je.embedding_summary IS NOT NULL",
     ]
     params: dict[str, Any] = {}
@@ -1044,7 +1061,7 @@ def _search_lexical(
     Returns:
         ``{"results": [...], "total": int, "matched_ids": [...], "search_type": "lexical"}``.
     """
-    where_parts: list[str] = ["j.status = 'success'"]
+    where_parts: list[str] = ["j.status = 'success'", _PUBLIC_CORPUS_TYPE_SQL]
     params: dict[str, Any] = {}
     if owner_username is not None:
         where_parts.append("j.username = :owner_username")
@@ -1256,7 +1273,7 @@ def _search_bm25(
     Returns:
         ``{"results": [...], "total": int, "matched_ids": [...], "search_type": "bm25"}``.
     """
-    where_parts: list[str] = ["j.status = 'success'"]
+    where_parts: list[str] = ["j.status = 'success'", _PUBLIC_CORPUS_TYPE_SQL]
     params: dict[str, Any] = {}
     if owner_username is not None:
         where_parts.append("j.username = :owner_username")

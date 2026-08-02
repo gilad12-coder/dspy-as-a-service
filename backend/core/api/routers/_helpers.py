@@ -88,6 +88,10 @@ from .constants import TERMINAL_STATUSES
 
 logger = logging.getLogger(__name__)
 
+_USER_FACING_OPTIMIZATION_TYPES = frozenset(
+    {OPTIMIZATION_TYPE_RUN, OPTIMIZATION_TYPE_GRID_SEARCH}
+)
+
 class _BoundedProgramCache(OrderedDict[str, Any]):
     """OrderedDict-backed LRU for deserialized DSPy programs.
 
@@ -438,6 +442,14 @@ def load_job_with_role(
             job_data = get_job_no_payload(job_store, optimization_id)
     except KeyError:
         raise DomainError("optimization.not_found", status=404, optimization_id=optimization_id) from None
+    overview = parse_overview(job_data)
+    optimization_type = (
+        overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE)
+        or job_data.get("optimization_type")
+        or OPTIMIZATION_TYPE_RUN
+    )
+    if optimization_type not in _USER_FACING_OPTIMIZATION_TYPES:
+        raise DomainError("optimization.not_found", status=404, optimization_id=optimization_id)
     if is_admin(user):
         return job_data, ShareRole.owner
     owner = job_owner(job_data)
