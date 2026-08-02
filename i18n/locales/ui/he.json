@@ -2893,7 +2893,7 @@
   "tooltip.react.optimized_tools": "הכלים שהסוכן (ReAct) מפעיל בלולאה, עם התיאורים והארגומנטים שה{term.optimizer} חידד במהלך ה{term.optimization}",
   "tooltip.react.tool_source": "מהיכן נטענת רשימת הכלים: שרת MCP חי, או תצלום כלים מתוך הדאטאסט",
   "tooltip.score.baseline": "{term.baselineScore} לפני {term.optimization}: איך ה{term.program} הצליחה בלי פרומפט משופר או דוגמאות נבחרות",
-  "tooltip.score.improvement": "הפער בין ה{term.optimizedScore} ל{term.baselineScore}. ככל שהוא גדול יותר, ה{term.optimization} שיפרה יותר את התוצאה",
+  "tooltip.score.improvement": "כל הציונים המצטברים משתמשים באותו סולם 0–100. השיפור הוא ה{term.optimizedScore} פחות ה{term.baselineScore}, בנקודות אחוז",
   "tooltip.score.logged_metrics": "מדדים שה{term.metric} תיעדה עם log_metrics — למשל precision ו-recall — בממוצע על פני סט הבדיקה, לפני ואחרי ה{term.optimization}",
   "tooltip.score.optimized": "{term.optimizedScore} אחרי {term.optimization}: איך ה{term.program} הצליחה עם הפרומפט והדוגמאות שנבחרו",
   "tooltip.score.progression": "איך ה{term.score} השתנה מניסיון לניסיון בזמן שה{term.optimizer} חיפש פרומפט טוב יותר",
