@@ -1939,6 +1939,10 @@ export type MessageKey =
   | "optimization.cancel.sent"
   | "optimization.delete.failed"
   | "optimization.file.parse_error"
+  | "optimization.logged_metrics.baseline_col"
+  | "optimization.logged_metrics.change_col"
+  | "optimization.logged_metrics.metric_col"
+  | "optimization.logged_metrics.optimized_col"
   | "optimization.logged_metrics.title"
   | "optimization.pair.restart"
   | "optimization.pair.restart.failed"
@@ -4845,6 +4849,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "optimization.cancel.sent": "בקשת ביטול נשלחה",
   "optimization.delete.failed": "מחיקה נכשלה",
   "optimization.file.parse_error": "שגיאה בפענוח הקובץ",
+  "optimization.logged_metrics.baseline_col": "בסיס",
+  "optimization.logged_metrics.change_col": "שינוי",
+  "optimization.logged_metrics.metric_col": "מדד",
+  "optimization.logged_metrics.optimized_col": "סופי",
   "optimization.logged_metrics.title": "פירוט הציון",
   "optimization.pair.restart": "הרץ/הריצי מחדש",
   "optimization.pair.restart.failed": "לא ניתן להריץ מחדש את הזוג",
@@ -13318,6 +13326,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "optimization.cancel.sent": "Cancellation request sent",
   "optimization.delete.failed": "Delete failed",
   "optimization.file.parse_error": "Error parsing the file",
+  "optimization.logged_metrics.baseline_col": "Baseline",
+  "optimization.logged_metrics.change_col": "Change",
+  "optimization.logged_metrics.metric_col": "Metric",
+  "optimization.logged_metrics.optimized_col": "Optimized",
   "optimization.logged_metrics.title": "Score breakdown",
   "optimization.pair.restart": "Restart",
   "optimization.pair.restart.failed": "Couldn't restart the pair",

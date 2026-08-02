@@ -4,13 +4,20 @@ import { memo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { ChatText, Gauge, Hourglass, Timer, TrendUp } from "@/shared/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/shared/ui/primitives/table";
 import { FadeIn, StaggerContainer, StaggerItem, TiltCard } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
 import type { LMActivity, OptimizationStatusResponse, PairResult } from "@/shared/types/api";
 import { type PipelineStage } from "../constants";
 import { detectPairStage, detectStage } from "../lib/detect-stage";
 import { formatDuration, formatImprovement, formatPercent } from "@/shared/lib";
-import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { tip } from "@/shared/lib/tooltips";
 import { TERMS } from "@/shared/lib/terms";
 import type { ScorePoint } from "../lib/extract-scores";
@@ -37,11 +44,29 @@ const GridOverview = dynamic(() => import("./GridOverview").then((m) => m.GridOv
 });
 
 /**
- * Compact formatting for log_metrics values: raw user-scale numbers (unlike
- * the 0–100 score cards), capped at 3 decimals with trailing zeros dropped.
+ * Decimal places shared by every number in the score-breakdown table: the most
+ * any value actually needs (capped at 3), but at least 2. A uniform precision
+ * is what lets the right-aligned tabular figures form true columns — "0.9"
+ * padded to "0.900" no longer reads larger than "0.967", and "1" becomes
+ * "1.000" instead of a lone digit.
  */
-function formatLoggedValue(value: number | undefined): string {
-  return value == null ? "—" : String(Number(value.toFixed(3)));
+function loggedPrecision(values: number[]): number {
+  let decimals = 2;
+  for (const value of values) {
+    const text = String(Number(value.toFixed(3)));
+    const dot = text.indexOf(".");
+    if (dot !== -1) decimals = Math.max(decimals, text.length - dot - 1);
+  }
+  return decimals;
+}
+
+/**
+ * log_metrics values are raw user-scale numbers (unlike the 0–100 score
+ * cards). The round-then-add-zero dance keeps a tiny negative delta from
+ * rendering as "-0.000".
+ */
+function formatLoggedValue(value: number | undefined, precision: number): string {
+  return value == null ? "—" : (Number(value.toFixed(precision)) + 0).toFixed(precision);
 }
 
 /**
@@ -146,7 +171,11 @@ function OverviewTabImpl({
   const loggedMetricNames = Array.from(
     new Set([...Object.keys(optimizedLogged), ...Object.keys(baselineLogged)]),
   );
-  const isRtl = getActiveDir() === "rtl";
+  const loggedDecimals = loggedPrecision(
+    loggedMetricNames
+      .flatMap((name) => [baselineLogged[name], optimizedLogged[name]])
+      .filter((value): value is number => value != null),
+  );
 
   // The score cards stream the real evaluated metrics as they land — the
   // baseline from baseline_evaluated, the optimized score from
@@ -368,56 +397,90 @@ function OverviewTabImpl({
       {renderRunBlocks && loggedMetricNames.length > 0 && (
         <FadeIn delay={0.1}>
           <div className="rounded-xl border border-[#E3DCD0] bg-[#FBF9F4] px-4 py-3.5">
-            <p className="text-[0.6875rem] text-muted-foreground font-medium tracking-wide">
-              <HelpTip text={tip("score.logged_metrics")}>
-                {msg("optimization.logged_metrics.title")}
-              </HelpTip>
-            </p>
-            <div className="mt-1.5 divide-y divide-[#E3DCD0]/60">
-              {loggedMetricNames.map((name) => {
-                const baselineValue = baselineLogged[name];
-                const optimizedValue = optimizedLogged[name];
-                const delta =
-                  baselineValue != null && optimizedValue != null
-                    ? optimizedValue - baselineValue
-                    : undefined;
-                return (
-                  <div key={name} className="flex items-center justify-between gap-3 py-1.5">
-                    <span dir="auto" className="min-w-0 truncate font-mono text-xs text-[#1C1612]">
-                      {name}
-                    </span>
-                    {/* Follows the page direction so baseline sits on the
-                        reading side (right in RTL), mirroring the score cards
-                        above; the arrow glyph flips with it. Values keep an
-                        inner dir="ltr" so a leading minus/plus never migrates
-                        to the wrong side, while the outer spans use logical
-                        alignment (toward the arrow / toward the far edge) to
-                        hold a steady column across rows. */}
-                    <span className="flex shrink-0 items-baseline gap-2 font-mono text-xs tabular-nums">
-                      <span className="min-w-12 text-end text-[#8C7A6B]">
-                        <span dir="ltr">{formatLoggedValue(baselineValue)}</span>
-                      </span>
-                      <span aria-hidden="true" className="text-[#A89680]">
-                        {isRtl ? "←" : "→"}
-                      </span>
-                      <span className="min-w-12 text-start font-semibold text-primary">
-                        <span dir="ltr">{formatLoggedValue(optimizedValue)}</span>
-                      </span>
-                      {delta != null && (
-                        <span
-                          className={`w-14 text-end ${delta >= 0 ? "text-stone-600" : "text-red-600"}`}
-                        >
+            {/* Semantic table so screen readers announce each value with its
+                column header. Columns use logical alignment and the table
+                follows the page direction — baseline stays on the reading
+                side in RTL — while every number keeps an inner dir="ltr" so
+                a leading minus never migrates to the wrong side. */}
+            <Table className="caption-top text-xs">
+              <caption className="pb-2 text-start text-[0.6875rem] font-medium tracking-wide text-muted-foreground">
+                <HelpTip text={tip("score.logged_metrics")}>
+                  {msg("optimization.logged_metrics.title")}
+                </HelpTip>
+              </caption>
+              <TableHeader className="static bg-transparent [&_tr]:border-[#E3DCD0]">
+                <TableRow>
+                  <TableHead className="h-auto w-full px-0 pb-1.5 text-[0.6875rem] font-medium text-muted-foreground/70">
+                    {msg("optimization.logged_metrics.metric_col")}
+                  </TableHead>
+                  <TableHead className="h-auto px-0 pb-1.5 ps-4 text-end text-[0.6875rem] font-medium text-muted-foreground/70">
+                    <HelpTip text={tip("score.baseline")}>
+                      {msg("optimization.logged_metrics.baseline_col")}
+                    </HelpTip>
+                  </TableHead>
+                  <TableHead className="h-auto px-0 pb-1.5 ps-4 text-end text-[0.6875rem] font-medium text-muted-foreground/70">
+                    <HelpTip text={tip("score.optimized")}>
+                      {msg("optimization.logged_metrics.optimized_col")}
+                    </HelpTip>
+                  </TableHead>
+                  <TableHead className="h-auto px-0 pb-1.5 ps-4 text-end text-[0.6875rem] font-medium text-muted-foreground/70">
+                    <HelpTip text={tip("score.improvement")}>
+                      {msg("optimization.logged_metrics.change_col")}
+                    </HelpTip>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loggedMetricNames.map((name) => {
+                  // Rounded to the table's shared precision (with -0
+                  // normalized away) so the sign and color agree with the
+                  // digits actually shown — a −0.0002 delta renders as a
+                  // neutral 0.00, not a red −0.00.
+                  const baselineValue = baselineLogged[name];
+                  const optimizedValue = optimizedLogged[name];
+                  const delta =
+                    baselineValue != null && optimizedValue != null
+                      ? Number((optimizedValue - baselineValue).toFixed(loggedDecimals)) + 0
+                      : undefined;
+                  return (
+                    <TableRow key={name} className="border-[#E3DCD0]/60">
+                      <th
+                        scope="row"
+                        dir="auto"
+                        title={name}
+                        className="w-full max-w-0 truncate py-2 pe-3 text-start font-mono text-xs font-normal text-foreground"
+                      >
+                        {name}
+                      </th>
+                      <TableCell className="px-0 py-2 ps-4 text-end font-mono text-xs tabular-nums text-muted-foreground">
+                        <span dir="ltr">{formatLoggedValue(baselineValue, loggedDecimals)}</span>
+                      </TableCell>
+                      <TableCell className="px-0 py-2 ps-4 text-end font-mono text-xs font-semibold tabular-nums text-primary">
+                        <span dir="ltr">{formatLoggedValue(optimizedValue, loggedDecimals)}</span>
+                      </TableCell>
+                      <TableCell
+                        className={`px-0 py-2 ps-4 text-end font-mono text-xs tabular-nums ${
+                          delta == null || delta === 0
+                            ? "text-muted-foreground/70"
+                            : delta > 0
+                              ? "text-[var(--success)]"
+                              : "text-[var(--danger)]"
+                        }`}
+                      >
+                        {delta == null ? (
+                          "—"
+                        ) : (
                           <span dir="ltr">
-                            {delta >= 0 ? "+" : ""}
-                            {formatLoggedValue(delta)}
+                            {delta > 0 ? "+" : ""}
+                            {delta.toFixed(loggedDecimals)}
                           </span>
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
         </FadeIn>
       )}
