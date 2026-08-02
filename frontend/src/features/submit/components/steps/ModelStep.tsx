@@ -21,28 +21,6 @@ import { CostCeilingCard } from "../CostCeilingCard";
 import { emptyModelConfig } from "../../constants";
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 
-/**
- * Two-line primer distinguishing the two model roles this step configures:
- * the generation model does the task, the reflection model rewrites the
- * prompt between rounds. The distinction trips up even people who have used
- * DSPy before, so it's stated inline here rather than hidden behind a hover.
- */
-function ModelRolesExplainer() {
-  return (
-    <div className="space-y-2 rounded-lg border border-border/50 bg-muted/20 px-3.5 py-3">
-      <p className="text-[0.75rem] leading-relaxed text-muted-foreground">
-        <span className="font-semibold text-foreground">{msg("model.generation.label")}</span>
-        {" — "}
-        {msg("model.generation.explainer")}
-      </p>
-      <p className="text-[0.75rem] leading-relaxed text-muted-foreground">
-        <span className="font-semibold text-foreground">{TERMS.reflectionModel}</span>
-        {" — "}
-        {msg("model.reflection.explainer")}
-      </p>
-    </div>
-  );
-}
 export function ModelStep({ w }: { w: SubmitWizardContext }) {
   const { prefs } = useUserPrefs();
   const advanced = prefs.advancedMode;
@@ -80,7 +58,6 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
       </CardHeader>
       <CardContent className="space-y-5">
         <TokenSourceToggle />
-        <ModelRolesExplainer />
         {jobType === "run" || !advanced ? (
           <div className="space-y-3" data-tutorial="model-catalog">
             <Label className="text-sm font-semibold">
@@ -90,6 +67,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
               <ModelChip
                 config={modelConfig}
                 roleLabel={msg("model.generation.label")}
+                tooltip={msg("model.generation.explainer")}
                 required
                 catalogModels={catalog?.models}
                 onClick={() =>
@@ -104,6 +82,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
               <ModelChip
                 config={secondModelConfig ?? emptyModelConfig()}
                 roleLabel={TERMS.reflectionModel}
+                tooltip={msg("model.reflection.explainer")}
                 required
                 catalogModels={catalog?.models}
                 onClick={() =>
@@ -134,6 +113,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
                   <ModelChip
                     key={i}
                     config={m}
+                    tooltip={msg("model.generation.explainer")}
                     catalogModels={catalog?.models}
                     onClick={() =>
                       setEditingModel({
@@ -182,6 +162,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
                   <ModelChip
                     key={i}
                     config={m}
+                    tooltip={msg("model.reflection.explainer")}
                     catalogModels={catalog?.models}
                     onClick={() =>
                       setEditingModel({

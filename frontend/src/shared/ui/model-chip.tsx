@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Gear, Copy, Trash, Plus, Thermometer, Coins, Eye, Brain } from "@/shared/ui/icons";
+import { Gear, Copy, Trash, Plus, Thermometer, Coins, Eye, Brain, Info } from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
 import type { CatalogModel, ModelConfig } from "@/shared/types/api";
 import { msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 
 interface ModelChipProps {
   config: ModelConfig;
@@ -23,6 +24,8 @@ interface ModelChipProps {
   catalogModels?: CatalogModel[];
   /** Placeholder when no model is set; overrides the required/not-configured copy. */
   emptyLabel?: string;
+  /** Explanation shown when hovering or focusing the model card. */
+  tooltip?: string | null;
   className?: string;
 }
 
@@ -63,6 +66,7 @@ export function ModelChip({
   onCopyFrom,
   catalogModels,
   emptyLabel,
+  tooltip,
   className,
 }: ModelChipProps) {
   const effort = config.extra?.reasoning_effort as string | undefined;
@@ -73,39 +77,29 @@ export function ModelChip({
   const isEmpty = !config.name;
   const supportsVision = !!catalogModels?.find((m) => m.value === config.name)?.supports_vision;
 
-  return (
-    <div
-      className={cn(
-        "group relative flex items-center gap-2.5 rounded-lg border px-3 py-2 cursor-pointer",
-        "transition-[border-color,box-shadow,background-color] duration-150",
-        isEmpty
-          ? "border-dashed border-border/60 bg-muted/20 hover:border-primary/40 hover:bg-muted/40"
-          : "border-border/50 bg-card/80 hover:border-primary/40 hover:shadow-sm",
-        className,
-      )}
-      onClick={onClick}
-    >
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        {roleLabel && (
-          <span className="text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
-            {roleLabel}
-          </span>
-        )}
-        <span
-          className={cn(
-            "truncate text-sm",
-            isEmpty ? "text-muted-foreground" : "text-foreground font-mono font-medium",
-          )}
-          // Placeholder text is localized, so it follows the active direction;
-          // a concrete model id is always Latin and stays LTR.
-          dir={isEmpty ? getActiveDir() : "ltr"}
-        >
-          {isEmpty ? name : (name.split("/").pop() ?? name)}
+  const content = (
+    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      {roleLabel && (
+        <span className="text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
+          {roleLabel}
         </span>
-        {/* A config that carries only a model id (e.g. the tagger's tagging
+      )}
+      <span
+        className={cn(
+          "truncate text-sm",
+          isEmpty ? "text-muted-foreground" : "text-foreground font-mono font-medium",
+        )}
+        // Placeholder text is localized, so it follows the active direction;
+        // a concrete model id is always Latin and stays LTR.
+        dir={isEmpty ? getActiveDir() : "ltr"}
+      >
+        {isEmpty ? name : (name.split("/").pop() ?? name)}
+      </span>
+      {/* A config that carries only a model id (e.g. the tagger's tagging
             model) renders no parameter row at all — a fabricated temperature
             would read as a setting the surface doesn't actually have. */}
-        {!isEmpty && (config.temperature != null || config.max_tokens || effort || supportsVision) && (
+      {!isEmpty &&
+        (config.temperature != null || config.max_tokens || effort || supportsVision) && (
           <div
             className="flex items-center gap-2.5 text-[0.625rem] text-muted-foreground"
             dir="ltr"
@@ -133,7 +127,35 @@ export function ModelChip({
             )}
           </div>
         )}
-      </div>
+    </div>
+  );
+
+  const card = (
+    <div
+      className={cn(
+        "group relative flex items-center gap-2.5 rounded-lg border px-3 py-2 cursor-pointer",
+        "transition-[border-color,box-shadow,background-color] duration-150",
+        isEmpty
+          ? "border-dashed border-border/60 bg-muted/20 hover:border-primary/40 hover:bg-muted/40"
+          : "border-border/50 bg-card/80 hover:border-primary/40 hover:shadow-sm",
+        className,
+      )}
+      onClick={onClick}
+    >
+      {tooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{content}</TooltipTrigger>
+          <TooltipContent
+            side="top"
+            className="max-w-80 text-center leading-relaxed"
+            dir={getActiveDir()}
+          >
+            {tooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        content
+      )}
 
       {isEmpty && copyFromLabel && onCopyFrom && (
         <button
@@ -150,6 +172,23 @@ export function ModelChip({
       )}
 
       <div className="flex shrink-0 items-center gap-1">
+        {tooltip && (
+          <TooltipButton
+            tooltip={tooltip}
+            side="top"
+            dir={getActiveDir()}
+            contentClassName="max-w-80 text-center leading-relaxed"
+          >
+            <button
+              type="button"
+              aria-label={tooltip}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-md p-1 text-muted-foreground/60 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+            >
+              <Info className="size-3.5" aria-hidden="true" />
+            </button>
+          </TooltipButton>
+        )}
         {onClone && !isEmpty && (
           <TooltipButton tooltip={msg("shared.model_chip.clone")} side="top">
             <button
@@ -182,6 +221,8 @@ export function ModelChip({
       </div>
     </div>
   );
+
+  return card;
 }
 
 interface AddModelButtonProps {
