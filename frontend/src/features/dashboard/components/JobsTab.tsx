@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  ChevronLeft,
-  ChevronRight,
+  CaretLeft,
+  CaretRight,
   Crown,
   Eye,
-  Pencil,
+  PaperPlaneTilt,
+  PencilSimple,
   Plus,
-  Send,
   ShieldCheck,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
@@ -82,7 +82,7 @@ function RoleBadge({ role }: { role?: ShareRole | null }) {
     tier === "viewer"
       ? Eye
       : tier === "editor"
-        ? Pencil
+        ? PencilSimple
         : tier === "owner"
           ? ShieldCheck
           : Crown;
@@ -165,8 +165,8 @@ export function JobsTab({
   onOpenJob,
 }: JobsTabProps) {
   const rtl = getActiveDir() === "rtl";
-  const PrevIcon = rtl ? ChevronRight : ChevronLeft;
-  const NextIcon = rtl ? ChevronLeft : ChevronRight;
+  const PrevIcon = rtl ? CaretRight : CaretLeft;
+  const NextIcon = rtl ? CaretLeft : CaretRight;
 
   // The row tooltip is positioned once at the current hover point. Keeping it
   // anchored there avoids a distracting cursor-following animation while the
@@ -278,7 +278,7 @@ export function JobsTab({
 
         {!loading && data && filteredItems.length === 0 && data.total === 0 && (
           <EmptyState
-            icon={Send}
+            icon={PaperPlaneTilt}
             iconWrap="tile"
             title={`${msg("auto.features.dashboard.components.jobstab.4")}${TERMS.optimizationPlural}`}
             description={msg("auto.features.dashboard.components.jobstab.5")}

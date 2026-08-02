@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { Coins, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowsClockwise, CircleNotch, Coins, Sparkle } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -145,7 +145,7 @@ function AddCreditsControls() {
         disabled={buying || (!pack && !customValid)}
         className="h-6 rounded-full px-2.5 text-[0.6875rem] font-semibold border-[#C8A882]/70 text-[#8a6d44] hover:bg-[#C8A882]/10 hover:text-[#8a6d44] [&_svg:not([class*='size-'])]:size-3"
       >
-        {buying ? <Loader2 className="animate-spin" /> : <Sparkles aria-hidden="true" />}
+        {buying ? <CircleNotch className="animate-spin" /> : <Sparkle aria-hidden="true" />}
         {formatMsg("billing.upgrade.buy", { p1: priceLabel })}
       </Button>
     </div>
@@ -240,7 +240,7 @@ export function WalletTab() {
 
       <div>
         <SettingsRow
-          icon={RefreshCw}
+          icon={ArrowsClockwise}
           label={msg("billing.wallet.autoreload_label")}
           description={formatMsg("billing.wallet.autoreload_rate", {
             p1: formatUsd(CREDIT_USD_VALUE, locale),
@@ -265,7 +265,7 @@ export function WalletTab() {
           />
         </SettingsRow>
 
-        <SettingsRow icon={Sparkles} label={msg("billing.action.add_credits")}>
+        <SettingsRow icon={Sparkle} label={msg("billing.action.add_credits")}>
           <AddCreditsControls />
         </SettingsRow>
       </div>

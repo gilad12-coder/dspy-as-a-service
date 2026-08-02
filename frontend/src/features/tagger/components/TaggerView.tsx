@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, List } from "lucide-react";
+import { ArrowRight, List } from "@/shared/ui/icons";
 import type { TaggerSessionDetail } from "@/shared/lib/api";
 import { Button } from "@/shared/ui/primitives/button";
 import { DataHubTabs } from "@/shared/ui/data-hub-tabs";

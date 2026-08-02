@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Coins, KeyRound, X } from "lucide-react";
+import { CaretDown, Coins, Key, X } from "@/shared/ui/icons";
 import { useCredits, useByokKeys, litellmProviderForByok } from "@/features/billing";
 import { useSettingsModal } from "@/features/settings";
 import { getByokModelCatalog, cachedByokCatalog } from "@/shared/lib/model-catalog";
@@ -215,7 +215,7 @@ export function ModelConfigModal({
               </>
             ) : (
               <>
-                <KeyRound className="size-3.5 shrink-0" aria-hidden="true" />
+                <Key className="size-3.5 shrink-0" aria-hidden="true" />
                 <span>{msg("billing.mode.byok_hint")}</span>
                 <button
                   type="button"
@@ -247,7 +247,7 @@ export function ModelConfigModal({
               <HelpTip text={tip("model_config.connection_section")} className="cursor-pointer">
                 {msg("auto.features.submit.components.modelconfigmodal.section.connection")}
               </HelpTip>
-              <ChevronDown
+              <CaretDown
                 className={cn(
                   "size-3 shrink-0 transition-transform duration-150",
                   connectionOpen && "rotate-180",

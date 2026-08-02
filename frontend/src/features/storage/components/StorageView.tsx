@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, HardDrive } from "lucide-react";
+import { CaretLeft, CaretRight, HardDrive } from "@/shared/ui/icons";
 import { getStorageUsage, type StorageUsageResponse } from "@/shared/lib/api";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { formatStorageSize } from "@/shared/lib/formatters";
@@ -31,7 +31,7 @@ export function StorageView() {
   const [error, setError] = React.useState(false);
   const [openCategory, setOpenCategory] = React.useState<string | null>(null);
 
-  const OpenIcon = getActiveDir() === "rtl" ? ChevronLeft : ChevronRight;
+  const OpenIcon = getActiveDir() === "rtl" ? CaretLeft : CaretRight;
 
   const refreshUsage = React.useCallback(() => {
     getStorageUsage()

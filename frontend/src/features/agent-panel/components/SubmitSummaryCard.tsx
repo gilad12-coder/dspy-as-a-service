@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { CheckCircle2, CircleAlert, ExternalLink } from "lucide-react";
+import { ArrowSquareOut, CheckCircle, WarningCircle } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
@@ -76,9 +76,9 @@ export function SubmitSummaryCard({ call, className }: SubmitSummaryCardProps) {
           )}
         >
           {isError ? (
-            <CircleAlert className="size-3.5" aria-hidden="true" />
+            <WarningCircle className="size-3.5" aria-hidden="true" />
           ) : (
-            <CheckCircle2 className="size-3.5" aria-hidden="true" />
+            <CheckCircle className="size-3.5" aria-hidden="true" />
           )}
         </span>
         <div className="min-w-0 flex-1">
@@ -109,7 +109,7 @@ export function SubmitSummaryCard({ call, className }: SubmitSummaryCardProps) {
           <span className="font-mono truncate text-muted-foreground">{jobId}</span>
           <span className="inline-flex items-center gap-1 text-[#3D2E22] shrink-0">
             {msg("auto.features.agent.panel.components.submitsummarycard.1")}
-            <ExternalLink className="size-3" aria-hidden="true" />
+            <ArrowSquareOut className="size-3" aria-hidden="true" />
           </span>
         </Link>
       )}

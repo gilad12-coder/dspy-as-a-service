@@ -1,6 +1,6 @@
 "use client";
 
-import { History } from "lucide-react";
+import { ClockCounterClockwise } from "@/shared/ui/icons";
 
 import { AgentBubble } from "@/shared/ui/agent/agent-bubble";
 import { UserBubble } from "@/shared/ui/agent/user-bubble";
@@ -49,7 +49,7 @@ export function RecordedChatTranscript({ messages }: { messages: readonly ChatMe
     <div className="overflow-hidden rounded-lg border border-[#DDD4C8]/60 bg-[#FBF7F1]/60 shadow-[0_1px_2px_rgba(28,22,18,0.02)]">
       <HelpTip text={msg("trajectory.chat.recorded_label.explain")} className="w-full">
         <div className="flex w-full items-center gap-1.5 border-b border-[#DDD4C8]/50 bg-[#F4ECE0]/70 px-3 py-1.5">
-          <History className="size-3 text-[#7A6A52]" aria-hidden="true" />
+          <ClockCounterClockwise className="size-3 text-[#7A6A52]" aria-hidden="true" />
           <span className="min-w-0 truncate text-[9px] font-semibold uppercase tracking-wider text-[#7A6A52]">
             {msg("trajectory.chat.recorded_label")}
           </span>

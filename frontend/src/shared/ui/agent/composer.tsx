@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Loader2, Mic, Square, X } from "lucide-react";
+import { Check, CircleNotch, Microphone, Square, X } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
 import { useLocale } from "@/shared/providers";
@@ -156,7 +156,7 @@ export function Composer({
             )}
             {dictation.state.kind === "busy" && (
               <>
-                <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                <CircleNotch className="size-4 shrink-0 animate-spin text-muted-foreground" />
                 <span className="truncate text-muted-foreground">
                   {msg("agent.composer.transcribing")}
                 </span>
@@ -196,7 +196,7 @@ export function Composer({
                     className="shrink-0 rounded-full !size-9 text-muted-foreground hover:text-foreground"
                     aria-label={msg("agent.composer.record")}
                   >
-                    <Mic className="size-4" />
+                    <Microphone className="size-4" />
                   </Button>
                 </TooltipButton>
               ))}

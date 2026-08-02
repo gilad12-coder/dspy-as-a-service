@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { CaretDown } from "@/shared/ui/icons";
 import {
   Card,
   CardContent,
@@ -154,7 +154,7 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
                   </span>
                 )}
               </span>
-              <ChevronDown
+              <CaretDown
                 className={cn(
                   "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
                   optimizationTypeOpen && "rotate-180",

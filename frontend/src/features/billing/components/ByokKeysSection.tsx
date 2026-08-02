@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, KeyRound, Loader2, Pencil, Trash2, X } from "lucide-react";
+import { Check, CircleNotch, Key, PencilSimple, Trash, X } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -132,14 +132,14 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
         <div className="flex shrink-0 items-center gap-1.5">
           {!saved && !editing && (
             <Button variant="outline" size="sm" onClick={startEditing}>
-              <KeyRound className="size-3.5" />
+              <Key className="size-3.5" />
               {msg("settings.keys.add")}
             </Button>
           )}
           {saved && saved.status !== "verified" && !editing && (
             <Button variant="outline" size="sm" disabled={verifying} onClick={handleVerify}>
               {verifying ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <CircleNotch className="size-3.5 animate-spin" />
               ) : (
                 <Check className="size-3.5" />
               )}
@@ -156,7 +156,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
                     onClick={startEditing}
                     aria-label={msg("settings.keys.replace")}
                   >
-                    <Pencil className="size-3.5" />
+                    <PencilSimple className="size-3.5" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{msg("settings.keys.replace")}</TooltipContent>
@@ -170,7 +170,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
                     className="text-destructive hover:text-destructive"
                     aria-label={msg("settings.keys.remove")}
                   >
-                    <Trash2 className="size-3.5" />
+                    <Trash className="size-3.5" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{msg("settings.keys.remove")}</TooltipContent>
@@ -204,7 +204,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
               className="h-8 flex-1"
             />
             <Button size="sm" onClick={handleSave} disabled={!secret.trim() || saving}>
-              {saving ? <Loader2 className="size-3.5 animate-spin" /> : msg("settings.keys.save")}
+              {saving ? <CircleNotch className="size-3.5 animate-spin" /> : msg("settings.keys.save")}
             </Button>
             <Button
               variant="ghost"
@@ -250,7 +250,7 @@ export function ByokKeysSection() {
     <div className="space-y-3">
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <KeyRound className="size-4 text-muted-foreground" aria-hidden="true" />
+          <Key className="size-4 text-muted-foreground" aria-hidden="true" />
           <span className="text-sm font-semibold text-foreground">
             {msg("settings.keys.title")}
           </span>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Boxes, Braces, Database, Download, Feather, FileText, Sheet } from "lucide-react";
+import { BracketsCurly, Database, DownloadSimple, Feather, FileText, Stack, Table } from "@/shared/ui/icons";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
@@ -21,9 +21,9 @@ const FORMAT_META: Record<
   { label: string; ext: string; Icon: typeof FileText }
 > = {
   csv: { label: "CSV", ext: ".csv", Icon: FileText },
-  json: { label: "JSON", ext: ".json", Icon: Braces },
-  xlsx: { label: "Excel", ext: ".xlsx", Icon: Sheet },
-  parquet: { label: "Parquet", ext: ".parquet", Icon: Boxes },
+  json: { label: "JSON", ext: ".json", Icon: BracketsCurly },
+  xlsx: { label: "Excel", ext: ".xlsx", Icon: Table },
+  parquet: { label: "Parquet", ext: ".parquet", Icon: Stack },
   feather: { label: "Feather", ext: ".feather", Icon: Feather },
 };
 
@@ -88,9 +88,8 @@ export function ExportTableMenu({
                 aria-label={msg("export.table.aria")}
                 className={className}
               >
-                <Download
+                <DownloadSimple
                   className="size-[1.05rem] text-primary"
-                  strokeWidth={2.25}
                   aria-hidden="true"
                 />
               </Button>
@@ -102,9 +101,8 @@ export function ExportTableMenu({
                 aria-label={msg("export.table.aria")}
                 className={cn("gap-1.5", className)}
               >
-                <Download
+                <DownloadSimple
                   className="size-[1.05rem] text-primary"
-                  strokeWidth={2.25}
                   aria-hidden="true"
                 />
                 {msg("export.table.button")}

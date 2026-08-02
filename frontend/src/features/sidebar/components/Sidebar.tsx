@@ -6,22 +6,22 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard,
-  Send,
-  Trash2,
-  MoreHorizontal,
-  Share,
-  Pencil,
-  Pin,
-  Loader2,
-  Grid2x2,
-  ChevronLeft,
+  SquaresFour,
+  PaperPlaneTilt,
+  Trash,
+  DotsThree,
+  ShareNetwork,
+  PencilSimple,
+  PushPin,
+  CircleNotch,
+  GridFour,
+  CaretLeft,
   Compass,
-  CopyPlus,
+  Copy,
   Database,
-  RotateCcw,
+  ArrowCounterClockwise,
   Play,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { SidebarMoreSkeleton } from "./SidebarMoreSkeleton";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";
@@ -67,7 +67,7 @@ const NAV_ITEMS = perLocale(
       {
         href: "/",
         label: msg("auto.features.sidebar.components.sidebar.literal.1"),
-        icon: LayoutDashboard,
+        icon: SquaresFour,
       },
       // One entry covers the whole Data hub: the dataset library and the
       // labeling-session chooser are tabs of the same surface, so both route
@@ -80,7 +80,7 @@ const NAV_ITEMS = perLocale(
       },
       // The glossary term is lowercase for mid-sentence use; nav items are
       // sentence-cased ("Explore", "Data"), so this one matches.
-      { href: "/submit", label: sentenceCase(TERMS.notificationNewOpt), icon: Send },
+      { href: "/submit", label: sentenceCase(TERMS.notificationNewOpt), icon: PaperPlaneTilt },
       { href: "/explore", label: msg("sidebar.nav.explore"), icon: Compass },
     ] as const,
 );
@@ -579,7 +579,7 @@ export function Sidebar() {
                 ))}
                 {loadedAll && groupedJobs.length === 0 && (
                   <EmptyState
-                    icon={Send}
+                    icon={PaperPlaneTilt}
                     iconWrap="tile"
                     title={msg(
                       renderedTab === "shared" ? "sidebar.shared.empty" : "sidebar.mine.empty",
@@ -650,7 +650,7 @@ export function Sidebar() {
               className="w-full justify-center"
             >
               {deleteLoading ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 msg("auto.features.sidebar.components.sidebar.literal.10")
               )}
@@ -991,11 +991,11 @@ function JobRow({
                 p1: job.total_pairs ?? "?",
               })}
             >
-              <Grid2x2 className="size-2.5" />
+              <GridFour className="size-2.5" />
               {job.total_pairs ?? "?"}
             </span>
           )}
-          {job.pinned && <Pin className="size-2.5 text-muted-foreground/60 shrink-0" />}
+          {job.pinned && <PushPin className="size-2.5 text-muted-foreground/60 shrink-0" />}
           <StatusDot status={job.status} />
         </Link>
         {isGridSearch && (
@@ -1013,7 +1013,7 @@ function JobRow({
                 : msg("auto.features.sidebar.components.sidebar.literal.12")
             }
           >
-            <ChevronLeft
+            <CaretLeft
               className={cn("size-3.5 transition-transform duration-200", expanded && "-rotate-90")}
             />
           </button>
@@ -1051,7 +1051,7 @@ function JobRow({
             aria-haspopup="menu"
             aria-expanded={menuOpen}
           >
-            <MoreHorizontal
+            <DotsThree
               className={cn(
                 "size-3.5 transition-[transform,color] duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none motion-reduce:transform-none",
                 menuOpen && "rotate-90 scale-110 text-foreground",
@@ -1125,7 +1125,7 @@ function JobRow({
                 onClick={handleShare}
                 className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
               >
-                <Share className="size-3.5 text-muted-foreground" />
+                <ShareNetwork className="size-3.5 text-muted-foreground" />
                 {msg("auto.features.sidebar.components.sidebar.7")}
               </button>
             )}
@@ -1141,7 +1141,7 @@ function JobRow({
                 }}
                 className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
               >
-                <Pencil className="size-3.5 text-muted-foreground" />
+                <PencilSimple className="size-3.5 text-muted-foreground" />
                 {msg("auto.features.sidebar.components.sidebar.8")}
               </button>
             )}
@@ -1152,7 +1152,7 @@ function JobRow({
               onClick={handleClone}
               className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
             >
-              <CopyPlus className="size-3.5 text-muted-foreground" />
+              <Copy className="size-3.5 text-muted-foreground" />
               {msg("auto.features.sidebar.components.sidebar.9")}
             </button>
 
@@ -1175,7 +1175,7 @@ function JobRow({
                   onClick={handleRetry}
                   className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
                 >
-                  <RotateCcw className="size-3.5 text-muted-foreground" />
+                  <ArrowCounterClockwise className="size-3.5 text-muted-foreground" />
                   {msg("sidebar.rerun")}
                 </button>
               ))}
@@ -1190,7 +1190,7 @@ function JobRow({
                   onClick={handlePin}
                   className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
                 >
-                  <Pin
+                  <PushPin
                     className={cn(
                       "size-3.5",
                       job.pinned ? "text-foreground" : "text-muted-foreground",
@@ -1213,7 +1213,7 @@ function JobRow({
                 }}
                 className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-red-500 hover:bg-red-500/5 cursor-pointer transition-colors"
               >
-                <Trash2 className="size-3.5" />
+                <Trash className="size-3.5" />
                 {msg("auto.features.sidebar.components.sidebar.10")}
               </button>
             )}

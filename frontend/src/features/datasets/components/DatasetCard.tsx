@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { CopyPlus, Database, Loader2, Pencil, Table2, Tags, Trash2 } from "lucide-react";
+import { CircleNotch, Copy, Database, PencilSimple, Table, Tag, Trash } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
@@ -189,7 +189,7 @@ export function DatasetCard({
               aria-label={msg("datasets.action.tag")}
             >
               <Link href={`/tagger?dataset=${dataset.id}&name=${encodeURIComponent(dataset.name)}`}>
-                <Tags className="size-4" />
+                <Tag className="size-4" />
               </Link>
             </Button>
           </TooltipButton>
@@ -203,7 +203,7 @@ export function DatasetCard({
                 aria-label={msg("datasets.action.edit")}
               >
                 <Link href={`/datasets/${dataset.id}/edit?name=${encodeURIComponent(dataset.name)}`}>
-                  <Table2 className="size-4" />
+                  <Table className="size-4" />
                 </Link>
               </Button>
             </TooltipButton>
@@ -222,7 +222,7 @@ export function DatasetCard({
                   }}
                   aria-label={msg("datasets.action.rename")}
                 >
-                  <Pencil className="size-4" />
+                  <PencilSimple className="size-4" />
                 </Button>
               </TooltipButton>
               <TooltipButton tooltip={msg("datasets.action.delete")}>
@@ -233,7 +233,7 @@ export function DatasetCard({
                   onClick={() => setDeleteOpen(true)}
                   aria-label={msg("datasets.action.delete")}
                 >
-                  <Trash2 className="size-4" />
+                  <Trash className="size-4" />
                 </Button>
               </TooltipButton>
             </>
@@ -247,7 +247,7 @@ export function DatasetCard({
                 disabled={cloning}
                 aria-label={msg("datasets.action.clone")}
               >
-                {cloning ? <Loader2 className="size-4 animate-spin" /> : <CopyPlus className="size-4" />}
+                {cloning ? <CircleNotch className="size-4 animate-spin" /> : <Copy className="size-4" />}
               </Button>
             </TooltipButton>
           )}
@@ -285,7 +285,7 @@ export function DatasetCard({
               disabled={renaming || renameValue.trim().length === 0}
               className="w-full justify-center shadow-xs"
             >
-              {renaming ? <Loader2 className="size-4 animate-spin" /> : msg("datasets.rename.save")}
+              {renaming ? <CircleNotch className="size-4 animate-spin" /> : msg("datasets.rename.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -326,7 +326,7 @@ export function DatasetCard({
               disabled={deleting}
               className="w-full justify-center shadow-xs"
             >
-              {deleting ? <Loader2 className="size-4 animate-spin" /> : msg("datasets.delete.confirm")}
+              {deleting ? <CircleNotch className="size-4 animate-spin" /> : msg("datasets.delete.confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -9,23 +9,23 @@ import {
   Clock,
   Code,
   Terminal,
-  TrendingUp,
+  TrendUp,
   Timer,
-  Send,
-  CopyPlus,
+  PaperPlaneTilt,
+  Copy,
   Database,
-  Settings,
-  Activity,
+  Gear,
+  Pulse,
   Eye,
-  Pencil,
-  RotateCcw,
+  PencilSimple,
+  ArrowCounterClockwise,
   Play,
   Pause,
   HardDrive,
-  Rocket,
-  Grid2x2,
+  RocketLaunch,
+  GridFour,
   Package,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 
 import { Button } from "@/shared/ui/primitives/button";
@@ -957,7 +957,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
         >
           <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/5 text-primary/80">
             {sharedTier === "editor" ? (
-              <Pencil className="size-4" aria-hidden="true" />
+              <PencilSimple className="size-4" aria-hidden="true" />
             ) : (
               <Eye className="size-4" aria-hidden="true" />
             )}
@@ -1037,12 +1037,12 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                 >
                   {job.optimization_type === "grid_search" ? (
                     <>
-                      <Grid2x2 />
+                      <GridFour />
                       {msg("auto.app.optimizations.id.page.literal.2")}
                     </>
                   ) : (
                     <>
-                      <Rocket />
+                      <RocketLaunch />
                       {msg("auto.app.optimizations.id.page.literal.3")}
                     </>
                   )}
@@ -1086,7 +1086,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                     onClick={() => router.push(`/submit?clone=${job.optimization_id}`)}
                     aria-label={msg("auto.app.optimizations.id.page.literal.4")}
                   >
-                    <CopyPlus className="size-4" />
+                    <Copy className="size-4" />
                   </Button>
                 </TooltipButton>
                 {canEditRun &&
@@ -1121,7 +1121,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                         disabled={retrying}
                         aria-label={msg("optimization.rerun")}
                       >
-                        <RotateCcw className={`size-4${retrying ? " animate-spin" : ""}`} />
+                        <ArrowCounterClockwise className={`size-4${retrying ? " animate-spin" : ""}`} />
                       </Button>
                     </TooltipButton>
                   ))}
@@ -1176,7 +1176,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                     }
                     aria-label={msg("share.clone")}
                   >
-                    <CopyPlus className="size-4" />
+                    <Copy className="size-4" />
                   </Button>
                 </TooltipButton>
               </div>
@@ -1332,13 +1332,13 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
               data-tutorial="detail-tabs"
             >
               <TabsTrigger value="overview" className={tabCls}>
-                <TrendingUp className="size-3.5" />
+                <TrendUp className="size-3.5" />
                 {msg("auto.app.optimizations.id.page.14")}
                 {pingActive && <PingDot className="ms-1" />}
               </TabsTrigger>
               {showPlaygroundTab && (
                 <TabsTrigger value="playground" className={tabCls}>
-                  <Send className="size-3.5" />
+                  <PaperPlaneTilt className="size-3.5" />
                   {msg("auto.app.optimizations.id.page.15")}
                 </TabsTrigger>
               )}
@@ -1367,12 +1367,12 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
               )}
               {showLmActivityTab && (
                 <TabsTrigger value="lm-activity" className={tabCls}>
-                  <Activity className="size-3.5" />
+                  <Pulse className="size-3.5" />
                   {msg("auto.app.optimizations.id.page.lm_activity")}
                 </TabsTrigger>
               )}
               <TabsTrigger value="config" className={tabCls}>
-                <Settings className="size-3.5" />
+                <Gear className="size-3.5" />
                 {msg("auto.app.optimizations.id.page.19")}
               </TabsTrigger>
             </TabsList>

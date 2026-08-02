@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, CaretDown } from "@/shared/ui/icons";
 
 import { cn } from "@/shared/lib/utils";
 import { formatMsg, msg } from "@/shared/lib/messages";
@@ -128,7 +128,7 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
             {tail}
           </span>
         )}
-        <ChevronDown
+        <CaretDown
           className={cn(
             "ms-auto size-3.5 text-muted-foreground/50 transition-transform shrink-0",
             open ? "rotate-0" : "rotate-90",
@@ -167,7 +167,7 @@ function ThinkingIndicator({ active, reduce }: { active: boolean; reduce: boolea
   }
   return (
     <span className="inline-flex size-4 items-center justify-center rounded-full bg-[#3D2E22]/15 shrink-0">
-      <Check className="size-2.5 text-[#3D2E22]" strokeWidth={3} />
+      <Check className="size-2.5 text-[#3D2E22]" />
     </span>
   );
 }

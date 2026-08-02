@@ -24,13 +24,13 @@ import { keymap } from "@codemirror/view";
 import { linkifyMessage } from "@/shared/lib/linkify";
 import { CopyGlyph, useCopyToClipboard } from "@/shared/ui/copy-button";
 import {
-  ChevronUp,
-  ChevronDown,
+  CaretUp,
+  CaretDown,
   Play,
-  Loader2,
+  CircleNotch,
   X,
   Eraser,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
@@ -407,7 +407,7 @@ export function CodeEditor({
           onClick={() => setCollapsed((c) => !c)}
           className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-black/5 transition-colors cursor-pointer"
         >
-          {collapsed ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />}
+          {collapsed ? <CaretDown className="size-3" /> : <CaretUp className="size-3" />}
           {collapsed
             ? formatMsg("shared.code_editor.lines_count", { count: lineCount })
             : msg("shared.code_editor.collapse")}
@@ -420,7 +420,7 @@ export function CodeEditor({
             disabled={running || !value.trim()}
             className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-black/5 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {running ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
+            {running ? <CircleNotch className="size-3 animate-spin" /> : <Play className="size-3" />}
             {running ? runningLabel : runLabel}
           </button>
         )}
@@ -431,7 +431,7 @@ export function CodeEditor({
           disabled={formatting || !value.trim()}
           className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-black/5 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {formatting ? <Loader2 className="size-3 animate-spin" /> : <Eraser className="size-3" />}
+          {formatting ? <CircleNotch className="size-3 animate-spin" /> : <Eraser className="size-3" />}
           {msg("shared.code_editor.format")}
         </button>
 
@@ -575,7 +575,7 @@ export function CodeEditor({
             <div className="py-1 max-h-48 overflow-y-auto">
               {running && (
                 <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-[#8C7A6B]">
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <CircleNotch className="size-3.5 animate-spin" />
                   {msg("shared.code_editor.validating")}
                 </div>
               )}

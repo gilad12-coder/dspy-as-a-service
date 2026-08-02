@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { CircleNotch } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { Dialog, DialogContent, DialogFooter } from "@/shared/ui/primitives/dialog";
 import { DialogTitleRow } from "@/shared/ui/dialog-title-row";
@@ -71,7 +71,7 @@ export function DeleteDialogs({
             className="w-full justify-center"
           >
             {bulkDeleting ? (
-              <Loader2 className="size-4 animate-spin" />
+              <CircleNotch className="size-4 animate-spin" />
             ) : (
               msg("auto.features.dashboard.components.deletedialogs.literal.1")
             )}

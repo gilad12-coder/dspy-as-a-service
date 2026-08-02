@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, List, UserRound, Sparkles, BadgeCheck } from "lucide-react";
+import { WarningCircle, List, User, Sparkle, SealCheck } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { formatMsg, msg } from "@/shared/lib/messages";
@@ -43,17 +43,17 @@ export function TaggerComplete({
         <CardContent className="flex flex-col gap-4">
           <dl className="flex flex-col gap-2">
             <SummaryRow
-              icon={<UserRound className="size-4 text-muted-foreground" />}
+              icon={<User className="size-4 text-muted-foreground" />}
               label={msg("tagger.assist.complete.human")}
               value={counts.human}
             />
             <SummaryRow
-              icon={<BadgeCheck className="size-4 text-muted-foreground" />}
+              icon={<SealCheck className="size-4 text-muted-foreground" />}
               label={msg("tagger.assist.complete.ai_confirmed")}
               value={counts.aiConfirmed}
             />
             <SummaryRow
-              icon={<Sparkles className="size-4 text-muted-foreground" />}
+              icon={<Sparkle className="size-4 text-muted-foreground" />}
               label={msg("tagger.assist.complete.ai_auto")}
               value={counts.aiAuto}
             />
@@ -61,7 +61,7 @@ export function TaggerComplete({
 
           {flagged.length === 0 && counts.aiAuto > 0 && (
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <BadgeCheck className="size-3.5 shrink-0 text-emerald-700" />
+              <SealCheck className="size-3.5 shrink-0 text-emerald-700" />
               {formatMsg("tagger.assist.complete.no_flags", { count: counts.aiAuto })}
             </p>
           )}
@@ -77,7 +77,7 @@ export function TaggerComplete({
           <div className="flex flex-col gap-2">
             {flagged.length > 0 && (
               <Button onClick={onFlaggedPass} className="w-full gap-2">
-                <CircleAlert className="size-4" />
+                <WarningCircle className="size-4" />
                 {formatMsg("tagger.assist.complete.flagged_cta", { count: flagged.length })}
               </Button>
             )}

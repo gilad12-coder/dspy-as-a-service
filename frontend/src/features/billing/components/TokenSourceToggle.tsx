@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { Coins, KeyRound } from "lucide-react";
+import { Coins, Key } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useCredits } from "../providers/credit-provider";
@@ -14,7 +14,7 @@ const SEGMENTS: Array<{
   labelKey: "billing.mode.managed" | "billing.mode.byok";
 }> = [
   { mode: "managed", icon: Coins, labelKey: "billing.mode.managed" },
-  { mode: "byok", icon: KeyRound, labelKey: "billing.mode.byok" },
+  { mode: "byok", icon: Key, labelKey: "billing.mode.byok" },
 ];
 
 // Mirrors the logs verbosity pill so the billing-mode toggle slides alike.

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CircleAlert } from "lucide-react";
+import { WarningCircle } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
@@ -197,7 +197,7 @@ export function CompareJobsCard({ call }: CompareJobsCardProps) {
 
       {missing.length > 0 && (
         <div className="flex items-center gap-1.5 text-[0.625rem] text-[#9B2C1F]">
-          <CircleAlert className="size-3 shrink-0" aria-hidden="true" />
+          <WarningCircle className="size-3 shrink-0" aria-hidden="true" />
           <span>
             {formatMsg("auto.features.agent.panel.components.comparejobscard.missing", {
               p1: missing.length,

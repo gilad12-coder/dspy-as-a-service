@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import * as React from "react";
-import { ArrowLeft, ArrowRight, X, Play, Pause } from "lucide-react";
+import { ArrowLeft, ArrowRight, X, Play, Pause } from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
 import type { TutorialStep } from "../lib/steps";
 import { msg } from "@/shared/lib/messages";

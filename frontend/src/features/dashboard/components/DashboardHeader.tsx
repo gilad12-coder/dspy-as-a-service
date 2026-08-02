@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Users } from "lucide-react";
+import { Users } from "@/shared/ui/icons";
 import { AnimatedNumber } from "@/shared/ui/motion";
 import type { DashboardStats } from "../lib/get-dashboard-stats";
 import { msg } from "@/shared/lib/messages";

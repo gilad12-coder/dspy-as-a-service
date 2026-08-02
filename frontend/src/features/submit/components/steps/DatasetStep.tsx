@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Image as ImageIcon, Library, Type as TypeIcon, Upload } from "lucide-react";
+import { Image as ImageIcon, Books, TextT as TypeIcon, UploadSimple } from "@/shared/ui/icons";
 import {
   Card,
   CardContent,
@@ -65,7 +65,7 @@ export function DatasetStep({ w }: { w: SubmitWizardContext }) {
               : "hover:border-primary/50 hover:bg-muted/30",
           )}
         >
-          <Upload className="h-10 w-10 mx-auto mb-3 text-muted-foreground group-hover:text-primary/70 transition-colors duration-300" />
+          <UploadSimple className="h-10 w-10 mx-auto mb-3 text-muted-foreground group-hover:text-primary/70 transition-colors duration-300" />
           <p
             className="text-sm font-medium truncate max-w-full px-4"
             title={datasetFileName ?? undefined}
@@ -101,7 +101,7 @@ export function DatasetStep({ w }: { w: SubmitWizardContext }) {
           onClick={() => setPickerOpen(true)}
           className="w-full justify-center gap-2"
         >
-          <Library className="size-4" />
+          <Books className="size-4" />
           {msg("submit.dataset.library_pick")}
         </Button>
 

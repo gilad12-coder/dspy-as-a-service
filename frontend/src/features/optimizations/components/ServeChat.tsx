@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Check, Loader2, MessageSquare, Pencil, X } from "lucide-react";
+import { ChatText, Check, CircleNotch, PencilSimple, X } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { InlineErrorRow } from "@/shared/ui/inline-error-row";
@@ -65,7 +65,7 @@ export function ServeChat({
       <div ref={chatScrollRef} className="min-w-0 flex-1 overflow-y-auto pb-4 space-y-6">
         {runHistory.length === 0 && !streamingRun && (
           <EmptyState
-            icon={MessageSquare}
+            icon={ChatText}
             iconWrap="tile"
             variant="compact"
             title={msg("auto.features.optimizations.components.servechat.1")}
@@ -182,7 +182,7 @@ export function ServeChat({
                       className="self-center ms-1.5 opacity-0 group-hover/user:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-muted/60"
                       title={msg("auto.features.optimizations.components.servechat.literal.1")}
                     >
-                      <Pencil className="size-3 text-muted-foreground" />
+                      <PencilSimple className="size-3 text-muted-foreground" />
                     </button>
                   )}
                 </div>
@@ -313,7 +313,7 @@ export function ServeChat({
               aria-label={msg("auto.features.optimizations.components.servechat.literal.2")}
             >
               {serveLoading ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 <svg viewBox="0 0 24 24" fill="currentColor" className="size-4">
                   <path

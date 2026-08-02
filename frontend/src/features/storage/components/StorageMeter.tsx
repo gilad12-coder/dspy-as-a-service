@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { HardDrive } from "lucide-react";
+import { HardDrive } from "@/shared/ui/icons";
 import { getStorageUsage, STORAGE_CHANGED_EVENT, type StorageUsageResponse } from "@/shared/lib/api";
 import { formatStorageSize } from "@/shared/lib/formatters";
 import { formatMsg, msg } from "@/shared/lib/messages";

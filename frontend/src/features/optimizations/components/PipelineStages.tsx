@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
+import { CheckCircle, Circle, CircleNotch, XCircle } from "@/shared/ui/icons";
 import { PIPELINE_STAGES, type PipelineStage } from "../constants";
 import type { ProgressEvent } from "@/shared/types/api";
 import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
@@ -165,9 +165,9 @@ export function PipelineStages({
               }`}
             >
               {isDone ? (
-                <CheckCircle2 className="size-3.5" />
+                <CheckCircle className="size-3.5" />
               ) : isCurrent ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <CircleNotch className="size-3.5 animate-spin" />
               ) : isStopped ? (
                 <XCircle className="size-3.5" />
               ) : (

@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, OctagonX, RotateCcw } from "lucide-react";
+import { ArrowCounterClockwise, CircleNotch, WarningOctagon } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { formatMsg, msg } from "@/shared/lib/messages";
@@ -32,7 +32,7 @@ export function TaggerAutotagProgress({ status, onCancel, onResume, onBrowse }: 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            {running && <Loader2 className="size-4 animate-spin text-primary" />}
+            {running && <CircleNotch className="size-4 animate-spin text-primary" />}
             {running
               ? msg("tagger.assist.autotag.running_title")
               : interrupted
@@ -71,14 +71,14 @@ export function TaggerAutotagProgress({ status, onCancel, onResume, onBrowse }: 
 
           {running && (
             <Button variant="outline" onClick={onCancel} className="w-full gap-2">
-              <OctagonX className="size-4" />
+              <WarningOctagon className="size-4" />
               {msg("tagger.assist.autotag.cancel")}
             </Button>
           )}
           {(interrupted || failed || canceled) && (
             <div className="flex flex-col gap-2">
               <Button onClick={onResume} className="w-full gap-2">
-                <RotateCcw className="size-4" />
+                <ArrowCounterClockwise className="size-4" />
                 {msg("tagger.assist.autotag.resume")}
               </Button>
               <Button variant="outline" onClick={onBrowse} className="w-full">

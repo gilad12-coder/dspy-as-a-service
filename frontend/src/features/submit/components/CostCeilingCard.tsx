@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Gauge } from "lucide-react";
+import { Gauge } from "@/shared/ui/icons";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { NumberInput } from "@/shared/ui/number-input";
 import { formatCredits, type TokenSourceMode } from "@/features/billing";

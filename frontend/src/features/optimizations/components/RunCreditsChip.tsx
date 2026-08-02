@@ -1,6 +1,6 @@
 "use client";
 
-import { Coins } from "lucide-react";
+import { Coins } from "@/shared/ui/icons";
 import { useLocale } from "@/shared/providers";
 import { useSettingsModal } from "@/features/settings";
 import { msg } from "@/shared/lib/messages";

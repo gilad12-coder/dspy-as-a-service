@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Languages, Wand2 } from "lucide-react";
+import { Check, MagicWand, Translate } from "@/shared/ui/icons";
 import { LOCALES, LOCALE_REGISTRY, type Locale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -87,7 +87,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
             className,
           )}
         >
-          <Languages className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          <Translate className="size-3.5 text-muted-foreground" aria-hidden="true" />
           <span dir={current.dir}>{current.nativeName}</span>
         </button>
       </PopoverTrigger>
@@ -112,7 +112,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
             }}
             className="mb-1 flex w-full items-center gap-2 rounded-md border-b border-border/40 px-2 py-1.5 text-start transition-colors cursor-pointer hover:bg-accent/60"
           >
-            <Wand2 className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <MagicWand className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-sm text-foreground">
                 {msg("shared.language.auto_detect")}

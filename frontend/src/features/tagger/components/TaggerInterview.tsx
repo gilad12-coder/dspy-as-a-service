@@ -3,15 +3,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  ArrowCounterClockwise,
   Binary,
-  ChevronRight,
+  CaretRight,
+  CircleNotch,
+  CursorText,
   ListChecks,
-  Loader2,
   Plus,
-  RotateCcw,
-  TextCursorInput,
-  Trash2,
-} from "lucide-react";
+  Trash,
+} from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   Card,
@@ -184,7 +184,7 @@ export function TaggerInterview({
             isEmpty={messages.length === 0}
             emptyState={
               <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-                <Loader2 className="size-5 animate-spin" />
+                <CircleNotch className="size-5 animate-spin" />
                 <p className="text-sm">{msg("tagger.assist.interview.reading")}</p>
               </div>
             }
@@ -202,7 +202,7 @@ export function TaggerInterview({
             <div className="flex items-center justify-between gap-3 border-t border-border/40 px-4 py-2.5">
               <p className="text-sm text-destructive">{msg("tagger.assist.interview.error")}</p>
               <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5 shrink-0">
-                <RotateCcw className="size-3.5" />
+                <ArrowCounterClockwise className="size-3.5" />
                 {msg("tagger.assist.retry")}
               </Button>
             </div>
@@ -279,7 +279,7 @@ function ContractPendingIndicator() {
   return (
     <div className="flex flex-col gap-2 border-t border-border/40 px-4 pb-2 pt-3 motion-safe:animate-in motion-safe:fade-in-0">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" />
+        <CircleNotch className="size-3.5 animate-spin" />
         <p role="status" className="flex-1">
           {msg("tagger.assist.interview.contract_pending")}
         </p>
@@ -416,7 +416,7 @@ function RubricCard({
       mode: "freetext",
       label: msg("auto.features.tagger.components.taggersetup.literal.8"),
       desc: msg("auto.features.tagger.components.taggersetup.literal.9"),
-      icon: TextCursorInput,
+      icon: CursorText,
     },
   ];
 
@@ -601,7 +601,7 @@ function RubricCard({
                           disabled={categories.length <= 2}
                           aria-label={msg("auto.features.tagger.components.taggersetup.16")}
                         >
-                          <Trash2 className="size-3.5 text-muted-foreground" />
+                          <Trash className="size-3.5 text-muted-foreground" />
                         </Button>
                       </div>
                     ))}
@@ -689,7 +689,7 @@ function RubricCard({
                       aria-label={msg("tagger.assist.rubric.rule_remove")}
                       className="mt-1.5"
                     >
-                      <Trash2 className="size-3.5 text-muted-foreground" />
+                      <Trash className="size-3.5 text-muted-foreground" />
                     </Button>
                   </div>
                 ))}
@@ -762,9 +762,9 @@ function RubricCard({
               dir="ltr"
               className="flex items-center -space-x-7 opacity-70 transition-opacity duration-200 group-hover:opacity-100 rtl:-scale-x-100 [&>svg]:animate-[cascadeDown_1s_ease-in-out_infinite] group-hover:[&>svg]:animate-[cascadeRightHyper_0.5s_ease-out_infinite]"
             >
-              <ChevronRight className="size-10 [animation-delay:0s] group-hover:[animation-delay:0s]" />
-              <ChevronRight className="size-10 [animation-delay:0.15s] group-hover:[animation-delay:0.08s]" />
-              <ChevronRight className="size-10 [animation-delay:0.3s] group-hover:[animation-delay:0.16s]" />
+              <CaretRight className="size-10 [animation-delay:0s] group-hover:[animation-delay:0s]" />
+              <CaretRight className="size-10 [animation-delay:0.15s] group-hover:[animation-delay:0.08s]" />
+              <CaretRight className="size-10 [animation-delay:0.3s] group-hover:[animation-delay:0.16s]" />
             </div>
           </motion.button>
         </Rise>

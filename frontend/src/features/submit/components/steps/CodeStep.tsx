@@ -3,7 +3,7 @@
 import * as React from "react";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, Brain, Check, Repeat2, Sparkles, Workflow, Zap } from "lucide-react";
+import { Robot, Brain, Check, Repeat, Sparkle, FlowArrow, Lightning } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { Label } from "@/shared/ui/primitives/label";
@@ -24,10 +24,10 @@ import { workflowUsesTools } from "../../workflow/model";
 // The four DSPy module choices offered by the picker. Names are technical
 // terms kept in English; descriptions reuse the localized tooltip copy.
 const MODULE_META = [
-  { value: "predict", label: "Predict", icon: Zap, tipKey: "module.predict" },
+  { value: "predict", label: "Predict", icon: Lightning, tipKey: "module.predict" },
   { value: "cot", label: "Chain of Thought", icon: Brain, tipKey: "module.cot" },
-  { value: "react", label: "ReAct", icon: Bot, tipKey: "module.react" },
-  { value: "workflow", label: "Workflow", icon: Workflow, tipKey: "module.workflow" },
+  { value: "react", label: "ReAct", icon: Robot, tipKey: "module.react" },
+  { value: "workflow", label: "Workflow", icon: FlowArrow, tipKey: "module.workflow" },
 ] as const;
 
 const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
@@ -394,7 +394,7 @@ function ModulePicker({ onChoose }: { onChoose: (module: string) => void }) {
             className="group flex cursor-pointer flex-col items-start gap-2 rounded-xl border border-border/60 bg-background/60 p-4 text-start transition-all duration-150 hover:-translate-y-0.5 hover:border-[#C8A882] hover:shadow-md"
           >
             <span className="flex size-9 items-center justify-center rounded-lg bg-[#F3EDE3] text-[#3D2E22] transition-colors duration-150 group-hover:bg-[#3D2E22] group-hover:text-[#FAF8F5]">
-              <Icon className="size-4" strokeWidth={2} />
+              <Icon className="size-4" />
             </span>
             <span className="text-sm font-semibold text-foreground">{label}</span>
             <span className="text-xs leading-relaxed text-muted-foreground">{tip(tipKey)}</span>
@@ -456,12 +456,12 @@ function ModeToggle({ value, onChange, disabledReason, module }: ModeToggleProps
             <span aria-hidden className="h-3 w-px bg-border/80" />
             <span className="flex items-center gap-1 font-medium text-muted-foreground transition-colors group-hover:text-foreground">
               {msg("submit.module.change")}
-              <Repeat2 className="size-3" />
+              <Repeat className="size-3" />
             </span>
           </button>
         )}
         <div className="flex items-center gap-1.5 text-xs text-[#5C4D40]">
-          <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#3D2E22]" />
+          <Sparkle className="h-3.5 w-3.5 shrink-0 text-[#3D2E22]" />
           <span className="font-medium">
             {value === "auto"
               ? formatMsg("auto.features.submit.components.steps.codestep.template.4", {

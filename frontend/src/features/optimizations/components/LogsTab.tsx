@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import { motion } from "framer-motion";
-import { Gauge, ScrollText } from "lucide-react";
+import { Gauge, Scroll } from "@/shared/ui/icons";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { Badge } from "@/shared/ui/primitives/badge";
@@ -256,7 +256,7 @@ export function LogsTab({
       {filtered.length === 0 ? (
         <EmptyState
           variant="list"
-          icon={ScrollText}
+          icon={Scroll}
           title={
             logs.length === 0
               ? msg("auto.features.optimizations.components.logstab.2")

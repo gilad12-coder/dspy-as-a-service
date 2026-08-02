@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LogOut, MoreHorizontal, Settings } from "lucide-react";
+import { DotsThree, Gear, SignOut } from "@/shared/ui/icons";
 import { signOut, useSession } from "next-auth/react";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -115,7 +115,7 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
           </span>
         )}
       </span>
-      <MoreHorizontal
+      <DotsThree
         className="size-4 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-muted-foreground"
         aria-hidden="true"
       />
@@ -172,7 +172,7 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
           }}
           className={MENU_ITEM}
         >
-          <Settings className="size-4 text-muted-foreground" aria-hidden="true" />
+          <Gear className="size-4 text-muted-foreground" aria-hidden="true" />
           {msg("app.shell.account.settings")}
         </button>
         <div role="separator" className="my-1 h-px bg-border/60" />
@@ -187,11 +187,11 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
         >
           {/* Point the arrow "outward" toward the sidebar's edge so it reads as
               leaving: the rail sits on the left in LTR (arrow ←, flipped from the
-              lucide default) and on the right in RTL (arrow →, the default). Derive
+              icon's default) and on the right in RTL (arrow →, the default). Derive
               the flip from `isRtl` rather than the `rtl:` Tailwind variant — this
               menu is a portaled popover where the variant doesn't fire reliably, and
               the rest of the file drives direction the same way. */}
-          <LogOut
+          <SignOut
             className={cn("size-4 text-muted-foreground", !isRtl && "-scale-x-100")}
             aria-hidden="true"
           />

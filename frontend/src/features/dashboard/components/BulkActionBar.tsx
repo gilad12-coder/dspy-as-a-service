@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import * as React from "react";
-import { ArrowLeftRight, Trash2, X } from "lucide-react";
+import { ArrowsLeftRight, Trash, X } from "@/shared/ui/icons";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
@@ -100,7 +100,7 @@ export function BulkActionBar({
                 aria-label={msg("auto.features.dashboard.components.bulkactionbar.literal.2")}
                 data-tutorial="compare-button"
               >
-                <ArrowLeftRight className="size-4" />
+                <ArrowsLeftRight className="size-4" />
               </button>
             </TooltipButton>
             {canDelete && (
@@ -115,7 +115,7 @@ export function BulkActionBar({
                   className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive active:scale-95 transition-all cursor-pointer"
                   aria-label={msg("auto.features.dashboard.components.bulkactionbar.literal.5")}
                 >
-                  <Trash2 className="size-4" />
+                  <Trash className="size-4" />
                 </button>
               </TooltipButton>
             )}

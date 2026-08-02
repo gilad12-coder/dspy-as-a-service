@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUp, ArrowDown, ArrowUpDown, Filter, Search, RotateCcw } from "lucide-react";
+import { ArrowUp, ArrowDown, ArrowsDownUp, Funnel, MagnifyingGlass, ArrowCounterClockwise } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
 import { formatMsg, msg } from "@/shared/lib/messages";
@@ -158,7 +158,7 @@ export function ColumnHeader<K extends string>({
               <ArrowDown className="size-3" />
             )
           ) : (
-            <ArrowUpDown className="size-3" />
+            <ArrowsDownUp className="size-3" />
           )}
         </button>
         {hasFilter ? (
@@ -172,7 +172,7 @@ export function ColumnHeader<K extends string>({
             }}
             aria-label={formatMsg("shared.excel_filter.filter_column", { label })}
           >
-            <Filter className="size-3" />
+            <Funnel className="size-3" />
           </button>
         ) : null}
       </div>
@@ -320,7 +320,7 @@ function FilterDropdown({
     >
       <div className="relative mb-1.5">
         <div className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground">
-          <Search className="size-3" />
+          <MagnifyingGlass className="size-3" />
         </div>
         <Input
           ref={searchRef}
@@ -464,7 +464,7 @@ export function ResetColumnsButton({
       className="inline-flex items-center gap-1 text-[0.625rem] text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer underline underline-offset-2 decoration-muted-foreground/30 hover:decoration-foreground/40"
       title={msg("shared.excel_filter.reset_width_title")}
     >
-      <RotateCcw className="size-3" />
+      <ArrowCounterClockwise className="size-3" />
       <span>{msg("shared.excel_filter.reset_width_label")}</span>
     </button>
   );
@@ -483,7 +483,7 @@ export function ResetFiltersButton({
       className="inline-flex items-center gap-1 text-[0.625rem] text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer underline underline-offset-2 decoration-muted-foreground/30 hover:decoration-foreground/40"
       title={msg("shared.excel_filter.reset_filters_title")}
     >
-      <RotateCcw className="size-3" />
+      <ArrowCounterClockwise className="size-3" />
       <span>{msg("shared.excel_filter.reset_filters_label")}</span>
     </button>
   );

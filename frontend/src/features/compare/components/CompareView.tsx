@@ -4,24 +4,24 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
+  Warning,
+  CaretLeft,
+  CaretRight,
+  CaretDown,
   XCircle,
   Trophy,
   Cpu,
-  Layers,
+  Stack,
   ListChecks,
-  Sparkles,
+  Sparkle,
   Clipboard,
   Check,
   X,
-  BarChart3,
+  ChartBar,
   Clock,
-  TrendingUp,
-  GitCompareArrows,
-} from "lucide-react";
+  TrendUp,
+  GitDiff,
+} from "@/shared/ui/icons";
 import {
   Tooltip as UiTooltip,
   TooltipContent,
@@ -119,7 +119,7 @@ function CompactRunsLegend({ runs }: { runs: RunInfo[] }) {
 
 function VerdictBlock({ runs, winnerIdx }: { runs: RunInfo[]; winnerIdx: number | null }) {
   const winner = winnerIdx != null ? runs[winnerIdx] : null;
-  const OpenIcon = getActiveDir() === "rtl" ? ChevronLeft : ChevronRight;
+  const OpenIcon = getActiveDir() === "rtl" ? CaretLeft : CaretRight;
 
   if (!winner) {
     return (
@@ -146,7 +146,7 @@ function VerdictBlock({ runs, winnerIdx }: { runs: RunInfo[]; winnerIdx: number 
       key: "improvement",
       label: msg("auto.app.compare.page.literal.3"),
       tooltip: tip("compare.winner_improvement"),
-      icon: <TrendingUp className="size-3 text-primary/70 shrink-0" />,
+      icon: <TrendUp className="size-3 text-primary/70 shrink-0" />,
       value: fmtImprovement(winner.improvement),
       tone: "primary",
     });
@@ -547,13 +547,13 @@ function ConfigTable({ runs, winnerIdx }: { runs: RunInfo[]; winnerIdx: number |
   const configRows: ConfigRowDef[] = [
     {
       key: "module",
-      icon: Layers,
+      icon: Stack,
       label: msg("auto.app.compare.page.literal.14"),
       values: runs.map((r) => r.moduleName ?? "—"),
     },
     {
       key: "model",
-      icon: Sparkles,
+      icon: Sparkle,
       label: msg("auto.app.compare.page.literal.15"),
       values: runs.map((r) => `${r.modelName ?? "—"}|${r.reasoningEffort ?? ""}`),
       renderCell: (i) => {
@@ -1091,7 +1091,7 @@ function PerExampleSection({ runs }: { runs: RunInfo[] }) {
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }`}
               >
-                <GitCompareArrows className="size-4" />
+                <GitDiff className="size-4" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">
@@ -1173,7 +1173,7 @@ function PerExampleSection({ runs }: { runs: RunInfo[] }) {
                       >
                         <td className={`py-2 px-2 ${borderTop} sticky start-0 z-10 bg-card`}>
                           <div className="flex items-center gap-1.5">
-                            <ChevronDown
+                            <CaretDown
                               className={`size-3.5 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`}
                             />
                             {isDisagree && (
@@ -1334,7 +1334,7 @@ export function CompareView() {
           <Link href="/" className="hover:text-foreground transition-colors">
             {msg("auto.app.compare.page.19")}
           </Link>
-          <ChevronLeft className="h-3 w-3 rtl:rotate-180" />
+          <CaretLeft className="h-3 w-3 rtl:rotate-180" />
           <span className="text-foreground font-medium">
             {msg("auto.app.compare.page.20")}
             {TERMS.optimizationPlural}
@@ -1348,7 +1348,7 @@ export function CompareView() {
             className="flex items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-50 px-4 py-3 text-sm text-amber-900"
             role="status"
           >
-            <AlertTriangle className="size-4 mt-0.5 shrink-0 text-amber-600" aria-hidden="true" />
+            <Warning className="size-4 mt-0.5 shrink-0 text-amber-600" aria-hidden="true" />
             <div className="min-w-0 flex-1">
               <p className="font-semibold">{msg("compare.partial_load")}</p>
               <p className="mt-0.5 text-xs text-amber-900/75 break-all" dir="ltr">
@@ -1365,7 +1365,7 @@ export function CompareView() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList variant="line" className="w-full border-b border-border/50 pb-0 gap-0">
             <TabsTrigger value="overview" className={tabCls}>
-              <BarChart3 className="size-3.5" />
+              <ChartBar className="size-3.5" />
               {msg("auto.app.compare.page.21")}
             </TabsTrigger>
             <TabsTrigger value="config" className={tabCls}>
@@ -1373,7 +1373,7 @@ export function CompareView() {
               {msg("auto.app.compare.page.22")}
             </TabsTrigger>
             <TabsTrigger value="prompts" className={tabCls}>
-              <Sparkles className="size-3.5" />
+              <Sparkle className="size-3.5" />
               {msg("auto.app.compare.page.23")}
             </TabsTrigger>
             <TabsTrigger value="examples" className={tabCls}>

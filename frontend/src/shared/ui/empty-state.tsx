@@ -2,13 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import type { LucideIcon } from "lucide-react";
+import type { Icon } from "@/shared/ui/icons";
 
 import { Button } from "@/shared/ui/primitives/button";
 import { cn } from "@/shared/lib/utils";
 
 interface EmptyStateProps {
-  icon?: LucideIcon;
+  icon?: Icon;
   /**
    * How the icon is presented.
    * - "none" (default): plain icon at muted color, used for page-level empties.
@@ -30,7 +30,7 @@ interface EmptyStateProps {
     onClick?: () => void;
     href?: string;
     /** Optional leading icon for the action (used by the "list" CTA). */
-    icon?: LucideIcon;
+    icon?: Icon;
   };
   /** Extra content rendered after the action (e.g. demo cards). */
   children?: React.ReactNode;
@@ -62,7 +62,6 @@ export function EmptyState({
         {Icon && (
           <Icon
             className="size-6 text-muted-foreground/25"
-            strokeWidth={1.5}
             aria-hidden="true"
           />
         )}

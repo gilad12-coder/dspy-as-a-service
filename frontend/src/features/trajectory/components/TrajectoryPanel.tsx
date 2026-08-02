@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { GitBranch } from "lucide-react";
+import { GitBranch } from "@/shared/ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OptimizationStatusResponse } from "@/shared/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";

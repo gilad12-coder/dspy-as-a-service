@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { Sparkles, XCircle } from "lucide-react";
+import { Sparkle, XCircle } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
@@ -77,7 +77,7 @@ export function CodeAuthoringCard({ agent }: CodeAuthoringCardProps) {
   return (
     <div className="overflow-hidden rounded-2xl border border-[#C8A882]/30 bg-[#FAF8F5] shadow-sm">
       <div className="flex items-center gap-2 border-b border-[#3D2E22]/10 px-4 py-2.5 text-[0.8125rem] font-medium text-[#3D2E22]">
-        <Sparkles className="size-3.5 text-[#3D2E22]" aria-hidden="true" />
+        <Sparkle className="size-3.5 text-[#3D2E22]" aria-hidden="true" />
         {msg("auto.features.submit.components.steps.codestep.1")}
       </div>
 

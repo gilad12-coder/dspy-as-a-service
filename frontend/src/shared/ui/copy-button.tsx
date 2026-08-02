@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy } from "@/shared/ui/icons";
 
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";

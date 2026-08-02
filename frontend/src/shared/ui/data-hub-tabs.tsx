@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
-import { Database, Tags } from "lucide-react";
+import { Database, Tag } from "@/shared/ui/icons";
 
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
 import { msg } from "@/shared/lib/messages";
@@ -34,7 +34,7 @@ export function DataHubTabs({ active }: { active: "datasets" | "sessions" }) {
 
   const tabs = [
     { key: "datasets", href: "/datasets", label: msg("sidebar.nav.datasets"), Icon: Database },
-    { key: "sessions", href: "/tagger", label: msg("data.tabs.sessions"), Icon: Tags },
+    { key: "sessions", href: "/tagger", label: msg("data.tabs.sessions"), Icon: Tag },
   ] as const;
 
   return (

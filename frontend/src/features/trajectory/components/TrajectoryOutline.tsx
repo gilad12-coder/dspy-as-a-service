@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { Trophy } from "lucide-react";
+import { Trophy } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { CandidateMetrics, RejectedMetrics } from "../lib/types";

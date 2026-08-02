@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Shield, ShieldCheck, Zap } from "lucide-react";
+import { Lightning, Shield, ShieldCheck } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
@@ -22,7 +22,7 @@ interface TrustToggleProps {
 const ICONS: Record<TrustMode, React.ComponentType<{ className?: string }>> = {
   ask: Shield,
   auto_safe: ShieldCheck,
-  yolo: Zap,
+  yolo: Lightning,
 };
 
 const MODE_ORDER: TrustMode[] = ["ask", "auto_safe", "yolo"];

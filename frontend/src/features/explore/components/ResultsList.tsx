@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUp, ArrowDown } from "@/shared/ui/icons";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import type { SearchResult } from "@/shared/lib/api";
 import type { SearchType } from "../hooks/use-semantic-search";

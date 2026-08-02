@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp } from "@/shared/ui/icons";
 
 import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
@@ -120,7 +120,7 @@ export function GainPill({
         color: positive ? "var(--success)" : "var(--danger)",
       }}
     >
-      <Icon className="size-2.5" strokeWidth={2.5} aria-hidden="true" />
+      <Icon className="size-2.5" aria-hidden="true" />
       {gain.text}
     </span>
   );

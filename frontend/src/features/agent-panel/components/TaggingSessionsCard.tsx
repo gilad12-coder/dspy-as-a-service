@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { CheckCircle2, Pin } from "lucide-react";
+import { CheckCircle, PushPin } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import type { AgentToolCall } from "@/shared/ui/agent/types";
@@ -81,7 +81,7 @@ export function TaggingSessionsCard({ call }: TaggingSessionsCardProps) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1">
                   {s.pinned && (
-                    <Pin className="size-2.5 shrink-0 text-muted-foreground/50" aria-hidden="true" />
+                    <PushPin className="size-2.5 shrink-0 text-muted-foreground/50" aria-hidden="true" />
                   )}
                   {s.id ? (
                     <Link
@@ -105,7 +105,7 @@ export function TaggingSessionsCard({ call }: TaggingSessionsCardProps) {
                 </div>
               </div>
               {isComplete(s) && (
-                <CheckCircle2
+                <CheckCircle
                   className="size-3.5 shrink-0"
                   style={{ color: "var(--success)" }}
                   aria-hidden="true"

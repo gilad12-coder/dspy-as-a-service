@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
-import { AlertTriangle, Clock, FilterX, LogIn, Plus, SearchX, Send } from "lucide-react";
+import { Clock, FunnelX, MagnifyingGlassMinus, PaperPlaneTilt, Plus, SignIn, Warning } from "@/shared/ui/icons";
 import { logSearchQuery, type PublicDashboardPoint } from "@/shared/lib/api";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { sessionIdentity } from "@/shared/lib/session-identity";
@@ -130,7 +130,7 @@ export function ExploreView() {
             className="flex items-start gap-3 rounded-lg border border-border bg-accent-muted/50 px-4 py-3 text-xs text-foreground"
             role="status"
           >
-            <AlertTriangle
+            <Warning
               className="mt-0.5 size-4 shrink-0 text-muted-foreground"
               aria-hidden="true"
             />
@@ -159,7 +159,7 @@ export function ExploreView() {
 
         {isTrulyEmpty ? (
           <EmptyState
-            icon={Send}
+            icon={PaperPlaneTilt}
             iconWrap="tile"
             title={msg("explore.empty.title")}
             description={msg("explore.empty.hint")}
@@ -234,7 +234,7 @@ function ListPane({
         role="status"
         className="mx-auto flex max-w-2xl items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px] text-destructive"
       >
-        <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <Warning className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <span>{msg("explore.results.error")}</span>
       </div>
     );
@@ -262,7 +262,7 @@ function ListPane({
       return (
         <EmptyState
           variant="list"
-          icon={LogIn}
+          icon={SignIn}
           title={msg(
             isShared ? "explore.corpus.shared.signed_out" : "explore.corpus.mine.signed_out",
           )}
@@ -272,7 +272,7 @@ function ListPane({
     if (isMine && !response.isActive) {
       return (
         <EmptyState
-          icon={Send}
+          icon={PaperPlaneTilt}
           iconWrap="tile"
           title={msg("explore.corpus.mine.empty")}
           description={msg("explore.corpus.mine.empty.hint")}
@@ -294,7 +294,7 @@ function ListPane({
     return (
       <EmptyState
         variant="list"
-        icon={SearchX}
+        icon={MagnifyingGlassMinus}
         title={formatMsg("explore.results.empty.title", { query: query.text || "—" })}
         description={msg("explore.results.empty.hint")}
       >
@@ -316,7 +316,7 @@ function ListPane({
                 onClick={onClearAll}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3.5 py-2 text-[12.5px] text-foreground/75 transition-colors cursor-pointer hover:border-foreground/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
               >
-                <FilterX className="size-3.5" aria-hidden="true" />
+                <FunnelX className="size-3.5" aria-hidden="true" />
                 {msg("explore.results.empty.clear_filters")}
               </button>
             )}

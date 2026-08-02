@@ -5,14 +5,14 @@ import Link from "next/link";
 import {
   Check,
   Database,
-  FileClock,
-  MessageSquare,
-  Sparkles,
-  Trash2,
+  FileText,
+  ChatText,
+  Sparkle,
+  Trash,
   ArrowUpLeft,
   ArrowUpRight,
-  type LucideIcon,
-} from "lucide-react";
+  type Icon,
+} from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { cn } from "@/shared/lib/utils";
 import { formatStorageSize } from "@/shared/lib/formatters";
@@ -23,10 +23,10 @@ import type { StorageItem } from "@/shared/lib/api";
 /** Per-type icon, in-app jump target, and label key for a ranked storage item. */
 const TYPE_META: Record<
   StorageItem["type"],
-  { icon: LucideIcon; label: MessageKey; href: (id: string) => string | null }
+  { icon: Icon; label: MessageKey; href: (id: string) => string | null }
 > = {
   optimization: {
-    icon: Sparkles,
+    icon: Sparkle,
     label: "storage.type.optimization",
     href: (id) => `/optimizations/${id}`,
   },
@@ -38,13 +38,13 @@ const TYPE_META: Record<
   // Chats live in the slide-over agent panel; ?chat=<id> opens the panel onto
   // that conversation from whichever route the link is clicked on.
   chat: {
-    icon: MessageSquare,
+    icon: ChatText,
     label: "storage.type.chat",
     href: (id) => `?chat=${encodeURIComponent(id)}`,
   },
   // Pending uploads are transient wizard rows with no page of their own.
   staged_upload: {
-    icon: FileClock,
+    icon: FileText,
     label: "storage.type.staged_upload",
     href: () => null,
   },
@@ -98,10 +98,10 @@ export function StorageItemRow({ item, selected, onToggle, onDelete, onNavigate 
             : "border-border/70 bg-background hover:border-foreground/40",
         )}
       >
-        {selected && <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />}
+        {selected && <Check className="size-3.5" aria-hidden="true" />}
       </button>
       <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-        <Icon className="size-4" strokeWidth={1.75} />
+        <Icon className="size-4" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">
@@ -127,7 +127,7 @@ export function StorageItemRow({ item, selected, onToggle, onDelete, onNavigate 
           aria-label={msg("storage.item.delete")}
           className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
         >
-          <Trash2 className="size-4" />
+          <Trash className="size-4" />
         </Button>
       </div>
     </li>

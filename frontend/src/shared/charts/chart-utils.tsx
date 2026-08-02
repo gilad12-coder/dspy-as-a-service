@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3 } from "lucide-react";
+import { ChartBar } from "@/shared/ui/icons";
 
 import { msg } from "@/shared/lib/messages";
 import { EmptyState } from "@/shared/ui/empty-state";
@@ -49,7 +49,7 @@ export function ChartEmptyState({ message }: { message?: string }) {
   return (
     <EmptyState
       variant="list"
-      icon={BarChart3}
+      icon={ChartBar}
       title={message ?? msg("auto.shared.charts.chart.utils.literal.1")}
       className="h-[300px] justify-center"
     />

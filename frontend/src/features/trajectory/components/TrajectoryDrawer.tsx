@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { AlignLeft, ChevronRight, GitCompare, Hash, XCircle, type LucideIcon } from "lucide-react";
+import { CaretRight, GitDiff, Hash, TextAlignLeft, XCircle, type Icon } from "@/shared/ui/icons";
 import {
   createContext,
   useContext,
@@ -1369,7 +1369,7 @@ function AgentTurnMeta({ entries }: { entries: Array<[string, string]> }) {
         className="flex w-full cursor-pointer select-none items-center gap-2 px-2.5 py-1.5 text-start text-[10px] font-medium text-muted-foreground/80 transition-colors hover:bg-[#F8F4EF]/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C8A882]/45"
       >
         {msg("trajectory.pareto.cell.details_label")}
-        <ChevronRight
+        <CaretRight
           className={cn(
             "ms-auto size-3 shrink-0 opacity-50 transition-transform duration-200 ease-out motion-reduce:transition-none",
             // Pinned to the inline-end edge (far left in RTL) via ms-auto. Open
@@ -1736,7 +1736,7 @@ function ReactToolsSection({
 interface SegmentedOption<T extends string> {
   value: T;
   label: string;
-  icon?: LucideIcon;
+  icon?: Icon;
 }
 
 // Measuring the thumb must run before paint on the client, but useLayoutEffect
@@ -1841,11 +1841,11 @@ function ToolsViewToggle({
       onChange={onChange}
       ariaLabel={msg("trajectory.prompt.react.tools.view_aria")}
       options={[
-        { value: "plain", label: msg("trajectory.prompt.react.tools.view_plain"), icon: AlignLeft },
+        { value: "plain", label: msg("trajectory.prompt.react.tools.view_plain"), icon: TextAlignLeft },
         {
           value: "compare",
           label: msg("trajectory.prompt.react.tools.view_compare"),
-          icon: GitCompare,
+          icon: GitDiff,
         },
       ]}
     />
@@ -2208,8 +2208,8 @@ function PromptViewToggle({ view, onChange }: { view: View; onChange: (v: View) 
       onChange={onChange}
       ariaLabel={msg("trajectory.drawer.toggle.aria")}
       options={[
-        { value: "prompt", label: msg("trajectory.drawer.toggle.prompt"), icon: AlignLeft },
-        { value: "diff", label: msg("trajectory.drawer.toggle.diff"), icon: GitCompare },
+        { value: "prompt", label: msg("trajectory.drawer.toggle.prompt"), icon: TextAlignLeft },
+        { value: "diff", label: msg("trajectory.drawer.toggle.diff"), icon: GitDiff },
       ]}
     />
   );

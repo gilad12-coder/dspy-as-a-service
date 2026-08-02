@@ -1,30 +1,29 @@
 import {
-  BarChart3,
+  ArrowsClockwise,
+  Books,
+  ChartBar,
   Check,
-  CheckCircle2,
-  Code2,
+  CheckCircle,
+  Code,
   Copy,
   Database,
-  FileSearch,
-  GitCompare,
-  Library,
+  FadersHorizontal,
+  FileMagnifyingGlass,
+  GitDiff,
   ListChecks,
-  Pencil,
-  Pin,
+  MagicWand,
+  MagnifyingGlass,
+  PencilSimple,
   Play,
-  RefreshCw,
-  ScanSearch,
-  ScrollText,
-  Search,
-  SlidersHorizontal,
-  Sparkles,
+  PushPin,
+  Scroll,
+  Sparkle,
   Square,
-  Tags,
-  Trash2,
+  Tag,
+  Trash,
   Wallet,
-  Wand2,
-  type LucideIcon,
-} from "lucide-react";
+  type Icon,
+} from "@/shared/ui/icons";
 import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
@@ -35,7 +34,7 @@ export interface ToolMeta {
   description: string;
   confirmLabel: string;
   severity: ApprovalSeverity;
-  icon: LucideIcon;
+  icon: Icon;
 }
 
 // Locale strings are stored as thunks, not resolved values: `msg()` reads the
@@ -51,7 +50,7 @@ interface ToolMetaDef {
   description: LocaleString;
   confirmLabel: LocaleString;
   severity: ApprovalSeverity;
-  icon: LucideIcon;
+  icon: Icon;
 }
 
 export const TOOL_META: Record<string, ToolMetaDef> = {
@@ -64,7 +63,7 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     }),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.1"),
     severity: "destructive",
-    icon: Trash2,
+    icon: Trash,
   },
   bulk_delete_jobs_optimizations_bulk_delete_post: {
     title: () => formatMsg("auto.features.agent.panel.lib.tool.meta.template.3", {
@@ -75,7 +74,7 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     }),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.2"),
     severity: "destructive",
-    icon: Trash2,
+    icon: Trash,
   },
   cancel_job_optimizations: {
     title: () => formatMsg("auto.features.agent.panel.lib.tool.meta.template.5", {
@@ -126,7 +125,7 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.9"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.10"),
     severity: "info",
-    icon: Pencil,
+    icon: PencilSimple,
   },
   toggle_pin_job_optimizations: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.11"),
@@ -135,7 +134,7 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     }),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.12"),
     severity: "info",
-    icon: Pin,
+    icon: PushPin,
   },
   edit_code_optimizations_edit_code_post: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.18"),
@@ -145,14 +144,14 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     }),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.19"),
     severity: "info",
-    icon: Code2,
+    icon: Code,
   },
   validate_code_validate_code_post: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.20"),
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.21"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.22"),
     severity: "info",
-    icon: CheckCircle2,
+    icon: CheckCircle,
   },
   profile_datasets_profile_post: {
     title: () => formatMsg("auto.features.agent.panel.lib.tool.meta.template.15", { p1: TERMS.dataset }),
@@ -161,14 +160,14 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     }),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.23"),
     severity: "info",
-    icon: FileSearch,
+    icon: FileMagnifyingGlass,
   },
   discover_models_models_discover_post: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.24"),
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.25"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.26"),
     severity: "info",
-    icon: Search,
+    icon: MagnifyingGlass,
   },
   clone_job_optimizations: {
     title: () => formatMsg("auto.features.agent.panel.lib.tool.meta.template.17", {
@@ -188,7 +187,7 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     }),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.32"),
     severity: "warning",
-    icon: RefreshCw,
+    icon: ArrowsClockwise,
   },
   compare_jobs_optimizations_compare_post: {
     title: () => formatMsg("auto.features.agent.panel.lib.tool.meta.template.20", {
@@ -197,7 +196,7 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.33"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.34"),
     severity: "info",
-    icon: GitCompare,
+    icon: GitDiff,
   },
   bulk_pin_jobs_optimizations_bulk_pin_post: {
     title: () => formatMsg("auto.features.agent.panel.lib.tool.meta.template.21", {
@@ -206,14 +205,14 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.35"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.36"),
     severity: "info",
-    icon: Pin,
+    icon: PushPin,
   },
   set_column_roles_datasets_column_roles_post: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.46"),
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.47"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.48"),
     severity: "info",
-    icon: Tags,
+    icon: Tag,
   },
   list_jobs_optimizations_get: {
     title: () => formatMsg("auto.features.agent.panel.lib.tool.meta.template.25", {
@@ -222,28 +221,28 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.49"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.50"),
     severity: "info",
-    icon: FileSearch,
+    icon: FileMagnifyingGlass,
   },
   update_wizard_state: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.54"),
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.55"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.56"),
     severity: "info",
-    icon: Wand2,
+    icon: MagicWand,
   },
   update_user_preferences: {
     title: () => msg("settings.agent.settings_tool.title"),
     description: () => msg("settings.agent.settings_tool.description"),
     confirmLabel: () => msg("settings.agent.settings_tool.confirm"),
     severity: "info",
-    icon: SlidersHorizontal,
+    icon: FadersHorizontal,
   },
   public_search_dashboard_search_post: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.57"),
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.58"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.59"),
     severity: "info",
-    icon: ScanSearch,
+    icon: MagnifyingGlass,
   },
   get_test_results_optimizations: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.60"),
@@ -257,21 +256,21 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.64"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.65"),
     severity: "info",
-    icon: ScrollText,
+    icon: Scroll,
   },
   get_analytics_summary_analytics_summary_get: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.66"),
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.67"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.68"),
     severity: "info",
-    icon: BarChart3,
+    icon: ChartBar,
   },
   request_user_inference: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.70"),
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.71"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.72"),
     severity: "info",
-    icon: Sparkles,
+    icon: Sparkle,
   },
   get_wallet_for_agent: {
     title: () => msg("auto.features.agent.panel.components.walletcard.title"),
@@ -285,7 +284,7 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.81"),
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.62"),
     severity: "info",
-    icon: Tags,
+    icon: Tag,
   },
   list_datasets_for_agent: {
     title: () => msg("auto.features.agent.panel.lib.tool.meta.literal.79"),
@@ -299,7 +298,7 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.83"),
     confirmLabel: () => msg("auto.features.agent.panel.components.librarydatasetcard.pick"),
     severity: "info",
-    icon: Library,
+    icon: Books,
   },
 };
 

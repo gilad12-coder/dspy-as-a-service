@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Settings, Copy, Trash2, Plus, Thermometer, Coins, Eye, Brain } from "lucide-react";
+import { Gear, Copy, Trash, Plus, Thermometer, Coins, Eye, Brain } from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
 import type { CatalogModel, ModelConfig } from "@/shared/types/api";
 import { msg } from "@/shared/lib/messages";
@@ -174,11 +174,11 @@ export function ModelChip({
               }}
               className="rounded-md p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all cursor-pointer"
             >
-              <Trash2 className="size-3" />
+              <Trash className="size-3" />
             </button>
           </TooltipButton>
         )}
-        <Settings className="size-3.5 text-muted-foreground/60 group-hover:text-foreground/70 transition-colors" />
+        <Gear className="size-3.5 text-muted-foreground/60 group-hover:text-foreground/70 transition-colors" />
       </div>
     </div>
   );

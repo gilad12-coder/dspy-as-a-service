@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { XCircle } from "lucide-react";
+import { XCircle } from "@/shared/ui/icons";
 
 import {
   ApiError,

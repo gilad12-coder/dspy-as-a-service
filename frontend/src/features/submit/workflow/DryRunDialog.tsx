@@ -8,7 +8,7 @@
  */
 
 import * as React from "react";
-import { AlertTriangle, CheckCircle2, Cpu, Loader2, Play } from "lucide-react";
+import { CheckCircle, CircleNotch, Cpu, Play, Warning } from "@/shared/ui/icons";
 
 import {
   Dialog,
@@ -210,19 +210,19 @@ export function DryRunDialog({
             >
               {running && (
                 <>
-                  <Loader2 className="size-3 shrink-0 animate-spin" />
+                  <CircleNotch className="size-3 shrink-0 animate-spin" />
                   {msg("workflow.dryrun.running")}
                 </>
               )}
               {!running && result && !result.error && (
                 <>
-                  <CheckCircle2 className="size-3 shrink-0" />
+                  <CheckCircle className="size-3 shrink-0" />
                   {msg("workflow.dryrun.succeeded")}
                 </>
               )}
               {!running && result?.error && (
                 <>
-                  <AlertTriangle className="size-3 shrink-0" />
+                  <Warning className="size-3 shrink-0" />
                   {msg("workflow.dryrun.failed")}
                 </>
               )}
@@ -266,7 +266,7 @@ export function DryRunDialog({
           </Button>
           <Button size="sm" className="gap-1.5" disabled={running} onClick={handleRun}>
             {running ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <CircleNotch className="size-3.5 animate-spin" />
             ) : (
               <Play className="size-3.5" />
             )}

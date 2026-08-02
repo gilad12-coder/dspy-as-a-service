@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { RotateCcw } from "lucide-react";
+import { ArrowCounterClockwise } from "@/shared/ui/icons";
 
 import { msg } from "@/shared/lib/messages";
 import { Button } from "@/shared/ui/primitives/button";
@@ -75,7 +75,7 @@ function SubmitWizardInner({ onStartOver }: { onStartOver: () => void }) {
               onClick={() => setConfirmStartOver(true)}
               className="gap-1.5 text-muted-foreground"
             >
-              <RotateCcw className="size-3.5" />
+              <ArrowCounterClockwise className="size-3.5" />
               {msg("submit.start_over")}
             </Button>
           </div>

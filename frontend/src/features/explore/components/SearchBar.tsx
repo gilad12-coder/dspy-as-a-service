@@ -3,14 +3,14 @@
 import * as React from "react";
 import { motion } from "framer-motion";
 import {
-  FilterX,
+  CircleNotch,
+  FadersHorizontal,
+  FunnelX,
   Globe,
-  Loader2,
-  SlidersHorizontal,
   User,
   Users,
   X,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
@@ -198,7 +198,7 @@ export function SearchBar({
             className="inline-flex size-8 shrink-0 items-center justify-center"
             aria-hidden="true"
           >
-            <Loader2 className="size-4 animate-spin text-foreground/40" />
+            <CircleNotch className="size-4 animate-spin text-foreground/40" />
           </span>
         )}
         {draft.length > 0 && (
@@ -219,7 +219,7 @@ export function SearchBar({
               aria-label={msg("explore.filters.reset")}
               className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] cursor-pointer hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
             >
-              <FilterX className="size-[1.05rem]" aria-hidden="true" />
+              <FunnelX className="size-[1.05rem]" aria-hidden="true" />
             </button>
           </TooltipButton>
         )}
@@ -229,7 +229,7 @@ export function SearchBar({
           aria-label={msg("explore.filters.button")}
           className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-foreground/70 transition-[background-color,color] cursor-pointer hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
         >
-          <SlidersHorizontal className="size-[1.125rem]" aria-hidden="true" />
+          <FadersHorizontal className="size-[1.125rem]" aria-hidden="true" />
           {filtersCount > 0 && (
             <span
               dir="ltr"

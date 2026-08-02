@@ -50,24 +50,24 @@ import "@xyflow/react/dist/style.css";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "react-toastify";
 import {
-  AlertTriangle,
-  Bot,
-  ChevronDown,
-  Code2,
+  ArrowCounterClockwise,
+  ArrowsIn,
+  ArrowsOut,
+  CaretDown,
+  Code,
   Copy,
-  LayoutGrid,
-  Maximize2,
-  Minimize2,
+  GridFour,
+  MagnifyingGlassMinus,
+  MagnifyingGlassPlus,
   Play,
   Plus,
-  RotateCcw,
-  Sparkles,
-  Trash2,
+  Robot,
+  Sparkle,
+  Trash,
+  Warning,
   Wrench,
   X,
-  ZoomIn,
-  ZoomOut,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 
 import { Button } from "@/shared/ui/primitives/button";
 import { cn } from "@/shared/lib/utils";
@@ -122,8 +122,8 @@ const FIT_VIEW = { padding: 0.2, maxZoom: 1 };
 const EDGE_COLOR = "#8A7563";
 
 const ADD_KINDS = [
-  { kind: "signature", icon: Sparkles, labelKey: "workflow.toolbar.add_signature" },
-  { kind: "transform", icon: Code2, labelKey: "workflow.toolbar.add_transform" },
+  { kind: "signature", icon: Sparkle, labelKey: "workflow.toolbar.add_signature" },
+  { kind: "transform", icon: Code, labelKey: "workflow.toolbar.add_transform" },
   { kind: "mcp", icon: Wrench, labelKey: "workflow.toolbar.add_tool" },
 ] as const;
 
@@ -775,7 +775,7 @@ function CanvasInner({
         {fullscreen ? (
           agentPanel && (
             <ToolbarButton
-              icon={Bot}
+              icon={Robot}
               label={msg("workflow.toolbar.agent")}
               onClick={() => setAgentOpen((v) => !v)}
               active={agentOpen}
@@ -791,10 +791,10 @@ function CanvasInner({
             >
               <Plus className="size-3.5" />
               {msg("workflow.toolbar.add_node")}
-              <ChevronDown className="size-3 text-muted-foreground" />
+              <CaretDown className="size-3 text-muted-foreground" />
             </Button>
             <ToolbarButton
-              icon={LayoutGrid}
+              icon={GridFour}
               label={msg("workflow.toolbar.tidy")}
               onClick={tidyUp}
             />
@@ -803,7 +803,7 @@ function CanvasInner({
         <span className="ms-auto" />
         {issues.length > 0 && (
           <span className="inline-flex items-center gap-1 text-[0.6875rem] font-medium text-[#A3512B]">
-            <AlertTriangle className="size-3" />
+            <Warning className="size-3" />
             {formatMsg("workflow.toolbar.issues", { p1: issues.length })}
           </span>
         )}
@@ -839,7 +839,7 @@ function CanvasInner({
           </Button>
         )}
         <ToolbarButton
-          icon={fullscreen ? Minimize2 : Maximize2}
+          icon={fullscreen ? ArrowsIn : ArrowsOut}
           label={msg(
             fullscreen ? "workflow.toolbar.exit_fullscreen" : "workflow.toolbar.fullscreen",
           )}
@@ -1007,7 +1007,7 @@ function CanvasInner({
                   <>
                     <div className="mx-1 my-1 h-px bg-border/70" />
                     <MenuItem
-                      icon={LayoutGrid}
+                      icon={GridFour}
                       label={msg("workflow.toolbar.tidy")}
                       onClick={() => {
                         tidyUp();
@@ -1030,7 +1030,7 @@ function CanvasInner({
                 />
                 <div className="mx-1 my-1 h-px bg-border/70" />
                 <MenuItem
-                  icon={Trash2}
+                  icon={Trash}
                   label={msg("workflow.menu.delete")}
                   danger
                   onClick={() => {
@@ -1042,7 +1042,7 @@ function CanvasInner({
             )}
             {menuEdge && (
               <MenuItem
-                icon={Trash2}
+                icon={Trash}
                 label={msg("workflow.menu.delete_edge")}
                 danger
                 onClick={() => {
@@ -1101,7 +1101,7 @@ function ZoomControls() {
     <Panel position="bottom-left" className="!m-3">
       <div className="flex items-center overflow-hidden rounded-lg border border-border/60 bg-background/95 shadow-sm backdrop-blur">
         <ControlButton
-          icon={ZoomOut}
+          icon={MagnifyingGlassMinus}
           label={msg("workflow.controls.zoom_out")}
           onClick={() => zoomOut({ duration: 150 })}
         />
@@ -1114,13 +1114,13 @@ function ZoomControls() {
           {Math.round(zoom * 100)}%
         </button>
         <ControlButton
-          icon={ZoomIn}
+          icon={MagnifyingGlassPlus}
           label={msg("workflow.controls.zoom_in")}
           onClick={() => zoomIn({ duration: 150 })}
         />
         <div className="h-4 w-px bg-border/70" />
         <ControlButton
-          icon={RotateCcw}
+          icon={ArrowCounterClockwise}
           label={msg("workflow.controls.reset")}
           // Back to the original framing — the same fit the canvas opened
           // with (mirrors the trajectory tree's reset control).

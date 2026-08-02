@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { CaretLeft, CaretRight, CircleNotch } from "@/shared/ui/icons";
 import { AgentPillDock } from "@/features/agent-panel";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardTitle } from "@/shared/ui/primitives/card";
@@ -34,8 +34,8 @@ function hasLabel(ann: Annotation, mode: TaggerConfig["mode"]): boolean {
  */
 export function TaggerAutotagLive({ config, data, annotations, status }: Props) {
   const rtl = getActiveDir() === "rtl";
-  const PrevIcon = rtl ? ChevronRight : ChevronLeft;
-  const NextIcon = rtl ? ChevronLeft : ChevronRight;
+  const PrevIcon = rtl ? CaretRight : CaretLeft;
+  const NextIcon = rtl ? CaretLeft : CaretRight;
   const total = status?.total ?? data.length;
   const done = status?.done ?? 0;
   const pct = total > 0 ? Math.min(100, (done / total) * 100) : 0;
@@ -65,7 +65,7 @@ export function TaggerAutotagLive({ config, data, annotations, status }: Props) 
   return (
     <div className="flex h-[calc(100dvh-var(--header-height,53px)-3rem)] flex-col overflow-hidden md:h-[calc(100dvh-var(--header-height,53px)-4rem)]">
       <div className="flex items-center gap-3 px-5 pt-3 pb-1.5">
-        <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+        <CircleNotch className="size-3.5 shrink-0 animate-spin text-primary" />
         <span className="shrink-0 text-xs font-medium text-foreground">
           {msg("tagger.assist.autotag.running_title")}
         </span>
@@ -113,7 +113,7 @@ export function TaggerAutotagLive({ config, data, annotations, status }: Props) 
               role="status"
               className="flex min-h-0 flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 text-sm text-muted-foreground"
             >
-              <Loader2 className="size-4 animate-spin" />
+              <CircleNotch className="size-4 animate-spin" />
               {msg("tagger.assist.autotag.live_waiting")}
             </div>
           ) : (

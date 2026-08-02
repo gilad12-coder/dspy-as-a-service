@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { ArrowRight, Loader2, Sparkles } from "lucide-react";
+import { ArrowRight, CircleNotch, Sparkle } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { formatMsg, msg } from "@/shared/lib/messages";
@@ -58,7 +58,7 @@ export function TaggerReviewGate({
   if (roundLoading) {
     return (
       <Centered>
-        <Loader2 className="size-6 animate-spin text-primary" />
+        <CircleNotch className="size-6 animate-spin text-primary" />
         <p className="text-sm text-muted-foreground">{msg("tagger.assist.gate.preparing")}</p>
       </Centered>
     );
@@ -119,7 +119,7 @@ export function TaggerReviewGate({
           {unlocked ? (
             <>
               <Button onClick={onStartAutotag} size="lg" className="w-full gap-2">
-                <Sparkles className="size-4" />
+                <Sparkle className="size-4" />
                 {estimate
                   ? formatMsg("tagger.assist.gate.tag_rest_estimate", {
                       rows: remainingCount,

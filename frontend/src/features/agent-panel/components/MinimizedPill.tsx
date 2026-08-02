@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkle } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 import { formatShortcut, useUserPrefs } from "@/features/settings";
 
@@ -63,7 +63,7 @@ export function MinimizedPill({
           className="relative inline-flex size-5 items-center justify-center rounded-full text-[#FAF8F5]"
           style={{ backgroundColor: hue }}
         >
-          <Sparkles className="size-3" aria-hidden="true" />
+          <Sparkle className="size-3" aria-hidden="true" />
         </span>
       </span>
       <span className="truncate max-w-[18ch] leading-none">

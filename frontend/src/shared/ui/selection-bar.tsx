@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Trash2, X } from "lucide-react";
+import { Trash, X } from "@/shared/ui/icons";
 
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
@@ -58,7 +58,7 @@ export function SelectionBar({ count, onClear, onDelete }: SelectionBarProps) {
                 className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive active:scale-95 transition-all cursor-pointer"
                 aria-label={msg("shared.selection.delete")}
               >
-                <Trash2 className="size-4" />
+                <Trash className="size-4" />
               </button>
             </TooltipButton>
           </div>

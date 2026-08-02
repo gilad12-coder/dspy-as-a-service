@@ -234,7 +234,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                               <AppShell>{children}</AppShell>
                               <SettingsModal />
                               {/* Inside SettingsModalProvider: its CTA opens the
-                                  wallet settings tab now that /upgrade is gone. */}
+                                    wallet settings tab now that /upgrade is gone. */}
                               <InsufficientCreditsModalHost />
                             </SettingsModalProvider>
                             <TutorialOverlay />

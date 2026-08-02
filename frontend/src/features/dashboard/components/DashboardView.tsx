@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { motion, useReducedMotion } from "framer-motion";
-import { BarChart3, TableIcon } from "lucide-react";
+import { ChartBar, Table } from "@/shared/ui/icons";
 import { DashboardSkeleton } from "./DashboardSkeleton";
 import { toast } from "react-toastify";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
@@ -348,7 +348,7 @@ export function DashboardView() {
                     />
                   )}
                   <span className="relative z-10 inline-flex items-center gap-1.5">
-                    <TableIcon className="size-3.5" />
+                    <Table className="size-3.5" />
                     {TERMS.optimizationPlural}
                   </span>
                 </TabsTrigger>
@@ -366,7 +366,7 @@ export function DashboardView() {
                     />
                   )}
                   <span className="relative z-10 inline-flex items-center gap-1.5">
-                    <BarChart3 className="size-3.5" />
+                    <ChartBar className="size-3.5" />
                     {msg("auto.features.dashboard.components.dashboardview.1")}
                   </span>
                 </TabsTrigger>

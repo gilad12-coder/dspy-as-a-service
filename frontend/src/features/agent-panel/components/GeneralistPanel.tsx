@@ -5,15 +5,14 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  History,
-  PanelLeftClose,
-  PanelRightClose,
+  ClockCounterClockwise,
+  SidebarSimple,
   Plus,
-  RotateCcw,
-  Sparkles,
-  WandSparkles,
+  ArrowCounterClockwise,
+  Sparkle,
+  MagicWand,
   XCircle,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
@@ -652,7 +651,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
 
   const emptyState = (
     <EmptyState
-      icon={Sparkles}
+      icon={Sparkle}
       iconWrap="circle"
       variant="compact"
       title={msg("auto.features.agent.panel.components.generalistpanel.1")}
@@ -701,7 +700,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                     className="inline-flex size-6 items-center justify-center rounded-full text-[#FAF8F5]"
                     style={{ backgroundColor: hue }}
                   >
-                    <Sparkles className="size-3" aria-hidden="true" />
+                    <Sparkle className="size-3" aria-hidden="true" />
                   </span>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 leading-tight">
@@ -719,7 +718,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                                   "auto.features.agent.panel.components.generalistpanel.literal.2",
                                 )}
                               >
-                                <WandSparkles className="size-3.5" />
+                                <MagicWand className="size-3.5" />
                               </button>
                             </PopoverTrigger>
                           </TooltipTrigger>
@@ -750,7 +749,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                           "auto.features.agent.panel.components.generalistpanel.history_button",
                         )}
                       >
-                        <History className="size-3.5" />
+                        <ClockCounterClockwise className="size-3.5" />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">
@@ -789,9 +788,9 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                         {/* Icon points toward the edge the panel collapses to:
                             right when docked right (LTR), left when docked left (RTL). */}
                         {isRtl ? (
-                          <PanelLeftClose className="size-3.5" />
+                          <SidebarSimple className="size-3.5" />
                         ) : (
-                          <PanelRightClose className="size-3.5" />
+                          <SidebarSimple className="size-3.5" />
                         )}
                       </button>
                     </TooltipTrigger>
@@ -845,7 +844,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                               onClick={agent.retry}
                               className="inline-flex items-center gap-1 text-[0.6875rem] text-[#7A1E13] bg-[#9B2C1F]/10 hover:bg-[#9B2C1F]/20 px-2 py-0.5 rounded cursor-pointer transition-colors"
                             >
-                              <RotateCcw className="size-3" />
+                              <ArrowCounterClockwise className="size-3" />
                               {msg("auto.features.agent.panel.components.generalistpanel.error_retry")}
                             </button>
                           </div>

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowsDownUp } from "@/shared/ui/icons";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import type { SearchSort } from "@/shared/lib/api";
@@ -72,7 +72,7 @@ function SortControl({
       aria-label={msg("explore.sort.aria")}
       className="inline-flex items-center gap-0.5 rounded-lg border border-border/70 bg-muted/30 p-0.5"
     >
-      <ArrowUpDown className="mx-1 size-3 text-foreground/35" aria-hidden="true" />
+      <ArrowsDownUp className="mx-1 size-3 text-foreground/35" aria-hidden="true" />
       {options.map((o) => {
         const active = o.value === sort;
         return (

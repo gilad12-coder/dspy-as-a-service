@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { CircleNotch, Plus, ArrowCounterClockwise, Trash } from "@/shared/ui/icons";
 
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -62,7 +62,7 @@ export function CodeInterviewPanel({ interview, className }: Props) {
             isEmpty={interview.messages.length === 0}
             emptyState={
               <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-                <Loader2 className="size-5 animate-spin" />
+                <CircleNotch className="size-5 animate-spin" />
                 <p className="text-sm">{msg("submit.code.interview.reading")}</p>
               </div>
             }
@@ -85,7 +85,7 @@ export function CodeInterviewPanel({ interview, className }: Props) {
                 onClick={interview.retry}
                 className="gap-1.5 shrink-0"
               >
-                <RotateCcw className="size-3.5" />
+                <ArrowCounterClockwise className="size-3.5" />
                 {msg("submit.code.interview.retry")}
               </Button>
             </div>
@@ -187,7 +187,7 @@ function BriefCard({ interview }: { interview: CodeInterviewState }) {
               aria-label={msg("submit.code.interview.brief.remove")}
               className="mt-1.5"
             >
-              <Trash2 className="size-3.5 text-muted-foreground" />
+              <Trash className="size-3.5 text-muted-foreground" />
             </Button>
           </div>
         ))}

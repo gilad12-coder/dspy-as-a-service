@@ -6,40 +6,40 @@ import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
 import { motion, useReducedMotion } from "framer-motion";
 import {
-  BarChart3,
+  ChartBar,
   BookOpen,
-  Bot,
+  Robot,
   Brain,
-  Columns2,
+  Columns,
   Cpu,
   CreditCard,
-  KeyRound,
-  ExternalLink,
+  Key,
+  ArrowSquareOut,
   Feather,
   HardDrive,
   Keyboard,
   Lock,
-  type LucideIcon,
-  Languages,
-  Mic,
-  Pencil,
-  PenLine,
+  type Icon,
+  Translate,
+  Microphone,
+  PencilSimple,
+  PencilSimpleLine,
   Plug,
   Plus,
-  RotateCcw,
-  Server,
+  ArrowCounterClockwise,
+  HardDrives,
   Shield,
-  SlidersHorizontal,
+  FadersHorizontal,
   ShieldCheck,
-  Sparkles,
+  Sparkle,
   Table as TableIcon,
-  Tags,
-  TextSearch,
-  Trash2,
+  Tag,
+  MagnifyingGlass,
+  Trash,
   User,
   Info,
   X,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import {
   Dialog,
   DialogContent,
@@ -127,7 +127,7 @@ function WizardTab() {
 
   return (
     <div className="space-y-1">
-      <SettingsRow icon={Sparkles} label={msg("settings.wizard.code_assist.label")}>
+      <SettingsRow icon={Sparkle} label={msg("settings.wizard.code_assist.label")}>
         <Select
           value={prefs.wizardCodeAssist}
           onValueChange={(v) => setPref("wizardCodeAssist", v as typeof prefs.wizardCodeAssist)}
@@ -142,7 +142,7 @@ function WizardTab() {
         </Select>
       </SettingsRow>
 
-      <SettingsRow icon={Columns2} label={msg("settings.wizard.split_mode.label")}>
+      <SettingsRow icon={Columns} label={msg("settings.wizard.split_mode.label")}>
         <Select
           value={prefs.wizardSplitMode}
           onValueChange={(v) => setPref("wizardSplitMode", v as typeof prefs.wizardSplitMode)}
@@ -185,7 +185,7 @@ function TaggingTab() {
   return (
     <div className="space-y-1">
       <SettingsRow
-        icon={Tags}
+        icon={Tag}
         label={msg("settings.tagger.assist.label")}
         description={msg("settings.tagger.assist.description")}
       >
@@ -248,7 +248,7 @@ function MemoryKnobControl({
               onClick={() => onCommit(null)}
               aria-label={msg("settings.agent.memory.reset")}
             >
-              <RotateCcw className="size-3.5" />
+              <ArrowCounterClockwise className="size-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{msg("settings.agent.memory.reset")}</TooltipContent>
@@ -329,7 +329,7 @@ function AgentTab() {
       </SettingsRow>
 
       <SettingsRow
-        icon={Mic}
+        icon={Microphone}
         label={msg("settings.agent.dictation.label")}
         description={msg("settings.agent.dictation.description")}
       >
@@ -382,7 +382,7 @@ function AgentTab() {
           </SettingsRow>
 
           <SettingsRow
-            icon={PenLine}
+            icon={PencilSimpleLine}
             label={msg("settings.agent.memory.entry.label")}
             description={msg("settings.agent.memory.entry.description")}
           >
@@ -394,7 +394,7 @@ function AgentTab() {
           </SettingsRow>
 
           <SettingsRow
-            icon={TextSearch}
+            icon={MagnifyingGlass}
             label={msg("settings.agent.memory.recall.label")}
             description={msg("settings.agent.memory.recall.description")}
           >
@@ -431,12 +431,12 @@ function AccountTab() {
         </span>
       </SettingsRow>
 
-      <SettingsRow icon={Languages} label={msg("shared.language.switch_aria")}>
+      <SettingsRow icon={Translate} label={msg("shared.language.switch_aria")}>
         <LanguageSwitcher />
       </SettingsRow>
 
       <SettingsRow
-        icon={SlidersHorizontal}
+        icon={FadersHorizontal}
         label={msg("settings.account.advanced_mode.label")}
         description={msg("settings.account.advanced_mode.description")}
       >
@@ -444,7 +444,7 @@ function AccountTab() {
       </SettingsRow>
 
       <SettingsRow
-        icon={Sparkles}
+        icon={Sparkle}
         label={msg("settings.account.expand_advanced.label")}
         description={msg("settings.account.expand_advanced.description")}
       >
@@ -709,7 +709,7 @@ function EditableBudgetCell({
       className="group inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs tabular-nums text-muted-foreground hover:bg-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
     >
       <span dir="ltr">{formatStorageSize(bytes)}</span>
-      <Pencil className="size-3 opacity-0 transition group-hover:opacity-50" aria-hidden="true" />
+      <PencilSimple className="size-3 opacity-0 transition group-hover:opacity-50" aria-hidden="true" />
     </button>
   );
 }
@@ -1162,14 +1162,14 @@ function AboutTab() {
         </span>
       </SettingsRow>
 
-      <SettingsRow icon={Server} label={msg("settings.about.api_url.label")}>
+      <SettingsRow icon={HardDrives} label={msg("settings.about.api_url.label")}>
         <span className="text-xs font-mono text-muted-foreground" dir="ltr">
           {apiUrl}
         </span>
       </SettingsRow>
 
       <SettingsRow
-        icon={RotateCcw}
+        icon={ArrowCounterClockwise}
         label={msg("settings.about.reset_all.label")}
         description={msg("settings.about.reset_all.description")}
       >
@@ -1182,7 +1182,7 @@ function AboutTab() {
               className="text-destructive hover:text-destructive"
               aria-label={msg("settings.about.reset_all.action")}
             >
-              <RotateCcw className="size-3.5" />
+              <ArrowCounterClockwise className="size-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{msg("settings.about.reset_all.action")}</TooltipContent>
@@ -1271,7 +1271,7 @@ function ApiTab() {
         </div>
       )}
 
-      <SettingsRow icon={KeyRound} label={msg("settings.api.title")}>
+      <SettingsRow icon={Key} label={msg("settings.api.title")}>
         {loaded &&
           !revealed &&
           (info ? (
@@ -1285,7 +1285,7 @@ function ApiTab() {
                   className="text-destructive hover:text-destructive"
                   aria-label={msg("settings.api.revoke")}
                 >
-                  <Trash2 className="size-3.5" />
+                  <Trash className="size-3.5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{msg("settings.api.revoke")}</TooltipContent>
@@ -1300,7 +1300,7 @@ function ApiTab() {
                   onClick={handleGenerate}
                   aria-label={msg("settings.api.generate")}
                 >
-                  <KeyRound className="size-3.5" />
+                  <Key className="size-3.5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{msg("settings.api.generate")}</TooltipContent>
@@ -1387,7 +1387,7 @@ function ApiTab() {
               aria-label={msg("settings.api.docs_action")}
             >
               <a href={docsUrl} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="size-3.5" />
+                <ArrowSquareOut className="size-3.5" />
               </a>
             </Button>
           </TooltipTrigger>
@@ -1418,23 +1418,23 @@ type SettingsMessageKey = Parameters<typeof msg>[0];
 const SETTINGS_TAB_META: Record<
   SettingsTab,
   {
-    icon: LucideIcon;
+    icon: Icon;
     labelKey: SettingsMessageKey;
     group: "workflows" | "assistants" | "preferences" | "access" | "system";
   }
 > = {
   wizard: {
-    icon: Sparkles,
+    icon: Sparkle,
     labelKey: "settings.tab.wizard",
     group: "workflows",
   },
   tagging: {
-    icon: Tags,
+    icon: Tag,
     labelKey: "settings.tab.tagging",
     group: "workflows",
   },
   agent: {
-    icon: Bot,
+    icon: Robot,
     labelKey: "settings.tab.agent",
     group: "assistants",
   },
@@ -1459,7 +1459,7 @@ const SETTINGS_TAB_META: Record<
     group: "access",
   },
   usage: {
-    icon: BarChart3,
+    icon: ChartBar,
     labelKey: "settings.tab.usage",
     group: "access",
   },
@@ -1469,7 +1469,7 @@ const SETTINGS_TAB_META: Record<
     group: "access",
   },
   api: {
-    icon: KeyRound,
+    icon: Key,
     labelKey: "settings.tab.api",
     group: "access",
   },

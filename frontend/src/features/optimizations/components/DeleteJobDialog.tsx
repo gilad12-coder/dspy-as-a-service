@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { CircleNotch, Trash } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
 import { Dialog, DialogContent, DialogFooter } from "@/shared/ui/primitives/dialog";
@@ -43,7 +43,7 @@ export function DeleteJobDialog({
           onClick={() => setOpen(true)}
           aria-label={msg("auto.features.optimizations.components.deletejobdialog.literal.1")}
         >
-          <Trash2 className="size-4" />
+          <Trash className="size-4" />
         </Button>
       </TooltipButton>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -84,7 +84,7 @@ export function DeleteJobDialog({
               className="w-full justify-center"
             >
               {loading ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 msg("auto.features.optimizations.components.deletejobdialog.literal.2")
               )}

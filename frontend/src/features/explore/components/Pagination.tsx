@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CaretLeft, CaretRight } from "@/shared/ui/icons";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 
@@ -26,8 +26,8 @@ export function Pagination({
   const pages = React.useMemo(() => pageList(page, totalPages), [page, totalPages]);
 
   const rtl = getActiveDir() === "rtl";
-  const PrevIcon = rtl ? ChevronRight : ChevronLeft;
-  const NextIcon = rtl ? ChevronLeft : ChevronRight;
+  const PrevIcon = rtl ? CaretRight : CaretLeft;
+  const NextIcon = rtl ? CaretLeft : CaretRight;
 
   if (totalPages <= 1) return null;
 

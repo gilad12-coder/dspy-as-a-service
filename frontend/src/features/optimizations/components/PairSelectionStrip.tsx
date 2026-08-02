@@ -5,14 +5,14 @@ import { toast } from "react-toastify";
 import {
   ArrowLeft,
   ArrowRight,
-  ChevronLeft,
-  ChevronRight,
-  CopyPlus,
+  CaretLeft,
+  CaretRight,
+  CircleNotch,
+  Copy,
   Crown,
-  Loader2,
-  Trash2,
+  Trash,
   XCircle,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { Dialog, DialogContent, DialogFooter } from "@/shared/ui/primitives/dialog";
 import { DialogTitleRow } from "@/shared/ui/dialog-title-row";
@@ -60,7 +60,7 @@ export function PairSelectionStrip({
   const [deleting, setDeleting] = useState(false);
 
   const rtl = getActiveDir() === "rtl";
-  const BackIcon = rtl ? ChevronRight : ChevronLeft;
+  const BackIcon = rtl ? CaretRight : CaretLeft;
   const PrevArrow = rtl ? ArrowRight : ArrowLeft;
   const NextArrow = rtl ? ArrowLeft : ArrowRight;
 
@@ -114,7 +114,7 @@ export function PairSelectionStrip({
                 onClick={onClone}
                 aria-label={msg("auto.app.optimizations.id.page.literal.4")}
               >
-                <CopyPlus className="size-4" />
+                <Copy className="size-4" />
               </Button>
             </TooltipButton>
             {jobActive && (
@@ -139,7 +139,7 @@ export function PairSelectionStrip({
                   onClick={() => setDeleteOpen(true)}
                   aria-label={msg("auto.features.optimizations.components.gridoverview.literal.29")}
                 >
-                  <Trash2 className="size-4" />
+                  <Trash className="size-4" />
                 </Button>
               </TooltipButton>
             )}
@@ -199,7 +199,7 @@ export function PairSelectionStrip({
               className="w-full justify-center"
             >
               {deleting ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 msg("auto.features.optimizations.components.gridoverview.literal.30")
               )}

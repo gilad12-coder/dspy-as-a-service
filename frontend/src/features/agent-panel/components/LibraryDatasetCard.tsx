@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, Database, Loader2, XCircle } from "lucide-react";
+import { CheckCircle, Database, CircleNotch, XCircle } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { getDatasetRows, type DatasetSummary } from "@/shared/lib/api";
@@ -78,7 +78,7 @@ export function LibraryDatasetCard({ call, alreadyConfirmed, onConfirm }: Librar
   if (phase === "done") {
     return (
       <div className="flex items-center gap-2 rounded-2xl border border-[#5E7A5E]/25 bg-[#F0F4EC] px-4 py-3 text-[0.8125rem] text-[#2F3E32]">
-        <CheckCircle2 className="size-3.5 shrink-0 text-[#3E5240]" aria-hidden="true" />
+        <CheckCircle className="size-3.5 shrink-0 text-[#3E5240]" aria-hidden="true" />
         <span dir="auto" className="min-w-0 flex-1 truncate">
           {pickedName
             ? formatMsg("auto.features.agent.panel.components.librarydatasetcard.picked", {
@@ -118,7 +118,7 @@ export function LibraryDatasetCard({ call, alreadyConfirmed, onConfirm }: Librar
           className="inline-flex items-center gap-1.5 rounded-lg border border-[#C8A882]/50 bg-white/70 px-3 py-1.5 text-[0.75rem] font-medium text-[#3D2E22] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           {phase === "loading" ? (
-            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            <CircleNotch className="size-3.5 animate-spin" aria-hidden="true" />
           ) : (
             <Database className="size-3.5" aria-hidden="true" />
           )}

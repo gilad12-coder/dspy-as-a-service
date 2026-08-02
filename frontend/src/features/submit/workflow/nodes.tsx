@@ -12,15 +12,15 @@
 import * as React from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import {
-  AlertTriangle,
-  ArrowRightToLine,
+  ArrowLineRight,
   Check,
-  Code2,
+  Code,
   Flag,
-  Sparkles,
+  Sparkle,
+  Warning,
   Wrench,
   X,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 
 import { cn } from "@/shared/lib/utils";
 import { msg } from "@/shared/lib/messages";
@@ -45,10 +45,10 @@ export interface WorkflowNodeData extends Record<string, unknown> {
 export type CanvasNode = Node<WorkflowNodeData>;
 
 const KIND_ICONS = {
-  input: ArrowRightToLine,
+  input: ArrowLineRight,
   output: Flag,
-  signature: Sparkles,
-  transform: Code2,
+  signature: Sparkle,
+  transform: Code,
   mcp: Wrench,
 } as const;
 
@@ -127,7 +127,7 @@ function NodeCard({ data, selected }: NodeProps<CanvasNode>) {
           isAnchor ? "bg-[#F3EDE3]" : "bg-[#FAF8F5]",
         )}
       >
-        <Icon className="size-3.5 shrink-0 text-[#3D2E22]" strokeWidth={2} />
+        <Icon className="size-3.5 shrink-0 text-[#3D2E22]" />
         <span className="truncate text-xs font-semibold text-foreground" dir="ltr">
           {displayName(spec)}
         </span>
@@ -154,7 +154,7 @@ function NodeCard({ data, selected }: NodeProps<CanvasNode>) {
               className="inline-flex items-center gap-1 text-[0.625rem] font-medium text-[#A3512B]"
               title={issues.join("\n")}
             >
-              <AlertTriangle className="size-3" />
+              <Warning className="size-3" />
               {issues.length}
             </span>
           )}

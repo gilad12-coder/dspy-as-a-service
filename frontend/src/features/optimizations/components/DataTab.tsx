@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "react-toastify";
-import { Inbox, Loader2 } from "lucide-react";
+import { CircleNotch, Tray } from "@/shared/ui/icons";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/shared/ui/primitives/table";
@@ -385,7 +385,7 @@ export function DataTab({
                 </button>
               </div>
               {testResultsLoading && (
-                <Loader2 className="size-4 animate-spin text-[#8C7A6B] shrink-0" />
+                <CircleNotch className="size-4 animate-spin text-[#8C7A6B] shrink-0" />
               )}
             </div>
           </div>
@@ -477,7 +477,7 @@ export function DataTab({
         {filtered.length === 0 ? (
           <EmptyState
             variant="list"
-            icon={Inbox}
+            icon={Tray}
             title={msg("auto.features.optimizations.components.datatab.5")}
           />
         ) : (

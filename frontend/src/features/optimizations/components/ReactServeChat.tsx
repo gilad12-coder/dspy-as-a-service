@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { MessageSquare, RotateCcw, XCircle } from "lucide-react";
+import { ArrowCounterClockwise, ChatText, XCircle } from "@/shared/ui/icons";
 
 import { AgentThread } from "@/shared/ui/agent/agent-thread";
 import { ChatTranscript } from "@/shared/ui/agent/chat-transcript";
@@ -51,7 +51,7 @@ export function ReactServeChat({ optimizationId }: ReactServeChatProps) {
 
   const emptyState = (
     <EmptyState
-      icon={MessageSquare}
+      icon={ChatText}
       iconWrap="circle"
       variant="compact"
       title={msg("optimizations.react.chat_empty_title")}
@@ -103,7 +103,7 @@ export function ReactServeChat({ optimizationId }: ReactServeChatProps) {
                       onClick={agent.retry}
                       className="inline-flex items-center gap-1 text-[0.6875rem] text-[#7A1E13] bg-[#9B2C1F]/10 hover:bg-[#9B2C1F]/20 px-2 py-0.5 rounded cursor-pointer transition-colors"
                     >
-                      <RotateCcw className="size-3" />
+                      <ArrowCounterClockwise className="size-3" />
                       {msg("optimizations.react.chat_retry")}
                     </button>
                   </div>

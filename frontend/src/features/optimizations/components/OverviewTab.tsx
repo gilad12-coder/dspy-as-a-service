@@ -2,7 +2,7 @@
 
 import { memo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
-import { Gauge, Hourglass, MessageSquare, Timer, TrendingUp } from "lucide-react";
+import { ChatText, Gauge, Hourglass, Timer, TrendUp } from "@/shared/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { FadeIn, StaggerContainer, StaggerItem, TiltCard } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
@@ -301,7 +301,7 @@ function OverviewTabImpl({
                     "auto.features.optimizations.components.overviewtab.template.6",
                     { p1: runResult.num_lm_calls },
                   )}
-                  icon={<MessageSquare className="size-3.5" />}
+                  icon={<ChatText className="size-3.5" />}
                 />
               )}
               {runResult.avg_response_time_ms != null && (
@@ -443,7 +443,7 @@ function OverviewTabImpl({
             />
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <TrendingUp className="size-4 text-[#7C6350]" aria-hidden="true" />
+                <TrendUp className="size-4 text-[#7C6350]" aria-hidden="true" />
                 <HelpTip text={tip("score.progression")}>
                   <span className="font-bold tracking-tight">
                     {msg("auto.features.optimizations.components.overviewtab.4")}

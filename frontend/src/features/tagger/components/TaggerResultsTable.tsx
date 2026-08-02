@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert } from "lucide-react";
+import { WarningCircle } from "@/shared/ui/icons";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/shared/ui/primitives/table";
@@ -304,7 +304,7 @@ export function TaggerResultsTable({
                       <TableCell className="max-w-0">
                         <span className="flex items-center gap-1.5">
                           {row.flagged && (
-                            <CircleAlert className="size-3.5 shrink-0 text-amber-600 dark:text-amber-500" />
+                            <WarningCircle className="size-3.5 shrink-0 text-amber-600 dark:text-amber-500" />
                           )}
                           <span className="truncate" dir="auto">
                             {row.text}

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { CaretDown } from "@/shared/ui/icons";
 import {
   Card,
   CardContent,
@@ -226,7 +226,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                     {msg("auto.features.submit.components.steps.paramsstep.11")}
                     {TERMS.optimizer}
                   </span>
-                  <ChevronDown
+                  <CaretDown
                     className={cn(
                       "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
                       optimizerSettingsOpen && "rotate-180",

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CircleAlert, Loader2, Plus, Search, Tags } from "lucide-react";
+import { CircleNotch, MagnifyingGlass, Plus, Tag, WarningCircle } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 
 import {
@@ -146,7 +146,7 @@ export function TaggingSessionsPanel({ onStartNew }: { onStartNew: () => void })
       <section className="w-full pb-16">
         <div className="mt-5 rounded-xl border border-dashed border-transparent" aria-live="polite">
           <EmptyState
-            icon={CircleAlert}
+            icon={WarningCircle}
             iconWrap="tile"
             title={msg("tagger.session.load_failed")}
             description={msg("tagger.session.load_failed_body")}
@@ -162,7 +162,7 @@ export function TaggingSessionsPanel({ onStartNew }: { onStartNew: () => void })
       <section className="w-full pb-16">
         <div className="mt-5 rounded-xl border border-dashed border-transparent">
           <EmptyState
-            icon={Tags}
+            icon={Tag}
             iconWrap="tile"
             title={msg("tagger.session.empty_title")}
             description={msg("tagger.session.empty_body")}
@@ -190,7 +190,7 @@ export function TaggingSessionsPanel({ onStartNew }: { onStartNew: () => void })
 
       <div className="mt-5 rounded-xl border border-dashed border-transparent">
         {filteredSessions.length === 0 ? (
-          <EmptyState icon={Search} title={msg("tagger.session.search_empty")} />
+          <EmptyState icon={MagnifyingGlass} title={msg("tagger.session.search_empty")} />
         ) : (
           <div className="flex flex-col gap-2.5 p-0.5">
             {filteredSessions.map((session) => (
@@ -243,7 +243,7 @@ export function TaggingSessionsPanel({ onStartNew }: { onStartNew: () => void })
               className="w-full justify-center shadow-xs"
             >
               {bulkDeleting ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 msg("datasets.delete.confirm")
               )}

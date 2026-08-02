@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, HardDrive, Minus, X } from "lucide-react";
+import { Check, HardDrive, Minus, X } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import {
   bulkDeleteStorageItems,
@@ -279,9 +279,9 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
                     )}
                   >
                     {allSelected ? (
-                      <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
+                      <Check className="size-3.5" aria-hidden="true" />
                     ) : someSelected ? (
-                      <Minus className="size-3.5" strokeWidth={3} aria-hidden="true" />
+                      <Minus className="size-3.5" aria-hidden="true" />
                     ) : null}
                   </button>
                   <span className="text-xs font-medium text-muted-foreground">{msg("storage.select.all")}</span>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkles, AlertTriangle, Info } from "lucide-react";
+import { Sparkle, Warning, Info } from "@/shared/ui/icons";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { cn } from "@/shared/lib/utils";
 import { msg, type MessageKey } from "@/shared/lib/messages";
@@ -117,7 +117,7 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-[#3D2E22]">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#C8A882]/15 text-[#A8895E]">
-              <Sparkles className="h-3 w-3" />
+              <Sparkle className="h-3 w-3" />
             </span>
             <span className="text-[13px] font-semibold tracking-tight">
               {msg("submit.split.recommended_title")}
@@ -142,7 +142,7 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
                   {hasRationale && (
                     <>
                       <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#8C7A6B]">
-                        <Sparkles className="h-3 w-3 text-[#C8A882]" />
+                        <Sparkle className="h-3 w-3 text-[#C8A882]" />
                         {msg("submit.split.rationale_title")}
                       </div>
                       <ul className="space-y-1.5 text-[12px] leading-relaxed text-[#3D2E22]">
@@ -161,7 +161,7 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
                           hasRationale ? "mt-3 mb-2 border-t border-[#DDD6CC]/60 pt-2.5" : "mb-2",
                         )}
                       >
-                        <AlertTriangle className="h-3 w-3 text-[#C8924A]" />
+                        <Warning className="h-3 w-3 text-[#C8924A]" />
                         {msg("submit.split.warnings_title")}
                       </div>
                       <ul className="space-y-1.5 text-[12px] leading-relaxed text-[#7A5A38]">

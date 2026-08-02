@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { signIn, getProviders, getSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { Loader2, Github, Fingerprint, ArrowLeft } from "lucide-react";
+import { CircleNotch, GithubLogo, Fingerprint, ArrowLeft } from "@/shared/ui/icons";
 import {
   browserSupportsWebAuthn,
   platformAuthenticatorIsAvailable,
@@ -497,7 +497,7 @@ export function LoginView() {
           <div className="flex flex-col items-center">
             <LoginHeader />
             <div className="mt-9 flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
+              <CircleNotch className="size-4 animate-spin" />
               <span>{msg("auth.login.loading")}</span>
             </div>
           </div>
@@ -525,7 +525,7 @@ export function LoginView() {
                       className="mt-5 h-11 w-full gap-2 text-[0.9375rem] font-medium"
                     >
                       {passkeyOffer === "saving" ? (
-                        <Loader2 className="size-4 animate-spin" />
+                        <CircleNotch className="size-4 animate-spin" />
                       ) : (
                         <Fingerprint className="size-[18px]" />
                       )}
@@ -573,7 +573,7 @@ export function LoginView() {
                         onClick={() => void sendEmailCode()}
                         className="mt-3 gap-2"
                       >
-                        {sendingCode && <Loader2 className="size-3.5 animate-spin" />}
+                        {sendingCode && <CircleNotch className="size-3.5 animate-spin" />}
                         {msg(
                           twoFactor.emailSent ? "auth.login.twofa_resend" : "auth.login.twofa_send",
                         )}
@@ -619,7 +619,7 @@ export function LoginView() {
                         disabled={loading || !twoFactorCode.trim()}
                         className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
                       >
-                        {loading && <Loader2 className="size-4 animate-spin" />}
+                        {loading && <CircleNotch className="size-4 animate-spin" />}
                         {msg("auth.login.twofa_verify")}
                       </Button>
                     </form>
@@ -720,7 +720,7 @@ export function LoginView() {
                               onClick={() => handleOAuth("github")}
                               className="h-11 w-full gap-2.5 text-[0.9375rem] font-medium"
                             >
-                              <Github className="size-[18px]" />
+                              <GithubLogo className="size-[18px]" />
                               {msg("auth.login.with_github")}
                             </Button>
                           )}
@@ -734,7 +734,7 @@ export function LoginView() {
                               className="h-11 w-full gap-2.5 text-[0.9375rem] font-medium"
                             >
                               {passkeyLoading ? (
-                                <Loader2 className="size-[18px] animate-spin" />
+                                <CircleNotch className="size-[18px] animate-spin" />
                               ) : (
                                 <Fingerprint className="size-[18px]" />
                               )}
@@ -827,7 +827,7 @@ export function LoginView() {
                         disabled={!canSubmit}
                         className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
                       >
-                        {loading && <Loader2 className="size-4 animate-spin" />}
+                        {loading && <CircleNotch className="size-4 animate-spin" />}
                         {msg(
                           authMode === "signin"
                             ? "auth.login.signin_submit"

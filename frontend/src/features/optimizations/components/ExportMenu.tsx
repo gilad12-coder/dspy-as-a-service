@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Download, FileCode, FileJson, FileSpreadsheet, Package } from "lucide-react";
+import { CaretDown, DownloadSimple, FileCode, FileText, FileXls, Package } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
 import { downloadProgramExport } from "@/shared/lib/api";
@@ -106,9 +106,9 @@ export function ExportMenu({
   return (
     <div className="relative" ref={ref}>
       <Button size="sm" onClick={() => setOpen((o) => !o)} className="gap-1.5">
-        <Download className="size-4" />
+        <DownloadSimple className="size-4" />
         {msg("auto.features.optimizations.components.exportmenu.1")}
-        <ChevronDown
+        <CaretDown
           className={`size-3.5 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
         />
       </Button>
@@ -186,7 +186,7 @@ export function ExportMenu({
                   }}
                   className={itemCls}
                 >
-                  <FileJson className={iconCls} />
+                  <FileText className={iconCls} />
                   <span className="flex-1">
                     {msg("auto.features.optimizations.components.exportmenu.4")}
                   </span>
@@ -208,7 +208,7 @@ export function ExportMenu({
                   }}
                   className={itemCls}
                 >
-                  <FileSpreadsheet className={iconCls} />
+                  <FileXls className={iconCls} />
                   <span className="flex-1">
                     {msg("auto.features.optimizations.components.exportmenu.6")}
                   </span>

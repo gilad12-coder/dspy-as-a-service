@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Loader2, XCircle } from "lucide-react";
+import { CircleNotch, XCircle } from "@/shared/ui/icons";
 
 import {
   getTaggerSession,
@@ -61,7 +61,7 @@ export function TaggerSessionGate() {
     return (
       <PageContainer full>
         <div className="flex items-center justify-center min-h-[60vh]">
-          <Loader2 className="size-8 animate-spin text-primary" />
+          <CircleNotch className="size-8 animate-spin text-primary" />
         </div>
       </PageContainer>
     );

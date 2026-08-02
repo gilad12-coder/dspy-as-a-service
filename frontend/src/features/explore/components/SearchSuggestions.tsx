@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, TrendingUp } from "lucide-react";
+import { Clock, TrendUp } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
 interface SearchSuggestionsProps {
@@ -78,7 +78,7 @@ export function SearchSuggestions({
                 onClick={() => onSelect(s)}
                 className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-[12.5px] text-foreground/80 transition-colors cursor-pointer hover:border-foreground/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
               >
-                <TrendingUp className="size-3 shrink-0 text-foreground/35" aria-hidden="true" />
+                <TrendUp className="size-3 shrink-0 text-foreground/35" aria-hidden="true" />
                 <span dir="auto" className="min-w-0 truncate">{s}</span>
               </button>
             ))}

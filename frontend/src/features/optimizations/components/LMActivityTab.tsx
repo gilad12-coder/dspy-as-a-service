@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Activity, MessageSquare, Timer } from "lucide-react";
+import { ChatText, Pulse, Timer } from "@/shared/ui/icons";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
 import { ExportTableMenu } from "@/shared/ui/export-table-menu";
@@ -233,8 +233,8 @@ export function LMActivityTab({ lmActivity }: { lmActivity: LMActivity | null | 
   const genLabel = msg("auto.features.optimizations.components.lmactivitytab.col_generation");
   const reflLabel = msg("auto.features.optimizations.components.lmactivitytab.col_reflection");
 
-  const callsIcon = <MessageSquare className="size-3" strokeWidth={1.75} />;
-  const avgIcon = <Timer className="size-3" strokeWidth={1.75} />;
+  const callsIcon = <ChatText className="size-3" />;
+  const avgIcon = <Timer className="size-3" />;
 
   // Plain ``<section>`` instead of ``<Card>`` to opt out of the global
   // ``[data-slot="card"]`` chrome (gradient bg, backdrop-blur, mouse-spotlight,
@@ -251,9 +251,8 @@ export function LMActivityTab({ lmActivity }: { lmActivity: LMActivity | null | 
         className="rounded-2xl border border-border bg-card text-card-foreground shadow-[var(--shadow-sm)]"
       >
         <header className="flex items-center gap-2 px-6 pt-5 pb-3">
-          <Activity
+          <Pulse
             className="size-4 text-muted-foreground"
-            strokeWidth={1.75}
             aria-hidden="true"
           />
           <HelpTip text={tip("lm_activity.section")}>

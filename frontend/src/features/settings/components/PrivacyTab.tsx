@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
-import { AtSign, ChartNoAxesColumn, Database, User } from "lucide-react";
+import { At, ChartBar, Database, User } from "@/shared/ui/icons";
 
 import { msg } from "@/shared/lib/messages";
 import { invalidateCache } from "@/shared/lib/api";
@@ -53,7 +53,7 @@ export function PrivacyTab() {
     <div className="space-y-4">
       <div className="space-y-1">
         <SettingsRow
-          icon={ChartNoAxesColumn}
+          icon={ChartBar}
           label={msg("settings.privacy.analytics.label")}
           description={msg("settings.privacy.analytics.description")}
         >
@@ -88,7 +88,7 @@ export function PrivacyTab() {
         />
 
         <CopyValueRow
-          icon={AtSign}
+          icon={At}
           label={msg("settings.privacy.copy_email.label")}
           value={session?.user?.email ?? ""}
           signedOut={signedOut}

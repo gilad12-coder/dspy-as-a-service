@@ -8,18 +8,17 @@ import {
   User,
   Code,
   Tag,
-  Layers,
-  Component,
+  Stack,
+  Cube,
   Target,
   FileText,
   Columns,
   Shuffle,
-  Search,
+  MagnifyingGlass,
   Database,
   Cpu,
-  Boxes,
   Gauge,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { perLocale } from "@/shared/lib/per-locale";
@@ -163,7 +162,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                   </div>
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Layers className="size-3.5" />
+                      <Stack className="size-3.5" />
                       {msg("auto.features.submit.components.steps.summarystep.4")}
                       {TERMS.optimization}
                     </span>
@@ -175,7 +174,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                   </div>
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Component className="size-3.5" />
+                      <Cube className="size-3.5" />
                       {msg("auto.features.submit.components.steps.summarystep.5")}
                     </span>
                     <span className="text-sm font-medium font-mono" dir="ltr">
@@ -271,7 +270,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                       <Separator />
                       <div className="space-y-3">
                         <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Layers className="size-3.5" />
+                          <Stack className="size-3.5" />
                           {msg("auto.features.submit.components.steps.summarystep.12")}
                           {TERMS.dataset}
                         </span>
@@ -384,7 +383,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                   {isReact && (
                     <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                       <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Boxes className="size-3.5" />
+                        <Stack className="size-3.5" />
                         {msg("submit.react.mcp_url_label")}
                       </span>
                       <span
@@ -398,7 +397,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                   )}
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Search className="size-3.5" />
+                      <MagnifyingGlass className="size-3.5" />
                       {msg("auto.features.submit.components.steps.summarystep.19")}
                     </span>
                     <span className="text-sm font-medium">
@@ -431,7 +430,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                       </div>
                       <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                         <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Layers className="size-3.5" />
+                          <Stack className="size-3.5" />
                           {msg("auto.features.submit.components.steps.summarystep.21")}
                         </span>
                         <span className="text-sm font-medium font-mono">{maxFullEvals || "—"}</span>

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check } from "lucide-react";
+import { Check } from "@/shared/ui/icons";
 
 import { cn } from "@/shared/lib/utils";
 
@@ -39,7 +39,7 @@ export function SelectCheckbox({ checked, onToggle, ariaLabel, disabled }: Selec
           : "border-border/70 bg-background hover:border-foreground/40",
       )}
     >
-      {checked && <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />}
+      {checked && <Check className="size-3.5" aria-hidden="true" />}
     </button>
   );
 }

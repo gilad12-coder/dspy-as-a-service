@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Clipboard, Cpu, RefreshCw } from "lucide-react";
+import { Check, Clipboard, Cpu, ArrowsClockwise } from "@/shared/ui/icons";
 
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
@@ -94,7 +94,7 @@ export function MessageActions({
       )}
       {onRegenerate && (
         <ActionButton label={msg("shared.agent.regenerate")} onClick={onRegenerate}>
-          <RefreshCw className="size-3.5" />
+          <ArrowsClockwise className="size-3.5" />
         </ActionButton>
       )}
       <span className="sr-only" role="status" aria-live="polite">

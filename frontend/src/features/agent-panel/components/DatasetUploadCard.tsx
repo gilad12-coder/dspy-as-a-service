@@ -3,16 +3,16 @@
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  ArrowClockwise,
   ArrowRight,
   Check,
-  CheckCircle2,
-  FileSpreadsheet,
+  CheckCircle,
+  CircleNotch,
+  FileXls,
   Image as ImageIcon,
-  Loader2,
-  RotateCw,
-  Type as TypeIcon,
-  Upload,
-} from "lucide-react";
+  TextT as TypeIcon,
+  UploadSimple,
+} from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
@@ -229,7 +229,7 @@ export function DatasetUploadCard({
                   : "bg-[#C8A882]/25 text-[#3D2E22]",
               )}
             >
-              {confirmed ? <Check className="size-3.5" /> : <Upload className="size-3.5" />}
+              {confirmed ? <Check className="size-3.5" /> : <UploadSimple className="size-3.5" />}
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[0.8125rem] font-semibold text-[#3D2E22] leading-tight">
@@ -269,7 +269,7 @@ export function DatasetUploadCard({
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                 )}
               >
-                <Upload className="size-3.5" />
+                <UploadSimple className="size-3.5" />
                 {msg("auto.features.agent.panel.components.datasetuploadcard.replace")}
               </button>
             </motion.div>
@@ -304,7 +304,7 @@ export function DatasetUploadCard({
                       : "bg-[#C8A882]/20 text-[#3D2E22] group-hover:bg-[#C8A882]/35",
                   )}
                 >
-                  <Upload className="size-4" />
+                  <UploadSimple className="size-4" />
                 </div>
                 <div className="text-center">
                   <div className="text-[0.8125rem] font-medium text-[#3D2E22]">
@@ -326,7 +326,7 @@ export function DatasetUploadCard({
               {...fade}
               className="px-4 py-6 flex items-center justify-center gap-2 text-[0.75rem] text-[#6B5B4A]"
             >
-              <Loader2 className="size-3.5 animate-spin" />
+              <CircleNotch className="size-3.5 animate-spin" />
               {msg("auto.features.agent.panel.components.datasetuploadcard.parsing")}
             </motion.div>
           )}
@@ -335,7 +335,7 @@ export function DatasetUploadCard({
             <motion.div key="parsed" {...fade} className="px-4 py-3 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <FileSpreadsheet className="size-3.5 text-[#3D2E22] shrink-0" />
+                  <FileXls className="size-3.5 text-[#3D2E22] shrink-0" />
                   <div className="min-w-0">
                     <div className="text-[0.75rem] font-medium text-[#3D2E22] truncate">
                       {parsed.fileName}
@@ -361,7 +361,7 @@ export function DatasetUploadCard({
                       "hover:bg-white/70 transition-colors cursor-pointer",
                     )}
                   >
-                    <RotateCw className="size-3" />
+                    <ArrowClockwise className="size-3" />
                     {msg("auto.features.agent.panel.components.datasetuploadcard.replace")}
                   </button>
                 )}
@@ -417,7 +417,7 @@ export function DatasetUploadCard({
 
               {confirmed && (
                 <div className="flex items-center gap-1.5 text-[0.6875rem] text-[#3D2E22]/80 bg-white/50 rounded-md px-2.5 py-1.5">
-                  <CheckCircle2 className="size-3 text-[#3D2E22]" />
+                  <CheckCircle className="size-3 text-[#3D2E22]" />
                   {formatMsg("auto.features.agent.panel.components.datasetuploadcard.confirmed", {})}
                 </div>
               )}

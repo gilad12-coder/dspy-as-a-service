@@ -1,7 +1,7 @@
 "use client";
 
-import { BarChart3, Database, AlertCircle, RefreshCw } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ChartBar, Database, WarningCircle, ArrowsClockwise } from "@/shared/ui/icons";
+import type { Icon } from "@/shared/ui/icons";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { FadeIn } from "@/shared/ui/motion";
 import { TERMS } from "@/shared/lib/terms";
@@ -21,14 +21,14 @@ export function AnalyticsEmpty({
   const configs: Record<
     NonNullable<AnalyticsEmptyProps["variant"]>,
     {
-      icon: LucideIcon;
+      icon: Icon;
       title: string;
       description?: string;
       action?: {
         label: string;
         onClick?: () => void;
         href?: string;
-        icon?: LucideIcon;
+        icon?: Icon;
       };
     }
   > = {
@@ -37,7 +37,7 @@ export function AnalyticsEmpty({
       title: msg("auto.features.dashboard.components.analyticsempty.literal.1"),
     },
     "no-results": {
-      icon: BarChart3,
+      icon: ChartBar,
       title: msg("auto.features.dashboard.components.analyticsempty.literal.2"),
       description: formatMsg("auto.features.dashboard.components.analyticsempty.template.2", {
         p1: TERMS.optimizationPlural,
@@ -50,14 +50,14 @@ export function AnalyticsEmpty({
         : undefined,
     },
     "loading-error": {
-      icon: AlertCircle,
+      icon: WarningCircle,
       title: msg("auto.features.dashboard.components.analyticsempty.literal.3"),
       description: msg("auto.features.dashboard.components.analyticsempty.literal.4"),
       action: onRetry
         ? {
             label: msg("auto.features.dashboard.components.analyticsempty.2"),
             onClick: onRetry,
-            icon: RefreshCw,
+            icon: ArrowsClockwise,
           }
         : undefined,
     },

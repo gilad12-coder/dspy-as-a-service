@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarBlank, CaretLeft, CaretRight } from "@/shared/ui/icons";
 import {
   Popover,
   PopoverTrigger,
@@ -264,8 +264,8 @@ export function SkynetDatePicker({
   );
 
   const rtl = getActiveDir() === "rtl";
-  const PrevMonthIcon = rtl ? ChevronRight : ChevronLeft;
-  const NextMonthIcon = rtl ? ChevronLeft : ChevronRight;
+  const PrevMonthIcon = rtl ? CaretRight : CaretLeft;
+  const NextMonthIcon = rtl ? CaretLeft : CaretRight;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -282,7 +282,7 @@ export function SkynetDatePicker({
           >
             {displayValue ?? triggerPlaceholder}
           </span>
-          <Calendar
+          <CalendarBlank
             className="size-3.5 shrink-0 text-foreground/55 transition-colors group-hover:text-foreground/75 group-data-[state=open]:text-foreground/75"
             aria-hidden="true"
           />

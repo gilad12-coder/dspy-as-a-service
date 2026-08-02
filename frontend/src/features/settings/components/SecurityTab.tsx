@@ -4,15 +4,15 @@ import * as React from "react";
 import { toast } from "react-toastify";
 import {
   Check,
+  CircleNotch,
+  DeviceMobile,
+  Envelope,
   Fingerprint,
-  Loader2,
-  Mail,
-  Pencil,
+  PencilSimple,
   Plus,
-  Smartphone,
-  Trash2,
+  Trash,
   X,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { QRCodeSVG } from "qrcode.react";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import {
@@ -225,7 +225,7 @@ export function SecurityTab() {
   if (!status) {
     return (
       <div className="flex items-center justify-center py-10 text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        <CircleNotch className="size-4 animate-spin" aria-hidden="true" />
       </div>
     );
   }
@@ -235,7 +235,7 @@ export function SecurityTab() {
       {status.has_password ? (
         <>
           <SettingsRow
-            icon={Smartphone}
+            icon={DeviceMobile}
             label={msg("settings.security.totp.label")}
             description={msg("settings.security.totp.description")}
           >
@@ -258,7 +258,7 @@ export function SecurityTab() {
           </SettingsRow>
 
           <SettingsRow
-            icon={Mail}
+            icon={Envelope}
             label={msg("settings.security.email.label")}
             description={
               status.email_2fa_available
@@ -275,7 +275,7 @@ export function SecurityTab() {
         </>
       ) : (
         <SettingsRow
-          icon={Smartphone}
+          icon={DeviceMobile}
           label={msg("settings.security.provider_managed.label")}
           description={msg("settings.security.provider_managed.description")}
         >
@@ -342,7 +342,7 @@ export function SecurityTab() {
                       disabled={!editingPasskeyName.trim() || renaming === passkey.credential_id}
                     >
                       {renaming === passkey.credential_id ? (
-                        <Loader2 className="size-3.5 animate-spin" />
+                        <CircleNotch className="size-3.5 animate-spin" />
                       ) : (
                         <Check className="size-3.5" />
                       )}
@@ -382,7 +382,7 @@ export function SecurityTab() {
                     disabled={renaming !== null}
                     onClick={() => beginPasskeyRename(passkey)}
                   >
-                    <Pencil className="size-3.5" />
+                    <PencilSimple className="size-3.5" />
                   </Button>
                 )}
                 <Button
@@ -395,9 +395,9 @@ export function SecurityTab() {
                   onClick={() => void removePasskey(passkey.credential_id)}
                 >
                   {deleting === passkey.credential_id ? (
-                    <Loader2 className="size-3.5 animate-spin" />
+                    <CircleNotch className="size-3.5 animate-spin" />
                   ) : (
-                    <Trash2 className="size-3.5" />
+                    <Trash className="size-3.5" />
                   )}
                 </Button>
               </div>
@@ -481,7 +481,7 @@ export function SecurityTab() {
                     disabled={busy || !totpCode.trim()}
                     className="w-full gap-2"
                   >
-                    {busy && <Loader2 className="size-4 animate-spin" />}
+                    {busy && <CircleNotch className="size-4 animate-spin" />}
                     {msg("settings.security.totp_dialog.verify")}
                   </Button>
                 </form>
@@ -514,7 +514,7 @@ export function SecurityTab() {
               disabled={busy || !disableCode.trim()}
               className="w-full gap-2"
             >
-              {busy && <Loader2 className="size-4 animate-spin" />}
+              {busy && <CircleNotch className="size-4 animate-spin" />}
               {msg("settings.security.disable")}
             </Button>
           </form>
@@ -545,7 +545,7 @@ export function SecurityTab() {
               />
             </div>
             <Button type="submit" disabled={busy} className="w-full gap-2">
-              {busy && <Loader2 className="size-4 animate-spin" />}
+              {busy && <CircleNotch className="size-4 animate-spin" />}
               {msg("settings.security.passkeys.create")}
             </Button>
           </form>

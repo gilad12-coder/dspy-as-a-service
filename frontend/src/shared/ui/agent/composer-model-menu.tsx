@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, ChevronRight } from "lucide-react";
+import { Check, CaretDown, CaretRight } from "@/shared/ui/icons";
 
 import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
 import { effortLabel, effortsFor } from "@/shared/lib/model-efforts";
@@ -242,7 +242,7 @@ export function ComposerModelMenu({
           {value && effort && (
             <span className="shrink-0 text-muted-foreground">{effortLabel(effort)}</span>
           )}
-          <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+          <CaretDown className="size-3 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={6} className="w-64 py-1.5">
@@ -252,7 +252,7 @@ export function ComposerModelMenu({
             <span className="ms-auto truncate text-muted-foreground" dir="ltr">
               {displayName(value)}
             </span>
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
+            <CaretRight className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-72 overflow-hidden p-0">
             <div className="max-h-72 overflow-y-auto py-1">
@@ -298,7 +298,7 @@ export function ComposerModelMenu({
             <span className="ms-auto truncate text-muted-foreground">
               {effort ? effortLabel(effort) : msg("agent.model_menu.effort_default")}
             </span>
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
+            <CaretRight className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-60 py-1">
             {[null, ...efforts].map((level) => (

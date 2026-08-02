@@ -12,7 +12,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { Plus, Trash2, X } from "lucide-react";
+import { Plus, Trash, X } from "@/shared/ui/icons";
 
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
@@ -63,7 +63,7 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
               className="text-muted-foreground hover:text-destructive"
               aria-label={msg("workflow.inspector.delete")}
             >
-              <Trash2 className="size-3.5" />
+              <Trash className="size-3.5" />
             </Button>
           )}
           {onClose && (
@@ -274,7 +274,7 @@ function FieldListEditor({
               onClick={() => onChange(fields.filter((_, j) => j !== i))}
               aria-label={msg("workflow.inspector.remove_field")}
             >
-              <Trash2 className="size-3" />
+              <Trash className="size-3" />
             </Button>
           </div>
         ))}

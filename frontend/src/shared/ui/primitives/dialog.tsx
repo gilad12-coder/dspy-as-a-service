@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { XIcon } from "lucide-react";
+import { X } from "@/shared/ui/icons";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { cn } from "@/shared/lib/utils";
@@ -71,7 +71,7 @@ function DialogContent({
             data-slot="dialog-close"
             className="close-button absolute top-4 end-4"
           >
-            <XIcon />
+            <X />
             <span className="sr-only">{msg("shared.dialog.close")}</span>
           </DialogPrimitive.Close>
         )}

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { CaretDown, CircleNotch } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
 import { Button } from "@/shared/ui/primitives/button";
@@ -135,7 +135,7 @@ export function ApprovalCard({ payload, onResolve, className }: ApprovalCardProp
             )}
             aria-expanded={showDetails}
           >
-            <ChevronDown
+            <CaretDown
               className={cn("size-3 transition-transform", showDetails && "rotate-180")}
               aria-hidden="true"
             />
@@ -167,7 +167,7 @@ export function ApprovalCard({ payload, onResolve, className }: ApprovalCardProp
           className="flex-1 justify-center"
         >
           {busy === "deny" ? (
-            <Loader2 className="size-4 animate-spin" />
+            <CircleNotch className="size-4 animate-spin" />
           ) : (
             msg("auto.features.agent.panel.components.approvalcard.literal.3")
           )}
@@ -178,7 +178,7 @@ export function ApprovalCard({ payload, onResolve, className }: ApprovalCardProp
           disabled={busy !== null}
           className="flex-1 justify-center"
         >
-          {busy === "approve" ? <Loader2 className="size-4 animate-spin" /> : meta.confirmLabel}
+          {busy === "approve" ? <CircleNotch className="size-4 animate-spin" /> : meta.confirmLabel}
         </Button>
       </div>
     </div>

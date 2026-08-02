@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Pencil, Tags, Trash2 } from "lucide-react";
+import { CircleNotch, PencilSimple, Tag, Trash } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 
 import { Badge } from "@/shared/ui/primitives/badge";
@@ -150,7 +150,7 @@ export function TaggingSessionCard({
           />
         </span>
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#3D2E22]/8 text-[#3D2E22]">
-          <Tags className="size-5" />
+          <Tag className="size-5" />
         </span>
 
         <div className="min-w-0 flex-1">
@@ -200,7 +200,7 @@ export function TaggingSessionCard({
                 }}
                 aria-label={msg("datasets.action.rename")}
               >
-                <Pencil className="size-4" />
+                <PencilSimple className="size-4" />
               </Button>
             </TooltipButton>
             <TooltipButton tooltip={msg("datasets.action.delete")}>
@@ -211,7 +211,7 @@ export function TaggingSessionCard({
                 onClick={() => setDeleteOpen(true)}
                 aria-label={msg("datasets.action.delete")}
               >
-                <Trash2 className="size-4" />
+                <Trash className="size-4" />
               </Button>
             </TooltipButton>
           </div>
@@ -249,7 +249,7 @@ export function TaggingSessionCard({
               disabled={renaming || renameValue.trim().length === 0}
               className="w-full justify-center shadow-xs"
             >
-              {renaming ? <Loader2 className="size-4 animate-spin" /> : msg("datasets.rename.save")}
+              {renaming ? <CircleNotch className="size-4 animate-spin" /> : msg("datasets.rename.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -286,7 +286,7 @@ export function TaggingSessionCard({
               className="w-full justify-center shadow-xs"
             >
               {deleting ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 msg("datasets.delete.confirm")
               )}

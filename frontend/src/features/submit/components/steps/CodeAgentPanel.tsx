@@ -2,14 +2,14 @@
 
 import * as React from "react";
 import {
-  Bot,
+  Robot,
   XCircle,
-  RotateCcw,
+  ArrowCounterClockwise,
   Ruler,
-  FileCode2,
-  MessageSquarePlus,
-  Waypoints,
-} from "lucide-react";
+  FileCode,
+  ChatCenteredDots,
+  ShareNetwork,
+} from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
@@ -80,9 +80,8 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
             title={msg("auto.features.submit.components.steps.codeagentpanel.literal.2")}
             aria-label={msg("auto.features.submit.components.steps.codeagentpanel.literal.3")}
           >
-            <MessageSquarePlus
+            <ChatCenteredDots
               className="size-3.5 opacity-75 transition-opacity duration-150 ease-out group-hover:opacity-100"
-              strokeWidth={2}
               aria-hidden
             />
             <span>{msg("auto.features.submit.components.steps.codeagentpanel.1")}</span>
@@ -131,7 +130,7 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
                       onClick={agent.retry}
                       className="inline-flex items-center gap-1 text-[0.6875rem] text-[#7A1E13] bg-[#9B2C1F]/10 hover:bg-[#9B2C1F]/20 px-2 py-0.5 rounded cursor-pointer transition-colors"
                     >
-                      <RotateCcw className="size-3" />
+                      <ArrowCounterClockwise className="size-3" />
                       {msg("auto.features.submit.components.steps.codeagentpanel.2")}
                     </button>
                     <button
@@ -250,7 +249,7 @@ function ToolCallCard({ call, isRetry = false }: { call: SharedAgentToolCall; is
   const codeCall = call as AgentToolCall;
   const isSignature = codeCall.tool === "edit_signature";
   const isMetric = codeCall.tool === "edit_metric";
-  const Icon = isSignature ? FileCode2 : isMetric ? Ruler : Waypoints;
+  const Icon = isSignature ? FileCode : isMetric ? Ruler : ShareNetwork;
   const title = isSignature
     ? msg("submit.code.agent.tool.signature.title")
     : isMetric
@@ -334,7 +333,7 @@ function DiffRow({ line }: { line: DiffLine }) {
 function EmptyState({ disabled, disabledReason }: { disabled?: boolean; disabledReason?: string }) {
   return (
     <SharedEmptyState
-      icon={Bot}
+      icon={Robot}
       iconWrap="tile"
       variant="compact"
       title={

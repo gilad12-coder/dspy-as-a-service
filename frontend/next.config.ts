@@ -35,7 +35,6 @@ const nextConfig: NextConfig = {
     optimizePackageImports: [
       "framer-motion",
       "react-toastify",
-      "lucide-react",
       "radix-ui",
       "@radix-ui/react-direction",
       "class-variance-authority",

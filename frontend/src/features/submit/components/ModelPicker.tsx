@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Eye, Search, Loader2, RefreshCw } from "lucide-react";
+import { Check, CaretDown, Eye, MagnifyingGlass, CircleNotch, ArrowsClockwise } from "@/shared/ui/icons";
 import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
@@ -310,7 +310,7 @@ export function ModelPicker({
               {placeholder}
             </span>
           )}
-          <ChevronDown
+          <CaretDown
             className={cn(
               "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
               open && "rotate-180",
@@ -330,7 +330,7 @@ export function ModelPicker({
         }}
       >
         <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2">
-          <Search className="size-3.5 shrink-0 text-muted-foreground" />
+          <MagnifyingGlass className="size-3.5 shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
             dir="auto"
@@ -348,9 +348,9 @@ export function ModelPicker({
               title={msg("auto.features.submit.components.modelpicker.literal.3")}
             >
               {discovering ? (
-                <Loader2 className="size-3 animate-spin" />
+                <CircleNotch className="size-3 animate-spin" />
               ) : (
-                <RefreshCw className="size-3" />
+                <ArrowsClockwise className="size-3" />
               )}
               {msg("auto.features.submit.components.modelpicker.1")}
             </button>

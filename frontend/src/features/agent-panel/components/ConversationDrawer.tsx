@@ -2,14 +2,14 @@
 
 import * as React from "react";
 import {
-  History,
-  MoreHorizontal,
-  Pencil,
-  Pin,
-  PinOff,
-  Search,
-  Trash2,
-} from "lucide-react";
+  ClockCounterClockwise,
+  DotsThree,
+  PencilSimple,
+  PushPin,
+  PushPinSlash,
+  MagnifyingGlass,
+  Trash,
+} from "@/shared/ui/icons";
 
 import {
   Sheet,
@@ -122,11 +122,11 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
       >
         <SheetHeader className="border-b border-border/40 p-3">
           <SheetTitle className="text-[0.875rem] flex items-center gap-2">
-            <History className="size-4" aria-hidden="true" />
+            <ClockCounterClockwise className="size-4" aria-hidden="true" />
             {msg("auto.features.agent.panel.components.conversationdrawer.title")}
           </SheetTitle>
           <div className="relative mt-2">
-            <Search
+            <MagnifyingGlass
               className="absolute top-1/2 -translate-y-1/2 end-2 size-3.5 text-muted-foreground"
               aria-hidden="true"
             />
@@ -288,7 +288,7 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1 truncate text-[0.8125rem]">
-            {row.pinned && <Pin className="size-3 text-muted-foreground shrink-0" />}
+            {row.pinned && <PushPin className="size-3 text-muted-foreground shrink-0" />}
             <span
               className={cn(
                 "truncate",
@@ -320,7 +320,7 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
                     "auto.features.agent.panel.components.conversationdrawer.row_menu",
                   )}
                 >
-                  <MoreHorizontal
+                  <DotsThree
                     className={cn(
                       "size-3.5 transition-[transform,color] duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none motion-reduce:transform-none",
                       menuOpen && "rotate-90 scale-110 text-foreground",
@@ -349,7 +349,7 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
               }}
               className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] hover:bg-accent cursor-pointer"
             >
-              <Pencil className="size-3.5" />
+              <PencilSimple className="size-3.5" />
               {msg("auto.features.agent.panel.components.conversationdrawer.rename")}
             </button>
             <button
@@ -360,7 +360,7 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
               }}
               className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] hover:bg-accent cursor-pointer"
             >
-              {row.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+              {row.pinned ? <PushPinSlash className="size-3.5" /> : <PushPin className="size-3.5" />}
               {row.pinned
                 ? msg("auto.features.agent.panel.components.conversationdrawer.unpin")
                 : msg("auto.features.agent.panel.components.conversationdrawer.pin")}
@@ -373,7 +373,7 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
               }}
               className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] text-destructive hover:bg-destructive/10 cursor-pointer"
             >
-              <Trash2 className="size-3.5" />
+              <Trash className="size-3.5" />
               {msg("auto.features.agent.panel.components.conversationdrawer.delete")}
             </button>
           </PopoverContent>

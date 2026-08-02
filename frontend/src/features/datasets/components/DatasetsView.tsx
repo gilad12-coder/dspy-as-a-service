@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
-import { Database, Loader2, Search, Upload } from "lucide-react";
+import { CircleNotch, Database, MagnifyingGlass, UploadSimple } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -208,7 +208,7 @@ export function DatasetsView() {
             disabled={uploading}
             className="h-11 shrink-0 rounded-2xl"
           >
-            <Upload className="size-4" />
+            <UploadSimple className="size-4" />
             {msg("datasets.upload")}
           </Button>
         </div>
@@ -244,7 +244,7 @@ export function DatasetsView() {
             action={{ label: msg("datasets.upload"), onClick: () => fileInputRef.current?.click() }}
           />
         ) : filtered.length === 0 ? (
-          <EmptyState icon={Search} title={msg("datasets.search.empty")} />
+          <EmptyState icon={MagnifyingGlass} title={msg("datasets.search.empty")} />
         ) : (
           <div className="flex flex-col gap-2.5 p-0.5">
             {dragging && (
@@ -302,7 +302,7 @@ export function DatasetsView() {
               className="w-full justify-center shadow-xs"
             >
               {bulkDeleting ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 msg("datasets.delete.confirm")
               )}

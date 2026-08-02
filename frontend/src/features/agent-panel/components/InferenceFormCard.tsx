@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Sparkles, XCircle } from "lucide-react";
+import { CircleNotch, Sparkle, XCircle } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
 import { Button } from "@/shared/ui/primitives/button";
@@ -151,7 +151,7 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
         <div className="px-4 pt-3.5 pb-2.5 border-b border-[#C8A882]/25 bg-white/40">
           <div className="flex items-start gap-2.5">
             <span className="shrink-0 size-7 rounded-full inline-flex items-center justify-center bg-[#C8A882]/25 text-[#3D2E22]">
-              <Sparkles className="size-3.5" aria-hidden="true" />
+              <Sparkle className="size-3.5" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -173,7 +173,7 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
         <div className="px-4 py-4">
           {!info && !infoError && (
             <div className="text-[0.75rem] text-[#6B5B4A] flex items-center justify-center gap-1.5 py-3">
-              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              <CircleNotch className="size-3.5 animate-spin" aria-hidden="true" />
               {msg("auto.features.agent.panel.components.inferenceformcard.literal.8")}
             </div>
           )}
@@ -251,7 +251,7 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
                   aria-label={msg("auto.features.agent.panel.components.inferenceformcard.literal.2")}
                 >
                   {running ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <CircleNotch className="size-4 animate-spin" />
                   ) : (
                     <svg viewBox="0 0 24 24" fill="currentColor" className="size-4">
                       <path

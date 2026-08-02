@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
 import { TERMS } from "@/shared/lib/terms";

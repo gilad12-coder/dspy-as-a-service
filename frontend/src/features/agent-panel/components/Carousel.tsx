@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CaretLeft, CaretRight } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 
@@ -254,11 +254,11 @@ function CarouselNav({
   const Icon =
     direction === "prev"
       ? isRtl
-        ? ChevronRight
-        : ChevronLeft
+        ? CaretRight
+        : CaretLeft
       : isRtl
-        ? ChevronLeft
-        : ChevronRight;
+        ? CaretLeft
+        : CaretRight;
   const label =
     direction === "prev"
       ? msg("auto.features.agent.panel.components.toolscarousel.literal.14")

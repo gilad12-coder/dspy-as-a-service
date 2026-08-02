@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X, XCircle } from "lucide-react";
+import { X, XCircle } from "@/shared/ui/icons";
 
 import { cn } from "@/shared/lib/utils";
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Globe, Loader2, Lock, User, UserPlus, Users, X } from "lucide-react";
+import { CircleNotch, Globe, Lock, User, UserPlus, Users, X } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -201,7 +201,7 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
 
             {state === null ? (
               <div className="flex items-center justify-center gap-2 px-6 py-10 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
                 {msg("share.loading")}
               </div>
             ) : (
@@ -434,7 +434,7 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
               className="w-full justify-center shadow-xs"
             >
               {transferring ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 msg("share.transfer.confirm_cta")
               )}
@@ -584,7 +584,7 @@ function InvitePeople({
               className="size-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0"
             >
               {inviting ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 <UserPlus className="size-4" />
               )}
@@ -595,7 +595,7 @@ function InvitePeople({
           <div className="absolute inset-x-0 top-full z-30 mt-2 max-h-48 overflow-y-auto rounded-md border border-border/70 bg-popover shadow-lg">
             {searching ? (
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
-                <Loader2 className="size-3.5 animate-spin" />
+                <CircleNotch className="size-3.5 animate-spin" />
                 {msg("share.searching")}
               </div>
             ) : results.length === 0 ? (

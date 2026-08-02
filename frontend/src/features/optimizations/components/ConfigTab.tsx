@@ -4,28 +4,27 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
-  Boxes,
+  Books,
   Brain,
   Coins,
-  Component,
   Cpu,
+  Cube,
   Database,
-  Dices,
+  DiceFive,
   Gauge,
+  Gear,
+  GearSix,
   GitMerge,
-  Layers,
-  Library,
   Repeat,
   Ruler,
-  Settings,
-  Settings2,
   Shuffle,
-  Sparkles,
-  Tags,
+  Sparkle,
+  Stack,
+  Tag,
   Target,
   Thermometer,
   Wrench,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { FadeIn } from "@/shared/ui/motion";
 import { useUserPrefs } from "@/features/settings";
@@ -81,9 +80,9 @@ function labelWithTip(key: string): ReactNode {
 
 const PARAM_ICONS: Record<string, ReactNode> = {
   auto: <Gauge className="size-3.5" />,
-  max_bootstrapped_demos: <Sparkles className="size-3.5" />,
-  max_labeled_demos: <Tags className="size-3.5" />,
-  minibatch: <Boxes className="size-3.5" />,
+  max_bootstrapped_demos: <Sparkle className="size-3.5" />,
+  max_labeled_demos: <Tag className="size-3.5" />,
+  minibatch: <Stack className="size-3.5" />,
   minibatch_size: <Ruler className="size-3.5" />,
   reflection_minibatch_size: <Brain className="size-3.5" />,
   max_full_evals: <Repeat className="size-3.5" />,
@@ -91,7 +90,7 @@ const PARAM_ICONS: Record<string, ReactNode> = {
 };
 
 function paramIcon(key: string): ReactNode {
-  return PARAM_ICONS[key] ?? <Settings2 className="size-3.5" />;
+  return PARAM_ICONS[key] ?? <GearSix className="size-3.5" />;
 }
 
 // The GEPA budget level arrives as the raw "light" / "medium" / "heavy"
@@ -233,7 +232,7 @@ export function ConfigTab({
         </HelpTip>
       ),
       value: moduleLabel(job.module_name),
-      icon: <Component className="size-3.5" />,
+      icon: <Cube className="size-3.5" />,
     },
     {
       label: <HelpTip text={tip("optimizer.choice")}>{TERMS.optimizer}</HelpTip>,
@@ -251,7 +250,7 @@ export function ConfigTab({
     ...Object.entries(compKw).map(([k, v]) => ({
       label: labelWithTip(k),
       value: formatParamValue(k, v),
-      icon: <Layers className="size-3.5" />,
+      icon: <Stack className="size-3.5" />,
     })),
   ];
 
@@ -277,7 +276,7 @@ export function ConfigTab({
           />
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Settings className="size-4 text-[#7C6350]" aria-hidden="true" />
+              <Gear className="size-4 text-[#7C6350]" aria-hidden="true" />
               <HelpTip text={tip("config.section.summary")}>
                 <span className="font-bold tracking-tight">
                   {msg("auto.features.optimizations.components.configtab.5")}
@@ -420,7 +419,7 @@ export function ConfigTab({
                 href={`/datasets?open=${job.source_dataset_id}`}
                 className="group/srclink flex items-center gap-2.5 rounded-lg border border-border/50 bg-card/80 px-3 py-2.5 transition-colors hover:border-[#C8A882]/60 hover:bg-accent/40"
               >
-                <Library className="size-3.5 shrink-0 text-[#A89680]" />
+                <Books className="size-3.5 shrink-0 text-[#A89680]" />
                 <span className="min-w-0 flex-1 text-xs text-foreground">
                   {msg("optimizations.source_dataset.label")}
                 </span>
@@ -512,7 +511,7 @@ export function ConfigTab({
                       </HelpTip>
                     }
                     value={seedVal}
-                    icon={<Dices className="size-3.5" />}
+                    icon={<DiceFive className="size-3.5" />}
                   />
                 )}
               </div>

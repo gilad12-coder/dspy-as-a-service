@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, ChevronDown, RefreshCw, type LucideIcon } from "lucide-react";
+import { ArrowsClockwise, CaretDown, Warning, type Icon } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 import { CopyGlyph, useCopyToClipboard } from "@/shared/ui/copy-button";
 
@@ -22,7 +22,7 @@ interface ToolCallRowProps {
   /** Override for the trigger title. Defaults to ``TOOL_META.title``. */
   title?: string | null;
   /** Override for the status-glyph icon (done state). Defaults to ``TOOL_META.icon``. */
-  icon?: LucideIcon;
+  icon?: Icon;
   /**
    * Replaces the default args/result body. Caller renders whatever fits the
    * tool — e.g. a diff view. Wrapped in the same container as the default
@@ -146,7 +146,7 @@ export function ToolCallRow({
               {elapsedLabel}
             </span>
           )}
-          <ChevronDown
+          <CaretDown
             className={cn(
               "size-3.5 text-muted-foreground/50 transition-transform duration-150",
               open ? "rotate-0" : "rotate-90",
@@ -172,7 +172,7 @@ export function ToolCallRow({
                     className="inline-flex items-center gap-1 text-[0.625rem] text-muted-foreground/70"
                     title={msg("auto.features.agent.panel.components.toolcallrow.literal.2")}
                   >
-                    <RefreshCw className="size-2.5" aria-hidden="true" />
+                    <ArrowsClockwise className="size-2.5" aria-hidden="true" />
                     {msg("auto.features.agent.panel.components.toolcallrow.1")}
                   </span>
                 </div>
@@ -231,7 +231,6 @@ function StatusGlyph({
   status: AgentToolCall["status"];
   Icon: React.ComponentType<{
     className?: string;
-    strokeWidth?: number;
     "aria-hidden"?: boolean;
   }>;
   isRetry: boolean;
@@ -260,7 +259,7 @@ function StatusGlyph({
         )}
         aria-label={msg("auto.features.agent.panel.components.toolcallrow.literal.7")}
       >
-        <AlertTriangle className="size-2.5" strokeWidth={2.5} aria-hidden />
+        <Warning className="size-2.5" aria-hidden />
       </span>
     );
   }
@@ -272,7 +271,7 @@ function StatusGlyph({
       )}
       aria-label={msg("auto.features.agent.panel.components.toolcallrow.literal.8")}
     >
-      <Icon className="size-2.5" strokeWidth={2.5} aria-hidden />
+      <Icon className="size-2.5" aria-hidden />
     </span>
   );
 }

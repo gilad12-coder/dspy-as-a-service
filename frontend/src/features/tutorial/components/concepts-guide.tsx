@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { X, BookOpen, Sparkles, Cog, Boxes, ListTree, Lightbulb, Compass } from "lucide-react";
+import { X, BookOpen, Sparkle, Gear, Stack, TreeStructure, Lightbulb, Compass } from "@/shared/ui/icons";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { perLocale } from "@/shared/lib/per-locale";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
@@ -35,25 +35,25 @@ const SECTIONS: readonly SectionMeta[] = perLocale(() => [
     id: "gepa",
     num: "2",
     title: msg("auto.features.tutorial.components.concepts.guide.literal.2"),
-    Icon: Sparkles,
+    Icon: Sparkle,
   },
   {
     id: "parameters",
     num: "3",
     title: msg("auto.features.tutorial.components.concepts.guide.literal.3"),
-    Icon: Cog,
+    Icon: Gear,
   },
   {
     id: "task-definition",
     num: "4",
     title: msg("auto.features.tutorial.components.concepts.guide.literal.4"),
-    Icon: Boxes,
+    Icon: Stack,
   },
   {
     id: "workflow",
     num: "5",
     title: msg("auto.features.tutorial.components.concepts.guide.literal.5"),
-    Icon: ListTree,
+    Icon: TreeStructure,
   },
   {
     id: "tips",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { BarChart3 } from "lucide-react";
+import { ChartBar } from "@/shared/ui/icons";
 import {
   Bar,
   BarChart,
@@ -81,7 +81,7 @@ export function PerformanceChart({ runs }: { runs: RunInfo[] }) {
     <Card>
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
-          <BarChart3 className="size-4" />
+          <ChartBar className="size-4" />
           <HelpTip text={msg("auto.app.compare.page.literal.12")}>
             {msg("auto.app.compare.page.6")}
           </HelpTip>

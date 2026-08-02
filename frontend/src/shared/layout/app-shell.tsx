@@ -4,7 +4,7 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Menu, GraduationCap, Lightbulb, Feather } from "lucide-react";
+import { List, GraduationCap, Lightbulb, Feather } from "@/shared/ui/icons";
 import { useTutorialContext, ConceptsGuide, registerTutorialHook } from "@/features/tutorial";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
@@ -209,7 +209,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
             aria-expanded={sidebarOpen}
             aria-controls={SIDEBAR_ID}
           >
-            <Menu className="size-5" />
+            <List className="size-5" />
           </button>
         </div>
       </motion.header>

@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Crown, Gauge, Trash2, Trophy } from "lucide-react";
+import { Crown, Gauge, Trash, Trophy } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { msg } from "@/shared/lib/messages";
 
@@ -324,7 +324,7 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
                       "auto.features.optimizations.components.gridservetab.literal.1",
                     )}
                   >
-                    <Trash2 className="size-4" />
+                    <Trash className="size-4" />
                   </Button>
                 </TooltipButton>
               </div>

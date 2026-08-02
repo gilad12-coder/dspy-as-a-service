@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Brain, Check, ChevronDown, Clipboard } from "lucide-react";
+import { Brain, CaretDown, Check, Clipboard } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
 export function InfoCard({
@@ -77,7 +77,7 @@ export function LangPicker<T extends string>({
         aria-expanded={open}
       >
         <span>{labels[value]}</span>
-        <ChevronDown
+        <CaretDown
           className={`size-3 text-[#8C7A6B] transition-transform duration-150 ${open ? "rotate-180" : ""}`}
         />
       </button>

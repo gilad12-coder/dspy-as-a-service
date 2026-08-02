@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Minus, Plus } from "lucide-react";
+import { Minus, Plus } from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
 
 interface NumberInputProps {

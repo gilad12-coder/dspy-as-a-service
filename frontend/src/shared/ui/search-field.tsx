@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { X } from "@/shared/ui/icons";
 
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";

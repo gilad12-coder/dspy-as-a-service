@@ -17,7 +17,7 @@ import {
   Together,
   XAI,
 } from "@lobehub/icons";
-import { Plug } from "lucide-react";
+import { Plug } from "@/shared/ui/icons";
 
 /**
  * Full-color brand avatar for a BYOK provider slug.

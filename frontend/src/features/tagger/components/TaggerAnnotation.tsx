@@ -2,16 +2,16 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  ChevronRight,
-  ChevronLeft,
+  CaretRight,
+  CaretLeft,
   SkipBack,
-  CircleMinus,
+  MinusCircle,
   Database,
-  Download,
+  DownloadSimple,
   Keyboard,
-  Loader2,
-  Sparkles,
-} from "lucide-react";
+  CircleNotch,
+  Sparkle,
+} from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { AgentPillDock } from "@/features/agent-panel";
 import { Button } from "@/shared/ui/primitives/button";
@@ -97,8 +97,8 @@ export function TaggerAnnotation({
   onBack,
 }: Props) {
   const rtl = getActiveDir() === "rtl";
-  const PrevIcon = rtl ? ChevronRight : ChevronLeft;
-  const NextIcon = rtl ? ChevronLeft : ChevronRight;
+  const PrevIcon = rtl ? CaretRight : CaretLeft;
+  const NextIcon = rtl ? CaretLeft : CaretRight;
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [exportConfirm, setExportConfirm] = useState<ExportFormat | null>(null);
@@ -343,7 +343,7 @@ export function TaggerAnnotation({
                 </Badge>
                 {msg("auto.features.tagger.components.taggerannotation.5")}
                 {isBinaryYes(aiPick) && (
-                  <Sparkles className="size-3.5 text-primary/70" aria-hidden="true" />
+                  <Sparkle className="size-3.5 text-primary/70" aria-hidden="true" />
                 )}
               </Button>
               <Button
@@ -362,7 +362,7 @@ export function TaggerAnnotation({
                 </Badge>
                 {msg("auto.features.tagger.components.taggerannotation.7")}
                 {isBinaryNo(aiPick) && (
-                  <Sparkles className="size-3.5 text-primary/70" aria-hidden="true" />
+                  <Sparkle className="size-3.5 text-primary/70" aria-hidden="true" />
                 )}
               </Button>
             </div>
@@ -402,7 +402,7 @@ export function TaggerAnnotation({
                     )}
                     <span className="min-w-0 break-words">{cat.label}</span>
                     {aiPickedCats.has(cat.id) && (
-                      <Sparkles className="size-3.5 shrink-0 text-primary/70" aria-hidden="true" />
+                      <Sparkle className="size-3.5 shrink-0 text-primary/70" aria-hidden="true" />
                     )}
                   </Button>
                 );
@@ -457,7 +457,7 @@ export function TaggerAnnotation({
                   disabled={taggedCount === data.length}
                   aria-label={msg("auto.features.tagger.components.taggerannotation.10")}
                 >
-                  <CircleMinus className="size-4" />
+                  <MinusCircle className="size-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -489,7 +489,7 @@ export function TaggerAnnotation({
                       size="icon-sm"
                       aria-label={msg("auto.features.tagger.components.taggerannotation.12")}
                     >
-                      <Download className="size-4" />
+                      <DownloadSimple className="size-4" />
                     </Button>
                   </PopoverPrimitive.Trigger>
                 </TooltipTrigger>
@@ -684,7 +684,7 @@ export function TaggerAnnotation({
               className="w-full justify-center"
             >
               {savingToLibrary ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 msg("tagger.library.name_save")
               )}

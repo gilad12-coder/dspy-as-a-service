@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@/shared/ui/icons";
 
 import { msg } from "@/shared/lib/messages";
 import { clearRecentSession } from "@/shared/lib/recent-session";

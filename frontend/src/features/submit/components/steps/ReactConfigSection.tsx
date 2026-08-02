@@ -2,13 +2,13 @@
 
 import * as React from "react";
 import {
-  AlertTriangle,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  RefreshCw,
-} from "lucide-react";
+  Warning,
+  CheckCircle,
+  CaretLeft,
+  CaretRight,
+  CircleNotch,
+  ArrowsClockwise,
+} from "@/shared/ui/icons";
 
 import { Label } from "@/shared/ui/primitives/label";
 import { Input } from "@/shared/ui/primitives/input";
@@ -131,26 +131,26 @@ export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
               >
                 {probe.kind === "checking" && (
                   <>
-                    <Loader2 className="size-3 shrink-0 animate-spin" />
+                    <CircleNotch className="size-3 shrink-0 animate-spin" />
                     {msg("submit.react.mcp_checking")}
                   </>
                 )}
                 {probe.kind === "ok" && (
                   <>
-                    <CheckCircle2 className="size-3 shrink-0" />
+                    <CheckCircle className="size-3 shrink-0" />
                     {formatMsg("submit.react.mcp_connected", { p1: probe.toolCount })}
                   </>
                 )}
                 {probe.kind === "error" && (
                   <>
-                    <AlertTriangle className="size-3 shrink-0" />
+                    <Warning className="size-3 shrink-0" />
                     {msg("submit.react.mcp_failed")}
                     <button
                       type="button"
                       onClick={() => runProbe(reactConfig.mcpUrl.trim(), reactConfig.mcpAuthHeader)}
                       className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 py-0.5 text-[0.625rem] font-medium text-foreground transition-colors hover:border-[#C8A882]"
                     >
-                      <RefreshCw className="size-2.5" />
+                      <ArrowsClockwise className="size-2.5" />
                       {msg("submit.react.mcp_retry")}
                     </button>
                   </>
@@ -165,7 +165,7 @@ export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
                     onClick={() => setToolIndex((i) => Math.max(0, i - 1))}
                     className={NAV_BUTTON_CLASS}
                   >
-                    <ChevronLeft className="size-3.5" />
+                    <CaretLeft className="size-3.5" />
                   </button>
                   <span className="text-[0.625rem] font-medium text-muted-foreground tabular-nums">
                     {toolIndex + 1} / {tools.length}
@@ -177,7 +177,7 @@ export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
                     onClick={() => setToolIndex((i) => Math.min(tools.length - 1, i + 1))}
                     className={NAV_BUTTON_CLASS}
                   >
-                    <ChevronRight className="size-3.5" />
+                    <CaretRight className="size-3.5" />
                   </button>
                 </div>
               )}

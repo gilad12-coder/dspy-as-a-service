@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Trash } from "@/shared/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { Button } from "@/shared/ui/primitives/button";
 import { Separator } from "@/shared/ui/primitives/separator";
@@ -69,7 +69,7 @@ export function RunPlayground({
                 onClick={onClearHistory}
                 aria-label={clearLabel}
               >
-                <Trash2 className="size-4" />
+                <Trash className="size-4" />
               </Button>
             </TooltipButton>
           )}

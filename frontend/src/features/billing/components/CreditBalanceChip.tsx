@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Coins, KeyRound, Plus } from "lucide-react";
+import { Coins, Key, Plus } from "@/shared/ui/icons";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
@@ -66,7 +66,7 @@ export function CreditBalanceChip({ className }: { className?: string }) {
         >
           {isByok ? (
             <>
-              <KeyRound className="size-3.5 text-muted-foreground" aria-hidden="true" />
+              <Key className="size-3.5 text-muted-foreground" aria-hidden="true" />
               <span>{msg("billing.chip.byok")}</span>
             </>
           ) : status === "empty" ? (

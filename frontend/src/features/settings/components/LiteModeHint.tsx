@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Feather, X } from "lucide-react";
+import { Feather, X } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { msg } from "@/shared/lib/messages";
 import { useUserPrefs } from "../hooks/use-user-prefs";

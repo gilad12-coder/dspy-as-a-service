@@ -3,14 +3,14 @@
 import * as React from "react";
 import {
   ArrowDownLeft,
-  BarChart3,
+  ArrowsClockwise,
+  ChartBar,
   Coins,
   Gift,
   Plus,
-  RefreshCw,
-  Sparkles,
-  type LucideIcon,
-} from "lucide-react";
+  Sparkle,
+  type Icon,
+} from "@/shared/ui/icons";
 import { motion } from "framer-motion";
 import {
   Bar,
@@ -59,7 +59,7 @@ const GROUP_LABEL: Record<GroupBy, MessageKey> = {
 // Run rows lead with a spark; top-ups/grants with their own glyph. Keyed loosely
 // so an unrecognized backend kind still resolves to a sensible default.
 const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
-  run: Sparkles,
+  run: Sparkle,
   topup: Plus,
   grant: Gift,
 };
@@ -255,7 +255,7 @@ function StatCard({
   value,
   secondary,
 }: {
-  icon: LucideIcon;
+  icon: Icon;
   label: string;
   value: string;
   secondary?: string;
@@ -437,7 +437,7 @@ function RunBreakdown({ entries, locale }: { entries: BillingUsageEntry[]; local
           className="flex items-center gap-3 border-b border-border/30 py-2 last:border-b-0"
         >
           <span className="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
-            <Sparkles className="size-3.5" aria-hidden="true" />
+            <Sparkle className="size-3.5" aria-hidden="true" />
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
             <span dir="auto" className="truncate text-sm text-foreground">
@@ -460,7 +460,7 @@ function RunBreakdown({ entries, locale }: { entries: BillingUsageEntry[]; local
 
 /** One activity-list row. Numerals and model ids stay LTR-islanded. */
 function LedgerRow({ entry, locale }: { entry: BillingUsageEntry; locale: string }) {
-  const Icon = KIND_ICON[entry.kind] ?? Sparkles;
+  const Icon = KIND_ICON[entry.kind] ?? Sparkle;
   const credited = entry.credits > 0;
   const free = entry.credits === 0;
   return (
@@ -648,7 +648,7 @@ export function UsageTab() {
       <div className="flex flex-col gap-5">
         {toolbar}
         <div className="flex h-64 items-center justify-center" aria-busy="true">
-          <RefreshCw className="size-5 animate-spin text-muted-foreground" aria-hidden="true" />
+          <ArrowsClockwise className="size-5 animate-spin text-muted-foreground" aria-hidden="true" />
         </div>
       </div>
     );
@@ -662,7 +662,7 @@ export function UsageTab() {
         {toolbar}
         <EmptyState
           variant="list"
-          icon={BarChart3}
+          icon={ChartBar}
           title={msg("usage.empty.title")}
           description={msg("usage.empty.desc")}
         />
@@ -689,7 +689,7 @@ export function UsageTab() {
           secondary={formatUsd(creditsToUsd(data.billed_credits), locale)}
         />
         <StatCard
-          icon={Sparkles}
+          icon={Sparkle}
           label={msg("usage.stat.runs")}
           value={formatCredits(data.runs, locale)}
           secondary={avgPerRun}

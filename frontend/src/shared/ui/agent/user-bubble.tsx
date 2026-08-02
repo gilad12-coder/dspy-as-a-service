@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Clipboard, Pencil } from "lucide-react";
+import { Check, Clipboard, PencilSimple } from "@/shared/ui/icons";
 
 import { cn } from "@/shared/lib/utils";
 import { msg } from "@/shared/lib/messages";
@@ -65,7 +65,7 @@ export function UserBubble({ content, onEdit, editable = true }: UserBubbleProps
               className="p-1.5 rounded-lg hover:bg-muted/60 cursor-pointer"
               aria-label={msg("shared.agent.edit_and_resend")}
             >
-              <Pencil className="size-3 text-muted-foreground" />
+              <PencilSimple className="size-3 text-muted-foreground" />
             </button>
           </TooltipButton>
         )}

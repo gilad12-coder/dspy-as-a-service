@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, GraduationCap } from "lucide-react";
+import { X, GraduationCap } from "@/shared/ui/icons";
 import { useTutorialContext } from "./tutorial-provider";
 import { msg } from "@/shared/lib/messages";
 

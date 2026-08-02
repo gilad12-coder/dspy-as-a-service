@@ -2,15 +2,15 @@
 
 import * as React from "react";
 import {
-  Calendar,
+  CalendarBlank,
   Check,
-  Component,
   Cpu,
-  Layers,
-  Search,
+  Cube,
+  MagnifyingGlass,
+  Stack,
   Target,
   X,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import {
@@ -130,7 +130,7 @@ export function FiltersDrawer({
               <div className="flex flex-col gap-7">
                 <SearchableChipSection
                   title={msg("explore.filters.section.modules")}
-                  icon={Component}
+                  icon={Cube}
                   options={moduleOptions}
                   selected={selectedModules}
                   onToggle={(v) =>
@@ -163,7 +163,7 @@ export function FiltersDrawer({
               <div className="flex flex-col gap-7">
                 <FilterSection
                   title={msg("explore.filters.section.types")}
-                  icon={Layers}
+                  icon={Stack}
                   selectedCount={selectedTypes.length}
                 >
                   <ChipGroup
@@ -181,7 +181,7 @@ export function FiltersDrawer({
 
                 <FilterSection
                   title={msg("explore.filters.section.date")}
-                  icon={Calendar}
+                  icon={CalendarBlank}
                   selectedCount={(dateFrom ? 1 : 0) + (dateTo ? 1 : 0)}
                 >
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -235,7 +235,6 @@ function toggleValue(current: string[], value: string): string[] {
 type IconComponent = React.ComponentType<{
   className?: string;
   "aria-hidden"?: boolean | "true";
-  strokeWidth?: number;
 }>;
 
 function FilterSection({
@@ -264,7 +263,6 @@ function FilterSection({
                 active ? "text-foreground/70" : "text-foreground/45"
               }`}
               aria-hidden="true"
-              strokeWidth={1.75}
             />
           )}
           <span>{title}</span>
@@ -364,7 +362,7 @@ function SectionSearchInput({
 }) {
   return (
     <div className="relative">
-      <Search
+      <MagnifyingGlass
         className="pointer-events-none absolute end-2.5 top-1/2 size-3.5 -translate-y-1/2 text-foreground/40"
         aria-hidden="true"
       />
@@ -451,7 +449,6 @@ function SelectableChip({
         <Check
           className="size-3 shrink-0 text-foreground/70"
           aria-hidden="true"
-          strokeWidth={2.25}
         />
       )}
       <span className="min-w-0 truncate tabular-nums">{label}</span>

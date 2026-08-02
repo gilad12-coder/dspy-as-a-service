@@ -2,17 +2,17 @@
 
 import { useState, useCallback, useEffect } from "react";
 import {
-  Upload,
+  UploadSimple,
   Binary,
   ListChecks,
-  TextCursorInput,
+  CursorText,
   Plus,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
+  Trash,
+  CaretLeft,
+  CaretRight,
   Check,
-  Library,
-} from "lucide-react";
+  Books,
+} from "@/shared/ui/icons";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -143,7 +143,7 @@ const MODE_OPTIONS: Array<{
     mode: "freetext",
     label: msg("auto.features.tagger.components.taggersetup.literal.8"),
     desc: msg("auto.features.tagger.components.taggersetup.literal.9"),
-    icon: TextCursorInput,
+    icon: CursorText,
   },
 ]);
 
@@ -422,7 +422,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
             file ? "border-primary/40 bg-primary/5" : "hover:border-primary/50 hover:bg-muted/30",
           )}
         >
-          <Upload className="size-8 text-muted-foreground group-hover:text-primary/70 transition-colors duration-300" />
+          <UploadSimple className="size-8 text-muted-foreground group-hover:text-primary/70 transition-colors duration-300" />
           {file ? (
             <div className="text-center">
               <p className="font-medium text-foreground">{file.name}</p>
@@ -472,7 +472,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
           onClick={() => setPickerOpen(true)}
           className="w-full justify-center gap-2"
         >
-          <Library className="size-4" />
+          <Books className="size-4" />
           {msg("tagger.setup.library_pick")}
         </Button>
 
@@ -511,7 +511,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                         className="size-3 rounded-[3px] border-2 flex items-center justify-center shrink-0"
                         style={{ borderColor: selected ? "var(--primary)" : "var(--border)" }}
                       >
-                        {selected && <Check className="size-2 text-primary" strokeWidth={3.5} />}
+                        {selected && <Check className="size-2 text-primary" />}
                       </span>
                       <span className="font-mono text-xs truncate min-w-0" dir="ltr">
                         {col}
@@ -629,7 +629,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                     disabled={categories.length <= 2}
                     aria-label={msg("auto.features.tagger.components.taggersetup.16")}
                   >
-                    <Trash2 className="size-3.5 text-muted-foreground" />
+                    <Trash className="size-3.5 text-muted-foreground" />
                   </Button>
                 </div>
               ))}
@@ -722,8 +722,8 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const isLastStep = step === activeSteps.length - 1;
 
   const rtl = getActiveDir() === "rtl";
-  const BackIcon = rtl ? ChevronRight : ChevronLeft;
-  const NextIcon = rtl ? ChevronLeft : ChevronRight;
+  const BackIcon = rtl ? CaretRight : CaretLeft;
+  const NextIcon = rtl ? CaretLeft : CaretRight;
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto pb-8 -mt-2 md:-mt-4" data-tutorial="tagger-setup">

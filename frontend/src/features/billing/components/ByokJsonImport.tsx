@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, Loader2, ShieldCheck } from "lucide-react";
+import { CaretDown, CheckCircle, CircleNotch, ShieldCheck, Warning } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -251,7 +251,7 @@ export function ByokJsonImport() {
         className="flex w-full cursor-pointer items-center justify-between text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         {msg("settings.keys.json_advanced")}
-        <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
+        <CaretDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
@@ -313,7 +313,7 @@ export function ByokJsonImport() {
                         className="flex items-start gap-1.5 text-[0.6875rem] text-destructive/90"
                         dir="auto"
                       >
-                        <AlertTriangle className="mt-px size-3 shrink-0" />
+                        <Warning className="mt-px size-3 shrink-0" />
                         <span>{err}</span>
                       </li>
                     ))}
@@ -322,7 +322,7 @@ export function ByokJsonImport() {
               ) : (
                 <>
                   <div className="flex items-center gap-1.5 text-xs font-medium text-[#3f7d4f] dark:text-emerald-400">
-                    <CheckCircle2 className="size-3.5 shrink-0" />
+                    <CheckCircle className="size-3.5 shrink-0" />
                     <span>
                       {formatMsg("settings.keys.json_valid", { count: result.connections.length })}
                     </span>
@@ -336,7 +336,7 @@ export function ByokJsonImport() {
                           className="flex items-start gap-1.5 text-[0.6875rem] text-amber-700 dark:text-amber-400"
                           dir="auto"
                         >
-                          <AlertTriangle className="mt-px size-3 shrink-0" />
+                          <Warning className="mt-px size-3 shrink-0" />
                           <span>{warn}</span>
                         </li>
                       ))}
@@ -388,7 +388,7 @@ export function ByokJsonImport() {
                     disabled={busy}
                   >
                     {busy ? (
-                      <Loader2 className="size-3.5 animate-spin" />
+                      <CircleNotch className="size-3.5 animate-spin" />
                     ) : (
                       formatMsg("settings.keys.json_import_count", {
                         count: result.connections.length,

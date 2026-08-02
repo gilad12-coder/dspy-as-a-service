@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Sparkles } from "lucide-react";
+import { Check, CircleNotch, Sparkle } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { formatMsg, msg } from "@/shared/lib/messages";
@@ -132,7 +132,7 @@ export function TaggerAssistRail({
       <div className="rounded-xl border border-border/60 bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
           <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-            <Sparkles className="size-3.5 text-primary/70" />
+            <Sparkle className="size-3.5 text-primary/70" />
             {msg("tagger.assist.rail.title")}
           </span>
           <span className="text-xs text-muted-foreground tabular-nums">
@@ -237,7 +237,7 @@ function CalibrationPanel({
   if (reveal === "pending") {
     return (
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" />
+        <CircleNotch className="size-3.5 animate-spin" />
         {msg("tagger.assist.rail.predicting")}
       </p>
     );
@@ -303,7 +303,7 @@ function ReviewPanel({
         <Suggestion config={config} prediction={prediction} />
       ) : (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
+          <CircleNotch className="size-3.5 animate-spin" />
           {msg("tagger.assist.rail.predicting")}
         </p>
       )}

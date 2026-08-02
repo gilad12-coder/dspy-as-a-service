@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Loader2 } from "lucide-react";
+import { CircleNotch } from "@/shared/ui/icons";
 
 import { claimSharedTaggerSession, setApiAuthToken } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
@@ -57,7 +57,7 @@ export default function TaggerSharePage() {
 
   return (
     <div className="flex items-center justify-center min-h-screen">
-      <Loader2 className="size-8 animate-spin text-primary" />
+      <CircleNotch className="size-8 animate-spin text-primary" />
     </div>
   );
 }

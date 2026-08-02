@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Wrench } from "lucide-react";
+import { Wrench } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 import { perLocale } from "@/shared/lib/per-locale";
 
@@ -73,7 +73,7 @@ export function ToolHeader({ toolKey, severity, trailing, className }: ToolHeade
           color: accent,
         }}
       >
-        <Icon className="size-4" strokeWidth={1.75} aria-hidden="true" />
+        <Icon className="size-4" aria-hidden="true" />
       </span>
       <div className="min-w-0 flex-1">
         <div className="text-[0.8125rem] font-medium leading-tight truncate">

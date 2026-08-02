@@ -6,16 +6,16 @@ import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
+  CaretLeft,
+  CaretRight,
+  CircleNotch,
+  FloppyDisk,
   Plus,
-  Save,
-  Tags,
-  Trash2,
+  Tag,
+  Trash,
   X,
   XCircle,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
@@ -114,7 +114,7 @@ export function DatasetEditorView() {
   if (state.mode === "loading") {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="size-8 animate-spin text-primary" />
+        <CircleNotch className="size-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -267,7 +267,7 @@ export function DatasetEditorView() {
                 disabled={dirty}
                 className="gap-2"
               >
-                <Tags className="size-4" />
+                <Tag className="size-4" />
                 {msg("datasets.editor.tag")}
               </Button>
             </span>
@@ -275,7 +275,7 @@ export function DatasetEditorView() {
           {dirty && <TooltipContent>{msg("datasets.editor.tag_dirty_hint")}</TooltipContent>}
         </Tooltip>
         <Button onClick={save} disabled={!dirty || saving || rows.length === 0} className="gap-2">
-          {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+          {saving ? <CircleNotch className="size-4 animate-spin" /> : <FloppyDisk className="size-4" />}
           {msg("datasets.editor.save")}
         </Button>
       </div>
@@ -384,7 +384,7 @@ export function DatasetEditorView() {
                       aria-label={msg("datasets.editor.delete_row")}
                       className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
                     >
-                      <Trash2 className="size-3.5" />
+                      <Trash className="size-3.5" />
                     </Button>
                   </td>
                 </tr>
@@ -418,7 +418,7 @@ export function DatasetEditorView() {
               disabled={safePage === 0}
               aria-label={msg("datasets.editor.prev_page")}
             >
-              <ChevronLeft className="size-4 rtl:rotate-180" />
+              <CaretLeft className="size-4 rtl:rotate-180" />
             </Button>
             <span className="text-xs text-muted-foreground tabular-nums">
               {formatMsg("datasets.editor.rows_range", { from, to, total: rows.length })}
@@ -430,7 +430,7 @@ export function DatasetEditorView() {
               disabled={safePage >= pageCount - 1}
               aria-label={msg("datasets.editor.next_page")}
             >
-              <ChevronRight className="size-4 rtl:rotate-180" />
+              <CaretRight className="size-4 rtl:rotate-180" />
             </Button>
           </div>
         )}

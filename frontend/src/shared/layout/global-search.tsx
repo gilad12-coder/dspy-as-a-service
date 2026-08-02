@@ -5,18 +5,18 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   ArrowUpRight,
-  BarChart3,
-  Bot,
+  ChartBar,
   Compass,
   Database,
+  GearSix,
   HardDrive,
-  LayoutDashboard,
-  Search,
-  Settings2,
-  Sparkles,
-  Tags,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+  MagnifyingGlass,
+  Robot,
+  Sparkle,
+  SquaresFour,
+  Tag,
+} from "@/shared/ui/icons";
+import type { Icon } from "@/shared/ui/icons";
 
 import { useSettingsModal } from "@/features/settings";
 import { useLocale } from "@/shared/providers";
@@ -40,7 +40,7 @@ type SearchItem = {
   label: string;
   description?: string;
   keywords: string[];
-  icon: LucideIcon;
+  icon: Icon;
   href?: string;
   settingsTab?: string;
 };
@@ -52,77 +52,77 @@ const SETTINGS_ITEMS: Array<
     id: "settings-wizard",
     label: "settings.tab.wizard",
     keywords: ["optimization", "models"],
-    icon: Sparkles,
+    icon: Sparkle,
     settingsTab: "wizard",
   },
   {
     id: "settings-tagging",
     label: "settings.tab.tagging",
     keywords: ["labels", "copilot", "autopilot"],
-    icon: Tags,
+    icon: Tag,
     settingsTab: "tagging",
   },
   {
     id: "settings-agent",
     label: "settings.tab.agent",
     keywords: ["assistant", "trust", "memory"],
-    icon: Bot,
+    icon: Robot,
     settingsTab: "agent",
   },
   {
     id: "settings-account",
     label: "settings.tab.account",
     keywords: ["language", "preferences", "lite"],
-    icon: Settings2,
+    icon: GearSix,
     settingsTab: "account",
   },
   {
     id: "settings-security",
     label: "settings.tab.security",
     keywords: ["login", "passkey", "two factor"],
-    icon: Settings2,
+    icon: GearSix,
     settingsTab: "security",
   },
   {
     id: "settings-privacy",
     label: "settings.tab.privacy",
     keywords: ["data", "analytics", "cache"],
-    icon: Settings2,
+    icon: GearSix,
     settingsTab: "privacy",
   },
   {
     id: "settings-billing",
     label: "settings.tab.billing",
     keywords: ["credits", "plan", "payment"],
-    icon: Settings2,
+    icon: GearSix,
     settingsTab: "billing",
   },
   {
     id: "settings-usage",
     label: "settings.tab.usage",
     keywords: ["spend", "cost", "tokens"],
-    icon: BarChart3,
+    icon: ChartBar,
     settingsTab: "usage",
   },
   {
     id: "settings-providers",
     label: "settings.tab.providers",
     keywords: ["keys", "openai", "anthropic"],
-    icon: Settings2,
+    icon: GearSix,
     settingsTab: "providers",
   },
   {
     id: "settings-api",
     label: "settings.tab.api",
     keywords: ["token", "developer", "integration"],
-    icon: Settings2,
+    icon: GearSix,
     settingsTab: "api",
   },
   {
     id: "settings-about",
     label: "settings.tab.about",
     keywords: ["version", "defaults"],
-    icon: Settings2,
+    icon: GearSix,
     settingsTab: "about",
   },
 ];
@@ -153,7 +153,7 @@ export function GlobalSearch() {
         label: TERMS.notificationNewOpt,
         description: msg("app.shell.search.new_optimization_description"),
         keywords: ["run", "prompt", "model"],
-        icon: Sparkles,
+        icon: Sparkle,
         href: "/submit",
       },
       {
@@ -162,7 +162,7 @@ export function GlobalSearch() {
         label: msg("data.tabs.sessions"),
         description: msg("app.shell.search.tagging_description"),
         keywords: ["label", "dataset", "copilot", "autopilot"],
-        icon: Tags,
+        icon: Tag,
         href: "/tagger",
       },
       {
@@ -171,7 +171,7 @@ export function GlobalSearch() {
         label: msg("app.shell.account.settings"),
         description: msg("settings.subtitle"),
         keywords: ["preferences", "configuration"],
-        icon: Settings2,
+        icon: GearSix,
         settingsTab: "account",
       },
     ];
@@ -181,7 +181,7 @@ export function GlobalSearch() {
         group: "navigate",
         label: msg("app.shell.search.dashboard"),
         keywords: ["runs", "jobs", "home"],
-        icon: LayoutDashboard,
+        icon: SquaresFour,
         href: "/",
       },
       {
@@ -312,7 +312,7 @@ export function GlobalSearch() {
         aria-controls="global-search-dialog"
       >
         <span className="flex min-w-0 items-center gap-1.5">
-          <Search
+          <MagnifyingGlass
             className="size-4 shrink-0 text-muted-foreground transition-colors duration-150 group-hover:text-primary"
             aria-hidden="true"
           />
@@ -342,7 +342,7 @@ export function GlobalSearch() {
             <DialogDescription>{msg("app.shell.search.description")}</DialogDescription>
           </DialogHeader>
           <div className="group flex h-[58px] items-center gap-3 border-b border-border/60 px-4 focus-within:bg-white/50">
-            <Search
+            <MagnifyingGlass
               className="size-5 shrink-0 text-primary/60 transition-colors group-focus-within:text-primary"
               aria-hidden="true"
             />
@@ -444,7 +444,7 @@ export function GlobalSearch() {
               })
             ) : (
               <div className="flex min-h-36 flex-col items-center justify-center gap-2 px-6 text-center">
-                <Search className="size-5 text-primary/30" aria-hidden="true" />
+                <MagnifyingGlass className="size-5 text-primary/30" aria-hidden="true" />
                 <p className="text-sm font-medium text-foreground/75">
                   {msg("app.shell.search.no_results")}
                 </p>

@@ -2,13 +2,13 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import {
-  LocateFixed,
-  Maximize2,
-  Minimize2,
+  ArrowCounterClockwise,
+  ArrowsIn,
+  ArrowsOut,
+  Crosshair,
   Minus,
   Plus,
-  RotateCcw,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { TRAJECTORY_LAYOUT, type LayoutResult } from "../lib/layout";
@@ -502,9 +502,9 @@ export function TrajectoryTree({
         </MapControlButton>
         <MapControlButton label={msg("trajectory.controls.zoom_reset")} onClick={resetView}>
           {isTransformed ? (
-            <RotateCcw className="size-3.5" aria-hidden="true" />
+            <ArrowCounterClockwise className="size-3.5" aria-hidden="true" />
           ) : (
-            <LocateFixed className="size-3.5" aria-hidden="true" />
+            <Crosshair className="size-3.5" aria-hidden="true" />
           )}
         </MapControlButton>
         <ControlsDivider />
@@ -517,9 +517,9 @@ export function TrajectoryTree({
           onClick={() => setIsMaximized((v) => !v)}
         >
           {isMaximized ? (
-            <Minimize2 className="size-3.5" aria-hidden="true" />
+            <ArrowsIn className="size-3.5" aria-hidden="true" />
           ) : (
-            <Maximize2 className="size-3.5" aria-hidden="true" />
+            <ArrowsOut className="size-3.5" aria-hidden="true" />
           )}
         </MapControlButton>
       </div>

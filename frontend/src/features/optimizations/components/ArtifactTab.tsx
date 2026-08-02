@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Sparkles, Wrench } from "lucide-react";
+import { Sparkle, Wrench } from "@/shared/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
@@ -72,7 +72,7 @@ export function ArtifactTab({
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Sparkles className="size-4" />
+              <Sparkle className="size-4" />
               <HelpTip text={tip("prompt.optimized")}>
                 {msg("auto.features.optimizations.components.codetab.5")}
               </HelpTip>

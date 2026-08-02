@@ -6,13 +6,13 @@ import { toast } from "react-toastify";
 import {
   ArrowLeft,
   ArrowUpRight,
-  ChevronLeft,
-  ChevronRight,
-  Inbox,
-  Loader2,
-  Sparkles,
-  Table2,
-} from "lucide-react";
+  CaretLeft,
+  CaretRight,
+  CircleNotch,
+  Sparkle,
+  Table as Table2,
+  Tray,
+} from "@/shared/ui/icons";
 import { motion } from "framer-motion";
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -227,7 +227,7 @@ export function DatasetDetailDialog({
 
   const segments: ReadonlyArray<{ value: DetailTab; label: string; icon: typeof Table2 }> = [
     { value: "rows", label: msg("datasets.detail.rows_title"), icon: Table2 },
-    { value: "usage", label: msg("datasets.detail.tab.usage"), icon: Sparkles },
+    { value: "usage", label: msg("datasets.detail.tab.usage"), icon: Sparkle },
   ];
 
   return (
@@ -339,7 +339,7 @@ export function DatasetDetailDialog({
                       disabled={readerIndex === 0}
                       aria-label={msg("datasets.detail.row_reader.prev")}
                     >
-                      <ChevronLeft className="size-4 rtl:rotate-180" />
+                      <CaretLeft className="size-4 rtl:rotate-180" />
                     </Button>
                     <span className="text-xs text-muted-foreground tabular-nums">
                       {formatMsg("datasets.detail.row_reader.counter", {
@@ -354,7 +354,7 @@ export function DatasetDetailDialog({
                       disabled={readerIndex >= filtered.length - 1}
                       aria-label={msg("datasets.detail.row_reader.next")}
                     >
-                      <ChevronRight className="size-4 rtl:rotate-180" />
+                      <CaretRight className="size-4 rtl:rotate-180" />
                     </Button>
                   </div>
                 </div>
@@ -400,14 +400,14 @@ export function DatasetDetailDialog({
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-4">
                 {rows === null ? (
                   <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" />
+                    <CircleNotch className="size-4 animate-spin" />
                     {msg("datasets.detail.loading")}
                   </div>
                 ) : columns.length === 0 || allRows.length === 0 ? (
                   <div className="py-8">
                     <EmptyState
                       variant="list"
-                      icon={Inbox}
+                      icon={Tray}
                       title={msg("datasets.detail.rows_empty")}
                     />
                   </div>
@@ -437,7 +437,7 @@ export function DatasetDetailDialog({
                       <div className="rounded-lg border border-dashed border-border/60 py-8">
                         <EmptyState
                           variant="list"
-                          icon={Inbox}
+                          icon={Tray}
                           title={msg("datasets.detail.rows_empty")}
                         />
                       </div>
@@ -530,14 +530,14 @@ export function DatasetDetailDialog({
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
                 {optimizations === null ? (
                   <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" />
+                    <CircleNotch className="size-4 animate-spin" />
                     {msg("datasets.detail.loading")}
                   </div>
                 ) : optimizations.length === 0 ? (
                   <div className="py-8">
                     <EmptyState
                       variant="list"
-                      icon={Sparkles}
+                      icon={Sparkle}
                       title={msg("datasets.detail.used_by_empty")}
                     />
                   </div>

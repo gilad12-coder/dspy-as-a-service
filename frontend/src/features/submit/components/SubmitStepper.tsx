@@ -1,6 +1,6 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check } from "@/shared/ui/icons";
 import { motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 
