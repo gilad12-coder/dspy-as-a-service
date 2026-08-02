@@ -1051,7 +1051,13 @@ function JobRow({
             aria-haspopup="menu"
             aria-expanded={menuOpen}
           >
-            <MoreHorizontal className="size-3.5" />
+            <MoreHorizontal
+              className={cn(
+                "size-3.5 transition-[transform,color] duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none motion-reduce:transform-none",
+                menuOpen && "rotate-90 scale-110 text-foreground",
+              )}
+              aria-hidden="true"
+            />
           </button>
         }
       </div>

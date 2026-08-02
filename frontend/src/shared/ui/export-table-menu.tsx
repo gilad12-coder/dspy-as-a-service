@@ -88,7 +88,11 @@ export function ExportTableMenu({
                 aria-label={msg("export.table.aria")}
                 className={className}
               >
-                <Download className="size-4" />
+                <Download
+                  className="size-[1.05rem] text-primary"
+                  strokeWidth={2.25}
+                  aria-hidden="true"
+                />
               </Button>
             ) : (
               <Button
@@ -98,7 +102,11 @@ export function ExportTableMenu({
                 aria-label={msg("export.table.aria")}
                 className={cn("gap-1.5", className)}
               >
-                <Download className="size-4" />
+                <Download
+                  className="size-[1.05rem] text-primary"
+                  strokeWidth={2.25}
+                  aria-hidden="true"
+                />
                 {msg("export.table.button")}
               </Button>
             )}
