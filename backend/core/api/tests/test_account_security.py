@@ -279,6 +279,13 @@ def test_passkey_register_list_delete(
     assert created.json()["nickname"] == "MacBook Touch ID"
     credential_id = created.json()["credential_id"]
 
+    renamed = client.patch(
+        f"/auth/security/passkeys/{credential_id}",
+        json={"nickname": "Work laptop"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["nickname"] == "Work laptop"
+
     replay = client.post(
         "/auth/security/passkeys",
         json={"credential": _fake_credential(challenge)},
@@ -288,6 +295,7 @@ def test_passkey_register_list_delete(
 
     status = client.get("/auth/security").json()
     assert [p["credential_id"] for p in status["passkeys"]] == [credential_id]
+    assert status["passkeys"][0]["nickname"] == "Work laptop"
 
     assert client.delete(f"/auth/security/passkeys/{credential_id}").status_code == 200
     assert client.get("/auth/security").json()["passkeys"] == []

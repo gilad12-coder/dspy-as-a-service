@@ -2168,6 +2168,10 @@ export type MessageKey =
   | "settings.security.passkeys.name_label"
   | "settings.security.passkeys.name_placeholder"
   | "settings.security.passkeys.never_used"
+  | "settings.security.passkeys.rename"
+  | "settings.security.passkeys.rename_cancel"
+  | "settings.security.passkeys.rename_save"
+  | "settings.security.passkeys.renamed"
   | "settings.security.passkeys.unsupported"
   | "settings.security.provider_managed.description"
   | "settings.security.provider_managed.label"
@@ -5079,6 +5083,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.security.passkeys.name_label": "שם מפתח הגישה",
   "settings.security.passkeys.name_placeholder": "למשל MacBook Touch ID",
   "settings.security.passkeys.never_used": "לא היה בשימוש",
+  "settings.security.passkeys.rename": "שינוי שם מפתח הגישה",
+  "settings.security.passkeys.rename_cancel": "ביטול שינוי שם מפתח הגישה",
+  "settings.security.passkeys.rename_save": "שמירת שם מפתח הגישה",
+  "settings.security.passkeys.renamed": "שם מפתח הגישה עודכן",
   "settings.security.passkeys.unsupported": "הדפדפן הזה לא תומך במפתחות גישה.",
   "settings.security.provider_managed.description": "אבטחת ההתחברות לחשבון הזה מנוהלת אצל ספק הזהות (Google או GitHub).",
   "settings.security.provider_managed.label": "אימות דו-שלבי",
@@ -13567,6 +13575,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "settings.security.passkeys.name_label": "Passkey name",
   "settings.security.passkeys.name_placeholder": "e.g. MacBook Touch ID",
   "settings.security.passkeys.never_used": "Never used",
+  "settings.security.passkeys.rename": "Rename passkey",
+  "settings.security.passkeys.rename_cancel": "Cancel passkey rename",
+  "settings.security.passkeys.rename_save": "Save passkey name",
+  "settings.security.passkeys.renamed": "Passkey renamed",
   "settings.security.passkeys.unsupported": "This browser doesn't support passkeys.",
   "settings.security.provider_managed.description": "Sign-in security for this account is managed by your identity provider (Google or GitHub).",
   "settings.security.provider_managed.label": "Two-factor authentication",

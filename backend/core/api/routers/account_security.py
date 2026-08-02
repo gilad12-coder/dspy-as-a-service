@@ -254,6 +254,10 @@ class PasskeyRegisterRequest(BaseModel):
     nickname: str = Field(default="", description="Label for the settings list; defaults to 'Passkey'.")
 
 
+class PasskeyRenameRequest(BaseModel):
+    nickname: str = Field(description="New label for the settings list.")
+
+
 # Browser-produced WebAuthn assertion for passkey sign-in.
 class PasskeyAssertRequest(BaseModel):
     credential: dict[str, Any] = Field(description="JSON result of navigator.credentials.get().")
@@ -542,6 +546,38 @@ def create_account_security_router(*, job_store) -> APIRouter:
                 nickname=(body.nickname.strip() or "Passkey")[:_NICKNAME_MAX],
             )
             session.add(row)
+            session.commit()
+            return _passkey_info(row)
+
+    @router.patch(
+        "/auth/security/passkeys/{credential_id}",
+        response_model=PasskeyInfo,
+        summary="Rename one of the caller's passkeys",
+    )
+    def passkey_rename(
+        credential_id: str,
+        body: PasskeyRenameRequest,
+        user: AuthenticatedUserDep,
+    ) -> PasskeyInfo:
+        """Rename a passkey the caller owns.
+
+        Args:
+            credential_id: Base64url id from the passkey list.
+            body: Replacement display label.
+            user: The bearer-authenticated caller.
+
+        Returns:
+            The updated client-facing passkey summary.
+
+        Raises:
+            DomainError: 404 when no such passkey belongs to the caller.
+        """
+        email = _normalise_email(user.username)
+        with Session(job_store.engine) as session:
+            row = session.get(WebAuthnCredentialModel, credential_id)
+            if row is None or str(row.user_email) != email:
+                raise DomainError("webauthn.not_found", status=404)
+            row.nickname = (body.nickname.strip() or "Passkey")[:_NICKNAME_MAX]
             session.commit()
             return _passkey_info(row)
 

@@ -2,7 +2,17 @@
 
 import * as React from "react";
 import { toast } from "react-toastify";
-import { Fingerprint, Loader2, Mail, Plus, Smartphone, Trash2 } from "lucide-react";
+import {
+  Check,
+  Fingerprint,
+  Loader2,
+  Mail,
+  Pencil,
+  Plus,
+  Smartphone,
+  Trash2,
+  X,
+} from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import {
@@ -29,6 +39,7 @@ import {
   getPasskeyRegistrationOptions,
   getSecurityStatus,
   registerPasskey,
+  renamePasskey,
   setEmailCodes,
   setupTotp,
   type SecurityStatus,
@@ -66,6 +77,9 @@ export function SecurityTab() {
   const [passkeyName, setPasskeyName] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [deleting, setDeleting] = React.useState<string | null>(null);
+  const [editingPasskey, setEditingPasskey] = React.useState<string | null>(null);
+  const [editingPasskeyName, setEditingPasskeyName] = React.useState("");
+  const [renaming, setRenaming] = React.useState<string | null>(null);
   const passkeysSupported = React.useMemo(() => browserSupportsWebAuthn(), []);
 
   const refresh = React.useCallback(() => {
@@ -175,6 +189,32 @@ export function SecurityTab() {
     }
   }
 
+  function beginPasskeyRename(passkey: SecurityStatus["passkeys"][number]) {
+    setEditingPasskey(passkey.credential_id);
+    setEditingPasskeyName(passkey.nickname);
+  }
+
+  function cancelPasskeyRename() {
+    setEditingPasskey(null);
+    setEditingPasskeyName("");
+  }
+
+  async function savePasskeyRename(credentialId: string) {
+    const nickname = editingPasskeyName.trim();
+    if (!nickname) return;
+    setRenaming(credentialId);
+    try {
+      await renamePasskey(credentialId, nickname);
+      toast.success(msg("settings.security.passkeys.renamed"));
+      if (editingPasskey === credentialId) cancelPasskeyRename();
+      refresh();
+    } catch (err) {
+      toast.error(describeError(err));
+    } finally {
+      setRenaming(null);
+    }
+  }
+
   function closeTotpDialog() {
     setTotpSetup(null);
     setTotpCode("");
@@ -277,8 +317,50 @@ export function SecurityTab() {
               key={passkey.credential_id}
               className="flex items-center justify-between gap-3 rounded-lg border border-border/40 px-3 py-2"
             >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-foreground">{passkey.nickname}</p>
+              <div className="min-w-0 flex-1">
+                {editingPasskey === passkey.credential_id ? (
+                  <form
+                    className="flex min-w-0 items-center gap-1.5"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void savePasskeyRename(passkey.credential_id);
+                    }}
+                  >
+                    <Input
+                      value={editingPasskeyName}
+                      onChange={(event) => setEditingPasskeyName(event.target.value)}
+                      aria-label={msg("settings.security.passkeys.name_label")}
+                      maxLength={64}
+                      autoFocus
+                      className="h-8 min-w-0 rounded-lg px-2 text-sm"
+                    />
+                    <Button
+                      type="submit"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={msg("settings.security.passkeys.rename_save")}
+                      disabled={!editingPasskeyName.trim() || renaming === passkey.credential_id}
+                    >
+                      {renaming === passkey.credential_id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Check className="size-3.5" />
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={msg("settings.security.passkeys.rename_cancel")}
+                      disabled={renaming === passkey.credential_id}
+                      onClick={cancelPasskeyRename}
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </form>
+                ) : (
+                  <p className="truncate text-sm font-medium text-foreground">{passkey.nickname}</p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   {formatMsg("settings.security.passkeys.created", {
                     date: formatDate(passkey.created_at),
@@ -291,19 +373,34 @@ export function SecurityTab() {
                     : msg("settings.security.passkeys.never_used")}
                 </p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={msg("settings.security.passkeys.delete_aria")}
-                disabled={deleting === passkey.credential_id}
-                onClick={() => void removePasskey(passkey.credential_id)}
-              >
-                {deleting === passkey.credential_id ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="size-3.5" />
+              <div className="flex shrink-0 items-center gap-1">
+                {editingPasskey !== passkey.credential_id && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={msg("settings.security.passkeys.rename")}
+                    disabled={renaming !== null}
+                    onClick={() => beginPasskeyRename(passkey)}
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
                 )}
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={msg("settings.security.passkeys.delete_aria")}
+                  disabled={
+                    deleting === passkey.credential_id || renaming === passkey.credential_id
+                  }
+                  onClick={() => void removePasskey(passkey.credential_id)}
+                >
+                  {deleting === passkey.credential_id ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-3.5" />
+                  )}
+                </Button>
+              </div>
             </li>
           ))}
         </ul>

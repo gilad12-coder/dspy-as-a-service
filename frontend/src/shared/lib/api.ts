@@ -593,6 +593,14 @@ export function registerPasskey(credential: unknown, nickname: string) {
   });
 }
 
+/** Rename one of the caller's passkeys. */
+export function renamePasskey(credentialId: string, nickname: string) {
+  return request<PasskeyInfo>(`/auth/security/passkeys/${encodeURIComponent(credentialId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ nickname }),
+  });
+}
+
 /** Remove one of the caller's passkeys. */
 export function deletePasskey(credentialId: string) {
   return request<{ ok: boolean }>(
