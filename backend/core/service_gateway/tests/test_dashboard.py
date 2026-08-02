@@ -6,9 +6,10 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 
+from core.constants import OPTIMIZATION_TYPE_TAGGING
 from core.service_gateway import dashboard
 from core.storage.models import SearchQueryLogModel
 
@@ -59,6 +60,69 @@ def test_corpus_fetch_has_no_artificial_point_cap() -> None:
     assert dashboard._fetch_corpus_points(session, "job_embeddings") == []
     statement = session.execute.call_args.args[0]
     assert "LIMIT" not in statement.text.upper()
+
+
+def test_user_facing_corpus_sql_keeps_legacy_rows_and_drops_internal_rows() -> None:
+    """The corpus predicate admits user-facing rows and rejects internal ones.
+
+    Executes the real SQL against an in-memory schema shaped like the columns
+    the predicate reads. Legacy rows (no ``optimization_type`` recorded
+    anywhere) must stay discoverable — the open/detail paths serve them — and
+    tagger jobs and distributed grid-pair child rows must never surface.
+    """
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE jobs (optimization_id TEXT, optimization_type TEXT, "
+                "payload_overview TEXT, parent_optimization_id TEXT)"
+            )
+        )
+        conn.execute(
+            text("CREATE TABLE job_embeddings (optimization_id TEXT, optimization_type TEXT)")
+        )
+        conn.execute(
+            text("INSERT INTO jobs VALUES (:id, :otype, :payload, :parent)"),
+            [
+                {"id": "legacy", "otype": None, "payload": None, "parent": None},
+                {"id": "plain-run", "otype": "run", "payload": None, "parent": None},
+                {"id": "grid-parent", "otype": "grid_search", "payload": None, "parent": None},
+                {
+                    "id": "payload-only",
+                    "otype": None,
+                    "payload": '{"optimization_type": "run"}',
+                    "parent": None,
+                },
+                {
+                    "id": "tagger",
+                    "otype": OPTIMIZATION_TYPE_TAGGING,
+                    "payload": None,
+                    "parent": None,
+                },
+                {
+                    "id": "grid-child",
+                    "otype": "grid_search",
+                    "payload": None,
+                    "parent": "grid-parent",
+                },
+            ],
+        )
+        kept = (
+            conn.execute(
+                text(
+                    "SELECT j.optimization_id FROM jobs j "
+                    "LEFT JOIN job_embeddings je "
+                    "ON je.optimization_id = j.optimization_id "
+                    f"WHERE {dashboard._USER_FACING_CORPUS_SQL} "
+                    "ORDER BY j.optimization_id"
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert kept == ["grid-parent", "legacy", "payload-only", "plain-run"]
 
 
 def test_normalize_query_for_log_collapses_and_drops_short() -> None:
