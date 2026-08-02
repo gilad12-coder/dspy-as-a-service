@@ -131,6 +131,9 @@ function OverviewTabImpl({
   const runResult = isPairContext ? activePair : job.result;
   const baseline = runResult?.baseline_test_metric ?? baselineFromEvents;
   const optimized = runResult?.optimized_test_metric ?? optimizedFromEvents;
+  const improvement =
+    runResult?.metric_improvement ??
+    (baseline != null && optimized != null ? optimized - baseline : undefined);
   const scoresReady =
     runResult != null && baseline != null && optimized != null && !activePair?.error;
   const lmActivity: LMActivity | null = (runResult?.lm_activity as LMActivity | undefined) ?? null;
@@ -150,12 +153,9 @@ function OverviewTabImpl({
   // optimized_evaluated — and show "—" until each metric is genuinely
   // evaluated. Never a stale or interpolated value, so a stalled or
   // unfinished run reads honestly. Improvement only resolves once both the
-  // baseline and the optimized score exist, keeping the score blocks coherent.
-  // Both aggregate scores use the canonical 0–100 scale. Derive the displayed
-  // delta from those same values so the improvement always matches the scores
-  // the user sees, even when a streamed result carried an older cached delta.
+  // baseline and the optimized score exist, keeping the three cards coherent.
   const displayImprovement =
-    baseline != null && optimized != null ? optimized - baseline : undefined;
+    baseline != null && optimized != null ? (improvement ?? optimized - baseline) : undefined;
   const showScoreCards = scoresReady || (stagesActive && baseline != null);
 
   // Status text reflects what the user is looking at — for a pair, that is
@@ -323,10 +323,10 @@ function OverviewTabImpl({
         )}
 
       {renderRunBlocks && showScoreCards && (
-        <div data-tutorial="score-cards" className="space-y-4">
-          <StaggerContainer className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div data-tutorial="score-cards">
+          <StaggerContainer className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <StaggerItem>
-              <TiltCard className="rounded-xl border border-border/50 bg-card p-6 text-center">
+              <TiltCard className=" rounded-xl border border-border/50 bg-card p-6 text-center">
                 <p className="text-[0.6875rem] text-muted-foreground mb-2 font-medium tracking-wide">
                   <HelpTip text={tip("score.baseline")}>{TERMS.baselineScore}</HelpTip>
                 </p>
@@ -345,52 +345,23 @@ function OverviewTabImpl({
                 </p>
               </TiltCard>
             </StaggerItem>
-          </StaggerContainer>
-
-          <FadeIn delay={0.08}>
-            <Card
-              className={`relative overflow-hidden shadow-[0_1px_3px_rgba(28,22,18,0.04),inset_0_1px_0_rgba(255,255,255,0.5)] ${
-                (displayImprovement ?? 0) >= 0
-                  ? "border-stone-400/50"
-                  : "border-red-300/50"
-              }`}
-            >
-              <div
-                className={`absolute inset-x-0 top-0 h-px ${
-                  (displayImprovement ?? 0) >= 0
-                    ? "bg-gradient-to-l from-transparent via-stone-400/60 to-transparent"
-                    : "bg-gradient-to-l from-transparent via-red-300/70 to-transparent"
-                }`}
-                aria-hidden="true"
-              />
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <TrendUp className="size-4 text-[#7C6350]" aria-hidden="true" />
+            <StaggerItem>
+              <TiltCard
+                className={`rounded-xl border p-6 text-center ${(displayImprovement ?? 0) >= 0 ? "border-stone-400/50 bg-gradient-to-br from-stone-100/50 to-stone-200/30" : "border-red-300/50 bg-gradient-to-br from-red-50/50 to-red-100/30"}`}
+              >
+                <p className="text-[0.6875rem] text-muted-foreground mb-2 font-medium tracking-wide">
                   <HelpTip text={tip("score.improvement")}>
-                    <span className="font-bold tracking-tight">
-                      {msg("auto.features.optimizations.components.overviewtab.3")}
-                    </span>
+                    {msg("auto.features.optimizations.components.overviewtab.3")}
                   </HelpTip>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                  <p
-                    className={`font-mono text-5xl font-bold leading-none tabular-nums ${
-                      (displayImprovement ?? 0) >= 0 ? "text-stone-600" : "text-red-600"
-                    }`}
-                    dir="ltr"
-                  >
-                    {formatImprovement(displayImprovement)}
-                  </p>
-                  <p className="text-sm tabular-nums text-muted-foreground" dir="ltr">
-                    {formatPercent(baseline)} <span aria-hidden="true">→</span>{" "}
-                    {formatPercent(optimized)}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </FadeIn>
+                </p>
+                <p
+                  className={`text-3xl font-mono font-bold tabular-nums ${(displayImprovement ?? 0) >= 0 ? "text-stone-600" : "text-red-600"}`}
+                >
+                  {formatImprovement(displayImprovement)}
+                </p>
+              </TiltCard>
+            </StaggerItem>
+          </StaggerContainer>
         </div>
       )}
 

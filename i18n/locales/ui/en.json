@@ -2888,7 +2888,7 @@
   "tooltip.react.optimized_tools": "The tools the agent (ReAct) runs in a loop, with the descriptions and arguments the optimizer refined during optimization",
   "tooltip.react.tool_source": "Where the tool list is loaded from: a live MCP server, or a snapshot of tools from the dataset",
   "tooltip.score.baseline": "Baseline score before optimization: how the program did without an improved prompt or selected examples",
-  "tooltip.score.improvement": "Aggregate scores use the same 0–100 scale. Improvement is the optimized score minus the baseline score, shown in percentage points",
+  "tooltip.score.improvement": "The gap between the optimized score and the baseline score. The larger it is, the more the optimization improved the result",
   "tooltip.score.logged_metrics": "Scores your metric recorded with log_metrics — e.g. precision and recall — averaged over the test set, before and after optimization",
   "tooltip.score.optimized": "Optimized score after optimization: how the program did with the chosen prompt and examples",
   "tooltip.score.progression": "How the score changed from attempt to attempt while the optimizer searched for a better prompt",
