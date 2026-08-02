@@ -63,14 +63,10 @@ export type MessageKey =
   | "app.shell.logout"
   | "app.shell.menu"
   | "app.shell.menu_close"
-  | "app.shell.search.arrow_keys"
   | "app.shell.search.button_aria"
   | "app.shell.search.command_key"
   | "app.shell.search.dashboard"
   | "app.shell.search.description"
-  | "app.shell.search.enter_key"
-  | "app.shell.search.escape_key"
-  | "app.shell.search.hint"
   | "app.shell.search.k_key"
   | "app.shell.search.label"
   | "app.shell.search.navigate"
@@ -2973,14 +2969,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "app.shell.logout": "התנתק/י",
   "app.shell.menu": "תפריט",
   "app.shell.menu_close": "סגור/סגרי את התפריט",
-  "app.shell.search.arrow_keys": "↑↓",
   "app.shell.search.button_aria": "חיפוש בכל המערכת",
   "app.shell.search.command_key": "⌘",
   "app.shell.search.dashboard": "לוח הבקרה",
   "app.shell.search.description": "חיפוש מהיר בין עמודים, פעולות והגדרות",
-  "app.shell.search.enter_key": "↵",
-  "app.shell.search.escape_key": "Esc",
-  "app.shell.search.hint": "ניווט עם החצים ובחירה עם Enter",
   "app.shell.search.k_key": "K",
   "app.shell.search.label": "חיפוש בכל המערכת…",
   "app.shell.search.navigate": "ניווט",
@@ -11450,14 +11442,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "app.shell.logout": "Log out",
   "app.shell.menu": "Menu",
   "app.shell.menu_close": "Close menu",
-  "app.shell.search.arrow_keys": "↑↓",
   "app.shell.search.button_aria": "Search everything",
   "app.shell.search.command_key": "⌘",
   "app.shell.search.dashboard": "Dashboard",
   "app.shell.search.description": "Quickly search pages, actions, and settings",
-  "app.shell.search.enter_key": "↵",
-  "app.shell.search.escape_key": "Esc",
-  "app.shell.search.hint": "Use the arrow keys to move and Enter to open",
   "app.shell.search.k_key": "K",
   "app.shell.search.label": "Search everything…",
   "app.shell.search.navigate": "Navigate",

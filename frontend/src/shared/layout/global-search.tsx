@@ -368,9 +368,6 @@ export function GlobalSearch() {
               className="h-full min-w-0 flex-1 bg-transparent text-[0.95rem] text-foreground outline-none placeholder:text-muted-foreground/70"
               dir="auto"
             />
-            <kbd className="hidden h-6 items-center rounded-md border border-border/70 bg-muted/55 px-1.5 text-[0.6875rem] font-medium text-muted-foreground sm:inline-flex">
-              {msg("app.shell.search.escape_key")}
-            </kbd>
           </div>
 
           <div
@@ -450,17 +447,6 @@ export function GlobalSearch() {
                 </p>
               </div>
             )}
-          </div>
-          <div className="flex items-center justify-between border-t border-border/50 bg-muted/20 px-4 py-2 text-[0.6875rem] text-muted-foreground/70">
-            <span>{msg("app.shell.search.hint")}</span>
-            <span className="flex items-center gap-1">
-              <kbd className="rounded border border-border/60 bg-background/70 px-1">
-                {msg("app.shell.search.arrow_keys")}
-              </kbd>
-              <kbd className="rounded border border-border/60 bg-background/70 px-1">
-                {msg("app.shell.search.enter_key")}
-              </kbd>
-            </span>
           </div>
         </DialogContent>
       </Dialog>
