@@ -153,17 +153,16 @@ def run_service_in_subprocess(
         event_queue: Shared multiprocessing queue back to the parent.
         start_method: The active multiprocessing start method (e.g. ``"fork"``).
     """
-    # One run makes thousands of unique LM calls, and dspy's default cache
-    # pins every response in a process-wide in-memory LRU (1M-entry cap —
-    # unbounded in practice) for this child's whole multi-hour lifetime.
-    # Disk-only caching keeps retry/resume dedup at near-zero resident cost.
-    # An unwritable cache dir (sandboxed test runs) must not fail the job:
-    # degrade to no caching at all, the same way dspy's own import does.
-    try:
-        dspy.configure_cache(enable_memory_cache=False)
-    except Exception:
-        with contextlib.suppress(Exception):
-            dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
+    # Disable dspy caching entirely for this child. The in-memory cache pins
+    # every response in a process-wide LRU (1M-entry cap — unbounded in
+    # practice) for its whole multi-hour lifetime, and the disk cache routes
+    # through diskcache, whose pickle-backed store has an unpatched
+    # deserialization flaw (GHSA-w8v5-vhqr-4h9v — no fixed release exists).
+    # Dropping the disk cache keeps that path out of the worker, trading away
+    # retry/resume dedup. suppress() so an incompatible dspy build can't fail
+    # the job.
+    with contextlib.suppress(Exception):
+        dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
     # Cap this child's in-flight LM calls: grid pair threads x GEPA eval
     # threads multiply, and without a ceiling a single job can spray the
     # provider hard enough to trip rate limits and fail the run.
