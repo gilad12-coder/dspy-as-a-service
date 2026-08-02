@@ -22,6 +22,7 @@ import {
   markRecentSession,
   refreshRecentSession,
 } from "@/shared/lib/recent-session";
+import { LOCALE_RELOAD_EVENT } from "@/shared/lib/locale";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
 import type { ModelConfig } from "@/shared/types/api";
 import type { AgentThinking } from "@/shared/ui/agent";
@@ -49,6 +50,7 @@ import {
   labelsAgree,
   sampleRowIds,
 } from "../lib/assist";
+import { markTaggerInterviewForLocaleReset } from "../lib/interview-locale-reset";
 
 /** Window event the sidebar listens for to refresh its saved-session list. */
 export const TAGGER_SESSIONS_CHANGED = "tagger-sessions-changed";
@@ -136,6 +138,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   const [interviewStreamText, setInterviewStreamText] = useState("");
   const [interviewThinking, setInterviewThinking] = useState<AgentThinking | null>(null);
   const interviewAbortRef = useRef<AbortController | null>(null);
+  const localeReloadingRef = useRef(false);
   const [assistError, setAssistError] = useState<string | null>(null);
   const [roundLoading, setRoundLoading] = useState(false);
   // Autopilot contract confirmed, bulk job not yet started: held true until
@@ -288,6 +291,17 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     };
   }, [sessionId, readOnly, annotations, assist, currentIndex, phase]);
 
+  useEffect(() => {
+    if (!sessionId || readOnly || phase !== "interview") return;
+    const onLocaleReload = () => {
+      localeReloadingRef.current = true;
+      markTaggerInterviewForLocaleReset(sessionId);
+      interviewAbortRef.current?.abort();
+    };
+    window.addEventListener(LOCALE_RELOAD_EVENT, onLocaleReload);
+    return () => window.removeEventListener(LOCALE_RELOAD_EVENT, onLocaleReload);
+  }, [sessionId, readOnly, phase]);
+
   // Write any buffered progress to the server. Best-effort: on failure the
   // payload is re-armed (unless a newer edit already replaced it) so the next
   // tick retries. Reads the ref, so it always sends the freshest state.
@@ -329,6 +343,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       flush();
     }, AUTOSAVE_INTERVAL_MS);
     const onLeave = () => {
+      if (localeReloadingRef.current) return;
       // Refresh rather than set: a deliberate exit (back / start over) just
       // cleared the mark, and re-stamping it here would hand the sidebar back
       // the session the user explicitly left.

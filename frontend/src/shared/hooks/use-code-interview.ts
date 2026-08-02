@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { readPref } from "@/features/settings";
+import { LOCALE_RELOAD_EVENT } from "@/shared/lib/locale";
 import {
   streamCodeInterviewTurn,
   type CodeAgentChatTurn,
@@ -100,10 +101,33 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
   const [confirmedBrief, setConfirmedBrief] = React.useState<string[]>([]);
 
   const abortRef = React.useRef<AbortController | null>(null);
+  const localeReloadingRef = React.useRef(false);
+
+  const resetForLocaleChange = React.useCallback(() => {
+    localeReloadingRef.current = true;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setTurns([]);
+    setBusy(false);
+    setStreamText("");
+    setThinking(null);
+    setOptions([]);
+    setPending(null);
+    setError(false);
+    setDone(false);
+    setBrief([]);
+    setResolved(false);
+    setConfirmedBrief([]);
+  }, []);
+
+  React.useEffect(() => {
+    window.addEventListener(LOCALE_RELOAD_EVENT, resetForLocaleChange);
+    return () => window.removeEventListener(LOCALE_RELOAD_EVENT, resetForLocaleChange);
+  }, [resetForLocaleChange]);
 
   const runTurn = React.useCallback(
     (next: InterviewTurn[]) => {
-      if (!parsedDataset || busy) return;
+      if (!parsedDataset || busy || localeReloadingRef.current) return;
       setTurns(next);
       setDone(false);
       setBusy(true);
@@ -196,7 +220,7 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
 
   // Fire the opening question exactly once per eligible interview.
   React.useEffect(() => {
-    if (!enabled || resolved || done || busy || error) return;
+    if (localeReloadingRef.current || !enabled || resolved || done || busy || error) return;
     if (turns.length > 0) return;
     runTurn([]);
   }, [enabled, resolved, done, busy, error, turns, runTurn]);

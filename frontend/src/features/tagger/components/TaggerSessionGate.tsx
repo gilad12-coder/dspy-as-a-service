@@ -9,17 +9,56 @@ import {
   getTaggerSession,
   takeTaggerSession,
   setApiAuthToken,
+  updateTaggerSession,
   type TaggerSessionDetail,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
 import { PageContainer } from "@/shared/layout/page-container";
 import { TaggerBackLink } from "./TaggerBackLink";
 import { TaggerView } from "./TaggerView";
+import {
+  clearTaggerInterviewLocaleReset,
+  hasTaggerInterviewLocaleReset,
+} from "../lib/interview-locale-reset";
 
 type GateState =
   | { mode: "loading" }
   | { mode: "ready"; session: TaggerSessionDetail }
   | { mode: "notfound" };
+
+async function resetInterviewAfterLocaleReload(
+  detail: TaggerSessionDetail,
+): Promise<TaggerSessionDetail> {
+  if (!hasTaggerInterviewLocaleReset(detail.id)) return detail;
+  if (
+    detail.phase !== "interview" ||
+    detail.role === "viewer" ||
+    !detail.assist ||
+    typeof detail.assist !== "object" ||
+    Array.isArray(detail.assist)
+  ) {
+    clearTaggerInterviewLocaleReset(detail.id);
+    return detail;
+  }
+
+  const assist = { ...(detail.assist as Record<string, unknown>) };
+  delete assist.taskOverride;
+  assist.interview = { turns: [], done: false };
+  assist.rubric = [];
+  const next = { ...detail, assist };
+  try {
+    await updateTaggerSession(detail.id, {
+      annotations: detail.annotations,
+      assist,
+      current_index: detail.current_index,
+      phase: "interview",
+    });
+    clearTaggerInterviewLocaleReset(detail.id);
+  } catch {
+    // Leave the marker in place so a later reload retries the persisted reset.
+  }
+  return next;
+}
 
 /**
  * Resolves ``/tagger/[id]``: fetches the caller's saved session and hands its
@@ -35,17 +74,22 @@ export function TaggerSessionGate() {
 
   useEffect(() => {
     if (status === "loading") return;
+    let cancelled = false;
     // Resume instantly from the wizard's same-tab handoff when present; a genuine
     // reload or a return from elsewhere finds none and fetches from the server.
     const handed = takeTaggerSession(id);
     if (handed) {
-      setState({ mode: "ready", session: handed });
-      return;
+      void resetInterviewAfterLocaleReload(handed).then((sessionDetail) => {
+        if (!cancelled) setState({ mode: "ready", session: sessionDetail });
+      });
+      return () => {
+        cancelled = true;
+      };
     }
-    let cancelled = false;
     setState({ mode: "loading" });
     if (session?.backendAccessToken) setApiAuthToken(session.backendAccessToken);
     getTaggerSession(id)
+      .then(resetInterviewAfterLocaleReload)
       .then((detail) => {
         if (!cancelled) setState({ mode: "ready", session: detail });
       })
