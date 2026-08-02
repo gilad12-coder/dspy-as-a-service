@@ -539,6 +539,26 @@ class Settings(BaseSettings):
             "Falls back to code_agent_model when empty."
         ),
     )
+    embedding_index_sweep_interval_seconds: float = Field(
+        default=60.0,
+        ge=5.0,
+        le=3600.0,
+        description=(
+            "Seconds between bounded repair passes for missing or stale Explore "
+            "embeddings."
+        ),
+        alias="EMBEDDING_INDEX_SWEEP_INTERVAL",
+    )
+    embedding_index_sweep_batch_size: int = Field(
+        default=25,
+        ge=1,
+        le=500,
+        description=(
+            "Maximum number of successful jobs re-indexed during one Explore "
+            "embedding repair pass."
+        ),
+        alias="EMBEDDING_INDEX_SWEEP_BATCH_SIZE",
+    )
     search_backend: Literal["lexical", "bm25", "semantic"] = Field(
         default="lexical",
         alias="SEARCH_BACKEND",

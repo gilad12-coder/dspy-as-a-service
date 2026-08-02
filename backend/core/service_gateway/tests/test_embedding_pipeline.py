@@ -7,6 +7,7 @@ is covered without a live pgvector instance.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -293,6 +294,7 @@ def test_embed_finished_job_updates_existing_row() -> None:
     session.add.assert_not_called()
     assert existing.embedding_summary == [0.9, 0.0, 0.0]
     assert existing.summary_text == "Refreshed summary."
+    assert existing.updated_at.tzinfo is not None
     session.commit.assert_called_once()
 
 
@@ -408,6 +410,23 @@ def test_drain_backfill_queue_continues_after_embed_failure() -> None:
     assert seen == ["a", "b", "c"]
 
 
+def test_embedding_index_sweeper_repairs_a_bounded_batch() -> None:
+    """A repair pass purges orphans and drains only the configured batch."""
+    store = _FakeJobStore()
+    store.engine = SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+    sweeper = pipeline.EmbeddingIndexSweeper(store, interval_seconds=5.0, batch_size=2)
+    with (
+        patch.object(pipeline.settings, "embeddings_enabled", True),
+        patch.object(pipeline, "purge_orphan_embeddings", return_value=0) as purge,
+        patch.object(pipeline, "_fetch_missing_embedding_ids", return_value=["a", "b"]) as fetch,
+        patch.object(pipeline, "_drain_backfill_queue", return_value=2) as drain,
+    ):
+        assert sweeper.sweep_once() == 2
+    purge.assert_called_once_with(store)
+    fetch.assert_called_once_with(store, limit=2)
+    drain.assert_called_once_with(store, ["a", "b"])
+
+
 def test_set_embedding_task_name_updates_row() -> None:
     """A rename propagates the new display name onto the embedding row."""
     store = _FakeJobStore()
@@ -420,7 +439,9 @@ def test_set_embedding_task_name_updates_row() -> None:
 
     update = session.query.return_value.filter.return_value.update
     update.assert_called_once()
-    assert list(update.call_args.args[0].values()) == ["Renamed task"]
+    values = update.call_args.args[0]
+    assert values[pipeline.JobEmbeddingModel.task_name] == "Renamed task"
+    assert values[pipeline.JobEmbeddingModel.updated_at].tzinfo is not None
     session.commit.assert_called_once()
 
 

@@ -8,13 +8,13 @@ Pipeline:
    task summary, embeds the summary, and upserts the vector + display
    metadata (task / module / optimizer name, baseline / optimized score,
    winning model) into ``job_embeddings``.
-3. On backend startup, ``backfill_missing_embeddings`` scans for success
-   jobs that lack an embedding row and drains them on a single daemon
-   thread so a crashed worker thread or restart still heals the index.
+3. ``EmbeddingIndexSweeper`` scans for missing or stale success jobs on a
+   bounded, advisory-locked loop so crashed worker threads, provider outages,
+   and resumed optimizations heal without requiring a restart.
 
-Failures never raise — embedding is best-effort. Missing embedding API
-credentials, LLM hiccups, or a flaky pgvector connection all degrade to
-"skip this job" and the row is retried on the next startup scan.
+Failures never raise — embedding is isolated from job completion. Missing
+embedding API credentials, LLM hiccups, or a flaky pgvector connection all
+degrade to "skip this job" and the row is retried by the repair loop.
 
 Only the ``summary`` aspect is embedded. The code / schema aspects from
 the original recommendations design were dropped: the explore page's only
@@ -44,6 +44,10 @@ from .embeddings import get_embedder
 from .summarizer import summarize_task
 
 logger = logging.getLogger(__name__)
+
+_EMBEDDING_SWEEP_LOCK_KEY = 742137000003
+_EMBEDDING_IN_FLIGHT_LOCK = threading.Lock()
+_EMBEDDING_IN_FLIGHT: set[str] = set()
 
 
 def _extract_metadata(job: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -145,11 +149,61 @@ def _extract_display_fields(job: dict[str, Any]) -> dict[str, str | None]:
     }
 
 
+def _claim_embedding(optimization_id: str) -> bool:
+    """Claim an in-process embedding attempt for ``optimization_id``.
+
+    Args:
+        optimization_id: Job identifier to claim.
+
+    Returns:
+        ``True`` when this process did not already start the same attempt.
+    """
+    with _EMBEDDING_IN_FLIGHT_LOCK:
+        if optimization_id in _EMBEDDING_IN_FLIGHT:
+            return False
+        _EMBEDDING_IN_FLIGHT.add(optimization_id)
+        return True
+
+
+def _release_embedding(optimization_id: str) -> None:
+    """Release the in-process embedding claim for ``optimization_id``.
+
+    Args:
+        optimization_id: Job identifier whose attempt finished.
+    """
+    with _EMBEDDING_IN_FLIGHT_LOCK:
+        _EMBEDDING_IN_FLIGHT.discard(optimization_id)
+
+
 def embed_finished_job(optimization_id: str, *, job_store: Any) -> bool:
+    """Compute and upsert one finished job's summary embedding.
+
+    Duplicate attempts in the same process are coalesced so the periodic
+    repair loop cannot race the worker's fire-and-forget task. Failures return
+    ``False`` and remain eligible for a later repair pass.
+
+    Args:
+        optimization_id: ID of the finished job whose embedding should be
+            (re)computed.
+        job_store: Job-store handle used to load the payload and to open
+            a SQLAlchemy session for the upsert.
+
+    Returns:
+        ``True`` when a row was written, else ``False``.
+    """
+    if not _claim_embedding(optimization_id):
+        return False
+    try:
+        return _embed_finished_job_once(optimization_id, job_store=job_store)
+    finally:
+        _release_embedding(optimization_id)
+
+
+def _embed_finished_job_once(optimization_id: str, *, job_store: Any) -> bool:
     """Compute and upsert the summary embedding for a finished job.
 
-    Called on a daemon thread from the worker and from the startup
-    backfill — must never raise.
+    Called on a daemon thread from the worker and repair loop — must never
+    raise.
 
     Args:
         optimization_id: ID of the finished job whose embedding should be
@@ -228,14 +282,17 @@ def embed_finished_job(optimization_id: str, *, job_store: Any) -> bool:
                 # page can collapse repeated submissions of the same task.
                 "signature_code": signature_code,
             }
+            indexed_at = datetime.now(UTC)
             if existing:
                 for k, v in fields.items():
                     setattr(existing, k, v)
+                existing.updated_at = indexed_at
             else:
                 session.add(
                     JobEmbeddingModel(
                         optimization_id=optimization_id,
-                        created_at=datetime.now(UTC),
+                        created_at=indexed_at,
+                        updated_at=indexed_at,
                         **fields,
                     )
                 )
@@ -273,7 +330,12 @@ def set_embedding_privacy(job_store: Any, optimization_id: str, is_private: bool
     with Session(job_store.engine) as session:
         session.query(JobEmbeddingModel).filter(
             JobEmbeddingModel.optimization_id == optimization_id
-        ).update({JobEmbeddingModel.is_private: is_private})
+        ).update(
+            {
+                JobEmbeddingModel.is_private: is_private,
+                JobEmbeddingModel.updated_at: datetime.now(UTC),
+            }
+        )
         session.commit()
 
 
@@ -298,24 +360,29 @@ def set_embedding_task_name(job_store: Any, optimization_id: str, task_name: str
     with Session(job_store.engine) as session:
         session.query(JobEmbeddingModel).filter(
             JobEmbeddingModel.optimization_id == optimization_id
-        ).update({JobEmbeddingModel.task_name: task_name})
+        ).update(
+            {
+                JobEmbeddingModel.task_name: task_name,
+                JobEmbeddingModel.updated_at: datetime.now(UTC),
+            }
+        )
         session.commit()
 
 
-def _fetch_missing_embedding_ids(job_store: Any) -> list[str]:
-    """Return success-state job IDs that lack a summary embedding row.
+def _fetch_missing_embedding_ids(job_store: Any, *, limit: int | None = None) -> list[str]:
+    """Return success-state job IDs with missing or stale embeddings.
 
-    The scan is a single LEFT JOIN — cheap even at 100k jobs — and runs
-    synchronously on startup so the lifespan logger knows the queue size
-    before the drain thread starts.
+    A row is stale when its source job completed after the embedding was
+    written. This catches resumed optimizations whose existing embedding row
+    must be refreshed rather than merely inserted once.
 
     Args:
         job_store: Job-store handle exposing a SQLAlchemy engine.
+        limit: Optional upper bound for one repair pass.
 
     Returns:
-        A list of optimization IDs ordered by creation time (oldest
-        first) so backfill heals the longest-stale rows before any
-        recently-crashed ones.
+        A list of optimization IDs ordered by the oldest source/index
+        timestamp first.
     """
     try:
         with Session(job_store.engine) as session:
@@ -326,9 +393,17 @@ def _fetch_missing_embedding_ids(job_store: Any) -> list[str]:
                         "FROM jobs j "
                         "LEFT JOIN job_embeddings e ON e.optimization_id = j.optimization_id "
                         "WHERE j.status = 'success' "
-                        "AND (e.optimization_id IS NULL OR e.embedding_summary IS NULL) "
-                        "ORDER BY j.created_at ASC"
-                    )
+                        "AND ("
+                        "e.optimization_id IS NULL "
+                        "OR e.embedding_summary IS NULL "
+                        "OR e.updated_at IS NULL "
+                        "OR e.updated_at < COALESCE(j.completed_at, j.created_at)"
+                        ") "
+                        "ORDER BY COALESCE(e.updated_at, j.completed_at, j.created_at) ASC, "
+                        "j.created_at ASC"
+                        + (" LIMIT :limit" if limit is not None else "")
+                    ),
+                    {"limit": limit} if limit is not None else {},
                 )
                 .mappings()
                 .all()
@@ -339,7 +414,7 @@ def _fetch_missing_embedding_ids(job_store: Any) -> list[str]:
         return []
 
 
-def _drain_backfill_queue(job_store: Any, ids: list[str]) -> None:
+def _drain_backfill_queue(job_store: Any, ids: list[str]) -> int:
     """Embed each pending job sequentially, logging progress per row.
 
     Sequential (not fan-out) so backfill never thunders the embedding API
@@ -351,10 +426,13 @@ def _drain_backfill_queue(job_store: Any, ids: list[str]) -> None:
         job_store: Job-store handle forwarded to ``embed_finished_job``.
         ids: Optimization IDs to embed, in the order returned by
             ``_fetch_missing_embedding_ids``.
+
+    Returns:
+        The number of rows written successfully.
     """
     total = len(ids)
     if total == 0:
-        return
+        return 0
     logger.info("Embedding backfill: starting drain of %d job(s)", total)
     ok = 0
     for idx, optimization_id in enumerate(ids, start=1):
@@ -367,6 +445,7 @@ def _drain_backfill_queue(job_store: Any, ids: list[str]) -> None:
             ok += 1
         logger.info("Embedding backfill: %d/%d processed (%d written)", idx, total, ok)
     logger.info("Embedding backfill: drain complete (%d/%d written)", ok, total)
+    return ok
 
 
 def backfill_missing_embeddings(job_store: Any) -> int:
@@ -398,13 +477,130 @@ def backfill_missing_embeddings(job_store: Any) -> int:
     return len(ids)
 
 
+class EmbeddingIndexSweeper:
+    """Continuously repair missing and stale optimization embeddings.
+
+    Every API and standalone-worker process runs one instance. PostgreSQL
+    session-level advisory locking ensures only one replica performs a repair
+    pass at a time, while the bounded batch keeps provider outages and large
+    backlogs from monopolizing a process.
+    """
+
+    def __init__(
+        self,
+        job_store: Any,
+        interval_seconds: float | None = None,
+        batch_size: int | None = None,
+    ) -> None:
+        """Initialize the repair loop.
+
+        Args:
+            job_store: Store exposing the SQLAlchemy engine and job payloads.
+            interval_seconds: Optional override for the repair interval.
+            batch_size: Optional maximum number of jobs per pass.
+        """
+        self._job_store = job_store
+        self._engine = getattr(job_store, "engine", None)
+        resolved_interval = (
+            interval_seconds
+            if interval_seconds is not None
+            else settings.embedding_index_sweep_interval_seconds
+        )
+        resolved_batch = (
+            batch_size
+            if batch_size is not None
+            else settings.embedding_index_sweep_batch_size
+        )
+        self._interval_seconds = max(5.0, float(resolved_interval))
+        self._batch_size = max(1, int(resolved_batch))
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        """Start the periodic repair thread."""
+        self._thread = threading.Thread(
+            target=self._run,
+            name="embedding-index-sweeper",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Stop the periodic repair thread and wait briefly for shutdown."""
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+
+    def sweep_once(self) -> int:
+        """Run one leader-elected repair pass.
+
+        Returns:
+            The number of embeddings written by this pass, or ``0`` when
+            embeddings are disabled, the database is unavailable, or another
+            replica owns the advisory lock.
+        """
+        if not settings.embeddings_enabled or self._engine is None:
+            return 0
+        try:
+            if getattr(self._engine.dialect, "name", None) != "postgresql":
+                return self._repair()
+            with self._engine.connect() as connection:
+                acquired = connection.execute(
+                    text("SELECT pg_try_advisory_lock(:key)"),
+                    {"key": _EMBEDDING_SWEEP_LOCK_KEY},
+                ).scalar()
+                if not acquired:
+                    return 0
+                try:
+                    return self._repair()
+                finally:
+                    connection.execute(
+                        text("SELECT pg_advisory_unlock(:key)"),
+                        {"key": _EMBEDDING_SWEEP_LOCK_KEY},
+                    )
+                    connection.commit()
+        except Exception:
+            logger.warning("Embedding index repair pass failed", exc_info=True)
+            return 0
+
+    def _repair(self) -> int:
+        """Purge orphan rows and process one bounded stale-ID batch.
+
+        Returns:
+            The number of embeddings written successfully.
+        """
+        purge_orphan_embeddings(self._job_store)
+        ids = _fetch_missing_embedding_ids(self._job_store, limit=self._batch_size)
+        return _drain_backfill_queue(self._job_store, ids)
+
+    def _run(self) -> None:
+        """Run one repair immediately, then continue at the configured interval."""
+        self.sweep_once()
+        while not self._stop_event.wait(self._interval_seconds):
+            self.sweep_once()
+
+
+def start_embedding_index_sweeper(job_store: Any) -> EmbeddingIndexSweeper:
+    """Start and return an embedding index sweeper for ``job_store``.
+
+    Args:
+        job_store: Store whose successful jobs should be indexed.
+
+    Returns:
+        The started sweeper; callers should invoke ``stop()`` during shutdown.
+    """
+    sweeper = EmbeddingIndexSweeper(job_store)
+    sweeper.start()
+    return sweeper
+
+
 def purge_orphan_embeddings(job_store: Any) -> int:
     """Delete embedding rows whose underlying ``jobs`` row no longer exists.
 
     Pre-existing orphans accumulated before the deletion path cascaded into
-    ``job_embeddings``. This one-shot sweep — run at startup alongside
-    ``backfill_missing_embeddings`` — keeps the index honest even after a
-    migration / restore that drops jobs out from under the embedding table.
+    ``job_embeddings``. This sweep runs during startup and every repair pass,
+    keeping the index honest even after a migration / restore that drops jobs
+    out from under the embedding table.
 
     Args:
         job_store: Job-store handle exposing a SQLAlchemy engine.

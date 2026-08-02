@@ -687,7 +687,9 @@ class JobEmbeddingModel(Base):
 
     Metadata (``optimization_type``, ``winning_model``, ``winning_rank``)
     is denormalized from ``jobs`` so the search can filter and rerank
-    without an extra join per-candidate.
+    without an extra join per-candidate. ``updated_at`` advances on every
+    refresh so dashboard caches can detect resumed jobs without replacing the
+    row.
     """
 
     __tablename__ = "job_embeddings"
@@ -699,6 +701,9 @@ class JobEmbeddingModel(Base):
     winning_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
     )
     embedding_summary: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     embedding_code: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)

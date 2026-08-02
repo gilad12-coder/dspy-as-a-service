@@ -69,6 +69,10 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         A ``TestClient`` with one registered email/password account.
     """
     monkeypatch.setattr(settings, "backend_auth_secret", SecretStr(_SECRET))
+    # The repository's backend/.env may configure SMTP on a developer machine;
+    # keep the default account-security fixture deterministic and let the
+    # email-code flow opt in to a fake relay explicitly below.
+    monkeypatch.setattr(settings, "smtp_host", None)
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )

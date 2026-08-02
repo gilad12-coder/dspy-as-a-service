@@ -3,13 +3,14 @@
 Builds the corpus point list that feeds the /explore list view's count,
 filters, and model/optimizer options.
 
-1. Fingerprint check — cheap ``COUNT(*) + MAX(created_at)`` query gates the
+1. Fingerprint check — cheap counts plus source/index freshness maxima gate the
    expensive recompute. Same fingerprint = serve cached payload.
 2. Bulk fetch — every public success job's lightweight metadata. Heavy
    fields (``signature_code``, ``optimizer_kwargs``, ``metric_name``,
    ``winning_rank``, ``is_recommendable``) are not used by the explore UI
-   and are dropped to keep the payload under ~5 MB (gzipped) at 100k points.
-3. Cache — keyed by fingerprint, 5 min TTL.
+   and are dropped to keep the response focused on searchable metadata.
+3. Cache — keyed by fingerprint, 5 min TTL; any indexed refresh changes the
+   fingerprint immediately.
 
 No personal information is exposed. ``signature_code`` is dropped from the
 bulk response (it is not consumed by the explore page). Jobs flagged
@@ -44,11 +45,6 @@ from .embedding_pipeline.embeddings import get_embedder
 
 logger = logging.getLogger(__name__)
 
-
-# Defensive ceiling. The /explore page is designed for up to 100k points;
-# beyond that, building the payload on the request thread becomes a real
-# outage risk.
-MAX_POINTS = 100_000
 
 # Free-text fields are truncated for the bulk response. Full text is
 # only useful when a point is selected — and the truncated text is what
@@ -95,6 +91,7 @@ _EMPTY_JOB_EMBEDDINGS_REL = (
     "NULL::double precision AS optimized_metric, "
     "NULL::boolean AS is_private, "
     "NULL::timestamptz AS created_at, "
+    "NULL::timestamptz AS updated_at, "
     "NULL::text AS embedding_summary "
     "WHERE FALSE)"
 )
@@ -157,7 +154,9 @@ def _fetch_fingerprint(session: Session, je_rel: str) -> str:
 
     Used as the cache key. Includes both embedded and unembedded public
     success jobs so backfill progress (or new submissions while embeddings
-    are off) reliably invalidates the cached corpus payload.
+    are off) reliably invalidates the cached corpus payload. The embedding
+    ``updated_at`` and job completion timestamp make a resumed optimization
+    invalidate the cache even when its row already existed.
 
     Args:
         session: Active SQLAlchemy session.
@@ -165,13 +164,14 @@ def _fetch_fingerprint(session: Session, je_rel: str) -> str:
             table, or the empty stand-in when it does not exist).
 
     Returns:
-        ``"<embedded>|<embedded_max_ts>|<unembedded>|<unembedded_max_ts>"``
-        — opaque but compact.
+        An opaque compact fingerprint containing counts and freshness maxima.
     """
     embedded = (
         session.execute(
             text(
-                "SELECT COUNT(*) AS n, MAX(je.created_at) AS max_ts "
+                "SELECT COUNT(*) AS n, MAX(je.updated_at) AS updated_max_ts, "
+                "MAX(je.created_at) AS created_max_ts, "
+                "MAX(j.completed_at) AS completed_max_ts "
                 f"FROM {je_rel} je "
                 "INNER JOIN jobs j ON j.optimization_id = je.optimization_id "
                 "WHERE j.status = 'success' "
@@ -184,7 +184,8 @@ def _fetch_fingerprint(session: Session, je_rel: str) -> str:
     unembedded = (
         session.execute(
             text(
-                "SELECT COUNT(*) AS n, MAX(j.created_at) AS max_ts "
+                "SELECT COUNT(*) AS n, MAX(j.completed_at) AS completed_max_ts, "
+                "MAX(j.created_at) AS created_max_ts "
                 "FROM jobs j "
                 f"LEFT JOIN {je_rel} je ON je.optimization_id = j.optimization_id "
                 "WHERE j.status = 'success' "
@@ -196,12 +197,18 @@ def _fetch_fingerprint(session: Session, je_rel: str) -> str:
         .first()
     )
     e_n = int(embedded["n"]) if embedded else 0
-    e_ts = embedded["max_ts"] if embedded else None
+    e_updated_ts = embedded["updated_max_ts"] if embedded else None
+    e_created_ts = embedded["created_max_ts"] if embedded else None
+    e_completed_ts = embedded["completed_max_ts"] if embedded else None
     u_n = int(unembedded["n"]) if unembedded else 0
-    u_ts = unembedded["max_ts"] if unembedded else None
+    u_completed_ts = unembedded["completed_max_ts"] if unembedded else None
+    u_created_ts = unembedded["created_max_ts"] if unembedded else None
     return (
-        f"{e_n}|{e_ts.isoformat() if e_ts else 'none'}|"
-        f"{u_n}|{u_ts.isoformat() if u_ts else 'none'}"
+        f"{e_n}|{e_updated_ts.isoformat() if e_updated_ts else 'none'}|"
+        f"{e_created_ts.isoformat() if e_created_ts else 'none'}|"
+        f"{e_completed_ts.isoformat() if e_completed_ts else 'none'}|"
+        f"{u_n}|{u_completed_ts.isoformat() if u_completed_ts else 'none'}|"
+        f"{u_created_ts.isoformat() if u_created_ts else 'none'}"
     )
 
 
@@ -262,7 +269,6 @@ def _fetch_corpus_points(session: Session, je_rel: str) -> list[dict[str, Any]]:
                 "AND NOT COALESCE(je.is_private, "
                 "(j.payload_overview->>'is_private')::boolean, FALSE) "
                 "ORDER BY j.created_at DESC, j.optimization_id DESC "
-                f"LIMIT {MAX_POINTS}"
             )
         )
         .mappings()

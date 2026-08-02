@@ -21,6 +21,8 @@ _SETTINGS_ENV_VARS = (
     "WORKER_POLL_INTERVAL",
     "WORKER_STALE_THRESHOLD",
     "JOB_MAX_ATTEMPTS",
+    "EMBEDDING_INDEX_SWEEP_INTERVAL",
+    "EMBEDDING_INDEX_SWEEP_BATCH_SIZE",
     "PROGRESS_EVENTS_PER_JOB_CAP",
     "LOG_ENTRIES_PER_JOB_CAP",
     "CANCEL_POLL_INTERVAL",
@@ -91,6 +93,14 @@ def test_settings_defaults_job_max_attempts() -> None:
     s = Settings(_env_file=None)
 
     assert s.job_max_attempts == 3
+
+
+def test_settings_defaults_embedding_index_repair() -> None:
+    """Embedding repair defaults to a one-minute interval and 25-row batch."""
+    s = Settings(_env_file=None)
+
+    assert s.embedding_index_sweep_interval_seconds == 60.0
+    assert s.embedding_index_sweep_batch_size == 25
 
 
 def test_settings_defaults_cancel_poll_interval() -> None:

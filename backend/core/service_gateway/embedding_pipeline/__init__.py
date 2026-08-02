@@ -1,7 +1,7 @@
 """Embedding pipelines feeding explore search and the agent-history search.
 
 :mod:`core` runs the per-job embedding (``embed_finished_job``) and the
-startup heal (``backfill_missing_embeddings``). :mod:`conversations` is the
+continuous repair loop (``EmbeddingIndexSweeper``). :mod:`conversations` is the
 companion pipeline for agent conversations — same embedder, same dispatch
 shape, different source table. :mod:`embeddings` wraps the OpenAI-compatible
 vector-model client and :mod:`summarizer` turns a finished run into the
@@ -22,6 +22,7 @@ from .core import (
     purge_orphan_embeddings,
     set_embedding_privacy,
     set_embedding_task_name,
+    start_embedding_index_sweeper,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "queue_conversation_embed",
     "set_embedding_privacy",
     "set_embedding_task_name",
+    "start_embedding_index_sweeper",
 ]

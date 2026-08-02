@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -20,6 +22,43 @@ def test_invalidate_public_dashboard_cache_resets_state() -> None:
     assert dashboard._CACHE["fingerprint"] is None
     assert dashboard._CACHE["at"] == 0.0
     assert dashboard._CACHE["payload"] is None
+
+
+def test_fingerprint_includes_embedding_and_completion_freshness() -> None:
+    """An in-place embedding refresh changes the public-dashboard fingerprint."""
+    session = MagicMock(name="session")
+    embedded = MagicMock(name="embedded-result")
+    embedded.mappings.return_value.first.return_value = {
+        "n": 2,
+        "updated_max_ts": datetime(2026, 8, 2, 12, 0, tzinfo=UTC),
+        "created_max_ts": datetime(2026, 8, 1, 12, 0, tzinfo=UTC),
+        "completed_max_ts": datetime(2026, 8, 2, 11, 0, tzinfo=UTC),
+    }
+    unembedded = MagicMock(name="unembedded-result")
+    unembedded.mappings.return_value.first.return_value = {
+        "n": 1,
+        "completed_max_ts": datetime(2026, 8, 2, 10, 0, tzinfo=UTC),
+        "created_max_ts": datetime(2026, 8, 1, 10, 0, tzinfo=UTC),
+    }
+    session.execute.side_effect = [embedded, unembedded]
+
+    fingerprint = dashboard._fetch_fingerprint(session, "job_embeddings")
+
+    assert fingerprint == (
+        "2|2026-08-02T12:00:00+00:00|2026-08-01T12:00:00+00:00|"
+        "2026-08-02T11:00:00+00:00|1|2026-08-02T10:00:00+00:00|"
+        "2026-08-01T10:00:00+00:00"
+    )
+
+
+def test_corpus_fetch_has_no_artificial_point_cap() -> None:
+    """The public corpus query returns every matching success row."""
+    session = MagicMock(name="session")
+    session.execute.return_value.mappings.return_value.all.return_value = []
+
+    assert dashboard._fetch_corpus_points(session, "job_embeddings") == []
+    statement = session.execute.call_args.args[0]
+    assert "LIMIT" not in statement.text.upper()
 
 
 def test_normalize_query_for_log_collapses_and_drops_short() -> None:

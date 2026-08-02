@@ -53,9 +53,9 @@ from ..registry import ServiceRegistry
 from ..service_gateway import DspyService
 from ..service_gateway.embedding_pipeline import (
     backfill_missing_conversation_embeddings,
-    backfill_missing_embeddings,
     purge_orphan_conversation_embeddings,
     purge_orphan_embeddings,
+    start_embedding_index_sweeper,
 )
 from ..service_gateway.language_models import install_openrouter_served_model_patch
 from ..service_gateway.service_builder import wire_registry_aliases
@@ -691,6 +691,7 @@ def create_app(
     orphan_sweeper = None
     stale_conversation_sweeper = None
     staged_dataset_sweeper = None
+    embedding_sweeper = None
     loop_lag_monitor = None
 
     @asynccontextmanager
@@ -709,6 +710,7 @@ def create_app(
             queue_metrics_refresher, \
             staged_dataset_sweeper, \
             stale_conversation_sweeper, \
+            embedding_sweeper, \
             worker
         # Reclaim jobs whose worker lease has expired. Under multi-pod scaling
         # this only fails rows whose ``lease_expires_at`` is in the past — a
@@ -751,27 +753,20 @@ def create_app(
         # ~15-20s for the cold-cache parallel probe to settle.
         prewarm_catalog()
 
-        # Embedding maintenance below is idempotent but redundantly expensive
+        # Embedding orphan cleanup is idempotent but redundantly expensive
         # across a rolling deploy. The advisory lock makes one replica the
-        # leader so the work runs once per restart, not once per pod. Peers
-        # skip the block and trust the leader's writes (visible in the
-        # shared DB before they begin serving traffic).
+        # leader so the cleanup runs once per restart, not once per pod.
+        # Continuous missing/stale-row repair runs below on every replica and
+        # uses its own advisory lock so it survives leader restarts.
         engine = getattr(job_store, "engine", None)
         with advisory_lock(engine, STARTUP_WORK_LOCK_KEY) as is_startup_leader:
             if is_startup_leader and settings.embeddings_enabled:
-                # The explore search vector is embedded on a daemon thread
-                # when a job succeeds; a crashed thread (LLM creds, API blip)
-                # leaves the row missing forever and the job silently drops
-                # out of search. A startup backfill drains the gap; the orphan
-                # purge cleans up rows whose job was deleted before the
-                # cascade into job_embeddings completed.
+                # The periodic sweeper owns embedding retries; this startup
+                # pass only removes rows whose source job was deleted.
                 try:
                     purge_orphan_embeddings(job_store)
-                    queued = backfill_missing_embeddings(job_store)
-                    if queued:
-                        logger.info("Embedding backfill queued for %d job(s)", queued)
                 except Exception as exc:
-                    logger.warning("Embedding backfill scan failed: %s", exc)
+                    logger.warning("Embedding orphan cleanup failed: %s", exc)
                 if engine is not None:
                     try:
                         purge_orphan_conversation_embeddings(engine)
@@ -787,6 +782,9 @@ def create_app(
                 logger.info("Embedding maintenance skipped — embeddings disabled (lexical backend)")
             else:
                 logger.info("Embedding maintenance skipped — peer replica is leader")
+
+        if settings.embeddings_enabled:
+            embedding_sweeper = start_embedding_index_sweeper(job_store)
 
         # SIGTERM handler can only be registered on the main interpreter
         # thread. ``threading.current_thread()`` lets us detect when the
@@ -826,6 +824,8 @@ def create_app(
                 stale_conversation_sweeper.stop()
             if staged_dataset_sweeper:
                 staged_dataset_sweeper.stop()
+            if embedding_sweeper:
+                embedding_sweeper.stop()
             if loop_lag_monitor:
                 loop_lag_monitor.stop()
 

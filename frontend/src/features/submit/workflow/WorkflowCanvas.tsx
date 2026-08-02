@@ -130,7 +130,9 @@ const ADD_KINDS = [
 type MenuTarget = { type: "pane" } | { type: "node"; id: string } | { type: "edge"; id: string };
 
 interface MenuState {
-  // Position relative to the canvas root element (physical px).
+  // Position relative to the canvas root: `x` is a logical inline-start
+  // offset (so the menu opens toward the inline-end in both LTR and RTL),
+  // `y` a top offset. Both in px.
   x: number;
   y: number;
   // Where an added node lands, in flow coordinates.
@@ -143,6 +145,15 @@ interface MenuState {
 
 const edgeId = (e: { source: string; source_port: string; target: string; target_port: string }) =>
   `${e.source}.${e.source_port}->${e.target}.${e.target_port}`;
+
+// Position the canvas menu by a logical inline-start offset within the root,
+// so it opens toward the inline-end — rightward in LTR, leftward in RTL —
+// instead of always growing to the physical right, which ran it off-screen in
+// RTL. Clamp to a conservative width estimate so the far edge stays visible.
+const menuInlineStart = (physicalX: number, rootRect: DOMRect, isRtl: boolean): number => {
+  const start = isRtl ? rootRect.right - physicalX : physicalX - rootRect.left;
+  return Math.max(4, Math.min(start, rootRect.width - 200));
+};
 
 function deriveNodes(
   spec: WorkflowSpec,
@@ -206,6 +217,7 @@ function CanvasInner({
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const flowWrapRef = React.useRef<HTMLDivElement | null>(null);
   const menuRef = React.useRef<HTMLDivElement | null>(null);
+  const addNodeBtnRef = React.useRef<HTMLButtonElement | null>(null);
   const menuOpenRef = React.useRef(false);
   React.useEffect(() => {
     menuOpenRef.current = menu !== null;
@@ -373,8 +385,9 @@ function CanvasInner({
       const root = rootRef.current;
       if (!root || !point) return;
       const rect = root.getBoundingClientRect();
+      const isRtl = document.documentElement.dir === "rtl";
       setMenu({
-        x: Math.min(point.clientX - rect.left, rect.width - 200),
+        x: menuInlineStart(point.clientX, rect, isRtl),
         y: Math.min(point.clientY - rect.top, rect.height - 170),
         flow: screenToFlowPosition({ x: point.clientX, y: point.clientY }),
         target: { type: "pane" },
@@ -606,8 +619,9 @@ function CanvasInner({
       const root = rootRef.current;
       if (!root) return;
       const rect = root.getBoundingClientRect();
+      const isRtl = document.documentElement.dir === "rtl";
       setMenu({
-        x: Math.min(clientX - rect.left, rect.width - 200),
+        x: menuInlineStart(clientX, rect, isRtl),
         y: Math.min(clientY - rect.top, rect.height - 170),
         flow: screenToFlowPosition({ x: clientX, y: clientY }),
         target,
@@ -651,11 +665,15 @@ function CanvasInner({
       const rootRect = root.getBoundingClientRect();
       const btnRect = event.currentTarget.getBoundingClientRect();
       const flowRect = flowEl.getBoundingClientRect();
+      const isRtl = document.documentElement.dir === "rtl";
+      // Anchor to the button's inline-start edge so the menu drops down aligned
+      // under it and opens toward the inline-end.
+      const anchorX = menuInlineStart(isRtl ? btnRect.right : btnRect.left, rootRect, isRtl);
       setMenu((prev) =>
         prev
           ? null
           : {
-              x: btnRect.left - rootRect.left,
+              x: anchorX,
               y: btnRect.bottom - rootRect.top + 4,
               flow: screenToFlowPosition({
                 x: flowRect.left + flowRect.width / 2,
@@ -679,12 +697,17 @@ function CanvasInner({
   }, []);
 
   // Dismiss the menu on any pointer-down outside it (capture phase so canvas
-  // interactions can't swallow the event first).
+  // interactions can't swallow the event first). The toolbar's add-node
+  // trigger is excluded: it toggles the menu itself, so letting this handler
+  // close it first would close-then-reopen and the menu could never collapse.
   React.useEffect(() => {
     if (!menu) return;
     const onPointerDown = (e: PointerEvent) => {
       const el = menuRef.current;
-      if (el && e.target instanceof globalThis.Node && !el.contains(e.target)) setMenu(null);
+      const btn = addNodeBtnRef.current;
+      if (!(e.target instanceof globalThis.Node)) return;
+      if (btn?.contains(e.target)) return;
+      if (el && !el.contains(e.target)) setMenu(null);
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
@@ -784,6 +807,7 @@ function CanvasInner({
         ) : (
           <>
             <Button
+              ref={addNodeBtnRef}
               size="sm"
               variant="outline"
               className="h-7 gap-1.5 px-2.5 text-xs"
@@ -988,7 +1012,12 @@ function CanvasInner({
             exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.08 } }}
             transition={{ duration: 0.12, ease: "easeOut" }}
             className="absolute z-30 min-w-44 rounded-lg border border-border/70 bg-popover p-1 text-popover-foreground shadow-xl"
-            style={{ left: menu.x, top: menu.y, transformOrigin: "top left" }}
+            style={{
+              insetInlineStart: menu.x,
+              top: menu.y,
+              transformOrigin:
+                document.documentElement.dir === "rtl" ? "top right" : "top left",
+            }}
           >
             {menu.target.type === "pane" && (
               <>
