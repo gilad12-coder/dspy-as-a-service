@@ -359,8 +359,21 @@ export function DatasetEditorView() {
               const rowIdx = safePage * PAGE_SIZE + i;
               return (
                 <tr key={rowIdx} className="group border-b border-border/30 last:border-b-0">
-                  <td className="px-2 py-1 text-xs text-muted-foreground tabular-nums">
-                    {rowIdx + 1}
+                  {/* The row number doubles as the delete affordance: hovering
+                      the row swaps it for the trash button, keeping the action
+                      at the start of the row instead of a trailing column that
+                      drifts off-screen on wide datasets. */}
+                  <td className="relative px-2 py-1 text-xs text-muted-foreground tabular-nums">
+                    <span className="transition-opacity group-hover:opacity-0">{rowIdx + 1}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => deleteRow(rowIdx)}
+                      aria-label={msg("datasets.editor.delete_row")}
+                      className="absolute inset-y-0 start-1 my-auto text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:bg-accent focus-visible:opacity-100 hover:text-destructive"
+                    >
+                      <Trash className="size-3.5" />
+                    </Button>
                   </td>
                   {columns.map((column) => (
                     <td key={column} className="px-1 py-0.5 align-top">
@@ -376,17 +389,6 @@ export function DatasetEditorView() {
                       />
                     </td>
                   ))}
-                  <td className="px-2 py-0.5">
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => deleteRow(rowIdx)}
-                      aria-label={msg("datasets.editor.delete_row")}
-                      className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
-                    >
-                      <Trash className="size-3.5" />
-                    </Button>
-                  </td>
                 </tr>
               );
             })}
@@ -401,40 +403,49 @@ export function DatasetEditorView() {
               </tr>
             )}
           </tbody>
+          <tfoot>
+            <tr className="border-t border-border/40">
+              <td colSpan={columns.length + 2} className="p-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={addRow}
+                  className="w-full justify-start gap-1.5 text-muted-foreground"
+                >
+                  <Plus className="size-3.5" />
+                  {msg("datasets.editor.add_row")}
+                </Button>
+              </td>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <Button variant="outline" size="sm" onClick={addRow} className="flex-1 gap-1.5">
-          <Plus className="size-3.5" />
-          {msg("datasets.editor.add_row")}
-        </Button>
-        {pageCount > 1 && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setPage(Math.max(0, safePage - 1))}
-              disabled={safePage === 0}
-              aria-label={msg("datasets.editor.prev_page")}
-            >
-              <CaretLeft className="size-4 rtl:rotate-180" />
-            </Button>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {formatMsg("datasets.editor.rows_range", { from, to, total: rows.length })}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
-              disabled={safePage >= pageCount - 1}
-              aria-label={msg("datasets.editor.next_page")}
-            >
-              <CaretRight className="size-4 rtl:rotate-180" />
-            </Button>
-          </div>
-        )}
-      </div>
+      {pageCount > 1 && (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setPage(Math.max(0, safePage - 1))}
+            disabled={safePage === 0}
+            aria-label={msg("datasets.editor.prev_page")}
+          >
+            <CaretLeft className="size-4 rtl:rotate-180" />
+          </Button>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {formatMsg("datasets.editor.rows_range", { from, to, total: rows.length })}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
+            disabled={safePage >= pageCount - 1}
+            aria-label={msg("datasets.editor.next_page")}
+          >
+            <CaretRight className="size-4 rtl:rotate-180" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

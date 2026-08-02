@@ -1,5 +1,3 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   CaretLeft,
   CaretRight,
@@ -62,10 +60,6 @@ const DEFAULT_COL_WIDTHS: Record<string, number> = {
   elapsed_seconds: 66,
   optimized_test_metric: 94,
 };
-
-// First-open delay for the row tooltip; also the grace window in which
-// hopping straight to a neighboring row reopens it without the delay.
-const TOOLTIP_DELAY_MS = 300;
 
 type ColResize = ReturnType<typeof useColumnResize>;
 
@@ -168,69 +162,16 @@ export function JobsTab({
   const PrevIcon = rtl ? CaretRight : CaretLeft;
   const NextIcon = rtl ? CaretLeft : CaretRight;
 
-  // The row tooltip is positioned once at the current hover point. Keeping it
-  // anchored there avoids a distracting cursor-following animation while the
-  // table is being scanned.
-  const [tipJob, setTipJob] = useState<OptimizationSummaryResponse | null>(null);
-  const tipRef = useRef<HTMLDivElement | null>(null);
-  const tipCoords = useRef({ x: 0, y: 0 });
-  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tipGraceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tipRecentlyHidden = useRef(false);
-
-  const positionTip = useCallback(() => {
-    const el = tipRef.current;
-    if (!el) return;
-    const pad = 8;
-    const { x, y } = tipCoords.current;
-    const left = Math.min(
-      Math.max(x - el.offsetWidth / 2, pad),
-      window.innerWidth - el.offsetWidth - pad,
-    );
-    // Below the cursor by default; flipped above it near the viewport bottom.
-    let top = y + 16;
-    if (top + el.offsetHeight > window.innerHeight - pad) top = y - el.offsetHeight - 12;
-    el.style.transform = `translate(${left}px, ${top}px)`;
-    el.style.visibility = "visible";
-  }, []);
-
-  useEffect(() => {
-    if (tipJob) positionTip();
-  }, [tipJob, positionTip]);
-
-  useEffect(
-    () => () => {
-      if (tipTimer.current) clearTimeout(tipTimer.current);
-      if (tipGraceTimer.current) clearTimeout(tipGraceTimer.current);
-    },
-    [],
-  );
-
-  const openTip = (job: OptimizationSummaryResponse) => {
-    if (tipTimer.current) clearTimeout(tipTimer.current);
-    if (tipRecentlyHidden.current) {
-      setTipJob(job);
-      return;
-    }
-    tipTimer.current = setTimeout(() => setTipJob(job), TOOLTIP_DELAY_MS);
-  };
-
-  const closeTip = () => {
-    if (tipTimer.current) clearTimeout(tipTimer.current);
-    if (tipJob) {
-      tipRecentlyHidden.current = true;
-      if (tipGraceTimer.current) clearTimeout(tipGraceTimer.current);
-      tipGraceTimer.current = setTimeout(() => {
-        tipRecentlyHidden.current = false;
-      }, TOOLTIP_DELAY_MS);
-    }
-    setTipJob(null);
-  };
-
   return (
     <Card className="border-border/60">
       <CardContent className="pt-5">
         <div className="flex items-center gap-2 mb-3">
+          {filteredItems.length > 0 && (
+            <span className="text-[0.6875rem] text-muted-foreground tabular-nums">
+              {filteredItems.length}
+              {msg("auto.features.dashboard.components.jobstab.3")}
+            </span>
+          )}
           {activeCount > 0 && (
             <Badge variant="secondary" className="text-xs">
               {activeCount}
@@ -239,12 +180,6 @@ export function JobsTab({
           )}
           <ResetFiltersButton filters={{ activeCount, clearAll: clearAllFilters }} />
           <ResetColumnsButton resize={colResize} />
-          {filteredItems.length > 0 && (
-            <span className="text-[0.6875rem] text-muted-foreground tabular-nums ms-auto">
-              {filteredItems.length}
-              {msg("auto.features.dashboard.components.jobstab.3")}
-            </span>
-          )}
           <ExportTableMenu
             iconOnly
             className="ms-auto"
@@ -469,14 +404,6 @@ export function JobsTab({
                       style={{
                         animation: `fadeSlideIn 0.25s ease-out ${idx * 0.03}s both`,
                       }}
-                      onMouseEnter={(e) => {
-                        tipCoords.current = { x: e.clientX, y: e.clientY };
-                        openTip(job);
-                      }}
-                      onMouseMove={(e) => {
-                        if (!tipJob) tipCoords.current = { x: e.clientX, y: e.clientY };
-                      }}
-                      onMouseLeave={closeTip}
                       onClick={(e) => {
                         // Convenience target only — the ID button remains the
                         // accessible/keyboard path. The checkbox cell is
@@ -623,27 +550,6 @@ export function JobsTab({
             </Table>
           </div>
         )}
-
-        {tipJob &&
-          createPortal(
-            <div
-              ref={tipRef}
-              style={{ visibility: "hidden" }}
-              className="pointer-events-none fixed left-0 top-0 z-50 w-fit rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background"
-            >
-              <span className="flex flex-col gap-0.5">
-                <span>
-                  {formatMsg("auto.features.dashboard.components.jobstab.template.3", {
-                    p1: TERMS.optimization,
-                  })}
-                </span>
-                <span className="font-mono text-[0.6875rem] opacity-80" dir="ltr">
-                  {tipJob.optimization_id}
-                </span>
-              </span>
-            </div>,
-            document.body,
-          )}
 
         {data && data.total > FETCH_PAGE_SIZE && (
           <div className="flex items-center justify-center gap-3 pt-5 border-t border-border/50 mt-4">
