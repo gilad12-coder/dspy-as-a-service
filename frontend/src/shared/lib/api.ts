@@ -2184,6 +2184,8 @@ export interface CodeAgentHandlers {
     metric_code: string;
     assistant_message: string;
     model: string | null;
+    /** Concrete model selected by Auto Router, when the route was automatic. */
+    served_model: string | null;
     workflow?: WorkflowSpec | null;
     workflowValid?: boolean;
     /**
@@ -2268,11 +2270,16 @@ export async function streamCodeAgent(
       }
     } else if (event === "done") {
       const rawModel = data.model;
+      const rawServedModel = data.served_model;
       handlers.onDone({
         signature_code: String(data.signature_code ?? ""),
         metric_code: String(data.metric_code ?? ""),
         assistant_message: String(data.assistant_message ?? ""),
         model: typeof rawModel === "string" && rawModel.length > 0 ? rawModel : null,
+        served_model:
+          typeof rawServedModel === "string" && rawServedModel.length > 0
+            ? rawServedModel
+            : null,
         workflow:
           data.workflow && typeof data.workflow === "object"
             ? (data.workflow as WorkflowSpec)

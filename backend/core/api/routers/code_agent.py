@@ -269,9 +269,9 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
           (workflow mode: seed snapshot + one per graph tool op)
         * ``tool_end`` — ``{"id", "tool", "status"}``
         * ``message_patch`` — ``{"chunk": "<token>"}`` (chat mode reply stream)
-        * ``done`` — ``{"signature_code", "metric_code", "assistant_message"}``
-          (workflow mode carries ``workflow`` + ``workflow_valid`` instead
-          of ``signature_code``)
+        * ``done`` — ``{"signature_code", "metric_code", "assistant_message",
+          "model", "served_model"}`` (workflow mode carries ``workflow`` +
+          ``workflow_valid`` instead of ``signature_code``)
         * ``error`` — ``{"error": "<message>"}``
 
         Args:

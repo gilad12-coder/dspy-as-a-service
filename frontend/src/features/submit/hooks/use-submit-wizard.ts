@@ -84,6 +84,7 @@ const COLUMN_ROLES = new Set<string>(["input", "output", "ignore"]);
 // every field still matches them.
 const DEFAULT_REFLECTION_MINIBATCH = "3";
 const DEFAULT_MAX_FULL_EVALS = "6";
+const DEFAULT_TARGET_SCORE = "85";
 
 /** Type guard for a valid dataset column role (signature I/O). */
 function isColumnRole(value: unknown): value is ColumnRole {
@@ -340,7 +341,7 @@ export function useSubmitWizard() {
   );
   const [maxFullEvals, setMaxFullEvals] = useState<string>(DEFAULT_MAX_FULL_EVALS);
   const [useMerge, setUseMerge] = useState(true);
-  const [targetScore, setTargetScore] = useState<string>("");
+  const [targetScore, setTargetScore] = useState<string>(DEFAULT_TARGET_SCORE);
 
   // Disclosure state for the advanced wizard sections (Basics: optimization
   // type, Params: optimizer settings). Held here rather than in the step
@@ -364,7 +365,7 @@ export function useSubmitWizard() {
       reflectionMinibatchSize !== DEFAULT_REFLECTION_MINIBATCH ||
       maxFullEvals !== DEFAULT_MAX_FULL_EVALS ||
       !useMerge ||
-      targetScore.trim() !== ""
+      targetScore !== DEFAULT_TARGET_SCORE
     ) {
       setOptimizerSettingsOpen(true);
     }

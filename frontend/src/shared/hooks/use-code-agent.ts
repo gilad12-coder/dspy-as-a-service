@@ -100,6 +100,8 @@ interface AgentMessage {
   content: string;
   toolCalls?: AgentToolCall[];
   model?: string | null;
+  /** Concrete model selected by Auto Router, when the route was automatic. */
+  servedModel?: string | null;
 }
 
 interface ArtifactVersion {
@@ -758,7 +760,12 @@ export function useCodeAgent(args: UseCodeAgentArgs): CodeAgentState {
                 : "I wrote a Signature and Metric based on your data.";
               const finalContent = result.assistant_message || last.content || fallback;
               const next = prev.slice();
-              next[next.length - 1] = { ...last, content: finalContent, model: result.model };
+              next[next.length - 1] = {
+                ...last,
+                content: finalContent,
+                model: result.model,
+                servedModel: result.served_model,
+              };
               return next;
             });
 

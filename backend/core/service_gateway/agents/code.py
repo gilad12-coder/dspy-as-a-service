@@ -43,6 +43,7 @@ from ..language_models import (
     apply_model_reasoning_config,
     apply_reasoning_effort,
     build_language_model,
+    served_model_from,
 )
 from ..react_compat import REACT_CLASS, react_uses_submit
 from ..safe_exec import validate_metric_code, validate_signature_code
@@ -2664,6 +2665,7 @@ async def _run_code_agent_orchestration(
     *,
     is_seed: bool,
     lm: dspy.LM,
+    model_name: str,
     queue: asyncio.Queue[dict | None],
     dataset_columns: list[str],
     column_roles_json: str,
@@ -2694,6 +2696,7 @@ async def _run_code_agent_orchestration(
     Args:
         is_seed: True to run the seed path; False to run the chat agent.
         lm: Language model bound to the chosen runner.
+        model_name: Catalog model id requested for this turn.
         queue: SSE event queue.
         dataset_columns: All dataset column names.
         column_roles_json: JSON string mapping column → role.
@@ -2767,7 +2770,8 @@ async def _run_code_agent_orchestration(
                 queue=queue,
             )
         payload = dict(results)
-        payload.setdefault("model", settings.code_agent_model)
+        payload.setdefault("model", model_name)
+        payload["served_model"] = served_model_from(lm)
         await queue.put({"event": "done", "data": payload})
     except Exception as exc:
         logger.exception("Code agent failed")
@@ -2824,9 +2828,9 @@ async def run_code_agent(
       replacement when a tool runs.
     * ``tool_end`` — ``{id, tool, status}``, after the tool returns.
     * ``message_patch`` — chat-mode reply token stream.
-    * ``done`` — ``{signature_code, metric_code, assistant_message}``; the
-      seed path additionally carries ``signature_valid`` / ``metric_valid``
-      booleans and an optional ``validation_error``.
+    * ``done`` — ``{signature_code, metric_code, assistant_message, model,
+      served_model}``; the seed path additionally carries ``signature_valid`` /
+      ``metric_valid`` booleans and an optional ``validation_error``.
     * ``error`` — ``{error}``.
 
     Args:
@@ -2864,6 +2868,7 @@ async def run_code_agent(
         SSE event dicts of shape ``{"event": str, "data": dict}``.
     """
     lm = _build_agent_lm(model, reasoning_effort, lm_extra_body)
+    model_name = model or settings.code_agent_model
     if usage_sink is not None:
         usage_sink.append(lm)
     column_roles_json = json.dumps(column_roles, ensure_ascii=False)
@@ -2879,6 +2884,7 @@ async def run_code_agent(
         _run_code_agent_orchestration(
             is_seed=is_seed,
             lm=lm,
+            model_name=model_name,
             queue=queue,
             dataset_columns=dataset_columns,
             column_roles_json=column_roles_json,

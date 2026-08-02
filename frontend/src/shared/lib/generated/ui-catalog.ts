@@ -1062,7 +1062,6 @@ export type MessageKey =
   | "auto.features.submit.components.steps.paramsstep.14"
   | "auto.features.submit.components.steps.paramsstep.15"
   | "auto.features.submit.components.steps.paramsstep.16"
-  | "auto.features.submit.components.steps.paramsstep.17"
   | "auto.features.submit.components.steps.paramsstep.2"
   | "auto.features.submit.components.steps.paramsstep.4"
   | "auto.features.submit.components.steps.paramsstep.5"
@@ -2726,6 +2725,7 @@ export type MessageKey =
   | "tooltip.submit.eval_rounds"
   | "tooltip.submit.merge"
   | "tooltip.submit.reflection_minibatch"
+  | "tooltip.submit.target_score"
   | "tooltip.tagger.binary_question"
   | "tooltip.tagger.mode"
   | "tooltip.tagger.multiclass_categories"
@@ -3972,7 +3972,6 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.submit.components.steps.paramsstep.14": "מקסימום סבבי הערכה",
   "auto.features.submit.components.steps.paramsstep.15": "מיזוג מועמדים",
   "auto.features.submit.components.steps.paramsstep.16": "עצירה כשהציון באימות מגיע ל־",
-  "auto.features.submit.components.steps.paramsstep.17": "אופציונלי. השאירו ריק כדי להשתמש בכל תקציב החיפוש.",
   "auto.features.submit.components.steps.paramsstep.2": "חלוקת הדאטאסט והגדרות החיפוש",
   "auto.features.submit.components.steps.paramsstep.4": "חלוקת ",
   "auto.features.submit.components.steps.paramsstep.5": "סכום: ",
@@ -5636,6 +5635,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tooltip.submit.eval_rounds": "כמה פעמים להריץ הערכה מלאה כדי לבדוק מועמדים לפרומפט",
   "tooltip.submit.merge": "כשפעיל, GEPA יכול לבצע merge ולשלב רעיונות מכמה מועמדים טובים לפרומפט אחד",
   "tooltip.submit.reflection_minibatch": "כמה דוגמאות ה{term.model} בודק בכל סבב משוב כדי למצוא דפוסי שגיאה",
+  "tooltip.submit.target_score": "הפסקת החיפוש כשהאימות מגיע לאחוז הזה; השאר/השאירי ריק כדי להשתמש בכל תקציב החיפוש",
   "tooltip.tagger.binary_question": "השאלה שתוצג מעל כפתורי כן/לא. כדאי לנסח שאלה שאפשר לענות עליה בבירור",
   "tooltip.tagger.mode": "בחר/י את סוג התיוג שמתאים למשימה: כן/לא, בחירה מרשימה או טקסט חופשי",
   "tooltip.tagger.multiclass_categories": "הגדר/הגדירי את הקטגוריות הזמינות לבחירה בזמן התיוג — לפחות שתיים",
@@ -12449,7 +12449,6 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auto.features.submit.components.steps.paramsstep.14": "Max evaluation rounds",
   "auto.features.submit.components.steps.paramsstep.15": "Candidate merging",
   "auto.features.submit.components.steps.paramsstep.16": "Stop when validation score reaches",
-  "auto.features.submit.components.steps.paramsstep.17": "Optional. Leave empty to use the full search budget.",
   "auto.features.submit.components.steps.paramsstep.2": "Dataset split and search settings",
   "auto.features.submit.components.steps.paramsstep.4": "Split of the ",
   "auto.features.submit.components.steps.paramsstep.5": "Sum: ",
@@ -14113,6 +14112,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tooltip.submit.eval_rounds": "How many times to run a full evaluation to check prompt candidates",
   "tooltip.submit.merge": "When enabled, GEPA can merge and combine ideas from several good candidates into one prompt",
   "tooltip.submit.reflection_minibatch": "How many examples the model checks in each feedback round to find error patterns",
+  "tooltip.submit.target_score": "Stop the search once validation reaches this percentage; leave it empty to use the full search budget",
   "tooltip.tagger.binary_question": "The question shown above the yes/no buttons. It helps to phrase a question that can be answered clearly",
   "tooltip.tagger.mode": "Choose the tagging type that fits the task: yes/no, selection from a list, or free text",
   "tooltip.tagger.multiclass_categories": "Define the categories available for selection while tagging — at least two",
