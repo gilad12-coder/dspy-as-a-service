@@ -13,6 +13,7 @@ cannot be parsed.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import threading
@@ -786,6 +787,110 @@ def interview_turn(
     return turn
 
 
+async def _drive_interview_turn(
+    *,
+    predict: dspy.Predict,
+    lm: dspy.LM,
+    inputs: dict[str, Any],
+    asked: int,
+    config: dict[str, Any],
+    model: str | None,
+    queue: asyncio.Queue[dict | None],
+) -> None:
+    """Drive the interview predictor to completion, fanning events onto ``queue``.
+
+    Runs the whole streamify loop inside this one task so that ``dspy.context``'s
+    contextvar token and streamify's internal anyio task group are entered and
+    exited in the same task. The previous shape yielded SSE events directly from
+    inside the loop, which tied the streamify generator's finalization to the
+    Starlette response task; when consumption crossed task boundaries the
+    teardown raised ``RuntimeError: exit cancel scope in a different task``,
+    failing every turn — the same defect fixed for the code interview.
+
+    A terminal ``interview_done`` is enqueued on success; a total failure
+    propagates out (the caller re-raises it for the router to translate into an
+    ``error`` event). A ``None`` sentinel always closes the queue.
+
+    Args:
+        predict: The interview predictor (reused across attempts).
+        lm: Language model conducting the interview.
+        inputs: Keyword inputs forwarded to the streamify program.
+        asked: Count of assistant turns so far, for the parsed turn's numbering.
+        config: The session's ``TaggerConfig`` payload.
+        model: LiteLLM id conducting the interview; stamped on the parsed turn
+            when set. ``None`` runs the default.
+        queue: SSE event queue; receives event dicts and a trailing ``None``.
+    """
+    turn: dict[str, Any] = {}
+    try:
+        for attempt in range(INTERVIEW_TURN_ATTEMPTS):
+            # Stream listeners are single-use; rebuild the program per attempt.
+            program = dspy.streamify(
+                predict,
+                stream_listeners=[
+                    dspy.streaming.StreamListener(signature_field_name="message"),
+                    dspy.streaming.StreamListener(signature_field_name="done"),
+                    ReasoningStreamListener(predict=predict),
+                ],
+                async_streaming=True,
+            )
+            if attempt:
+                await queue.put({"event": "message_reset", "data": {}})
+            guard = _MessageLeakGuard()
+            prediction: Any = None
+            done_text = ""
+            try:
+                with dspy.context(lm=lm):
+                    async for chunk in program(**inputs):
+                        if isinstance(chunk, dspy.streaming.StreamResponse):
+                            if chunk.signature_field_name == REASONING_FIELD:
+                                await queue.put(
+                                    {"event": "reasoning_patch", "data": {"chunk": chunk.chunk}}
+                                )
+                            elif chunk.signature_field_name == "message":
+                                text, reset = guard.feed(chunk.chunk)
+                                if reset:
+                                    await queue.put({"event": "message_reset", "data": {}})
+                                if text:
+                                    await queue.put(
+                                        {"event": "message_patch", "data": {"chunk": text}}
+                                    )
+                                if chunk.is_last_chunk:
+                                    await queue.put({"event": "message_end", "data": {}})
+                            elif chunk.signature_field_name == "done":
+                                done_text += chunk.chunk
+                                if chunk.is_last_chunk:
+                                    await queue.put(
+                                        {
+                                            "event": "turn_hint",
+                                            "data": {"final": "true" in done_text.lower()},
+                                        }
+                                    )
+                        elif isinstance(chunk, dspy.Prediction):
+                            prediction = chunk
+            except Exception as err:
+                # Keep a prediction already captured this attempt — an exception
+                # raised during teardown must not discard a completed reply.
+                if prediction is None:
+                    prediction = salvage_prediction(err)
+                if prediction is None:
+                    if attempt + 1 >= INTERVIEW_TURN_ATTEMPTS:
+                        raise
+                    logger.warning("tagger interview turn failed; retrying", exc_info=True)
+                    continue
+            turn = _parse_interview_prediction(prediction, asked, config)
+            if turn["done"] and not turn["rubric"] and attempt + 1 < INTERVIEW_TURN_ATTEMPTS:
+                logger.warning("tagger interview finished without a rubric; retrying")
+                continue
+            break
+        if model and turn:
+            turn["model"] = model
+        turn["served_model"] = served_model_from(lm)
+        await queue.put({"event": "interview_done", "data": turn})
+    finally:
+        await queue.put(None)
+
+
 async def interview_turn_stream(
     config: dict[str, Any],
     columns: list[str],
@@ -838,62 +943,32 @@ async def interview_turn_stream(
     if usage_sink is not None:
         usage_sink.append(lm)
     inputs = _interview_inputs(config, columns, data, turns, locale)
-    turn: dict[str, Any] = {}
-    for attempt in range(INTERVIEW_TURN_ATTEMPTS):
-        # Stream listeners are single-use; rebuild the program per attempt.
-        program = dspy.streamify(
-            predict,
-            stream_listeners=[
-                dspy.streaming.StreamListener(signature_field_name="message"),
-                dspy.streaming.StreamListener(signature_field_name="done"),
-                ReasoningStreamListener(predict=predict),
-            ],
-            async_streaming=True,
+
+    # Drive the streamify loop in its own task and relay its events off a queue:
+    # yielding directly from inside the loop finalizes the dspy.context token and
+    # streamify's anyio task group in the SSE consumer's task, corrupting both.
+    queue: asyncio.Queue[dict | None] = asyncio.Queue()
+    task = asyncio.create_task(
+        _drive_interview_turn(
+            predict=predict,
+            lm=lm,
+            inputs=inputs,
+            asked=asked,
+            config=config,
+            model=model,
+            queue=queue,
         )
-        if attempt:
-            yield {"event": "message_reset", "data": {}}
-        guard = _MessageLeakGuard()
-        prediction: Any = None
-        done_text = ""
-        try:
-            with dspy.context(lm=lm):
-                async for chunk in program(**inputs):
-                    if isinstance(chunk, dspy.streaming.StreamResponse):
-                        if chunk.signature_field_name == REASONING_FIELD:
-                            yield {"event": "reasoning_patch", "data": {"chunk": chunk.chunk}}
-                        elif chunk.signature_field_name == "message":
-                            text, reset = guard.feed(chunk.chunk)
-                            if reset:
-                                yield {"event": "message_reset", "data": {}}
-                            if text:
-                                yield {"event": "message_patch", "data": {"chunk": text}}
-                            if chunk.is_last_chunk:
-                                yield {"event": "message_end", "data": {}}
-                        elif chunk.signature_field_name == "done":
-                            done_text += chunk.chunk
-                            if chunk.is_last_chunk:
-                                yield {
-                                    "event": "turn_hint",
-                                    "data": {"final": "true" in done_text.lower()},
-                                }
-                    elif isinstance(chunk, dspy.Prediction):
-                        prediction = chunk
-        except Exception as err:
-            prediction = salvage_prediction(err)
-            if prediction is None:
-                if attempt + 1 >= INTERVIEW_TURN_ATTEMPTS:
-                    raise
-                logger.warning("tagger interview turn failed; retrying", exc_info=True)
-                continue
-        turn = _parse_interview_prediction(prediction, asked, config)
-        if turn["done"] and not turn["rubric"] and attempt + 1 < INTERVIEW_TURN_ATTEMPTS:
-            logger.warning("tagger interview finished without a rubric; retrying")
-            continue
-        break
-    if model and turn:
-        turn["model"] = model
-    turn["served_model"] = served_model_from(lm)
-    yield {"event": "interview_done", "data": turn}
+    )
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield item
+        await task
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
 
 
 def _predict_batch(
