@@ -5,6 +5,7 @@ import { Check, CircleNotch, Sparkle } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { formatTaggerLabel } from "../lib/labels";
 import type {
   Annotation,
   AssistPrediction,
@@ -13,7 +14,6 @@ import type {
   ReviewRound,
   TaggerConfig,
 } from "../lib/types";
-import { isBinaryYes } from "../lib/types";
 import { agreementGate, agreementOver, labelsAgree } from "../lib/assist";
 
 interface Props {
@@ -34,21 +34,6 @@ function isCommitted(ann: Annotation, mode: TaggerConfig["mode"]): boolean {
   if (ann === undefined || ann === null) return false;
   if (mode === "multiclass") return Array.isArray(ann) && ann.length > 0;
   return typeof ann === "string" && ann !== "";
-}
-
-/** Human-readable form of a label value for the rail's small displays. */
-function displayLabel(config: TaggerConfig, value: Annotation | AssistPrediction["value"]): string {
-  if (value === undefined) return "";
-  if (config.mode === "multiclass" && Array.isArray(value)) {
-    const byId = new Map((config.categories ?? []).map((c) => [c.id, c.label]));
-    return value.map((id) => byId.get(id) ?? id).join(" · ");
-  }
-  if (config.mode === "binary") {
-    return isBinaryYes(value as Annotation)
-      ? msg("tagger.assist.label.yes")
-      : msg("tagger.assist.label.no");
-  }
-  return String(value);
 }
 
 /**
@@ -345,7 +330,7 @@ function Suggestion({
     <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-foreground" dir="auto">
-          {displayLabel(config, prediction.value)}
+          {formatTaggerLabel(config, prediction.value)}
         </span>
         <Badge variant="ghost" size="sm" className="shrink-0 font-mono tabular-nums opacity-60">
           {Math.round(prediction.confidence * 100)}%

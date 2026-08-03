@@ -17,8 +17,8 @@ import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { cn } from "@/shared/lib/utils";
 import { msg, type MessageKey } from "@/shared/lib/messages";
 import { flaggedRowIds } from "../lib/assist";
+import { formatTaggerLabel } from "../lib/labels";
 import type { Annotation, AssistState, DataRow, TaggerConfig } from "../lib/types";
-import { isBinaryNo, isBinaryYes } from "../lib/types";
 
 type SortKey = "text" | "label" | "confidence" | "source";
 type SortState = SortKey | "none";
@@ -32,19 +32,6 @@ interface PreparedRow {
   confidence: number | null;
   provenance: string | null;
   flagged: boolean;
-}
-
-function displayLabel(config: TaggerConfig, ann: Annotation): string {
-  if (ann === undefined || ann === null) return "";
-  if (Array.isArray(ann)) {
-    const cats = config.categories ?? [];
-    return ann.map((id) => cats.find((c) => c.id === id)?.label ?? id).join(", ");
-  }
-  if (config.mode === "binary") {
-    if (isBinaryYes(ann)) return msg("tagger.assist.label.yes");
-    if (isBinaryNo(ann)) return msg("tagger.assist.label.no");
-  }
-  return String(ann);
 }
 
 const PROVENANCE_KEYS: Record<string, MessageKey> = {
@@ -91,7 +78,7 @@ export function TaggerResultsTable({
           index,
           id,
           text: row.text,
-          label: displayLabel(config, annotations[id]),
+          label: formatTaggerLabel(config, annotations[id]),
           confidence: pred ? pred.confidence : null,
           provenance: assist?.provenance?.[id] ?? null,
           flagged: flagged.has(id),
