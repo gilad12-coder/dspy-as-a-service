@@ -25,6 +25,7 @@ import { ChartTooltip, ChartEmptyState } from "@/shared/charts/chart-utils";
 import { ChartTable } from "@/shared/charts/chart-table";
 import { useLiteMode } from "@/features/settings";
 import { EmptyState } from "@/shared/ui/empty-state";
+import { modelDisplayName } from "@/shared/lib/formatters";
 import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
@@ -358,7 +359,7 @@ function ModelBreakdown({
     return (
       <ChartTable
         rows={rows.map((row) => ({
-          model: row.model ?? msg("usage.model.unknown"),
+          model: row.model ? modelDisplayName(row.model) : msg("usage.model.unknown"),
           credits: row.credits,
           runs: row.runs,
           tokens: rowTokens(row) > 0 ? formatTokens(rowTokens(row), locale) : "—",
@@ -376,12 +377,16 @@ function ModelBreakdown({
   return (
     <ul className="flex flex-col gap-2.5">
       {rows.slice(0, 6).map((row, index) => {
-        const label = row.model ?? msg("usage.model.unknown");
+        const label = row.model ? modelDisplayName(row.model) : msg("usage.model.unknown");
         const tokens = rowTokens(row);
         return (
-          <li key={label} className="flex flex-col gap-1">
+          <li key={row.model ?? label} className="flex flex-col gap-1">
             <div className="flex items-baseline justify-between gap-3">
-              <span dir="ltr" className="min-w-0 truncate text-xs text-foreground" title={label}>
+              <span
+                dir="ltr"
+                className="min-w-0 truncate text-xs text-foreground"
+                title={row.model ?? label}
+              >
                 {label}
               </span>
               <span className="flex shrink-0 items-baseline gap-2">
@@ -444,8 +449,12 @@ function RunBreakdown({ entries, locale }: { entries: BillingUsageEntry[]; local
               {run.label}
             </span>
             {run.model && (
-              <span dir="ltr" className="truncate text-[0.6875rem] text-muted-foreground">
-                {run.model}
+              <span
+                dir="ltr"
+                className="truncate text-[0.6875rem] text-muted-foreground"
+                title={run.model}
+              >
+                {modelDisplayName(run.model)}
               </span>
             )}
           </span>
@@ -477,8 +486,12 @@ function LedgerRow({ entry, locale }: { entry: BillingUsageEntry; locale: string
           {entry.label}
         </span>
         {entry.model && (
-          <span dir="ltr" className="truncate text-[0.6875rem] text-muted-foreground">
-            {entry.model}
+          <span
+            dir="ltr"
+            className="truncate text-[0.6875rem] text-muted-foreground"
+            title={entry.model}
+          >
+            {modelDisplayName(entry.model)}
           </span>
         )}
       </span>

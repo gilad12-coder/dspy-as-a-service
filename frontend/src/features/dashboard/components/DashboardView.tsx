@@ -27,6 +27,7 @@ import { useJobsRealtime } from "../hooks/use-jobs-realtime";
 import { useBulkDelete } from "../hooks/use-bulk-delete";
 import { COMPARE_MAX } from "../constants";
 import { DashboardHeader } from "./DashboardHeader";
+import { WorkspaceStrip } from "./WorkspaceStrip";
 import { QueueStatusAlert } from "./QueueStatusAlert";
 import { BulkActionBar } from "./BulkActionBar";
 import { DeleteDialogs } from "./DeleteDialogs";
@@ -327,8 +328,9 @@ export function DashboardView() {
 
   return (
     <>
-      <div className="flex flex-col gap-8 -mt-2 md:-mt-4">
+      <div className="flex flex-col gap-6 -mt-2 md:-mt-4">
         <DashboardHeader stats={stats} />
+        <WorkspaceStrip />
         <QueueStatusAlert queueStatus={queueStatus} />
 
         <FadeIn delay={0.2}>

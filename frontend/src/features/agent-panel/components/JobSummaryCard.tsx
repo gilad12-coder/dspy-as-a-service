@@ -6,7 +6,7 @@ import { ArrowUpRight } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
 import { TERMS } from "@/shared/lib/terms";
-import { formatPercent, moduleLabel } from "@/shared/lib/formatters";
+import { formatPercent, modelDisplayName, moduleLabel } from "@/shared/lib/formatters";
 import { getStatusLabel } from "@/shared/constants/job-status";
 import { StatusBadge } from "@/shared/ui/status-badge";
 import type { OptimizationSummaryResponse } from "@/shared/types/api";
@@ -94,7 +94,11 @@ export function JobSummaryCard({ call }: JobSummaryCardProps) {
           valueDir="auto"
         />
         <StatTile label={TERMS.optimizer} value={job.optimizer_name} valueDir="auto" />
-        <StatTile label={TERMS.model} value={job.model_name} valueDir="ltr" />
+        <StatTile
+          label={TERMS.model}
+          value={job.model_name ? modelDisplayName(job.model_name) : null}
+          valueDir="ltr"
+        />
         <StatTile
           label={msg("auto.features.agent.panel.components.resultcards.rows")}
           value={job.dataset_rows ?? null}

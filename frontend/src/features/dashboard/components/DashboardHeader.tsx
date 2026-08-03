@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Users } from "@/shared/ui/icons";
 import { AnimatedNumber } from "@/shared/ui/motion";
+import { Card } from "@/shared/ui/primitives/card";
 import type { DashboardStats } from "../lib/get-dashboard-stats";
 import { msg } from "@/shared/lib/messages";
 
@@ -32,7 +33,7 @@ const ACCENT_DOT: Record<NonNullable<StatCardProps["accent"]>, string> = {
 
 function StatCard({ label, value, accent = "default", pulse = false, icon }: StatCardProps) {
   return (
-    <div className="group/stat relative flex min-w-0 flex-[1_1_13rem] flex-col gap-5 rounded-2xl border border-border/40 bg-card/60 p-6 transition-colors duration-300 hover:border-border/70 sm:p-7 xl:flex-[1_1_9rem]">
+    <Card className="group/stat min-w-0 flex-[1_1_11rem] gap-3.5 p-5 xl:flex-[1_1_9rem]">
       <div className="flex items-center gap-2">
         {icon ?? (
           <span
@@ -45,11 +46,11 @@ function StatCard({ label, value, accent = "default", pulse = false, icon }: Sta
         </p>
       </div>
       <p
-        className={`text-[2.75rem] sm:text-[3.25rem] font-bold leading-[0.9] tracking-tight tabular-nums ${ACCENT_TEXT[accent]}`}
+        className={`text-3xl sm:text-[2rem] font-bold leading-none tracking-tight tabular-nums ${ACCENT_TEXT[accent]}`}
       >
         <AnimatedNumber value={value} />
       </p>
-    </div>
+    </Card>
   );
 }
 

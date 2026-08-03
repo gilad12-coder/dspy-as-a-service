@@ -59,6 +59,7 @@ import {
   consumePendingCompareExamples,
   registerTutorialHook,
 } from "@/features/tutorial";
+import { modelDisplayName } from "@/shared/lib/formatters";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TERMS } from "@/shared/lib/terms";
@@ -180,7 +181,9 @@ function VerdictBlock({ runs, winnerIdx }: { runs: RunInfo[]; winnerIdx: number 
               className="inline-flex items-center gap-1 min-w-0 font-mono text-sm text-foreground/90"
               dir="ltr"
             >
-              <span className="truncate">{winner.modelName}</span>
+              <span className="truncate" title={winner.modelName ?? undefined}>
+                {modelDisplayName(winner.modelName)}
+              </span>
               {winner.reasoningEffort && (
                 <ReasoningPill value={winner.reasoningEffort} size="sm" />
               )}
@@ -194,7 +197,9 @@ function VerdictBlock({ runs, winnerIdx }: { runs: RunInfo[]; winnerIdx: number 
               className="inline-flex items-center gap-1 min-w-0 font-mono text-sm text-foreground/90"
               dir="ltr"
             >
-              <span className="truncate">{winner.reflectionModelName}</span>
+              <span className="truncate" title={winner.reflectionModelName ?? undefined}>
+                {modelDisplayName(winner.reflectionModelName)}
+              </span>
               {winner.reflectionReasoningEffort && (
                 <ReasoningPill value={winner.reflectionReasoningEffort} size="sm" />
               )}

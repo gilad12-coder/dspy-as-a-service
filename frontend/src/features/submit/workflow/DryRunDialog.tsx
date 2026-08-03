@@ -21,6 +21,7 @@ import {
 import { Button } from "@/shared/ui/primitives/button";
 import { Label } from "@/shared/ui/primitives/label";
 import { cn } from "@/shared/lib/utils";
+import { modelDisplayName } from "@/shared/lib/formatters";
 import { msg } from "@/shared/lib/messages";
 import type { WorkflowDryRunStreamHandlers } from "@/shared/lib/api";
 import type { WorkflowDryRunResponse } from "@/shared/types/api";
@@ -165,8 +166,12 @@ export function DryRunDialog({
           <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/40 px-3 py-2">
             <div className="flex min-w-0 items-center gap-2">
               <Cpu className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate font-mono text-xs text-foreground" dir="ltr">
-                {modelName}
+              <span
+                className="truncate font-mono text-xs text-foreground"
+                dir="ltr"
+                title={modelName}
+              >
+                {modelDisplayName(modelName)}
               </span>
             </div>
             <Button

@@ -21,6 +21,8 @@ import {
   Database,
   ArrowCounterClockwise,
   Play,
+  User,
+  Users,
 } from "@/shared/ui/icons";
 import { SidebarMoreSkeleton } from "./SidebarMoreSkeleton";
 import { cn } from "@/shared/lib/utils";
@@ -520,21 +522,30 @@ export function Sidebar() {
             className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-100 ease-out"
             style={{ insetInlineStart: tab === "mine" ? 4 : "calc(50% + 2px)" }}
           />
-          {(["mine", "shared"] as const).map((key) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={tab === key}
-              onClick={() => handleTabChange(key)}
-              className={cn(
-                "relative z-10 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-center text-[0.6875rem] font-medium transition-colors duration-200",
-                tab === key ? "text-foreground" : "text-foreground/60 hover:text-foreground",
-              )}
-            >
-              {msg(key === "mine" ? "sidebar.tab.mine" : "sidebar.tab.shared")}
-            </button>
-          ))}
+          {(["mine", "shared"] as const).map((key) => {
+            const label = msg(key === "mine" ? "sidebar.tab.mine" : "sidebar.tab.shared");
+            const Icon = key === "mine" ? User : Users;
+            return (
+              <Tooltip key={key}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === key}
+                    aria-label={label}
+                    onClick={() => handleTabChange(key)}
+                    className={cn(
+                      "relative z-10 flex flex-1 cursor-pointer items-center justify-center rounded-md px-2 py-1.5 transition-colors duration-200",
+                      tab === key ? "text-foreground" : "text-foreground/60 hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-3.5" aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{label}</TooltipContent>
+              </Tooltip>
+            );
+          })}
         </div>
 
         {/* Collapsed rail hides the run list (no icon form for a text list), but

@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { AnimatedNumber, StaggerContainer, StaggerItem } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
-import { formatElapsed } from "@/shared/lib";
+import { formatElapsed, modelDisplayName } from "@/shared/lib";
 import type { DashboardAnalytics } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
 import { tip } from "@/shared/lib/tooltips";
@@ -468,7 +468,7 @@ function AnalyticsTabImpl({
                             {i + 1}
                           </span>
                           <span className="font-mono truncate min-w-0" title={m.name}>
-                            {m.name}
+                            {modelDisplayName(m.name)}
                           </span>
                           <span className="ms-auto tabular-nums font-medium shrink-0">{m.count}</span>
                         </div>

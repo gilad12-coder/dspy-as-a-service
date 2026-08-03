@@ -391,6 +391,8 @@ export function JobsTab({
                     width={colResize.widths["optimized_test_metric"] ?? DEFAULT_COL_WIDTHS.optimized_test_metric}
                     onResize={colResize.setColumnWidth}
                   />
+                  {/* Spacer over the per-row open chevron. */}
+                  <TableHead aria-hidden="true" className="w-8" />
                 </TableRow>
               </TableHeader>
               <TableBody className="transition-opacity duration-200">
@@ -400,7 +402,7 @@ export function JobsTab({
                     <TableRow
                       key={job.optimization_id}
                       data-selected={isSelected}
-                      className="group border-border/30 transition-colors duration-150 data-[selected=true]:bg-primary/[0.08] cursor-pointer [&_td:first-child]:cursor-default"
+                      className="group border-border/30 transition-colors duration-150 hover:bg-muted/50 data-[selected=true]:bg-primary/[0.08] data-[selected=true]:hover:bg-primary/[0.12] cursor-pointer [&_td:first-child]:cursor-default"
                       style={{
                         animation: `fadeSlideIn 0.25s ease-out ${idx * 0.03}s both`,
                       }}
@@ -445,7 +447,7 @@ export function JobsTab({
                             type="button"
                             dir="ltr"
                             onClick={() => onOpenJob(job.optimization_id)}
-                            className="font-mono text-xs text-primary truncate min-w-0 rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            className="font-mono text-xs text-primary truncate min-w-0 rounded-md cursor-pointer underline-offset-2 group-hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                             aria-label={formatMsg(
                               "auto.features.dashboard.components.jobstab.template.3",
                               { p1: TERMS.optimization },
@@ -542,6 +544,16 @@ export function JobsTab({
                         data-label={msg("auto.features.dashboard.components.jobstab.literal.8")}
                       >
                         {formatScore(job)}
+                      </TableCell>
+                      {/* Open-affordance chevron: always faintly visible so the
+                          row reads as navigable, brightening and nudging on
+                          hover. Hidden in the stacked mobile layout, where the
+                          !important beats table-stack's display:block on td. */}
+                      <TableCell className="w-8 pe-3 max-[900px]:!hidden">
+                        <CaretRight
+                          aria-hidden="true"
+                          className="size-3.5 text-muted-foreground/40 transition-[color,transform] duration-150 group-hover:translate-x-0.5 group-hover:text-primary rtl:rotate-180 rtl:group-hover:-translate-x-0.5"
+                        />
                       </TableCell>
                     </TableRow>
                   );

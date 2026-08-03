@@ -6,7 +6,7 @@ import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
-import { formatPercent, moduleLabel } from "@/shared/lib/formatters";
+import { formatPercent, modelDisplayName, moduleLabel } from "@/shared/lib/formatters";
 import { StatusBadge } from "@/shared/ui/status-badge";
 import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 
@@ -86,7 +86,11 @@ const FIELD_ROWS: FieldRow[] = [
   {
     key: "model_name",
     label: () => TERMS.model,
-    render: (j) => <span dir="ltr">{j.model_name ?? "—"}</span>,
+    render: (j) => (
+      <span dir="ltr" title={j.model_name ?? undefined}>
+        {j.model_name ? modelDisplayName(j.model_name) : "—"}
+      </span>
+    ),
   },
   {
     key: "dataset_rows",

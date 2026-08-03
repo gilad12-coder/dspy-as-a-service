@@ -1,6 +1,7 @@
 import * as React from "react";
 import { X } from "@/shared/ui/icons";
 import { getStatusLabel } from "@/shared/constants/job-status";
+import { modelDisplayName } from "@/shared/lib/formatters";
 import { msg } from "@/shared/lib/messages";
 import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import type { UseAnalyticsFiltersReturn } from "../hooks/use-analytics-filters";
@@ -101,7 +102,7 @@ export function AnalyticsFilterChips({
       {model !== "all" && (
         <FilterChip
           dir="ltr"
-          label={model}
+          label={modelDisplayName(model)}
           title={model}
           truncate
           ariaLabel={msg("auto.features.dashboard.components.analyticstab.literal.4")}

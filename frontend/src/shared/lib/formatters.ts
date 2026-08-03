@@ -160,6 +160,20 @@ export function moduleLabel(raw: string | null | undefined): string {
   return raw;
 }
 
+/**
+ * Bare model name of a provider-routed model id, for display. Ids arrive as
+ * gateway paths ("openrouter/openai/gpt-5.4-mini"); everything before the last
+ * slash is routing, not identity, so UI text shows only the final segment.
+ * Keep the full id in a tooltip/title when two providers could collide, and
+ * never trim ids used as filter values, API payloads, or exports.
+ * @example "openrouter/openai/gpt-5.4-mini" → "gpt-5.4-mini", "auto:intelligent" → "auto:intelligent"
+ */
+export function modelDisplayName(id: string | null | undefined): string {
+  if (!id) return "";
+  const tail = id.split("/").pop();
+  return tail || id;
+}
+
 
 /**
  * Sentence-case a lowercase glossary term for standalone UI positions (nav

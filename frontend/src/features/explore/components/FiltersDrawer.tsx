@@ -11,6 +11,7 @@ import {
   Target,
   X,
 } from "@/shared/ui/icons";
+import { modelDisplayName } from "@/shared/lib/formatters";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import {
@@ -145,6 +146,9 @@ export function FiltersDrawer({
                   options={modelOptions}
                   selected={selectedModels}
                   onToggle={(v) => onChangeModels(toggleValue(selectedModels, v))}
+                  labels={Object.fromEntries(
+                    modelOptions.map((m) => [m, modelDisplayName(m)]),
+                  )}
                   dir="ltr"
                 />
 
@@ -297,6 +301,7 @@ function SearchableChipSection({
   options,
   selected,
   onToggle,
+  labels,
   dir,
 }: {
   title: string;
@@ -304,6 +309,7 @@ function SearchableChipSection({
   options: string[];
   selected: string[];
   onToggle: (value: string) => void;
+  labels?: Record<string, string>;
   dir: "ltr" | "rtl" | "auto";
 }) {
   const [query, setQuery] = React.useState("");
@@ -344,6 +350,7 @@ function SearchableChipSection({
           options={ordered}
           selected={selected}
           onToggle={onToggle}
+          labels={labels}
           dir={dir}
         />
       )}
@@ -412,6 +419,9 @@ function ChipGroup({
           <SelectableChip
             key={value}
             label={label}
+            // Trimmed labels (e.g. bare model names) keep the full value
+            // reachable on hover — providers can collide on the short name.
+            title={label === value ? undefined : value}
             active={active}
             dir={dir}
             onClick={() => onToggle(value)}
@@ -424,11 +434,13 @@ function ChipGroup({
 
 function SelectableChip({
   label,
+  title,
   active,
   dir,
   onClick,
 }: {
   label: string;
+  title?: string;
   active: boolean;
   dir: "ltr" | "rtl" | "auto";
   onClick: () => void;
@@ -438,6 +450,7 @@ function SelectableChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      title={title}
       dir={dir}
       className={`group inline-flex max-w-full items-center gap-1 rounded-full border px-3 py-1.5 text-[12.5px] transition-[background-color,border-color,color] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 ${
         active
