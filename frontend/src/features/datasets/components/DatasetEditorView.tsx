@@ -52,12 +52,67 @@ type Row = Record<string, unknown>;
 type ColumnRole = "input" | "output" | "ignore";
 type SaveState = "saved" | "pending" | "saving" | "error";
 type CellRef = { row: number; col: string };
+type GridPos = { row: number; col: number };
+type Selection = { anchor: GridPos; head: GridPos };
 
 /** Flatten any stored cell value into editable text. */
 function cellText(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
+}
+
+/** Quote a cell for TSV the way Sheets/Excel do, so round-trips survive. */
+function escapeTsvCell(value: string): string {
+  return /[\t\n\r"]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/**
+ * Parse clipboard text into a cell grid: tab-separated columns, newline-
+ * separated rows, with Sheets/Excel-style quoted cells for embedded tabs,
+ * newlines and quotes.
+ */
+function parseClipboardGrid(text: string): string[][] {
+  const grid: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cell += ch;
+      }
+    } else if (ch === '"' && cell === "") {
+      inQuotes = true;
+    } else if (ch === "\t") {
+      row.push(cell);
+      cell = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell);
+      grid.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += ch;
+    }
+  }
+  row.push(cell);
+  grid.push(row);
+  // Sheets terminates its clipboard payload with a newline; drop the
+  // phantom empty row it would otherwise paste.
+  if (grid.length > 1 && grid[grid.length - 1]!.length === 1 && grid[grid.length - 1]![0] === "") {
+    grid.pop();
+  }
+  return grid;
 }
 
 type Snap = {
@@ -77,9 +132,12 @@ type HistEntry = { snap: Snap; anchor?: CellRef };
  * Editing follows the Google-Sheets grammar: every change auto-saves (debounced
  * whole-dataset PUT, since edits replace the row set in place the dataset keeps
  * its identity, shares and links), Cmd/Ctrl+Z undoes and Cmd/Ctrl+Shift+Z
- * redoes committed steps, Enter/arrows move between cells, Escape restores a
- * cell's pre-edit value, and right-clicking a row opens insert/duplicate/
- * delete. Datasets can be large, so only one page of rows renders at a time.
+ * redoes committed steps, and right-clicking a row opens insert/duplicate/
+ * delete. Cells follow the two-mode grammar: click selects, drag/Shift/Cmd+A
+ * grow a range, arrows and Tab navigate, typing or Enter/F2/double-click edit,
+ * Escape restores a cell's pre-edit value, Delete clears the range, and
+ * Cmd/Ctrl+C/X/V move TSV through the clipboard (Sheets/Excel-compatible).
+ * Datasets can be large, so only one page of rows renders at a time.
  */
 export function DatasetEditorView() {
   const { id } = useParams<{ id: string }>();
@@ -90,6 +148,12 @@ export function DatasetEditorView() {
   const [saveState, setSaveState] = React.useState<SaveState>("saved");
   const [touched, setTouched] = React.useState(false);
   const [pendingFocus, setPendingFocus] = React.useState<CellRef | null>(null);
+  // Two-mode grammar, like Sheets: a cell (or range) is *selected* for
+  // navigation and clipboard work, and only the anchor cell ever *edits*.
+  const [sel, setSel] = React.useState<Selection | null>(null);
+  const [editing, setEditing] = React.useState<GridPos | null>(null);
+  const dragging = React.useRef(false);
+  const gridRef = React.useRef<HTMLDivElement | null>(null);
   // Column renames commit on blur/Enter — remapping every row's keys per
   // keystroke would churn huge datasets for nothing.
   const [headerDrafts, setHeaderDrafts] = React.useState<Record<number, string>>({});
@@ -209,19 +273,48 @@ export function DatasetEditorView() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Cell focus lands after the page/rows re-render commits; rAF gives the DOM
-  // one frame to mount the target input.
+  // A drag-select can end anywhere on the page, not just over a cell.
+  React.useEffect(() => {
+    const end = () => {
+      dragging.current = false;
+    };
+    window.addEventListener("mouseup", end);
+    return () => window.removeEventListener("mouseup", end);
+  }, []);
+
+  // Scrolling lands after the page/rows re-render commits; rAF gives the DOM
+  // one frame to mount the target cell.
   React.useEffect(() => {
     if (!pendingFocus) return;
     const frame = requestAnimationFrame(() => {
-      const el = document.querySelector<HTMLInputElement>(
-        `[data-cell="${CSS.escape(`${pendingFocus.row}:${pendingFocus.col}`)}"]`,
-      );
-      el?.focus();
-      el?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      document
+        .querySelector<HTMLInputElement>(
+          `[data-cell="${CSS.escape(`${pendingFocus.row}:${pendingFocus.col}`)}"]`,
+        )
+        ?.scrollIntoView({ block: "nearest", inline: "nearest" });
     });
     return () => cancelAnimationFrame(frame);
   }, [pendingFocus]);
+
+  // Entering edit mode focuses the cell's input with the caret at the end —
+  // both for Enter/double-click (existing text) and type-to-replace (seed).
+  React.useEffect(() => {
+    if (!editing) return;
+    const current = stateRef.current;
+    if (current.mode !== "ready") return;
+    const col = current.columns[editing.col];
+    if (col === undefined) return;
+    const frame = requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLInputElement>(
+        `[data-cell="${CSS.escape(`${editing.row}:${col}`)}"]`,
+      );
+      if (el) {
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [editing]);
 
   // beforeunload only covers tab closes — client-side navigation unmounts
   // without it, so flush any edit the debounce hasn't sent yet.
@@ -272,10 +365,33 @@ export function DatasetEditorView() {
     markDirty();
   };
 
-  const focusCell = (row: number, col: string) => {
+  const scrollToCell = (row: number, col: string) => {
     setPage(Math.floor(row / PAGE_SIZE));
     setPendingFocus({ row, col });
   };
+
+  // Selection coordinates survive row/column removals by clamping, so a
+  // stale range degrades to the nearest live cells instead of crashing.
+  const clampPos = (p: GridPos): GridPos => ({
+    row: Math.max(0, Math.min(p.row, rows.length - 1)),
+    col: Math.max(0, Math.min(p.col, columns.length - 1)),
+  });
+  const selRange =
+    sel && rows.length > 0 && columns.length > 0
+      ? { anchor: clampPos(sel.anchor), head: clampPos(sel.head) }
+      : null;
+  const selBounds = selRange
+    ? {
+        top: Math.min(selRange.anchor.row, selRange.head.row),
+        bottom: Math.max(selRange.anchor.row, selRange.head.row),
+        left: Math.min(selRange.anchor.col, selRange.head.col),
+        right: Math.max(selRange.anchor.col, selRange.head.col),
+      }
+    : null;
+
+  // Keyboard events flow through the grid container while a cell is merely
+  // selected (no input focused), so selecting always refocuses it.
+  const gridFocus = () => gridRef.current?.focus();
 
   /**
    * Apply an edit as one undoable step. Consecutive edits carrying the same
@@ -295,6 +411,17 @@ export function DatasetEditorView() {
     markDirty();
   };
 
+  /** Undo/redo re-select the affected cell so the user sees what reverted. */
+  const showAnchor = (snap: Snap, anchor: CellRef | undefined) => {
+    setEditing(null);
+    if (!anchor || !snap.rows.length) return;
+    const col = snap.columns.indexOf(anchor.col);
+    if (col === -1) return;
+    const pos = { row: Math.min(anchor.row, snap.rows.length - 1), col };
+    setSel({ anchor: pos, head: pos });
+    scrollToCell(pos.row, anchor.col);
+  };
+
   const undo = () => {
     const h = history.current;
     const entry = h.past.pop();
@@ -302,9 +429,7 @@ export function DatasetEditorView() {
     h.future.push({ snap: { columns, rows, roles, kinds }, anchor: entry.anchor });
     h.burstKey = null;
     restoreSnap(entry.snap);
-    if (entry.anchor && entry.snap.columns.includes(entry.anchor.col) && entry.snap.rows.length) {
-      focusCell(Math.min(entry.anchor.row, entry.snap.rows.length - 1), entry.anchor.col);
-    }
+    showAnchor(entry.snap, entry.anchor);
   };
 
   const redo = () => {
@@ -314,9 +439,7 @@ export function DatasetEditorView() {
     h.past.push({ snap: { columns, rows, roles, kinds }, anchor: entry.anchor });
     h.burstKey = null;
     restoreSnap(entry.snap);
-    if (entry.anchor && entry.snap.columns.includes(entry.anchor.col) && entry.snap.rows.length) {
-      focusCell(Math.min(entry.anchor.row, entry.snap.rows.length - 1), entry.anchor.col);
-    }
+    showAnchor(entry.snap, entry.anchor);
   };
 
   undoRef.current = undo;
@@ -340,31 +463,197 @@ export function DatasetEditorView() {
     if (entry) restoreSnap(entry.snap);
   };
 
-  const handleCellKey = (
-    e: React.KeyboardEvent<HTMLInputElement>,
-    rowIdx: number,
-    colIdx: number,
-    column: string,
-  ) => {
+  const selectOnly = (pos: GridPos) => {
+    setEditing(null);
+    history.current.burstKey = null;
+    setSel({ anchor: pos, head: pos });
+    scrollToCell(pos.row, columns[pos.col]!);
+  };
+
+  const startEdit = (pos: GridPos, seed?: string) => {
+    setSel({ anchor: pos, head: pos });
+    if (seed !== undefined) setCell(pos.row, columns[pos.col]!, seed);
+    setEditing(pos);
+  };
+
+  const commitEdit = () => {
+    setEditing(null);
+    history.current.burstKey = null;
+    gridFocus();
+  };
+
+  /**
+   * Move the selection by a delta — the plain-arrow move collapses the range
+   * to the new anchor, Shift extends the head while the anchor stays put.
+   */
+  const moveSel = (dRow: number, dCol: number, extend: boolean) => {
+    if (!selRange) return;
+    const base = extend ? selRange.head : selRange.anchor;
+    const pos = clampPos({ row: base.row + dRow, col: base.col + dCol });
+    setSel(extend ? { anchor: selRange.anchor, head: pos } : { anchor: pos, head: pos });
+    scrollToCell(pos.row, columns[pos.col]!);
+  };
+
+  /** Tab order wraps at row edges the way Sheets does. */
+  const tabSel = (backwards: boolean) => {
+    if (!selRange) return;
+    const total = rows.length * columns.length;
+    const flat = selRange.anchor.row * columns.length + selRange.anchor.col;
+    const next = Math.max(0, Math.min(total - 1, flat + (backwards ? -1 : 1)));
+    selectOnly({ row: Math.floor(next / columns.length), col: next % columns.length });
+  };
+
+  const copyRange = () => {
+    if (!selBounds) return;
+    const tsv = rows
+      .slice(selBounds.top, selBounds.bottom + 1)
+      .map((row) =>
+        columns
+          .slice(selBounds.left, selBounds.right + 1)
+          .map((col) => escapeTsvCell(cellText(row[col])))
+          .join("\t"),
+      )
+      .join("\n");
+    void navigator.clipboard.writeText(tsv).catch(() => {});
+  };
+
+  const clearRange = () => {
+    if (!selBounds) return;
+    const next = rows.map((row, r) => {
+      if (r < selBounds.top || r > selBounds.bottom) return row;
+      const cleared = { ...row };
+      for (const col of columns.slice(selBounds.left, selBounds.right + 1)) cleared[col] = "";
+      return cleared;
+    });
+    apply({ rows: next }, { anchor: { row: selBounds.top, col: columns[selBounds.left]! } });
+  };
+
+  const pasteGrid = (grid: string[][]) => {
+    if (!selBounds || grid.length === 0) return;
+    const base = { row: selBounds.top, col: selBounds.left };
+    // A single copied cell fills the whole selected range, as in Sheets.
+    const fillOne =
+      grid.length === 1 &&
+      grid[0]!.length === 1 &&
+      (selBounds.bottom > selBounds.top || selBounds.right > selBounds.left);
+    const height = fillOne ? selBounds.bottom - selBounds.top + 1 : grid.length;
+    const next = [...rows];
+    // Pasting past the last row grows the table; extra columns are clipped.
+    while (next.length < base.row + height) {
+      next.push(Object.fromEntries(columns.map((c) => [c, ""])));
+    }
+    let right = base.col;
+    for (let r = 0; r < height; r++) {
+      const source = fillOne ? grid[0]! : (grid[r] ?? []);
+      const target = { ...next[base.row + r] };
+      const width = fillOne ? selBounds.right - selBounds.left + 1 : source.length;
+      for (let c = 0; c < width && base.col + c < columns.length; c++) {
+        target[columns[base.col + c]!] = fillOne ? source[0]! : (source[c] ?? "");
+        right = Math.max(right, base.col + c);
+      }
+      next[base.row + r] = target;
+    }
+    apply({ rows: next }, { anchor: { row: base.row, col: columns[base.col]! } });
+    setSel({ anchor: base, head: { row: base.row + height - 1, col: right } });
+    scrollToCell(base.row, columns[base.col]!);
+  };
+
+  const handleGridPaste = (e: React.ClipboardEvent) => {
+    // Only when the container itself holds focus (selection mode): pastes
+    // into cell inputs, header drafts etc. keep their native behavior.
+    if (editing || e.target !== e.currentTarget) return;
+    if (!selRange) return;
+    const text = e.clipboardData.getData("text/plain");
+    if (!text) return;
+    e.preventDefault();
+    pasteGrid(parseClipboardGrid(text));
+  };
+
+  /** Selection-mode keys, on the grid container: navigation and clipboard. */
+  const handleGridKey = (e: React.KeyboardEvent) => {
+    // Only when the container itself holds focus: keys inside cell inputs,
+    // header drafts and row buttons keep their native behavior.
+    if (editing || e.target !== e.currentTarget) return;
+    if (!selRange) return;
+    const rtl = gridRef.current ? getComputedStyle(gridRef.current).direction === "rtl" : false;
+    const visual = (dCol: number) => (rtl ? -dCol : dCol);
+    if (e.metaKey || e.ctrlKey) {
+      const key = e.key.toLowerCase();
+      if (key === "c" || key === "x") {
+        e.preventDefault();
+        copyRange();
+        if (key === "x") clearRange();
+      } else if (key === "a") {
+        e.preventDefault();
+        setSel({
+          anchor: { row: 0, col: 0 },
+          head: { row: rows.length - 1, col: columns.length - 1 },
+        });
+      }
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      moveSel(e.key === "ArrowDown" ? 1 : -1, 0, e.shiftKey);
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      moveSel(0, visual(e.key === "ArrowRight" ? 1 : -1), e.shiftKey);
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      tabSel(e.shiftKey);
+    } else if (e.key === "Enter" || e.key === "F2") {
+      e.preventDefault();
+      startEdit(selRange.anchor);
+    } else if (e.key === "Escape") {
+      setSel(null);
+    } else if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      clearRange();
+    } else if (e.key.length === 1 && !e.nativeEvent.isComposing) {
+      // Typing replaces the cell's content and opens the editor, like Sheets.
+      e.preventDefault();
+      startEdit(selRange.anchor, e.key);
+    }
+  };
+
+  const handleCellMouseDown = (e: React.MouseEvent, pos: GridPos) => {
+    if (e.button !== 0) return;
+    // Clicks inside the cell being edited keep their native caret behavior.
+    if (editing && editing.row === pos.row && editing.col === pos.col) return;
+    // Native focus would land in the readOnly input; selection owns the cell.
+    e.preventDefault();
+    if (editing) commitEdit();
+    gridFocus();
+    if (e.shiftKey && selRange) {
+      setSel({ anchor: selRange.anchor, head: pos });
+    } else {
+      setSel({ anchor: pos, head: pos });
+      dragging.current = true;
+    }
+  };
+
+  const handleCellMouseEnter = (pos: GridPos) => {
+    if (!dragging.current) return;
+    setSel((prev) => (prev ? { anchor: prev.anchor, head: pos } : prev));
+  };
+
+  /** Keys inside the actively edited cell input. */
+  const handleCellKey = (e: React.KeyboardEvent<HTMLInputElement>, rowIdx: number, column: string) => {
     if (e.nativeEvent.isComposing) return;
     if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      history.current.burstKey = null;
+      commitEdit();
       const delta = e.key === "ArrowUp" || (e.key === "Enter" && e.shiftKey) ? -1 : 1;
-      const next = rowIdx + delta;
-      if (next >= 0 && next < rows.length) focusCell(next, column);
+      moveSel(delta, 0, false);
     } else if (e.key === "Tab") {
-      const nextCol = colIdx + (e.shiftKey ? -1 : 1);
-      // Row edges fall through to the native tab order so the row's delete
-      // button and surrounding controls stay keyboard-reachable.
-      if (nextCol >= 0 && nextCol < columns.length) {
-        e.preventDefault();
-        history.current.burstKey = null;
-        focusCell(rowIdx, columns[nextCol]!);
-      }
+      e.preventDefault();
+      commitEdit();
+      tabSel(e.shiftKey);
     } else if (e.key === "Escape") {
       e.preventDefault();
       abortBurst(rowIdx, column);
+      setEditing(null);
+      gridFocus();
     }
   };
 
@@ -374,7 +663,7 @@ export function DatasetEditorView() {
       { rows: [...rows.slice(0, rowIdx), empty, ...rows.slice(rowIdx)] },
       { anchor: { row: rowIdx, col: columns[0]! } },
     );
-    focusCell(rowIdx, columns[0]!);
+    selectOnly({ row: rowIdx, col: 0 });
   };
 
   const duplicateRow = (rowIdx: number) => {
@@ -382,7 +671,7 @@ export function DatasetEditorView() {
       { rows: [...rows.slice(0, rowIdx + 1), { ...rows[rowIdx] }, ...rows.slice(rowIdx + 1)] },
       { anchor: { row: rowIdx + 1, col: columns[0]! } },
     );
-    focusCell(rowIdx + 1, columns[0]!);
+    selectOnly({ row: rowIdx + 1, col: 0 });
   };
 
   const addRow = () => {
@@ -562,7 +851,25 @@ export function DatasetEditorView() {
         </Tooltip>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-border/60 bg-card">
+      {/* The container is the keyboard surface for selection mode: it holds
+          DOM focus while cells are selected-but-not-editing, so arrows, Tab,
+          typing and clipboard events all land here. */}
+      <div
+        ref={gridRef}
+        tabIndex={0}
+        onKeyDown={handleGridKey}
+        onPaste={handleGridPaste}
+        onFocus={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (!sel && rows.length > 0 && columns.length > 0) {
+            setSel({
+              anchor: { row: safePage * PAGE_SIZE, col: 0 },
+              head: { row: safePage * PAGE_SIZE, col: 0 },
+            });
+          }
+        }}
+        className="overflow-x-auto rounded-xl border border-border/60 bg-card outline-none focus-visible:border-ring/60"
+      >
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-border/60 bg-muted/40">
@@ -661,29 +968,61 @@ export function DatasetEditorView() {
                           <Trash className="size-3.5" />
                         </Button>
                       </td>
-                      {columns.map((column, colIdx) => (
-                        <td key={column} className="px-1 py-0.5 align-top">
-                          <input
-                            value={cellText(row[column])}
-                            data-cell={`${rowIdx}:${column}`}
-                            onChange={(e) => setCell(rowIdx, column, e.target.value)}
-                            onKeyDown={(e) => handleCellKey(e, rowIdx, colIdx, column)}
-                            onBlur={() => {
-                              // Leaving the cell commits the burst; re-entering
-                              // later starts a fresh undo step, as in Sheets.
-                              if (history.current.burstKey === `cell:${rowIdx}:${column}`) {
-                                history.current.burstKey = null;
-                              }
-                            }}
-                            dir="auto"
-                            className={cn(
-                              "w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 py-1",
-                              "text-sm text-foreground outline-none",
-                              "hover:border-input/60 focus-visible:border-ring focus-visible:bg-background",
-                            )}
-                          />
-                        </td>
-                      ))}
+                      {columns.map((column, colIdx) => {
+                        const isEditing =
+                          editing !== null && editing.row === rowIdx && editing.col === colIdx;
+                        const inRange =
+                          !isEditing &&
+                          selBounds !== null &&
+                          rowIdx >= selBounds.top &&
+                          rowIdx <= selBounds.bottom &&
+                          colIdx >= selBounds.left &&
+                          colIdx <= selBounds.right;
+                        const isAnchor =
+                          selRange !== null &&
+                          selRange.anchor.row === rowIdx &&
+                          selRange.anchor.col === colIdx;
+                        return (
+                          <td
+                            key={column}
+                            className="px-1 py-0.5 align-top"
+                            onMouseDown={(e) =>
+                              handleCellMouseDown(e, { row: rowIdx, col: colIdx })
+                            }
+                            onMouseEnter={() =>
+                              handleCellMouseEnter({ row: rowIdx, col: colIdx })
+                            }
+                            onDoubleClick={() => startEdit({ row: rowIdx, col: colIdx })}
+                          >
+                            <input
+                              value={cellText(row[column])}
+                              data-cell={`${rowIdx}:${column}`}
+                              readOnly={!isEditing}
+                              tabIndex={-1}
+                              onChange={(e) => setCell(rowIdx, column, e.target.value)}
+                              onKeyDown={(e) => handleCellKey(e, rowIdx, column)}
+                              onBlur={() => {
+                                // Click-away commits the edit; the burst reset
+                                // makes a later re-entry a fresh undo step.
+                                if (isEditing) {
+                                  setEditing(null);
+                                  history.current.burstKey = null;
+                                }
+                              }}
+                              dir="auto"
+                              className={cn(
+                                "w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 py-1",
+                                "text-sm text-foreground outline-none",
+                                isEditing
+                                  ? "border-ring bg-background"
+                                  : "cursor-default hover:border-input/60",
+                                inRange && "bg-primary/10",
+                                isAnchor && !isEditing && "border-ring",
+                              )}
+                            />
+                          </td>
+                        );
+                      })}
                     </tr>
                   </ContextMenuTrigger>
                   <ContextMenuContent className="min-w-44 py-1">
