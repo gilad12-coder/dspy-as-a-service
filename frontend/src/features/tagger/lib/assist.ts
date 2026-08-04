@@ -208,7 +208,6 @@ export function initialAssistState(
     ...assistModelPatch(modelConfig),
     interview: { turns: [], done: false },
     rubric: [],
-    calibrationIds: [],
     predictions: {},
     provenance: {},
     rounds: [],

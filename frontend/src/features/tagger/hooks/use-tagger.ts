@@ -8,7 +8,6 @@ import {
   renameTaggerSession,
   stashTaggerSession,
   getTaggerSession,
-  taggerAssistPredict,
   taggerAssistEstimate,
   taggerAssistAutotagStart,
   taggerAssistAutotagStatus,
@@ -59,8 +58,6 @@ export const TAGGER_SESSIONS_CHANGED = "tagger-sessions-changed";
 
 const AUTOSAVE_INTERVAL_MS = 60_000;
 const AUTOTAG_POLL_MS = 2_500;
-/** Calibration predictions are prefetched this many rows ahead of the cursor. */
-const PREDICT_AHEAD = 6;
 
 function isTagged(ann: Annotation, mode: AnnotationMode): boolean {
   if (ann === undefined || ann === null) return false;
@@ -102,17 +99,19 @@ export interface AutotagEstimate {
  * interview → review → autotag phases. All final labels live in
  * ``annotations`` regardless of who produced them; ``assist`` carries the AI
  * bookkeeping (rubric, predictions, provenance, rounds, bulk-job progress).
- * Sessions saved before AI-first calibration may still resume mid-way through
- * the legacy human-first ``calibration`` phase, which is why that machinery
- * survives below even though new sessions never enter it.
  * During the ``autotagging`` phase the server owns the row, so autosaving is
  * suspended and progress is polled instead.
  */
 export function useTagger(initialSession?: TaggerSessionDetail | null) {
   const router = useRouter();
-  const [phase, setPhase] = useState<TaggerPhase>(
-    (initialSession?.phase as TaggerPhase | undefined) ?? "setup",
-  );
+  const [phase, setPhase] = useState<TaggerPhase>(() => {
+    const saved = initialSession?.phase;
+    // Sessions saved before AI-first calibration persist the retired
+    // human-first "calibration" phase; land them on the review gate, where
+    // their partial labels simply count as human-tagged rows.
+    if (saved === "calibration") return "review";
+    return (saved as TaggerPhase | undefined) ?? "setup";
+  });
   const [config, setConfig] = useState<TaggerConfig | null>(
     (initialSession?.config as TaggerConfig | undefined) ?? null,
   );
@@ -397,9 +396,9 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   }, []);
 
   // ---------------------------------------------------------------- frames
-  // In calibration/review the annotator surface works on a subset of rows (the
-  // calibration set or the open round); everywhere else it sees the full
-  // dataset. ``currentIndex`` is always an index into the active frame.
+  // In review the annotator surface works on the open round's subset of rows;
+  // everywhere else it sees the full dataset. ``currentIndex`` is always an
+  // index into the active frame.
 
   const openRound: ReviewRound | null = useMemo(() => {
     const last = assist?.rounds[assist.rounds.length - 1];
@@ -408,10 +407,9 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
 
   const frameIds: string[] | null = useMemo(() => {
     if (readOnly) return null;
-    if (phase === "calibration") return assist?.calibrationIds ?? null;
     if (phase === "review") return openRound?.rowIds ?? null;
     return null;
-  }, [readOnly, phase, assist, openRound]);
+  }, [readOnly, phase, openRound]);
 
   const frameData: DataRow[] = useMemo(() => {
     if (!frameIds) return data;
@@ -789,63 +787,6 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     void sendInterviewMessage(null, 0);
   }, [sendInterviewMessage]);
 
-  // ------------------------------------------------------------ calibration
-
-  // Silently prefetch predictions a few rows ahead of the cursor so the
-  // post-commit reveal is instant. Human-first stays intact: predictions are
-  // only revealed after the row is committed.
-  const predictInFlight = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (phase !== "calibration" || !sessionId || !effectiveConfig) return;
-    const state = assistRef.current;
-    if (!state) return;
-    const upcoming = (state.calibrationIds ?? [])
-      .slice(Math.max(0, currentIndex), currentIndex + PREDICT_AHEAD)
-      .filter((id) => !state.predictions[id] && !predictInFlight.current.has(id));
-    if (upcoming.length === 0) return;
-    for (const id of upcoming) predictInFlight.current.add(id);
-    void (async () => {
-      try {
-        await flushNow();
-        const res = await taggerAssistPredict(sessionId, upcoming);
-        setAssist((prev) =>
-          prev
-            ? {
-                ...prev,
-                predictions: {
-                  ...prev.predictions,
-                  ...(res.predictions as Record<string, AssistPrediction>),
-                },
-              }
-            : prev,
-        );
-        setAssistError(null);
-      } catch {
-        setAssistError("predict");
-      } finally {
-        for (const id of upcoming) predictInFlight.current.delete(id);
-      }
-    })();
-  }, [phase, sessionId, effectiveConfig, currentIndex, annotations, flushNow]);
-
-  const calibrationDone = useMemo(() => {
-    if (phase !== "calibration" || !assist || !effectiveConfig) return false;
-    return (
-      assist.calibrationIds.length > 0 &&
-      assist.calibrationIds.every((id) => isTagged(annotations[id], effectiveConfig.mode))
-    );
-  }, [phase, assist, effectiveConfig, annotations]);
-
-  /** Leave calibration for the review stage (or straight to done when tiny). */
-  const finishCalibration = useCallback(() => {
-    if (!effectiveConfig) return;
-    const untagged = data.filter(
-      (row) => !isTagged(annotations[String(row.id)], effectiveConfig.mode),
-    );
-    setCurrentIndex(0);
-    setPhase(untagged.length === 0 ? "complete" : "review");
-  }, [effectiveConfig, data, annotations]);
-
   // ---------------------------------------------------------------- review
 
   /**
@@ -1139,7 +1080,6 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     frameData,
     frameTaggedCount,
     openRound,
-    calibrationDone,
     // Base flow.
     startAnnotating,
     backToSetup,
@@ -1173,7 +1113,6 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     assistToggleCategory,
     assistSetFreetext,
     acceptPrediction,
-    finishCalibration,
     startReviewRound,
     finishRound,
     fetchEstimate,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, List } from "@/shared/ui/icons";
+import { List } from "@/shared/ui/icons";
 import type { TaggerSessionDetail } from "@/shared/lib/api";
 import { Button } from "@/shared/ui/primitives/button";
 import { DataHubTabs } from "@/shared/ui/data-hub-tabs";
@@ -227,7 +227,6 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
         <TaggerReviewGate
           config={tagger.config}
           assist={tagger.assist}
-          annotations={tagger.annotations}
           remainingCount={tagger.data.length - tagger.taggedCount}
           estimate={tagger.estimate}
           roundLoading={tagger.roundLoading || tagger.contractStarting}
@@ -240,8 +239,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
     );
   }
 
-  const assistActive =
-    tagger.assist !== null && (tagger.phase === "calibration" || tagger.phase === "review");
+  const assistActive = tagger.assist !== null && tagger.phase === "review";
 
   // During a round the header bar tracks the human's audit, not the AI's
   // pre-labels — the same decided/total the rail shows, one number per screen.
@@ -319,21 +317,9 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
     <PageContainer full>
       {backBar}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        <div className="min-w-0 flex-1">
-          {tagger.phase === "calibration" && tagger.calibrationDone && (
-            <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5">
-              <p className="text-sm text-foreground">{msg("tagger.assist.calibration.done")}</p>
-              <Button size="sm" onClick={tagger.finishCalibration} className="gap-1.5 shrink-0">
-                {msg("tagger.assist.calibration.continue")}
-                <ArrowRight className="size-3.5 rtl:rotate-180" />
-              </Button>
-            </div>
-          )}
-          {annotation}
-        </div>
+        <div className="min-w-0 flex-1">{annotation}</div>
         <div className="lg:max-h-[calc(100dvh-var(--header-height,53px)-4rem)] lg:sticky lg:top-4">
           <TaggerAssistRail
-            phase={tagger.phase as "calibration" | "review"}
             config={tagger.config}
             assist={tagger.assist}
             annotations={tagger.annotations}

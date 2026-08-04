@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Check, CircleNotch, Sparkle } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { Badge } from "@/shared/ui/primitives/badge";
@@ -14,10 +14,9 @@ import type {
   ReviewRound,
   TaggerConfig,
 } from "../lib/types";
-import { agreementGate, agreementOver, labelsAgree } from "../lib/assist";
+import { agreementGate, agreementOver } from "../lib/assist";
 
 interface Props {
-  phase: "calibration" | "review";
   config: TaggerConfig;
   assist: AssistState;
   annotations: Record<string, Annotation>;
@@ -32,24 +31,14 @@ interface Props {
   predictError: boolean;
 }
 
-function isCommitted(ann: Annotation, mode: TaggerConfig["mode"]): boolean {
-  if (ann === undefined || ann === null) return false;
-  if (mode === "multiclass") return Array.isArray(ann) && ann.length > 0;
-  return typeof ann === "string" && ann !== "";
-}
-
 /**
  * The co-pilot companion rail beside the annotation surface.
  *
  * Review is AI-first: the suggestion is the object under audit, confirmation
- * and correction both cost one keystroke. The calibration branch serves only
- * sessions saved before AI-first calibration — there the AI predicted
- * silently and revealed its guess after the human committed. The rail is
- * display-only chrome — it never takes keyboard focus away from the
- * annotator.
+ * and correction both cost one keystroke. The rail is display-only chrome —
+ * it never takes keyboard focus away from the annotator.
  */
 export function TaggerAssistRail({
-  phase,
   config,
   assist,
   annotations,
@@ -62,17 +51,12 @@ export function TaggerAssistRail({
   onFinishRound,
   predictError,
 }: Props) {
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  const [freetextRevealed, setFreetextRevealed] = useState<Set<string>>(new Set());
-
   const row = frameData[currentIndex];
   const rowId = row ? String(row.id) : "";
   const prediction = rowId ? assist.predictions[rowId] : undefined;
-  const committed = isCommitted(annotations[rowId], config.mode);
   const gate = agreementGate(config.mode);
 
   const frameIds = useMemo(() => frameData.map((r) => String(r.id)), [frameData]);
-  const committedCount = frameIds.filter((id) => isCommitted(annotations[id], config.mode)).length;
 
   const decidedCount = openRound
     ? openRound.rowIds.filter((id) => openRound.decided[id] !== undefined).length
@@ -84,10 +68,7 @@ export function TaggerAssistRail({
   // A percentage over a handful of rows swings wildly and reads as a verdict
   // before the evidence is in — the meter stays "—" until the whole pass is
   // reviewed (30/30, not 3/30).
-  const passComplete =
-    phase === "calibration"
-      ? frameIds.length > 0 && committedCount === frameIds.length
-      : openRound !== null && decidedCount === openRound.rowIds.length;
+  const passComplete = openRound !== null && decidedCount === openRound.rowIds.length;
   const agreement = passComplete
     ? agreementOver(config.mode, frameIds, annotations, assist.predictions)
     : null;
@@ -97,7 +78,6 @@ export function TaggerAssistRail({
   // shortcuts keep working untouched; inputs and textareas keep their Enter
   // (which is what makes this safe for freetext rows too).
   useEffect(() => {
-    if (phase !== "review") return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "Enter") return;
       const tag = (e.target as HTMLElement).tagName;
@@ -114,7 +94,7 @@ export function TaggerAssistRail({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [phase, rowId, assist.predictions, openRound, frameData, currentIndex, onAccept, onGoTo]);
+  }, [rowId, assist.predictions, openRound, frameData, currentIndex, onAccept, onGoTo]);
 
   // "Finish round" is gated behind a full pass, so until then the same slot
   // navigates: jump to the next row (wrapping) that still needs a decision.
@@ -131,17 +111,6 @@ export function TaggerAssistRail({
     }
   };
 
-  const calibrationReveal = (() => {
-    if (phase !== "calibration" || !committed) return null;
-    if (!prediction) return "pending" as const;
-    if (config.mode === "freetext" && assist.calibrationStyle === "blind" && !freetextRevealed.has(rowId)) {
-      return "offer" as const;
-    }
-    return labelsAgree(config.mode, annotations[rowId], prediction.value as Annotation)
-      ? ("agree" as const)
-      : ("disagree" as const);
-  })();
-
   return (
     <aside
       className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto lg:w-[300px]"
@@ -154,15 +123,10 @@ export function TaggerAssistRail({
             {msg("tagger.assist.rail.title")}
           </span>
           <span className="text-xs text-muted-foreground tabular-nums">
-            {phase === "calibration"
-              ? formatMsg("tagger.assist.rail.progress", {
-                  done: committedCount,
-                  total: frameIds.length,
-                })
-              : formatMsg("tagger.assist.rail.reviewed", {
-                  done: decidedCount,
-                  total: openRound?.rowIds.length ?? 0,
-                })}
+            {formatMsg("tagger.assist.rail.reviewed", {
+              done: decidedCount,
+              total: openRound?.rowIds.length ?? 0,
+            })}
           </span>
         </div>
 
@@ -194,7 +158,7 @@ export function TaggerAssistRail({
 
         {/* Live pulse of the streaming batch: predictions land chunk by
             chunk, and this strip fills as they do, then disappears. */}
-        {phase === "review" && roundPredicting && openRound && (
+        {roundPredicting && openRound && (
           <div className="mt-3 border-t border-border/40 pt-2.5 motion-safe:animate-in motion-safe:fade-in-0">
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -223,17 +187,6 @@ export function TaggerAssistRail({
       <div className="rounded-xl border border-border/60 bg-card p-4">
         {predictError ? (
           <p className="text-sm text-muted-foreground">{msg("tagger.assist.rail.predict_error")}</p>
-        ) : phase === "calibration" ? (
-          <CalibrationPanel
-            reveal={calibrationReveal}
-            config={config}
-            prediction={prediction}
-            assisted={assist.calibrationStyle === "assisted"}
-            dismissed={dismissed.has(rowId)}
-            onSwitch={() => onAccept(rowId)}
-            onKeep={() => setDismissed((prev) => new Set(prev).add(rowId))}
-            onReveal={() => setFreetextRevealed((prev) => new Set(prev).add(rowId))}
-          />
         ) : (
           <ReviewPanel
             config={config}
@@ -250,78 +203,6 @@ export function TaggerAssistRail({
         )}
       </div>
     </aside>
-  );
-}
-
-function CalibrationPanel({
-  reveal,
-  config,
-  prediction,
-  assisted,
-  dismissed,
-  onSwitch,
-  onKeep,
-  onReveal,
-}: {
-  reveal: "pending" | "offer" | "agree" | "disagree" | null;
-  config: TaggerConfig;
-  prediction: AssistPrediction | undefined;
-  assisted: boolean;
-  dismissed: boolean;
-  onSwitch: () => void;
-  onKeep: () => void;
-  onReveal: () => void;
-}) {
-  // Assisted style (opt-in pref): the suggestion is visible before commit.
-  if (reveal === null) {
-    if (assisted && prediction) {
-      return <Suggestion config={config} prediction={prediction} />;
-    }
-    return (
-      <p className="text-sm text-muted-foreground">{msg("tagger.assist.rail.waiting")}</p>
-    );
-  }
-  if (reveal === "pending") {
-    return (
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <CircleNotch className="size-3.5 animate-spin" />
-        {msg("tagger.assist.rail.predicting")}
-      </p>
-    );
-  }
-  if (reveal === "offer") {
-    return (
-      <Button variant="outline" size="sm" onClick={onReveal} className="w-full">
-        {msg("tagger.assist.rail.reveal")}
-      </Button>
-    );
-  }
-  if (reveal === "agree") {
-    return (
-      <p className="flex items-center gap-2 text-sm text-foreground">
-        <Check className="size-4 text-emerald-700" />
-        {msg("tagger.assist.rail.agree")}
-      </p>
-    );
-  }
-  if (dismissed) {
-    return (
-      <p className="text-sm text-muted-foreground">{msg("tagger.assist.rail.kept")}</p>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-2.5">
-      <p className="text-sm text-foreground">{msg("tagger.assist.rail.disagree")}</p>
-      {prediction && <Suggestion config={config} prediction={prediction} />}
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={onKeep} className="flex-1">
-          {msg("tagger.assist.rail.keep")}
-        </Button>
-        <Button variant="secondary" size="sm" onClick={onSwitch} className="flex-1">
-          {msg("tagger.assist.rail.switch")}
-        </Button>
-      </div>
-    </div>
   );
 }
 

@@ -6,13 +6,12 @@ import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import type { AutotagEstimate } from "../hooks/use-tagger";
-import type { Annotation, AssistState, TaggerConfig } from "../lib/types";
-import { agreementGate, agreementOver, gateUnlocked } from "../lib/assist";
+import type { AssistState, TaggerConfig } from "../lib/types";
+import { agreementGate, gateUnlocked } from "../lib/assist";
 
 interface Props {
   config: TaggerConfig;
   assist: AssistState;
-  annotations: Record<string, Annotation>;
   remainingCount: number;
   estimate: AutotagEstimate | null;
   roundLoading: boolean;
@@ -31,7 +30,6 @@ interface Props {
 export function TaggerReviewGate({
   config,
   assist,
-  annotations,
   remainingCount,
   estimate,
   roundLoading,
@@ -44,12 +42,6 @@ export function TaggerReviewGate({
   const closedRounds = assist.rounds.filter((r) => !r.flaggedPass && r.agreement !== undefined);
   const lastRound = closedRounds[closedRounds.length - 1];
   const unlocked = assist.mode === "autopilot" || gateUnlocked(config, assist);
-  const calibrationAgreement = agreementOver(
-    config.mode,
-    assist.calibrationIds,
-    annotations,
-    assist.predictions,
-  );
 
   useEffect(() => {
     if (unlocked) onFetchEstimate();
@@ -83,11 +75,7 @@ export function TaggerReviewGate({
                     agreement: Math.round((lastRound.agreement ?? 0) * 100),
                     gate: Math.round(gate * 100),
                   })
-                : calibrationAgreement !== null
-                  ? formatMsg("tagger.assist.gate.calibration_subtitle", {
-                      agreement: Math.round(calibrationAgreement * 100),
-                    })
-                  : msg("tagger.assist.gate.calibration_subtitle_blind")}
+                : msg("tagger.assist.gate.calibration_subtitle_blind")}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">

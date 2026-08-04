@@ -67,7 +67,6 @@ export type TaggerAssistMode = "manual" | "copilot" | "autopilot";
 export type TaggerPhase =
   | "setup"
   | "interview"
-  | "calibration"
   | "review"
   | "autotagging"
   | "complete"
@@ -138,16 +137,9 @@ export interface AssistState {
   interviewModel?: string | null;
   /** Reasoning-effort level for ``interviewModel``; same null/absent split. */
   interviewEffort?: string | null;
-  /**
-   * Only sessions saved before AI-first calibration carry this; it steers the
-   * legacy human-first calibration phase, which new sessions never enter.
-   */
-  calibrationStyle?: "blind" | "assisted";
   interview: { turns: InterviewTurn[]; done: boolean };
   /** The labeling rubric distilled from the interview; grows with corrections. */
   rubric: string[];
-  /** Row ids sampled by the legacy calibration phase (pre-AI-first sessions). */
-  calibrationIds: string[];
   predictions: Record<string, AssistPrediction>;
   provenance: Record<string, AnnotationProvenance>;
   rounds: ReviewRound[];

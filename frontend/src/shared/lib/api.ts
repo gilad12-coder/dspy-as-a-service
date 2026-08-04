@@ -1326,17 +1326,6 @@ export async function deleteTaggerSession(sessionId: string) {
   return res;
 }
 
-/** Predict labels for specific rows (calibration / review batches). */
-export function taggerAssistPredict(sessionId: string, rowIds: string[]) {
-  return request<{
-    predictions: Record<string, { value: string | string[]; confidence: number; reason?: string }>;
-    credits: number;
-  }>(`/tagging-sessions/${sessionId}/assist/predict`, {
-    method: "POST",
-    body: JSON.stringify({ row_ids: rowIds }),
-  });
-}
-
 /** Credit estimate for auto-tagging every currently-unlabeled row. */
 export function taggerAssistEstimate(sessionId: string) {
   return request<{ rows: number; model: string; credits_low: number; credits_high: number }>(
