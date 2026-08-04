@@ -132,11 +132,12 @@ export interface AssistState {
    */
   modelParams?: Omit<ModelConfig, "name">;
   /** LiteLLM id of the model conducting the interview (the composer's model
-   * menu); absent runs the server default. Distinct from ``model``, which is
+   * menu). ``null`` is an explicit auto-router pick; absent (never picked)
+   * follows the app-wide composer default. Distinct from ``model``, which is
    * the model that tags rows. */
-  interviewModel?: string;
-  /** Reasoning-effort level for ``interviewModel``; absent runs its default. */
-  interviewEffort?: string;
+  interviewModel?: string | null;
+  /** Reasoning-effort level for ``interviewModel``; same null/absent split. */
+  interviewEffort?: string | null;
   /**
    * Only sessions saved before AI-first calibration carry this; it steers the
    * legacy human-first calibration phase, which new sessions never enter.

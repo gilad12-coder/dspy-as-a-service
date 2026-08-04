@@ -119,6 +119,11 @@ export const PREF_KEYS: Record<keyof UserPrefs, string> = {
   taggerAssistModel: "skynet.prefs.tagger.assist-model",
 };
 
+// Mirrors the backend's balanced-tier pin (BALANCED_PINNED_MODEL_ID in
+// core/api/model_router.py): new composers open on the model that would
+// serve them anyway, instead of an opaque "Auto" chip. Re-pin both together.
+export const DEFAULT_COMPOSER_MODEL = "openrouter/openai/gpt-5.6-terra";
+
 export const DEFAULT_AGENT_SHORTCUT: AgentShortcut = {
   key: "j",
   ctrl: true,
@@ -136,7 +141,7 @@ export const DEFAULT_PREFS: UserPrefs = {
   agentTrustMode: "ask",
   agentShortcut: DEFAULT_AGENT_SHORTCUT,
   taggerAssist: true,
-  composerModel: null,
+  composerModel: DEFAULT_COMPOSER_MODEL,
   composerEffort: null,
   dictationEnabled: true,
   taggerAssistModel: { name: "" },

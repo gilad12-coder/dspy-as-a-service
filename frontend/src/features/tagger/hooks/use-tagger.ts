@@ -47,6 +47,8 @@ import {
   calibrationTarget,
   flaggedRowIds,
   initialAssistState,
+  interviewComposerEffort,
+  interviewComposerModel,
   labelsAgree,
   sampleRowIds,
 } from "../lib/assist";
@@ -379,14 +381,16 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
 
   // The interviewer's model (the composer menu) — same flush semantics as
   // ``setAssistModel`` so the very next turn already runs on the new choice.
+  // ``null`` (an explicit auto-router pick) is stored as-is: only a session
+  // that never picked follows the app-wide composer default.
   const setInterviewModel = useCallback((model: string | null) => {
-    const patch = { interviewModel: model ?? undefined };
+    const patch = { interviewModel: model };
     setAssist((prev) => (prev ? { ...prev, ...patch } : prev));
     if (assistRef.current) assistRef.current = { ...assistRef.current, ...patch };
   }, []);
 
   const setInterviewEffort = useCallback((effort: string | null) => {
-    const patch = { interviewEffort: effort ?? undefined };
+    const patch = { interviewEffort: effort };
     setAssist((prev) => (prev ? { ...prev, ...patch } : prev));
     if (assistRef.current) assistRef.current = { ...assistRef.current, ...patch };
   }, []);
@@ -648,8 +652,8 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
             // role/content go over the wire.
             turns: turns.map(({ role, content }) => ({ role, content })),
             locale: getActiveLocale(),
-            model: state.interviewModel,
-            reasoning_effort: state.interviewEffort,
+            model: interviewComposerModel(state) ?? undefined,
+            reasoning_effort: interviewComposerEffort(state) ?? undefined,
           },
           {
             signal: controller.signal,

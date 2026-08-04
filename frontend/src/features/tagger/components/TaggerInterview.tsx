@@ -39,7 +39,12 @@ import { ModelChip } from "@/shared/ui/model-chip";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { AutotagEstimate } from "../hooks/use-tagger";
-import { assistModelConfig, calibrationTarget } from "../lib/assist";
+import {
+  assistModelConfig,
+  calibrationTarget,
+  interviewComposerEffort,
+  interviewComposerModel,
+} from "../lib/assist";
 import type { AnnotationMode, AssistState, Category, TaggerConfig } from "../lib/types";
 
 /**
@@ -229,9 +234,9 @@ export function TaggerInterview({
             placeholder={msg("tagger.assist.interview.placeholder")}
             modelMenu={
               <ComposerModelMenu
-                value={assist.interviewModel ?? null}
+                value={interviewComposerModel(assist)}
                 onChange={onSetInterviewModel}
-                effort={assist.interviewEffort ?? null}
+                effort={interviewComposerEffort(assist)}
                 onEffortChange={onSetInterviewEffort}
               />
             }
