@@ -2765,7 +2765,7 @@
   "tagger.assist.rubric.credits_estimate_flat": "~{count} credits",
   "tagger.assist.rubric.credits_estimate_one": "~1 credit",
   "agent.model_menu.auto": "Auto",
-  "agent.model_menu.auto_hint": "Picks the best model each turn",
+  "agent.model_menu.auto_hint": "The recommended default model (GPT-5.6 Terra)",
   "agent.model_menu.auto_intelligent": "Auto · Intelligent",
   "agent.model_menu.auto_intelligent_hint": "A frontier model on every turn",
   "agent.model_menu.desc_gpt_5_6_sol": "OpenAI's code & science flagship",

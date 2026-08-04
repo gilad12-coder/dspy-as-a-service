@@ -305,8 +305,8 @@ def test_interview_stream_forwards_model(monkeypatch) -> None:
     assert seen["lm_extra_body"] is None
 
 
-def test_interview_stream_auto_rides_router_with_sticky_session(monkeypatch) -> None:
-    """No chosen model rides the auto router, keyed to the tagging session."""
+def test_interview_stream_auto_runs_pinned_default(monkeypatch) -> None:
+    """No chosen model runs the pinned default with no router extras."""
     seen: dict = {}
 
     async def fake_stream(
@@ -329,11 +329,8 @@ def test_interview_stream_auto_rides_router_with_sticky_session(monkeypatch) -> 
         json={"turns": []},
     )
     assert resp.status_code == 200
-    assert seen["model"] == model_router.OPENROUTER_AUTO_ID
-    assert seen["lm_extra_body"] == {
-        "plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}],
-        "session_id": session_id,
-    }
+    assert seen["model"] == model_router.BALANCED_PINNED_MODEL_ID
+    assert seen["lm_extra_body"] is None
 
 
 def test_predict_excludes_requested_rows_from_examples(monkeypatch) -> None:

@@ -1,16 +1,15 @@
 """Auto-mode model routing for the generalist agent.
 
-The composer's "Auto" delegates per-turn model choice to OpenRouter's Auto
-Router Beta (model id ``openrouter/auto-beta``, docs:
-openrouter.ai/docs/guides/routing/routers/auto-router) — a task-aware
-router that classifies each request and routes it to the best model for
-the job. Both tiers ride the same router and differ only in its
-``cost_quality_tradeoff`` dial: "balanced" sits mid-scale, "intelligent"
-pins the dial to pure quality, mirroring Cursor Router's Balance and
-Intelligence modes.
+The composer's default "Auto" runs the pinned default model
+(``BALANCED_PINNED_MODEL_ID``); the "intelligent" tier delegates per-turn
+model choice to OpenRouter's Auto Router Beta (model id
+``openrouter/auto-beta``, docs:
+openrouter.ai/docs/guides/routing/routers/auto-router) with its
+``cost_quality_tradeoff`` dial pinned to pure quality, mirroring Cursor
+Router's Intelligence mode.
 
 Deployments without OpenRouter connectivity (air-gapped gateways) degrade
-to the configured server default, matching Auto's pre-router behaviour.
+to the configured server default for both tiers.
 """
 
 from __future__ import annotations
@@ -33,10 +32,18 @@ AUTO_INTELLIGENT_ID = "auto:intelligent"
 # prefix plus their ``openrouter/auto-beta`` model id.
 OPENROUTER_AUTO_ID = "openrouter/openrouter/auto-beta"
 
+# The default ("balanced") model, pinned per the 2026-08 nine-model eval on
+# sanitized production cases (two rounds). gpt-5.6-luna scored higher
+# (16/20 vs Terra's 14/20 judged passes) but Terra was kept deliberately:
+# fastest (3.1s vs 7.1s avg) and cheapest of the top scorers, and the only
+# candidate whose routing variants were also validated (bare beat every
+# variant). Re-measure before changing — the eval is re-runnable.
+BALANCED_PINNED_MODEL_ID = "openrouter/openai/gpt-5.6-terra"
+
 # OpenRouter's dial: 0 = pure quality, 10 = cheapest wins (their default is
-# 9). Balanced sits mid-scale because the agent's tool-calling loop fumbles
-# on the bottom of the ladder; intelligent is Cursor-style frontier quality.
-_TIER_DIALS: dict[AutoTier, int] = {"balanced": 5, "intelligent": 0}
+# 9). Only the intelligent tier rides the router now; balanced runs the
+# pinned default above.
+_INTELLIGENT_DIAL = 0
 
 
 def resolve_auto_tier(model: str | None) -> tuple[str | None, AutoTier | None]:
@@ -81,20 +88,24 @@ def route_auto_model(tier: AutoTier, conversation_id: str | None = None) -> Mode
     """Build the model config an Auto turn should run on.
 
     Args:
-        tier: ``"balanced"`` or ``"intelligent"`` — picks the router's
-            ``cost_quality_tradeoff`` dial.
-        conversation_id: Persisted conversation id, when known. Forwarded
-            as the router's ``session_id`` so model selection sticks across
-            the turns of one conversation instead of flip-flopping.
+        tier: ``"balanced"`` runs the pinned default model;
+            ``"intelligent"`` rides the Auto Router at pure quality.
+        conversation_id: Persisted conversation id, when known. On the
+            router path it is forwarded as the ``session_id`` so model
+            selection sticks across the turns of one conversation instead
+            of flip-flopping; the pinned path doesn't need it.
 
     Returns:
-        A :class:`ModelConfig` running OpenRouter's Auto Router, or the
-        configured server default when OpenRouter isn't reachable.
+        A :class:`ModelConfig` running the pinned default (balanced) or
+        OpenRouter's Auto Router (intelligent), or the configured server
+        default when OpenRouter isn't reachable.
     """
     if not _openrouter_reachable():
         return ModelConfig(name=settings.generalist_agent_model)
+    if tier == "balanced":
+        return ModelConfig(name=BALANCED_PINNED_MODEL_ID)
     body: dict[str, Any] = {
-        "plugins": [{"id": "auto-router", "cost_quality_tradeoff": _TIER_DIALS[tier]}],
+        "plugins": [{"id": "auto-router", "cost_quality_tradeoff": _INTELLIGENT_DIAL}],
     }
     if conversation_id:
         body["session_id"] = conversation_id
@@ -120,8 +131,9 @@ def route_menu_model(
 
     Returns:
         ``(model_id, lm_extra_body)`` — a validated catalog id with no extras,
-        the auto router's id with its plugin dial, or ``(None, None)`` when
-        OpenRouter is unreachable (the engine's configured default runs).
+        the pinned default with no extras, the auto router's id with its
+        plugin dial, or ``(None, None)`` when OpenRouter is unreachable (the
+        engine's configured default runs).
 
     Raises:
         DomainError: 422 when an explicit id is not a catalog model.
@@ -131,10 +143,11 @@ def route_menu_model(
         require_known_model(requested)
         return requested, None
     routed = route_auto_model(tier or "balanced", session_id)
-    # The degraded config carries no extras, and the server default may itself
-    # be the auto router's id — the plugin body, not the name, marks the
-    # routed path.
     body = routed.extra.get("extra_body") if routed.extra else None
-    if body is None:
-        return None, None
-    return routed.name, dict(body)
+    if body is not None:
+        return routed.name, dict(body)
+    if routed.name == BALANCED_PINNED_MODEL_ID:
+        return routed.name, None
+    # Degraded (no OpenRouter): plain name but not the pin — let the
+    # engine's own configured default run, matching pre-pin behaviour.
+    return None, None

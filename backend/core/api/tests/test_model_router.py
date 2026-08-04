@@ -11,6 +11,7 @@ from ..errors import DomainError
 from ..model_catalog import CatalogModel, ModelCatalogResponse
 from ..model_router import (
     AUTO_INTELLIGENT_ID,
+    BALANCED_PINNED_MODEL_ID,
     OPENROUTER_AUTO_ID,
     resolve_auto_tier,
     route_auto_model,
@@ -45,18 +46,16 @@ def test_resolve_auto_tier(model: str | None, expected: tuple[str | None, str | 
     assert resolve_auto_tier(model) == expected
 
 
-def test_balanced_runs_auto_router_mid_dial(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Balanced Auto rides OpenRouter's router with the mid-scale dial."""
+def test_balanced_runs_pinned_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Balanced Auto runs the eval-pinned default model with no extras."""
     monkeypatch.setattr(
         mr,
         "get_catalog_cached",
         lambda: _catalog_with("openrouter/anthropic/claude-sonnet-5", "openai/gpt-5.5"),
     )
     config = route_auto_model("balanced")
-    assert config.name == OPENROUTER_AUTO_ID
-    assert config.extra == {
-        "extra_body": {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]}
-    }
+    assert config.name == BALANCED_PINNED_MODEL_ID
+    assert config.extra == {}
 
 
 def test_intelligent_runs_auto_router_pure_quality(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,7 +79,7 @@ def test_conversation_id_becomes_sticky_session(monkeypatch: pytest.MonkeyPatch)
         "get_catalog_cached",
         lambda: _catalog_with("openrouter/anthropic/claude-sonnet-5"),
     )
-    config = route_auto_model("balanced", "conv-123")
+    config = route_auto_model("intelligent", "conv-123")
     assert config.extra["extra_body"]["session_id"] == "conv-123"
 
 
@@ -123,16 +122,13 @@ def test_route_menu_model_rejects_unknown_id(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_route_menu_model_routes_auto_tiers(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Absent and sentinel values ride the auto router with their dials."""
+    """Absent values run the pinned default; the sentinel rides the router."""
     monkeypatch.setattr(
         mr,
         "get_catalog_cached",
         lambda: _catalog_with("openrouter/anthropic/claude-sonnet-5"),
     )
-    assert route_menu_model(None) == (
-        OPENROUTER_AUTO_ID,
-        {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]},
-    )
+    assert route_menu_model(None) == (BALANCED_PINNED_MODEL_ID, None)
     model, body = route_menu_model(AUTO_INTELLIGENT_ID, session_id="sess-1")
     assert model == OPENROUTER_AUTO_ID
     assert body == {

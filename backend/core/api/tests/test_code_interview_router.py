@@ -91,7 +91,7 @@ def test_interview_streams_events_and_forwards_args(monkeypatch) -> None:
 
 
 def test_interview_auto_tiers_ride_the_auto_router(monkeypatch) -> None:
-    """Absent and 'auto:intelligent' models route through OpenRouter's router."""
+    """An absent model runs the pinned default; 'auto:intelligent' rides the router."""
     seen: list[dict[str, Any]] = []
 
     async def fake_stream(**kwargs: Any) -> Any:
@@ -117,9 +117,12 @@ def test_interview_auto_tiers_ride_the_auto_router(monkeypatch) -> None:
         ).status_code
         == 200
     )
-    assert [k["model"] for k in seen] == [model_router.OPENROUTER_AUTO_ID] * 2
+    assert [k["model"] for k in seen] == [
+        model_router.BALANCED_PINNED_MODEL_ID,
+        model_router.OPENROUTER_AUTO_ID,
+    ]
     assert [k["lm_extra_body"] for k in seen] == [
-        {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]},
+        None,
         {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 0}]},
     ]
 
@@ -229,7 +232,7 @@ def test_seed_endpoint_forwards_model_and_effort(monkeypatch) -> None:
 
 
 def test_seed_endpoint_auto_tiers_ride_the_auto_router(monkeypatch) -> None:
-    """Absent and 'auto:intelligent' models route the code author through OpenRouter."""
+    """The code author runs the pinned default, or the router when 'auto:intelligent'."""
     seen: list[dict[str, Any]] = []
 
     def fake_run(**kwargs: Any) -> Any:
@@ -256,9 +259,12 @@ def test_seed_endpoint_auto_tiers_ride_the_auto_router(monkeypatch) -> None:
         ).status_code
         == 200
     )
-    assert [k["model"] for k in seen] == [model_router.OPENROUTER_AUTO_ID] * 2
+    assert [k["model"] for k in seen] == [
+        model_router.BALANCED_PINNED_MODEL_ID,
+        model_router.OPENROUTER_AUTO_ID,
+    ]
     assert [k["lm_extra_body"] for k in seen] == [
-        {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]},
+        None,
         {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 0}]},
     ]
 
