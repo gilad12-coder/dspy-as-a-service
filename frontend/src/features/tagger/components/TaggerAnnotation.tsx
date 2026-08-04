@@ -67,6 +67,10 @@ interface Props {
   // human starts; when set, the header bar counts decided rows instead — the
   // same number the co-pilot rail reports.
   reviewProgress?: { done: number; total: number };
+  // Confetti when the last row is tagged. Only the plain manual flow earns
+  // it — assist sessions (review rounds, autotag) reach all-tagged through
+  // the AI, and browsing an already-full session isn't an achievement.
+  celebrateCompletion?: boolean;
   // Shared-in viewers page through rows but cannot label: the answer controls
   // render disabled and the label keyboard shortcuts are inert, while
   // navigation and export stay live.
@@ -91,6 +95,7 @@ export function TaggerAnnotation({
   currentIndex,
   taggedCount,
   reviewProgress,
+  celebrateCompletion = false,
   readOnly = false,
   onNavigate,
   onGoTo,
@@ -145,12 +150,13 @@ export function TaggerAnnotation({
   );
 
   useEffect(() => {
+    if (!celebrateCompletion) return;
     if (taggedCount === data.length && data.length > 0 && !confettiFired.current) {
       confettiFired.current = true;
       showConfettiBriefly();
     }
     if (taggedCount < data.length) confettiFired.current = false;
-  }, [taggedCount, data.length, showConfettiBriefly]);
+  }, [celebrateCompletion, taggedCount, data.length, showConfettiBriefly]);
 
   const doExport = useCallback(
     (format: ExportFormat) => {

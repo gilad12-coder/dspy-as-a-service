@@ -237,6 +237,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
       currentIndex={tagger.currentIndex}
       taggedCount={tagger.frameTaggedCount}
       reviewProgress={reviewProgress}
+      celebrateCompletion={!tagger.assist}
       onNavigate={tagger.navigate}
       onGoTo={tagger.goTo}
       onJumpUntagged={tagger.jumpToUntagged}
