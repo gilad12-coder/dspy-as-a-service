@@ -305,6 +305,43 @@ def test_interview_stream_forwards_model(monkeypatch) -> None:
     assert seen["lm_extra_body"] is None
 
 
+def test_interview_stream_tolerates_turn_bookkeeping_fields(monkeypatch) -> None:
+    """Echoed turns with extra (even null) bookkeeping fields still validate."""
+    seen: dict = {}
+
+    async def fake_stream(
+        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None, usage_sink=None
+    ):
+        """Capture the forwarded turns and finish immediately."""
+        seen["turns"] = turns
+        yield {"event": "interview_done", "data": {"message": "hi", "done": False}}
+
+    monkeypatch.setattr(tagging, "interview_turn_stream", fake_stream)
+    monkeypatch.setattr(model_catalog, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test"))
+    client, _ = _client(_ALICE)
+    session_id = _create(client)
+    resp = client.post(
+        f"/tagging-sessions/{session_id}/assist/interview/stream",
+        json={
+            "turns": [
+                {
+                    "role": "assistant",
+                    "content": "What counts as positive?",
+                    "model": "openai/gpt-test",
+                    "servedModel": None,
+                },
+                {"role": "user", "content": "Praise of the product."},
+            ],
+            "model": "openai/gpt-test",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert seen["turns"] == [
+        {"role": "assistant", "content": "What counts as positive?"},
+        {"role": "user", "content": "Praise of the product."},
+    ]
+
+
 def test_interview_stream_auto_runs_pinned_default(monkeypatch) -> None:
     """No chosen model runs the pinned default with no router extras."""
     seen: dict = {}

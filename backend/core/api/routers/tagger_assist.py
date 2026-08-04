@@ -62,10 +62,19 @@ MAX_INTERVIEW_TURNS = 40
 _ACTIVE_JOB_STATUSES = ("pending", "validating", "running")
 
 
+# One transcript turn as the client replays it. Clients echo their stored
+# turns, which carry extra bookkeeping fields (``model``, ``servedModel`` —
+# possibly null); parsing into this model drops them so only role/content
+# reach the interview engine.
+class InterviewTurn(BaseModel):
+    role: str
+    content: str
+
+
 class InterviewRequest(BaseModel):
     """One interview exchange: the transcript so far, oldest turn first."""
 
-    turns: list[dict[str, str]] = Field(default_factory=list, max_length=MAX_INTERVIEW_TURNS)
+    turns: list[InterviewTurn] = Field(default_factory=list, max_length=MAX_INTERVIEW_TURNS)
     locale: str | None = Field(
         default=None,
         description="UI locale code; the assistant replies in that language.",
@@ -288,7 +297,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                 config,
                 columns,
                 data,
-                req.turns,
+                [t.model_dump() for t in req.turns],
                 req.locale,
                 model=model,
                 reasoning_effort=req.reasoning_effort,
@@ -345,7 +354,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                     config,
                     columns,
                     data,
-                    req.turns,
+                    [t.model_dump() for t in req.turns],
                     req.locale,
                     model=model,
                     reasoning_effort=req.reasoning_effort,

@@ -643,7 +643,10 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
         await streamInterviewTurn(
           sessionId,
           {
-            turns,
+            // Stored assistant turns carry display bookkeeping (model,
+            // servedModel — possibly null) the request schema rejects; only
+            // role/content go over the wire.
+            turns: turns.map(({ role, content }) => ({ role, content })),
             locale: getActiveLocale(),
             model: state.interviewModel,
             reasoning_effort: state.interviewEffort,
