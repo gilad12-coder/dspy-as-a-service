@@ -2668,6 +2668,8 @@
   "tagger.assist.interview.contract_pending": "Writing your labeling guide…",
   "tagger.assist.interview.skip_message": "Please wrap up now and continue with your best guess.",
   "tagger.assist.interview.restart": "Restart interview",
+  "tagger.assist.review.predicting": "The AI is tagging this row…",
+  "tagger.assist.rail.tagging": "AI is tagging the batch…",
   "tagger.assist.rubric.start_autotag": "Tag all {rows} rows",
   "tagger.assist.rubric.start_copilot_round": "Tag the first {rows} rows for my review",
   "tagger.assist.rubric.credits_estimate": "~{low}–{high} credits",

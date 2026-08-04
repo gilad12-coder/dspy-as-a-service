@@ -58,6 +58,9 @@ interface Props {
   // answer is highlighted on the answer surface itself until the row is
   // decided; blind phases simply omit the prop.
   suggestions?: Record<string, AssistPrediction>;
+  // The open round's predictions are still streaming in — rows whose
+  // suggestion hasn't landed yet show a "tagging…" hint instead of nothing.
+  suggestionsPending?: boolean;
   currentIndex: number;
   taggedCount: number;
   // Review rounds pre-label every row, so tagged/total reads full before the
@@ -84,6 +87,7 @@ export function TaggerAnnotation({
   annotations,
   provenance,
   suggestions,
+  suggestionsPending = false,
   currentIndex,
   taggedCount,
   reviewProgress,
@@ -122,6 +126,10 @@ export function TaggerAnnotation({
       : typeof currentAnn === "string" && currentAnn !== "";
   const aiPick = rowCommitted ? undefined : suggestions?.[id]?.value;
   const aiPickedCats = new Set(Array.isArray(aiPick) ? aiPick : []);
+  // This row's suggestion is still on its way (predictions stream in one
+  // chunk at a time); hidden the moment the human commits either way.
+  const aiPending =
+    suggestionsPending && !rowCommitted && suggestions !== undefined && !suggestions[id];
 
   const showConfettiBriefly = useCallback(() => {
     setShowConfetti(true);
@@ -325,6 +333,21 @@ export function TaggerAnnotation({
               (config.prompt ?? msg("auto.features.tagger.components.taggerannotation.literal.3"))}
           </CardTitle>
 
+          {aiPending && (
+            <div
+              role="status"
+              className="mb-2 flex items-center justify-center motion-safe:animate-in motion-safe:fade-in-0"
+            >
+              <span className="flex items-center gap-1.5 rounded-full border border-primary/15 bg-primary/5 px-2.5 py-1 text-xs text-muted-foreground">
+                <Sparkle
+                  className="size-3 text-primary/60 motion-safe:animate-pulse"
+                  aria-hidden="true"
+                />
+                {msg("tagger.assist.review.predicting")}
+              </span>
+            </div>
+          )}
+
           {config.mode === "binary" && (
             <div className="flex flex-1 min-h-0 flex-col gap-2">
               <Button
@@ -343,7 +366,10 @@ export function TaggerAnnotation({
                 </Badge>
                 {msg("auto.features.tagger.components.taggerannotation.5")}
                 {isBinaryYes(aiPick) && (
-                  <Sparkle className="size-3.5 text-primary/70" aria-hidden="true" />
+                  <Sparkle
+                    className="size-3.5 text-primary/70 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-50"
+                    aria-hidden="true"
+                  />
                 )}
               </Button>
               <Button
@@ -362,7 +388,10 @@ export function TaggerAnnotation({
                 </Badge>
                 {msg("auto.features.tagger.components.taggerannotation.7")}
                 {isBinaryNo(aiPick) && (
-                  <Sparkle className="size-3.5 text-primary/70" aria-hidden="true" />
+                  <Sparkle
+                    className="size-3.5 text-primary/70 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-50"
+                    aria-hidden="true"
+                  />
                 )}
               </Button>
             </div>
@@ -402,7 +431,10 @@ export function TaggerAnnotation({
                     )}
                     <span className="min-w-0 break-words">{cat.label}</span>
                     {aiPickedCats.has(cat.id) && (
-                      <Sparkle className="size-3.5 shrink-0 text-primary/70" aria-hidden="true" />
+                      <Sparkle
+                        className="size-3.5 shrink-0 text-primary/70 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-50"
+                        aria-hidden="true"
+                      />
                     )}
                   </Button>
                 );

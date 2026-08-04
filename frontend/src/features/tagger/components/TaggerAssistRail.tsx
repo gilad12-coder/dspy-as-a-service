@@ -24,6 +24,8 @@ interface Props {
   frameData: DataRow[];
   currentIndex: number;
   openRound: ReviewRound | null;
+  /** The open round's predictions are still streaming in chunk by chunk. */
+  roundPredicting?: boolean;
   onAccept: (id: string) => void;
   onGoTo: (idx: number) => void;
   onFinishRound: () => void;
@@ -54,6 +56,7 @@ export function TaggerAssistRail({
   frameData,
   currentIndex,
   openRound,
+  roundPredicting = false,
   onAccept,
   onGoTo,
   onFinishRound,
@@ -73,6 +76,9 @@ export function TaggerAssistRail({
 
   const decidedCount = openRound
     ? openRound.rowIds.filter((id) => openRound.decided[id] !== undefined).length
+    : 0;
+  const predictedCount = openRound
+    ? openRound.rowIds.filter((id) => assist.predictions[id] !== undefined).length
     : 0;
 
   // Review: Enter confirms the AI's suggestion for the current row and moves
@@ -158,6 +164,33 @@ export function TaggerAssistRail({
         <p className="mt-1 text-[11px] text-muted-foreground">
           {formatMsg("tagger.assist.rail.gate", { gate: Math.round(gate * 100) })}
         </p>
+
+        {/* Live pulse of the streaming batch: predictions land chunk by
+            chunk, and this strip fills as they do, then disappears. */}
+        {phase === "review" && roundPredicting && openRound && (
+          <div className="mt-3 border-t border-border/40 pt-2.5 motion-safe:animate-in motion-safe:fade-in-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Sparkle
+                  className="size-3 text-primary/60 motion-safe:animate-pulse"
+                  aria-hidden="true"
+                />
+                {msg("tagger.assist.rail.tagging")}
+              </span>
+              <span className="text-xs text-muted-foreground tabular-nums" dir="ltr">
+                {predictedCount}/{openRound.rowIds.length}
+              </span>
+            </div>
+            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary/40 transition-all duration-500"
+                style={{
+                  width: `${Math.round((predictedCount / Math.max(1, openRound.rowIds.length)) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-border/60 bg-card p-4">
@@ -327,7 +360,7 @@ function Suggestion({
   prediction: AssistPrediction;
 }) {
   return (
-    <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
+    <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-foreground" dir="auto">
           {formatTaggerLabel(config, prediction.value)}

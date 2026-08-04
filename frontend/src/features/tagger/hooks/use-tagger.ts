@@ -61,8 +61,13 @@ const AUTOSAVE_INTERVAL_MS = 60_000;
 const AUTOTAG_POLL_MS = 2_500;
 /** Calibration predictions are prefetched this many rows ahead of the cursor. */
 const PREDICT_AHEAD = 6;
-/** Ids per predict call — the server caps a single call at 50 rows. */
-const PREDICT_CHUNK = 40;
+/**
+ * Ids per predict call while a round streams in. Matches the server's
+ * per-call row concurrency (BATCH_CONCURRENCY), so each chunk is one LLM
+ * wave and the first suggestions land after ~one wave instead of the whole
+ * batch.
+ */
+const PREDICT_CHUNK = 4;
 
 function isTagged(ann: Annotation, mode: AnnotationMode): boolean {
   if (ann === undefined || ann === null) return false;
@@ -143,6 +148,9 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   const localeReloadingRef = useRef(false);
   const [assistError, setAssistError] = useState<string | null>(null);
   const [roundLoading, setRoundLoading] = useState(false);
+  // An open round's predictions are still streaming in chunk by chunk; the
+  // annotator shows a per-row "tagging…" hint for rows not yet predicted.
+  const [roundPredicting, setRoundPredicting] = useState(false);
   // Autopilot contract confirmed, bulk job not yet started: held true until
   // the starter resolves so the between-rounds gate never renders on the way
   // out of the interview.
@@ -847,7 +855,13 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
 
   // ---------------------------------------------------------------- review
 
-  /** Sample a fresh batch of untagged rows, predict them, and open a round. */
+  /**
+   * Sample a fresh batch of untagged rows, open the round immediately, and
+   * stream its predictions in one-wave chunks. The human starts auditing
+   * after the first chunk (~one LLM round-trip) instead of waiting behind
+   * the whole batch; rows not yet predicted show a "tagging…" hint and fill
+   * in as their chunk lands.
+   */
   const startReviewRound = useCallback(
     async (count: number = REVIEW_BATCH_SIZE) => {
       if (!sessionId || !effectiveConfig || roundLoading) return;
@@ -864,37 +878,56 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       setRoundLoading(true);
       setAssistError(null);
       try {
+        // Predictions compile their few-shot examples server-side, so the
+        // server must see the freshest labels before the first chunk runs.
         await flushNow();
-        const predictions: Record<string, AssistPrediction> = {};
+      } catch {
+        setAssistError("predict");
+        setRoundLoading(false);
+        return;
+      }
+      const round: ReviewRound = { rowIds: ids, decided: {} };
+      setAssist((prev) => (prev ? { ...prev, rounds: [...prev.rounds, round] } : prev));
+      // Mirrored synchronously (like setAssistModel) so the streaming loop's
+      // round-closed check below reads this round, not the previous one.
+      if (assistRef.current) {
+        assistRef.current = { ...assistRef.current, rounds: [...assistRef.current.rounds, round] };
+      }
+      setCurrentIndex(0);
+      setRoundLoading(false);
+      setRoundPredicting(true);
+      try {
         for (let i = 0; i < ids.length; i += PREDICT_CHUNK) {
-          const res = await taggerAssistPredict(sessionId, ids.slice(i, i + PREDICT_CHUNK));
-          Object.assign(predictions, res.predictions as Record<string, AssistPrediction>);
+          // The round can close mid-stream (every row hand-tagged first);
+          // stop spending on suggestions nobody will see.
+          const rounds = assistRef.current?.rounds;
+          if (!rounds || rounds[rounds.length - 1]?.agreement !== undefined) break;
+          const chunk = ids.slice(i, i + PREDICT_CHUNK);
+          const res = await taggerAssistPredict(sessionId, chunk);
+          const preds = res.predictions as Record<string, AssistPrediction>;
+          setAssist((prev) =>
+            prev ? { ...prev, predictions: { ...prev.predictions, ...preds } } : prev,
+          );
+          // Freetext audits by fixing the AI's extraction in place — each row
+          // is prefilled as its prediction arrives, never over a human edit;
+          // binary/multiclass confirm or override per keystroke.
+          if (effectiveConfig.mode === "freetext") {
+            setAnnotations((prev) => {
+              const next = { ...prev };
+              for (const id of chunk) {
+                const value = (preds[id]?.value as Annotation) ?? undefined;
+                if (value !== undefined && !isTagged(next[id], effectiveConfig.mode)) {
+                  next[id] = value;
+                }
+              }
+              return next;
+            });
+          }
         }
-        setAssist((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            predictions: { ...prev.predictions, ...predictions },
-            rounds: [...prev.rounds, { rowIds: ids, decided: {} }],
-          };
-        });
-        // Freetext audits by fixing the AI's extraction in place, so the round's
-        // rows are prefilled; binary/multiclass confirm or override per keystroke.
-        if (effectiveConfig.mode === "freetext") {
-          setAnnotations((prev) => {
-            const next = { ...prev };
-            for (const id of ids) {
-              const value = (predictions[id]?.value as Annotation) ?? undefined;
-              if (value !== undefined && !isTagged(next[id], effectiveConfig.mode)) next[id] = value;
-            }
-            return next;
-          });
-        }
-        setCurrentIndex(0);
       } catch {
         setAssistError("predict");
       } finally {
-        setRoundLoading(false);
+        setRoundPredicting(false);
       }
     },
     [sessionId, effectiveConfig, data, roundLoading, flushNow],
@@ -1132,6 +1165,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     interviewPending,
     assistError,
     roundLoading,
+    roundPredicting,
     contractStarting,
     estimate,
     autotagStatus,

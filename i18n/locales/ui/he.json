@@ -2667,6 +2667,8 @@
   "tagger.assist.interview.skip": "דילוג על הראיון",
   "tagger.assist.interview.skip_message": "אפשר לסכם עכשיו ולהמשיך עם ההערכה הכי טובה שלך.",
   "tagger.assist.interview.restart": "התחלת הראיון מחדש",
+  "tagger.assist.review.predicting": "ה-AI מתייג את השורה הזו…",
+  "tagger.assist.rail.tagging": "ה-AI מתייג את הסבב…",
   "tagger.assist.interview.contract_pending": "מנסח את מדריך התיוג…",
   "tagger.assist.rubric.start_autotag": "תיוג כל {rows} השורות",
   "tagger.assist.rubric.start_copilot_round": "תיוג {rows} שורות ראשונות לבדיקה שלכם",
