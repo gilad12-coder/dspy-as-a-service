@@ -2620,6 +2620,13 @@ export type MessageKey =
   | "tagger.results.col.source"
   | "tagger.results.col.text"
   | "tagger.results.empty"
+  | "tagger.results.recap.ai_auto"
+  | "tagger.results.recap.ai_confirmed"
+  | "tagger.results.recap.credits"
+  | "tagger.results.recap.credits_hint"
+  | "tagger.results.recap.human"
+  | "tagger.results.recap.subtitle"
+  | "tagger.results.recap.title"
   | "tagger.results.who.ai_auto"
   | "tagger.results.who.ai_confirmed"
   | "tagger.results.who.human"
@@ -5531,6 +5538,13 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.results.col.source": "מקור",
   "tagger.results.col.text": "טקסט",
   "tagger.results.empty": "אין שורות שמתאימות לסינון הזה.",
+  "tagger.results.recap.ai_auto": "תויגו אוטומטית",
+  "tagger.results.recap.ai_confirmed": "תיוגי AI שאישרתם",
+  "tagger.results.recap.credits": "קרדיטים",
+  "tagger.results.recap.credits_hint": "עלות תיוג אוטומטי",
+  "tagger.results.recap.human": "תויגו על ידיכם",
+  "tagger.results.recap.subtitle": "כל {total} השורות מתויגות. הנה מי עשה מה.",
+  "tagger.results.recap.title": "הדאטה תויג",
   "tagger.results.who.ai_auto": "AI",
   "tagger.results.who.ai_confirmed": "AI · מאושר",
   "tagger.results.who.human": "אתם",
@@ -13957,6 +13971,13 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.results.col.source": "Source",
   "tagger.results.col.text": "Text",
   "tagger.results.empty": "No rows match this filter.",
+  "tagger.results.recap.ai_auto": "Labeled automatically",
+  "tagger.results.recap.ai_confirmed": "AI labels you confirmed",
+  "tagger.results.recap.credits": "Credits",
+  "tagger.results.recap.credits_hint": "Auto-labeling cost",
+  "tagger.results.recap.human": "Labeled by you",
+  "tagger.results.recap.subtitle": "All {total} rows carry a label. Here's who did what.",
+  "tagger.results.recap.title": "Dataset tagged",
   "tagger.results.who.ai_auto": "AI",
   "tagger.results.who.ai_confirmed": "AI · confirmed",
   "tagger.results.who.human": "You",
