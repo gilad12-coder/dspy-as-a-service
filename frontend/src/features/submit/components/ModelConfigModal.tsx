@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { CaretDown, Coins, Key, X } from "@/shared/ui/icons";
 import { useCredits, useByokKeys, litellmProviderForByok } from "@/features/billing";
 import { useSettingsModal } from "@/features/settings";
@@ -58,6 +59,10 @@ export function ModelConfigModal({
   const { keys } = useByokKeys();
   const { openTo } = useSettingsModal();
   const mode = wallet.mode;
+  const prefersReducedMotion = useReducedMotion();
+  // Two of these modals coexist (generation + reflection); the sliding-pill
+  // layoutId must be unique per instance or Framer pairs them up.
+  const effortPillId = React.useId();
 
   // In BYOK mode the picker lists the BYOK catalog narrowed to the providers
   // the user has a *verified* key for (mapped to their LiteLLM prefix), so a
@@ -426,13 +431,29 @@ export function ModelConfigModal({
                           type="button"
                           onClick={() => setEffort(val)}
                           className={cn(
-                            "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors text-center cursor-pointer",
+                            "relative flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors text-center cursor-pointer",
                             reasoningEffort === val
-                              ? "bg-background text-foreground shadow-sm"
+                              ? "text-foreground"
                               : "text-muted-foreground hover:text-foreground",
                           )}
                         >
-                          {effortLabel(val)}
+                          {reasoningEffort === val && (
+                            <motion.span
+                              layoutId={effortPillId}
+                              transition={
+                                prefersReducedMotion
+                                  ? { duration: 0 }
+                                  : {
+                                      type: "tween",
+                                      duration: 0.2,
+                                      ease: [0.2, 0.8, 0.2, 1],
+                                    }
+                              }
+                              className="absolute inset-0 rounded-md bg-background shadow-sm"
+                              aria-hidden="true"
+                            />
+                          )}
+                          <span className="relative">{effortLabel(val)}</span>
                         </button>
                       ))}
                     </div>
