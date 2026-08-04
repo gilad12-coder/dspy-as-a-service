@@ -34,7 +34,7 @@ import type { AgentMessage, AgentThinking } from "@/shared/ui/agent";
 import type { InterviewOption } from "@/shared/lib/api";
 import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
 import type { CatalogModel, ModelConfig } from "@/shared/types/api";
-import { ModelConfigModal } from "@/features/submit";
+import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
 import { ModelChip } from "@/shared/ui/model-chip";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -509,6 +509,10 @@ function RubricCard({
     window.setTimeout(confirm, SUBMIT_SPLASH_HOLD_MS);
   };
 
+  // The same recents the submit wizard's model dialog keeps — one shared
+  // localStorage list across every model-config surface.
+  const { recentConfigs, saveToRecent, removeRecentConfig } = useRecentModelConfigs();
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <Rise className="shrink-0">
@@ -655,9 +659,14 @@ function RubricCard({
                 open={modelDialogOpen}
                 onOpenChange={setModelDialogOpen}
                 config={modelConfig}
-                onSave={onSetModel}
+                onSave={(cfg) => {
+                  saveToRecent(cfg);
+                  onSetModel(cfg);
+                }}
                 roleLabel={msg("tagger.assist.model.title")}
                 catalogModels={catalogModels ?? undefined}
+                recentConfigs={recentConfigs}
+                onRemoveRecent={removeRecentConfig}
                 showConnection={false}
               />
             </CardContent>

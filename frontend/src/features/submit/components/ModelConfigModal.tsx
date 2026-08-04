@@ -2,10 +2,16 @@
 
 import * as React from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { CaretDown, Coins, Key, X } from "@/shared/ui/icons";
+import { CaretDown, Coins, Key, Trash, X } from "@/shared/ui/icons";
 import { useCredits, useByokKeys, litellmProviderForByok } from "@/features/billing";
 import { useSettingsModal } from "@/features/settings";
 import { getByokModelCatalog, cachedByokCatalog } from "@/shared/lib/model-catalog";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/shared/ui/primitives/context-menu";
 import { Dialog, DialogContent, DialogFooter } from "@/shared/ui/primitives/dialog";
 import { DialogTitleRow } from "@/shared/ui/dialog-title-row";
 import { Button } from "@/shared/ui/primitives/button";
@@ -164,9 +170,8 @@ export function ModelConfigModal({
               <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin" dir="ltr">
                 {recentConfigs.map((rc, i) => {
                   const isActive = draft.name === rc.name;
-                  return (
+                  const chip = (
                     <div
-                      key={`${rc.name}-${i}`}
                       className={cn(
                         "group/recent flex shrink-0 items-center gap-1.5 rounded-md border ps-2 pe-1 py-1 text-[0.6875rem] font-mono transition-all",
                         isActive
@@ -205,6 +210,23 @@ export function ModelConfigModal({
                         </button>
                       )}
                     </div>
+                  );
+                  if (!onRemoveRecent) {
+                    return <React.Fragment key={`${rc.name}-${i}`}>{chip}</React.Fragment>;
+                  }
+                  return (
+                    <ContextMenu key={`${rc.name}-${i}`}>
+                      <ContextMenuTrigger asChild>{chip}</ContextMenuTrigger>
+                      <ContextMenuContent className="min-w-44 py-1">
+                        <ContextMenuItem
+                          onSelect={() => onRemoveRecent(rc.name)}
+                          className="text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
+                        >
+                          <Trash className="size-3.5" aria-hidden="true" />
+                          {msg("submit.model_config.recent.remove")}
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
                   );
                 })}
               </div>

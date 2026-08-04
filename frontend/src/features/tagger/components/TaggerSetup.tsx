@@ -31,7 +31,7 @@ import { getDatasetRows } from "@/shared/lib/api";
 import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
 import type { CatalogModel, ModelConfig } from "@/shared/types/api";
 import { registerTutorialHook, registerTutorialQuery } from "@/features/tutorial";
-import { ModelConfigModal } from "@/features/submit";
+import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
 import { DatasetPickerDialog } from "@/features/datasets";
 import { ModelChip } from "@/shared/ui/model-chip";
 import { readPref, useUserPrefs } from "@/features/settings";
@@ -164,6 +164,9 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     readPref("taggerAssistModel"),
   );
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
+  // The same recents the submit wizard's model dialog keeps — one shared
+  // localStorage list across every model-config surface.
+  const { recentConfigs, saveToRecent, removeRecentConfig } = useRecentModelConfigs();
   // Managed catalog for the model dialog's thinking detection and the chip's
   // vision badge — same source the submit wizard feeds it.
   const [catalogModels, setCatalogModels] = useState<CatalogModel[] | null>(
@@ -705,9 +708,14 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                 open={modelDialogOpen}
                 onOpenChange={setModelDialogOpen}
                 config={assistModel}
-                onSave={setAssistModel}
+                onSave={(cfg) => {
+                  saveToRecent(cfg);
+                  setAssistModel(cfg);
+                }}
                 roleLabel={msg("tagger.assist.model.title")}
                 catalogModels={catalogModels ?? undefined}
+                recentConfigs={recentConfigs}
+                onRemoveRecent={removeRecentConfig}
                 showConnection={false}
               />
             </div>

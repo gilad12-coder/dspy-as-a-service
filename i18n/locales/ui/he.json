@@ -922,6 +922,7 @@
   "auto.features.submit.components.modelconfigmodal.literal.2": "אין מודלים זמינים — הוסף/הוסיפי מפתח API",
   "auto.features.submit.components.modelconfigmodal.literal.3": "בחר/י מודל…",
   "auto.features.submit.components.modelconfigmodal.recent.remove": "הסרת {model} מההגדרות האחרונות",
+  "submit.model_config.recent.remove": "הסרה מההגדרות האחרונות",
   "auto.features.submit.components.modelconfigmodal.section.connection": "חיבור מותאם אישית (אופציונלי)",
   "auto.features.submit.components.modelconfigmodal.section.parameters": "פרמטרים",
   "auto.features.submit.components.modelconfigmodal.template.1": "ירוץ {p1} לכל {p2} בקטלוג · {p3} כרגע",

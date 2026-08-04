@@ -2451,6 +2451,7 @@ export type MessageKey =
   | "submit.dataset.library_picker_title"
   | "submit.dataset.library_search"
   | "submit.dataset.library_search_empty"
+  | "submit.model_config.recent.remove"
   | "submit.modelpicker.purpose.all"
   | "submit.modelpicker.purpose.aria"
   | "submit.modelpicker.purpose.multilingual"
@@ -5379,6 +5380,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.dataset.library_picker_title": "בחירת {term.dataset} מהספרייה",
   "submit.dataset.library_search": "חיפוש {term.dataset}…",
   "submit.dataset.library_search_empty": "לא נמצאו דאטאסטים תואמים",
+  "submit.model_config.recent.remove": "הסרה מההגדרות האחרונות",
   "submit.modelpicker.purpose.all": "הכל",
   "submit.modelpicker.purpose.aria": "סינון מודלים לפי ייעוד",
   "submit.modelpicker.purpose.multilingual": "רב-לשוני",
@@ -13858,6 +13860,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.dataset.library_picker_title": "Pick a dataset from the library",
   "submit.dataset.library_search": "Search datasets…",
   "submit.dataset.library_search_empty": "No matching datasets found",
+  "submit.model_config.recent.remove": "Remove from recent settings",
   "submit.modelpicker.purpose.all": "All",
   "submit.modelpicker.purpose.aria": "Filter models by purpose",
   "submit.modelpicker.purpose.multilingual": "Multilingual",

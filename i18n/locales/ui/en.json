@@ -922,6 +922,7 @@
   "auto.features.submit.components.modelconfigmodal.literal.2": "No models available — add an API key",
   "auto.features.submit.components.modelconfigmodal.literal.3": "Select a model…",
   "auto.features.submit.components.modelconfigmodal.recent.remove": "Remove {model} from recent settings",
+  "submit.model_config.recent.remove": "Remove from recent settings",
   "auto.features.submit.components.modelconfigmodal.section.connection": "Custom connection (optional)",
   "auto.features.submit.components.modelconfigmodal.section.parameters": "Parameters",
   "auto.features.submit.components.modelconfigmodal.template.1": "Will run {p1} per {p2} in the catalog · {p3} selected",

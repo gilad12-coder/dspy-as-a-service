@@ -93,7 +93,7 @@ import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
 import type { CatalogModel } from "@/shared/types/api";
 import { ComposerModelMenu } from "@/shared/ui/agent";
 import { ModelChip } from "@/shared/ui/model-chip";
-import { ModelConfigModal } from "@/features/submit";
+import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
 import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { LanguageSwitcher } from "@/shared/ui/language-switcher";
@@ -164,6 +164,9 @@ function WizardTab() {
 function TaggingTab() {
   const { prefs, setPref } = useUserPrefs();
   const [modelDialogOpen, setModelDialogOpen] = React.useState(false);
+  // The same recents the submit wizard's model dialog keeps — one shared
+  // localStorage list across every model-config surface.
+  const { recentConfigs, saveToRecent, removeRecentConfig } = useRecentModelConfigs();
   // Same managed-catalog source the tagger setup feeds the dialog: thinking
   // detection and the chip's vision badge need the model metadata.
   const [catalogModels, setCatalogModels] = React.useState<CatalogModel[] | null>(
@@ -216,9 +219,14 @@ function TaggingTab() {
         open={modelDialogOpen}
         onOpenChange={setModelDialogOpen}
         config={prefs.taggerAssistModel}
-        onSave={(cfg) => setPref("taggerAssistModel", cfg)}
+        onSave={(cfg) => {
+          saveToRecent(cfg);
+          setPref("taggerAssistModel", cfg);
+        }}
         roleLabel={msg("settings.tagger.default_model.label")}
         catalogModels={catalogModels ?? undefined}
+        recentConfigs={recentConfigs}
+        onRemoveRecent={removeRecentConfig}
         showConnection={false}
       />
     </div>
