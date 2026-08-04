@@ -160,6 +160,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
           onStop={tagger.stopInterview}
           onRetry={() => void tagger.sendInterviewMessage(null)}
           onSkip={tagger.skipInterview}
+          onRestart={tagger.restartInterview}
           onConfirmRubric={tagger.confirmRubric}
         />
       </PageContainer>

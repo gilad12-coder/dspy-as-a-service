@@ -2425,6 +2425,7 @@ export type MessageKey =
   | "submit.code.interview.error"
   | "submit.code.interview.placeholder"
   | "submit.code.interview.reading"
+  | "submit.code.interview.restart"
   | "submit.code.interview.retry"
   | "submit.code.interview.skip"
   | "submit.code.interview.subtitle"
@@ -2569,6 +2570,7 @@ export type MessageKey =
   | "tagger.assist.interview.error"
   | "tagger.assist.interview.placeholder"
   | "tagger.assist.interview.reading"
+  | "tagger.assist.interview.restart"
   | "tagger.assist.interview.skip"
   | "tagger.assist.interview.skip_message"
   | "tagger.assist.interview.subtitle"
@@ -5349,6 +5351,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.code.interview.error": "העוזר לא הצליח לענות.",
   "submit.code.interview.placeholder": "כתבו תשובה…",
   "submit.code.interview.reading": "קורא את הדאטה…",
+  "submit.code.interview.restart": "התחלת הראיון מחדש",
   "submit.code.interview.retry": "ניסיון נוסף",
   "submit.code.interview.skip": "דילוג על הראיון",
   "submit.code.interview.subtitle": "כמה שאלות קצרות לפני שנכתוב את ה-Signature וה-Metric — כדי שהקוד ישקף איך אתם חושבים על הדאטה.",
@@ -5493,6 +5496,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.assist.interview.error": "העוזר לא הצליח לענות.",
   "tagger.assist.interview.placeholder": "כתבו תשובה…",
   "tagger.assist.interview.reading": "קורא את הדאטה…",
+  "tagger.assist.interview.restart": "התחלת הראיון מחדש",
   "tagger.assist.interview.skip": "דילוג על הראיון",
   "tagger.assist.interview.skip_message": "אפשר לסכם עכשיו ולהמשיך עם ההערכה הכי טובה שלך.",
   "tagger.assist.interview.subtitle": "כמה שאלות כדי להבין איך אתם חושבים על הדאטה — התשובות הופכות למדריך תיוג.",
@@ -13824,6 +13828,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.code.interview.error": "The assistant couldn't respond.",
   "submit.code.interview.placeholder": "Type your answer…",
   "submit.code.interview.reading": "Reading your dataset…",
+  "submit.code.interview.restart": "Restart interview",
   "submit.code.interview.retry": "Retry",
   "submit.code.interview.skip": "Skip the interview",
   "submit.code.interview.subtitle": "A few short questions before we write the Signature and Metric — so the code reflects how you think about your data.",
@@ -13968,6 +13973,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.assist.interview.error": "The assistant couldn't respond.",
   "tagger.assist.interview.placeholder": "Type your answer…",
   "tagger.assist.interview.reading": "Reading your dataset…",
+  "tagger.assist.interview.restart": "Restart interview",
   "tagger.assist.interview.skip": "Skip the interview",
   "tagger.assist.interview.skip_message": "Please wrap up now and continue with your best guess.",
   "tagger.assist.interview.subtitle": "A few questions to learn how you think about this data — the answers become your labeling guide.",

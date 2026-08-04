@@ -96,6 +96,8 @@ interface Props {
   onStop: () => void;
   onRetry: () => void;
   onSkip: () => void;
+  /** Discard the transcript and re-run the interview from its opening question. */
+  onRestart: () => void;
   onConfirmRubric: (rubric: string[], task: TaskContract) => void;
 }
 
@@ -127,6 +129,7 @@ export function TaggerInterview({
   onStop,
   onRetry,
   onSkip,
+  onRestart,
   onConfirmRubric,
 }: Props) {
   const [draft, setDraft] = useState("");
@@ -182,6 +185,16 @@ export function TaggerInterview({
                 {msg("tagger.assist.interview.subtitle")}
               </p>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRestart}
+              disabled={busy || assist.interview.turns.length === 0}
+              className="shrink-0 gap-1.5 text-muted-foreground"
+            >
+              <ArrowCounterClockwise className="size-3.5" />
+              {msg("tagger.assist.interview.restart")}
+            </Button>
           </div>
 
           <AgentThread

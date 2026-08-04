@@ -40,13 +40,27 @@ export function CodeInterviewPanel({ interview, className }: Props) {
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
-      <div className="border-b border-border/40 px-4 py-3 shrink-0">
-        <h3 className="text-sm font-semibold text-foreground">
-          {msg("submit.code.interview.title")}
-        </h3>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {msg("submit.code.interview.subtitle")}
-        </p>
+      <div className="flex items-start justify-between gap-3 border-b border-border/40 px-4 py-3 shrink-0">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">
+            {msg("submit.code.interview.title")}
+          </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {msg("submit.code.interview.subtitle")}
+          </p>
+        </div>
+        {/* The header spans both the chat and the brief card, so a re-run is
+            one click away from the brief too — mirroring the tagger. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={interview.reset}
+          disabled={interview.busy || (interview.messages.length === 0 && !interview.done)}
+          className="shrink-0 gap-1.5 text-muted-foreground"
+        >
+          <ArrowCounterClockwise className="size-3.5" />
+          {msg("submit.code.interview.restart")}
+        </Button>
       </div>
 
       {interview.done ? (

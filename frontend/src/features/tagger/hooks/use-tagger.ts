@@ -783,6 +783,11 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     void sendInterviewMessage(msg("tagger.assist.interview.skip_message"));
   }, [sendInterviewMessage]);
 
+  /** Discard the transcript and restart the interview from its opening question. */
+  const restartInterview = useCallback(() => {
+    void sendInterviewMessage(null, 0);
+  }, [sendInterviewMessage]);
+
   // ------------------------------------------------------------ calibration
 
   // Silently prefetch predictions a few rows ahead of the cursor so the
@@ -1133,6 +1138,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     sendInterviewMessage,
     stopInterview,
     skipInterview,
+    restartInterview,
     confirmRubric,
     setAssistModel,
     setInterviewModel,
