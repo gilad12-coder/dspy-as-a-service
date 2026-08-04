@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CaretLeft, CaretRight, CircleNotch } from "@/shared/ui/icons";
 import { AgentPillDock } from "@/features/agent-panel";
 import { Button } from "@/shared/ui/primitives/button";
@@ -43,14 +43,41 @@ export function TaggerAutotagLive({ config, data, annotations, status }: Props) 
   // null = follow the newest labeled row; a number = the user browsed away.
   const [cursor, setCursor] = useState<number | null>(null);
 
-  // The worker tags in dataset order, so the newest labeled row is the last
-  // labeled index. Recomputed per poll-driven render; datasets are small.
-  let frontier = 0;
-  for (let i = data.length - 1; i >= 0; i--) {
-    if (hasLabel(annotations[String(data[i]!.id)], config.mode)) {
-      frontier = i;
-      break;
+  // Rows already labeled when the run began — the calibration set, which
+  // stride-sampling scattered across the whole dataset (so it can reach the
+  // last row). Captured once at mount so the walkthrough can ignore them and
+  // follow only the rows THIS run tags, instead of snapping to whatever high
+  // index calibration happened to hit.
+  const [preLabeled] = useState<Set<string>>(() => {
+    const seen = new Set<string>();
+    for (const row of data) {
+      if (hasLabel(annotations[String(row.id)], config.mode)) seen.add(String(row.id));
     }
+    return seen;
+  });
+
+  // Dataset indices of the rows this run has to tag, in display order. The
+  // worker labels them top-to-bottom, so the follow-cursor walks this list as
+  // a contiguous prefix fills in — strictly sequential viewing, even though
+  // the tagging itself runs in fast concurrent batches.
+  const pendingIdx = useMemo(
+    () =>
+      data.reduce<number[]>((acc, row, i) => {
+        if (!preLabeled.has(String(row.id))) acc.push(i);
+        return acc;
+      }, []),
+    [data, preLabeled],
+  );
+
+  // Newest sequentially-tagged row: advance through the pending list while
+  // each is labeled, stopping at the first that isn't yet. Sits on the first
+  // pending row until the run's first result lands. Every dataset index up to
+  // here is labeled (pending prefix + the interleaved calibration rows), so
+  // browsing back never lands on a "waiting" row.
+  let frontier = pendingIdx.length > 0 ? pendingIdx[0]! : 0;
+  for (const i of pendingIdx) {
+    if (!hasLabel(annotations[String(data[i]!.id)], config.mode)) break;
+    frontier = i;
   }
   const shown = Math.min(cursor ?? frontier, Math.max(0, data.length - 1));
   const item = data[shown];

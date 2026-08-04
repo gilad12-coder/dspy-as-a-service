@@ -22,7 +22,8 @@ interface Props {
 }
 
 /**
- * The between-rounds interstitial of the review phase: shows what the last
+ * The between-rounds card of the review phase, rendered in the assist rail's
+ * slot so the tagging surface never changes geometry: shows what the last
  * round proved, whether the agreement gate is open, and — only once it is
  * earned (or in autopilot, where the user chose full autonomy) — the
  * cost-labeled "tag the rest" commitment. Cost before commitment, always.
@@ -57,7 +58,7 @@ export function TaggerReviewGate({
   }
 
   return (
-    <div className="mx-auto flex max-w-lg flex-col gap-4 pt-6">
+    <div className="flex w-full flex-col gap-4 lg:w-[300px]">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">

@@ -220,25 +220,6 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
     );
   }
 
-  if (tagger.phase === "review" && tagger.assist && !tagger.openRound) {
-    return (
-      <PageContainer full>
-        {backBar}
-        <TaggerReviewGate
-          config={tagger.config}
-          assist={tagger.assist}
-          remainingCount={tagger.data.length - tagger.taggedCount}
-          estimate={tagger.estimate}
-          roundLoading={tagger.roundLoading || tagger.contractStarting}
-          assistError={tagger.assistError}
-          onStartRound={() => void tagger.startReviewRound()}
-          onStartAutotag={() => void tagger.startAutotag()}
-          onFetchEstimate={() => void tagger.fetchEstimate()}
-        />
-      </PageContainer>
-    );
-  }
-
   const assistActive = tagger.assist !== null && tagger.phase === "review";
 
   // During a round the header bar tracks the human's audit, not the AI's
@@ -319,19 +300,36 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">{annotation}</div>
         <div className="lg:max-h-[calc(100dvh-var(--header-height,53px)-4rem)] lg:sticky lg:top-4">
-          <TaggerAssistRail
-            config={tagger.config}
-            assist={tagger.assist}
-            annotations={tagger.annotations}
-            frameData={tagger.frameData}
-            currentIndex={tagger.currentIndex}
-            openRound={tagger.openRound}
-            roundPredicting={tagger.roundPredicting}
-            onAccept={tagger.acceptPrediction}
-            onGoTo={tagger.goTo}
-            onFinishRound={tagger.finishRound}
-            predictError={tagger.assistError === "predict"}
-          />
+          {/* Between rounds the gate question takes the rail's slot instead of
+              replacing the whole screen — the annotation surface stays mounted
+              and the app keeps the exact same viewport geometry. */}
+          {tagger.openRound ? (
+            <TaggerAssistRail
+              config={tagger.config}
+              assist={tagger.assist}
+              annotations={tagger.annotations}
+              frameData={tagger.frameData}
+              currentIndex={tagger.currentIndex}
+              openRound={tagger.openRound}
+              roundPredicting={tagger.roundPredicting}
+              onAccept={tagger.acceptPrediction}
+              onGoTo={tagger.goTo}
+              onFinishRound={tagger.finishRound}
+              predictError={tagger.assistError === "predict"}
+            />
+          ) : (
+            <TaggerReviewGate
+              config={tagger.config}
+              assist={tagger.assist}
+              remainingCount={tagger.data.length - tagger.taggedCount}
+              estimate={tagger.estimate}
+              roundLoading={tagger.roundLoading || tagger.contractStarting}
+              assistError={tagger.assistError}
+              onStartRound={() => void tagger.startReviewRound()}
+              onStartAutotag={() => void tagger.startAutotag()}
+              onFetchEstimate={() => void tagger.fetchEstimate()}
+            />
+          )}
         </div>
       </div>
     </PageContainer>
