@@ -83,9 +83,10 @@ export function TaggerAssistRail({
 
   // Review: Enter confirms the AI's suggestion for the current row and moves
   // to the next unaudited one. Registered at the window so the annotator's own
-  // shortcuts keep working untouched; inputs and textareas keep their Enter.
+  // shortcuts keep working untouched; inputs and textareas keep their Enter
+  // (which is what makes this safe for freetext rows too).
   useEffect(() => {
-    if (phase !== "review" || config.mode === "freetext") return;
+    if (phase !== "review") return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "Enter") return;
       const tag = (e.target as HTMLElement).tagName;
@@ -102,7 +103,22 @@ export function TaggerAssistRail({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [phase, config.mode, rowId, assist.predictions, openRound, frameData, currentIndex, onAccept, onGoTo]);
+  }, [phase, rowId, assist.predictions, openRound, frameData, currentIndex, onAccept, onGoTo]);
+
+  // "Finish round" is gated behind a full pass, so until then the same slot
+  // navigates: jump to the next row (wrapping) that still needs a decision.
+  const goToNextUnreviewed = () => {
+    if (!openRound) return;
+    const undecided = (i: number) =>
+      openRound.decided[String(frameData[i]!.id)] === undefined;
+    for (let step = 1; step <= frameData.length; step++) {
+      const idx = (currentIndex + step) % frameData.length;
+      if (undecided(idx)) {
+        onGoTo(idx);
+        return;
+      }
+    }
+  };
 
   const calibrationReveal = (() => {
     if (phase !== "calibration" || !committed) return null;
@@ -213,10 +229,12 @@ export function TaggerAssistRail({
             prediction={prediction}
             decided={openRound?.decided[rowId]}
             allDecided={openRound !== null && decidedCount === openRound.rowIds.length}
+            remaining={openRound ? openRound.rowIds.length - decidedCount : 0}
             isFreetext={config.mode === "freetext"}
             isFlaggedPass={openRound?.flaggedPass === true}
             onConfirm={() => onAccept(rowId)}
             onFinishRound={onFinishRound}
+            onNextUnreviewed={goToNextUnreviewed}
           />
         )}
       </div>
@@ -301,19 +319,23 @@ function ReviewPanel({
   prediction,
   decided,
   allDecided,
+  remaining,
   isFreetext,
   isFlaggedPass,
   onConfirm,
   onFinishRound,
+  onNextUnreviewed,
 }: {
   config: TaggerConfig;
   prediction: AssistPrediction | undefined;
   decided: "confirmed" | "corrected" | undefined;
   allDecided: boolean;
+  remaining: number;
   isFreetext: boolean;
   isFlaggedPass: boolean;
   onConfirm: () => void;
   onFinishRound: () => void;
+  onNextUnreviewed: () => void;
 }) {
   return (
     <div className="flex flex-col gap-2.5">
@@ -325,12 +347,12 @@ function ReviewPanel({
           {msg("tagger.assist.rail.predicting")}
         </p>
       )}
-      {!isFreetext && decided === undefined && prediction && (
+      {decided === undefined && prediction && (
         <Button variant="secondary" size="sm" onClick={onConfirm} className="w-full">
           {msg("tagger.assist.rail.confirm")}
         </Button>
       )}
-      {!isFreetext && decided !== undefined && (
+      {decided !== undefined && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Check className="size-3.5" />
           {decided === "confirmed"
@@ -338,16 +360,18 @@ function ReviewPanel({
             : msg("tagger.assist.rail.decided_corrected")}
         </p>
       )}
-      {(isFreetext || isFlaggedPass) && (
-        <Button
-          variant={allDecided || isFreetext ? "secondary" : "outline"}
-          size="sm"
-          onClick={onFinishRound}
-          className="w-full"
-        >
-          {msg("tagger.assist.rail.finish_round")}
-        </Button>
-      )}
+      {/* The round only closes after a full pass: until every row carries an
+          explicit decision, this slot navigates to what's left instead. */}
+      {(isFreetext || isFlaggedPass) &&
+        (allDecided ? (
+          <Button variant="secondary" size="sm" onClick={onFinishRound} className="w-full">
+            {msg("tagger.assist.rail.finish_round")}
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={onNextUnreviewed} className="w-full">
+            {formatMsg("tagger.assist.rail.next_unreviewed", { count: remaining })}
+          </Button>
+        ))}
     </div>
   );
 }

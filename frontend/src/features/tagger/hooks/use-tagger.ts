@@ -26,7 +26,7 @@ import { LOCALE_RELOAD_EVENT } from "@/shared/lib/locale";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
 import type { ModelConfig } from "@/shared/types/api";
 import type { AgentThinking } from "@/shared/ui/agent";
-import { streamInterviewTurn } from "../lib/assist-stream";
+import { streamInterviewTurn, streamPredictions } from "../lib/assist-stream";
 import type {
   DataRow,
   Annotation,
@@ -61,13 +61,6 @@ const AUTOSAVE_INTERVAL_MS = 60_000;
 const AUTOTAG_POLL_MS = 2_500;
 /** Calibration predictions are prefetched this many rows ahead of the cursor. */
 const PREDICT_AHEAD = 6;
-/**
- * Ids per predict call while a round streams in. Matches the server's
- * per-call row concurrency (BATCH_CONCURRENCY), so each chunk is one LLM
- * wave and the first suggestions land after ~one wave instead of the whole
- * batch.
- */
-const PREDICT_CHUNK = 4;
 
 function isTagged(ann: Annotation, mode: AnnotationMode): boolean {
   if (ann === undefined || ann === null) return false;
@@ -857,10 +850,10 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
 
   /**
    * Sample a fresh batch of untagged rows, open the round immediately, and
-   * stream its predictions in one-wave chunks. The human starts auditing
-   * after the first chunk (~one LLM round-trip) instead of waiting behind
-   * the whole batch; rows not yet predicted show a "tagging…" hint and fill
-   * in as their chunk lands.
+   * stream its predictions row by row over SSE. Each suggestion appears the
+   * moment the model writes it — the human starts auditing on the first row
+   * while the rest are still generating; unpredicted rows show a "tagging…"
+   * hint and fill in as their event lands.
    */
   const startReviewRound = useCallback(
     async (count: number = REVIEW_BATCH_SIZE) => {
@@ -896,36 +889,40 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       setCurrentIndex(0);
       setRoundLoading(false);
       setRoundPredicting(true);
-      try {
-        for (let i = 0; i < ids.length; i += PREDICT_CHUNK) {
-          // The round can close mid-stream (every row hand-tagged first);
-          // stop spending on suggestions nobody will see.
-          const rounds = assistRef.current?.rounds;
-          if (!rounds || rounds[rounds.length - 1]?.agreement !== undefined) break;
-          const chunk = ids.slice(i, i + PREDICT_CHUNK);
-          const res = await taggerAssistPredict(sessionId, chunk);
-          const preds = res.predictions as Record<string, AssistPrediction>;
-          setAssist((prev) =>
-            prev ? { ...prev, predictions: { ...prev.predictions, ...preds } } : prev,
-          );
-          // Freetext audits by fixing the AI's extraction in place — each row
-          // is prefilled as its prediction arrives, never over a human edit;
-          // binary/multiclass confirm or override per keystroke.
-          if (effectiveConfig.mode === "freetext") {
-            setAnnotations((prev) => {
-              const next = { ...prev };
-              for (const id of chunk) {
-                const value = (preds[id]?.value as Annotation) ?? undefined;
-                if (value !== undefined && !isTagged(next[id], effectiveConfig.mode)) {
-                  next[id] = value;
-                }
-              }
-              return next;
-            });
-          }
+      const controller = new AbortController();
+      const applyPrediction = (id: string, pred: AssistPrediction) => {
+        // The round can close mid-stream (every row hand-tagged first);
+        // stop spending on suggestions nobody will see.
+        const rounds = assistRef.current?.rounds;
+        if (!rounds || rounds[rounds.length - 1]?.agreement !== undefined) {
+          controller.abort();
+          return;
         }
-      } catch {
-        setAssistError("predict");
+        setAssist((prev) =>
+          prev ? { ...prev, predictions: { ...prev.predictions, [id]: pred } } : prev,
+        );
+        // Freetext audits by fixing the AI's extraction in place — each row
+        // is prefilled as its prediction arrives, never over a human edit;
+        // binary/multiclass confirm or override per keystroke.
+        if (effectiveConfig.mode === "freetext") {
+          setAnnotations((prev) => {
+            const value = pred.value as Annotation;
+            if (value === undefined || isTagged(prev[id], effectiveConfig.mode)) return prev;
+            return { ...prev, [id]: value };
+          });
+        }
+      };
+      try {
+        await streamPredictions(sessionId, ids, {
+          onPrediction: applyPrediction,
+          onDone: (predictions) => {
+            // The terminal map is authoritative — re-applying is a no-op for
+            // rows already streamed and fills in any missed events.
+            for (const [id, pred] of Object.entries(predictions)) applyPrediction(id, pred);
+          },
+          onError: () => setAssistError("predict"),
+          signal: controller.signal,
+        });
       } finally {
         setRoundPredicting(false);
       }
@@ -958,35 +955,30 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     const state = assistRef.current;
     if (!state || !effectiveConfig) return;
     const last = state.rounds[state.rounds.length - 1];
-    if (!last || last.agreement !== undefined) return;
-    const agreement =
-      agreementOver(effectiveConfig.mode, last.rowIds, annotationsRef.current, state.predictions) ??
-      0;
-    setAssist((prev) => {
-      if (!prev) return prev;
-      const current = prev.rounds[prev.rounds.length - 1]!;
-      const decided = { ...current.decided };
-      const provenance = { ...prev.provenance };
-      for (const id of current.rowIds) {
-        const final = annotationsRef.current[id];
-        if (final === undefined) continue;
-        const agrees = labelsAgree(
+    if (!last) return;
+    if (last.agreement === undefined) {
+      // Every row needs an explicit decision (confirm keystroke or edit) —
+      // finishing must never silently approve rows the human hasn't audited.
+      if (!last.rowIds.every((id) => last.decided[id] !== undefined)) return;
+      const agreement =
+        agreementOver(
           effectiveConfig.mode,
-          final,
-          prev.predictions[id]?.value as Annotation,
-        );
-        if (decided[id] === undefined) decided[id] = agrees ? "confirmed" : "corrected";
-        // Untouched prefilled rows were approved by finishing the round.
-        if (provenance[id] === undefined || provenance[id] === "ai_auto") {
-          provenance[id] = agrees ? "ai_confirmed" : "human";
-        }
-      }
-      return {
-        ...prev,
-        provenance,
-        rounds: [...prev.rounds.slice(0, -1), { ...current, decided, agreement }],
-      };
-    });
+          last.rowIds,
+          annotationsRef.current,
+          state.predictions,
+        ) ?? 0;
+      setAssist((prev) =>
+        prev
+          ? {
+              ...prev,
+              rounds: [
+                ...prev.rounds.slice(0, -1),
+                { ...prev.rounds[prev.rounds.length - 1]!, agreement },
+              ],
+            }
+          : prev,
+      );
+    }
     if (last.flaggedPass) setPhase("complete");
   }, [effectiveConfig]);
 

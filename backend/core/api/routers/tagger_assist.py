@@ -435,6 +435,73 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         return PredictResponse(predictions=predictions, credits=credits)
 
     @router.post(
+        "/tagging-sessions/{session_id}/assist/predict/stream",
+        summary="Predict labels for specific rows as an SSE stream",
+    )
+    async def assist_predict_stream(
+        session_id: str, req: PredictRequest, user: AuthenticatedUserDep
+    ) -> StreamingResponse:
+        """Stream per-row label predictions as the model produces them.
+
+        The streaming twin of the predict route — same few-shot compilation
+        and row lookup — emitting a ``prediction`` event per row the moment
+        its label lands, a terminal ``predict_done`` with the merged map and
+        credit cost, and ``error`` on total failure.
+
+        Args:
+            session_id: UUID of the tagger session.
+            req: The row ids to predict (capped at ``MAX_PREDICT_ROWS``).
+            user: Authenticated caller; must own the session.
+
+        Returns:
+            A ``text/event-stream`` response.
+        """
+        await asyncio.to_thread(enforce_llm_credits, job_store, user.username)
+        with Session(job_store.engine) as db:
+            row = _load_for_role(db, session_id, user)
+            config = _effective_config(row)
+            data = cast("list[dict[str, Any]]", row.data)
+            annotations = cast("dict[str, Any]", row.annotations)
+            assist = cast("dict[str, Any]", row.assist) or {}
+        _require_known_model(assist)
+        wanted = set(req.row_ids)
+        rows = [r for r in data if str(r.get("id")) in wanted]
+        if not rows:
+            raise DomainError("tagger.assist.rows_not_found", status=404)
+        rubric = [str(r) for r in assist.get("rubric") or []]
+        examples = tagging.select_examples(config, data, annotations, assist, exclude_ids=wanted)
+        instructions = tagging.compile_instructions(config, rubric, examples)
+        usage_sink: list = []
+
+        async def source() -> Any:
+            """Relay engine events, translating failures into an error event."""
+            try:
+                async for event in tagging.predict_rows_stream(
+                    config, instructions, rows, usage_sink=usage_sink
+                ):
+                    yield event
+            except Exception:
+                logger.exception("prediction stream failed for session %s", session_id)
+                yield {"event": "error", "data": {"code": "tagger.assist.llm_failed"}}
+
+        metered = stream_with_llm_metering(
+            source(),
+            job_store=job_store,
+            username=user.username,
+            description="Tagging predictions",
+            usage_sink=usage_sink,
+        )
+        return StreamingResponse(
+            sse_from_events(metered),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @router.post(
         "/tagging-sessions/{session_id}/assist/estimate",
         response_model=EstimateResponse,
         summary="Estimate the credit cost of auto-tagging the remaining rows",

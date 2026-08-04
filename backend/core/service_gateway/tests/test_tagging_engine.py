@@ -8,6 +8,7 @@ estimator.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -18,6 +19,7 @@ from ..tagging import (
     _MessageLeakGuard,
     _parse_interview_prediction,
     _parse_json,
+    _StreamedArrayItems,
     assist_model_name,
     compile_instructions,
     effective_task_config,
@@ -219,6 +221,57 @@ def test_interview_signature_streams_done_before_payload_fields() -> None:
     assert fields.index("done") < fields.index("rubric_json")
     assert fields.index("done") < fields.index("task_config_json")
     assert fields.index("done") < fields.index("session_title")
+
+
+def test_streamed_array_items_emits_objects_per_chunk() -> None:
+    """Objects surface the moment their closing brace arrives, across chunk splits."""
+    scanner = _StreamedArrayItems()
+    assert scanner.feed('[{"id": "1", "label"') == []
+    assert scanner.feed(': "yes"}, {"id": "2",') == [{"id": "1", "label": "yes"}]
+    assert scanner.feed(' "label": "no"}]') == [{"id": "2", "label": "no"}]
+
+
+def test_streamed_array_items_ignores_braces_inside_strings() -> None:
+    """Braces and escaped quotes inside string values never skew the balance."""
+    scanner = _StreamedArrayItems()
+    items = scanner.feed('[{"id": "1", "reason": "brace } and quote \\" inside"}]')
+    assert items == [{"id": "1", "reason": 'brace } and quote " inside'}]
+
+
+def test_streamed_array_items_survives_fences_and_nesting() -> None:
+    """Fences and prose around the array are ignored; nested objects stay whole."""
+    scanner = _StreamedArrayItems()
+    items = scanner.feed('```json\n[{"id": "1", "extra": {"a": 1}}]\n```')
+    assert items == [{"id": "1", "extra": {"a": 1}}]
+
+
+def test_predict_rows_stream_merges_batches_into_terminal_event(monkeypatch) -> None:
+    """Per-row events from every batch relay through; the terminal map merges them."""
+
+    async def fake_drive(*, lm, instructions, batch, config, queue, semaphore) -> None:
+        """Emit one canned prediction event per batch row."""
+        for row in batch:
+            await queue.put(
+                {
+                    "event": "prediction",
+                    "data": {"id": str(row["id"]), "prediction": {"value": "1", "confidence": 0.9, "reason": ""}},
+                }
+            )
+
+    monkeypatch.setattr(tagging, "_drive_predict_batch", fake_drive)
+    monkeypatch.setattr(tagging, "_build_assist_lm", lambda *a, **k: SimpleNamespace(history=[]))
+    monkeypatch.setattr(tagging, "usage_by_model_from_history", lambda lm: {})
+    rows = [{"id": i, "text": f"row {i}"} for i in range(tagging.BATCH_SIZE + 2)]
+
+    async def run() -> list[dict]:
+        """Collect the full event stream."""
+        return [event async for event in tagging.predict_rows_stream(_BINARY, "instructions", rows)]
+
+    events = asyncio.run(run())
+    assert events[-1]["event"] == "predict_done"
+    assert all(e["event"] == "prediction" for e in events[:-1])
+    assert set(events[-1]["data"]["predictions"]) == {str(i) for i in range(tagging.BATCH_SIZE + 2)}
+    assert events[-1]["data"]["credits"] == 0
 
 
 def test_summarize_dataset_samples_rows() -> None:

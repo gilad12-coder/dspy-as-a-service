@@ -971,6 +971,62 @@ async def interview_turn_stream(
         raise
 
 
+def _normalize_batch_item(config: dict[str, Any], item: Any) -> tuple[str, dict[str, Any]] | None:
+    """Validate one model-produced ``{id, label, confidence, reason}`` object.
+
+    Args:
+        config: The session's ``TaggerConfig`` payload.
+        item: One parsed element of the model's ``labels_json`` array.
+
+    Returns:
+        ``(row_id, prediction)`` when the object carries a usable id and a
+        label mappable onto the task, else ``None``.
+    """
+    if not isinstance(item, dict):
+        return None
+    row_id = str(item.get("id", "")).strip()
+    value = normalize_label(config, item.get("label"))
+    if not row_id or value is None:
+        return None
+    try:
+        confidence = min(1.0, max(0.0, float(item.get("confidence", 0.5))))
+    except (TypeError, ValueError):
+        confidence = 0.5
+    return row_id, {
+        "value": value,
+        "confidence": confidence,
+        "reason": str(item.get("reason", "")).strip()[:200],
+    }
+
+
+def _predict_one_row(
+    lm: dspy.LM, instructions: str, row: dict[str, Any], config: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Label a single row with the per-row fallback signature.
+
+    Args:
+        lm: The assist LM (bound inside the calling thread).
+        instructions: Compiled tagging instructions.
+        row: One ``{id, text}`` row payload.
+        config: The session's ``TaggerConfig`` payload.
+
+    Returns:
+        The ``{value, confidence, reason}`` prediction, or ``None`` when the
+        call failed or produced no mappable label.
+    """
+    try:
+        with dspy.context(lm=lm):
+            one = dspy.Predict(TagOneSig)(task_instructions=instructions, row_text=row["text"])
+        payload = _parse_json(getattr(one, "label_json", ""), {})
+    except Exception:
+        logger.warning("tagging per-row call failed for row %s", row["id"], exc_info=True)
+        return None
+    if not isinstance(payload, dict):
+        return None
+    normalized = _normalize_batch_item(config, {**payload, "id": str(row["id"])})
+    return normalized[1] if normalized else None
+
+
 def _predict_batch(
     lm: dspy.LM, instructions: str, batch: list[dict[str, Any]], config: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:
@@ -997,44 +1053,14 @@ def _predict_batch(
     results: dict[str, dict[str, Any]] = {}
     if isinstance(parsed, list):
         for item in parsed:
-            if not isinstance(item, dict):
-                continue
-            row_id = str(item.get("id", "")).strip()
-            value = normalize_label(config, item.get("label"))
-            if not row_id or value is None:
-                continue
-            try:
-                confidence = min(1.0, max(0.0, float(item.get("confidence", 0.5))))
-            except (TypeError, ValueError):
-                confidence = 0.5
-            results[row_id] = {
-                "value": value,
-                "confidence": confidence,
-                "reason": str(item.get("reason", "")).strip()[:200],
-            }
+            normalized = _normalize_batch_item(config, item)
+            if normalized:
+                results[normalized[0]] = normalized[1]
     missing = [r for r in batch if str(r["id"]) not in results]
     for row in missing:
-        try:
-            with dspy.context(lm=lm):
-                one = dspy.Predict(TagOneSig)(task_instructions=instructions, row_text=row["text"])
-            payload = _parse_json(getattr(one, "label_json", ""), {})
-        except Exception:
-            logger.warning("tagging per-row call failed for row %s", row["id"], exc_info=True)
-            continue
-        if not isinstance(payload, dict):
-            continue
-        value = normalize_label(config, payload.get("label"))
-        if value is None:
-            continue
-        try:
-            confidence = min(1.0, max(0.0, float(payload.get("confidence", 0.5))))
-        except (TypeError, ValueError):
-            confidence = 0.5
-        results[str(row["id"])] = {
-            "value": value,
-            "confidence": confidence,
-            "reason": str(payload.get("reason", "")).strip()[:200],
-        }
+        prediction = _predict_one_row(lm, instructions, row, config)
+        if prediction is not None:
+            results[str(row["id"])] = prediction
     return results
 
 
@@ -1088,6 +1114,211 @@ def predict_rows(
         ModelUsage(model=model, input_tokens=tokens[0], output_tokens=tokens[1]) for model, tokens in usage.items()
     )
     return merged, credits
+
+
+class _StreamedArrayItems:
+    """Incrementally extract complete top-level objects from a streamed JSON array.
+
+    Fed the raw ``labels_json`` token stream, it emits each ``{...}`` element
+    the moment its closing brace arrives, tracking string state and escapes so
+    braces inside values never skew the balance. It is deliberately permissive
+    (fences and prose around the array are ignored; a fragment that fails
+    ``json.loads`` is dropped) — the terminal full-payload parse remains the
+    authoritative pass.
+    """
+
+    def __init__(self) -> None:
+        """Initialize an empty scan state."""
+        self._buf: list[str] = []
+        self._depth = 0
+        self._in_string = False
+        self._escaped = False
+
+    def feed(self, chunk: str) -> list[dict[str, Any]]:
+        """Consume the next chunk and return any objects it completed.
+
+        Args:
+            chunk: The next raw delta of the streamed JSON text.
+
+        Returns:
+            Every complete top-level object closed within this chunk, in order.
+        """
+        items: list[dict[str, Any]] = []
+        for ch in chunk:
+            if self._depth:
+                self._buf.append(ch)
+            if self._in_string:
+                if self._escaped:
+                    self._escaped = False
+                elif ch == "\\":
+                    self._escaped = True
+                elif ch == '"':
+                    self._in_string = False
+                continue
+            if ch == '"':
+                if self._depth:
+                    self._in_string = True
+            elif ch == "{":
+                self._depth += 1
+                if self._depth == 1:
+                    self._buf = ["{"]
+            elif ch == "}" and self._depth:
+                self._depth -= 1
+                if self._depth == 0:
+                    try:
+                        parsed = json.loads("".join(self._buf))
+                    except ValueError:
+                        parsed = None
+                    self._buf = []
+                    if isinstance(parsed, dict):
+                        items.append(parsed)
+        return items
+
+
+async def _drive_predict_batch(
+    *,
+    lm: dspy.LM,
+    instructions: str,
+    batch: list[dict[str, Any]],
+    config: dict[str, Any],
+    queue: asyncio.Queue[dict | None],
+    semaphore: asyncio.Semaphore,
+) -> None:
+    """Label one batch, emitting each row's prediction as the model writes it.
+
+    The streamify loop runs entirely inside this task for the same reason as
+    ``_drive_interview_turn`` — crossing task boundaries corrupts
+    ``dspy.context``'s token and streamify's anyio task group. The streamed
+    ``labels_json`` deltas are scanned for complete objects; the terminal
+    prediction is re-parsed in full afterwards (authoritative), and rows still
+    missing fall back to per-row calls, mirroring ``_predict_batch``. Only
+    ``prediction`` events are enqueued — the caller owns queue shutdown.
+
+    Args:
+        lm: The assist LM shared across the run's batches.
+        instructions: Compiled tagging instructions.
+        batch: ``{id, text}`` row payloads.
+        config: The session's ``TaggerConfig`` payload.
+        queue: Event queue shared by every batch driver.
+        semaphore: Caps concurrent batches at ``BATCH_CONCURRENCY``.
+    """
+    wanted = {str(r["id"]) for r in batch}
+    emitted: set[str] = set()
+
+    async def emit(row_id: str, prediction: dict[str, Any]) -> None:
+        """Enqueue one row's prediction, dropping duplicates and strays."""
+        if row_id in wanted and row_id not in emitted:
+            emitted.add(row_id)
+            await queue.put({"event": "prediction", "data": {"id": row_id, "prediction": prediction}})
+
+    rows_json = json.dumps([{"id": str(r["id"]), "text": r["text"]} for r in batch], ensure_ascii=False)
+    async with semaphore:
+        scanner = _StreamedArrayItems()
+        prediction: Any = None
+        program = dspy.streamify(
+            dspy.Predict(TagBatchSig),
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="labels_json")],
+            async_streaming=True,
+        )
+        try:
+            with dspy.context(lm=lm):
+                async for chunk in program(task_instructions=instructions, rows_json=rows_json):
+                    if isinstance(chunk, dspy.streaming.StreamResponse):
+                        if chunk.signature_field_name == "labels_json":
+                            for item in scanner.feed(chunk.chunk):
+                                normalized = _normalize_batch_item(config, item)
+                                if normalized:
+                                    await emit(*normalized)
+                    elif isinstance(chunk, dspy.Prediction):
+                        prediction = chunk
+        except Exception:
+            logger.warning("tagging stream batch call failed; falling back to per-row", exc_info=True)
+        if prediction is not None:
+            parsed = _parse_json(getattr(prediction, "labels_json", ""), None)
+            if isinstance(parsed, list):
+                for item in parsed:
+                    normalized = _normalize_batch_item(config, item)
+                    if normalized:
+                        await emit(*normalized)
+        for row in batch:
+            if str(row["id"]) in emitted:
+                continue
+            fallback = await asyncio.to_thread(_predict_one_row, lm, instructions, row, config)
+            if fallback is not None:
+                await emit(str(row["id"]), fallback)
+
+
+async def predict_rows_stream(
+    config: dict[str, Any],
+    instructions: str,
+    rows: list[dict[str, Any]],
+    usage_sink: list | None = None,
+) -> Any:
+    """Label rows concurrently, yielding each row's prediction as it lands.
+
+    The review round's streaming twin of :func:`predict_rows`: the same
+    batched calls, concurrency cap and per-row fallback, but every row is
+    surfaced the moment the model writes its object inside the batch reply
+    instead of when the whole batch returns.
+
+    Yields ``{"event": "prediction", "data": {"id", "prediction"}}`` per row,
+    then a terminal ``{"event": "predict_done", "data": {"predictions",
+    "credits"}}`` with the merged map and the credit cost of the calls made.
+
+    Args:
+        config: The session's effective config; when it carries the user's
+            chosen tagging model (``model``) and its saved sampling
+            parameters (``modelParams``), predictions run on them.
+        instructions: Compiled tagging instructions.
+        rows: Row payloads (each needs ``id`` and ``text``).
+        usage_sink: Optional list the built LM is appended to, so the caller
+            can debit the run's token usage on any exit path.
+    """
+    lm = _build_assist_lm(str(config.get("model") or "").strip() or None, config.get("modelParams"))
+    if usage_sink is not None:
+        usage_sink.append(lm)
+    prepared = [{"id": str(r.get("id")), "text": _row_text(r)} for r in rows]
+    batches = [prepared[i : i + BATCH_SIZE] for i in range(0, len(prepared), BATCH_SIZE)]
+    queue: asyncio.Queue[dict | None] = asyncio.Queue()
+    semaphore = asyncio.Semaphore(BATCH_CONCURRENCY)
+
+    async def drive_all() -> None:
+        """Run every batch driver, always closing the queue afterwards."""
+        try:
+            await asyncio.gather(
+                *(
+                    _drive_predict_batch(
+                        lm=lm,
+                        instructions=instructions,
+                        batch=batch,
+                        config=config,
+                        queue=queue,
+                        semaphore=semaphore,
+                    )
+                    for batch in batches
+                )
+            )
+        finally:
+            await queue.put(None)
+
+    task = asyncio.create_task(drive_all())
+    merged: dict[str, dict[str, Any]] = {}
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            merged[item["data"]["id"]] = item["data"]["prediction"]
+            yield item
+        await task
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    usage = usage_by_model_from_history(lm)
+    credits = credits_for_usage(
+        ModelUsage(model=model, input_tokens=tokens[0], output_tokens=tokens[1]) for model, tokens in usage.items()
+    )
+    yield {"event": "predict_done", "data": {"predictions": merged, "credits": credits}}
 
 
 def estimate_credits_for_rows(

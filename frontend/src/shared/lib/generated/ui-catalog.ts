@@ -2451,7 +2451,6 @@ export type MessageKey =
   | "submit.dataset.library_picker_title"
   | "submit.dataset.library_search"
   | "submit.dataset.library_search_empty"
-  | "submit.model_config.recent.remove"
   | "submit.modelpicker.purpose.all"
   | "submit.modelpicker.purpose.aria"
   | "submit.modelpicker.purpose.multilingual"
@@ -2591,6 +2590,7 @@ export type MessageKey =
   | "tagger.assist.rail.gate"
   | "tagger.assist.rail.keep"
   | "tagger.assist.rail.kept"
+  | "tagger.assist.rail.next_unreviewed"
   | "tagger.assist.rail.predict_error"
   | "tagger.assist.rail.predicting"
   | "tagger.assist.rail.progress"
@@ -5380,7 +5380,6 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.dataset.library_picker_title": "בחירת {term.dataset} מהספרייה",
   "submit.dataset.library_search": "חיפוש {term.dataset}…",
   "submit.dataset.library_search_empty": "לא נמצאו דאטאסטים תואמים",
-  "submit.model_config.recent.remove": "הסרה מההגדרות האחרונות",
   "submit.modelpicker.purpose.all": "הכל",
   "submit.modelpicker.purpose.aria": "סינון מודלים לפי ייעוד",
   "submit.modelpicker.purpose.multilingual": "רב-לשוני",
@@ -5520,6 +5519,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.assist.rail.gate": "כשנגיע ל-{gate}% הסכמה, אתייג את השאר בעצמי.",
   "tagger.assist.rail.keep": "להשאיר את שלי",
   "tagger.assist.rail.kept": "נרשם — התיוג שלכם נשאר.",
+  "tagger.assist.rail.next_unreviewed": "לשורה הבאה שטרם נבדקה (נותרו {count})",
   "tagger.assist.rail.predict_error": "החיזויים לא זמינים כרגע — התיוג ממשיך לעבוד.",
   "tagger.assist.rail.predicting": "קורא את השורה…",
   "tagger.assist.rail.progress": "{done} מתוך {total} כוילו",
@@ -13860,7 +13860,6 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.dataset.library_picker_title": "Pick a dataset from the library",
   "submit.dataset.library_search": "Search datasets…",
   "submit.dataset.library_search_empty": "No matching datasets found",
-  "submit.model_config.recent.remove": "Remove from recent settings",
   "submit.modelpicker.purpose.all": "All",
   "submit.modelpicker.purpose.aria": "Filter models by purpose",
   "submit.modelpicker.purpose.multilingual": "Multilingual",
@@ -14000,6 +13999,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.assist.rail.gate": "Once we agree {gate}% of the time, I'll tag the rest myself.",
   "tagger.assist.rail.keep": "Keep mine",
   "tagger.assist.rail.kept": "Noted — your label stands.",
+  "tagger.assist.rail.next_unreviewed": "Next unreviewed row ({count} left)",
   "tagger.assist.rail.predict_error": "Predictions are unavailable right now — labeling still works.",
   "tagger.assist.rail.predicting": "Reading this row…",
   "tagger.assist.rail.progress": "{done} of {total} calibrated",

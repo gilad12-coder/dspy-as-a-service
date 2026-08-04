@@ -402,6 +402,41 @@ def test_predict_excludes_requested_rows_from_examples(monkeypatch) -> None:
     assert resp.json()["code"] == "tagger.assist.rows_not_found"
 
 
+def test_predict_stream_emits_rows_then_done(monkeypatch) -> None:
+    """The SSE predict route relays per-row events, then the terminal summary."""
+    captured: dict = {}
+
+    async def fake_stream(config, instructions, rows, usage_sink=None):
+        """Yield one event per requested row, then the merged summary."""
+        captured["instructions"] = instructions
+        captured["ids"] = [str(r["id"]) for r in rows]
+        merged = {}
+        for r in rows:
+            prediction = {"value": "no", "confidence": 0.8, "reason": "test"}
+            merged[str(r["id"])] = prediction
+            yield {"event": "prediction", "data": {"id": str(r["id"]), "prediction": prediction}}
+        yield {"event": "predict_done", "data": {"predictions": merged, "credits": 2}}
+
+    monkeypatch.setattr(tagging, "predict_rows_stream", fake_stream)
+    client, _ = _client(_ALICE)
+    session_id = _create(client)
+    resp = client.post(
+        f"/tagging-sessions/{session_id}/assist/predict/stream", json={"row_ids": ["2", "3"]}
+    )
+    assert resp.status_code == 200, resp.text
+    assert captured["ids"] == ["2", "3"]
+    # Same exclusion semantics as the non-streaming route: row 1 is the only
+    # labeled candidate, and the requested rows never appear as examples.
+    assert "great" in captured["instructions"]
+    assert resp.text.count("event: prediction") == 2
+    assert resp.text.index("event: predict_done") > resp.text.rindex("event: prediction")
+    resp = client.post(
+        f"/tagging-sessions/{session_id}/assist/predict/stream", json={"row_ids": ["999"]}
+    )
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "tagger.assist.rows_not_found"
+
+
 def test_estimate_counts_untagged_rows() -> None:
     """The estimate covers exactly the rows without a final label."""
     client, _ = _client(_ALICE)

@@ -2,7 +2,7 @@ import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { readServerSentEvents } from "@/shared/lib/sse";
 import { fetchWithAuthRetry, parseInterviewOptions, type InterviewOption } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
-import type { TaggerConfig } from "./types";
+import type { AssistPrediction, TaggerConfig } from "./types";
 
 // Resolve lazily — a module-load const races the injected window.__SKYNET_ENV__
 // and freezes the build-time localhost fallback. See shared/lib/api.ts.
@@ -124,4 +124,77 @@ export async function streamInterviewTurn(
     return;
   }
   if (!finished) handlers.onError(msg("tagger.assist.interview.error"));
+}
+
+export interface PredictStreamHandlers {
+  /** One row's prediction landed — fired the moment the model writes it. */
+  onPrediction: (id: string, prediction: AssistPrediction) => void;
+  /** Terminal event: the authoritative merged map (covers missed events). */
+  onDone: (predictions: Record<string, AssistPrediction>) => void;
+  onError: () => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Stream per-row label predictions for a review round via SSE. Rows arrive
+ * as individual `prediction` events while the batch call is still running;
+ * aborting the signal is a deliberate stop, not an error.
+ */
+export async function streamPredictions(
+  sessionId: string,
+  rowIds: string[],
+  handlers: PredictStreamHandlers,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetchWithAuthRetry(
+      `${apiBase()}/tagging-sessions/${sessionId}/assist/predict/stream`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify({ row_ids: rowIds }),
+        signal: handlers.signal,
+      },
+    );
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") return;
+    handlers.onError();
+    return;
+  }
+  if (!res.ok || !res.body) {
+    handlers.onError();
+    return;
+  }
+  let finished = false;
+  try {
+    await readServerSentEvents(res.body, ({ event, data }) => {
+      const payload = data as Record<string, unknown>;
+      switch (event) {
+        case "prediction": {
+          const id = String(payload.id ?? "");
+          if (id && payload.prediction && typeof payload.prediction === "object") {
+            handlers.onPrediction(id, payload.prediction as AssistPrediction);
+          }
+          break;
+        }
+        case "predict_done":
+          finished = true;
+          handlers.onDone(
+            payload.predictions && typeof payload.predictions === "object"
+              ? (payload.predictions as Record<string, AssistPrediction>)
+              : {},
+          );
+          break;
+        case "error":
+          finished = true;
+          handlers.onError();
+          break;
+      }
+    });
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") return;
+    if (!finished) handlers.onError();
+    return;
+  }
+  if (!finished && !handlers.signal?.aborted) handlers.onError();
 }
