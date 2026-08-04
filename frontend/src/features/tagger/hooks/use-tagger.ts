@@ -1044,7 +1044,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     setPhase("review");
   }, []);
 
-  /** Leave the completion summary for the plain full-dataset annotator. */
+  /** Drop an interrupted autotag job into the plain full-dataset annotator. */
   const browseAll = useCallback(() => {
     setCurrentIndex(0);
     setPhase("annotating");

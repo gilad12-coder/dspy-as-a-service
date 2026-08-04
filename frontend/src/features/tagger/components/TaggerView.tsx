@@ -17,7 +17,7 @@ import { TaggerAssistRail } from "./TaggerAssistRail";
 import { TaggerReviewGate } from "./TaggerReviewGate";
 import { TaggerAutotagLive } from "./TaggerAutotagLive";
 import { TaggerAutotagProgress } from "./TaggerAutotagProgress";
-import { TaggerComplete } from "./TaggerComplete";
+import { TaggerResultsSummary } from "./TaggerResultsSummary";
 import { TaggingSessionsPanel } from "./TaggingSessionsPanel";
 
 export function TaggerView({ initialSession }: { initialSession?: TaggerSessionDetail | null }) {
@@ -30,6 +30,16 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
   // surprise scene change mid-flip) — the overview is one click away instead.
   // Shared-in viewers always land on the table: browsing is their whole job.
   const [focusRow, setFocusRow] = useState(() => !allLabeled && !readOnlyViewer);
+
+  // A finished assist run swaps the row view for the results overview once —
+  // the completion accounting rides above that table now, so landing there is
+  // the "you're done" moment (no separate summary screen). Detected as a
+  // render-time phase change so the switch happens before paint, not after.
+  const [seenPhase, setSeenPhase] = useState(tagger.phase);
+  if (tagger.phase !== seenPhase) {
+    setSeenPhase(tagger.phase);
+    if (tagger.phase === "complete") setFocusRow(false);
+  }
 
   // "Tag this dataset" deep links (/tagger?dataset=…) skip the session chooser
   // straight into setup, which loads the referenced dataset itself. Applied in
@@ -202,24 +212,6 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
     );
   }
 
-  if (tagger.phase === "complete" && tagger.assist) {
-    return (
-      <PageContainer full>
-        {backBar}
-        <TaggerComplete
-          assist={tagger.assist}
-          annotations={tagger.annotations}
-          rowCount={tagger.data.length}
-          onFlaggedPass={tagger.startFlaggedPass}
-          onBrowse={() => {
-            setFocusRow(false);
-            tagger.browseAll();
-          }}
-        />
-      </PageContainer>
-    );
-  }
-
   const assistActive = tagger.assist !== null && tagger.phase === "review";
 
   // During a round the header bar tracks the human's audit, not the AI's
@@ -256,10 +248,25 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
   );
 
   if (!assistActive || !tagger.assist) {
-    if (tagger.phase === "annotating" && allLabeled && !focusRow) {
+    // A completed assist run browses the same overview as a fully-labeled
+    // manual session — the results table — so the two flows converge here.
+    const browsing = tagger.phase === "annotating" || tagger.phase === "complete";
+    if (browsing && allLabeled && !focusRow) {
       return (
         <PageContainer full>
           {backBar}
+          {/* The finished run's accounting — who labeled what, the credit
+              cost, and the one-click flagged pass — rides above the table
+              instead of on a separate summary screen. */}
+          {tagger.assist && (
+            <div className="mb-3">
+              <TaggerResultsSummary
+                assist={tagger.assist}
+                annotations={tagger.annotations}
+                onFlaggedPass={tagger.startFlaggedPass}
+              />
+            </div>
+          )}
           <TaggerResultsTable
             config={tagger.config}
             data={tagger.data}
@@ -276,7 +283,7 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
     return (
       <PageContainer full>
         {backBar}
-        {tagger.phase === "annotating" && allLabeled && (
+        {browsing && allLabeled && (
           <div className="mb-3">
             <Button
               variant="outline"
