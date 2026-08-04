@@ -1764,7 +1764,7 @@ export type MessageKey =
   | "dashboard.role_short.owner"
   | "dashboard.role_short.viewer"
   | "dashboard.stat.shared"
-  | "dashboard.workspace.credits.free"
+  | "dashboard.workspace.credits.cta"
   | "dashboard.workspace.credits.title"
   | "dashboard.workspace.datasets.cta"
   | "dashboard.workspace.datasets.title"
@@ -4688,7 +4688,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "dashboard.role_short.owner": "בעלים",
   "dashboard.role_short.viewer": "צופה",
   "dashboard.stat.shared": "משותפים",
-  "dashboard.workspace.credits.free": "נותרו {remaining} מתוך {total} קרדיטים חינמיים",
+  "dashboard.workspace.credits.cta": "הוסיפו קרדיטים כדי להתחיל",
   "dashboard.workspace.credits.title": "קרדיטים",
   "dashboard.workspace.datasets.cta": "העלו את הדאטהסט הראשון שלכם",
   "dashboard.workspace.datasets.title": "ספריית הדאטהסטים",
@@ -13163,7 +13163,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "dashboard.role_short.owner": "Owner",
   "dashboard.role_short.viewer": "Viewer",
   "dashboard.stat.shared": "Shared",
-  "dashboard.workspace.credits.free": "{remaining} of {total} free credits left",
+  "dashboard.workspace.credits.cta": "Add credits to get started",
   "dashboard.workspace.credits.title": "Credits",
   "dashboard.workspace.datasets.cta": "Upload your first dataset",
   "dashboard.workspace.datasets.title": "Dataset library",

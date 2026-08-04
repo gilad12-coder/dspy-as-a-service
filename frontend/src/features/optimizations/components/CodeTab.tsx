@@ -47,10 +47,10 @@ export function CodeTab({
               dir="ltr"
               onValueChange={setActiveCodeTab}
             >
-              <TabsList className="relative inline-flex w-full rounded-lg bg-muted p-1 gap-1 border-none shadow-none h-auto">
+              <TabsList className="relative inline-flex w-full rounded-full bg-muted p-1 gap-1 border-none shadow-none h-auto">
                 {signatureCode && metricCode && (
                   <div
-                    className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-md bg-[#3D2E22] shadow-sm transition-[inset-inline-start] duration-200 ease-out"
+                    className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-full bg-[#3D2E22] shadow-sm transition-[inset-inline-start] duration-200 ease-out"
                     style={{
                       insetInlineStart: activeCodeTab === "signature" ? 4 : "calc(50% + 2px)",
                     }}
@@ -59,7 +59,7 @@ export function CodeTab({
                 {signatureCode && (
                   <TabsTrigger
                     value="signature"
-                    className="relative z-10 rounded-md px-4 py-2 text-sm font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5"
+                    className="relative z-10 rounded-full px-4 py-2 text-sm font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5"
                   >
                     {msg("auto.features.optimizations.components.codetab.3")}
                   </TabsTrigger>
@@ -67,7 +67,7 @@ export function CodeTab({
                 {metricCode && (
                   <TabsTrigger
                     value="metric"
-                    className="relative z-10 rounded-md px-4 py-2 text-sm font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5"
+                    className="relative z-10 rounded-full px-4 py-2 text-sm font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5"
                   >
                     {msg("auto.features.optimizations.components.codetab.4")}
                   </TabsTrigger>

@@ -7,7 +7,7 @@ export { ByokKeysSection } from "./components/ByokKeysSection";
 export { TokenSourceToggle } from "./components/TokenSourceToggle";
 export { InsufficientCreditsModalHost } from "./components/InsufficientCreditsModalHost";
 export { litellmProviderForByok } from "./lib/byok";
-export { formatCredits, type TokenSourceMode } from "./lib/credit";
+export { creditsToUsd, formatCredits, formatUsd, type TokenSourceMode } from "./lib/credit";
 export {
   creditsForUsage,
   platformFeeCredits,

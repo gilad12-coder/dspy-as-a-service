@@ -1721,7 +1721,7 @@
   "dashboard.workspace.datasets.title": "ספריית הדאטהסטים",
   "dashboard.workspace.datasets.cta": "העלו את הדאטהסט הראשון שלכם",
   "dashboard.workspace.credits.title": "קרדיטים",
-  "dashboard.workspace.credits.free": "נותרו {remaining} מתוך {total} קרדיטים חינמיים",
+  "dashboard.workspace.credits.cta": "הוסיפו קרדיטים כדי להתחיל",
   "datasets.count.columns": "{count} עמודות",
   "datasets.count.rows": "{count} שורות",
   "datasets.delete.body": "הפעולה תמחק לצמיתות את הדאטאסט הזה מהספרייה. לא ניתן לבטל פעולה זו.",

@@ -1721,7 +1721,7 @@
   "dashboard.workspace.datasets.title": "Dataset library",
   "dashboard.workspace.datasets.cta": "Upload your first dataset",
   "dashboard.workspace.credits.title": "Credits",
-  "dashboard.workspace.credits.free": "{remaining} of {total} free credits left",
+  "dashboard.workspace.credits.cta": "Add credits to get started",
   "datasets.count.columns": "{count} columns",
   "datasets.count.rows": "{count} rows",
   "datasets.delete.body": "This permanently deletes this dataset from your library. This action cannot be undone.",

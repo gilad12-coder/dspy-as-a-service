@@ -664,10 +664,10 @@ function PromptsSection({ runs, winnerIdx }: { runs: RunInfo[]; winnerIdx: numbe
     <Card>
       <CardContent className="p-5 sm:p-6">
         <Tabs value={activeValue} onValueChange={setActiveValue}>
-          <TabsList className="relative inline-flex w-full rounded-lg bg-muted p-1 gap-1 border-none shadow-none h-auto">
+          <TabsList className="relative inline-flex w-full rounded-full bg-muted p-1 gap-1 border-none shadow-none h-auto">
             {n >= 2 && (
               <div
-                className="absolute top-1 bottom-1 rounded-md bg-[#3D2E22] shadow-sm transition-[inset-inline-start] duration-200 ease-out"
+                className="absolute top-1 bottom-1 rounded-full bg-[#3D2E22] shadow-sm transition-[inset-inline-start] duration-200 ease-out"
                 style={{ width: segmentWidth, insetInlineStart: segmentOffset }}
               />
             )}
@@ -675,7 +675,7 @@ function PromptsSection({ runs, winnerIdx }: { runs: RunInfo[]; winnerIdx: numbe
               <TabsTrigger
                 key={run.job.optimization_id}
                 value={run.job.optimization_id}
-                className="flex-1 min-w-0 relative z-10 rounded-md px-3 py-2 text-sm font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5"
+                className="flex-1 min-w-0 relative z-10 rounded-full px-3 py-2 text-sm font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5"
               >
                 <span
                   className="size-5 rounded-md flex items-center justify-center text-[0.625rem] font-bold text-white tabular-nums shrink-0"
