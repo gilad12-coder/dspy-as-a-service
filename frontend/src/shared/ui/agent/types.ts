@@ -1,4 +1,4 @@
-export type AgentStatus = "idle" | "streaming" | "done" | "error";
+export type AgentStatus = "idle" | "streaming" | "queued" | "done" | "error";
 
 export type AgentToolStatus = "running" | "done" | "error";
 

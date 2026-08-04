@@ -38,6 +38,8 @@ interface ConversationDrawerProps {
   loading: boolean;
   activeId: string | null;
   unreadIds: ReadonlySet<string>;
+  /** Conversations with a turn still streaming or waiting in the queue. */
+  busyIds: ReadonlySet<string>;
   query: string;
   onQueryChange: (q: string) => void;
   onPick: (id: string) => void;
@@ -102,6 +104,7 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
     loading,
     activeId,
     unreadIds,
+    busyIds,
     query,
     onQueryChange,
     onPick,
@@ -159,6 +162,7 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
                   rows={group.rows}
                   activeId={activeId}
                   unreadIds={unreadIds}
+                  busyIds={busyIds}
                   onPick={onPick}
                   onRename={onRename}
                   onTogglePin={onTogglePin}
@@ -178,6 +182,7 @@ interface SectionProps {
   rows: ConversationSummary[];
   activeId: string | null;
   unreadIds: ReadonlySet<string>;
+  busyIds: ReadonlySet<string>;
   onPick: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onTogglePin: (id: string, pinned: boolean) => void;
@@ -189,6 +194,7 @@ function Section({
   rows,
   activeId,
   unreadIds,
+  busyIds,
   onPick,
   onRename,
   onTogglePin,
@@ -207,6 +213,7 @@ function Section({
             row={row}
             active={row.id === activeId}
             unread={unreadIds.has(row.id)}
+            busy={busyIds.has(row.id)}
             onPick={onPick}
             onRename={onRename}
             onTogglePin={onTogglePin}
@@ -222,13 +229,14 @@ interface RowProps {
   row: ConversationSummary;
   active: boolean;
   unread: boolean;
+  busy: boolean;
   onPick: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onTogglePin: (id: string, pinned: boolean) => void;
   onDelete: (id: string) => void;
 }
 
-function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, onDelete }: RowProps) {
+function ConversationRow({ row, active, unread, busy, onPick, onRename, onTogglePin, onDelete }: RowProps) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(row.title);
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -278,13 +286,21 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
         )}
         onClick={() => onPick(row.id)}
       >
-        {unread && !active && (
+        {busy ? (
           <span
-            aria-label={msg(
-              "auto.features.agent.panel.components.conversationdrawer.unread_indicator",
-            )}
-            className="size-1.5 rounded-full bg-primary shrink-0"
+            aria-label={msg("agent.parallel.busy_indicator")}
+            className="size-1.5 rounded-full bg-primary shrink-0 animate-pulse"
           />
+        ) : (
+          unread &&
+          !active && (
+            <span
+              aria-label={msg(
+                "auto.features.agent.panel.components.conversationdrawer.unread_indicator",
+              )}
+              className="size-1.5 rounded-full bg-primary shrink-0"
+            />
+          )
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1 truncate text-[0.8125rem]">

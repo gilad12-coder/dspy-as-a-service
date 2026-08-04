@@ -48,6 +48,9 @@ export type MessageKey =
   | "agent.model_menu.effort_xhigh_hint"
   | "agent.model_menu.label"
   | "agent.model_menu.model"
+  | "agent.parallel.background_count"
+  | "agent.parallel.busy_indicator"
+  | "agent.parallel.queued"
   | "app.meta.description"
   | "app.shell.account.aria"
   | "app.shell.account.settings"
@@ -2969,6 +2972,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "agent.model_menu.effort_xhigh_hint": "חשיבה מורחבת לבעיות קשות במיוחד",
   "agent.model_menu.label": "בחירת מודל",
   "agent.model_menu.model": "מודל",
+  "agent.parallel.background_count": "שיחות רצות ברקע: {p1}",
+  "agent.parallel.busy_indicator": "השיחה רצה ברקע",
+  "agent.parallel.queued": "ממתין בתור…",
   "app.meta.description": "מערכת לאופטימיזציית פרומפטים עם DSPy — שיפור ביצועים של מודלי שפה באופן אוטומטי",
   "app.shell.account.aria": "תפריט חשבון",
   "app.shell.account.settings": "הגדרות",
@@ -11441,6 +11447,9 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "agent.model_menu.effort_xhigh_hint": "Extended reasoning for very hard problems",
   "agent.model_menu.label": "Choose a model",
   "agent.model_menu.model": "Model",
+  "agent.parallel.background_count": "Chats running in the background: {p1}",
+  "agent.parallel.busy_indicator": "Chat running in the background",
+  "agent.parallel.queued": "Queued…",
   "app.meta.description": "Prompt optimization with DSPy — automatically improve the performance of language models",
   "app.shell.account.aria": "Account menu",
   "app.shell.account.settings": "Settings",

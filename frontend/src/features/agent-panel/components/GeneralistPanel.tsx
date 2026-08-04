@@ -31,7 +31,7 @@ import { formatMsg } from "@/shared/lib/messages";
 import { formatShortcut, parseAgentPreferencePatch, useUserPrefs } from "@/features/settings";
 
 import { useConversationStore } from "../hooks/use-conversation-store";
-import { useGeneralistAgent } from "../hooks/use-generalist-agent";
+import { useGeneralistAgent, type SessionEventContext } from "../hooks/use-generalist-agent";
 import { useCodeAuthoringAgent } from "../hooks/use-code-authoring-agent";
 import { useGeneralistPanelState } from "../hooks/use-panel-state";
 import { getConversation } from "../lib/conversation-api";
@@ -202,7 +202,12 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   );
 
   const handleToolEnd = React.useCallback(
-    (ev: ToolEndPayload) => {
+    (ev: ToolEndPayload, ctx: SessionEventContext) => {
+      // Background chats keep streaming, but only the chat on screen may drive
+      // panel-level side effects: preference patches, the submit splash (which
+      // navigates!), and shared-wizard writes. The dashboards still refresh on
+      // background mutations via the hook-level "optimizations-changed" event.
+      if (!ctx.isActive) return;
       if (ev.status === "ok" && ev.tool === "update_user_preferences") {
         const patch = parseAgentPreferencePatch(ev.result);
         if (Object.keys(patch).length > 0) updatePrefs(patch);
@@ -221,8 +226,9 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   const store = useConversationStore({ enabled: open });
 
   const handleConversationMeta = React.useCallback(
-    (id: string, title: string) => {
+    (id: string, title: string, ctx: SessionEventContext) => {
       store.upsertFromMeta(id, title);
+      if (!ctx.isActive) return;
       store.setActiveId(id);
       // The user is actively in this conversation — every new turn is "seen"
       // by definition. Without this, the row would render as unread the
@@ -237,7 +243,10 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   // its run + timer survive the aside collapse / auto-minimize.
   const [codeArmed, setCodeArmed] = React.useState(false);
   const handedOffRef = React.useRef(false);
-  const handleToolStart = React.useCallback((ev: ToolStartPayload) => {
+  const handleToolStart = React.useCallback((ev: ToolStartPayload, ctx: SessionEventContext) => {
+    // The code agent is a panel-scoped singleton tied to the visible chat; a
+    // background chat requesting authoring must not hijack it mid-use.
+    if (!ctx.isActive) return;
     if (ev.tool === REQUEST_CODE_TOOL) {
       handedOffRef.current = false;
       setCodeArmed(true);
@@ -252,6 +261,9 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
     onConversationMeta: handleConversationMeta,
   });
   const streaming = agent.status === "streaming";
+  // A queued turn locks the composer like a streaming one — its stop button
+  // cancels the queued run before it ever reaches the server.
+  const activeBusy = streaming || agent.status === "queued";
 
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -275,9 +287,14 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   const handlePickConversation = React.useCallback(
     async (id: string) => {
       setDrawerOpen(false);
-      const detail = await getConversation(id);
-      if (!detail) return;
-      agent.loadConversation(id, detail.messages);
+      // A conversation with a live session (streaming, queued, or just kept
+      // in memory) re-attaches instantly — its stream was never interrupted.
+      // Only session-less conversations need a server round-trip.
+      if (!agent.activateConversation(id)) {
+        const detail = await getConversation(id);
+        if (!detail) return;
+        agent.openConversation(id, detail.messages);
+      }
       store.setActiveId(id);
       store.markSeen(id);
     },
@@ -299,22 +316,20 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   }, [searchParams, setOpen, handlePickConversation, router]);
 
   const handleNewConversation = React.useCallback(() => {
-    agent.reset();
+    agent.newSession();
     store.setActiveId(null);
   }, [agent, store]);
 
   // Deleting the conversation you're currently viewing must drop you back to a
   // clean slate — otherwise the panel keeps showing the just-deleted thread and
   // the next message would try to append to a row that no longer exists (404).
-  // Deleting some *other* thread from the drawer leaves the active one alone.
+  // Deleting some *other* thread also aborts any stream it still has running.
   const handleDeleteConversation = React.useCallback(
     async (id: string) => {
       const wasActive = id === (agent.conversationId ?? store.activeId);
+      agent.discardConversation(id);
       await store.remove(id);
-      if (wasActive) {
-        agent.reset();
-        store.setActiveId(null);
-      }
+      if (wasActive) store.setActiveId(null);
     },
     [agent, store],
   );
@@ -744,16 +759,32 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                       <button
                         type="button"
                         onClick={() => setDrawerOpen(true)}
-                        className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer"
+                        className="relative rounded-md p-1.5 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer"
                         aria-label={msg(
                           "auto.features.agent.panel.components.generalistpanel.history_button",
                         )}
                       >
                         <ClockCounterClockwise className="size-3.5" />
+                        {agent.backgroundBusyCount > 0 && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -top-0.5 -end-0.5 flex min-w-3.5 h-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[0.5625rem] font-semibold leading-none text-primary-foreground"
+                          >
+                            {agent.backgroundBusyCount}
+                          </span>
+                        )}
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">
                       {msg("auto.features.agent.panel.components.generalistpanel.history_button")}
+                      {agent.backgroundBusyCount > 0 && (
+                        <>
+                          {" · "}
+                          {formatMsg("agent.parallel.background_count", {
+                            p1: agent.backgroundBusyCount,
+                          })}
+                        </>
+                      )}
                     </TooltipContent>
                   </Tooltip>
                   {agent.messages.length > 0 && (
@@ -861,7 +892,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                 onSubmit={handleSubmit}
                 onStop={agent.stop}
                 placeholder={msg("auto.features.agent.panel.components.generalistpanel.literal.5")}
-                streaming={streaming}
+                streaming={activeBusy}
                 disabled={codeAuthoringActive}
                 modelMenu={
               <ComposerModelMenu
@@ -976,7 +1007,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
           createPortal(
             <MinimizedPill
               onOpen={openPanel}
-              active={streaming}
+              active={streaming || agent.backgroundBusyCount > 0}
               statusLabel={agent.statusLabel}
               hue={hue}
               inline
@@ -986,7 +1017,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         ) : (
           <MinimizedPill
             onOpen={openPanel}
-            active={streaming}
+            active={streaming || agent.backgroundBusyCount > 0}
             statusLabel={agent.statusLabel}
             hue={hue}
           />
@@ -999,6 +1030,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         loading={store.loading}
         activeId={agent.conversationId ?? store.activeId}
         unreadIds={store.unreadIds}
+        busyIds={agent.busyConversationIds}
         query={searchQuery}
         onQueryChange={setSearchQuery}
         onPick={handlePickConversation}

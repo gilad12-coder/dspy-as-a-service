@@ -18,6 +18,14 @@ import type {
   WizardState,
 } from "../lib/types";
 
+/** Where a stream event came from, relative to what the panel is showing. */
+export interface SessionEventContext {
+  /** True when the event's session is the one currently displayed. */
+  isActive: boolean;
+  /** The session's conversation id at event time (null before meta arrives). */
+  conversationId: string | null;
+}
+
 export interface GeneralistAgentState {
   status: AgentStatus;
   statusLabel: string;
@@ -38,17 +46,31 @@ export interface GeneralistAgentState {
   editAndResend: (messageIndex: number, content: string) => void;
   retry: () => void;
   stop: () => void;
-  reset: () => void;
   confirmApproval: (approved: boolean) => Promise<void>;
-  loadConversation: (id: string, messages: AgentMessage[]) => void;
+  /** Start a fresh empty chat; every other chat keeps streaming untouched. */
+  newSession: () => void;
+  /**
+   * Switch to the live session already holding this conversation, if one
+   * exists (streaming, queued, or finished-but-kept). Returns false when the
+   * conversation has no in-memory session and must be loaded from the server.
+   */
+  activateConversation: (id: string) => boolean;
+  /** Open a server-loaded conversation as the displayed session. */
+  openConversation: (id: string, messages: AgentMessage[]) => void;
+  /** Drop a conversation's session (aborting its stream) after deletion. */
+  discardConversation: (id: string) => void;
+  /** Conversation ids with a stream running or waiting in the queue. */
+  busyConversationIds: ReadonlySet<string>;
+  /** Busy sessions other than the displayed one (badge / pill signal). */
+  backgroundBusyCount: number;
 }
 
 export interface UseGeneralistAgentArgs {
   wizardState: WizardState;
   trustMode: TrustMode;
-  onToolStart?: (ev: ToolStartPayload) => void;
-  onToolEnd?: (ev: ToolEndPayload) => void;
-  onConversationMeta?: (id: string, title: string) => void;
+  onToolStart?: (ev: ToolStartPayload, ctx: SessionEventContext) => void;
+  onToolEnd?: (ev: ToolEndPayload, ctx: SessionEventContext) => void;
+  onConversationMeta?: (id: string, title: string, ctx: SessionEventContext) => void;
 }
 
 // MCP tool names that mutate the user's optimization set. When one of these
@@ -77,23 +99,112 @@ const SUBMIT_TOOLS: ReadonlySet<string> = new Set([
   "submit_grid_search_grid_search_post",
 ]);
 
+// SSE streams hold one HTTP connection each for their whole lifetime. Over
+// HTTP/1.1 the browser allows six connections per origin, so an uncapped
+// fan-out would starve every other API call to the backend. Runs beyond the
+// cap wait in a FIFO queue and start automatically as slots free up.
+const MAX_PARALLEL_STREAMS = 4;
+
+// The first session's key; ``keyCounterRef`` therefore starts at 1.
+const INITIAL_SESSION_KEY = "session-0";
+
+/** Per-session render state — everything the panel needs to draw one chat. */
+interface SessionView {
+  key: string;
+  conversationId: string | null;
+  status: AgentStatus;
+  statusLabel: string;
+  messages: AgentMessage[];
+  reasoning: string;
+  reasoningStartedAt: number | null;
+  reasoningEndedAt: number | null;
+  error: string | null;
+  pendingApproval: PendingApprovalPayload | null;
+}
+
+/** A turn captured at send time, replayed verbatim when a slot frees up. */
+interface PendingRun {
+  message: string;
+  chatHistory: ChatTurn[];
+  wizardState: WizardState;
+  trustMode: TrustMode;
+  regenerate: boolean;
+}
+
+/** Per-session mutable machinery that must never trigger a render. */
+interface SessionRuntime {
+  controller: AbortController | null;
+  reasoningBuf: string;
+  replyBuf: string;
+  // Sticky overlay of wizard fields derived synchronously this session
+  // (e.g. ``staged_dataset_id`` from an in-panel upload). The panel-only
+  // flow has no ``wizardCtx`` to write into, so without this every turn
+  // after the upload would lose the staged dataset and the agent would
+  // ask the user to re-upload.
+  persistentExtras: Partial<WizardState>;
+  pendingRun: PendingRun | null;
+}
+
+function blankSession(key: string): SessionView {
+  return {
+    key,
+    conversationId: null,
+    status: "idle",
+    statusLabel: "",
+    messages: [],
+    reasoning: "",
+    reasoningStartedAt: null,
+    reasoningEndedAt: null,
+    error: null,
+    pendingApproval: null,
+  };
+}
+
+function blankRuntime(): SessionRuntime {
+  return {
+    controller: null,
+    reasoningBuf: "",
+    replyBuf: "",
+    persistentExtras: {},
+    pendingRun: null,
+  };
+}
+
+function isBusy(session: SessionView): boolean {
+  return session.status === "streaming" || session.status === "queued";
+}
+
+/**
+ * Multi-session generalist-agent manager. Every chat owns its own stream,
+ * buffers, and abort controller, so switching threads or opening a new chat
+ * never cancels work in progress — streams keep running in the background
+ * and their state is re-attached when the user returns. Up to
+ * ``MAX_PARALLEL_STREAMS`` turns run concurrently; further sends wait in a
+ * FIFO queue. The returned state mirrors the previously single-session shape,
+ * projected from whichever session is currently displayed.
+ */
 export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgentState {
   const { wizardState, trustMode } = args;
 
-  const [status, setStatus] = React.useState<AgentStatus>("idle");
-  const [statusLabel, setStatusLabel] = React.useState("");
-  const [messages, setMessages] = React.useState<AgentMessage[]>([]);
-  const [reasoning, setReasoning] = React.useState("");
-  const [reasoningStartedAt, setReasoningStartedAt] = React.useState<number | null>(null);
-  const [reasoningEndedAt, setReasoningEndedAt] = React.useState<number | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-  const [pendingApproval, setPendingApproval] = React.useState<PendingApprovalPayload | null>(null);
-  const [conversationId, setConversationId] = React.useState<string | null>(null);
+  const keyCounterRef = React.useRef(1);
+  const nextKey = React.useCallback(() => `session-${keyCounterRef.current++}`, []);
+
+  const [sessions, setSessions] = React.useState<ReadonlyMap<string, SessionView>>(
+    () => new Map([[INITIAL_SESSION_KEY, blankSession(INITIAL_SESSION_KEY)]]),
+  );
+  const sessionsRef = React.useRef(sessions);
+  const [activeKey, setActiveKey] = React.useState(INITIAL_SESSION_KEY);
+  const activeKeyRef = React.useRef(activeKey);
+
+  const runtimesRef = React.useRef(new Map<string, SessionRuntime>());
+  const streamingKeysRef = React.useRef(new Set<string>());
+  const queueRef = React.useRef<string[]>([]);
+
   // Seeded from the settings-modal default; the panel is client-only
   // (ssr:false), so the localStorage read is hydration-safe.
   const [model, setModelState] = React.useState<string | null>(() => readPref("composerModel"));
   // Mirrored in a ref so the streaming closures (retry, regenerate) always
-  // send the current choice without re-memoizing runAgent.
+  // send the current choice without re-memoizing the run machinery.
   const modelRef = React.useRef<string | null>(model);
   const setModel = React.useCallback((next: string | null) => {
     modelRef.current = next;
@@ -108,18 +219,6 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
     setReasoningEffortState(next);
   }, []);
 
-  const abortRef = React.useRef<AbortController | null>(null);
-  const reasoningBufRef = React.useRef("");
-  const replyBufRef = React.useRef("");
-  const messagesRef = React.useRef<AgentMessage[]>(messages);
-  React.useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-  const conversationIdRef = React.useRef<string | null>(null);
-  React.useEffect(() => {
-    conversationIdRef.current = conversationId;
-  }, [conversationId]);
-
   // Effect ordering guarantees this snapshot is current at send time: this
   // child hook's effects run before the parent panel's, so any same-commit
   // programmatic send (e.g. the code-authoring handoff) sees the latest props.
@@ -129,14 +228,6 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
   React.useEffect(() => {
     snapshotRef.current = { wizardState, trustMode };
   }, [wizardState, trustMode]);
-
-  // Sticky overlay of wizard fields derived synchronously this session
-  // (e.g. ``staged_dataset_id`` from an in-panel upload). The panel-only
-  // flow has no ``wizardCtx`` to write into, so without this every turn
-  // after the upload would lose the staged dataset and the agent would
-  // ask the user to re-upload. Cleared on ``reset`` so a fresh thread
-  // starts clean.
-  const persistentExtrasRef = React.useRef<Partial<WizardState>>({});
 
   const callbacksRef = React.useRef<{
     onToolStart: UseGeneralistAgentArgs["onToolStart"];
@@ -155,40 +246,83 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
     };
   }, [args.onToolStart, args.onToolEnd, args.onConversationMeta]);
 
-  // Abort any in-flight stream when the hook unmounts so callbacks can't
-  // resume firing into a torn-down React tree (setState-on-unmounted warnings,
-  // window-event dispatch from a stale tool-end, etc.).
-  React.useEffect(
-    () => () => {
-      abortRef.current?.abort();
-      abortRef.current = null;
+  // The ref is updated synchronously with every commit so stream callbacks and
+  // same-tick sends always read post-mutation state, never a stale render.
+  const commit = React.useCallback(
+    (mutate: (draft: Map<string, SessionView>) => void) => {
+      const next = new Map(sessionsRef.current);
+      mutate(next);
+      sessionsRef.current = next;
+      setSessions(next);
     },
     [],
   );
 
-  const appendReply = React.useCallback((chunk: string) => {
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (!last || last.role !== "assistant") return prev;
-      const next = prev.slice();
-      next[next.length - 1] = { ...last, content: last.content + chunk };
-      return next;
-    });
+  const patchSession = React.useCallback(
+    (key: string, patch: Partial<SessionView>) => {
+      commit((draft) => {
+        const cur = draft.get(key);
+        if (cur) draft.set(key, { ...cur, ...patch });
+      });
+    },
+    [commit],
+  );
+
+  const patchMessages = React.useCallback(
+    (key: string, updater: (prev: AgentMessage[]) => AgentMessage[]) => {
+      commit((draft) => {
+        const cur = draft.get(key);
+        if (!cur) return;
+        const nextMessages = updater(cur.messages);
+        if (nextMessages !== cur.messages) draft.set(key, { ...cur, messages: nextMessages });
+      });
+    },
+    [commit],
+  );
+
+  const getRuntime = React.useCallback((key: string): SessionRuntime => {
+    let rt = runtimesRef.current.get(key);
+    if (!rt) {
+      rt = blankRuntime();
+      runtimesRef.current.set(key, rt);
+    }
+    return rt;
   }, []);
 
-  const pushToolCall = React.useCallback((call: AgentToolCall) => {
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (!last || last.role !== "assistant") return prev;
-      const next = prev.slice();
-      next[next.length - 1] = { ...last, toolCalls: [...(last.toolCalls ?? []), call] };
-      return next;
-    });
+  const setActive = React.useCallback((key: string) => {
+    activeKeyRef.current = key;
+    setActiveKey(key);
   }, []);
+
+  const appendReply = React.useCallback(
+    (key: string, chunk: string) => {
+      patchMessages(key, (prev) => {
+        const last = prev[prev.length - 1];
+        if (!last || last.role !== "assistant") return prev;
+        const next = prev.slice();
+        next[next.length - 1] = { ...last, content: last.content + chunk };
+        return next;
+      });
+    },
+    [patchMessages],
+  );
+
+  const pushToolCall = React.useCallback(
+    (key: string, call: AgentToolCall) => {
+      patchMessages(key, (prev) => {
+        const last = prev[prev.length - 1];
+        if (!last || last.role !== "assistant") return prev;
+        const next = prev.slice();
+        next[next.length - 1] = { ...last, toolCalls: [...(last.toolCalls ?? []), call] };
+        return next;
+      });
+    },
+    [patchMessages],
+  );
 
   const finishToolCall = React.useCallback(
-    (id: string, nextStatus: "done" | "error", result?: unknown) => {
-      setMessages((prev) => {
+    (key: string, id: string, nextStatus: "done" | "error", result?: unknown) => {
+      patchMessages(key, (prev) => {
         const last = prev[prev.length - 1];
         if (!last || last.role !== "assistant" || !last.toolCalls?.length) return prev;
         const next = prev.slice();
@@ -208,49 +342,46 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
         return next;
       });
     },
-    [],
+    [patchMessages],
   );
 
-  const runAgent = React.useCallback(
-    (
-      userMessage: string,
-      history: AgentMessage[],
-      wizardStateOverride?: WizardState,
-      regenerate = false,
-    ) => {
-      abortRef.current?.abort();
+  const eventContext = React.useCallback((key: string): SessionEventContext => {
+    return {
+      isActive: activeKeyRef.current === key,
+      conversationId: sessionsRef.current.get(key)?.conversationId ?? null,
+    };
+  }, []);
+
+  // ``pumpQueue`` (below) and ``startStream`` are mutually recursive: a
+  // finished stream frees a slot, which starts the next queued stream. The
+  // back-edge goes through a state tick — releasing a slot bumps the tick and
+  // the pump effect runs on the next commit, so neither callback needs the
+  // other in scope at declaration time.
+  const [pumpTick, setPumpTick] = React.useState(0);
+  const requestPump = React.useCallback(() => setPumpTick((t) => t + 1), []);
+
+  const startStream = React.useCallback(
+    (key: string, run: PendingRun) => {
+      const rt = getRuntime(key);
       const controller = new AbortController();
-      abortRef.current = controller;
+      rt.controller = controller;
+      rt.reasoningBuf = "";
+      rt.replyBuf = "";
+      streamingKeysRef.current.add(key);
 
-      reasoningBufRef.current = "";
-      replyBufRef.current = "";
+      patchSession(key, {
+        status: "streaming",
+        statusLabel: msg("auto.features.agent.panel.hooks.use.generalist.agent.literal.1"),
+        reasoning: "",
+        reasoningStartedAt: Date.now(),
+        reasoningEndedAt: null,
+        error: null,
+        pendingApproval: null,
+      });
 
-      setStatus("streaming");
-      setStatusLabel(msg("auto.features.agent.panel.hooks.use.generalist.agent.literal.1"));
-      setReasoning("");
-      setReasoningStartedAt(Date.now());
-      setReasoningEndedAt(null);
-      setError(null);
-      setPendingApproval(null);
-
-      setMessages((m) => [
-        ...m,
-        { role: "user", content: userMessage },
-        { role: "assistant", content: "", toolCalls: [] },
-      ]);
-
-      const chatHistory: ChatTurn[] = history
-        .filter((m) => m.content.trim().length > 0)
-        .map((m) => ({ role: m.role, content: m.content }));
-      // Merge order: snapshot (from wizardCtx if mounted) <- sticky extras
-      // (accumulated across turns from panel-side derivations like
-      // ``staged_dataset_id``) <- this-turn override. The sticky layer
-      // is what survives between turns when there's no wizardCtx writer.
-      const { wizardState: snapshotWs, trustMode: tm } = snapshotRef.current;
-      const ws = {
-        ...snapshotWs,
-        ...persistentExtrasRef.current,
-        ...(wizardStateOverride ?? {}),
+      const releaseSlot = () => {
+        rt.controller = null;
+        if (streamingKeysRef.current.delete(key)) requestPump();
       };
 
       // Every stream callback short-circuits on ``controller.signal.aborted``
@@ -258,12 +389,12 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
       // abort) cannot leak state writes or window events into the live view.
       void streamGeneralistAgent(
         {
-          user_message: userMessage,
-          chat_history: chatHistory,
-          wizard_state: ws,
-          trust_mode: tm,
-          conversation_id: conversationIdRef.current,
-          regenerate,
+          user_message: run.message,
+          chat_history: run.chatHistory,
+          wizard_state: run.wizardState,
+          trust_mode: run.trustMode,
+          conversation_id: sessionsRef.current.get(key)?.conversationId ?? null,
+          regenerate: run.regenerate,
           locale: getActiveLocale(),
           model: modelRef.current ?? undefined,
           reasoning_effort: effortRef.current ?? undefined,
@@ -273,29 +404,30 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
           onConversationMeta: (ev) => {
             if (controller.signal.aborted) return;
             if (!ev.conversation_id) return;
-            setConversationId(ev.conversation_id);
-            callbacksRef.current.onConversationMeta?.(ev.conversation_id, ev.title);
+            patchSession(key, { conversationId: ev.conversation_id });
+            callbacksRef.current.onConversationMeta?.(ev.conversation_id, ev.title, eventContext(key));
           },
           onReasoningPatch: (chunk) => {
             if (controller.signal.aborted) return;
-            if (reasoningBufRef.current === "") {
-              setReasoningStartedAt(Date.now());
+            if (rt.reasoningBuf === "") {
+              patchSession(key, { reasoningStartedAt: Date.now() });
             }
-            reasoningBufRef.current += chunk;
-            setReasoning(reasoningBufRef.current);
+            rt.reasoningBuf += chunk;
+            patchSession(key, { reasoning: rt.reasoningBuf });
           },
           onStatusPatch: (label) => {
             if (controller.signal.aborted) return;
-            if (label) setStatusLabel(label);
+            if (label) patchSession(key, { statusLabel: label });
           },
           onToolStart: (ev) => {
             if (controller.signal.aborted) return;
-            setStatusLabel(
-              formatMsg("auto.features.agent.panel.hooks.use.generalist.agent.template.1", {
-                p1: ev.tool,
-              }),
-            );
-            pushToolCall({
+            patchSession(key, {
+              statusLabel: formatMsg(
+                "auto.features.agent.panel.hooks.use.generalist.agent.template.1",
+                { p1: ev.tool },
+              ),
+            });
+            pushToolCall(key, {
               id: ev.id,
               tool: ev.tool,
               reason: ev.reason,
@@ -304,46 +436,54 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
               endedAt: null,
               payload: { arguments: ev.arguments },
             });
-            callbacksRef.current.onToolStart?.(ev);
+            callbacksRef.current.onToolStart?.(ev, eventContext(key));
           },
           onToolEnd: (ev) => {
             if (controller.signal.aborted) return;
-            finishToolCall(ev.id, ev.status === "ok" ? "done" : "error", ev.result);
+            finishToolCall(key, ev.id, ev.status === "ok" ? "done" : "error", ev.result);
             if (ev.status === "ok") {
               if (OPTIMIZATION_MUTATING_TOOLS.has(ev.tool)) {
                 window.dispatchEvent(new Event("optimizations-changed"));
               }
               if (SUBMIT_TOOLS.has(ev.tool)) {
-                persistentExtrasRef.current = {};
+                rt.persistentExtras = {};
               }
             }
-            callbacksRef.current.onToolEnd?.(ev);
+            callbacksRef.current.onToolEnd?.(ev, eventContext(key));
           },
           onPendingApproval: (ev) => {
             if (controller.signal.aborted) return;
-            setPendingApproval(ev);
-            setStatusLabel(msg("auto.features.agent.panel.hooks.use.generalist.agent.literal.2"));
+            patchSession(key, {
+              pendingApproval: ev,
+              statusLabel: msg("auto.features.agent.panel.hooks.use.generalist.agent.literal.2"),
+            });
           },
           onApprovalResolved: () => {
             if (controller.signal.aborted) return;
-            setPendingApproval(null);
-            setStatusLabel(msg("auto.features.agent.panel.hooks.use.generalist.agent.literal.3"));
+            patchSession(key, {
+              pendingApproval: null,
+              statusLabel: msg("auto.features.agent.panel.hooks.use.generalist.agent.literal.3"),
+            });
           },
           onMessagePatch: (chunk) => {
             if (controller.signal.aborted) return;
-            if (replyBufRef.current === "") {
-              setStatusLabel(msg("auto.features.agent.panel.hooks.use.generalist.agent.literal.4"));
-              if (reasoningBufRef.current) setReasoningEndedAt(Date.now());
+            if (rt.replyBuf === "") {
+              patchSession(key, {
+                statusLabel: msg("auto.features.agent.panel.hooks.use.generalist.agent.literal.4"),
+                ...(rt.reasoningBuf ? { reasoningEndedAt: Date.now() } : {}),
+              });
             }
-            replyBufRef.current += chunk;
-            appendReply(chunk);
+            rt.replyBuf += chunk;
+            appendReply(key, chunk);
           },
           onDone: (result) => {
             if (controller.signal.aborted) return;
-            setStatus("done");
-            setStatusLabel("");
-            if (reasoningBufRef.current) setReasoningEndedAt(Date.now());
-            setMessages((prev) => {
+            patchSession(key, {
+              status: "done",
+              statusLabel: "",
+              ...(rt.reasoningBuf ? { reasoningEndedAt: Date.now() } : {}),
+            });
+            patchMessages(key, (prev) => {
               const last = prev[prev.length - 1];
               if (!last || last.role !== "assistant") return prev;
               const fallback =
@@ -360,17 +500,19 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
               };
               return next;
             });
+            releaseSlot();
           },
           onError: (message, code) => {
             if (controller.signal.aborted) return;
-            setStatus("error");
-            setStatusLabel(msg("auto.features.agent.panel.hooks.use.generalist.agent.literal.6"));
-            // Known machine codes get a localized message; anything else
-            // shows the backend's text as-is.
-            setError(
-              code === "context_too_long" ? msg("agent.error.context_too_long") : message,
-            );
-            setMessages((prev) => {
+            patchSession(key, {
+              status: "error",
+              statusLabel: msg("auto.features.agent.panel.hooks.use.generalist.agent.literal.6"),
+              // Known machine codes get a localized message; anything else
+              // shows the backend's text as-is.
+              error:
+                code === "context_too_long" ? msg("agent.error.context_too_long") : message,
+            });
+            patchMessages(key, (prev) => {
               const last = prev[prev.length - 1];
               if (!last || last.role !== "assistant") return prev;
               if (!last.content && !last.toolCalls?.length) {
@@ -394,47 +536,165 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
               };
               return next;
             });
+            releaseSlot();
           },
         },
       );
     },
-    [appendReply, pushToolCall, finishToolCall],
+    [appendReply, eventContext, finishToolCall, getRuntime, patchMessages, patchSession, pushToolCall, requestPump],
+  );
+
+  // The pump is idempotent, so the mount-time effect run and
+  // identity-change re-runs are harmless no-ops.
+  const pumpQueue = React.useCallback(() => {
+    while (streamingKeysRef.current.size < MAX_PARALLEL_STREAMS && queueRef.current.length > 0) {
+      const key = queueRef.current.shift();
+      if (!key) continue;
+      const rt = runtimesRef.current.get(key);
+      const run = rt?.pendingRun;
+      if (!rt || !run || !sessionsRef.current.has(key)) continue;
+      rt.pendingRun = null;
+      startStream(key, run);
+    }
+  }, [startStream]);
+  React.useEffect(() => {
+    pumpQueue();
+  }, [pumpTick, pumpQueue]);
+
+  /** Cancel a session's stream or queued turn and free its slot. */
+  const abortSession = React.useCallback(
+    (key: string) => {
+      const rt = runtimesRef.current.get(key);
+      if (rt) {
+        rt.controller?.abort();
+        rt.controller = null;
+        rt.pendingRun = null;
+      }
+      queueRef.current = queueRef.current.filter((k) => k !== key);
+      if (streamingKeysRef.current.delete(key)) requestPump();
+    },
+    [requestPump],
+  );
+
+  // Abort every in-flight stream when the hook unmounts so callbacks can't
+  // resume firing into a torn-down React tree (setState-on-unmounted warnings,
+  // window-event dispatch from a stale tool-end, etc.).
+  React.useEffect(
+    () => () => {
+      for (const rt of runtimesRef.current.values()) {
+        rt.controller?.abort();
+        rt.controller = null;
+        rt.pendingRun = null;
+      }
+      queueRef.current = [];
+      streamingKeysRef.current.clear();
+    },
+    [],
+  );
+
+  const requestRun = React.useCallback(
+    (
+      key: string,
+      userMessage: string,
+      history: AgentMessage[],
+      wizardStateOverride?: WizardState,
+      regenerate = false,
+    ) => {
+      // A resend within the same session replaces its own in-flight or queued
+      // turn — other sessions' streams are untouched.
+      abortSession(key);
+      const rt = getRuntime(key);
+      rt.reasoningBuf = "";
+      rt.replyBuf = "";
+
+      const chatHistory: ChatTurn[] = history
+        .filter((m) => m.content.trim().length > 0)
+        .map((m) => ({ role: m.role, content: m.content }));
+      // Merge order: snapshot (from wizardCtx if mounted) <- sticky extras
+      // (accumulated across turns from panel-side derivations like
+      // ``staged_dataset_id``) <- this-turn override. The sticky layer
+      // is what survives between turns when there's no wizardCtx writer.
+      const { wizardState: snapshotWs, trustMode: tm } = snapshotRef.current;
+      const ws = {
+        ...snapshotWs,
+        ...rt.persistentExtras,
+        ...(wizardStateOverride ?? {}),
+      };
+      const run: PendingRun = {
+        message: userMessage,
+        chatHistory,
+        wizardState: ws,
+        trustMode: tm,
+        regenerate,
+      };
+
+      commit((draft) => {
+        const cur = draft.get(key);
+        if (!cur) return;
+        draft.set(key, {
+          ...cur,
+          messages: [
+            ...cur.messages,
+            { role: "user", content: userMessage },
+            { role: "assistant", content: "", toolCalls: [] },
+          ],
+          reasoning: "",
+          reasoningStartedAt: null,
+          reasoningEndedAt: null,
+          error: null,
+          pendingApproval: null,
+        });
+      });
+
+      if (streamingKeysRef.current.size < MAX_PARALLEL_STREAMS) {
+        startStream(key, run);
+      } else {
+        rt.pendingRun = run;
+        queueRef.current.push(key);
+        patchSession(key, {
+          status: "queued",
+          statusLabel: msg("agent.parallel.queued"),
+        });
+      }
+    },
+    [abortSession, commit, getRuntime, patchSession, startStream],
   );
 
   const send = React.useCallback(
     (message: string, wizardStateOverride?: WizardState) => {
       const trimmed = message.trim();
       if (!trimmed) return;
+      const key = activeKeyRef.current;
       if (wizardStateOverride) {
-        persistentExtrasRef.current = {
-          ...persistentExtrasRef.current,
+        const rt = getRuntime(key);
+        rt.persistentExtras = {
+          ...rt.persistentExtras,
           ...wizardStateOverride,
         };
       }
-      runAgent(trimmed, messagesRef.current, wizardStateOverride);
+      const history = sessionsRef.current.get(key)?.messages ?? [];
+      requestRun(key, trimmed, history, wizardStateOverride);
     },
-    [runAgent],
+    [getRuntime, requestRun],
   );
 
   const editAndResend = React.useCallback(
     (messageIndex: number, content: string) => {
       const trimmed = content.trim();
       if (!trimmed) return;
-      abortRef.current?.abort();
-      abortRef.current = null;
-      const truncated = messagesRef.current.slice(0, messageIndex);
-      setMessages(truncated);
-      messagesRef.current = truncated;
-      runAgent(trimmed, truncated);
+      const key = activeKeyRef.current;
+      const truncated = (sessionsRef.current.get(key)?.messages ?? []).slice(0, messageIndex);
+      requestRun(key, trimmed, truncated);
     },
-    [runAgent],
+    [requestRun],
   );
 
   // Re-run the most recent user turn (used by the error-banner retry button
   // and by the end-of-conversation regenerate action). Truncates back to the
   // user message so we don't re-feed a failed assistant turn into history.
   const retry = React.useCallback(() => {
-    const current = messagesRef.current;
+    const key = activeKeyRef.current;
+    const current = sessionsRef.current.get(key)?.messages ?? [];
     let lastUserIndex = -1;
     for (let i = current.length - 1; i >= 0; i--) {
       if (current[i]?.role === "user") {
@@ -445,89 +705,165 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
     if (lastUserIndex === -1) return;
     const lastUser = current[lastUserIndex];
     if (!lastUser) return;
-    abortRef.current?.abort();
-    abortRef.current = null;
     const truncated = current.slice(0, lastUserIndex);
-    setMessages(truncated);
-    messagesRef.current = truncated;
-    runAgent(lastUser.content, truncated, undefined, true);
-  }, [runAgent]);
+    requestRun(key, lastUser.content, truncated, undefined, true);
+  }, [requestRun]);
 
   const stop = React.useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setStatus("idle");
-    setStatusLabel("");
-  }, []);
+    const key = activeKeyRef.current;
+    const wasQueued = sessionsRef.current.get(key)?.status === "queued";
+    abortSession(key);
+    patchSession(key, { status: "idle", statusLabel: "" });
+    if (wasQueued) {
+      // Nothing streamed yet — drop the empty assistant placeholder so the
+      // transcript doesn't keep a hollow bubble for a turn that never ran.
+      patchMessages(key, (prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === "assistant" && !last.content && !last.toolCalls?.length) {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
+    }
+  }, [abortSession, patchMessages, patchSession]);
 
-  const reset = React.useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    reasoningBufRef.current = "";
-    replyBufRef.current = "";
-    persistentExtrasRef.current = {};
-    setMessages([]);
-    setStatus("idle");
-    setStatusLabel("");
-    setReasoning("");
-    setReasoningStartedAt(null);
-    setReasoningEndedAt(null);
-    setError(null);
-    setPendingApproval(null);
-    setConversationId(null);
-  }, []);
-
-  // Replace the in-memory state with a persisted conversation's id +
-  // messages, so the panel can switch threads without losing rehydrated
-  // tool-call rendering. The next ``send`` will continue this conversation
-  // by passing the id back to the server.
-  const loadConversation = React.useCallback(
-    (id: string, loaded: AgentMessage[]) => {
-      abortRef.current?.abort();
-      abortRef.current = null;
-      reasoningBufRef.current = "";
-      replyBufRef.current = "";
-      persistentExtrasRef.current = {};
-      setMessages(loaded);
-      setStatus("idle");
-      setStatusLabel("");
-      setReasoning("");
-      setReasoningStartedAt(null);
-      setReasoningEndedAt(null);
-      setError(null);
-      setPendingApproval(null);
-      setConversationId(id);
+  /**
+   * Drop background sessions that are safely re-openable: idle/done ones whose
+   * transcript lives on the server (or that are empty). Busy and errored
+   * sessions are kept so running work and unseen failures survive switching.
+   */
+  const pruneInactive = React.useCallback(
+    (draft: Map<string, SessionView>, keepKey: string) => {
+      for (const [key, session] of draft) {
+        if (key === keepKey) continue;
+        if (isBusy(session) || session.status === "error") continue;
+        if (session.conversationId === null && session.messages.length > 0) continue;
+        draft.delete(key);
+        runtimesRef.current.delete(key);
+      }
     },
     [],
   );
 
+  const newSession = React.useCallback(() => {
+    const cur = sessionsRef.current.get(activeKeyRef.current);
+    if (cur && cur.status === "idle" && cur.messages.length === 0 && cur.conversationId === null) {
+      return;
+    }
+    const key = nextKey();
+    commit((draft) => {
+      draft.set(key, blankSession(key));
+      pruneInactive(draft, key);
+    });
+    setActive(key);
+  }, [commit, nextKey, pruneInactive, setActive]);
+
+  const activateConversation = React.useCallback(
+    (id: string): boolean => {
+      let found: string | null = null;
+      for (const [key, session] of sessionsRef.current) {
+        if (session.conversationId === id) {
+          found = key;
+          break;
+        }
+      }
+      if (found === null) return false;
+      const key = found;
+      commit((draft) => pruneInactive(draft, key));
+      setActive(key);
+      return true;
+    },
+    [commit, pruneInactive, setActive],
+  );
+
+  const openConversation = React.useCallback(
+    (id: string, loaded: AgentMessage[]) => {
+      const key = nextKey();
+      commit((draft) => {
+        draft.set(key, { ...blankSession(key), conversationId: id, messages: loaded });
+        pruneInactive(draft, key);
+      });
+      setActive(key);
+    },
+    [commit, nextKey, pruneInactive, setActive],
+  );
+
+  const discardConversation = React.useCallback(
+    (id: string) => {
+      let found: string | null = null;
+      for (const [key, session] of sessionsRef.current) {
+        if (session.conversationId === id) {
+          found = key;
+          break;
+        }
+      }
+      if (found === null) return;
+      const key = found;
+      abortSession(key);
+      runtimesRef.current.delete(key);
+      const wasActive = activeKeyRef.current === key;
+      if (wasActive) {
+        const freshKey = nextKey();
+        commit((draft) => {
+          draft.delete(key);
+          draft.set(freshKey, blankSession(freshKey));
+        });
+        setActive(freshKey);
+      } else {
+        commit((draft) => {
+          draft.delete(key);
+        });
+      }
+    },
+    [abortSession, commit, nextKey, setActive],
+  );
+
+  const active = sessions.get(activeKey) ?? blankSession(activeKey);
+
   const confirmApproval = React.useCallback(
     async (approved: boolean) => {
-      const pa = pendingApproval;
+      const key = activeKeyRef.current;
+      const pa = sessionsRef.current.get(key)?.pendingApproval;
       if (!pa) return;
-      setPendingApproval(null);
+      patchSession(key, { pendingApproval: null });
       const resolved = await confirmGeneralistApproval(pa.id, approved);
       if (!resolved) {
         // The confirm never reached the stream's process (network blip or a
         // different replica) — silently dropping it leaves the tool hanging
         // with no feedback. Restore the card so the user can retry.
-        setPendingApproval(pa);
+        patchSession(key, { pendingApproval: pa });
         toast.error(msg("agent.approval.confirm_failed"));
       }
     },
-    [pendingApproval],
+    [patchSession],
   );
 
+  const busyConversationIds = React.useMemo(() => {
+    const out = new Set<string>();
+    for (const session of sessions.values()) {
+      if (isBusy(session) && session.conversationId) out.add(session.conversationId);
+    }
+    return out;
+  }, [sessions]);
+
+  const backgroundBusyCount = React.useMemo(() => {
+    let count = 0;
+    for (const [key, session] of sessions) {
+      if (key !== activeKey && isBusy(session)) count++;
+    }
+    return count;
+  }, [sessions, activeKey]);
+
   return {
-    status,
-    statusLabel,
-    messages,
-    reasoning,
-    reasoningStartedAt,
-    reasoningEndedAt,
-    error,
-    pendingApproval,
-    conversationId,
+    status: active.status,
+    statusLabel: active.statusLabel,
+    messages: active.messages,
+    reasoning: active.reasoning,
+    reasoningStartedAt: active.reasoningStartedAt,
+    reasoningEndedAt: active.reasoningEndedAt,
+    error: active.error,
+    pendingApproval: active.pendingApproval,
+    conversationId: active.conversationId,
     model,
     setModel,
     reasoningEffort,
@@ -536,8 +872,12 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
     editAndResend,
     retry,
     stop,
-    reset,
     confirmApproval,
-    loadConversation,
+    newSession,
+    activateConversation,
+    openConversation,
+    discardConversation,
+    busyConversationIds,
+    backgroundBusyCount,
   };
 }
