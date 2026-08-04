@@ -72,7 +72,7 @@ export function TaggerAssistRail({
   const gate = agreementGate(config.mode);
 
   const frameIds = useMemo(() => frameData.map((r) => String(r.id)), [frameData]);
-  const agreement = agreementOver(config.mode, frameIds, annotations, assist.predictions);
+  const committedCount = frameIds.filter((id) => isCommitted(annotations[id], config.mode)).length;
 
   const decidedCount = openRound
     ? openRound.rowIds.filter((id) => openRound.decided[id] !== undefined).length
@@ -80,6 +80,17 @@ export function TaggerAssistRail({
   const predictedCount = openRound
     ? openRound.rowIds.filter((id) => assist.predictions[id] !== undefined).length
     : 0;
+
+  // A percentage over a handful of rows swings wildly and reads as a verdict
+  // before the evidence is in — the meter stays "—" until the whole pass is
+  // reviewed (30/30, not 3/30).
+  const passComplete =
+    phase === "calibration"
+      ? frameIds.length > 0 && committedCount === frameIds.length
+      : openRound !== null && decidedCount === openRound.rowIds.length;
+  const agreement = passComplete
+    ? agreementOver(config.mode, frameIds, annotations, assist.predictions)
+    : null;
 
   // Review: Enter confirms the AI's suggestion for the current row and moves
   // to the next unaudited one. Registered at the window so the annotator's own
@@ -145,7 +156,7 @@ export function TaggerAssistRail({
           <span className="text-xs text-muted-foreground tabular-nums">
             {phase === "calibration"
               ? formatMsg("tagger.assist.rail.progress", {
-                  done: frameIds.filter((id) => isCommitted(annotations[id], config.mode)).length,
+                  done: committedCount,
                   total: frameIds.length,
                 })
               : formatMsg("tagger.assist.rail.reviewed", {
