@@ -227,13 +227,19 @@ function FilterDropdown({
   const updatePos = useCallback(() => {
     if (!anchorRef?.current) return;
     const rect = anchorRef.current.getBoundingClientRect();
-    const dropdownW = 260;
     const gap = 4;
+    const margin = 8;
+    // Measure the real rendered width (set in CSS: w-full capped by max-w) —
+    // a hard-coded guess that under-shoots the actual box lets the clamp leave
+    // the right edge (Apply row) spilling off-screen. The element is already
+    // laid out under visibility:hidden when this first runs, so offsetWidth is
+    // truthful; fall back to the max only if it somehow measures 0.
+    const dropdownW = ref.current?.offsetWidth || 320;
     const top = rect.bottom + gap;
     const availH = Math.max(150, window.innerHeight - top - gap);
     // Center dropdown on the icon, then clamp within viewport
     const idealLeft = rect.left + rect.width / 2 - dropdownW / 2;
-    const left = Math.max(4, Math.min(idealLeft, window.innerWidth - dropdownW - 4));
+    const left = Math.max(margin, Math.min(idealLeft, window.innerWidth - dropdownW - margin));
     setPos({ top, left, availH });
   }, [anchorRef]);
 

@@ -12,7 +12,6 @@ import {
   ArrowUp,
   CaretLeft,
   CaretRight,
-  Check,
   CircleNotch,
   Copy,
   Plus,
@@ -757,7 +756,9 @@ export function DatasetEditorView() {
             {formatMsg("datasets.count.columns", { count: columns.length })}
           </p>
         </div>
-        {touched && (
+        {/* Autosave stays silent on success — only the states that need the
+            user's attention (empty, failed, in-flight) surface a chip. */}
+        {touched && (blocked || saveState !== "saved") && (
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-live="polite">
             {blocked ? (
               <>
@@ -773,11 +774,6 @@ export function DatasetEditorView() {
                 <WarningCircle className="size-3.5" />
                 {msg("datasets.editor.autosave_error")}
               </button>
-            ) : saveState === "saved" ? (
-              <>
-                <Check className="size-3.5" />
-                {msg("datasets.editor.autosave_saved")}
-              </>
             ) : (
               <>
                 <CircleNotch className="size-3.5 animate-spin" />
@@ -833,21 +829,25 @@ export function DatasetEditorView() {
           <TooltipTrigger asChild>
             <span>
               <Button
-                variant="outline"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() =>
                   router.push(`/tagger?dataset=${id}&name=${encodeURIComponent(name ?? "")}`)
                 }
                 disabled={saveState !== "saved"}
-                className="gap-2"
+                aria-label={msg("datasets.editor.tag")}
               >
                 <Tag className="size-4" />
-                {msg("datasets.editor.tag")}
               </Button>
             </span>
           </TooltipTrigger>
-          {saveState !== "saved" && (
-            <TooltipContent>{msg("datasets.editor.tag_dirty_hint")}</TooltipContent>
-          )}
+          {/* The label lives in the tooltip now that the button is icon-only;
+              while it's disabled the dirty hint explains why instead. */}
+          <TooltipContent>
+            {saveState !== "saved"
+              ? msg("datasets.editor.tag_dirty_hint")
+              : msg("datasets.editor.tag")}
+          </TooltipContent>
         </Tooltip>
       </div>
 
