@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "Текст",
   "tagger.results.empty": "Жоден рядок не відповідає цьому фільтру.",
   "tagger.results.who.ai_auto": "ШІ",
-  "tagger.results.who.ai_confirmed": "ШІ · підтверджено",
+  "tagger.results.who.ai_confirmed": "ШІ підтверджено",
   "tagger.results.who.human": "Ви",
   "tagger.session.back": "Назад до сесій розмітки",
   "tagger.session.bulk_delete_body": "Видалити {count} сесій розмітки?",

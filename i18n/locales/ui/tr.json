@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "Metin",
   "tagger.results.empty": "Bu filtreye uyan satır yok.",
   "tagger.results.who.ai_auto": "AI",
-  "tagger.results.who.ai_confirmed": "AI · onaylandı",
+  "tagger.results.who.ai_confirmed": "AI onaylandı",
   "tagger.results.who.human": "Siz",
   "tagger.session.back": "Etiketleme oturumlarına dön",
   "tagger.session.bulk_delete_body": "{count} etiketleme oturumu silinsin mi?",

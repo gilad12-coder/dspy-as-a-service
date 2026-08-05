@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "Texto",
   "tagger.results.empty": "Nenhuma linha corresponde a este filtro.",
   "tagger.results.who.ai_auto": "IA",
-  "tagger.results.who.ai_confirmed": "IA · confirmado",
+  "tagger.results.who.ai_confirmed": "IA confirmado",
   "tagger.results.who.human": "Você",
   "tagger.session.back": "Voltar às sessões de marcação",
   "tagger.session.bulk_delete_body": "Eliminar {count} sessões de marcação?",

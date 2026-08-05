@@ -2823,7 +2823,7 @@
   "tagger.results.col.confidence": "ביטחון",
   "tagger.results.col.source": "מקור",
   "tagger.results.who.human": "אתם",
-  "tagger.results.who.ai_confirmed": "AI · מאושר",
+  "tagger.results.who.ai_confirmed": "AI מאושר",
   "tagger.results.who.ai_auto": "AI",
   "tagger.results.recap.title": "הדאטה תויג",
   "tagger.results.recap.subtitle": "כל {total} השורות מתויגות. הנה מי עשה מה.",

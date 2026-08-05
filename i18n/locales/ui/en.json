@@ -2823,7 +2823,7 @@
   "tagger.results.col.confidence": "Confidence",
   "tagger.results.col.source": "Source",
   "tagger.results.who.human": "You",
-  "tagger.results.who.ai_confirmed": "AI · confirmed",
+  "tagger.results.who.ai_confirmed": "AI confirmed",
   "tagger.results.who.ai_auto": "AI",
   "tagger.results.recap.title": "Dataset tagged",
   "tagger.results.recap.subtitle": "All {total} rows carry a label. Here's who did what.",

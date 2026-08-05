@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "Testo",
   "tagger.results.empty": "Nessuna riga corrisponde a questo filtro.",
   "tagger.results.who.ai_auto": "IA",
-  "tagger.results.who.ai_confirmed": "IA · confermata",
+  "tagger.results.who.ai_confirmed": "IA confermata",
   "tagger.results.who.human": "Tu",
   "tagger.session.back": "Torna alle sessioni di etichettatura",
   "tagger.session.bulk_delete_body": "Eliminare {count} sessioni di etichettatura?",

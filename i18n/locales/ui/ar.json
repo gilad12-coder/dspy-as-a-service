@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "النص",
   "tagger.results.empty": "لا توجد صفوف تطابق هذا الفلتر.",
   "tagger.results.who.ai_auto": "الذكاء الاصطناعي",
-  "tagger.results.who.ai_confirmed": "الذكاء الاصطناعي · مؤكَّد",
+  "tagger.results.who.ai_confirmed": "الذكاء الاصطناعي مؤكَّد",
   "tagger.results.who.human": "أنت",
   "tagger.session.back": "العودة إلى جلسات الوسم",
   "tagger.session.bulk_delete_body": "حذف {count} جلسة وسم؟",

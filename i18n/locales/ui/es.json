@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "Texto",
   "tagger.results.empty": "Ninguna fila coincide con este filtro.",
   "tagger.results.who.ai_auto": "IA",
-  "tagger.results.who.ai_confirmed": "IA · confirmado",
+  "tagger.results.who.ai_confirmed": "IA confirmado",
   "tagger.results.who.human": "Tú",
   "tagger.session.back": "Volver a las sesiones de etiquetado",
   "tagger.session.bulk_delete_body": "¿Eliminar {count} sesiones de etiquetado?",

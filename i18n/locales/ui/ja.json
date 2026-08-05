@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "テキスト",
   "tagger.results.empty": "このフィルターに一致する行はありません。",
   "tagger.results.who.ai_auto": "AI",
-  "tagger.results.who.ai_confirmed": "AI · 確認済み",
+  "tagger.results.who.ai_confirmed": "AI 確認済み",
   "tagger.results.who.human": "あなた",
   "tagger.session.back": "ラベル付けセッションに戻る",
   "tagger.session.bulk_delete_body": "{count} 件のラベル付けセッションを削除しますか？",

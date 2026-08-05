@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "متن",
   "tagger.results.empty": "هیچ ردیفی با این فیلتر مطابقت ندارد.",
   "tagger.results.who.ai_auto": "هوش مصنوعی",
-  "tagger.results.who.ai_confirmed": "هوش مصنوعی · تأییدشده",
+  "tagger.results.who.ai_confirmed": "هوش مصنوعی تأییدشده",
   "tagger.results.who.human": "شما",
   "tagger.session.back": "بازگشت به جلسه‌های برچسب‌گذاری",
   "tagger.session.bulk_delete_body": "{count} جلسه‌ی برچسب‌گذاری حذف شود؟",

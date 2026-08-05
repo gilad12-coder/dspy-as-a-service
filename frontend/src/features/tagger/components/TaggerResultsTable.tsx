@@ -88,9 +88,12 @@ export function TaggerResultsTable({
   );
 
   const labelOptions = useMemo(() => {
+    // First-appearance order (by row index): the filter lists labels in the
+    // same order they appear reading down the table, rather than an alphabetical
+    // sort that wouldn't line up with what the user actually sees.
     const seen = new Set<string>();
     for (const row of rows) if (row.label) seen.add(row.label);
-    return [...seen].sort().map((value) => ({ value, label: value }));
+    return [...seen].map((value) => ({ value, label: value }));
   }, [rows]);
 
   const sourceOptions = useMemo(() => {

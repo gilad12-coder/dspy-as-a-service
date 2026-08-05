@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "Text",
   "tagger.results.empty": "Keine Zeilen entsprechen diesem Filter.",
   "tagger.results.who.ai_auto": "KI",
-  "tagger.results.who.ai_confirmed": "KI · bestätigt",
+  "tagger.results.who.ai_confirmed": "KI bestätigt",
   "tagger.results.who.human": "Du",
   "tagger.session.back": "Zurück zu den Labeling-Sitzungen",
   "tagger.session.bulk_delete_body": "{count} Labeling-Sitzungen löschen?",

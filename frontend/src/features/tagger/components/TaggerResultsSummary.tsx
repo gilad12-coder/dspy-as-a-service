@@ -2,6 +2,7 @@
 
 import { Coins, SealCheck, Sparkle, User, WarningCircle } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { Annotation, AssistState } from "../lib/types";
@@ -78,10 +79,26 @@ export function TaggerResultsSummary({ assist, annotations, onFlaggedPass }: Pro
           </p>
         </div>
         {onFlaggedPass && flagged.length > 0 && (
-          <Button variant="outline" size="sm" onClick={onFlaggedPass} className="shrink-0 gap-1.5">
-            <WarningCircle className="size-3.5" />
-            {formatMsg("tagger.assist.complete.flagged_cta", { count: flagged.length })}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={onFlaggedPass}
+                className="shrink-0"
+                aria-label={formatMsg("tagger.assist.complete.flagged_cta", {
+                  count: flagged.length,
+                })}
+              >
+                {/* Same warning glyph the table stamps on each flagged row, so
+                    the button reads as "go review those rows". */}
+                <WarningCircle className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {formatMsg("tagger.assist.complete.flagged_cta", { count: flagged.length })}
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
 

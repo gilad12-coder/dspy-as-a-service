@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "文本",
   "tagger.results.empty": "没有符合此筛选条件的行。",
   "tagger.results.who.ai_auto": "AI",
-  "tagger.results.who.ai_confirmed": "AI · 已确认",
+  "tagger.results.who.ai_confirmed": "AI 已确认",
   "tagger.results.who.human": "你",
   "tagger.session.back": "返回标注会话",
   "tagger.session.bulk_delete_body": "删除 {count} 个标注会话？",

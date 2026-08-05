@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "Текст",
   "tagger.results.empty": "Нет строк, соответствующих этому фильтру.",
   "tagger.results.who.ai_auto": "ИИ",
-  "tagger.results.who.ai_confirmed": "ИИ · подтверждено",
+  "tagger.results.who.ai_confirmed": "ИИ подтверждено",
   "tagger.results.who.human": "Вы",
   "tagger.session.back": "Назад к сеансам разметки",
   "tagger.session.bulk_delete_body": "Удалить {count} сеансов разметки?",

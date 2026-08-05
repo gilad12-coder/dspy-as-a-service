@@ -2648,7 +2648,7 @@
   "tagger.results.col.text": "टेक्स्ट",
   "tagger.results.empty": "इस फ़िल्टर से कोई पंक्ति मेल नहीं खाती।",
   "tagger.results.who.ai_auto": "AI",
-  "tagger.results.who.ai_confirmed": "AI · पुष्ट",
+  "tagger.results.who.ai_confirmed": "AI पुष्ट",
   "tagger.results.who.human": "आप",
   "tagger.session.back": "लेबलिंग सत्रों पर वापस जाएँ",
   "tagger.session.bulk_delete_body": "{count} लेबलिंग सत्र हटाएँ?",
