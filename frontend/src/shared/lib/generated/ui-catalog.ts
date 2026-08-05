@@ -1810,6 +1810,7 @@ export type MessageKey =
   | "datasets.editor.delete_row"
   | "datasets.editor.duplicate_row"
   | "datasets.editor.empty"
+  | "datasets.editor.fill_handle"
   | "datasets.editor.insert_row_above"
   | "datasets.editor.insert_row_below"
   | "datasets.editor.next_page"
@@ -4728,6 +4729,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "datasets.editor.delete_row": "מחיקת שורה",
   "datasets.editor.duplicate_row": "שכפול שורה",
   "datasets.editor.empty": "אין שורות — הוסיפו אחת כדי להתחיל.",
+  "datasets.editor.fill_handle": "גרירה למילוי",
   "datasets.editor.insert_row_above": "הוספת שורה מעל",
   "datasets.editor.insert_row_below": "הוספת שורה מתחת",
   "datasets.editor.next_page": "השורות הבאות",
@@ -13161,6 +13163,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "datasets.editor.delete_row": "Delete row",
   "datasets.editor.duplicate_row": "Duplicate row",
   "datasets.editor.empty": "No rows — add one to begin.",
+  "datasets.editor.fill_handle": "Drag to fill",
   "datasets.editor.insert_row_above": "Insert row above",
   "datasets.editor.insert_row_below": "Insert row below",
   "datasets.editor.next_page": "Next rows",

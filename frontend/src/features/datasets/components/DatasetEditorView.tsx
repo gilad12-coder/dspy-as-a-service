@@ -53,6 +53,7 @@ type SaveState = "saved" | "pending" | "saving" | "error";
 type CellRef = { row: number; col: string };
 type GridPos = { row: number; col: number };
 type Selection = { anchor: GridPos; head: GridPos };
+type Bounds = { top: number; bottom: number; left: number; right: number };
 
 /** Flatten any stored cell value into editable text. */
 function cellText(value: unknown): string {
@@ -152,6 +153,14 @@ export function DatasetEditorView() {
   const [sel, setSel] = React.useState<Selection | null>(null);
   const [editing, setEditing] = React.useState<GridPos | null>(null);
   const dragging = React.useRef(false);
+  // Excel-style fill handle: grab the square at a selection's bottom-right and
+  // drag vertically to flood the source value(s) down (or up) the column(s).
+  // filling gates the drag; fillSrcRef holds the block dragged from; fillHead is
+  // the row the pointer is currently over (state, so the preview re-renders).
+  const filling = React.useRef(false);
+  const fillSrcRef = React.useRef<Bounds | null>(null);
+  const [fillHead, setFillHead] = React.useState<number | null>(null);
+  const commitFillRef = React.useRef<() => void>(() => {});
   const gridRef = React.useRef<HTMLDivElement | null>(null);
   // Column renames commit on blur/Enter — remapping every row's keys per
   // keystroke would churn huge datasets for nothing.
@@ -272,9 +281,11 @@ export function DatasetEditorView() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // A drag-select can end anywhere on the page, not just over a cell.
+  // A drag-select (or fill-handle drag) can end anywhere on the page, not just
+  // over a cell — so the release, and the fill commit, live on the window.
   React.useEffect(() => {
     const end = () => {
+      commitFillRef.current();
       dragging.current = false;
     };
     window.addEventListener("mouseup", end);
@@ -379,7 +390,7 @@ export function DatasetEditorView() {
     sel && rows.length > 0 && columns.length > 0
       ? { anchor: clampPos(sel.anchor), head: clampPos(sel.head) }
       : null;
-  const selBounds = selRange
+  const selBounds: Bounds | null = selRange
     ? {
         top: Math.min(selRange.anchor.row, selRange.head.row),
         bottom: Math.max(selRange.anchor.row, selRange.head.row),
@@ -387,6 +398,19 @@ export function DatasetEditorView() {
         right: Math.max(selRange.anchor.col, selRange.head.col),
       }
     : null;
+
+  // The rows a live fill-handle drag would flood, previewed while dragging. The
+  // fill is vertical only, so it keeps the source's columns and just extends the
+  // row span past the source, either downward or upward.
+  const fillSrc = fillSrcRef.current;
+  const fillPreview: Bounds | null =
+    fillHead !== null && fillSrc
+      ? fillHead > fillSrc.bottom
+        ? { top: fillSrc.bottom + 1, bottom: fillHead, left: fillSrc.left, right: fillSrc.right }
+        : fillHead < fillSrc.top
+          ? { top: fillHead, bottom: fillSrc.top - 1, left: fillSrc.left, right: fillSrc.right }
+          : null
+      : null;
 
   // Keyboard events flow through the grid container while a cell is merely
   // selected (no input focused), so selecting always refocuses it.
@@ -632,9 +656,63 @@ export function DatasetEditorView() {
   };
 
   const handleCellMouseEnter = (pos: GridPos) => {
+    // A fill drag tracks the row under the pointer; a range drag tracks the cell.
+    if (filling.current) {
+      setFillHead(pos.row);
+      return;
+    }
     if (!dragging.current) return;
     setSel((prev) => (prev ? { anchor: prev.anchor, head: pos } : prev));
   };
+
+  const startFill = (e: React.MouseEvent) => {
+    if (e.button !== 0 || !selBounds) return;
+    // Own the gesture outright: no text-select, and no range-drag from the cell
+    // underneath (its mousedown would otherwise reset the selection).
+    e.preventDefault();
+    e.stopPropagation();
+    if (editing) commitEdit();
+    gridFocus();
+    fillSrcRef.current = selBounds;
+    filling.current = true;
+    setFillHead(selBounds.bottom);
+  };
+
+  /**
+   * Commit the fill-handle drag: flood the source block's value(s) into the rows
+   * the handle was dragged over, as one undoable step. Vertical only — the
+   * columns stay the source's; a single source cell simply repeats, and a taller
+   * source tiles so it stays contiguous with itself in either direction.
+   */
+  const endFill = () => {
+    if (!filling.current) return;
+    filling.current = false;
+    const src = fillSrcRef.current;
+    const target = fillHead;
+    fillSrcRef.current = null;
+    setFillHead(null);
+    if (!src || target === null || (target >= src.top && target <= src.bottom)) return;
+    const height = src.bottom - src.top + 1;
+    const next = [...rows];
+    const fillRow = (r: number) => {
+      const offset = (((r - src.top) % height) + height) % height;
+      const source = rows[src.top + offset]!;
+      const cell = { ...next[r] };
+      for (let c = src.left; c <= src.right; c++) cell[columns[c]!] = cellText(source[columns[c]!]);
+      next[r] = cell;
+    };
+    if (target > src.bottom) {
+      for (let r = src.bottom + 1; r <= target && r < rows.length; r++) fillRow(r);
+    } else {
+      for (let r = target; r < src.top; r++) fillRow(r);
+    }
+    apply({ rows: next }, { anchor: { row: src.top, col: columns[src.left]! } });
+    setSel({
+      anchor: { row: Math.min(src.top, target), col: src.left },
+      head: { row: Math.max(src.bottom, target), col: src.right },
+    });
+  };
+  commitFillRef.current = endFill;
 
   /** Keys inside the actively edited cell input. */
   const handleCellKey = (e: React.KeyboardEvent<HTMLInputElement>, rowIdx: number, column: string) => {
@@ -982,10 +1060,22 @@ export function DatasetEditorView() {
                           selRange !== null &&
                           selRange.anchor.row === rowIdx &&
                           selRange.anchor.col === colIdx;
+                        const inFill =
+                          fillPreview !== null &&
+                          rowIdx >= fillPreview.top &&
+                          rowIdx <= fillPreview.bottom &&
+                          colIdx >= fillPreview.left &&
+                          colIdx <= fillPreview.right;
+                        // The handle rides the selection's bottom-right cell.
+                        const showHandle =
+                          editing === null &&
+                          selBounds !== null &&
+                          rowIdx === selBounds.bottom &&
+                          colIdx === selBounds.right;
                         return (
                           <td
                             key={column}
-                            className="px-1 py-0.5 align-top"
+                            className="relative px-1 py-0.5 align-top"
                             onMouseDown={(e) =>
                               handleCellMouseDown(e, { row: rowIdx, col: colIdx })
                             }
@@ -1017,9 +1107,19 @@ export function DatasetEditorView() {
                                   ? "border-ring bg-background"
                                   : "cursor-default hover:border-input/60",
                                 inRange && "bg-primary/10",
+                                inFill && "border-dashed border-primary/50 bg-primary/5",
                                 isAnchor && !isEditing && "border-ring",
                               )}
                             />
+                            {showHandle && (
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                aria-label={msg("datasets.editor.fill_handle")}
+                                onMouseDown={startFill}
+                                className="absolute bottom-0.5 end-1 z-20 size-2 cursor-ns-resize rounded-[2px] border border-background bg-primary"
+                              />
+                            )}
                           </td>
                         );
                       })}

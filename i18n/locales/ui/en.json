@@ -2742,6 +2742,7 @@
   "datasets.editor.rename_column": "Rename column",
   "datasets.editor.delete_column": "Delete column",
   "datasets.editor.delete_row": "Delete row",
+  "datasets.editor.fill_handle": "Drag to fill",
   "datasets.editor.output_badge": "output",
   "datasets.editor.empty": "No rows — add one to begin.",
   "datasets.editor.rows_range": "{from}–{to} of {total}",

@@ -2742,6 +2742,7 @@
   "datasets.editor.rename_column": "שינוי שם עמודה",
   "datasets.editor.delete_column": "מחיקת עמודה",
   "datasets.editor.delete_row": "מחיקת שורה",
+  "datasets.editor.fill_handle": "גרירה למילוי",
   "datasets.editor.output_badge": "פלט",
   "datasets.editor.empty": "אין שורות — הוסיפו אחת כדי להתחיל.",
   "datasets.editor.rows_range": "{from}–{to} מתוך {total}",
