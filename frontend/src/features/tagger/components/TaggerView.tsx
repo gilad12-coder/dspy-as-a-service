@@ -18,6 +18,7 @@ import { TaggerReviewGate } from "./TaggerReviewGate";
 import { TaggerAutotagLive } from "./TaggerAutotagLive";
 import { TaggerAutotagProgress } from "./TaggerAutotagProgress";
 import { TaggerResultsSummary } from "./TaggerResultsSummary";
+import { TaggerMoveToDatasets } from "./TaggerMoveToDatasets";
 import { TaggingSessionsPanel } from "./TaggingSessionsPanel";
 
 export function TaggerView({ initialSession }: { initialSession?: TaggerSessionDetail | null }) {
@@ -256,6 +257,21 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
       return (
         <PageContainer full>
           {backBar}
+          {/* The finished session's doorway into Datasets: only the owner of a
+              persisted session may move it, and moving deletes the session so no
+              completed labeling run is left stranded outside the library. */}
+          {(!initialSession || initialSession.role === "owner") && tagger.sessionId && (
+            <div className="mb-3">
+              <TaggerMoveToDatasets
+                sessionId={tagger.sessionId}
+                config={tagger.config}
+                data={tagger.data}
+                columns={tagger.columns}
+                annotations={tagger.annotations}
+                provenance={tagger.assist?.provenance}
+              />
+            </div>
+          )}
           {/* The finished run's accounting — who labeled what, the credit
               cost, and the one-click flagged pass — rides above the table
               instead of on a separate summary screen. */}

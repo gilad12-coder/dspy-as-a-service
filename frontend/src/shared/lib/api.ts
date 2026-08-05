@@ -1326,6 +1326,28 @@ export async function deleteTaggerSession(sessionId: string) {
   return res;
 }
 
+/**
+ * Move a finished session into the dataset library: save its labeled rows as a
+ * new owned dataset, carry the session's sharing onto it, and delete the
+ * session. Owner-only. On a byte-identical dedupe the existing dataset is
+ * returned unchanged (its sharing left intact) and the session is still removed.
+ */
+export async function moveTaggerSessionToLibrary(
+  sessionId: string,
+  body: {
+    name: string;
+    dataset: Array<Record<string, unknown>>;
+    column_schema?: DatasetColumnSchema;
+  },
+) {
+  const res = await request<SaveDatasetResponse>(
+    `/datasets/library/from-tagging-session/${sessionId}`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+  invalidateCache("/tagging-sessions");
+  return res;
+}
+
 /** Credit estimate for auto-tagging every currently-unlabeled row. */
 export function taggerAssistEstimate(sessionId: string) {
   return request<{ rows: number; model: string; credits_low: number; credits_high: number }>(

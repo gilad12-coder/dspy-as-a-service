@@ -2615,6 +2615,13 @@ export type MessageKey =
   | "tagger.library.save"
   | "tagger.library.save_failed"
   | "tagger.library.saved"
+  | "tagger.move.confirm_body"
+  | "tagger.move.confirm_title"
+  | "tagger.move.cta"
+  | "tagger.move.failed"
+  | "tagger.move.moved"
+  | "tagger.move.subtitle"
+  | "tagger.move.title"
   | "tagger.results.back"
   | "tagger.results.col.confidence"
   | "tagger.results.col.label"
@@ -5534,6 +5541,13 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.library.save": "שמירה לספרייה",
   "tagger.library.save_failed": "שגיאה בשמירת הדאטאסט לספרייה",
   "tagger.library.saved": "«{name}» נשמר לספרייה",
+  "tagger.move.confirm_body": "הדאטה יישמר כדאטאסט חדש בספרייה, וסשן התיוג יימחק. לא ניתן לבטל את הפעולה.",
+  "tagger.move.confirm_title": "להעביר לדאטאסטים?",
+  "tagger.move.cta": "העברה לדאטאסטים",
+  "tagger.move.failed": "שגיאה בהעברת הדאטה לדאטאסטים",
+  "tagger.move.moved": "«{name}» הועבר לדאטאסטים",
+  "tagger.move.subtitle": "התיוג הושלם. העבירו את הדאטה לדאטאסטים לשימוש חוזר — סשן התיוג יימחק, והגדרות השיתוף יעברו יחד איתו.",
+  "tagger.move.title": "העברה לספריית הדאטאסטים",
   "tagger.results.back": "חזרה לתצוגה הכללית",
   "tagger.results.col.confidence": "ביטחון",
   "tagger.results.col.label": "תווית",
@@ -13968,6 +13982,13 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.library.save": "Save to library",
   "tagger.library.save_failed": "Failed to save the dataset to the library",
   "tagger.library.saved": "“{name}” saved to the library",
+  "tagger.move.confirm_body": "The data is saved as a new dataset in your library and the tagging session is deleted. This can’t be undone.",
+  "tagger.move.confirm_title": "Move to Datasets?",
+  "tagger.move.cta": "Move to Datasets",
+  "tagger.move.failed": "Couldn’t move the data to Datasets",
+  "tagger.move.moved": "“{name}” moved to Datasets",
+  "tagger.move.subtitle": "Labeling is done. Move this data into Datasets for reuse — the tagging session is removed, and its sharing settings come along.",
+  "tagger.move.title": "Move to your Datasets",
   "tagger.results.back": "Back to overview",
   "tagger.results.col.confidence": "Confidence",
   "tagger.results.col.label": "Label",

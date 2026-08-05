@@ -25,6 +25,8 @@ uncompressed ``byte_size``; the per-file cap still measures the compressed
 
 from __future__ import annotations
 
+import secrets
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
@@ -49,6 +51,11 @@ from ...storage.dataset_library import (
     PostgresDatasetBlobStore,
     StagedDataset,
 )
+from ...storage.models import (
+    DatasetShareGrantModel,
+    DatasetShareLinkModel,
+    TaggingSessionModel,
+)
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..converters import parse_overview
 from ..dataset_access import (
@@ -57,6 +64,15 @@ from ..dataset_access import (
     require_role,
 )
 from ..errors import DomainError
+from ..tagging_session_access import (
+    get_active_link as get_active_session_link,
+)
+from ..tagging_session_access import (
+    list_grants as list_session_grants,
+)
+from ..tagging_session_access import (
+    require_role as require_session_role,
+)
 from ._helpers import enforce_storage_quota, load_job_for_user
 
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
@@ -162,6 +178,18 @@ class SaveFromOptimizationRequest(BaseModel):
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class MoveTaggingSessionRequest(BaseModel):
+    """Request body for ``POST /datasets/library/from-tagging-session/{id}``.
+
+    Carries the finished session's labeled rows and saved column schema, built
+    client-side exactly as the plain save-to-library flow does.
+    """
+
+    name: str = Field(min_length=1, max_length=255)
+    dataset: list[dict[str, Any]] = Field(min_length=1, max_length=200_000)
+    column_schema: dict[str, Any] = Field(default_factory=dict)
 
 
 class DatasetOptimizationRef(BaseModel):
@@ -273,6 +301,50 @@ def _schema_from_run_payload(payload: dict[str, Any], rows: list[dict[str, Any]]
         "column_roles": column_roles,
         "column_kinds": dict.fromkeys(column_order, "text"),
     }
+
+
+def _copy_session_sharing_to_dataset(
+    db: Session, *, session_id: str, dataset_id: str, actor: str
+) -> None:
+    """Mirror a tagger session's sharing onto a freshly-created dataset.
+
+    Copies the session's live share link (its general-access policy and tier)
+    and every member grant onto the new dataset, so a session that reached a set
+    of people keeps reaching exactly them once it lands in the library. The
+    dataset link is minted with a fresh token — it is a new resource at a new
+    ``/datasets/share/<token>`` URL — while each grant preserves its original
+    ``created_by`` (including the link-derived marker) so named invites and
+    link-claimed members render on the dataset just as they did on the session.
+    The caller owns the transaction and commits.
+
+    Args:
+        db: Open DB session carrying the caller's transaction.
+        session_id: Source tagger session whose sharing is copied.
+        dataset_id: Destination dataset, just created and not yet shared.
+        actor: Username recorded as the new dataset link's creator.
+    """
+    link = get_active_session_link(db, session_id)
+    if link is not None:
+        db.add(
+            DatasetShareLinkModel(
+                token=secrets.token_urlsafe(24),
+                dataset_id=dataset_id,
+                created_by=actor,
+                created_at=datetime.now(UTC),
+                general_access=link.general_access,
+                general_role=link.general_role,
+            )
+        )
+    for grant in list_session_grants(db, session_id):
+        db.add(
+            DatasetShareGrantModel(
+                dataset_id=dataset_id,
+                grantee_username=grant.grantee_username,
+                role=grant.role,
+                created_by=grant.created_by,
+                created_at=grant.created_at,
+            )
+        )
 
 
 def create_dataset_library_router(*, job_store) -> APIRouter:
@@ -761,6 +833,72 @@ def create_dataset_library_router(*, job_store) -> APIRouter:
             rows=rows,
             column_schema=_schema_from_run_payload(run_payload, rows),
         )
+        return SaveDatasetResponse(dataset=_summary(record, ShareRole.owner), deduplicated=deduped)
+
+    @router.post(
+        "/datasets/library/from-tagging-session/{session_id}",
+        response_model=SaveDatasetResponse,
+        summary="Move a finished tagger session into the library (session owner only)",
+    )
+    def move_tagging_session_to_library(
+        session_id: str,
+        payload: MoveTaggingSessionRequest,
+        current_user: AuthenticatedUserDep,
+    ) -> SaveDatasetResponse:
+        """Save a session's labeled rows as a dataset, carry its sharing, delete the session.
+
+        The tagger's "move to Datasets" doorway: it lands a finished labeling
+        session in the dataset library and removes the session, so no completed
+        session lingers un-transitioned. Owner-only, because the move deletes the
+        session. The rows and saved schema are built by the caller exactly as the
+        plain save-to-library flow does; this endpoint adds the two things that
+        make it a *move* rather than a copy — the session's sharing (its link
+        policy and every member grant) is mirrored onto the new dataset, and the
+        session is then deleted.
+
+        When the caller already owns a byte-identical dataset the save dedupes and
+        returns it unchanged: the existing dataset's own sharing is left intact
+        (only a freshly-created dataset inherits the session's sharing, so a
+        re-move never silently widens who can reach an existing entry) while the
+        session is still deleted, so the move never leaves a duplicate behind.
+
+        Args:
+            session_id: The finished tagger session to move.
+            payload: The dataset name, labeled rows, and saved column schema.
+            current_user: Authenticated caller; must own the session.
+
+        Returns:
+            A :class:`SaveDatasetResponse` for the library dataset, with
+            ``deduplicated`` set when an identical entry already existed.
+
+        Raises:
+            DomainError: 404 when the session is unknown or inaccessible; 403 when
+                the caller is not the session owner; 413 over the per-file cap;
+                409 over the unified storage budget.
+        """
+        with Session(job_store.engine) as session:
+            if session.get(TaggingSessionModel, session_id) is None:
+                raise DomainError("tagger.session.not_found", status=404)
+            require_session_role(session, session_id, current_user, ShareRole.owner)
+        record, deduped = _save_gated(
+            owner=current_user.username,
+            name=payload.name,
+            source="tagger",
+            rows=payload.dataset,
+            column_schema=payload.column_schema,
+        )
+        with Session(job_store.engine) as session:
+            row = session.get(TaggingSessionModel, session_id)
+            if row is not None:
+                if not deduped:
+                    _copy_session_sharing_to_dataset(
+                        session,
+                        session_id=session_id,
+                        dataset_id=record.id,
+                        actor=current_user.username,
+                    )
+                session.delete(row)
+                session.commit()
         return SaveDatasetResponse(dataset=_summary(record, ShareRole.owner), deduplicated=deduped)
 
     return router
