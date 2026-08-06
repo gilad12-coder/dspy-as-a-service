@@ -303,6 +303,33 @@ class Settings(BaseSettings):
         ),
         alias="GEPA_EVAL_NUM_THREADS",
     )
+    gepa_pxn_parents: int = Field(
+        default=1,
+        ge=1,
+        le=16,
+        description=(
+            "GEPA PxN batched sampling — parent count (p). Each reflective "
+            "iteration mutates p distinct parent candidates, drawing "
+            "gepa_pxn_proposals (n) proposals from each, and evaluates all p*n "
+            "as one batch. The default of 1 reproduces GEPA's classic "
+            "single-mutation sampling; raising p (or n) above 1 switches GEPA to "
+            "PxNSampling(p, n) — better wall-clock and generalization at higher "
+            "LM cost, bounded per job by job_lm_max_concurrency. A submission "
+            "that supplies its own gepa_kwargs.sampling_strategy always wins."
+        ),
+        alias="GEPA_PXN_PARENTS",
+    )
+    gepa_pxn_proposals: int = Field(
+        default=1,
+        ge=1,
+        le=16,
+        description=(
+            "GEPA PxN batched sampling — proposals per parent (n); see "
+            "gepa_pxn_parents. Raising n (or p) above 1 activates "
+            "PxNSampling(p, n). Defaults to 1 (classic single-mutation GEPA)."
+        ),
+        alias="GEPA_PXN_PROPOSALS",
+    )
     job_lm_max_concurrency: int = Field(
         default=16,
         ge=0,

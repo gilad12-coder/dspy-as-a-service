@@ -1,6 +1,6 @@
 # Pinned dependency set for the pip install path (PKG_MANAGER=pip) — the
-# lockfile-equivalent of uv.lock for the DEFAULT DSPy line: the 3.3 preview
-# (dspy==3.3.0b1). uv.lock remains the source of truth. The project itself
+# lockfile-equivalent of uv.lock for the DEFAULT DSPy line (dspy==3.3.0).
+# uv.lock remains the source of truth. The project itself
 # installs separately (pip install -e . --no-deps), so it is not emitted here.
 #
 # For the STABLE line (dspy==3.2.1) use requirements.stable.txt instead — the
@@ -96,7 +96,7 @@ docstring-parser==0.18.0
     # via cyclopts
 docutils==0.22.4
     # via rich-rst
-dspy==3.3.0b1
+dspy==3.3.0
     # via skynet
 email-validator==2.3.0
     # via pydantic
@@ -116,7 +116,7 @@ frozenlist==1.8.0
     #   aiosignal
 fsspec==2026.3.0
     # via huggingface-hub
-gepa==0.1.1
+gepa==0.1.4
     # via
     #   dspy
     #   skynet

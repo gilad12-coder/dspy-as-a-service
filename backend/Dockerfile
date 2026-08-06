@@ -23,20 +23,21 @@ COPY pyproject.toml uv.lock requirements.txt requirements.stable.txt ./
 ARG PIP_INDEX_URL
 ARG PIP_TRUSTED_HOST
 # Dependency installer toggle. PKG_MANAGER=uv (default) installs the exact
-# uv.lock wheel set via uv — always the 3.3 preview DSPy line. PKG_MANAGER=pip
-# installs a pinned requirements file; DSPY_LINE then selects which line:
-# "preview" (requirements.txt, dspy 3.3) or "stable" (requirements.stable.txt,
+# uv.lock wheel set via uv — the dspy 3.3.0 line. PKG_MANAGER=pip installs a
+# pinned requirements file; DSPY_LINE then selects which line: "preview"
+# (requirements.txt, dspy 3.3.0) or "stable" (requirements.stable.txt,
 # dspy 3.2.1). The agent layer bridges classic ReAct vs ReActV2, so the source
 # is identical either way — only the wheel set differs:
 #   docker build --build-arg PKG_MANAGER=pip --build-arg DSPY_LINE=stable ...
 # Either way the deps land in their own layer (before the source copy) so it
 # caches until the lockfile / requirements change. Both requirements files are
 # complete compiled lockfiles, so we install with --no-deps to skip
-# re-resolution. That is load-bearing for the stable line: dspy==3.2.1's
-# metadata hard-pins gepa[dspy]==0.0.27, which collides with the deliberately
-# overridden gepa==0.1.1 in the lockfile and makes a resolving install fail
-# with ResolutionImpossible. gepa 0.1.1 runs cleanly against dspy 3.2.1 at
-# runtime; only the resolver objects, and --no-deps sidesteps it.
+# re-resolution. That is load-bearing for BOTH lines: each pins gepa==0.1.4
+# (for GEPA PxN batched sampling), but dspy's metadata hard-pins an older gepa —
+# ==0.0.27 on dspy 3.2.1, ==0.1.1 on dspy 3.3.0 — so a resolving install fails
+# with ResolutionImpossible. gepa 0.1.4 runs cleanly against both dspy versions
+# at runtime; only the resolver objects, and --no-deps sidesteps it. The uv path
+# carries the same override in uv.lock ([tool.uv] override-dependencies).
 ARG PKG_MANAGER=uv
 ARG DSPY_LINE=preview
 RUN if [ "$PKG_MANAGER" = "pip" ]; then \

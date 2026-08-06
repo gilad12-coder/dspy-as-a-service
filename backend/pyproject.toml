@@ -25,19 +25,19 @@ dependencies = [
     "uvicorn>=0.23",
     "pydantic>=2.5",
     "pydantic-settings>=2.14.2",
-    # Dual-line support: classic ReAct (3.2.x stable) and ReActV2 (3.3 preview)
-    # are both bridged in core.service_gateway.react_compat. Air-gap builds vendor
-    # one line — see requirements.stable.txt / requirements.preview.txt.
+    # Dual-line support: classic ReAct (3.2.x stable) and ReActV2 (3.3) are both
+    # bridged in core.service_gateway.react_compat. Air-gap builds vendor one
+    # line — see requirements.stable.txt / requirements.preview.txt.
     "dspy>=3.2.1,<3.4",
-    # Floor gepa at the 0.1.x line. dspy 3.2.1's metadata hard-pins gepa==0.0.27,
-    # which lacks the enable_tool_optimization adapter (TOOL_MODULE_PREFIX) that
-    # core.service_gateway.react_compat imports at module load — the backend will
-    # not even import on 0.0.27. Without this floor a bare `pip install -e .`
-    # resolves dspy 3.2.1 + gepa 0.0.27 (3.3.0b1 is a prerelease, skipped by
-    # default) and silently builds a non-booting image; the floor turns that into
-    # a loud resolver error. Supported installs (uv.lock / requirements*.txt)
-    # already carry gepa 0.1.1.
-    "gepa>=0.1.1",
+    # Floor gepa at 0.1.4: it carries PxN batched sampling
+    # (gepa.strategies.proposal_sampling) and the enable_tool_optimization adapter
+    # (TOOL_MODULE_PREFIX) that core.service_gateway.react_compat imports at module
+    # load. Both dspy 3.2.1 (gepa==0.0.27) and dspy 3.3.0 (gepa==0.1.1) hard-pin an
+    # older gepa, so this floor collides with their metadata; the [tool.uv]
+    # override-dependencies below lifts that pin (0.1.4 is a strict superset — see
+    # the note there). Without floor+override a bare resolve silently builds a
+    # backend that won't import (0.0.27) or lacks PxN (0.1.1).
+    "gepa>=0.1.4",
     "litellm>=1.84.0",
     "sqlalchemy>=2.0",
     "alembic>=1.13",
@@ -81,6 +81,16 @@ training = [
     "transformers>=4.44",
     "httpx>=0.25",
 ]
+
+[tool.uv]
+# dspy 3.3.0's metadata hard-pins gepa[dspy]==0.1.1 (dspy 3.2.1 pins ==0.0.27). Both
+# predate PxN batched sampling (gepa.strategies.proposal_sampling), which the GEPA
+# optimizer wiring in core.service_gateway.optimization needs. gepa 0.1.4 is a strict
+# superset of 0.1.1's optimize()/DspyAdapter surface — it only adds params
+# (sampling_strategy, selection_strategy, …) and renames/removes nothing dspy calls —
+# so overriding the pin is safe. Verified: dspy 3.3.0 + gepa 0.1.4 import cleanly and
+# pass the full core suite. Drop this override once a dspy release relaxes the pin.
+override-dependencies = ["gepa[dspy]>=0.1.4"]
 
 [tool.ruff]
 target-version = "py311"

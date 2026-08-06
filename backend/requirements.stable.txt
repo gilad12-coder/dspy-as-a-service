@@ -1,13 +1,15 @@
 # Pinned dependency set for the STABLE DSPy line (dspy==3.2.1) on the pip
-# install path. Pairs DSPy 3.2.1 with gepa==0.1.1 — newer than the gepa==0.0.27
+# install path. Pairs DSPy 3.2.1 with gepa==0.1.4 — newer than the gepa==0.0.27
 # that DSPy 3.2.1 pins by default — because the react /run tool-optimization
-# needs gepa's enable_tool_optimization adapter (a 0.1.x feature). dspy 3.2.1
-# runs cleanly against gepa 0.1.1 at runtime (verified), but its metadata still
+# needs gepa's enable_tool_optimization adapter (a 0.1.x feature) and GEPA PxN
+# batched sampling (gepa.strategies.proposal_sampling, new in 0.1.4) that the
+# shared optimizer source imports at module load. dspy 3.2.1 runs cleanly
+# against gepa 0.1.4 at runtime (verified), but its metadata still
 # hard-pins gepa==0.0.27, so install this lockfile with --no-deps — a resolving
 # install fails with ResolutionImpossible. backend/Dockerfile's pip path does
 # exactly that. The agent layer bridges classic ReAct vs ReActV2 in
 # core.service_gateway.react_compat, so the same source runs on either line.
-# The DEFAULT line (3.3 preview) lives in requirements.txt.
+# The DEFAULT line (dspy 3.3.0) lives in requirements.txt.
 #
 # prometheus-fastapi-instrumentator tracks 8.0.2 to match uv.lock /
 # requirements.txt — both lines stay on one instrumentator version. It was
@@ -22,7 +24,7 @@
 # marker-gated package, which is how greenlet, jeepney and secretstorage went
 # missing here while the Linux image needed all three.
 #    uv pip compile pyproject.toml --no-header --universal \
-#        --override <(printf 'dspy==3.2.1\ngepa==0.1.1\nprometheus-fastapi-instrumentator==8.0.2\n') -o requirements.stable.txt
+#        --override <(printf 'dspy==3.2.1\ngepa==0.1.4\nprometheus-fastapi-instrumentator==8.0.2\n') -o requirements.stable.txt
 #
 # `pip check` against this line always reports the gepa mismatch described
 # above; that override is intentional and the docker-pip-path CI job filters
@@ -135,7 +137,7 @@ frozenlist==1.8.0
     #   aiosignal
 fsspec==2026.6.0
     # via huggingface-hub
-gepa==0.1.1
+gepa==0.1.4
     # via
     #   --override /tmp/stable_overrides.txt
     #   dspy

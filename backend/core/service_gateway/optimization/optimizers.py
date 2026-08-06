@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any, Literal, overload
 
 import dspy
+from gepa.strategies.proposal_sampling import PxNSampling
 from gepa.utils.stop_condition import ScoreThresholdStopper
 
 from ...config import settings
@@ -420,6 +421,31 @@ def validate_optimizer_kwargs(factory: Callable[..., Any], kwargs: dict[str, Any
             )
 
 
+def _gepa_kwargs_copy(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return a mutable copy of GEPA's ``gepa_kwargs`` passthrough mapping.
+
+    Server-managed GEPA options — the target-score stop callback and the PxN
+    sampling strategy — are layered onto whatever ``gepa_kwargs`` the submission
+    supplied. Copying that sub-mapping lets callers mutate a fresh dict instead
+    of the caller's object.
+
+    Args:
+        kwargs: The optimizer factory kwargs being assembled.
+
+    Returns:
+        A new dict copy of the current ``gepa_kwargs`` (empty when unset).
+
+    Raises:
+        ServiceError: When ``gepa_kwargs`` is present but is not a mapping.
+    """
+    existing = kwargs.get("gepa_kwargs")
+    if existing is None:
+        return {}
+    if not isinstance(existing, dict):
+        raise ServiceError("GEPA's gepa_kwargs must be an object.")
+    return dict(existing)
+
+
 def instantiate_optimizer(
     factory: Callable[..., Any],
     optimizer_name: str,
@@ -444,6 +470,10 @@ def instantiate_optimizer(
     - GEPA receives a native ``ScoreThresholdStopper`` through ``gepa_kwargs``
       when ``target_score`` is supplied. The target is expressed as a 0–100
       percentage at the API boundary and normalized to GEPA's 0–1 metric scale.
+    - GEPA receives a ``PxNSampling`` proposal strategy through ``gepa_kwargs``
+      when ``settings.gepa_pxn_parents`` or ``settings.gepa_pxn_proposals``
+      exceeds 1 (both default to 1, reproducing GEPA's single-mutation
+      default). A submission-supplied ``sampling_strategy`` takes precedence.
 
     Args:
         factory: The optimizer factory callable to invoke.
@@ -504,13 +534,7 @@ def instantiate_optimizer(
     if optimizer_key == OPTIMIZER_NAME_GEPA and target_score is not None:
         target_stopper = build_target_score_stopper(target_score)
         if target_stopper is not None:
-            gepa_kwargs = kwargs.get("gepa_kwargs")
-            if gepa_kwargs is None:
-                gepa_kwargs = {}
-            elif not isinstance(gepa_kwargs, dict):
-                raise ServiceError("GEPA's gepa_kwargs must be an object when a target score is configured.")
-            else:
-                gepa_kwargs = dict(gepa_kwargs)
+            gepa_kwargs = _gepa_kwargs_copy(kwargs)
             existing_callbacks = gepa_kwargs.get("stop_callbacks")
             if existing_callbacks is None:
                 callbacks: list[Any] = []
@@ -525,6 +549,21 @@ def instantiate_optimizer(
             kwargs["gepa_kwargs"] = gepa_kwargs
             if stop_state is not None:
                 stop_state["target_score_stopper"] = target_stopper
+    # GEPA proposal sampling: p distinct parents x n mutations per reflective
+    # iteration (PxNSampling), batched so proposals run in parallel and the
+    # optimizer generalizes better than the classic one-parent-one-mutation
+    # default. p=n=1 reproduces GEPA's built-in SingleMutationSampling, so only
+    # inject a strategy when either exceeds 1. A submission-supplied
+    # sampling_strategy in gepa_kwargs always wins.
+    if optimizer_key == OPTIMIZER_NAME_GEPA and (
+        settings.gepa_pxn_parents > 1 or settings.gepa_pxn_proposals > 1
+    ):
+        gepa_kwargs = _gepa_kwargs_copy(kwargs)
+        if "sampling_strategy" not in gepa_kwargs:
+            gepa_kwargs["sampling_strategy"] = PxNSampling(
+                settings.gepa_pxn_parents, settings.gepa_pxn_proposals
+            )
+            kwargs["gepa_kwargs"] = gepa_kwargs
     needs_reflection = optimizer_key in reflection_required_optimizers
     if OPTIMIZER_REFLECTION_LM_KEY not in kwargs:
         if reflection_lm is not None and needs_reflection:
@@ -542,14 +581,18 @@ def instantiate_optimizer(
     # INFO (not DEBUG): the subprocess log forwarder floors at INFO, so this —
     # the single most useful instantiation breadcrumb — was previously invisible
     # in job_logs. Reports which injections were applied, not just key names.
+    gepa_kwargs_for_log = kwargs.get("gepa_kwargs")
+    strategy = gepa_kwargs_for_log.get("sampling_strategy") if isinstance(gepa_kwargs_for_log, dict) else None
+    sampling_strategy = type(strategy).__name__ if strategy is not None else None
     logger.info(
-        "Creating optimizer %s (metric=%s reflection_lm=%s auto=%s log_dir=%s num_threads=%s)",
+        "Creating optimizer %s (metric=%s reflection_lm=%s auto=%s log_dir=%s num_threads=%s sampling=%s)",
         optimizer_name,
         OPTIMIZER_METRIC_KEY in kwargs,
         OPTIMIZER_REFLECTION_LM_KEY in kwargs,
         kwargs.get("auto"),
         OPTIMIZER_LOG_DIR_KEY in kwargs,
         kwargs.get("num_threads"),
+        sampling_strategy,
     )
     return factory(**kwargs)
 

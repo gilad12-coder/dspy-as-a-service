@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import dspy
 import pytest
+from gepa.strategies.proposal_sampling import PxNSampling
 
 from core.config import settings
 from core.exceptions import ServiceError
@@ -542,6 +543,84 @@ def test_instantiate_optimizer_gepa_injects_target_score_stopper() -> None:
     assert isinstance(stopper, TargetScoreStopper)
     assert stopper.threshold == pytest.approx(0.85)
     assert state["target_score_stopper"] is stopper
+
+
+def test_instantiate_optimizer_gepa_no_sampling_strategy_by_default() -> None:
+    """The classic p=n=1 defaults inject no ``sampling_strategy`` — GEPA keeps its own."""
+    captured: dict[str, Any] = {}
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+    )
+
+    assert "sampling_strategy" not in captured.get("gepa_kwargs", {})
+
+
+def test_instantiate_optimizer_gepa_injects_pxn_sampling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Raising the PxN settings above 1 injects a ``PxNSampling(p, n)`` strategy."""
+    monkeypatch.setattr(settings, "gepa_pxn_parents", 2)
+    monkeypatch.setattr(settings, "gepa_pxn_proposals", 3)
+    captured: dict[str, Any] = {}
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+    )
+
+    strategy = captured["gepa_kwargs"]["sampling_strategy"]
+    assert isinstance(strategy, PxNSampling)
+    assert (strategy.p, strategy.n) == (2, 3)
+
+
+def test_instantiate_optimizer_gepa_submission_sampling_strategy_wins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A submission-supplied ``sampling_strategy`` is never overwritten by the PxN default."""
+    monkeypatch.setattr(settings, "gepa_pxn_parents", 4)
+    monkeypatch.setattr(settings, "gepa_pxn_proposals", 4)
+    captured: dict[str, Any] = {}
+    supplied = PxNSampling(1, 1)
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={"gepa_kwargs": {"sampling_strategy": supplied}},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+    )
+
+    assert captured["gepa_kwargs"]["sampling_strategy"] is supplied
 
 
 class _FakeEvalResult:
