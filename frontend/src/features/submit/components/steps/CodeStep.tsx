@@ -21,12 +21,13 @@ import { CodeInterviewPanel } from "./CodeInterviewPanel";
 import { ReactConfigSection } from "./ReactConfigSection";
 import { workflowUsesTools } from "../../workflow/model";
 
-// The four DSPy module choices offered by the picker. Names are technical
+// The DSPy module choices offered by the picker. Names are technical
 // terms kept in English; descriptions reuse the localized tooltip copy.
 const MODULE_META = [
   { value: "predict", label: "Predict", icon: Lightning, tipKey: "module.predict" },
   { value: "cot", label: "Chain of Thought", icon: Brain, tipKey: "module.cot" },
   { value: "react", label: "ReAct", icon: Robot, tipKey: "module.react" },
+  { value: "flex", label: "Flex", icon: Sparkle, tipKey: "module.flex" },
   { value: "workflow", label: "Workflow", icon: FlowArrow, tipKey: "module.workflow" },
 ] as const;
 

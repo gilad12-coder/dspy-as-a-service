@@ -1,5 +1,6 @@
-# Air-gap operators: see AIRGAP.html for
-# REGISTRY_PREFIX / DEBIAN_MIRROR / PIP_INDEX_URL / PIP_TRUSTED_HOST build-args.
+# Air-gap operators: see AIRGAP.html for REGISTRY_PREFIX / DEBIAN_MIRROR /
+# PIP_INDEX_URL / PIP_TRUSTED_HOST build-args, plus DENO_DOWNLOAD_BASE /
+# NPM_CONFIG_REGISTRY for the Flex-capable (dspy 3.3) image's Deno sandbox.
 # With those set nothing in this file fetches from public mirrors.
 ARG REGISTRY_PREFIX=docker.io
 # 3.12 for PEP 683 immortal objects: core interpreter objects stop taking
@@ -15,7 +16,7 @@ RUN if [ -n "$DEBIAN_MIRROR" ]; then \
             sed -i "s|http[s]\?://deb.debian.org|$DEBIAN_MIRROR|g; s|http[s]\?://security.debian.org|$DEBIAN_MIRROR|g" {} \; ; \
     fi \
     && apt-get update \
-    && apt-get install -y --no-install-recommends build-essential curl \
+    && apt-get install -y --no-install-recommends build-essential curl unzip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock requirements.txt requirements.stable.txt ./
@@ -54,6 +55,37 @@ RUN if [ "$PKG_MANAGER" = "pip" ]; then \
         && UV_INDEX_URL=${PIP_INDEX_URL:-} \
            UV_PYTHON_DOWNLOADS=never \
            uv sync --frozen --no-install-project; \
+    fi
+
+# dspy.Flex serve-time dependency. An optimized Flex program ALWAYS executes
+# its generated Python in a Deno/Pyodide WASM sandbox (dspy.PythonInterpreter
+# shells out to `deno` on PATH) — even the un-optimized baseline runs through
+# the interpreter — so the runtime image needs the deno binary plus a warm
+# npm:pyodide cache. Only the dspy 3.3 line ships Flex, so gate this (~40MB
+# binary + ~14MB pyodide) to Flex-capable images: the uv path (always dspy
+# 3.3.0) and the preview pip line. The stable pip line skips it entirely.
+# DENO_DIR must match at build and run time so the runtime sandbox hits the
+# cache primed here; it lives under /app so the chgrp/chmod below makes it
+# group-0 writable for the runtime v8 code cache. Air-gap: point
+# DENO_DOWNLOAD_BASE (binary) and NPM_CONFIG_REGISTRY (pyodide wheel) inside
+# and `deno cache` fetches nothing public.
+ARG DENO_VERSION=2.6.6
+ARG DENO_DOWNLOAD_BASE=https://github.com/denoland/deno/releases/download
+ARG NPM_CONFIG_REGISTRY
+ENV DENO_DIR=/app/.deno
+RUN if [ "$PKG_MANAGER" = "uv" ] || [ "$DSPY_LINE" = "preview" ]; then \
+        case "$(dpkg --print-architecture)" in \
+            amd64) DENO_TARGET=x86_64-unknown-linux-gnu ;; \
+            arm64) DENO_TARGET=aarch64-unknown-linux-gnu ;; \
+            *) echo "unsupported arch for Deno: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+        esac \
+        && curl -fsSL --retry 3 "$DENO_DOWNLOAD_BASE/v$DENO_VERSION/deno-$DENO_TARGET.zip" -o /tmp/deno.zip \
+        && unzip -o /tmp/deno.zip -d /usr/local/bin \
+        && rm /tmp/deno.zip \
+        && chmod +x /usr/local/bin/deno \
+        && if [ "$PKG_MANAGER" = "uv" ]; then PY=/app/.venv/bin/python; else PY=python; fi \
+        && RUNNER_JS=$("$PY" -c 'import os, dspy.primitives.python_interpreter as m; print(os.path.join(os.path.dirname(m.__file__), "runner.js"))') \
+        && ${NPM_CONFIG_REGISTRY:+NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY} deno cache "$RUNNER_JS"; \
     fi
 
 COPY . .

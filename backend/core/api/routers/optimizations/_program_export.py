@@ -70,6 +70,7 @@ _MODULE_ALIASES = {
     "predict": "dspy.Predict",
     "cot": "dspy.ChainOfThought",
     "react": "dspy.ReAct",
+    "flex": "dspy.Flex",
 }
 
 

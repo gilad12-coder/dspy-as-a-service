@@ -2716,6 +2716,7 @@ export type MessageKey =
   | "tooltip.model_config.top_p"
   | "tooltip.module.choice"
   | "tooltip.module.cot"
+  | "tooltip.module.flex"
   | "tooltip.module.predict"
   | "tooltip.module.react"
   | "tooltip.module.workflow"
@@ -5642,6 +5643,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tooltip.model_config.top_p": "top_p (nucleus sampling): מגביל את מגוון המילים שה{term.model} שוקל — ערך נמוך ממקד, גבוה מאפשר יותר מגוון",
   "tooltip.module.choice": "מודול DSPy הוא רכיב בתוכנית שמפעילה מודל שפה: הוא עוטף כל signature בטכניקת prompting ומגדיר את מבנה הקריאה למודל כדי להפיק את הפלט שמוגדר ב-signature. בתוך המסגרת הזו האופטימייזר מכוון את הפרמטרים הניתנים ללמידה של המודול, כמו הוראות ודוגמאות בפרומפט",
   "tooltip.module.cot": "Chain of Thought — מוסיף שדה reasoning שמוביל את המודל לחשוב שלב-אחר-שלב לפני התשובה הסופית; לרוב משפר דיוק במשימות מורכבות",
+  "tooltip.module.flex": "Flex (נסיוני) — האופטימייזר משכתב יחד את הקוד ואת הפרומפט של התוכנית, ואז מריץ את קוד ה-Python שנוצר בסביבה מבודדת (sandbox); מתאים למשימות שדורשות חישוב ממשי, לא רק קריאה אחת למודל",
   "tooltip.module.predict": "Predict — המודול הבסיסי: ממפה את הקלט לפלט בקריאה אחת למודל, ללא שלבי ביניים",
   "tooltip.module.react": "ReAct — סוכן שמשלב חשיבה עם קריאה לכלים (tools) בלולאה, עד שהוא מפיק את הפלט שב-signature",
   "tooltip.module.workflow": "Workflow — גרף של כמה צעדים: Signatures, קוד Python וכלים המחוברים זה לזה בקנבס ויזואלי. האופטימיזציה משפרת את ההוראות של כל הצעדים יחד, מול מדד אחד על הפלט הסופי",
@@ -14083,6 +14085,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tooltip.model_config.top_p": "top_p (nucleus sampling): limits the range of words the model considers — a low value narrows it, a high one allows more variety",
   "tooltip.module.choice": "A DSPy module is a component in the program that calls a language model: it wraps each signature in a prompting technique and defines the structure of the call to the model in order to produce the output defined in the signature. Within this framework the optimizer tunes the module's learnable parameters, such as instructions and examples in the prompt",
   "tooltip.module.cot": "Chain of Thought — adds a reasoning field that leads the model to think step-by-step before the final answer; usually improves accuracy on complex tasks",
+  "tooltip.module.flex": "Flex (experimental) — the optimizer rewrites the program's code and prompt together, then runs the generated Python in a sandbox; best for tasks that need real computation, not just a single model call",
   "tooltip.module.predict": "Predict — the basic module: maps the input to the output in a single call to the model, with no intermediate steps",
   "tooltip.module.react": "ReAct — an agent that combines thinking with calling tools in a loop, until it produces the output in the signature",
   "tooltip.module.workflow": "Workflow — a graph of several steps: Signatures, Python code, and tools wired together on a visual canvas. Optimization improves the instructions of all steps together, against one metric on the final output",

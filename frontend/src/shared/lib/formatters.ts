@@ -157,6 +157,7 @@ export function moduleLabel(raw: string | null | undefined): string {
   if (v.includes("react")) return "ReAct";
   if (v.includes("chain") || v === "cot") return "CoT";
   if (v.includes("predict")) return "Predict";
+  if (v.includes("flex")) return "Flex";
   return raw;
 }
 
