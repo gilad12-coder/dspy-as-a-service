@@ -38,6 +38,15 @@ export function exportPromptAsJson(prompt: OptimizedPredictor, optimizationId: s
   );
 }
 
+/** Save the GEPA-rewritten Flex module source as a standalone .py download. */
+export function exportModuleAsPython(moduleSrc: string, optimizationId: string) {
+  downloadFile(
+    moduleSrc.endsWith("\n") ? moduleSrc : `${moduleSrc}\n`,
+    `optimized_module_${optimizationId.slice(0, 8)}.py`,
+    "text/x-python",
+  );
+}
+
 /** Decode the artifact's base64 pickle and hand it to the browser as a .pkl download. */
 export function downloadProgramPickle(pickleBase64: string, optimizationId: string) {
   const blob = new Blob([Uint8Array.from(atob(pickleBase64), (c) => c.charCodeAt(0))], {
@@ -67,11 +76,14 @@ function exportLogsAsCsv(logs: OptimizationLogEntry[], optimizationId: string) {
 export function ExportMenu({
   job,
   optimizedPrompt,
+  optimizedModuleSrc,
   pickleBase64,
   isShare,
 }: {
   job: OptimizationStatusResponse;
   optimizedPrompt: OptimizedPredictor | null;
+  /** GEPA-rewritten Flex module source, offered as a standalone .py download. */
+  optimizedModuleSrc?: string | null;
   /** Pair-scoped pickle override; falls back to the run / grid-best artifact. */
   pickleBase64?: string | null;
   /** The /program-export endpoint is authed, so the public share view hides the ZIP item. */
@@ -196,9 +208,27 @@ export function ExportMenu({
                 </button>
               </>
             )}
-            {job.logs && job.logs.length > 0 && (
+            {optimizedModuleSrc && (
               <>
                 {(hasProgram || hasPkl || optimizedPrompt) && divider}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false);
+                    exportModuleAsPython(optimizedModuleSrc, job.optimization_id);
+                  }}
+                  className={itemCls}
+                >
+                  <FileCode className={iconCls} />
+                  <span className="flex-1">{msg("optimizations.flex.optimized_code")}</span>
+                  <span className={extCls}>{msg("optimizations.flex.py_ext")}</span>
+                </button>
+              </>
+            )}
+            {job.logs && job.logs.length > 0 && (
+              <>
+                {(hasProgram || hasPkl || optimizedPrompt || optimizedModuleSrc) && divider}
                 <button
                   type="button"
                   role="menuitem"

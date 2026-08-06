@@ -114,6 +114,31 @@ def test_program_artifact_with_pickle() -> None:
     assert art.program_pickle_base64 == "abc123=="
 
 
+def test_program_artifact_backfills_module_src_from_flex_state() -> None:
+    """A Flex artifact derives optimized_module_src from top-level program_state_json."""
+    src = "import dspy\n\n\nclass M(dspy.Module):\n    pass\n"
+    art = ProgramArtifact(program_state_json={"module_src": src, "lm": None})
+
+    assert art.optimized_module_src == src
+
+
+def test_program_artifact_backfill_ignores_non_flex_state() -> None:
+    """Predictor-keyed (non-Flex) state has no module_src, so the field stays None."""
+    art = ProgramArtifact(program_state_json={"self": {"demos": []}})
+
+    assert art.optimized_module_src is None
+
+
+def test_program_artifact_explicit_module_src_survives_validation() -> None:
+    """An explicitly set optimized_module_src is not overwritten by the back-fill."""
+    art = ProgramArtifact(
+        program_state_json={"module_src": "old"},
+        optimized_module_src="explicit",
+    )
+
+    assert art.optimized_module_src == "explicit"
+
+
 def test_program_artifact_react_overlay_defaults_none() -> None:
     """A ProgramArtifact leaves ``react_overlay`` unset for non-react artifacts."""
     art = ProgramArtifact(path="/opt/artifacts/scalar")

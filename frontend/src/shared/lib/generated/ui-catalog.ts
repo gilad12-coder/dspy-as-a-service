@@ -1984,6 +1984,9 @@ export type MessageKey =
   | "optimization.storage_label"
   | "optimizations.datatab.description"
   | "optimizations.datatab.description_simple"
+  | "optimizations.flex.download_py"
+  | "optimizations.flex.optimized_code"
+  | "optimizations.flex.py_ext"
   | "optimizations.lmactivity.description"
   | "optimizations.logs.verbosity.aria"
   | "optimizations.logs.verbosity.empty_filtered"
@@ -2688,6 +2691,7 @@ export type MessageKey =
   | "tooltip.data.split.train"
   | "tooltip.data.split.val"
   | "tooltip.data.split_explanation"
+  | "tooltip.flex.optimized_code"
   | "tooltip.grid.avg_response_time_per_pair"
   | "tooltip.grid.best_pair_default"
   | "tooltip.grid.generation_models"
@@ -4911,6 +4915,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "optimization.storage_label": "נפח האחסון של הריצה — לחצו לניהול",
   "optimizations.datatab.description": "הנתונים ששימשו ב{term.optimization} — מחולקים ל{term.splitTrain}, {term.splitVal} ו{term.splitTest}, עם התוצאות לכל דוגמה.",
   "optimizations.datatab.description_simple": "הדוגמאות שנמדדו — כל דוגמה עם התוצאה שלה, לפני ואחרי ה{term.optimization}.",
+  "optimizations.flex.download_py": "הורדת קובץ Python",
+  "optimizations.flex.optimized_code": "קוד מותאם",
+  "optimizations.flex.py_ext": ".py",
   "optimizations.lmactivity.description": "פעילות מודלי השפה לפי שלב — כמה קריאות היו וכמה זמן הן לקחו, ל{term.generationModelShort} ולמודל המשוב בנפרד.",
   "optimizations.logs.verbosity.aria": "רמת פירוט היומנים",
   "optimizations.logs.verbosity.empty_filtered": "אין יומנים התואמים לסינון",
@@ -5615,6 +5622,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tooltip.data.split.train": "דוגמאות שה{term.optimizer} משתמש בהן כדי לבנות מועמדים לפרומפט",
   "tooltip.data.split.val": "דוגמאות שמדרגות את המועמדים בזמן ה{term.optimization}",
   "tooltip.data.split_explanation": "ה{term.dataset} מתחלק לשלושה חלקים: {term.splitTrain} ללמידה, {term.splitVal} לבחירת הפרומפט, ו{term.splitTest} למדידה סופית",
+  "tooltip.flex.optimized_code": "קוד התוכנית ש-GEPA שכתב לצד הפרומפט בהרצת Flex — קוד ה-Python המשופר שרץ בסביבת ההגשה המבודדת (sandbox)",
   "tooltip.grid.avg_response_time_per_pair": "משך זמן ממוצע לכל קריאה למודל שפה, לפי זוג מודלים",
   "tooltip.grid.best_pair_default": "ברירת מחדל: הזוג עם ציון האיכות הגבוה ביותר. ניתן להחליף לכל זוג אחר.",
   "tooltip.grid.generation_models": "המודלים שמייצרים תשובות. כל {term.pair} בסריקה משתמש ב{term.generationModel} אחר",
@@ -5643,7 +5651,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tooltip.model_config.top_p": "top_p (nucleus sampling): מגביל את מגוון המילים שה{term.model} שוקל — ערך נמוך ממקד, גבוה מאפשר יותר מגוון",
   "tooltip.module.choice": "מודול DSPy הוא רכיב בתוכנית שמפעילה מודל שפה: הוא עוטף כל signature בטכניקת prompting ומגדיר את מבנה הקריאה למודל כדי להפיק את הפלט שמוגדר ב-signature. בתוך המסגרת הזו האופטימייזר מכוון את הפרמטרים הניתנים ללמידה של המודול, כמו הוראות ודוגמאות בפרומפט",
   "tooltip.module.cot": "Chain of Thought — מוסיף שדה reasoning שמוביל את המודל לחשוב שלב-אחר-שלב לפני התשובה הסופית; לרוב משפר דיוק במשימות מורכבות",
-  "tooltip.module.flex": "Flex (נסיוני) — האופטימייזר משכתב יחד את הקוד ואת הפרומפט של התוכנית, ואז מריץ את קוד ה-Python שנוצר בסביבה מבודדת (sandbox); מתאים למשימות שדורשות חישוב ממשי, לא רק קריאה אחת למודל",
+  "tooltip.module.flex": "Flex — האופטימייזר משכתב יחד את הקוד ואת הפרומפט של התוכנית, ואז מריץ את קוד ה-Python שנוצר בסביבה מבודדת (sandbox); מתאים למשימות שדורשות חישוב ממשי, לא רק קריאה אחת למודל",
   "tooltip.module.predict": "Predict — המודול הבסיסי: ממפה את הקלט לפלט בקריאה אחת למודל, ללא שלבי ביניים",
   "tooltip.module.react": "ReAct — סוכן שמשלב חשיבה עם קריאה לכלים (tools) בלולאה, עד שהוא מפיק את הפלט שב-signature",
   "tooltip.module.workflow": "Workflow — גרף של כמה צעדים: Signatures, קוד Python וכלים המחוברים זה לזה בקנבס ויזואלי. האופטימיזציה משפרת את ההוראות של כל הצעדים יחד, מול מדד אחד על הפלט הסופי",
@@ -13353,6 +13361,9 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "optimization.storage_label": "Run storage usage — click to manage",
   "optimizations.datatab.description": "The data used in the {term.optimization} — split into {term.splitTrain}, {term.splitVal}, and {term.splitTest}, with results for each example.",
   "optimizations.datatab.description_simple": "The measured examples — each one with its result, before and after the {term.optimization}.",
+  "optimizations.flex.download_py": "Download .py",
+  "optimizations.flex.optimized_code": "Optimized code",
+  "optimizations.flex.py_ext": ".py",
   "optimizations.lmactivity.description": "Language-model activity by phase — how many calls there were and how long they took, for the {term.generationModelShort} and the feedback model separately.",
   "optimizations.logs.verbosity.aria": "Log verbosity level",
   "optimizations.logs.verbosity.empty_filtered": "No logs match the filter",
@@ -14057,6 +14068,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tooltip.data.split.train": "Examples the optimizer uses to build prompt candidates",
   "tooltip.data.split.val": "Examples that rank the candidates during optimization",
   "tooltip.data.split_explanation": "The dataset is split into three parts: train for learning, val for choosing the prompt, and test for the final measurement",
+  "tooltip.flex.optimized_code": "The program code GEPA rewrote alongside the prompt for this Flex run — the optimized Python that runs in the serve sandbox",
   "tooltip.grid.avg_response_time_per_pair": "Average duration per language model call, by model pair",
   "tooltip.grid.best_pair_default": "Default: the pair with the highest quality score. You can switch to any other pair.",
   "tooltip.grid.generation_models": "The models that produce answers. Each pair in the grid search uses a different generation model",
@@ -14085,7 +14097,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tooltip.model_config.top_p": "top_p (nucleus sampling): limits the range of words the model considers — a low value narrows it, a high one allows more variety",
   "tooltip.module.choice": "A DSPy module is a component in the program that calls a language model: it wraps each signature in a prompting technique and defines the structure of the call to the model in order to produce the output defined in the signature. Within this framework the optimizer tunes the module's learnable parameters, such as instructions and examples in the prompt",
   "tooltip.module.cot": "Chain of Thought — adds a reasoning field that leads the model to think step-by-step before the final answer; usually improves accuracy on complex tasks",
-  "tooltip.module.flex": "Flex (experimental) — the optimizer rewrites the program's code and prompt together, then runs the generated Python in a sandbox; best for tasks that need real computation, not just a single model call",
+  "tooltip.module.flex": "Flex — the optimizer rewrites the program's code and prompt together, then runs the generated Python in a sandbox; best for tasks that need real computation, not just a single model call",
   "tooltip.module.predict": "Predict — the basic module: maps the input to the output in a single call to the model, with no intermediate steps",
   "tooltip.module.react": "ReAct — an agent that combines thinking with calling tools in a loop, until it produces the output in the signature",
   "tooltip.module.workflow": "Workflow — a graph of several steps: Signatures, Python code, and tools wired together on a visual canvas. Optimization improves the instructions of all steps together, against one metric on the final output",

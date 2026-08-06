@@ -168,6 +168,40 @@ def test_export_reconstructs_optimized_program(tmp_path, module_alias, expected_
     assert any(len(p.demos) == 1 and p.demos[0]["answer"] == "four" for p in predictors)
 
 
+def test_flex_export_ships_readable_module_source() -> None:
+    """A Flex export adds ``optimized_module.py`` with the rewritten source and flags is_flex."""
+    artifact, overview = _persisted_artifact()
+    module_src = "import dspy\n\n\nclass QAModule(dspy.Module):\n    pass\n"
+    artifact = artifact.model_copy(update={"optimized_module_src": module_src})
+    overview["module_name"] = "flex"
+
+    zip_bytes = build_program_export_zip(
+        optimization_id="abcd1234-flex", artifact=artifact, overview=overview
+    )
+
+    archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    assert "optimized_module.py" in set(archive.namelist())
+    module_file = archive.read("optimized_module.py").decode("utf-8")
+    assert "class QAModule(dspy.Module):" in module_file
+    meta = json.loads(archive.read("metadata.json"))
+    assert meta["is_flex"] is True
+    assert "optimized_module.py" in archive.read("README.md").decode("utf-8")
+
+
+def test_non_flex_export_omits_module_source() -> None:
+    """A non-Flex export leaves out ``optimized_module.py`` and marks is_flex False."""
+    artifact, overview = _persisted_artifact()
+
+    zip_bytes = build_program_export_zip(
+        optimization_id="abcd1234-export", artifact=artifact, overview=overview
+    )
+
+    archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    assert "optimized_module.py" not in set(archive.namelist())
+    meta = json.loads(archive.read("metadata.json"))
+    assert meta["is_flex"] is False
+
+
 def test_react_export_requires_tools(tmp_path) -> None:
     """A react export ships its overlay and refuses to load without a tool roster."""
     artifact, overview = _persisted_artifact()

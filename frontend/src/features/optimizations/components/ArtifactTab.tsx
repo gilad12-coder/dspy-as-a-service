@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { Sparkle, Wrench } from "@/shared/ui/icons";
+import dynamic from "next/dynamic";
+import { Code, DownloadSimple, Sparkle, Wrench } from "@/shared/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
+import { Skeleton } from "@/shared/ui/skeleton";
 import { Carousel, ToolHeader } from "@/features/agent-panel";
 import type {
   OptimizationStatusResponse,
@@ -15,7 +17,12 @@ import type {
 import { tip } from "@/shared/lib/tooltips";
 import { msg } from "@/shared/lib/messages";
 import { CopyButton } from "./ui-primitives";
-import { ExportMenu } from "./ExportMenu";
+import { ExportMenu, exportModuleAsPython } from "./ExportMenu";
+
+const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
+  ssr: false,
+  loading: () => <Skeleton height={180} borderRadius={8} />,
+});
 
 // What the run produced, gathered in one place: the export menu (runnable
 // ZIP, pickle, prompt JSON, logs CSV) plus the optimized prompt and — for
@@ -26,12 +33,15 @@ export function ArtifactTab({
   activePair,
   optimizedPrompt,
   reactOverlay,
+  optimizedModuleSrc,
   isShare,
 }: {
   job: OptimizationStatusResponse;
   activePair?: PairResult | null;
   optimizedPrompt: OptimizedPredictor | null;
   reactOverlay?: ReactOverlay | null;
+  /** GEPA-rewritten Flex module source; shown as a read-only code viewer. */
+  optimizedModuleSrc?: string | null;
   isShare?: boolean;
 }) {
   // The runnable export reconstructs from state JSON + signature_code, which
@@ -44,7 +54,11 @@ export function ArtifactTab({
     !!job.result?.program_artifact?.program_pickle_base64 ||
     !!job.grid_result?.best_pair?.program_artifact?.program_pickle_base64;
   const hasExports =
-    hasProgram || hasPickle || !!optimizedPrompt || (job.logs?.length ?? 0) > 0;
+    hasProgram ||
+    hasPickle ||
+    !!optimizedPrompt ||
+    !!optimizedModuleSrc ||
+    (job.logs?.length ?? 0) > 0;
 
   return (
     <>
@@ -62,6 +76,7 @@ export function ArtifactTab({
           <ExportMenu
             job={job}
             optimizedPrompt={optimizedPrompt}
+            optimizedModuleSrc={optimizedModuleSrc}
             pickleBase64={pickleBase64}
             isShare={isShare}
           />
@@ -117,6 +132,37 @@ export function ArtifactTab({
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {optimizedModuleSrc && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Code className="size-4" />
+                <HelpTip text={tip("flex.optimized_code")}>
+                  {msg("optimizations.flex.optimized_code")}
+                </HelpTip>
+              </CardTitle>
+              <button
+                type="button"
+                onClick={() => exportModuleAsPython(optimizedModuleSrc, job.optimization_id)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+              >
+                <DownloadSimple className="size-3.5" />
+                {msg("optimizations.flex.download_py")}
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <CodeEditor
+              value={optimizedModuleSrc}
+              onChange={() => {}}
+              height={`${Math.min((optimizedModuleSrc.split("\n").length + 1) * 19.6 + 8, 600)}px`}
+              readOnly
+            />
           </CardContent>
         </Card>
       )}

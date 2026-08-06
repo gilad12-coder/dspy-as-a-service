@@ -359,6 +359,12 @@ export interface ProgramArtifact {
   metadata?: Record<string, unknown>;
   optimized_prompt?: OptimizedPredictor;
   react_overlay?: ReactOverlay | null;
+  /**
+   * GEPA-rewritten module source for a dspy.Flex program — the optimized Python
+   * that runs in the serve sandbox. Absent for non-Flex artifacts, whose
+   * optimization lands in the prompt rather than the code.
+   */
+  optimized_module_src?: string | null;
 }
 
 export interface EvalExampleResult {

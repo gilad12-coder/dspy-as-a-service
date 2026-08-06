@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class OptimizedDemo(BaseModel):
@@ -90,3 +90,31 @@ class ProgramArtifact(BaseModel):
             "non-react artifacts."
         ),
     )
+    optimized_module_src: str | None = Field(
+        default=None,
+        description=(
+            "GEPA-rewritten module source for a dspy.Flex program: the optimized "
+            "Python that runs in the serve sandbox. Unset for non-Flex artifacts, "
+            "whose optimization lands in the prompt rather than the code."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _backfill_module_src(self) -> ProgramArtifact:
+        """Derive ``optimized_module_src`` from persisted Flex state when absent.
+
+        Flex saves ``module_src`` at the top level of ``program.save(json)``, so
+        artifacts persisted before this field existed still carry the code inside
+        ``program_state_json``. Back-filling on validation surfaces it for old and
+        new Flex artifacts alike without a data migration; non-Flex state has no
+        ``module_src`` key, so this is a no-op there.
+
+        Returns:
+            The validated artifact, with ``optimized_module_src`` populated when a
+            Flex source is recoverable.
+        """
+        if self.optimized_module_src is None and isinstance(self.program_state_json, dict):
+            src = self.program_state_json.get("module_src")
+            if isinstance(src, str) and src.strip():
+                self.optimized_module_src = src
+        return self

@@ -831,6 +831,14 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
     ? (activePair.program_artifact?.react_overlay ?? null)
     : (job?.result?.program_artifact?.react_overlay ?? null);
 
+  // Flex optimizes the program's code alongside its prompt; the rewritten
+  // module source is the headline artifact for those runs.
+  const optimizedModuleSrc = isPairContext
+    ? (activePair.program_artifact?.optimized_module_src ?? null)
+    : (job?.result?.program_artifact?.optimized_module_src ??
+      job?.grid_result?.best_pair?.program_artifact?.optimized_module_src ??
+      null);
+
   // Artifact tab appears once the run has produced something durable — an
   // optimized prompt, tuned react tools, or downloadable program files.
   const artifactFiles = isPairContext
@@ -1452,6 +1460,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                   activePair={activePair}
                   optimizedPrompt={optimizedPrompt}
                   reactOverlay={reactOverlay}
+                  optimizedModuleSrc={optimizedModuleSrc}
                   isShare={isShare}
                 />
               </TabsContent>

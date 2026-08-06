@@ -144,6 +144,30 @@ if __name__ == "__main__":
 '''
 
 
+_MODULE_HEADER = (
+    "# Optimized module source (dspy.Flex).\n"
+    "#\n"
+    "# GEPA rewrote this program's code alongside its prompt. This file is a\n"
+    "# human-readable copy for reference; the loader reconstructs the program from\n"
+    "# program.json (which embeds the same source), so you do not import this file.\n"
+    "\n"
+)
+
+
+def _optimized_module_file(module_src: str) -> str:
+    """Render the readable ``optimized_module.py`` body for a Flex export.
+
+    Args:
+        module_src: The GEPA-rewritten module source from the artifact.
+
+    Returns:
+        The module source prefixed with a ``#`` comment header, kept as comments
+        so a leading ``from __future__`` import in the source stays first-statement
+        valid.
+    """
+    return _MODULE_HEADER + module_src.rstrip("\n") + "\n"
+
+
 def _installed_dspy_version() -> str | None:
     """Return the installed ``dspy`` version, or ``None`` when unavailable.
 
@@ -178,6 +202,7 @@ def _build_metadata(optimization_id: str, artifact: ProgramArtifact, overview: d
         "optimizer": overview.get(PAYLOAD_OVERVIEW_OPTIMIZER_NAME),
         "dspy_version": _installed_dspy_version(),
         "is_react": artifact.react_overlay is not None,
+        "is_flex": artifact.optimized_module_src is not None,
     }
 
 
@@ -203,6 +228,15 @@ def _build_readme(metadata: dict[str, Any]) -> str:
         if metadata.get("is_react")
         else ""
     )
+    flex_note = (
+        "\n## Optimized code (Flex)\n\n"
+        "GEPA rewrote this program's **code** as well as its prompt. The rewritten "
+        "source is in `optimized_module.py` for you to read; `load_program()` "
+        "rebuilds it from `program.json` (which embeds the same source), so you do "
+        "not import that file directly.\n"
+        if metadata.get("is_flex")
+        else ""
+    )
     lines = [
         "# Exported DSPy program",
         "",
@@ -219,6 +253,11 @@ def _build_readme(metadata: dict[str, Any]) -> str:
         "- `load_program.py` — rebuilds the module and loads the state. Run or import it.",
         "- `metadata.json` — the module recipe (module name, kwargs, default model).",
         "- `prompt.json` — the optimized instructions and few-shot demos, human-readable.",
+        *(
+            ["- `optimized_module.py` — the GEPA-rewritten program source, human-readable."]
+            if metadata.get("is_flex")
+            else []
+        ),
         "- `requirements.txt` — the `dspy` version this was trained on.",
         "",
         "## Run it",
@@ -238,6 +277,7 @@ def _build_readme(metadata: dict[str, Any]) -> str:
         "print(result)",
         "```",
         react_note,
+        flex_note,
         "## Reproducibility",
         "",
         f"Trained against `dspy=={dspy_version}`. Pin the same version for an exact",
@@ -282,6 +322,11 @@ def build_program_export_zip(
             archive.writestr(
                 "prompt.json",
                 artifact.optimized_prompt.model_dump_json(indent=2),
+            )
+        if artifact.optimized_module_src is not None:
+            archive.writestr(
+                "optimized_module.py",
+                _optimized_module_file(artifact.optimized_module_src),
             )
         if artifact.react_overlay is not None:
             archive.writestr(
