@@ -10,9 +10,18 @@ presence of an ``extract`` attribute on a stand-in program.
 
 from __future__ import annotations
 
-import dspy
+from types import SimpleNamespace
 
-from core.service_gateway.agents.code import ReactReplyStream
+import dspy
+import pytest
+
+from core.service_gateway.agents import code as code_module
+from core.service_gateway.agents.code import (
+    NativeToolCallStreamListener,
+    ReactReplyStream,
+    _NativeSubmitArgExtractor,
+    _SubmitArgExtractor,
+)
 from core.service_gateway.react_compat import REACT_CLASS, react_uses_submit
 
 
@@ -101,3 +110,142 @@ def test_submit_program_decodes_partial_tool_call_json() -> None:
     first = stream.reply_delta(_response("tool_calls", '{"tool_calls":[{"name":"submit","args":{"reply":"Hi'))
     second = stream.reply_delta(_response("tool_calls", ' there"}}]}', last=True))
     assert (first or "") + (second or "") == "Hi there"
+
+
+def _lm_chunk(tool_calls: list | None = None, finish: str | None = None) -> SimpleNamespace:
+    """Build a stand-in LiteLLM streaming chunk.
+
+    Args:
+        tool_calls: The ``delta.tool_calls`` list, or ``None`` for an empty delta.
+        finish: The choice's ``finish_reason``, or ``None`` mid-stream.
+
+    Returns:
+        An object shaped like a LiteLLM ``ModelResponseStream`` chunk.
+    """
+    delta = SimpleNamespace(tool_calls=tool_calls, content=None)
+    return SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=finish)])
+
+
+def _tool_call(index: int, name: str | None = None, arguments: str | None = None) -> SimpleNamespace:
+    """Build a stand-in streamed tool-call delta.
+
+    Args:
+        index: The tool call's stream index.
+        name: The function name (present only in the call's first delta).
+        arguments: The streaming ``arguments`` JSON fragment.
+
+    Returns:
+        An object shaped like one element of ``delta.tool_calls``.
+    """
+    return SimpleNamespace(index=index, function=SimpleNamespace(name=name, arguments=arguments))
+
+
+def _drain_native(listener: NativeToolCallStreamListener, stream: ReactReplyStream, chunks: list) -> str:
+    """Run raw chunks through the native listener + reply bridge, as the serve loop does.
+
+    Args:
+        listener: The native tool-call listener from ``stream.listeners()``.
+        stream: The reply stream whose ``_NativeSubmitArgExtractor`` decodes the deltas.
+        chunks: The sequence of stand-in LiteLLM chunks to replay.
+
+    Returns:
+        The reconstructed reply text.
+    """
+    out = ""
+    for chunk in chunks:
+        response = listener.receive(chunk)
+        if response is None:
+            continue
+        delta = stream.reply_delta(response)
+        if delta:
+            out += delta
+    return out
+
+
+def test_submit_program_defaults_to_text_protocol(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With native calling inactive, ReActV2 keeps the text tool-call extractor."""
+    monkeypatch.setattr(code_module, "native_tool_calling_active", lambda: False)
+    base = REACT_CLASS(_Sig, tools=[_noop], max_iters=3)
+    stream = ReactReplyStream(_SubmitProgram(base.react), "reply")
+
+    assert stream._uses_submit is True
+    assert stream._native is False
+    assert isinstance(stream._extractor, _SubmitArgExtractor)
+    assert not isinstance(stream.listeners()[0], NativeToolCallStreamListener)
+
+
+def test_native_submit_program_decodes_provider_tool_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Native calling: the submit call's provider ``arguments`` reconstruct the reply.
+
+    A parallel non-submit tool call streams on index 0 and must be ignored; the
+    submit call on index 1 carries the user-visible reply.
+    """
+    monkeypatch.setattr(code_module, "native_tool_calling_active", lambda: True)
+    base = REACT_CLASS(_Sig, tools=[_noop], max_iters=3)
+    stream = ReactReplyStream(_SubmitProgram(base.react), "reply")
+
+    assert stream._native is True
+    assert isinstance(stream._extractor, _NativeSubmitArgExtractor)
+    listener = stream.listeners()[0]
+    assert isinstance(listener, NativeToolCallStreamListener)
+
+    chunks = [
+        _lm_chunk([_tool_call(0, name="edit_signature", arguments="")]),
+        _lm_chunk([_tool_call(0, arguments='{"code":"x"}')]),
+        _lm_chunk([_tool_call(1, name="submit", arguments="")]),
+        _lm_chunk([_tool_call(1, arguments='{"reply":"Hi')]),
+        _lm_chunk([_tool_call(1, arguments=' there"}')]),
+        _lm_chunk(finish="tool_calls"),
+    ]
+    assert _drain_native(listener, stream, chunks) == "Hi there"
+
+
+def test_native_listener_buffers_args_arriving_before_submit_name() -> None:
+    """Args streamed before the ``submit`` name is seen are buffered, then flushed."""
+    listener = NativeToolCallStreamListener(predict=None, allow_reuse=True)
+    extractor = _NativeSubmitArgExtractor("reply")
+
+    chunks = [
+        _lm_chunk([_tool_call(0, arguments='{"reply":"par')]),
+        _lm_chunk([_tool_call(0, name="submit", arguments="tial")]),
+        _lm_chunk([_tool_call(0, arguments=' done"}')]),
+        _lm_chunk(finish="stop"),
+    ]
+    out = ""
+    for chunk in chunks:
+        response = listener.receive(chunk)
+        if response is None:
+            continue
+        delta = extractor.feed(response.chunk)
+        if response.is_last_chunk:
+            extractor.reset()
+        if delta:
+            out += delta
+    assert out == "partial done"
+
+
+def test_native_listener_resets_between_turns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The reused listener + extractor decode a second turn cleanly after finish_reason."""
+    monkeypatch.setattr(code_module, "native_tool_calling_active", lambda: True)
+    base = REACT_CLASS(_Sig, tools=[_noop], max_iters=3)
+    stream = ReactReplyStream(_SubmitProgram(base.react), "reply")
+    listener = stream.listeners()[0]
+
+    first = _drain_native(
+        listener,
+        stream,
+        [
+            _lm_chunk([_tool_call(0, name="submit", arguments='{"reply":"one"}')]),
+            _lm_chunk(finish="stop"),
+        ],
+    )
+    second = _drain_native(
+        listener,
+        stream,
+        [
+            _lm_chunk([_tool_call(0, name="submit", arguments='{"reply":"two"}')]),
+            _lm_chunk(finish="stop"),
+        ],
+    )
+    assert first == "one"
+    assert second == "two"

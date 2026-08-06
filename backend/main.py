@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from core.api.app import create_app
 from core.api.observability import configure_logging
 from core.registry import ServiceRegistry
+from core.service_gateway.react_compat import configure_native_tool_calling
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -30,6 +31,13 @@ load_dotenv(Path(__file__).parent / ".env")
 # abort startup. Mirrors the per-job child in core/worker/subprocess_runner.py.
 with contextlib.suppress(Exception):
     dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
+
+# Install the native-function-calling ChatAdapter process-wide when
+# REACT_NATIVE_TOOL_CALLING is set, so every ReAct serve path routes tools
+# through the provider API. A no-op when the flag is off; suppress() so an
+# incompatible dspy build can't abort startup. Mirrored in the optimize child.
+with contextlib.suppress(Exception):
+    configure_native_tool_calling()
 
 # Must run before create_app() so loggers acquired during router import
 # inherit the configured formatter, not Uvicorn's default.

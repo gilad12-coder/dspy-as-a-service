@@ -45,7 +45,7 @@ from ..language_models import (
     build_language_model,
     served_model_from,
 )
-from ..react_compat import REACT_CLASS, react_uses_submit
+from ..react_compat import REACT_CLASS, native_tool_calling_active, react_uses_submit
 from ..safe_exec import validate_metric_code, validate_signature_code
 from .constants import REASONING_FIELD
 from .parse_salvage import strip_adapter_debris
@@ -1138,6 +1138,68 @@ class _SubmitArgExtractor:
         self._emitted_chars = 0
 
 
+class _NativeSubmitArgExtractor:
+    """Recover token-level streaming of a submit argument under native function calling.
+
+    Sibling of :class:`_SubmitArgExtractor` for the native path. When native
+    function calling is active the provider streams the ``submit`` tool's
+    arguments directly — raw JSON of the shape ``{<arg>: "..."}`` — without
+    DSPy's ``{"tool_calls": [{"name": ..., "args": ...}]}`` text envelope. The
+    incremental-emit machinery is identical; only the JSON shape differs, so
+    this navigates ``parsed[target_arg]`` rather than the nested envelope.
+
+    One instance per agent turn; call ``reset`` between loop iterations.
+    """
+
+    def __init__(self, target_arg: str):
+        """Bind the extractor to a specific submit argument name.
+
+        Args:
+            target_arg: Name of the ``submit`` arg to extract — e.g. ``reply``
+                for the code agent or ``assistant_message`` for the generalist.
+        """
+        self._target_arg = target_arg
+        self._buffer = ""
+        self._emitted_chars = 0
+
+    def feed(self, chunk: str) -> str | None:
+        """Append a chunk and return the newly streamed slice of the target arg.
+
+        Args:
+            chunk: Latest fragment of the submit call's ``arguments`` JSON.
+
+        Returns:
+            The new characters of ``parsed[target_arg]`` since the last
+            successful feed, or ``None`` when the partial JSON has not yet
+            exposed any additional content for the target arg.
+        """
+        if not chunk:
+            return None
+        self._buffer += chunk
+        try:
+            parsed = jiter.from_json(
+                self._buffer.encode("utf-8"),
+                partial_mode="trailing-strings",
+            )
+        except ValueError:
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        value = parsed.get(self._target_arg)
+        if not isinstance(value, str):
+            return None
+        if len(value) <= self._emitted_chars:
+            return None
+        delta = value[self._emitted_chars :]
+        self._emitted_chars = len(value)
+        return delta
+
+    def reset(self) -> None:
+        """Drop accumulated state between ReAct loop iterations."""
+        self._buffer = ""
+        self._emitted_chars = 0
+
+
 class ReasoningStreamListener(dspy.streaming.StreamListener):
     """StreamListener subclass that harvests provider reasoning tokens.
 
@@ -1199,6 +1261,124 @@ class ReasoningStreamListener(dspy.streaming.StreamListener):
         return
 
 
+class NativeToolCallStreamListener(dspy.streaming.StreamListener):
+    """StreamListener that harvests a native ``submit`` tool call's arguments.
+
+    When native function calling is active, ReActV2's inner predict emits its
+    tool calls through the provider API rather than as text in the ``tool_calls``
+    field, so DSPy's built-in listener — which reads only ``delta.content`` —
+    never sees them. This subclass reads the raw ``delta.tool_calls`` deltas,
+    tracks the call index whose function name is ``submit``, and re-emits that
+    call's streaming ``arguments`` JSON as synthetic ``StreamResponse`` events
+    on the ``tool_calls`` field. It emits on the same field name the text path
+    uses so the reply bridge routes both paths identically; the arguments there
+    are the bare ``{<arg>: ...}`` object that :class:`_NativeSubmitArgExtractor`
+    decodes. Parallel non-submit tool calls stream on other indices and are
+    ignored — they execute, they are not the reply.
+
+    ``allow_reuse=True`` is required because the inner predict fires once per
+    ReAct loop iteration; per-turn index tracking is reset when a turn's
+    ``finish_reason`` arrives.
+    """
+
+    def __init__(self, predict: dspy.Predict, allow_reuse: bool = True):
+        """Bind the listener to a specific Predict and mark the tool_calls field.
+
+        Args:
+            predict: The :class:`dspy.Predict` (ReAct's inner loop predictor)
+                whose native tool-call deltas should be intercepted.
+            allow_reuse: Whether the listener can fire more than once (required
+                for ReAct's inner predict, which fires per loop iteration).
+        """
+        super().__init__(
+            signature_field_name="tool_calls",
+            predict=predict,
+            allow_reuse=allow_reuse,
+        )
+        self.predict_name = "tool_calls"
+        self._submit_index: int | None = None
+        self._pending: dict[int, str] = {}
+
+    def _consume_tool_calls(self, tool_calls: list) -> str | None:
+        """Pull the submit call's newest ``arguments`` fragment from a delta's tool calls.
+
+        Args:
+            tool_calls: The ``delta.tool_calls`` list from one streaming chunk —
+                objects carrying ``index``, ``function.name`` and streaming
+                ``function.arguments`` fragments.
+
+        Returns:
+            The concatenated new ``arguments`` text for the submit call in this
+            delta, or ``None`` when the delta contributes nothing to it. Args
+            arriving before the submit index is known are buffered per index and
+            flushed once that index reveals the ``submit`` name.
+        """
+        out: list[str] = []
+        for call in tool_calls:
+            index = getattr(call, "index", None)
+            function = getattr(call, "function", None)
+            name = getattr(function, "name", None) if function is not None else None
+            args = getattr(function, "arguments", None) if function is not None else None
+            if name == "submit":
+                self._submit_index = index
+                buffered = self._pending.pop(index, "")
+                if buffered:
+                    out.append(buffered)
+            if args:
+                if index == self._submit_index:
+                    out.append(args)
+                elif self._submit_index is None and index is not None:
+                    self._pending[index] = self._pending.get(index, "") + args
+        return "".join(out) if out else None
+
+    def receive(self, chunk: object) -> dspy.streaming.StreamResponse | None:
+        """Extract the submit call's argument delta from a LiteLLM chunk.
+
+        Args:
+            chunk: A raw LiteLLM streaming chunk.
+
+        Returns:
+            A synthetic :class:`dspy.streaming.StreamResponse` on the
+            ``tool_calls`` field carrying the submit call's newest ``arguments``
+            text, marked ``is_last_chunk`` when the turn's ``finish_reason``
+            arrives (so the reply bridge resets between loop iterations), or
+            ``None`` when the chunk carries nothing for the submit call.
+        """
+        try:
+            choice = chunk.choices[0]
+        except (AttributeError, IndexError, TypeError):
+            return None
+        delta = getattr(choice, "delta", None)
+        tool_calls = getattr(delta, "tool_calls", None) if delta is not None else None
+        emitted = self._consume_tool_calls(tool_calls) if tool_calls else None
+        if getattr(choice, "finish_reason", None):
+            terminal = dspy.streaming.StreamResponse(
+                predict_name=self.predict_name,
+                signature_field_name="tool_calls",
+                chunk=emitted or "",
+                is_last_chunk=True,
+            )
+            self._submit_index = None
+            self._pending = {}
+            return terminal
+        if emitted:
+            return dspy.streaming.StreamResponse(
+                predict_name=self.predict_name,
+                signature_field_name="tool_calls",
+                chunk=emitted,
+                is_last_chunk=False,
+            )
+        return None
+
+    def finalize(self) -> None:
+        """No-op — the reply's terminal chunk rides the turn's finish_reason.
+
+        Kept explicit so the listener satisfies the streamer's aggregator
+        protocol alongside peers that emit a final summary.
+        """
+        return
+
+
 class ReactReplyStream:
     """Bridge the V2-vs-classic difference in how a ReAct program streams its reply.
 
@@ -1220,19 +1400,33 @@ class ReactReplyStream:
         self._program = program
         self._reply_field = reply_field
         self._uses_submit = react_uses_submit(program)
+        self._native = self._uses_submit and native_tool_calling_active()
         self._stream_field = "tool_calls" if self._uses_submit else reply_field
-        self._extractor = _SubmitArgExtractor(reply_field) if self._uses_submit else None
+        if not self._uses_submit:
+            self._extractor = None
+        elif self._native:
+            self._extractor = _NativeSubmitArgExtractor(reply_field)
+        else:
+            self._extractor = _SubmitArgExtractor(reply_field)
 
     def listeners(self) -> list[dspy.streaming.StreamListener]:
         """Return the reply + reasoning stream listeners for this program.
 
         Returns:
-            On ReActV2: a ``tool_calls`` listener bound to the reused inner
-            predictor. On classic ReAct: a listener that auto-resolves the reply
-            field onto the ``extract`` predictor (the only one declaring it).
-            Both carry the same reasoning listener on the loop predictor.
+            On ReActV2 with native function calling: a
+            :class:`NativeToolCallStreamListener` reading the provider's
+            ``tool_calls`` deltas. On ReActV2 with the text protocol: a built-in
+            ``tool_calls`` listener bound to the reused inner predictor. On
+            classic ReAct: a listener that auto-resolves the reply field onto the
+            ``extract`` predictor (the only one declaring it). All carry the same
+            reasoning listener on the loop predictor.
         """
-        if self._uses_submit:
+        if self._native:
+            reply_listener: dspy.streaming.StreamListener = NativeToolCallStreamListener(
+                predict=self._program.react,
+                allow_reuse=True,
+            )
+        elif self._uses_submit:
             reply_listener = dspy.streaming.StreamListener(
                 signature_field_name="tool_calls",
                 predict=self._program.react,

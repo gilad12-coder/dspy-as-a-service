@@ -29,6 +29,7 @@ from ..service_gateway.optimization.llm_error import (
     enrich_error_message,
     reset_llm_error,
 )
+from ..service_gateway.react_compat import configure_native_tool_calling
 from .constants import EVENT_ERROR, EVENT_LOG, EVENT_PROGRESS, EVENT_RESULT
 from .log_handler import get_current_pair_index
 
@@ -163,6 +164,12 @@ def run_service_in_subprocess(
     # the job.
     with contextlib.suppress(Exception):
         dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
+    # Route ReActV2 tools through the provider's native function-calling API
+    # when REACT_NATIVE_TOOL_CALLING is set, matching the serve process so
+    # optimization rollouts and serving share one tool protocol. No-op when
+    # off; suppress() so an incompatible dspy build can't fail the job.
+    with contextlib.suppress(Exception):
+        configure_native_tool_calling()
     # Cap this child's in-flight LM calls: grid pair threads x GEPA eval
     # threads multiply, and without a ceiling a single job can spray the
     # provider hard enough to trip rate limits and fail the run.

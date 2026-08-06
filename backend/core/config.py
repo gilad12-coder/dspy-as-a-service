@@ -330,6 +330,23 @@ class Settings(BaseSettings):
         ),
         alias="GEPA_PXN_PROPOSALS",
     )
+    react_native_tool_calling: bool = Field(
+        default=False,
+        description=(
+            "Route ReActV2 tool calls through the provider's native "
+            "function-calling API instead of DSPy's text tool protocol. When "
+            "on, the process installs a global ChatAdapter with "
+            "use_native_function_calling=True; tools ride the provider's "
+            "tools= parameter and turns come back as structured tool_calls "
+            "(provider-default parallel calling included). The adapter is a "
+            "no-op for signatures without a ToolCalls field, so only ReAct "
+            "programs are affected. Off (default) keeps the text tool protocol "
+            "that every model — including the flaky MiniMax student — parses "
+            "reliably; only enable it for a deployment whose models all "
+            "support native function calling."
+        ),
+        alias="REACT_NATIVE_TOOL_CALLING",
+    )
     job_lm_max_concurrency: int = Field(
         default=16,
         ge=0,
