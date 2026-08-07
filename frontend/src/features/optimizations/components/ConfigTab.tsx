@@ -6,7 +6,6 @@ import {
   ArrowUpRight,
   Books,
   Brain,
-  Coins,
   Cpu,
   Cube,
   Database,
@@ -15,6 +14,7 @@ import {
   Gear,
   GearSix,
   GitMerge,
+  Hash,
   Repeat,
   Ruler,
   Shuffle,
@@ -145,7 +145,7 @@ function ModelCard({ label, cfg }: { label: string; cfg: Record<string, unknown>
           )}
           {maxTok != null && (
             <span className="inline-flex items-center gap-0.5">
-              <Coins className="size-2.5" />
+              <Hash className="size-2.5" />
               {maxTok}
             </span>
           )}

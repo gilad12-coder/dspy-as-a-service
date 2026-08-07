@@ -1,7 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { CaretRight, GitDiff, Hash, TextAlignLeft, XCircle, type Icon } from "@/shared/ui/icons";
+import dynamic from "next/dynamic";
+import { CaretRight, Code, GitDiff, Hash, TextAlignLeft, XCircle, type Icon } from "@/shared/ui/icons";
 import {
   createContext,
   useContext,
@@ -20,11 +21,18 @@ import {
   type TrajectoryNode,
   type ValsetRow,
 } from "../lib/types";
+import {
+  decomposeFlexSource,
+  matchSignature,
+  type FlexDecomposition,
+  type FlexSignature,
+} from "../lib/flex-source";
 import { cn } from "@/shared/lib/utils";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { TERMS } from "@/shared/lib/terms";
 import { HelpTip } from "@/shared/ui/help-tip";
+import { Skeleton } from "@/shared/ui/skeleton";
 import { RecordedChatTranscript, type ChatMessage } from "./RecordedChat";
 import { UserBubble } from "@/shared/ui/agent/user-bubble";
 import { AgentBubble } from "@/shared/ui/agent/agent-bubble";
@@ -65,6 +73,16 @@ const ToolSeveritiesContext = createContext<Record<string, string>>({});
 // Stable fallback for the provider value — an inline `?? {}` would hand the
 // context a fresh identity every render and re-render all consumers.
 const EMPTY_SEVERITIES: Record<string, string> = {};
+
+// A Flex submodule's optimizable candidate value is its full Python source — one
+// dspy.Module subclass whose predictors carry their instructions inline — not an
+// instruction string. GEPA rewrites that whole source, so a code candidate must
+// read as CODE. Rendered read-only through the same CodeMirror viewer the artifact
+// tab uses; lazy so CodeMirror stays out of the drawer's initial bundle.
+const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
+  ssr: false,
+  loading: () => <Skeleton height={140} borderRadius={6} />,
+});
 
 export type DrawerSelection =
   | { kind: "candidate"; node: TrajectoryNode; parent: TrajectoryNode | null }
@@ -307,6 +325,7 @@ function NodeBody({
                   {promptEntries.map(([predictor, prompt]) => (
                     <PromptEntry
                       key={predictor}
+                      label={predictor}
                       prompt={prompt}
                       parentPrompt={view.parentPrompt[predictor] ?? ""}
                       mode={promptViewMode}
@@ -1577,15 +1596,66 @@ function toolToText(tool: ReactToolView): string {
   return lines.join("\n");
 }
 
-// One prompt predictor: its instruction/diff card, with the tool-descriptions
-// section lifted out to sit *below* the card as its own block instead of nested
-// inside it. Parses the react overlay once and shares it with both halves.
+// Distinguish a candidate component that is CODE (a dspy.Flex submodule's full
+// source) from one that is a natural-language instruction. GEPA stores both as
+// plain strings in the candidate map, so we classify by structure: a module
+// source always defines `forward`, or a class with an `__init__`. High precision
+// — instruction prose never contains these — so a false positive is unrealistic.
+function looksLikeModuleCode(value: string): boolean {
+  const t = value.trimStart();
+  if (t.length === 0) return false;
+  if (/\bdef\s+forward\s*\(/.test(t)) return true;
+  return /\bclass\s+\w+/.test(t) && /\bdef\s+__init__\s*\(/.test(t);
+}
+
+// The label above each candidate entry: whether this change is CODE (a Flex
+// submodule's source) or an INSTRUCTION, plus the component's candidate key. A
+// Flex code candidate used to render as an anonymous monospace blob that read like
+// an instruction prompt; this makes the kind explicit and names the component.
+// When the module decomposes into signature + code sub-blocks, the header reads
+// "Module" — the "Code" label then belongs to the code sub-block, not the whole.
+function PromptKindHeader({
+  isCode,
+  label,
+  decomposed = false,
+}: {
+  isCode: boolean;
+  label: string;
+  decomposed?: boolean;
+}) {
+  const KindIcon = isCode ? Code : TextAlignLeft;
+  const kindText = decomposed
+    ? msg("trajectory.prompt.kind.module")
+    : isCode
+      ? msg("trajectory.prompt.kind.code")
+      : msg("trajectory.prompt.kind.instructions");
+  return (
+    <div className="mb-2 flex items-center justify-between gap-2">
+      <span className="inline-flex items-center gap-1.5 text-[0.625rem] font-semibold uppercase tracking-wide text-muted-foreground">
+        <KindIcon className="size-3" />
+        {kindText}
+      </span>
+      {label.length > 0 ? (
+        <span className="truncate font-mono text-[0.625rem] text-muted-foreground/70" dir="ltr">
+          {label}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+// One prompt predictor: a kind header (code vs instruction) over its
+// instruction/diff card, with the tool-descriptions section lifted out to sit
+// *below* the card as its own block instead of nested inside it. Parses the react
+// overlay once and shares it with both halves.
 function PromptEntry({
+  label,
   prompt,
   parentPrompt,
   mode,
   hasParent,
 }: {
+  label: string;
   prompt: string;
   parentPrompt: string;
   mode: View;
@@ -1596,23 +1666,154 @@ function PromptEntry({
     () => (parentPrompt.length > 0 ? parseReactOverlay(parentPrompt) : null),
     [parentPrompt],
   );
+  // React overlays are structured agent instructions, never code.
+  const isCode = overlay === null && looksLikeModuleCode(prompt);
+  // A Flex module that parses into predictor signatures renders decomposed:
+  // its signatures (prose) apart from its code (structure). When parsing finds
+  // no signature (unusual source shape), fall through to the whole-module view.
+  const decomposition = useMemo(
+    () => (isCode ? decomposeFlexSource(prompt) : null),
+    [isCode, prompt],
+  );
+  const parentDecomposition = useMemo(
+    () => (isCode && parentPrompt.length > 0 ? decomposeFlexSource(parentPrompt) : null),
+    [isCode, parentPrompt],
+  );
 
   return (
     <>
       <div className="overflow-hidden rounded-md border border-border/40 bg-background/60 p-3">
-        <PromptBody
-          prompt={prompt}
-          parentPrompt={parentPrompt}
-          overlay={overlay}
-          parentOverlay={parentOverlay}
-          mode={mode}
-          hasParent={hasParent}
-        />
+        <PromptKindHeader isCode={isCode} label={label} decomposed={decomposition !== null} />
+        {decomposition !== null ? (
+          <FlexModuleView
+            decomposition={decomposition}
+            parentDecomposition={parentDecomposition}
+            mode={mode}
+            hasParent={hasParent}
+          />
+        ) : (
+          <PromptBody
+            prompt={prompt}
+            parentPrompt={parentPrompt}
+            overlay={overlay}
+            parentOverlay={parentOverlay}
+            mode={mode}
+            hasParent={hasParent}
+            isCode={isCode}
+          />
+        )}
       </div>
       {overlay !== null ? (
         <ReactToolsSection overlay={overlay} parentOverlay={parentOverlay} />
       ) : null}
     </>
+  );
+}
+
+// A decomposed Flex module: its predictor signatures (fields + natural-language
+// instructions) rendered apart from the surrounding code structure. GEPA rewrites
+// the whole source each step, but a change is often confined to a signature's
+// instructions — a prompt edit wearing a code blob's clothes. Splitting them lets
+// the reader diff the prose (Signature) separately from the structure (Code), so a
+// pure instructions change reads as one and isn't mistaken for a code rewrite.
+function FlexModuleView({
+  decomposition,
+  parentDecomposition,
+  mode,
+  hasParent,
+}: {
+  decomposition: FlexDecomposition;
+  parentDecomposition: FlexDecomposition | null;
+  mode: View;
+  hasParent: boolean;
+}) {
+  const showDiff = mode === "diff" && hasParent && parentDecomposition !== null;
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <SectionLabel
+          label={msg("trajectory.prompt.kind.signature")}
+          info={msg("trajectory.prompt.kind.signature.explain")}
+        />
+        <div className="space-y-2">
+          {decomposition.signatures.map((sig, idx) => (
+            <SignatureRow
+              key={`${sig.name}:${idx}`}
+              sig={sig}
+              parentSig={matchSignature(parentDecomposition, sig, idx)}
+              showDiff={showDiff}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <SectionLabel
+          label={msg("trajectory.prompt.kind.code")}
+          info={msg("trajectory.prompt.kind.code.explain")}
+        />
+        {showDiff && parentDecomposition !== null ? (
+          <PromptDiff
+            before={parentDecomposition.codeSkeleton}
+            after={decomposition.codeSkeleton}
+          />
+        ) : (
+          <PromptCodeView value={decomposition.codeSkeleton} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// One predictor's signature: its field spec (`review: str -> score: int`) on the
+// header line, its natural-language instructions below. In compare mode the
+// fields show an inline old→new when they changed and the instructions run
+// through the same line diff as any prose prompt.
+function SignatureRow({
+  sig,
+  parentSig,
+  showDiff,
+}: {
+  sig: FlexSignature;
+  parentSig: FlexSignature | null;
+  showDiff: boolean;
+}) {
+  const fieldsChanged = showDiff && parentSig !== null && parentSig.fields !== sig.fields;
+  return (
+    <div className="space-y-1.5 rounded-md border border-border/40 bg-background/60 p-2.5">
+      <div
+        className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-[10px]"
+        dir="ltr"
+      >
+        {sig.name.length > 0 ? (
+          <span className="text-foreground/70">{`self.${sig.name}`}</span>
+        ) : null}
+        {fieldsChanged && parentSig !== null ? (
+          <span className="inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+            <span className="line-through" style={{ color: "#6e2e16" }}>
+              {parentSig.fields}
+            </span>
+            <span style={{ color: "#3f4d1f" }}>{sig.fields}</span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground/80">{sig.fields}</span>
+        )}
+      </div>
+      {showDiff && parentSig !== null ? (
+        <PromptDiff before={parentSig.instructions} after={sig.instructions} />
+      ) : sig.instructions.length > 0 ? (
+        <div
+          className="whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/90"
+          dir="auto"
+          style={{ wordBreak: "break-word" }}
+        >
+          {sig.instructions}
+        </div>
+      ) : (
+        <div className="text-[11px] italic text-muted-foreground/60">
+          {msg("trajectory.prompt.signature.no_instructions")}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1623,6 +1824,7 @@ function PromptBody({
   parentOverlay,
   mode,
   hasParent,
+  isCode,
 }: {
   prompt: string;
   parentPrompt: string;
@@ -1630,10 +1832,12 @@ function PromptBody({
   parentOverlay: ReactOverlay | null;
   mode: View;
   hasParent: boolean;
+  isCode: boolean;
 }) {
   if (mode === "diff" && hasParent) {
     // React overlays keep their structured shape in compare mode; non-overlay
-    // prompts fall back to a flat line diff.
+    // prompts (including code) fall back to a flat line diff, which reads as a
+    // code diff just as well.
     if (overlay !== null && parentOverlay !== null) {
       return <ReactOverlayDiffView before={parentOverlay} after={overlay} />;
     }
@@ -1643,6 +1847,9 @@ function PromptBody({
   if (overlay !== null) {
     return <ReactOverlayView overlay={overlay} />;
   }
+  if (isCode) {
+    return <PromptCodeView value={prompt} />;
+  }
   return (
     <pre
       className="text-xs whitespace-pre-wrap leading-relaxed font-mono text-foreground/90"
@@ -1651,6 +1858,20 @@ function PromptBody({
     >
       {prompt}
     </pre>
+  );
+}
+
+// Plain-mode render of a code candidate: the same read-only CodeMirror viewer the
+// artifact tab uses, height-fit to the source (capped so a long module scrolls
+// inside the drawer rather than stretching it).
+function PromptCodeView({ value }: { value: string }) {
+  return (
+    <CodeEditor
+      value={value}
+      onChange={() => {}}
+      height={`${Math.min((value.split("\n").length + 1) * 19.6 + 8, 480)}px`}
+      readOnly
+    />
   );
 }
 

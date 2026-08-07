@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Gear, Copy, Trash, Plus, Thermometer, Coins, Eye, Brain, Info } from "@/shared/ui/icons";
+import { Gear, Copy, Trash, Plus, Thermometer, Hash, Eye, Brain, Info } from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
 import type { CatalogModel, ModelConfig } from "@/shared/types/api";
 import { msg } from "@/shared/lib/messages";
@@ -112,7 +112,7 @@ export function ModelChip({
             )}
             {config.max_tokens && (
               <span className="inline-flex items-center gap-0.5">
-                <Coins className="size-2.5" />
+                <Hash className="size-2.5" />
                 {config.max_tokens}
               </span>
             )}

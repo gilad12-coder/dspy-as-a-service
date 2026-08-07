@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import dynamic from "next/dynamic";
-import { Code, DownloadSimple, Sparkle, Wrench } from "@/shared/ui/icons";
+import { Code, Sparkle, Wrench } from "@/shared/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
@@ -17,7 +17,7 @@ import type {
 import { tip } from "@/shared/lib/tooltips";
 import { msg } from "@/shared/lib/messages";
 import { CopyButton } from "./ui-primitives";
-import { ExportMenu, exportModuleAsPython } from "./ExportMenu";
+import { ExportMenu } from "./ExportMenu";
 
 const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
   ssr: false,
@@ -139,22 +139,12 @@ export function ArtifactTab({
       {optimizedModuleSrc && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Code className="size-4" />
-                <HelpTip text={tip("flex.optimized_code")}>
-                  {msg("optimizations.flex.optimized_code")}
-                </HelpTip>
-              </CardTitle>
-              <button
-                type="button"
-                onClick={() => exportModuleAsPython(optimizedModuleSrc, job.optimization_id)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted/40 transition-colors cursor-pointer"
-              >
-                <DownloadSimple className="size-3.5" />
-                {msg("optimizations.flex.download_py")}
-              </button>
-            </div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Code className="size-4" />
+              <HelpTip text={tip("flex.optimized_code")}>
+                {msg("optimizations.flex.optimized_code")}
+              </HelpTip>
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <CodeEditor

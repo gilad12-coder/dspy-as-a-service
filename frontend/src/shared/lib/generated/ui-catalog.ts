@@ -2811,6 +2811,12 @@ export type MessageKey =
   | "trajectory.pareto.cell.prediction_label.explain"
   | "trajectory.pareto.cell.prediction_unavailable"
   | "trajectory.pareto.cell_detail_pending"
+  | "trajectory.prompt.kind.code"
+  | "trajectory.prompt.kind.code.explain"
+  | "trajectory.prompt.kind.instructions"
+  | "trajectory.prompt.kind.module"
+  | "trajectory.prompt.kind.signature"
+  | "trajectory.prompt.kind.signature.explain"
   | "trajectory.prompt.react.tool.added"
   | "trajectory.prompt.react.tool.changed"
   | "trajectory.prompt.react.tool.removed"
@@ -2820,6 +2826,7 @@ export type MessageKey =
   | "trajectory.prompt.react.tools.view_compare"
   | "trajectory.prompt.react.tools.view_plain"
   | "trajectory.prompt.react.tools_carousel_aria"
+  | "trajectory.prompt.signature.no_instructions"
   | "trajectory.scrubber.generation_value"
   | "trajectory.scrubber.label"
   | "trajectory.scrubber.live"
@@ -5742,6 +5749,12 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "trajectory.pareto.cell.prediction_label.explain": "התשובה שהמועמד הציע על הקלט הזה במהלך הריצה על דוגמאות האימות.",
   "trajectory.pareto.cell.prediction_unavailable": "התשובה לא נמצאה",
   "trajectory.pareto.cell_detail_pending": "תוכן הדוגמה עדיין לא נטען מהשרת",
+  "trajectory.prompt.kind.code": "קוד",
+  "trajectory.prompt.kind.code.explain": "מבנה הקוד של המודול, כשטקסט ה-Signature מוסתר, כך ששינוי הוראות בלבד לא מופיע כאן.",
+  "trajectory.prompt.kind.instructions": "הוראות",
+  "trajectory.prompt.kind.module": "מודול",
+  "trajectory.prompt.kind.signature": "Signature",
+  "trajectory.prompt.kind.signature.explain": "השדות וההוראות בשפה טבעית של ה-predictor — החלק ברמת הפרומפט של המודול ש-GEPA יכול לשכתב.",
   "trajectory.prompt.react.tool.added": "נוסף",
   "trajectory.prompt.react.tool.changed": "שונה",
   "trajectory.prompt.react.tool.removed": "הוסר",
@@ -5751,6 +5764,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "trajectory.prompt.react.tools.view_compare": "השוואה",
   "trajectory.prompt.react.tools.view_plain": "תיאור",
   "trajectory.prompt.react.tools_carousel_aria": "דפדוף בין תיאורי הכלים",
+  "trajectory.prompt.signature.no_instructions": "אין הוראות",
   "trajectory.scrubber.generation_value": "דור {gen}",
   "trajectory.scrubber.label": "סינון לפי דור",
   "trajectory.scrubber.live": "חי",
@@ -14188,6 +14202,12 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "trajectory.pareto.cell.prediction_label.explain": "The prediction the candidate made for this input during the run over the validation examples.",
   "trajectory.pareto.cell.prediction_unavailable": "Prediction not found",
   "trajectory.pareto.cell_detail_pending": "Example content has not loaded from the server yet",
+  "trajectory.prompt.kind.code": "Code",
+  "trajectory.prompt.kind.code.explain": "The module's code structure with the signature text elided, so an instructions-only change doesn't appear here.",
+  "trajectory.prompt.kind.instructions": "Instructions",
+  "trajectory.prompt.kind.module": "Module",
+  "trajectory.prompt.kind.signature": "Signature",
+  "trajectory.prompt.kind.signature.explain": "The predictor's fields and natural-language instructions — the prompt-level part of the module GEPA can rewrite.",
   "trajectory.prompt.react.tool.added": "Added",
   "trajectory.prompt.react.tool.changed": "Changed",
   "trajectory.prompt.react.tool.removed": "Removed",
@@ -14197,6 +14217,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "trajectory.prompt.react.tools.view_compare": "Compare",
   "trajectory.prompt.react.tools.view_plain": "Description",
   "trajectory.prompt.react.tools_carousel_aria": "Paging through tool descriptions",
+  "trajectory.prompt.signature.no_instructions": "No instructions",
   "trajectory.scrubber.generation_value": "Generation {gen}",
   "trajectory.scrubber.label": "Filter by generation",
   "trajectory.scrubber.live": "Live",
