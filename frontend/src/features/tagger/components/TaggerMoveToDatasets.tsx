@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import { ArrowLineRight, CircleNotch, Database } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
+import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { Input } from "@/shared/ui/primitives/input";
 import { Label } from "@/shared/ui/primitives/label";
 import {
@@ -107,10 +108,17 @@ export function TaggerMoveToDatasets({
             <p className="text-sm text-muted-foreground">{msg("tagger.move.subtitle")}</p>
           </div>
         </div>
-        <Button onClick={openDialog} className="shrink-0 gap-1.5 sm:self-center">
-          <ArrowLineRight className="size-4 rtl:-scale-x-100" />
-          {msg("tagger.move.cta")}
-        </Button>
+        <TooltipButton tooltip={msg("tagger.move.cta")}>
+          <Button
+            onClick={openDialog}
+            variant="ghost"
+            size="icon"
+            aria-label={msg("tagger.move.cta")}
+            className="shrink-0 self-end text-foreground focus-visible:border-[#c8a882] focus-visible:ring-[#c8a882]/45 sm:self-center"
+          >
+            <ArrowLineRight className="size-4 rtl:-scale-x-100" />
+          </Button>
+        </TooltipButton>
       </div>
 
       <Dialog open={open} onOpenChange={(v) => !moving && setOpen(v)}>
