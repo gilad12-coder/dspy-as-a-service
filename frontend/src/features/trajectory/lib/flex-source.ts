@@ -46,7 +46,12 @@ export interface FlexSignature {
 
 export interface FlexDecomposition {
   signatures: FlexSignature[];
-  /** The source with every signature's fields/instructions elided to `…`. */
+  /**
+   * The source with every predictor's instructions string elided to `…`. The
+   * field spec is left intact — it's genuine structure, so it belongs in the
+   * code view — and the instructions render separately as a prompt, so they
+   * aren't duplicated here.
+   */
   codeSkeleton: string;
 }
 
@@ -149,7 +154,7 @@ export function decomposeFlexSource(src: string): FlexDecomposition | null {
       .sort((a, b) => a.openIdx - b.openIdx);
 
   const signatures: FlexSignature[] = [];
-  const elide: StrSpan[] = [];
+  const elide: Array<{ start: number; end: number }> = [];
   const seen = new Set<number>();
 
   const ctorAlt = ["Signature", ...PREDICTOR_CTORS].join("|");
@@ -173,30 +178,47 @@ export function decomposeFlexSource(src: string): FlexDecomposition | null {
     if (seen.has(fields.openIdx)) continue;
     seen.add(fields.openIdx);
 
-    // Instructions are the *next positional* string after the fields — a `,`
-    // (optionally `instructions=`) gap. This rejects a later string buried in a
+    // Instructions are the *next positional* string after the fields, reached by
+    // a `,` gap — optionally `instructions=` and/or an opening `(` that wraps a
+    // multi-line group. Requiring that shape rejects a later string buried in a
     // keyword arg like `tools=["search"]`, which isn't the instructions.
-    let instructions = inside[1];
-    if (instructions !== undefined) {
-      const gap = src.slice(fields.closeEnd, instructions.openIdx);
-      if (!/^\s*,\s*(instructions\s*=\s*)?$/.test(gap)) instructions = undefined;
+    const chunks: StrSpan[] = [];
+    const first = inside[1];
+    if (first !== undefined) {
+      const gap = src.slice(fields.closeEnd, first.openIdx);
+      if (/^\s*,\s*(instructions\s*=\s*)?\(?\s*$/.test(gap)) {
+        chunks.push(first);
+        // Python implicit string concatenation: adjacent literals separated by
+        // only whitespace (`"a" "b"` == `"ab"`). GEPA emits long instructions
+        // this way, wrapped in parens across lines — fold them into one string.
+        for (let k = 2; k < inside.length; k += 1) {
+          const prev = inside[k - 1];
+          const next = inside[k];
+          if (prev === undefined || next === undefined) break;
+          if (!/^\s*$/.test(src.slice(prev.closeEnd, next.openIdx))) break;
+          chunks.push(next);
+        }
+      }
     }
 
     signatures.push({
       name: nearestAttrName(src, m.index),
       fields: fields.value,
-      instructions: instructions?.value ?? "",
+      instructions: chunks.map((s) => s.value).join(""),
     });
-    elide.push(fields);
-    if (instructions !== undefined) elide.push(instructions);
+    const firstChunk = chunks[0];
+    const lastChunk = chunks[chunks.length - 1];
+    if (firstChunk !== undefined && lastChunk !== undefined) {
+      elide.push({ start: firstChunk.contentStart, end: lastChunk.contentEnd });
+    }
   }
 
   if (signatures.length === 0) return null;
 
   // Elide right-to-left so each splice leaves earlier offsets untouched.
   let codeSkeleton = src;
-  for (const s of [...elide].sort((a, b) => b.contentStart - a.contentStart)) {
-    codeSkeleton = codeSkeleton.slice(0, s.contentStart) + ELLIPSIS + codeSkeleton.slice(s.contentEnd);
+  for (const s of [...elide].sort((a, b) => b.start - a.start)) {
+    codeSkeleton = codeSkeleton.slice(0, s.start) + ELLIPSIS + codeSkeleton.slice(s.end);
   }
   return { signatures, codeSkeleton };
 }
