@@ -85,7 +85,7 @@ from .data import (
     split_examples,
 )
 from .llm_error import enrich_error_message
-from .logged_scores import combined_test_metrics
+from .logged_scores import aggregate_logged_metrics
 from .optimizers import (
     compile_program,
     evaluate_on_test,
@@ -597,8 +597,8 @@ def _run_grid_pair(
             program_artifact=program_artifact,
             baseline_test_results=baseline_test_results,
             optimized_test_results=optimized_test_results,
-            baseline_logged_metrics=combined_test_metrics(baseline_test_results),
-            optimized_logged_metrics=combined_test_metrics(optimized_test_results),
+            baseline_logged_metrics=aggregate_logged_metrics(baseline_test_results),
+            optimized_logged_metrics=aggregate_logged_metrics(optimized_test_results),
         )
         with ctx.results_lock:
             ctx.completed += 1
@@ -1005,8 +1005,8 @@ class DspyService:
             lm_activity=lm_activity,
             baseline_test_results=baseline_test_results,
             optimized_test_results=optimized_test_results,
-            baseline_logged_metrics=combined_test_metrics(baseline_test_results),
-            optimized_logged_metrics=combined_test_metrics(optimized_test_results),
+            baseline_logged_metrics=aggregate_logged_metrics(baseline_test_results),
+            optimized_logged_metrics=aggregate_logged_metrics(optimized_test_results),
         )
 
         logger.info(
