@@ -2898,6 +2898,9 @@ export type MessageKey =
   | "workflow.inspector.close"
   | "workflow.inspector.delete"
   | "workflow.inspector.display_name"
+  | "workflow.inspector.flex_tools"
+  | "workflow.inspector.flex_tools_hint"
+  | "workflow.inspector.flex_tools_placeholder"
   | "workflow.inspector.input_fields"
   | "workflow.inspector.kind.input"
   | "workflow.inspector.kind.mcp"
@@ -5846,6 +5849,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "workflow.inspector.close": "סגירת הפאנל",
   "workflow.inspector.delete": "מחיקת הצומת",
   "workflow.inspector.display_name": "שם תצוגה",
+  "workflow.inspector.flex_tools": "כלים",
+  "workflow.inspector.flex_tools_hint": "שמות כלים מתוך מקור הכלים של ההרצה, מופרדים בפסיק. ריק — הצומת פועל בלי כלים.",
+  "workflow.inspector.flex_tools_placeholder": "search, fetch",
   "workflow.inspector.input_fields": "שדות קלט",
   "workflow.inspector.kind.input": "צומת קלט — שדות המקור של הגרף",
   "workflow.inspector.kind.mcp": "קריאה ישירה לכלי MCP",
@@ -14309,6 +14315,9 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "workflow.inspector.close": "Close panel",
   "workflow.inspector.delete": "Delete node",
   "workflow.inspector.display_name": "Display name",
+  "workflow.inspector.flex_tools": "Tools",
+  "workflow.inspector.flex_tools_hint": "Comma-separated tool names from the run's tool source. Empty means the node runs without tools.",
+  "workflow.inspector.flex_tools_placeholder": "search, fetch",
   "workflow.inspector.input_fields": "Input fields",
   "workflow.inspector.kind.input": "Input node — the graph's source fields",
   "workflow.inspector.kind.mcp": "Direct MCP tool call",

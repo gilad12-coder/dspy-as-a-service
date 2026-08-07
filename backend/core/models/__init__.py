@@ -85,6 +85,7 @@ from .workflow import (
     WorkflowSignatureNode,
     WorkflowSpec,
     WorkflowTransformNode,
+    workflow_tool_users,
     workflow_topological_order,
 )
 
@@ -168,5 +169,6 @@ __all__ = [
     "WorkflowSignatureNode",
     "WorkflowSpec",
     "WorkflowTransformNode",
+    "workflow_tool_users",
     "workflow_topological_order",
 ]

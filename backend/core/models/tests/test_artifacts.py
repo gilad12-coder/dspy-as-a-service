@@ -127,6 +127,22 @@ def test_program_artifact_backfill_ignores_non_flex_state() -> None:
     art = ProgramArtifact(program_state_json={"self": {"demos": []}})
 
     assert art.optimized_module_src is None
+    assert art.optimized_component_srcs == {}
+
+
+def test_program_artifact_backfills_component_srcs_from_nested_flex_state() -> None:
+    """A workflow's flex nodes surface keyed by their component path."""
+    src = "import dspy\n\n\nclass M(dspy.Module):\n    pass\n"
+    art = ProgramArtifact(
+        program_state_json={
+            "n_draft": {"demos": [], "signature": {}},
+            "n_refine": {"module_src": src, "lm": None},
+        }
+    )
+
+    assert art.optimized_component_srcs == {"n_refine": src}
+    # The program is a workflow, not a Flex, so the scalar stays empty.
+    assert art.optimized_module_src is None
 
 
 def test_program_artifact_explicit_module_src_survives_validation() -> None:

@@ -93,9 +93,14 @@ export function nodePorts(node: WorkflowNodeSpec): NodePorts {
   }
 }
 
-/** True when the node consumes the run-level tool roster (react/mcp). */
+// A react node always draws on the roster; a flex node is a complete module
+// without tools, so it only counts once it names the ones it wants.
+/** True when the node consumes the run-level tool roster (react/mcp/flex+tools). */
 export function isToolUserNode(node: WorkflowNodeSpec): boolean {
-  return node.kind === "mcp" || (node.kind === "signature" && node.module_name === "react");
+  if (node.kind === "mcp") return true;
+  return (
+    node.kind === "signature" && (node.module_name === "react" || node.tool_filter != null)
+  );
 }
 
 /** True when any node in the spec needs a tool_source at submit. */

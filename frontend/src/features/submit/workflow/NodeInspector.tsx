@@ -32,6 +32,7 @@ const MODULE_CHOICES = [
   ["predict", "Predict"],
   ["cot", "CoT"],
   ["react", "ReAct"],
+  ["flex", "Flex"],
 ] as const;
 
 interface NodeInspectorProps {
@@ -130,7 +131,7 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
                       onChange({
                         ...spec,
                         module_name: val,
-                        ...(val !== "react" ? { tool_filter: null } : {}),
+                        ...(val === "react" || val === "flex" ? {} : { tool_filter: null }),
                       })
                     }
                     className={cn(
@@ -145,6 +146,13 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
                 ))}
               </div>
             </div>
+            {spec.module_name === "flex" && (
+              <FlexToolsEditor
+                key={spec.id}
+                value={spec.tool_filter ?? null}
+                onChange={(tool_filter) => onChange({ ...spec, tool_filter })}
+              />
+            )}
             <div className="space-y-1.5">
               <Label className="text-[0.6875rem] uppercase tracking-wide text-muted-foreground">
                 {msg("workflow.inspector.signature_code")}
@@ -222,6 +230,44 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// A Flex runs fine with no tools, so an empty box means exactly that — unlike
+// ReAct, where an empty filter would mean "the whole roster". The draft string
+// is local so a half-typed "search, " survives its own re-render.
+function FlexToolsEditor({
+  value,
+  onChange,
+}: {
+  value: string[] | null;
+  onChange: (next: string[] | null) => void;
+}) {
+  const [draft, setDraft] = React.useState(() => (value ?? []).join(", "));
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-[0.6875rem] uppercase tracking-wide text-muted-foreground">
+        {msg("workflow.inspector.flex_tools")}
+      </Label>
+      <Input
+        dir="ltr"
+        className="font-mono text-xs"
+        value={draft}
+        placeholder={msg("workflow.inspector.flex_tools_placeholder")}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const names = e.target.value
+            .split(",")
+            .map((name) => name.trim())
+            .filter(Boolean);
+          onChange(names.length > 0 ? names : null);
+        }}
+      />
+      <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
+        {msg("workflow.inspector.flex_tools_hint")}
+      </p>
     </div>
   );
 }

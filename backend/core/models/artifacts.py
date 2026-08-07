@@ -98,23 +98,41 @@ class ProgramArtifact(BaseModel):
             "whose optimization lands in the prompt rather than the code."
         ),
     )
+    optimized_component_srcs: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "GEPA-rewritten module source per Flex submodule, keyed by its component "
+            "path (a workflow's flex node is 'n_<node_id>'). Empty unless the program "
+            "nests Flex modules rather than being one itself."
+        ),
+    )
 
     @model_validator(mode="after")
     def _backfill_module_src(self) -> ProgramArtifact:
-        """Derive ``optimized_module_src`` from persisted Flex state when absent.
+        """Derive the Flex sources from persisted program state when absent.
 
-        Flex saves ``module_src`` at the top level of ``program.save(json)``, so
-        artifacts persisted before this field existed still carry the code inside
-        ``program_state_json``. Back-filling on validation surfaces it for old and
-        new Flex artifacts alike without a data migration; non-Flex state has no
-        ``module_src`` key, so this is a no-op there.
+        A top-level Flex saves ``module_src`` at the root of ``program.save(json)``;
+        nested ones (a workflow's flex nodes) save it under their component path, so
+        state is scanned one level deep too. Back-filling on validation surfaces the
+        code for old and new artifacts alike without a data migration; non-Flex state
+        has no ``module_src`` key, so this is a no-op there.
 
         Returns:
-            The validated artifact, with ``optimized_module_src`` populated when a
-            Flex source is recoverable.
+            The validated artifact, with the Flex sources populated wherever they
+            are recoverable.
         """
-        if self.optimized_module_src is None and isinstance(self.program_state_json, dict):
+        if not isinstance(self.program_state_json, dict):
+            return self
+        if self.optimized_module_src is None:
             src = self.program_state_json.get("module_src")
             if isinstance(src, str) and src.strip():
                 self.optimized_module_src = src
+        if not self.optimized_component_srcs:
+            self.optimized_component_srcs = {
+                path: state["module_src"]
+                for path, state in self.program_state_json.items()
+                if isinstance(state, dict)
+                and isinstance(state.get("module_src"), str)
+                and state["module_src"].strip()
+            }
         return self

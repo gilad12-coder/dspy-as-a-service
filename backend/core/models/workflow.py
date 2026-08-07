@@ -31,6 +31,8 @@ _IDENTIFIER_PATTERN = r"^[A-Za-z][A-Za-z0-9_]*$"
 MAX_WORKFLOW_NODES = 50
 MAX_WORKFLOW_EDGES = 200
 
+_TOOL_CAPABLE_MODULES = ("react", "flex")
+
 
 class WorkflowNodePosition(BaseModel):
     """Canvas coordinates persisted so the builder re-opens exactly as left."""
@@ -114,28 +116,39 @@ class WorkflowSignatureNode(_WorkflowNodeBase):
     """An LLM step: a dspy.Signature run by a per-node module choice."""
 
     kind: Literal["signature"]
-    module_name: Literal["predict", "cot", "react"] = "predict"
+    # ``flex`` is a code-optimizable node: GEPA rewrites its module source
+    # instead of only its instructions, and it needs dspy 3.3+ at build time.
+    module_name: Literal["predict", "cot", "react", "flex"] = "predict"
     signature_code: str = Field(min_length=1)
     tool_filter: list[str] | None = Field(
         default=None,
         description=(
-            "React nodes only: restrict the node's tool roster to these tool names "
-            "out of the run-level tool_source. Null means the full roster."
+            "React and flex nodes only: which tools out of the run-level tool_source "
+            "the node may call. Null means the full roster on a react node, and no "
+            "tools at all on a flex node — a Flex is a complete module without them, "
+            "so it opts in by naming the tools it wants."
         ),
     )
 
     @model_validator(mode="after")
     def _check_tool_filter(self) -> WorkflowSignatureNode:
-        """Reject a tool filter on a non-react node.
+        """Reject a tool filter on a module that cannot take tools.
 
         Returns:
             The validated node.
 
         Raises:
-            ValueError: When ``tool_filter`` is set but ``module_name`` is not react.
+            ValueError: When ``tool_filter`` is set on a predict/cot node, or is
+                empty on a flex node.
         """
-        if self.tool_filter is not None and self.module_name != "react":
-            raise ValueError(f"Node '{self.id}': tool_filter is only valid when module_name is 'react'.")
+        if self.tool_filter is None:
+            return self
+        if self.module_name not in _TOOL_CAPABLE_MODULES:
+            raise ValueError(f"Node '{self.id}': tool_filter is only valid when module_name is 'react' or 'flex'.")
+        if self.module_name == "flex" and not self.tool_filter:
+            # An empty list would demand a run-level tool_source and then hand the
+            # node nothing; null already says "no tools".
+            raise ValueError(f"Node '{self.id}': a flex tool_filter must name at least one tool, or be null.")
         return self
 
 
@@ -370,6 +383,26 @@ def _check_declared_target_port(node: WorkflowNode, port: str) -> None:
     declared = _declared_input_ports(node)
     if declared is not None and port not in declared:
         raise ValueError(f"Node '{node.id}' has no input port '{port}'.")
+
+
+def workflow_tool_users(spec: WorkflowSpec) -> list[str]:
+    """Return ids of nodes that draw on the run-level tool roster.
+
+    ReAct is defined by tool use, so a react node always qualifies; a flex node
+    is a complete module without tools and qualifies only once it names some.
+
+    Args:
+        spec: The workflow spec to scan.
+
+    Returns:
+        Ids of the tool-using nodes, in spec order.
+    """
+    return [
+        node.id
+        for node in spec.nodes
+        if node.kind == "mcp"
+        or (node.kind == "signature" and (node.module_name == "react" or node.tool_filter is not None))
+    ]
 
 
 def workflow_topological_order(spec: WorkflowSpec) -> list[str]:

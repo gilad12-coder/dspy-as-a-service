@@ -34,6 +34,7 @@ export function ArtifactTab({
   optimizedPrompt,
   reactOverlay,
   optimizedModuleSrc,
+  optimizedComponentSrcs,
   isShare,
 }: {
   job: OptimizationStatusResponse;
@@ -42,6 +43,8 @@ export function ArtifactTab({
   reactOverlay?: ReactOverlay | null;
   /** GEPA-rewritten Flex module source; shown as a read-only code viewer. */
   optimizedModuleSrc?: string | null;
+  /** Per-submodule Flex sources (a workflow's flex nodes), one viewer each. */
+  optimizedComponentSrcs?: Record<string, string>;
   isShare?: boolean;
 }) {
   // The runnable export reconstructs from state JSON + signature_code, which
@@ -58,6 +61,7 @@ export function ArtifactTab({
     hasPickle ||
     !!optimizedPrompt ||
     !!optimizedModuleSrc ||
+    Object.keys(optimizedComponentSrcs ?? {}).length > 0 ||
     (job.logs?.length ?? 0) > 0;
 
   return (
@@ -77,6 +81,7 @@ export function ArtifactTab({
             job={job}
             optimizedPrompt={optimizedPrompt}
             optimizedModuleSrc={optimizedModuleSrc}
+            optimizedComponentSrcs={optimizedComponentSrcs}
             pickleBase64={pickleBase64}
             isShare={isShare}
           />
@@ -136,26 +141,11 @@ export function ArtifactTab({
         </Card>
       )}
 
-      {optimizedModuleSrc && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Code className="size-4" />
-              <HelpTip text={tip("flex.optimized_code")}>
-                {msg("optimizations.flex.optimized_code")}
-              </HelpTip>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CodeEditor
-              value={optimizedModuleSrc}
-              onChange={() => {}}
-              height={`${Math.min((optimizedModuleSrc.split("\n").length + 1) * 19.6 + 8, 600)}px`}
-              readOnly
-            />
-          </CardContent>
-        </Card>
-      )}
+      {optimizedModuleSrc && <OptimizedCodeCard source={optimizedModuleSrc} />}
+
+      {Object.entries(optimizedComponentSrcs ?? {}).map(([path, source]) => (
+        <OptimizedCodeCard key={path} source={source} path={path} />
+      ))}
 
       {reactOverlay && Object.keys(reactOverlay.tool_descriptions).length > 0 && (
         <Card>
@@ -252,5 +242,35 @@ function ReactToolSlide({
         </div>
       )}
     </div>
+  );
+}
+
+// One read-only viewer over GEPA-rewritten code. `path` names the Flex
+// submodule it came from and is omitted when the program is itself a Flex.
+function OptimizedCodeCard({ source, path }: { source: string; path?: string }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Code className="size-4" />
+          <HelpTip text={tip("flex.optimized_code")}>
+            {msg("optimizations.flex.optimized_code")}
+          </HelpTip>
+          {path && (
+            <span className="font-mono text-xs font-normal text-muted-foreground" dir="ltr">
+              {path}
+            </span>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <CodeEditor
+          value={source}
+          onChange={() => {}}
+          height={`${Math.min((source.split("\n").length + 1) * 19.6 + 8, 600)}px`}
+          readOnly
+        />
+      </CardContent>
+    </Card>
   );
 }

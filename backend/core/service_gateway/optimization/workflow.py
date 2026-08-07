@@ -2,9 +2,10 @@
 
 ``build_workflow_program`` turns a structurally-valid ``WorkflowSpec`` into a
 ``WorkflowProgram`` — a ``dspy.Module`` whose signature nodes are named
-sub-modules (so GEPA discovers and jointly optimizes every node's
-instructions), whose transform nodes execute user Python, and whose mcp
-nodes call tools from the run-level roster. The same builder reconstructs
+sub-modules (so GEPA discovers and jointly optimizes every node, tuning
+instructions for predict/cot/react nodes and rewriting code for flex
+ones), whose transform nodes execute user Python, and whose mcp nodes
+call tools from the run-level roster. The same builder reconstructs
 the module shell at serve time before ``load_state`` overlays the optimized
 instructions, so construction must stay deterministic for a given spec.
 
@@ -30,9 +31,9 @@ import dspy
 
 from ...config import settings as app_settings
 from ...exceptions import ServiceError
-from ...models import WorkflowSpec, workflow_topological_order
+from ...models import WorkflowSpec, workflow_tool_users, workflow_topological_order
 from ...models.workflow import WorkflowNode
-from ...registry.resolvers import resolve_module_factory
+from ...registry.resolvers import ResolverError, resolve_module_factory
 from ..react_compat import REACT_CLASS
 from ..safe_exec import validate_signature_code, validate_transform_code
 from .data import extract_signature_fields, load_signature_from_code, load_transform_from_code
@@ -119,9 +120,11 @@ class WorkflowProgram(dspy.Module):
 
     Signature nodes are plain attributes (``n_<node_id>``) holding their
     DSPy modules, which is exactly what GEPA's predictor discovery walks —
-    every node's instructions are optimized jointly against the single
-    end-to-end metric. Transforms and tools are held in dicts so they stay
-    invisible to predictor discovery.
+    every node is optimized jointly against the single end-to-end metric.
+    A flex node is a ``dspy.Flex``, which GEPA picks up by type and whose
+    rewritten code becomes its component instead of an instruction string;
+    every other node contributes its predictors' instructions. Transforms
+    and tools are held in dicts so they stay invisible to that discovery.
     """
 
     def __init__(
@@ -246,22 +249,6 @@ class WorkflowProgram(dspy.Module):
         return dict(inputs)
 
 
-def workflow_tool_users(spec: WorkflowSpec) -> list[str]:
-    """Return ids of nodes that need the run-level tool roster.
-
-    Args:
-        spec: The workflow spec to scan.
-
-    Returns:
-        Ids of mcp nodes and react signature nodes, in spec order.
-    """
-    return [
-        node.id
-        for node in spec.nodes
-        if node.kind == "mcp" or (node.kind == "signature" and node.module_name == "react")
-    ]
-
-
 def build_workflow_program(
     spec: WorkflowSpec,
     *,
@@ -293,7 +280,7 @@ def build_workflow_program(
     schema_hashes: dict[str, str] = {}
     if workflow_tool_users(spec):
         if tool_source is None:
-            raise ServiceError("workflow contains react/mcp nodes; tool_source is required.")
+            raise ServiceError("workflow contains tool-using nodes; tool_source is required.")
         roster, schema_hashes = resolve_react_tools(tool_source, None, app_settings, dataset=dataset)
     roster_by_name = {tool.name: tool for tool in roster}
 
@@ -311,8 +298,21 @@ def build_workflow_program(
                     signature_cls, tools=_filter_roster(roster, node.tool_filter, node.id)
                 )
             else:
-                factory, _auto = resolve_module_factory(node.module_name)
-                signature_modules[node.id] = factory(signature=signature_cls)
+                try:
+                    factory, _auto = resolve_module_factory(node.module_name)
+                except ResolverError as exc:
+                    # Reachable for flex on a dspy build without ``dspy.Flex``;
+                    # name the node so the canvas can anchor the error.
+                    raise ServiceError(
+                        f"Workflow node '{node.id}' requests module '{node.module_name}', "
+                        f"which this DSPy build cannot provide: {exc}"
+                    ) from exc
+                module_kwargs: dict[str, Any] = {"signature": signature_cls}
+                if node.tool_filter is not None:
+                    # Flex is the only other tool-capable module; giving it tools
+                    # swaps its baseline from dspy.Predict to dspy.RLM.
+                    module_kwargs["tools"] = _filter_roster(roster, node.tool_filter, node.id)
+                signature_modules[node.id] = factory(**module_kwargs)
         elif node.kind == "transform":
             transforms[node.id] = load_transform_from_code(node.transform_code)
         elif node.kind == "mcp":
@@ -335,12 +335,12 @@ def build_workflow_program(
 
 
 def _filter_roster(roster: list[Any], tool_filter: list[str] | None, node_id: str) -> list[Any]:
-    """Narrow the run-level roster to a react node's tool filter.
+    """Narrow the run-level roster to a node's tool filter.
 
     Args:
         roster: The resolved run-level tool roster.
         tool_filter: Tool names the node is limited to, or ``None`` for all.
-        node_id: The react node's id, for error messages.
+        node_id: The node's id, for error messages.
 
     Returns:
         The filtered roster, preserving roster order.

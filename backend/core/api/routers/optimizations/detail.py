@@ -36,6 +36,7 @@ from ....constants import (
     PAYLOAD_OVERVIEW_MODULE_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_SIGNATURE_CODE,
+    PAYLOAD_OVERVIEW_WORKFLOW,
 )
 from ....models import (
     ColumnMapping,
@@ -775,7 +776,9 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         # carries no signature_code and isn't portably rebuildable, so it's 409.
         if artifact is None or artifact.program_state_json is None:
             raise DomainError("optimization.no_artifact_generic", status=409)
-        if not overview.get(PAYLOAD_OVERVIEW_SIGNATURE_CODE):
+        # A workflow run carries no top-level signature: its program definition
+        # is the persisted graph, and each node's signature travels inside it.
+        if not (overview.get(PAYLOAD_OVERVIEW_SIGNATURE_CODE) or overview.get(PAYLOAD_OVERVIEW_WORKFLOW)):
             raise DomainError("optimization.no_signature_code_for_reload", status=409)
 
         zip_bytes = build_program_export_zip(

@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .common import ColumnMapping, ModelConfig, OptimizationStatus, OptimizationType, SplitFractions
 from .serve import WorkflowNodeTrace
-from .workflow import WORKFLOW_MODULE_NAME, WorkflowSpec
+from .workflow import WORKFLOW_MODULE_NAME, WorkflowSpec, workflow_tool_users
 
 
 # Where a react run sources its tool roster: a live MCP endpoint or a snapshot
@@ -234,7 +234,7 @@ class RunRequest(_OptimizationRequestBase):
     def _require_tool_source_for_workflow_tools(self) -> RunRequest:
         """Require a run-level tool roster when the graph contains tool-using nodes.
 
-        Workflow react and mcp nodes resolve their tools from the run's
+        Workflow react, flex and mcp nodes resolve their tools from the run's
         single ``tool_source`` (optionally narrowed per node), mirroring how
         a top-level react run sources its roster.
 
@@ -242,15 +242,11 @@ class RunRequest(_OptimizationRequestBase):
             The validated request instance.
 
         Raises:
-            ValueError: When the workflow has react/mcp nodes but no
+            ValueError: When the workflow has tool-using nodes but no
                 ``tool_source`` is supplied.
         """
         if self.workflow is not None and self.tool_source is None:
-            tool_users = [
-                node.id
-                for node in self.workflow.nodes
-                if node.kind == "mcp" or (node.kind == "signature" and node.module_name == "react")
-            ]
+            tool_users = workflow_tool_users(self.workflow)
             if tool_users:
                 raise ValueError(f"tool_source is required — these workflow nodes use tools: {tool_users}.")
         return self
@@ -322,14 +318,10 @@ class WorkflowDryRunRequest(BaseModel):
             The validated request instance.
 
         Raises:
-            ValueError: When react/mcp nodes exist but no ``tool_source``.
+            ValueError: When tool-using nodes exist but no ``tool_source``.
         """
         if self.tool_source is None:
-            tool_users = [
-                node.id
-                for node in self.workflow.nodes
-                if node.kind == "mcp" or (node.kind == "signature" and node.module_name == "react")
-            ]
+            tool_users = workflow_tool_users(self.workflow)
             if tool_users:
                 raise ValueError(f"tool_source is required — these workflow nodes use tools: {tool_users}.")
         return self

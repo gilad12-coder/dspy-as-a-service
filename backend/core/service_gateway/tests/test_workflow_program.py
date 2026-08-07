@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import dspy
 import pytest
+from dspy.teleprompt.gepa.gepa_flex_utils import enumerate_flex_submodules
+from pydantic import ValidationError
 
 from core.exceptions import ServiceError
-from core.models import WorkflowSpec
+from core.models import WorkflowSpec, workflow_tool_users
+from core.registry.resolvers import ResolverError
+from core.service_gateway.optimization import workflow as workflow_module
 from core.service_gateway.optimization.workflow import (
     WORKFLOW_NODE_ATTR_PREFIX,
     WorkflowNodeExecutionError,
@@ -241,6 +245,142 @@ def test_build_workflow_program_registers_predictors():
     assert any(name.startswith(f"{WORKFLOW_NODE_ATTR_PREFIX}summarize") for name in predictor_names)
     assert any(name.startswith(f"{WORKFLOW_NODE_ATTR_PREFIX}polish") for name in predictor_names)
     assert len(predictor_names) == 2
+
+
+def _flex_node_spec(tool_filter: list[str] | None = None) -> WorkflowSpec:
+    """Build a two-node graph whose second node is a flex (code-optimized) step.
+
+    Args:
+        tool_filter: Tools the flex node opts into, or ``None`` for no tools.
+
+    Returns:
+        The workflow spec.
+    """
+    return _spec(
+        [
+            {"id": "inp", "kind": "input", "fields": [{"name": "text"}]},
+            {"id": "draft", "kind": "signature", "signature_code": _SIG},
+            {
+                "id": "refine",
+                "kind": "signature",
+                "signature_code": _SIG,
+                "module_name": "flex",
+                "tool_filter": tool_filter,
+            },
+            {"id": "out", "kind": "output", "fields": [{"name": "summary"}]},
+        ],
+        [
+            {"source": "inp", "source_port": "text", "target": "draft", "target_port": "text"},
+            {"source": "draft", "source_port": "summary", "target": "refine", "target_port": "text"},
+            {"source": "refine", "source_port": "summary", "target": "out", "target_port": "summary"},
+        ],
+    )
+
+
+def test_flex_node_is_discovered_as_a_code_component():
+    """A flex node becomes a dspy.Flex GEPA optimizes as code, not as instructions."""
+    program, _ = build_workflow_program(_flex_node_spec())
+    flex_path = f"{WORKFLOW_NODE_ATTR_PREFIX}refine"
+    assert isinstance(getattr(program, flex_path), dspy.Flex)
+    assert set(enumerate_flex_submodules(program)) == {flex_path}
+    # A Flex's update unit is its module_src, so it contributes no instruction
+    # predictor: the draft node's is the only prompt GEPA tunes as text.
+    predictor_names = [name for name, _pred in program.named_predictors()]
+    assert predictor_names == [f"{WORKFLOW_NODE_ATTR_PREFIX}draft"]
+
+
+def test_flex_node_state_roundtrip_carries_rewritten_source():
+    """The GEPA-rewritten source saves and reloads under the flex node's path."""
+    spec = _flex_node_spec()
+    flex_path = f"{WORKFLOW_NODE_ATTR_PREFIX}refine"
+    rewritten = (
+        "class SummarizeModule(dspy.Module):\n"
+        "    def __init__(self):\n"
+        "        super().__init__()\n"
+        "        self.predict = dspy.Predict('text -> summary')\n"
+        "\n"
+        "    def forward(self, **inputs):\n"
+        "        return dspy.Prediction(summary=self.predict(**inputs).summary)\n"
+    )
+    first, _ = build_workflow_program(spec)
+    state = first.dump_state()
+    state[flex_path]["module_src"] = rewritten
+
+    second, _ = build_workflow_program(spec)
+    second.load_state(state)
+    assert getattr(second, flex_path).module_src == rewritten
+    assert second.dump_state()[flex_path]["module_src"] == rewritten
+
+
+def _stub_roster(monkeypatch, *names: str) -> None:
+    """Replace run-level tool resolution with a fixed roster of no-op tools.
+
+    Args:
+        monkeypatch: Fixture used to patch the resolver.
+        names: Tool names the fake tool_source exposes, in roster order.
+    """
+    roster = [dspy.Tool(lambda **kwargs: "", name=name, desc=f"{name} tool") for name in names]
+    monkeypatch.setattr(workflow_module, "resolve_react_tools", lambda *args, **kwargs: (roster, {}))
+
+
+def test_flex_node_without_tools_is_not_a_tool_user():
+    """A flex node naming no tools builds without a run-level tool_source."""
+    spec = _flex_node_spec()
+    assert workflow_tool_users(spec) == []
+    program, _ = build_workflow_program(spec)
+    assert "dspy.Predict(" in getattr(program, f"{WORKFLOW_NODE_ATTR_PREFIX}refine").module_src
+
+
+def test_flex_node_tool_filter_opts_into_the_roster(monkeypatch):
+    """Naming tools hands them to the Flex, whose baseline becomes a dspy.RLM.
+
+    Args:
+        monkeypatch: Fixture used to stub run-level tool resolution.
+    """
+    _stub_roster(monkeypatch, "search", "fetch")
+    spec = _flex_node_spec(tool_filter=["search"])
+    assert workflow_tool_users(spec) == ["refine"]
+
+    program, _ = build_workflow_program(spec, tool_source={"kind": "live_mcp"})
+    baseline = getattr(program, f"{WORKFLOW_NODE_ATTR_PREFIX}refine").module_src
+    assert "dspy.RLM(" in baseline
+    assert "tools=[search]" in baseline
+
+
+def test_flex_node_tool_filter_rejects_unknown_tools(monkeypatch):
+    """A flex node naming a tool the roster lacks fails the build.
+
+    Args:
+        monkeypatch: Fixture used to stub run-level tool resolution.
+    """
+    _stub_roster(monkeypatch, "search")
+    with pytest.raises(ServiceError, match="references unknown tools"):
+        build_workflow_program(_flex_node_spec(tool_filter=["nope"]), tool_source={"kind": "live_mcp"})
+
+
+def test_flex_node_rejects_empty_tool_filter():
+    """An empty flex tool_filter is refused: null already says "no tools"."""
+    with pytest.raises(ValidationError, match="must name at least one tool"):
+        _flex_node_spec(tool_filter=[])
+
+
+def test_unresolvable_node_module_names_the_node(monkeypatch):
+    """A DSPy build without dspy.Flex fails as a node-anchored ServiceError.
+
+    Args:
+        monkeypatch: Fixture used to make the module resolver fail.
+    """
+
+    real_resolver = workflow_module.resolve_module_factory
+
+    def _flex_is_missing(name: str):
+        if name == "flex":
+            raise ResolverError("Module 'dspy' has no attribute 'Flex'.")
+        return real_resolver(name)
+
+    monkeypatch.setattr(workflow_module, "resolve_module_factory", _flex_is_missing)
+    with pytest.raises(ServiceError, match="Workflow node 'refine' requests module 'flex'"):
+        build_workflow_program(_flex_node_spec())
 
 
 def test_state_roundtrip_reconstructs_identically():

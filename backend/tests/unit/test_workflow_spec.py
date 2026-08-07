@@ -167,7 +167,7 @@ def test_anchor_direction_enforced():
         _spec(edges=edges)
 
 
-def test_tool_filter_only_valid_on_react_nodes():
+def test_tool_filter_only_valid_on_tool_capable_nodes():
     """A predict node carrying tool_filter is rejected."""
     nodes = _linear_nodes()
     nodes[1]["tool_filter"] = ["search"]
@@ -244,6 +244,19 @@ def test_run_request_requires_tool_source_for_tool_nodes():
         RunRequest.model_validate(payload)
     payload["tool_source"] = {"kind": "live_mcp", "mcp_url": "http://localhost:9"}
     assert RunRequest.model_validate(payload).tool_source is not None
+
+
+def test_run_request_tool_source_follows_the_flex_node_opt_in():
+    """A flex node needs a tool_source only once it names the tools it wants."""
+    nodes = _linear_nodes()
+    nodes[1]["module_name"] = "flex"
+    payload = _run_request_payload(workflow={"nodes": nodes, "edges": _linear_edges()})
+    assert RunRequest.model_validate(payload).tool_source is None
+
+    nodes[1]["tool_filter"] = ["search"]
+    payload = _run_request_payload(workflow={"nodes": nodes, "edges": _linear_edges()})
+    with pytest.raises(ValidationError, match="tool_source is required"):
+        RunRequest.model_validate(payload)
 
 
 def test_grid_search_rejects_workflow_module():

@@ -7,8 +7,10 @@ splits, and grid-search pair operations.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import pickle
+import zipfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -479,6 +481,59 @@ def test_artifact_returns_404_for_grid_search_job(opt_client: TestClient, store:
     resp = opt_client.get("/optimizations/gs/artifact")
 
     assert resp.status_code == 404
+
+
+_EXPORT_WORKFLOW_SPEC = {
+    "nodes": [
+        {"id": "start", "kind": "input", "fields": [{"name": "question"}]},
+        {
+            "id": "draft",
+            "kind": "signature",
+            "signature_code": "import dspy\n\n\nclass QA(dspy.Signature):\n"
+            "    question: str = dspy.InputField()\n    answer: str = dspy.OutputField()\n",
+        },
+        {"id": "end", "kind": "output", "fields": [{"name": "answer"}]},
+    ],
+    "edges": [
+        {"source": "start", "source_port": "question", "target": "draft", "target_port": "question"},
+        {"source": "draft", "source_port": "answer", "target": "end", "target_port": "answer"},
+    ],
+}
+
+
+def test_program_export_serves_a_workflow_run(opt_client: TestClient, store: _ExtendedFakeJobStore) -> None:
+    """A workflow run carries no top-level signature_code and is still exportable."""
+    result_data = _make_run_response_dict(
+        module_name="workflow",
+        program_artifact=ProgramArtifact(program_state_json={"n_draft": {"demos": []}}).model_dump(),
+    )
+    store.seed_job(
+        "wf",
+        status="success",
+        payload_overview={"module_name": "workflow", "workflow": _EXPORT_WORKFLOW_SPEC},
+        result=result_data,
+    )
+
+    resp = opt_client.get("/optimizations/wf/program-export")
+
+    assert resp.status_code == 200
+    names = set(zipfile.ZipFile(io.BytesIO(resp.content)).namelist())
+    assert "workflow.json" in names
+    assert "signature.py" not in names
+
+
+def test_program_export_409s_without_any_program_definition(
+    opt_client: TestClient, store: _ExtendedFakeJobStore
+) -> None:
+    """A non-workflow run with no signature_code still has nothing to rebuild from."""
+    result_data = _make_run_response_dict(
+        program_artifact=ProgramArtifact(program_state_json={"demos": []}).model_dump()
+    )
+    store.seed_job("nosig", status="success", payload_overview={"module_name": "predict"}, result=result_data)
+
+    resp = opt_client.get("/optimizations/nosig/program-export")
+
+    assert resp.status_code == 409
 
 
 def test_grid_result_returns_404_for_unknown_job(opt_client: TestClient) -> None:

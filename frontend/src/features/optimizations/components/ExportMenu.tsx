@@ -39,10 +39,15 @@ export function exportPromptAsJson(prompt: OptimizedPredictor, optimizationId: s
 }
 
 /** Save the GEPA-rewritten Flex module source as a standalone .py download. */
-export function exportModuleAsPython(moduleSrc: string, optimizationId: string) {
+export function exportModuleAsPython(
+  moduleSrc: string,
+  optimizationId: string,
+  componentPath?: string,
+) {
+  const suffix = componentPath ? `_${componentPath}` : "";
   downloadFile(
     moduleSrc.endsWith("\n") ? moduleSrc : `${moduleSrc}\n`,
-    `optimized_module_${optimizationId.slice(0, 8)}.py`,
+    `optimized_module_${optimizationId.slice(0, 8)}${suffix}.py`,
     "text/x-python",
   );
 }
@@ -77,6 +82,7 @@ export function ExportMenu({
   job,
   optimizedPrompt,
   optimizedModuleSrc,
+  optimizedComponentSrcs,
   pickleBase64,
   isShare,
 }: {
@@ -84,6 +90,8 @@ export function ExportMenu({
   optimizedPrompt: OptimizedPredictor | null;
   /** GEPA-rewritten Flex module source, offered as a standalone .py download. */
   optimizedModuleSrc?: string | null;
+  /** Per-submodule Flex sources (a workflow's flex nodes), one .py download each. */
+  optimizedComponentSrcs?: Record<string, string>;
   /** Pair-scoped pickle override; falls back to the run / grid-best artifact. */
   pickleBase64?: string | null;
   /** The /program-export endpoint is authed, so the public share view hides the ZIP item. */
@@ -109,6 +117,11 @@ export function ExportMenu({
   // The runnable export reconstructs from state JSON + signature_code, which the
   // /program-export endpoint serves for single-run (non-grid) jobs only.
   const hasProgram = !isShare && !!job.result?.program_artifact?.program_state_json;
+  // A top-level Flex is one nameless download; a workflow's flex nodes are one each.
+  const moduleDownloads: Array<[string, string]> = optimizedModuleSrc
+    ? [["", optimizedModuleSrc]]
+    : Object.entries(optimizedComponentSrcs ?? {});
+  const hasModuleSrc = moduleDownloads.length > 0;
   const itemCls =
     "w-full flex items-center gap-2.5 px-3.5 py-2 text-[0.75rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
   const iconCls = "size-4 shrink-0 text-muted-foreground/60";
@@ -208,27 +221,35 @@ export function ExportMenu({
                 </button>
               </>
             )}
-            {optimizedModuleSrc && (
+            {hasModuleSrc && (
               <>
                 {(hasProgram || hasPkl || optimizedPrompt) && divider}
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setOpen(false);
-                    exportModuleAsPython(optimizedModuleSrc, job.optimization_id);
-                  }}
-                  className={itemCls}
-                >
-                  <FileCode className={iconCls} />
-                  <span className="flex-1">{msg("optimizations.flex.optimized_code")}</span>
-                  <span className={extCls}>{msg("optimizations.flex.py_ext")}</span>
-                </button>
+                {moduleDownloads.map(([path, source]) => (
+                  <button
+                    key={path}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setOpen(false);
+                      exportModuleAsPython(source, job.optimization_id, path || undefined);
+                    }}
+                    className={itemCls}
+                  >
+                    <FileCode className={iconCls} />
+                    <span className="flex-1">{msg("optimizations.flex.optimized_code")}</span>
+                    {path && (
+                      <span className="font-mono text-[0.6875rem] text-muted-foreground" dir="ltr">
+                        {path}
+                      </span>
+                    )}
+                    <span className={extCls}>{msg("optimizations.flex.py_ext")}</span>
+                  </button>
+                ))}
               </>
             )}
             {job.logs && job.logs.length > 0 && (
               <>
-                {(hasProgram || hasPkl || optimizedPrompt || optimizedModuleSrc) && divider}
+                {(hasProgram || hasPkl || optimizedPrompt || hasModuleSrc) && divider}
                 <button
                   type="button"
                   role="menuitem"

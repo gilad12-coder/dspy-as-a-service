@@ -52,7 +52,7 @@ const KIND_ICONS = {
   mcp: Wrench,
 } as const;
 
-const MODULE_LABELS = { predict: "Predict", cot: "CoT", react: "ReAct" } as const;
+const MODULE_LABELS = { predict: "Predict", cot: "CoT", react: "ReAct", flex: "Flex" } as const;
 
 function kindLabel(spec: WorkflowNodeSpec): string {
   switch (spec.kind) {

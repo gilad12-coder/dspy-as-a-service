@@ -95,8 +95,14 @@ export interface WorkflowOutputNodeSpec extends WorkflowNodeSpecBase {
 
 export interface WorkflowSignatureNodeSpec extends WorkflowNodeSpecBase {
   kind: "signature";
-  module_name: "predict" | "cot" | "react";
+  module_name: "predict" | "cot" | "react" | "flex";
   signature_code: string;
+  /**
+   * React and flex nodes only: which tools out of the run-level tool_source the
+   * node may call. Null means the full roster on a react node, and no tools at
+   * all on a flex node — a Flex is a complete module without them, so it opts in
+   * by naming the tools it wants.
+   */
   tool_filter?: string[] | null;
 }
 
@@ -365,6 +371,12 @@ export interface ProgramArtifact {
    * optimization lands in the prompt rather than the code.
    */
   optimized_module_src?: string | null;
+  /**
+   * GEPA-rewritten source per Flex submodule, keyed by its component path (a
+   * workflow's flex node is `n_<node_id>`). Empty unless the program nests Flex
+   * modules rather than being one itself.
+   */
+  optimized_component_srcs?: Record<string, string>;
 }
 
 export interface EvalExampleResult {

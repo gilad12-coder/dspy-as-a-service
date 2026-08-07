@@ -838,6 +838,11 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
     : (job?.result?.program_artifact?.optimized_module_src ??
       job?.grid_result?.best_pair?.program_artifact?.optimized_module_src ??
       null);
+  // A workflow is not itself a Flex, so its flex nodes arrive keyed by node.
+  const optimizedComponentSrcs = isPairContext
+    ? activePair.program_artifact?.optimized_component_srcs
+    : (job?.result?.program_artifact?.optimized_component_srcs ??
+      job?.grid_result?.best_pair?.program_artifact?.optimized_component_srcs);
 
   // Artifact tab appears once the run has produced something durable — an
   // optimized prompt, tuned react tools, or downloadable program files.
@@ -1461,6 +1466,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                   optimizedPrompt={optimizedPrompt}
                   reactOverlay={reactOverlay}
                   optimizedModuleSrc={optimizedModuleSrc}
+                  optimizedComponentSrcs={optimizedComponentSrcs}
                   isShare={isShare}
                 />
               </TabsContent>
