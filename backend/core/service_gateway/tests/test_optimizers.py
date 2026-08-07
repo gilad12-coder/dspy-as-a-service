@@ -623,6 +623,93 @@ def test_instantiate_optimizer_gepa_submission_sampling_strategy_wins(
     assert captured["gepa_kwargs"]["sampling_strategy"] is supplied
 
 
+def test_instantiate_optimizer_gepa_submission_pxn_overrides_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Submission pxn kwargs beat the server defaults and never reach the factory."""
+    monkeypatch.setattr(settings, "gepa_pxn_parents", 1)
+    monkeypatch.setattr(settings, "gepa_pxn_proposals", 1)
+    captured: dict[str, Any] = {}
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={"pxn_parents": 4, "pxn_proposals": 2},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+    )
+
+    strategy = captured["gepa_kwargs"]["sampling_strategy"]
+    assert isinstance(strategy, PxNSampling)
+    assert (strategy.p, strategy.n) == (4, 2)
+    assert "pxn_parents" not in captured
+    assert "pxn_proposals" not in captured
+
+
+def test_instantiate_optimizer_gepa_submission_pxn_ones_disable_sampling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit 1x1 opts out of PxN even when the server defaults are higher."""
+    monkeypatch.setattr(settings, "gepa_pxn_parents", 4)
+    monkeypatch.setattr(settings, "gepa_pxn_proposals", 4)
+    captured: dict[str, Any] = {}
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={"pxn_parents": 1, "pxn_proposals": 1},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+    )
+
+    assert "sampling_strategy" not in captured.get("gepa_kwargs", {})
+    assert "pxn_parents" not in captured
+
+
+@pytest.mark.parametrize("bad", [0, 17, -1, True, 2.5, "4", None])
+def test_instantiate_optimizer_gepa_rejects_out_of_range_pxn(bad: Any) -> None:
+    """Non-integer or out-of-bounds pxn values fail loudly, except None (a no-op)."""
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            return None
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    def _run() -> None:
+        instantiate_optimizer(
+            factory=_GepaFactory,
+            optimizer_name="gepa",
+            optimizer_kwargs={"pxn_parents": bad},
+            metric=_dummy_metric,
+            reflection_model=None,
+            reflection_lm=object(),
+        )
+
+    if bad is None:
+        _run()
+        return
+    with pytest.raises(ServiceError, match="pxn_parents"):
+        _run()
+
+
 class _FakeEvalResult:
     """Stand-in for dspy.Evaluate's structured result with score + results."""
 

@@ -51,6 +51,9 @@ export interface WizardDraftData {
   maxFullEvals: string;
   useMerge: boolean;
   targetScore: string;
+  // Optional: drafts saved before PxN sampling existed carry neither field.
+  pxnParents?: string;
+  pxnProposals?: string;
   shuffle: boolean;
   maxCostCredits: number | null;
 }

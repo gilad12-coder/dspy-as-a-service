@@ -8,10 +8,13 @@ export interface OptimizerKwargsInput {
   maxFullEvals: string;
   reflectionMinibatchSize: string;
   useMerge: boolean;
+  pxnParents?: string;
+  pxnProposals?: string;
 }
 
 export function buildOptimizerKwargs(input: OptimizerKwargsInput): Record<string, unknown> {
-  const { autoLevel, maxFullEvals, reflectionMinibatchSize, useMerge } = input;
+  const { autoLevel, maxFullEvals, reflectionMinibatchSize, useMerge, pxnParents, pxnProposals } =
+    input;
   const kw: Record<string, unknown> = {};
   // GEPA requires exactly one of: auto, max_full_evals, max_metric_calls
   if (autoLevel) {
@@ -21,5 +24,15 @@ export function buildOptimizerKwargs(input: OptimizerKwargsInput): Record<string
   }
   if (reflectionMinibatchSize) kw.reflection_minibatch_size = parseInt(reflectionMinibatchSize, 10);
   kw.use_merge = useMerge;
+  // PxN batched sampling: the server turns these two integers into
+  // PxNSampling(p, n) — the strategy object itself can't cross JSON. Send them
+  // only when they deviate from 1x1, so an untouched form keeps inheriting the
+  // server-wide GEPA_PXN_* defaults instead of pinning them to 1.
+  const p = pxnParents ? parseInt(pxnParents, 10) : 1;
+  const n = pxnProposals ? parseInt(pxnProposals, 10) : 1;
+  if (Number.isFinite(p) && Number.isFinite(n) && (p > 1 || n > 1)) {
+    kw.pxn_parents = p;
+    kw.pxn_proposals = n;
+  }
   return Object.keys(kw).length > 0 ? kw : {};
 }

@@ -85,6 +85,9 @@ const COLUMN_ROLES = new Set<string>(["input", "output", "ignore"]);
 const DEFAULT_REFLECTION_MINIBATCH = "3";
 const DEFAULT_MAX_FULL_EVALS = "6";
 const DEFAULT_TARGET_SCORE = "85";
+// 1x1 is GEPA's classic single-mutation sampling. Left at the default the
+// wizard sends nothing, so the server-wide GEPA_PXN_* settings still apply.
+const DEFAULT_PXN = "1";
 
 /** Type guard for a valid dataset column role (signature I/O). */
 function isColumnRole(value: unknown): value is ColumnRole {
@@ -342,6 +345,8 @@ export function useSubmitWizard() {
   const [maxFullEvals, setMaxFullEvals] = useState<string>(DEFAULT_MAX_FULL_EVALS);
   const [useMerge, setUseMerge] = useState(true);
   const [targetScore, setTargetScore] = useState<string>(DEFAULT_TARGET_SCORE);
+  const [pxnParents, setPxnParents] = useState<string>(DEFAULT_PXN);
+  const [pxnProposals, setPxnProposals] = useState<string>(DEFAULT_PXN);
 
   // Disclosure state for the advanced wizard sections (Basics: optimization
   // type, Params: optimizer settings). Held here rather than in the step
@@ -365,11 +370,21 @@ export function useSubmitWizard() {
       reflectionMinibatchSize !== DEFAULT_REFLECTION_MINIBATCH ||
       maxFullEvals !== DEFAULT_MAX_FULL_EVALS ||
       !useMerge ||
-      targetScore !== DEFAULT_TARGET_SCORE
+      targetScore !== DEFAULT_TARGET_SCORE ||
+      pxnParents !== DEFAULT_PXN ||
+      pxnProposals !== DEFAULT_PXN
     ) {
       setOptimizerSettingsOpen(true);
     }
-  }, [advancedMode, reflectionMinibatchSize, maxFullEvals, useMerge, targetScore]);
+  }, [
+    advancedMode,
+    reflectionMinibatchSize,
+    maxFullEvals,
+    useMerge,
+    targetScore,
+    pxnParents,
+    pxnProposals,
+  ]);
   const [shuffle, setShuffle] = useState(true);
   // User-set Max Cost Ceiling, in credits — null until the user opts into a cap.
   // The run is hard-stopped server-side once spend exceeds it (Phase 2 [FG-1]),
@@ -478,6 +493,8 @@ export function useSubmitWizard() {
       maxFullEvals,
       useMerge,
       targetScore,
+      pxnParents,
+      pxnProposals,
       shuffle,
       maxCostCredits,
     };
@@ -551,6 +568,8 @@ export function useSubmitWizard() {
     setMaxFullEvals(d.maxFullEvals);
     setUseMerge(d.useMerge);
     setTargetScore(d.targetScore ?? "");
+    setPxnParents(d.pxnParents ?? DEFAULT_PXN);
+    setPxnProposals(d.pxnProposals ?? DEFAULT_PXN);
     setShuffle(d.shuffle);
     setMaxCostCredits(d.maxCostCredits);
     if (!advancedMode && d.jobType === "grid_search") {
@@ -1029,6 +1048,8 @@ export function useSubmitWizard() {
         ? reflectionMinibatchSize
         : DEFAULT_REFLECTION_MINIBATCH,
       useMerge: advancedMode ? useMerge : true,
+      pxnParents: advancedMode ? pxnParents : DEFAULT_PXN,
+      pxnProposals: advancedMode ? pxnProposals : DEFAULT_PXN,
     });
     const shared = wizardCtx.state.optimizer_kwargs ?? {};
     const kwEntries = Object.entries(kw);
@@ -1038,7 +1059,16 @@ export function useSubmitWizard() {
     if (!same) {
       wizardCtx.setField("optimizer_kwargs", kw, "user");
     }
-  }, [advancedMode, autoLevel, maxFullEvals, reflectionMinibatchSize, useMerge, wizardCtx]);
+  }, [
+    advancedMode,
+    autoLevel,
+    maxFullEvals,
+    reflectionMinibatchSize,
+    useMerge,
+    pxnParents,
+    pxnProposals,
+    wizardCtx,
+  ]);
 
   // Chat-driven dataset staging: when the user attaches a CSV/JSON/XLSX
   // file in the agent panel and confirms the column roles, the panel
@@ -1897,6 +1927,7 @@ export function useSubmitWizard() {
     setSubmitting(true);
     setSubmitPhase("sending");
     try {
+      const pxnEligible = advancedMode && optimizerName.toLowerCase() === "gepa";
       const optKw = buildOptimizerKwargs({
         autoLevel,
         maxFullEvals: advancedMode ? maxFullEvals : DEFAULT_MAX_FULL_EVALS,
@@ -1904,6 +1935,8 @@ export function useSubmitWizard() {
           ? reflectionMinibatchSize
           : DEFAULT_REFLECTION_MINIBATCH,
         useMerge: advancedMode ? useMerge : true,
+        pxnParents: pxnEligible ? pxnParents : DEFAULT_PXN,
+        pxnProposals: pxnEligible ? pxnProposals : DEFAULT_PXN,
       });
       const parsedTargetScore =
         advancedMode && optimizerName.toLowerCase() === "gepa"
@@ -2320,6 +2353,10 @@ export function useSubmitWizard() {
     setUseMerge,
     targetScore,
     setTargetScore,
+    pxnParents,
+    setPxnParents,
+    pxnProposals,
+    setPxnProposals,
     maxCostCredits,
     setMaxCostCredits,
     costBracket,

@@ -2466,6 +2466,9 @@ export type MessageKey =
   | "submit.module.picker_title"
   | "submit.nav.run_cap"
   | "submit.nav.validating"
+  | "submit.pxn.batch_hint"
+  | "submit.pxn.parents"
+  | "submit.pxn.proposals"
   | "submit.react.auth_label"
   | "submit.react.mcp_checking"
   | "submit.react.mcp_connected"
@@ -2745,6 +2748,8 @@ export type MessageKey =
   | "tooltip.submit.depth"
   | "tooltip.submit.eval_rounds"
   | "tooltip.submit.merge"
+  | "tooltip.submit.pxn_parents"
+  | "tooltip.submit.pxn_proposals"
   | "tooltip.submit.reflection_minibatch"
   | "tooltip.submit.target_score"
   | "tooltip.tagger.binary_question"
@@ -5409,6 +5414,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.module.picker_title": "בחירת {term.module}",
   "submit.nav.run_cap": "תקרה: {credits} קרדיטים",
   "submit.nav.validating": "מאמת…",
+  "submit.pxn.batch_hint": "{total} מועמדים נבדקים בכל סבב",
+  "submit.pxn.parents": "מועמדים לשיפור (p)",
+  "submit.pxn.proposals": "הצעות לכל מועמד (n)",
   "submit.react.auth_label": "כותרת אימות (אופציונלי)",
   "submit.react.mcp_checking": "בודק חיבור…",
   "submit.react.mcp_connected": "מחובר — {p1} כלים זמינים",
@@ -5688,6 +5696,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tooltip.submit.depth": "כמה רחב החיפוש של GEPA: קל רץ מהר עם פחות ניסיונות; מעמיק בודק יותר אפשרויות ולוקח יותר זמן",
   "tooltip.submit.eval_rounds": "כמה פעמים להריץ הערכה מלאה כדי לבדוק מועמדים לפרומפט",
   "tooltip.submit.merge": "כשפעיל, GEPA יכול לבצע merge ולשלב רעיונות מכמה מועמדים טובים לפרומפט אחד",
+  "tooltip.submit.pxn_parents": "כמה מועמדים שונים לשפר בכל סבב. ערך גבוה יותר בודק כיוונים מגוונים יותר, בעלות גבוהה יותר",
+  "tooltip.submit.pxn_proposals": "כמה הצעות לייצר מכל מועמד. סך הכול נבדקים p×n מועמדים בכל סבב, במקביל",
   "tooltip.submit.reflection_minibatch": "כמה דוגמאות ה{term.model} בודק בכל סבב משוב כדי למצוא דפוסי שגיאה",
   "tooltip.submit.target_score": "הפסקת החיפוש כשהאימות מגיע לאחוז הזה; השאר/השאירי ריק כדי להשתמש בכל תקציב החיפוש",
   "tooltip.tagger.binary_question": "השאלה שתוצג מעל כפתורי כן/לא. כדאי לנסח שאלה שאפשר לענות עליה בבירור",
@@ -13867,6 +13877,9 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.module.picker_title": "Choose a module",
   "submit.nav.run_cap": "Cap: {credits} credits",
   "submit.nav.validating": "Validating…",
+  "submit.pxn.batch_hint": "{total} candidates evaluated per round",
+  "submit.pxn.parents": "Candidates to improve (p)",
+  "submit.pxn.proposals": "Proposals per candidate (n)",
   "submit.react.auth_label": "Auth header (optional)",
   "submit.react.mcp_checking": "Checking connection…",
   "submit.react.mcp_connected": "Connected — {p1} tools available",
@@ -14146,6 +14159,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tooltip.submit.depth": "How wide GEPA's search is: light runs fast with fewer attempts; deeper checks more options and takes more time",
   "tooltip.submit.eval_rounds": "How many times to run a full evaluation to check prompt candidates",
   "tooltip.submit.merge": "When enabled, GEPA can merge and combine ideas from several good candidates into one prompt",
+  "tooltip.submit.pxn_parents": "How many different candidates to improve each round. Higher explores more directions in parallel, at higher cost",
+  "tooltip.submit.pxn_proposals": "How many rewrites to draw from each candidate. p×n candidates are evaluated per round, batched together",
   "tooltip.submit.reflection_minibatch": "How many examples the model checks in each feedback round to find error patterns",
   "tooltip.submit.target_score": "Stop the search once validation reaches this percentage; leave it empty to use the full search budget",
   "tooltip.tagger.binary_question": "The question shown above the yes/no buttons. It helps to phrase a question that can be answered clearly",

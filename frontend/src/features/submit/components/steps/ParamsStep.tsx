@@ -17,7 +17,7 @@ import { HelpTip } from "@/shared/ui/help-tip";
 import { cn } from "@/shared/lib/utils";
 import { tip } from "@/shared/lib/tooltips";
 import { TERMS } from "@/shared/lib/terms";
-import { msg } from "@/shared/lib/messages";
+import { formatMsg, msg } from "@/shared/lib/messages";
 import { useUserPrefs } from "@/features/settings";
 
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
@@ -44,10 +44,17 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
     optimizerName,
     targetScore,
     setTargetScore,
+    pxnParents,
+    setPxnParents,
+    pxnProposals,
+    setPxnProposals,
     optimizerSettingsOpen,
     setOptimizerSettingsOpen,
   } = w;
   const targetScoreValue = Number.parseFloat(targetScore);
+  // p*n candidates per reflective round; only worth spelling out once batching
+  // is actually on (1x1 is GEPA's classic one-candidate default).
+  const pxnBatch = (parseInt(pxnParents, 10) || 1) * (parseInt(pxnProposals, 10) || 1);
 
   return (
     <Card
@@ -276,6 +283,45 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                       </Label>
                       <Switch checked={useMerge} onCheckedChange={setUseMerge} />
                     </div>
+                    {optimizerName.toLowerCase() === "gepa" && (
+                      <>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pxn-parents" className="text-xs">
+                            <HelpTip text={tip("submit.pxn_parents")}>
+                              {msg("submit.pxn.parents")}
+                            </HelpTip>
+                          </Label>
+                          <NumberInput
+                            id="pxn-parents"
+                            min={1}
+                            max={16}
+                            step={1}
+                            value={pxnParents ? parseInt(pxnParents, 10) : ""}
+                            onChange={(v) => setPxnParents(String(v))}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pxn-proposals" className="text-xs">
+                            <HelpTip text={tip("submit.pxn_proposals")}>
+                              {msg("submit.pxn.proposals")}
+                            </HelpTip>
+                          </Label>
+                          <NumberInput
+                            id="pxn-proposals"
+                            min={1}
+                            max={16}
+                            step={1}
+                            value={pxnProposals ? parseInt(pxnProposals, 10) : ""}
+                            onChange={(v) => setPxnProposals(String(v))}
+                          />
+                        </div>
+                        {pxnBatch > 1 && (
+                          <p className="col-span-2 -mt-1 text-xs text-muted-foreground">
+                            {formatMsg("submit.pxn.batch_hint", { total: pxnBatch })}
+                          </p>
+                        )}
+                      </>
+                    )}
                     {optimizerName.toLowerCase() === "gepa" && (
                       <div className="col-span-2 space-y-2">
                         <Label htmlFor="target-score" className="cursor-pointer text-sm">

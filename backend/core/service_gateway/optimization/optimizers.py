@@ -35,6 +35,11 @@ logger = logging.getLogger(__name__)
 
 PREFLIGHT_SAMPLE_SIZE = 5
 
+# Upper bound for a submission's PxN dimensions, mirroring the `le=16` on the
+# gepa_pxn_* settings: p*n candidates are evaluated per reflective iteration, so
+# the ceiling keeps one job from saturating the shared LM concurrency gate.
+PXN_MAX = 16
+
 
 class TargetScoreStopper:
     """Stop GEPA when the best validation score reaches a percentage target."""
@@ -446,6 +451,38 @@ def _gepa_kwargs_copy(kwargs: dict[str, Any]) -> dict[str, Any]:
     return dict(existing)
 
 
+def _pxn_override(kwargs: dict[str, Any], key: str, default: int) -> int:
+    """Pop a submission's PxN sampling dimension, falling back to the server default.
+
+    ``PxNSampling`` cannot cross the JSON boundary, so a submission expresses it
+    as ``pxn_parents``/``pxn_proposals`` integers. Neither is a GEPA factory
+    parameter, so the key is removed whatever its value — leaving it in ``kwargs``
+    would reach ``dspy.GEPA(**kwargs)`` as an unexpected argument.
+
+    Args:
+        kwargs: The optimizer factory kwargs being assembled; mutated in place.
+        key: The kwarg name to consume.
+        default: The server-wide setting used when the submission omits the key.
+
+    Returns:
+        The effective dimension, bounded to 1-16.
+
+    Raises:
+        ServiceError: When the supplied value is not an integer in 1-16.
+    """
+    if key not in kwargs:
+        return default
+    raw = kwargs.pop(key)
+    if raw is None:
+        return default
+    # bool is an int subclass; True would silently read as 1.
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise ServiceError(f"GEPA's {key} must be an integer between 1 and {PXN_MAX}.")
+    if not 1 <= raw <= PXN_MAX:
+        raise ServiceError(f"GEPA's {key} must be between 1 and {PXN_MAX}.")
+    return raw
+
+
 def instantiate_optimizer(
     factory: Callable[..., Any],
     optimizer_name: str,
@@ -471,9 +508,12 @@ def instantiate_optimizer(
       when ``target_score`` is supplied. The target is expressed as a 0–100
       percentage at the API boundary and normalized to GEPA's 0–1 metric scale.
     - GEPA receives a ``PxNSampling`` proposal strategy through ``gepa_kwargs``
-      when ``settings.gepa_pxn_parents`` or ``settings.gepa_pxn_proposals``
-      exceeds 1 (both default to 1, reproducing GEPA's single-mutation
-      default). A submission-supplied ``sampling_strategy`` takes precedence.
+      when the effective parent/proposal counts exceed 1 (both default to 1,
+      reproducing GEPA's single-mutation default). A submission sets them with
+      the ``pxn_parents``/``pxn_proposals`` integer kwargs — consumed here, not
+      forwarded to the factory — which override ``settings.gepa_pxn_parents``
+      and ``settings.gepa_pxn_proposals``. A submission-supplied
+      ``sampling_strategy`` takes precedence over both.
 
     Args:
         factory: The optimizer factory callable to invoke.
@@ -501,7 +541,8 @@ def instantiate_optimizer(
         An instantiated optimizer ready for ``compile``.
 
     Raises:
-        ServiceError: When GEPA is requested without a reflection model.
+        ServiceError: When GEPA is requested without a reflection model, or
+            when ``pxn_parents``/``pxn_proposals`` is not an integer in 1-16.
     """
 
     optimizer_key = optimizer_name.lower()
@@ -555,14 +596,15 @@ def instantiate_optimizer(
     # default. p=n=1 reproduces GEPA's built-in SingleMutationSampling, so only
     # inject a strategy when either exceeds 1. A submission-supplied
     # sampling_strategy in gepa_kwargs always wins.
-    if optimizer_key == OPTIMIZER_NAME_GEPA and (
-        settings.gepa_pxn_parents > 1 or settings.gepa_pxn_proposals > 1
-    ):
+    # PxNSampling is a Python object, so submissions express the strategy as two
+    # plain integers instead; they are popped here because GEPA's factory has no
+    # such parameters, and fall back to the server-wide defaults when absent.
+    pxn_parents = _pxn_override(kwargs, "pxn_parents", settings.gepa_pxn_parents)
+    pxn_proposals = _pxn_override(kwargs, "pxn_proposals", settings.gepa_pxn_proposals)
+    if optimizer_key == OPTIMIZER_NAME_GEPA and (pxn_parents > 1 or pxn_proposals > 1):
         gepa_kwargs = _gepa_kwargs_copy(kwargs)
         if "sampling_strategy" not in gepa_kwargs:
-            gepa_kwargs["sampling_strategy"] = PxNSampling(
-                settings.gepa_pxn_parents, settings.gepa_pxn_proposals
-            )
+            gepa_kwargs["sampling_strategy"] = PxNSampling(pxn_parents, pxn_proposals)
             kwargs["gepa_kwargs"] = gepa_kwargs
     needs_reflection = optimizer_key in reflection_required_optimizers
     if OPTIMIZER_REFLECTION_LM_KEY not in kwargs:
