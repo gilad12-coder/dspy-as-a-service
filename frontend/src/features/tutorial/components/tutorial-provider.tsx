@@ -13,7 +13,6 @@ interface TutorialState {
   activeTrack: TutorialTrack | null;
   currentStepIndex: number;
   isVisible: boolean;
-  isMenuOpen: boolean;
   isAutoPlaying: boolean;
   completedTracks: Set<TutorialTrack>;
   /** Direction of the last navigation. Used by the auto-skip path so a
@@ -29,8 +28,6 @@ type TutorialAction =
   | { type: "GO_TO_STEP"; index: number }
   | { type: "EXIT_TUTORIAL" }
   | { type: "COMPLETE_TRACK" }
-  | { type: "OPEN_MENU" }
-  | { type: "CLOSE_MENU" }
   | { type: "RESET_ALL" }
   | { type: "TOGGLE_AUTO_PLAY" }
   | { type: "SET_AUTO_PLAY"; value: boolean }
@@ -44,7 +41,6 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
         activeTrack: action.track,
         currentStepIndex: 0,
         isVisible: true,
-        isMenuOpen: false,
         lastDirection: "forward",
       };
     case "NEXT_STEP": {
@@ -80,7 +76,7 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
       };
     }
     case "EXIT_TUTORIAL":
-      return { ...state, isVisible: false, isMenuOpen: false };
+      return { ...state, isVisible: false };
     case "COMPLETE_TRACK":
       return state.activeTrack
         ? {
@@ -89,10 +85,6 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
             completedTracks: new Set([...state.completedTracks, state.activeTrack]),
           }
         : state;
-    case "OPEN_MENU":
-      return { ...state, isMenuOpen: true, isVisible: false };
-    case "CLOSE_MENU":
-      return { ...state, isMenuOpen: false };
     case "TOGGLE_AUTO_PLAY":
       return { ...state, isAutoPlaying: !state.isAutoPlaying };
     case "SET_AUTO_PLAY":
@@ -102,7 +94,6 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
         activeTrack: null,
         currentStepIndex: 0,
         isVisible: false,
-        isMenuOpen: false,
         isAutoPlaying: false,
         completedTracks: new Set(),
         lastDirection: "forward",
@@ -122,7 +113,6 @@ const initialState: TutorialState = {
   activeTrack: null,
   currentStepIndex: 0,
   isVisible: false,
-  isMenuOpen: false,
   isAutoPlaying: false,
   completedTracks: new Set(),
   lastDirection: "forward",
@@ -139,8 +129,6 @@ interface TutorialContextValue {
   goToStep: (index: number) => void;
   exitTutorial: () => void;
   completeTrack: () => void;
-  openMenu: () => void;
-  closeMenu: () => void;
   resetAll: () => void;
   toggleAutoPlay: () => void;
 }
@@ -217,15 +205,6 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   const goToStep = useCallback((index: number) => dispatch({ type: "GO_TO_STEP", index }), []);
   const exitTutorial = useCallback(() => dispatch({ type: "EXIT_TUTORIAL" }), []);
   const completeTrack = useCallback(() => dispatch({ type: "COMPLETE_TRACK" }), []);
-  // Always a chooser, never a resumed preference: which track someone wants
-  // depends on how much time they have right now, so the question gets asked
-  // every time the help button is pressed. The load is kicked off here so the
-  // menu can show each track's length without a spinner.
-  const openMenu = useCallback(() => {
-    void loadStepsModule();
-    dispatch({ type: "OPEN_MENU" });
-  }, []);
-  const closeMenu = useCallback(() => dispatch({ type: "CLOSE_MENU" }), []);
   const resetAll = useCallback(() => {
     resetLoadedTutorialOneShotState();
     dispatch({ type: "RESET_ALL" });
@@ -257,8 +236,6 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
         goToStep,
         exitTutorial,
         completeTrack,
-        openMenu,
-        closeMenu,
         resetAll,
         toggleAutoPlay,
       }}

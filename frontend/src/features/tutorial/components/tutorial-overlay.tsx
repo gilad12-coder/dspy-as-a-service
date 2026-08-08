@@ -23,6 +23,8 @@ export function TutorialOverlay() {
     left: number;
     placement: "top" | "bottom" | "left" | "right";
   } | null>(null);
+  const [highlightPadding, setHighlightPadding] = React.useState(8);
+  const [highlightRadius, setHighlightRadius] = React.useState(12);
   const [showSplash, setShowSplash] = React.useState(false);
   const [stepReady, setStepReady] = React.useState(false);
   const stepPathRef = React.useRef<string | null>(null);
@@ -57,13 +59,23 @@ export function TutorialOverlay() {
   const lastRectRef = React.useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const autoPlayTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Fixed symmetric gap so the popover sits the same distance from the
+  // highlighted card regardless of direction — top/bottom use vertical gap,
+  // left/right use horizontal gap. Per-step offsetY is reserved only for
+  // fine-tuning (e.g. GEPA 2% nudge) and is otherwise 0.
+  const FIXED_GAP = 20;
   const calculatePosition = React.useCallback(
-    (rect: DOMRect, placement: "top" | "bottom" | "left" | "right" | "auto") => {
+    (
+      rect: DOMRect,
+      placement: "top" | "bottom" | "left" | "right" | "auto",
+      opts?: { offsetY?: number; popoverHeight?: number },
+    ) => {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       const pw = Math.min(360, vw * 0.9 - 16);
-      const ph = 260;
-      const gap = 16;
+      const ph = opts?.popoverHeight ?? 280;
+      const gap = FIXED_GAP;
+      const offsetY = opts?.offsetY ?? 0;
 
       let p = placement;
       if (p === "auto") {
@@ -80,19 +92,19 @@ export function TutorialOverlay() {
         left = 0;
       switch (p) {
         case "top":
-          top = rect.top - ph - gap;
+          top = rect.top - ph - gap + offsetY;
           left = rect.left + rect.width / 2 - pw / 2;
           break;
         case "bottom":
-          top = rect.bottom + gap;
+          top = rect.bottom + gap + offsetY;
           left = rect.left + rect.width / 2 - pw / 2;
           break;
         case "left":
-          top = rect.top + rect.height / 2 - ph / 2;
+          top = rect.top + rect.height / 2 - ph / 2 + offsetY;
           left = rect.left - pw - gap;
           break;
         case "right":
-          top = rect.top + rect.height / 2 - ph / 2;
+          top = rect.top + rect.height / 2 - ph / 2 + offsetY;
           left = rect.right + gap;
           break;
       }
@@ -117,6 +129,13 @@ export function TutorialOverlay() {
 
     targetRef.current = el;
     const rect = el.getBoundingClientRect();
+    // Fixed symmetric highlight for most cards — tight per-step overrides
+    // are respected where a target is small (e.g. sidebar nav) to avoid
+    // overlapping adjacent tabs.
+    const FIXED_HIGHLIGHT_PADDING = 12;
+    const FIXED_HIGHLIGHT_RADIUS = 12;
+    setHighlightPadding(currentStep.highlightPadding ?? FIXED_HIGHLIGHT_PADDING);
+    setHighlightRadius(currentStep.highlightRadius ?? FIXED_HIGHLIGHT_RADIUS);
 
     // Skip state updates when rect hasn't meaningfully changed — avoids
     // re-renders when an observer fires but nothing moved.
@@ -133,7 +152,12 @@ export function TutorialOverlay() {
     lastRectRef.current = { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
 
     setTargetRect(rect);
-    setPopoverPosition(calculatePosition(rect, currentStep.placement || "auto"));
+    setPopoverPosition(
+      calculatePosition(rect, currentStep.placement || "auto", {
+        offsetY: currentStep.offsetY,
+        popoverHeight: currentStep.popoverHeight,
+      }),
+    );
   }, [currentStep, calculatePosition]);
 
   React.useEffect(() => {
@@ -167,9 +191,14 @@ export function TutorialOverlay() {
       // beforeShow waitForElement so steps that navigate to a slow-mounting
       // route (e.g. /compare with demo data, /optimizations/[id]) aren't
       // auto-skipped while their anchor is still hydrating.
+      const isVisible = (e: Element | null) => {
+        if (!e) return false;
+        const r = (e as HTMLElement).getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      };
       const el = await new Promise<Element | null>((resolve) => {
         const found = document.querySelector(currentStep.target);
-        if (found) {
+        if (found && isVisible(found)) {
           resolve(found);
           return;
         }
@@ -180,8 +209,8 @@ export function TutorialOverlay() {
             return;
           }
           const next = document.querySelector(currentStep.target);
-          if (next || Date.now() - start > 5000) {
-            resolve(next);
+          if ((next && isVisible(next)) || Date.now() - start > 5000) {
+            resolve(next && isVisible(next) ? next : null);
             return;
           }
           waitRaf = requestAnimationFrame(tick);
@@ -224,6 +253,19 @@ export function TutorialOverlay() {
       }
 
       targetRef.current = el;
+      // Two rAFs + a 100ms settle handles route + wizard + AnimatePresence
+      // enter transitions where the element exists but is still at 0×0 or
+      // mid-slide. Without this the spotlight measured a 0×0 rect at -8,-8
+      // when coming backward from the agent to the module picker.
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      await new Promise<void>((r) => setTimeout(r, 120));
+      if (cancelled) return;
+      // Re-query after settle — tab/wizard remount may have replaced the node
+      const fresh = document.querySelector(currentStep.target) as Element | null;
+      if (fresh) {
+        const fr = (fresh as HTMLElement).getBoundingClientRect();
+        if (fr.width > 0 && fr.height > 0) targetRef.current = fresh;
+      }
       updatePositions();
       // Observe size changes on the target; scroll/resize cover
       // viewport-driven shifts. The 100ms rAF poll is the safety net for
@@ -232,7 +274,7 @@ export function TutorialOverlay() {
       // down. updatePositions is a no-op when the rect didn't move
       // ≥0.5px, so the poll is cheap.
       resizeObserver = new ResizeObserver(() => updatePositions());
-      resizeObserver.observe(el);
+      resizeObserver.observe(targetRef.current ?? el);
       window.addEventListener("scroll", onWindowChange, { passive: true, capture: true });
       window.addEventListener("resize", onWindowChange);
       let lastTrack = 0;
@@ -417,7 +459,7 @@ export function TutorialOverlay() {
       {splashPortal}
       {createPortal(
         <div className="fixed inset-0 z-[9998] pointer-events-none">
-          <SpotlightMask targetRect={targetRect} padding={8} borderRadius={12} />
+          <SpotlightMask targetRect={targetRect} padding={highlightPadding} borderRadius={highlightRadius} />
 
           <AnimatePresence mode="wait">
             {stepReady && popoverPosition && (

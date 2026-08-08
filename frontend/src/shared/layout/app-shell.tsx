@@ -4,8 +4,9 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
+import { Popover as PopoverPrimitive } from "radix-ui";
 import { List, GraduationCap, Lightbulb, Feather } from "@/shared/ui/icons";
-import { useTutorialContext, ConceptsGuide, registerTutorialHook } from "@/features/tutorial";
+import { ConceptsGuide, registerTutorialHook, TutorialMenu } from "@/features/tutorial";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { GlobalSearch } from "@/shared/layout/global-search";
@@ -64,7 +65,6 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const dir = dirForLocale(locale);
   const isRtl = dir === "rtl";
   const { prefs, setPref } = useUserPrefs();
-  const { openMenu } = useTutorialContext();
   const generalistEnabled = isGeneralistAgentEnabled();
   const progressRef = React.useRef<HTMLDivElement>(null);
 
@@ -171,21 +171,28 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="flex items-center gap-1.5" dir={dir}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={openMenu}
-                className="rounded-lg p-1.5 hover:bg-accent/80 active:scale-95 transition-all duration-200 cursor-pointer text-muted-foreground hover:text-foreground inline-flex items-center justify-center"
-                aria-label={msg("app.shell.tour_aria")}
-              >
-                <GraduationCap className="size-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" dir={dir}>
-              {msg("app.shell.tour_tooltip")}
-            </TooltipContent>
-          </Tooltip>
+          {/* The tour comes in two lengths, and which one someone wants depends
+              on how much time they have right now — so the button opens a
+              chooser anchored to itself rather than starting a remembered one. */}
+          <PopoverPrimitive.Root>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverPrimitive.Trigger asChild>
+                  <button
+                    type="button"
+                    className="rounded-lg p-1.5 hover:bg-accent/80 active:scale-95 transition-all duration-200 cursor-pointer text-muted-foreground hover:text-foreground inline-flex items-center justify-center"
+                    aria-label={msg("app.shell.tour_aria")}
+                  >
+                    <GraduationCap className="size-4" />
+                  </button>
+                </PopoverPrimitive.Trigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" dir={dir}>
+                {msg("app.shell.tour_tooltip")}
+              </TooltipContent>
+            </Tooltip>
+            <TutorialMenu />
+          </PopoverPrimitive.Root>
           <Tooltip>
             <TooltipTrigger asChild>
               <button

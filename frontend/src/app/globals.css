@@ -626,6 +626,15 @@ main {
   .app-main {
     margin-inline-start: var(--app-sidebar-width, min(240px, 40vw, 92vw));
   }
+  /* When the rail is collapsed to its 64px icon strip, let the page box grow
+     into the freed space instead of staying capped at 7xl and leaving a dead
+     margin. The capped width would pin content to ~80rem centered and hide
+     the gain of the collapse — removing the cap lets the container span the
+     wider <main> while its fluid padding still keeps gutters. The 1440+ clamp
+     below would also cap it at 85vw, so the collapsed override lifts that cap. */
+  html[data-sidebar-collapsed] .app-main .mx-auto.max-w-7xl {
+    max-width: none;
+  }
 }
 
 /* Collapse/expand snap: when the Sidebar commits the discrete icon-rail toggle it
@@ -639,6 +648,10 @@ main {
   }
   html[data-sidebar-snapping] .app-main {
     transition: margin-inline-start 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  html[data-sidebar-snapping][data-sidebar-collapsed] .app-main .mx-auto.max-w-7xl,
+  html[data-sidebar-snapping]:not([data-sidebar-collapsed]) .app-main .mx-auto.max-w-7xl {
+    transition: max-width 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 }
 

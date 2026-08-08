@@ -12,6 +12,7 @@ import {
   type AgentPreferencePatch,
   type UserPrefs,
 } from "../lib/prefs";
+import { registerTutorialHook } from "@/features/tutorial/lib/bridge";
 
 interface UserPrefsContextValue {
   prefs: UserPrefs;
@@ -52,6 +53,14 @@ export function UserPrefsProvider({ children }: { children: React.ReactNode }) {
     setPrefs((prev) => ({ ...prev, [key]: value }));
     writePref(key, value);
     toast.success(msg("settings.saved"), { autoClose: 1500, toastId: "settings-saved" });
+  }, []);
+
+  React.useEffect(() => {
+    const unregister = registerTutorialHook("setAdvancedMode", (enabled: boolean) => {
+      setPrefs((prev) => ({ ...prev, advancedMode: enabled }));
+      writePref("advancedMode", enabled);
+    });
+    return unregister;
   }, []);
 
   const updatePrefs = React.useCallback((patch: AgentPreferencePatch) => {

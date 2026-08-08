@@ -9,15 +9,15 @@
 
 import {
   resetDemoSimulation,
-  DEMO_DASHBOARD_JOBS,
-  DEMO_DASHBOARD_ANALYTICS,
-  DEMO_COMPARE_JOBS,
   DEMO_COMPARE_IDS,
   DEMO_COMPARE_EXAMPLES,
   DEMO_COMPARE_DATASET,
-  DEMO_EXPLORE_POINTS,
   DEMO_GRID_OPTIMIZATION_ID,
   DEMO_OPTIMIZATION_ID,
+  getCachedDemoCompareJobs,
+  getCachedDemoDashboardAnalytics,
+  getCachedDemoDashboardJobs,
+  getCachedDemoExplorePoints,
 } from "./demo-data";
 import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
@@ -45,6 +45,14 @@ export interface TutorialStep {
   description: string;
   target: string;
   placement?: "top" | "bottom" | "left" | "right" | "auto";
+  /** Vertical nudge in pixels — positive moves the card down, negative up. Used to de-overlap dense sections. */
+  offsetY?: number;
+  /** Override the default popover height (260px) for steps that need more breathing room. */
+  popoverHeight?: number;
+  /** Override spotlight padding (default 8) for this step. */
+  highlightPadding?: number;
+  /** Override spotlight border radius (default 12) for this step. */
+  highlightRadius?: number;
   beforeShow?: () => void | Promise<void>;
   /**
    * Best-effort UI cleanup fired when the step is left (PREV / NEXT / exit).
@@ -92,19 +100,26 @@ function navigateTo(path: string) {
 }
 
 /**
- * Wait for a selector to appear in the DOM (up to timeoutMs).
- * Resolves true when the element appears, false on timeout — so callers
- * can branch on "element really arrived" vs "we gave up waiting".
+ * Wait for a selector to appear and have layout (non-zero rect) — handles
+ * route + wizard + AnimatePresence transitions where the element exists
+ * in the DOM but is still at 0×0 during the enter animation.
  */
+function isElementVisible(selector: string): boolean {
+  const el = document.querySelector(selector) as HTMLElement | null;
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0;
+}
+
 function waitForElement(selector: string, timeoutMs = 5000): Promise<boolean> {
   return new Promise((resolve) => {
-    if (document.querySelector(selector)) {
+    if (isElementVisible(selector)) {
       resolve(true);
       return;
     }
     const start = Date.now();
     const check = () => {
-      if (document.querySelector(selector)) {
+      if (isElementVisible(selector)) {
         resolve(true);
         return;
       }
@@ -135,15 +150,15 @@ async function ensureDashboard() {
     navigateTo("/");
     await waitForElement("[data-tutorial='dashboard-kpis']");
   }
-  // The dashboard's tab/demo hooks live in a useEffect that fires AFTER
-  // the JSX commits — waitForElement can resolve before they're registered.
   await waitForHook("setTab");
+  // One commit tick so backward arrivals measure after React tab commit
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
 
-/** Inject demo jobs + analytics into dashboard for the tutorial */
+/** Inject demo jobs + analytics into dashboard for the tutorial — cached “real” data path */
 function injectDemoDashboardData() {
-  callTutorialHook("setDemoJobs", DEMO_DASHBOARD_JOBS);
-  callTutorialHook("setDemoAnalytics", DEMO_DASHBOARD_ANALYTICS);
+  callTutorialHook("setDemoJobs", getCachedDemoDashboardJobs());
+  callTutorialHook("setDemoAnalytics", getCachedDemoDashboardAnalytics());
 }
 
 async function ensureSubmit() {
@@ -151,20 +166,21 @@ async function ensureSubmit() {
     navigateTo("/submit");
     await waitForElement("[data-tutorial='wizard-stepper']");
   }
-  // SubmitWizard registers setWizardStep in a useEffect that runs after
-  // the stepper paints — waitForElement can resolve before that effect.
   await waitForHook("setWizardStep");
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
 
 async function ensureDemoDetail() {
   const path = `/optimizations/${DEMO_OPTIMIZATION_ID}`;
   if (window.location.pathname === path) {
     await waitForHook("setDetailTab");
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
     return;
   }
   navigateTo(path);
   await waitForElement("[data-tutorial='detail-header']");
   await waitForHook("setDetailTab");
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
 
 async function ensureCompareDemo() {
@@ -172,9 +188,10 @@ async function ensureCompareDemo() {
   const alreadyThere = window.location.pathname === "/compare" && window.location.search === query;
   if (alreadyThere) {
     await waitForHook("setCompareTab");
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
     return;
   }
-  setPendingCompareDemo(DEMO_COMPARE_JOBS);
+  setPendingCompareDemo(getCachedDemoCompareJobs());
   setPendingCompareExamples({
     byJobId: DEMO_COMPARE_EXAMPLES,
     dataset: DEMO_COMPARE_DATASET,
@@ -182,17 +199,20 @@ async function ensureCompareDemo() {
   navigateTo(`/compare${query}`);
   await waitForElement("[data-tutorial='compare-verdict']");
   await waitForHook("setCompareTab");
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
 
 async function ensureGridDemo() {
   const path = `/optimizations/${DEMO_GRID_OPTIMIZATION_ID}`;
   if (window.location.pathname === path && !window.location.search.includes("pair=")) {
     await waitForHook("setDetailTab");
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
     return;
   }
   navigateTo(path);
   await waitForElement("[data-tutorial='grid-search']");
   await waitForHook("setDetailTab");
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
 
 async function ensureGridPairDetail() {
@@ -227,6 +247,14 @@ function setOptimizerName(name: string) {
 async function ensureTagger() {
   if (!window.location.pathname.startsWith("/tagger")) {
     navigateTo("/tagger");
+    await waitForHook("setTaggerStartingNew");
+    // Force the sessions chooser into setup; no-op if already in setup
+    callTutorialHook("setTaggerStartingNew", true);
+    await waitForElement("[data-tutorial='tagger-setup']");
+  } else if (!hasTutorialHook("setTaggerStep")) {
+    // Already on /tagger but still on the sessions panel (startingNew false)
+    await waitForHook("setTaggerStartingNew");
+    callTutorialHook("setTaggerStartingNew", true);
     await waitForElement("[data-tutorial='tagger-setup']");
   }
   await waitForHook("setTaggerStep");
@@ -238,7 +266,7 @@ async function ensureExplore() {
     await waitForElement("[data-tutorial='explore-search']");
   }
   await waitForHook("setDemoExplorePoints");
-  callTutorialHook("setDemoExplorePoints", DEMO_EXPLORE_POINTS);
+  callTutorialHook("setDemoExplorePoints", getCachedDemoExplorePoints());
 }
 
 function setGeneralistPanelOpen(open: boolean) {
@@ -327,7 +355,9 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     title: msg("auto.features.tutorial.lib.steps.literal.28"),
     description: formatMsg("auto.features.tutorial.lib.steps.template.43", { p1: TERMS.dataset }),
     target: "[data-tutorial='sidebar-data']",
-    placement: "left",
+    placement: "right",
+    highlightPadding: 6,
+    highlightRadius: 8,
     beforeShow: async () => {
       await ensureDashboard();
       await revealSidebarDrawer();
@@ -343,7 +373,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     title: msg("auto.features.tutorial.lib.steps.literal.29"),
     description: msg("auto.features.tutorial.lib.steps.literal.30"),
     target: "[data-tutorial='tagger-setup']",
-    placement: "right",
+    placement: "auto",
     beforeShow: async () => {
       await ensureTagger();
       injectDemoTaggerData(0);
@@ -356,7 +386,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     title: msg("auto.features.tutorial.lib.steps.literal.31"),
     description: msg("auto.features.tutorial.lib.steps.literal.32"),
     target: "[data-tutorial='tagger-modes']",
-    placement: "right",
+    placement: "auto",
     beforeShow: async () => {
       await ensureTagger();
       injectDemoTaggerData(1);
@@ -394,7 +424,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p3: TERMS.optimizationTypeGrid,
     }),
     target: "[data-tutorial='wizard-step-1']",
-    placement: "right",
+    placement: "left",
     beforeShow: async () => {
       await ensureSubmit();
       setWizardStep(0);
@@ -411,7 +441,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p2: TERMS.optimization,
     }),
     target: "[data-tutorial='wizard-step-2']",
-    placement: "right",
+    placement: "left",
     beforeShow: async () => {
       await ensureSubmit();
       injectSampleDataset();
@@ -426,6 +456,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     description: formatMsg("auto.features.tutorial.lib.steps.template.18", { p1: TERMS.model }),
     target: "[data-tutorial='column-mapping']",
     placement: "top",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureSubmit();
       injectSampleDataset();
@@ -451,7 +482,10 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     placement: "top",
     beforeShow: async () => {
       await ensureSubmit();
+      callTutorialHook("setAdvancedMode", true);
+      callTutorialHook("setAdvancedSectionsOpen", true);
       setWizardStep(2);
+      await waitForElement("[data-tutorial='data-splits']");
     },
     tracks: FULL_ONLY,
     readingTimeSec: 10,
@@ -462,6 +496,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     description: msg("auto.features.tutorial.lib.steps.literal.18"),
     target: "[data-tutorial='auto-level']",
     placement: "top",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureSubmit();
       setWizardStep(2);
@@ -478,12 +513,15 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     }),
     target: "[data-tutorial='gepa-params']",
     placement: "top",
+    offsetY: 24,
     beforeShow: async () => {
       await ensureSubmit();
+      callTutorialHook("setAdvancedMode", true);
       setOptimizerName("gepa");
       // The GEPA grid lives inside the collapsed optimizer disclosure.
       callTutorialHook("setAdvancedSectionsOpen", true);
       setWizardStep(2);
+      await waitForElement("[data-tutorial='gepa-params']");
     },
     tracks: FULL_ONLY,
     readingTimeSec: 16,
@@ -497,7 +535,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p2: TERMS.model,
     }),
     target: "[data-tutorial='module-selector']",
-    placement: "auto",
+    placement: "bottom",
     beforeShow: async () => {
       await ensureSubmit();
       injectSampleDataset();
@@ -538,6 +576,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     }),
     target: "[data-tutorial='metric-editor']",
     placement: "top",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureSubmit();
       setWizardStep(3);
@@ -557,7 +596,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p3: TERMS.modelPlural,
     }),
     target: "[data-tutorial='model-catalog']",
-    placement: "top",
+    placement: "bottom",
     beforeShow: async () => {
       await ensureSubmit();
       setWizardStep(4);
@@ -574,7 +613,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p3: TERMS.optimizer,
     }),
     target: "[data-tutorial='wizard-step-6']",
-    placement: "right",
+    placement: "bottom",
     beforeShow: async () => {
       await ensureSubmit();
       setOptimizerName("gepa");
@@ -612,6 +651,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     }),
     target: "[data-tutorial='detail-header']",
     placement: "bottom",
+    offsetY: 0,
     beforeShow: async () => {
       const onDetail = window.location.pathname === `/optimizations/${DEMO_OPTIMIZATION_ID}`;
       // Splash plays whenever we cross into /detail from another route
@@ -624,6 +664,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       }
       await ensureDemoDetail();
       setDetailTab("overview");
+      await waitForElement("[data-tutorial='detail-header']");
     },
     tracks: ESSENTIAL,
     readingTimeSec: 9,
@@ -638,7 +679,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p4: TERMS.optimization,
     }),
     target: "[data-tutorial='pipeline-stages']",
-    placement: "top",
+    placement: "bottom",
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("overview");
@@ -655,13 +696,33 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p3: TERMS.optimizedScore,
     }),
     target: "[data-tutorial='score-cards']",
-    placement: "top",
+    placement: "bottom",
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("overview");
     },
     tracks: ESSENTIAL,
     readingTimeSec: 5,
+  },
+  {
+    id: "dd-trajectory",
+    title: msg("auto.features.tutorial.lib.steps.literal.46"),
+    description: msg("auto.features.tutorial.lib.steps.literal.48"),
+    target: "[data-tutorial='trajectory-panel']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureDemoDetail();
+      setDetailTab("overview");
+      // Re-stream the candidates so the user sees the tree grow live (with
+      // the GEPA TQDM bar visible in the pipeline) instead of jumping to
+      // the completed graph. Shown before the score chart because the tree
+      // sits vertically above the chart in the layout — narrative follows
+      // visual order.
+      callTutorialHook("replayDemoSimulation");
+      await waitForElement("[data-tutorial='trajectory-panel']");
+    },
+    tracks: ESSENTIAL,
+    readingTimeSec: 12,
   },
   {
     id: "dd-score-chart",
@@ -681,31 +742,12 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     readingTimeSec: 7,
   },
   {
-    id: "dd-trajectory",
-    title: msg("auto.features.tutorial.lib.steps.literal.46"),
-    description: msg("auto.features.tutorial.lib.steps.literal.48"),
-    target: "[data-tutorial='trajectory-panel']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDemoDetail();
-      setDetailTab("overview");
-      // Re-stream the candidates so the user sees the tree grow live (with
-      // the GEPA TQDM bar visible in the pipeline) instead of jumping to
-      // the completed graph. Placed right after dd-pipeline so the
-      // optimization stage is showcased end-to-end before we move on to
-      // the baseline-vs-final score comparison.
-      callTutorialHook("replayDemoSimulation");
-      await waitForElement("[data-tutorial='trajectory-panel']");
-    },
-    tracks: FULL_ONLY,
-    readingTimeSec: 12,
-  },
-  {
     id: "dd-playground",
     title: msg("auto.features.tutorial.lib.steps.literal.25"),
     description: `${formatMsg("auto.features.tutorial.lib.steps.template.36", { p1: TERMS.model })} ${msg("auto.features.tutorial.lib.steps.literal.41")}`,
     target: "[data-tutorial='serve-playground']",
-    placement: "top",
+    placement: "bottom",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("playground");
@@ -728,6 +770,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     }),
     target: "[data-tutorial='data-table']",
     placement: "top",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("data");
@@ -741,7 +784,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     title: msg("auto.features.tutorial.lib.steps.literal.26"),
     description: formatMsg("auto.features.tutorial.lib.steps.template.37", { p1: TERMS.optimizer }),
     target: "[data-tutorial='live-logs']",
-    placement: "bottom",
+    placement: "top",
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("logs");
@@ -755,7 +798,8 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     title: msg("auto.features.tutorial.lib.steps.literal.52"),
     description: msg("auto.features.tutorial.lib.steps.literal.53"),
     target: "[data-tutorial='lm-activity']",
-    placement: "top",
+    placement: "auto",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("lm-activity");
@@ -771,7 +815,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p1: TERMS.modelPlural,
     }),
     target: "[data-tutorial='config-summary']",
-    placement: "top",
+    placement: "bottom",
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("config");
@@ -825,24 +869,6 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     readingTimeSec: 8,
   },
   {
-    id: "dd-compare-scores",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.8", { p1: TERMS.scorePlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.46", {
-      p1: TERMS.finalScore,
-      p2: TERMS.baselineScore,
-      p3: TERMS.finalScore,
-    }),
-    target: "[data-tutorial='compare-scores']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("overview");
-      await waitForElement("[data-tutorial='compare-scores']");
-    },
-    tracks: FULL_ONLY,
-    readingTimeSec: 8,
-  },
-  {
     id: "dd-compare-config",
     title: msg("auto.features.tutorial.lib.steps.literal.11"),
     description: formatMsg("auto.features.tutorial.lib.steps.template.10", {
@@ -852,7 +878,8 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p4: TERMS.dataset,
     }),
     target: "[data-tutorial='compare-config']",
-    placement: "top",
+    placement: "bottom",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureCompareDemo();
       setCompareTab("config");
@@ -870,6 +897,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     }),
     target: "[data-tutorial='compare-prompts']",
     placement: "top",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureCompareDemo();
       setCompareTab("prompts");
@@ -888,6 +916,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     }),
     target: "[data-tutorial='compare-examples']",
     placement: "top",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureCompareDemo();
       setCompareTab("examples");
@@ -912,6 +941,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     }),
     target: "[data-tutorial='grid-pair-list']",
     placement: "top",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureGridDemo();
       setDetailTab("overview");
@@ -967,10 +997,12 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     }),
     target: "[data-tutorial='dashboard-table']",
     placement: "top",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureDashboard();
       injectDemoDashboardData();
       setTab("jobs");
+      await waitForElement("[data-tutorial='dashboard-table']");
     },
     tracks: FULL_ONLY,
     readingTimeSec: 6,
@@ -984,7 +1016,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p3: TERMS.optimization,
     }),
     target: "[data-tutorial='dashboard-stats']",
-    placement: "top",
+    placement: "bottom",
     beforeShow: async () => {
       await ensureDashboard();
       injectDemoDashboardData();
@@ -1003,7 +1035,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p2: TERMS.optimization,
     }),
     target: "[data-tutorial='sidebar-full']",
-    placement: "left",
+    placement: "auto",
     beforeShow: async () => {
       await ensureDashboard();
       injectDemoDashboardData();
@@ -1029,29 +1061,14 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     tracks: FULL_ONLY,
     readingTimeSec: 14,
   },
-  // Agent panel steps. Filtered out below when the generalist agent
-  // feature flag is off so prod users without the panel don't get
-  // dead spotlights.
-  {
-    id: "dd-agent-pill",
-    title: msg("auto.features.tutorial.lib.steps.literal.42"),
-    description: msg("auto.features.tutorial.lib.steps.literal.43"),
-    target: "[data-tutorial='agent-pill']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDashboard();
-      setGeneralistPanelOpen(false);
-      await waitForElement("[data-tutorial='agent-pill']");
-    },
-    tracks: FULL_ONLY,
-    readingTimeSec: 7,
-  },
+  // Agent panel: only the chat window. The pill alone is just the
+  // floating button and is now covered by the chat step's intro.
   {
     id: "dd-agent-panel",
     title: msg("auto.features.tutorial.lib.steps.literal.44"),
     description: msg("auto.features.tutorial.lib.steps.literal.50"),
     target: "[data-tutorial='agent-panel']",
-    placement: "right",
+    placement: "left",
     beforeShow: async () => {
       await ensureDashboard();
       setGeneralistPanelOpen(true);
@@ -1071,7 +1088,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p2: TERMS.scorePlural,
     }),
     target: "[data-tutorial='sidebar-full']",
-    placement: "left",
+    placement: "auto",
     beforeShow: async () => {
       await ensureDashboard();
       await revealSidebarDrawer();
@@ -1084,7 +1101,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
   },
 ]);
 
-const AGENT_PANEL_STEP_IDS = new Set(["dd-agent-pill", "dd-agent-panel"]);
+const AGENT_PANEL_STEP_IDS = new Set(["dd-agent-panel"]);
 
 function getVisibleSteps(): TutorialStep[] {
   const generalist = isGeneralistAgentEnabled();

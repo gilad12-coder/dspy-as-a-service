@@ -19,7 +19,7 @@ function StatCard() {
 
 export function CompareSkeleton() {
   return (
-    <div className="space-y-6 pb-16" aria-hidden="true">
+    <div className="space-y-6 pb-16" aria-hidden="true" data-tutorial="compare-verdict">
       <div className="flex items-center gap-2">
         <Skeleton width={48} height={14} />
         <Skeleton width={12} height={12} />

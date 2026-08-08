@@ -192,7 +192,7 @@ export function DashboardView() {
   // Compare-eligible subset of the current selection. Exact metric/test-set
   // compatibility is validated on the compare page after loading payloads.
   const compareEligibleIds = useMemo(() => {
-    if (!effectiveData || selectedIds.size === 0) return [];
+    if (!effectiveData || !Array.isArray(effectiveData.items) || selectedIds.size === 0) return [];
     const selectedItems = effectiveData.items.filter(
       (j) => selectedIds.has(j.optimization_id) && j.status === "success",
     );
@@ -208,7 +208,7 @@ export function DashboardView() {
   // when the server actually skipped them.
   const canBulkDelete = useMemo(() => {
     if (isAdmin) return true;
-    if (!effectiveData || selectedIds.size === 0) return false;
+    if (!effectiveData || !Array.isArray(effectiveData.items) || selectedIds.size === 0) return false;
     const selected = effectiveData.items.filter((j) => selectedIds.has(j.optimization_id));
     if (selected.length !== selectedIds.size) return false;
     return selected.every((j) => j.role == null || j.role === "owner");
@@ -224,7 +224,7 @@ export function DashboardView() {
   }, [compareEligibleIds, router]);
 
   const filteredItems = useMemo(() => {
-    if (!effectiveData) return [];
+    if (!effectiveData || !Array.isArray(effectiveData.items)) return [];
     const items = effectiveData.items.filter((job) => {
       for (const [col, allowed] of Object.entries(filters)) {
         if (allowed.size === 0) continue;
@@ -264,7 +264,8 @@ export function DashboardView() {
   };
 
   const filterOptions = useMemo(() => {
-    if (!effectiveData) return {} as Record<string, Array<{ value: string; label: string }>>;
+    if (!effectiveData || !Array.isArray(effectiveData.items))
+      return {} as Record<string, Array<{ value: string; label: string }>>;
     const items = effectiveData.items;
     const unique = (key: string, labelFn?: (v: string) => string) => {
       const vals = [...new Set(items.map((j) => String(getJobField(j, key) ?? "")))]
@@ -317,7 +318,9 @@ export function DashboardView() {
   // Owner/Role columns and the shared stat card only appear once the caller
   // actually collaborates — a solo user's control panel stays unchanged.
   const hasShared =
-    (counts?.shared ?? 0) > 0 || (effectiveData?.items.some((j) => Boolean(j.role)) ?? false);
+    (counts?.shared ?? 0) > 0 ||
+    (Array.isArray(effectiveData?.items) && effectiveData.items.some((j) => Boolean(j.role))) ||
+    false;
 
   if (initialLoad && !effectiveData) {
     return <DashboardSkeleton />;

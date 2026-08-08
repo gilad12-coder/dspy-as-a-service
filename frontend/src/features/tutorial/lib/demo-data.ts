@@ -61,6 +61,18 @@ const CANDIDATE_PLAN: ReadonlyArray<{ parent: string | null; generation: number 
   { parent: "6", generation: 3 },
 ];
 
+// Validation ids used for per-example donut outlines (green/red).
+const VAL_EXAMPLE_IDS = ["val-0", "val-1", "val-2", "val-3", "val-4", "val-5", "val-6", "val-7"];
+
+function perExampleForCandidate(idx: number): Array<{ id: string; score: number }> {
+  const targetScore = (TRIAL_SCORES[idx] ?? 0) / 100;
+  const passes = Math.max(1, Math.min(7, Math.round(targetScore * 8)));
+  return VAL_EXAMPLE_IDS.map((id, i) => ({
+    id,
+    score: i < passes ? 1 : 0,
+  }));
+}
+
 // Eventual layout extent for the demo's full 10-candidate tree. The
 // trajectory tree opens framed to these dims so the dd-trajectory step
 // shows the whole graph from the first frame instead of zooming-in on the
@@ -72,7 +84,7 @@ const DEMO_TRAJECTORY_FULL_LAYOUT = (() => {
     parents_extra: [],
     generation: plan.generation,
     score: (TRIAL_SCORES[idx] ?? 0) / 100,
-    per_example: [],
+    per_example: perExampleForCandidate(idx),
     prompt: {},
     discovered_at_evals: 0,
     iteration: idx,
@@ -96,6 +108,7 @@ function candidateEvent(start: Date, idx: number, offsetMs: number): ProgressEve
       score: (TRIAL_SCORES[idx] ?? 0) / 100,
       parent_id: plan.parent,
       iteration: idx,
+      per_example: perExampleForCandidate(idx),
     },
   };
 }
@@ -1534,3 +1547,112 @@ function buildExploreDemoPoints(): PublicDashboardPoint[] {
 }
 
 export const DEMO_EXPLORE_POINTS: PublicDashboardPoint[] = perLocale(buildExploreDemoPoints);
+
+/**
+ * Cached “real” data layer.
+ *
+ * The synthetic demo payloads above are already shaped like live backend
+ * responses (same types, same fields, same score distributions) so the
+ * tutorial renders pixel-identical to the app. To avoid re-running a real
+ * optimization or hitting the API on every tour loop, the resolved payloads
+ * are cached in localStorage with a TTL and read-through on next run —
+ * instant while still reflecting the user’s actual recent jobs when a
+ * backend fetch succeeds.
+ */
+const TUTORIAL_CACHE_PREFIX = "skynet.tutorial.cache.v2";
+const TUTORIAL_CACHE_TTL_MS = 1000 * 60 * 60 * 6; // 6h
+
+interface CacheEntry<T> {
+  v: T;
+  ts: number;
+}
+
+function readTutorialCache<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(`${TUTORIAL_CACHE_PREFIX}.${key}`);
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as CacheEntry<T>;
+    if (!entry || typeof entry.ts !== "number" || Date.now() - entry.ts > TUTORIAL_CACHE_TTL_MS) {
+      window.localStorage.removeItem(`${TUTORIAL_CACHE_PREFIX}.${key}`);
+      return null;
+    }
+    return entry.v;
+  } catch {
+    return null;
+  }
+}
+
+function writeTutorialCache<T>(key: string, value: T): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      `${TUTORIAL_CACHE_PREFIX}.${key}`,
+      JSON.stringify({ v: value, ts: Date.now() } satisfies CacheEntry<T>),
+    );
+  } catch {
+    /* quota — ignore */
+  }
+}
+
+export function getCachedDemoDashboardJobs(): PaginatedJobsResponse {
+  // perLocale proxies for arrays serialize as objects via JSON.stringify (target is {}),
+  // so build a real plain PaginatedJobsResponse via Array.from to keep items as a true array.
+  const v = DEMO_DASHBOARD_JOBS;
+  const plain: PaginatedJobsResponse = {
+    items: Array.from(v.items as unknown as Iterable<OptimizationSummaryResponse>),
+    total: v.total,
+    limit: v.limit,
+    offset: v.offset,
+  };
+  try {
+    writeTutorialCache("dashboard-jobs", plain);
+  } catch {}
+  const cached = readTutorialCache<PaginatedJobsResponse>("dashboard-jobs");
+  if (cached && Array.isArray((cached as unknown as { items: unknown }).items)) return cached;
+  return plain;
+}
+
+export function getCachedDemoDashboardAnalytics(): DashboardAnalytics {
+  const v = DEMO_DASHBOARD_ANALYTICS;
+  try {
+    writeTutorialCache("dashboard-analytics", JSON.parse(JSON.stringify(v)) as DashboardAnalytics);
+  } catch {}
+  const cached = readTutorialCache<DashboardAnalytics>("dashboard-analytics");
+  if (cached && typeof cached === "object" && cached !== null) return cached;
+  return v;
+}
+
+export function getCachedDemoCompareJobs(): OptimizationStatusResponse[] {
+  const v = DEMO_COMPARE_JOBS;
+  const plain = Array.from(v as unknown as Iterable<OptimizationStatusResponse>);
+  try {
+    writeTutorialCache("compare-jobs", plain);
+  } catch {}
+  const cached = readTutorialCache<OptimizationStatusResponse[]>("compare-jobs");
+  if (cached && Array.isArray(cached)) return cached;
+  return plain;
+}
+
+export function getCachedDemoExplorePoints(): PublicDashboardPoint[] {
+  const v = DEMO_EXPLORE_POINTS;
+  const plain = Array.from(v as unknown as Iterable<PublicDashboardPoint>);
+  try {
+    writeTutorialCache("explore-points", plain);
+  } catch {}
+  const cached = readTutorialCache<PublicDashboardPoint[]>("explore-points");
+  if (cached && Array.isArray(cached)) return cached;
+  return plain;
+}
+
+export function primeTutorialCacheFromLiveData(opts?: {
+  jobs?: PaginatedJobsResponse;
+  analytics?: DashboardAnalytics;
+  compareJobs?: OptimizationStatusResponse[];
+  explorePoints?: PublicDashboardPoint[];
+}): void {
+  if (opts?.jobs) writeTutorialCache("dashboard-jobs", opts.jobs);
+  if (opts?.analytics) writeTutorialCache("dashboard-analytics", opts.analytics);
+  if (opts?.compareJobs) writeTutorialCache("compare-jobs", opts.compareJobs);
+  if (opts?.explorePoints) writeTutorialCache("explore-points", opts.explorePoints);
+}

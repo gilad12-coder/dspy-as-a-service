@@ -83,6 +83,8 @@ export interface TutorialHooks {
     cols: string[];
     textCol: string | string[];
   }) => void;
+  /** Force the tagger view to show the setup wizard (new session). */
+  setTaggerStartingNew: (value: boolean) => void;
   /** Open or close the generalist agent panel (left-anchored aside). */
   setGeneralistPanelOpen: (open: boolean) => void;
   /**
@@ -98,6 +100,8 @@ export interface TutorialHooks {
    * target exists when the spotlight lands.
    */
   setAdvancedSectionsOpen: (open: boolean) => void;
+  /** Enable or disable the global advanced mode that gates dataset splits and GEPA tuning. */
+  setAdvancedMode: (enabled: boolean) => void;
   /**
    * Replay the demo optimization simulation. The deep-dive tour calls this
    * when reaching the trajectory step so the user sees the tree grow live
