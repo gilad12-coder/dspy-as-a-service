@@ -64,7 +64,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const dir = dirForLocale(locale);
   const isRtl = dir === "rtl";
   const { prefs, setPref } = useUserPrefs();
-  const { startDeepDive } = useTutorialContext();
+  const { openMenu } = useTutorialContext();
   const generalistEnabled = isGeneralistAgentEnabled();
   const progressRef = React.useRef<HTMLDivElement>(null);
 
@@ -175,7 +175,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
             <TooltipTrigger asChild>
               <button
                 type="button"
-                onClick={startDeepDive}
+                onClick={openMenu}
                 className="rounded-lg p-1.5 hover:bg-accent/80 active:scale-95 transition-all duration-200 cursor-pointer text-muted-foreground hover:text-foreground inline-flex items-center justify-center"
                 aria-label={msg("app.shell.tour_aria")}
               >

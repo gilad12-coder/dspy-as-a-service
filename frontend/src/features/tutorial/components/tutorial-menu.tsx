@@ -2,19 +2,51 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, GraduationCap } from "@/shared/ui/icons";
+import { X, GraduationCap, Lightning, Compass } from "@/shared/ui/icons";
 import { useTutorialContext } from "./tutorial-provider";
-import { msg } from "@/shared/lib/messages";
+import type { TutorialTrack } from "../lib/steps";
+import { getLoadedTrack, loadStepsModule } from "../lib/steps-loader";
+import { formatMsg, msg } from "@/shared/lib/messages";
+
+/** How long each track is — filled in once the lazy steps module resolves. */
+type TrackSize = { steps: number; minutes: number };
+
+const TRACK_ICONS: Record<TutorialTrack, typeof Lightning> = {
+  quick: Lightning,
+  "deep-dive": Compass,
+};
 
 export function TutorialMenu() {
   const { state, startTrack, closeMenu } = useTutorialContext();
-  const startBtnRef = React.useRef<HTMLButtonElement | null>(null);
   const dialogRef = React.useRef<HTMLDivElement | null>(null);
   const titleId = React.useId();
+  const [sizes, setSizes] = React.useState<Partial<Record<TutorialTrack, TrackSize>>>({});
+
+  // Names and blurbs render straight from the catalog so the chooser is
+  // readable the instant it opens; only the step counts have to wait for the
+  // step definitions, and they arrive as an addition rather than a reflow.
+  React.useEffect(() => {
+    if (!state.isMenuOpen) return;
+    let cancelled = false;
+    void loadStepsModule().then(() => {
+      if (cancelled) return;
+      const next: Partial<Record<TutorialTrack, TrackSize>> = {};
+      for (const id of Object.keys(TRACK_ICONS) as TutorialTrack[]) {
+        const track = getLoadedTrack(id);
+        if (track) next[id] = { steps: track.stepCount, minutes: track.estimatedMinutes };
+      }
+      setSizes(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.isMenuOpen]);
 
   React.useEffect(() => {
     if (!state.isMenuOpen) return;
-    startBtnRef.current?.focus();
+    // Land on the first track rather than the close button: the dialog exists
+    // to be answered, and the shorter track is the safer default answer.
+    dialogRef.current?.querySelector<HTMLButtonElement>("[data-track]")?.focus();
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -72,7 +104,7 @@ export function TutorialMenu() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 12 }}
             transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
-            className="relative w-full max-w-xs rounded-2xl border border-[#E5DDD4] bg-gradient-to-b from-[#FAF8F5] to-[#F5F1EC] shadow-[0_16px_48px_rgba(28,22,18,0.18)] overflow-hidden"
+            className="relative w-full max-w-sm rounded-2xl border border-[#E5DDD4] bg-gradient-to-b from-[#FAF8F5] to-[#F5F1EC] shadow-[0_16px_48px_rgba(28,22,18,0.18)] overflow-hidden"
           >
             <button
               type="button"
@@ -91,20 +123,71 @@ export function TutorialMenu() {
                 {msg("auto.features.tutorial.components.tutorial.menu.1")}
               </h2>
               <p className="text-xs text-[#8C7A6B] leading-relaxed mb-5">
-                {msg("auto.features.tutorial.components.tutorial.menu.2")}
+                {msg("tutorial.menu.subtitle")}
               </p>
-              <button
-                ref={startBtnRef}
-                type="button"
-                onClick={() => startTrack("deep-dive")}
-                className="w-full px-5 py-2.5 rounded-xl text-sm font-semibold bg-[#3D2E22] text-[#FAF8F5] hover:bg-[#2C2018] transition-colors cursor-pointer"
-              >
-                {msg("auto.features.tutorial.components.tutorial.menu.3")}
-              </button>
+
+              <div className="flex w-full flex-col gap-2.5">
+                <TrackOption
+                  track="quick"
+                  name={msg("tutorial.track.quick.name")}
+                  description={msg("tutorial.track.quick.desc")}
+                  size={sizes.quick}
+                  onStart={startTrack}
+                />
+                <TrackOption
+                  track="deep-dive"
+                  name={msg("tutorial.track.full.name")}
+                  description={msg("tutorial.track.full.desc")}
+                  size={sizes["deep-dive"]}
+                  onStart={startTrack}
+                />
+              </div>
             </div>
           </motion.div>
         </div>
       )}
     </AnimatePresence>
+  );
+}
+
+/** One card in the chooser: a track's name, what it covers, and how long it is. */
+function TrackOption({
+  track,
+  name,
+  description,
+  size,
+  onStart,
+}: {
+  track: TutorialTrack;
+  name: string;
+  description: string;
+  size?: TrackSize;
+  onStart: (track: TutorialTrack) => void;
+}) {
+  const Icon = TRACK_ICONS[track];
+  return (
+    <button
+      type="button"
+      data-track={track}
+      onClick={() => onStart(track)}
+      className="group w-full cursor-pointer rounded-xl border border-[#E5DDD4] bg-[#FDFCFA] p-3.5 text-start transition-colors hover:border-[#C9BCAE] hover:bg-[#F7F3EE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D2E22]/30"
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#F0EBE4] text-[#8C7A6B] transition-colors group-hover:bg-[#E7DFD5] group-hover:text-[#3D2E22]">
+          <Icon className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-sm font-semibold text-[#3D2E22]">{name}</span>
+            {size && (
+              <span className="shrink-0 text-[0.6875rem] tabular-nums text-[#A8998A]">
+                {formatMsg("tutorial.menu.meta", { p1: size.steps, p2: size.minutes })}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-[#8C7A6B]">{description}</p>
+        </div>
+      </div>
+    </button>
   );
 }

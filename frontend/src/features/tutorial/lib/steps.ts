@@ -2,7 +2,8 @@
  * Tutorial System — Step Definitions
  * Skynet prompt optimization platform
  *
- * Single comprehensive tutorial covering every feature.
+ * One ordered walkthrough of every feature, published as two tracks: the
+ * essentials, and the essentials plus everything else.
  * Works even for users with zero optimizations.
  */
 
@@ -22,7 +23,21 @@ import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { perLocale } from "@/shared/lib/per-locale";
 
-export type TutorialTrack = "deep-dive";
+/**
+ * The two ways through the tour.
+ *
+ * Users abandon a walkthrough at wildly different points, so the steps are
+ * ordered by necessity rather than by screen: whenever someone quits, what
+ * they already saw is the part that mattered most. "quick" is that ordering
+ * cut down to the single path that gets a first result; "deep-dive" is the
+ * same path with every remaining feature slotted in where it belongs.
+ */
+export type TutorialTrack = "quick" | "deep-dive";
+
+/** Steps on the shortest path to a first result — shown in both tracks. */
+const ESSENTIAL: readonly TutorialTrack[] = ["quick", "deep-dive"];
+/** Steps that deepen or widen that path — the full tour only. */
+const FULL_ONLY: readonly TutorialTrack[] = ["deep-dive"];
 
 export interface TutorialStep {
   id: string;
@@ -38,7 +53,8 @@ export interface TutorialStep {
    * the return value is not awaited.
    */
   afterHide?: () => void | Promise<void>;
-  track: TutorialTrack;
+  /** Tracks this step belongs to — {@link ESSENTIAL} or {@link FULL_ONLY}. */
+  tracks: readonly TutorialTrack[];
   readingTimeSec: number;
 }
 
@@ -48,6 +64,8 @@ export interface TutorialTrackDefinition {
   description: string;
   icon: string;
   stepCount: number;
+  /** Rounded wall-clock estimate, for setting expectations before starting. */
+  estimatedMinutes: number;
   steps: TutorialStep[];
 }
 
@@ -301,194 +319,54 @@ function injectSampleDataset() {
 }
 
 const tutorialSteps: TutorialStep[] = perLocale(() => [
+  // 1 — Where a dataset comes from. The tour opens here because nothing
+  // downstream is reachable without labelled data.
+
   {
-    id: "dd-kpis",
-    title: msg("auto.features.tutorial.lib.steps.literal.6"),
-    description: msg("auto.features.tutorial.lib.steps.literal.7"),
-    target: "[data-tutorial='dashboard-kpis']",
-    placement: "bottom",
-    beforeShow: async () => {
-      await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("jobs");
-    },
-    track: "deep-dive",
-    readingTimeSec: 4,
-  },
-  {
-    id: "dd-table",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.1", {
-      p1: TERMS.optimizationPlural,
-    }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.2", {
-      p1: TERMS.optimization,
-    }),
-    target: "[data-tutorial='dashboard-table']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("jobs");
-    },
-    track: "deep-dive",
-    readingTimeSec: 6,
-  },
-  {
-    id: "dd-sidebar",
-    title: msg("auto.features.tutorial.lib.steps.literal.8"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.3", {
-      p1: TERMS.optimization,
-      p2: TERMS.optimization,
-    }),
-    target: "[data-tutorial='sidebar-full']",
+    id: "dd-tagger-intro",
+    title: msg("auto.features.tutorial.lib.steps.literal.28"),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.43", { p1: TERMS.dataset }),
+    target: "[data-tutorial='sidebar-data']",
     placement: "left",
     beforeShow: async () => {
       await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("jobs");
       await revealSidebarDrawer();
     },
     afterHide: () => {
       callTutorialHook("setSidebarOpen", false);
     },
-    track: "deep-dive",
+    tracks: ESSENTIAL,
     readingTimeSec: 7,
   },
   {
-    id: "dd-analytics",
-    title: msg("auto.features.tutorial.lib.steps.literal.9"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.47", {
-      p1: TERMS.scorePlural,
-      p2: TERMS.optimization,
-      p3: TERMS.optimization,
-    }),
-    target: "[data-tutorial='dashboard-stats']",
-    placement: "top",
+    id: "dd-tagger-setup",
+    title: msg("auto.features.tutorial.lib.steps.literal.29"),
+    description: msg("auto.features.tutorial.lib.steps.literal.30"),
+    target: "[data-tutorial='tagger-setup']",
+    placement: "right",
     beforeShow: async () => {
-      await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("analytics");
-      await waitForElement("[data-tutorial='dashboard-stats']");
-      await new Promise((r) => setTimeout(r, 250));
+      await ensureTagger();
+      injectDemoTaggerData(0);
     },
-    track: "deep-dive",
-    readingTimeSec: 5,
-  },
-
-  {
-    id: "dd-compare-trigger",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.5", {
-      p1: TERMS.optimizationPlural,
-    }),
-    description: msg("auto.features.tutorial.lib.steps.literal.10"),
-    target: "[data-tutorial='compare-button']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("jobs");
-      callTutorialHook("setSelectedJobIds", ["demo-001", "demo-002"]);
-      await waitForElement("[data-tutorial='compare-button']");
-      await new Promise((r) => setTimeout(r, 450));
-    },
-    afterHide: () => {
-      // Drop the demo selection so dashboard steps revisited via PREV
-      // don't show the compare-button still hovering with rows pre-checked.
-      callTutorialHook("setSelectedJobIds", []);
-    },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 8,
   },
   {
-    id: "dd-compare-verdict",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.6", {
-      p1: TERMS.optimizationPlural,
-    }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.7", {
-      p1: TERMS.score,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='compare-verdict']",
-    placement: "bottom",
+    id: "dd-tagger-modes",
+    title: msg("auto.features.tutorial.lib.steps.literal.31"),
+    description: msg("auto.features.tutorial.lib.steps.literal.32"),
+    target: "[data-tutorial='tagger-modes']",
+    placement: "right",
     beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("overview");
+      await ensureTagger();
+      injectDemoTaggerData(1);
+      await waitForElement("[data-tutorial='tagger-modes']");
     },
-    track: "deep-dive",
-    readingTimeSec: 8,
-  },
-  {
-    id: "dd-compare-scores",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.8", { p1: TERMS.scorePlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.46", {
-      p1: TERMS.finalScore,
-      p2: TERMS.baselineScore,
-      p3: TERMS.finalScore,
-    }),
-    target: "[data-tutorial='compare-scores']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("overview");
-      await waitForElement("[data-tutorial='compare-scores']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 8,
-  },
-  {
-    id: "dd-compare-config",
-    title: msg("auto.features.tutorial.lib.steps.literal.11"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.10", {
-      p1: TERMS.module,
-      p2: TERMS.optimizer,
-      p3: TERMS.modelPlural,
-      p4: TERMS.dataset,
-    }),
-    target: "[data-tutorial='compare-config']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("config");
-      await waitForElement("[data-tutorial='compare-config']");
-    },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 9,
   },
-  {
-    id: "dd-compare-prompts",
-    title: msg("auto.features.tutorial.lib.steps.literal.12"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.11", {
-      p1: TERMS.examplePlural,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='compare-prompts']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("prompts");
-      await waitForElement("[data-tutorial='compare-prompts']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 9,
-  },
-  {
-    id: "dd-compare-examples",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.12", { p1: TERMS.examplePlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.13", {
-      p1: TERMS.examplePlural,
-      p2: TERMS.score,
-      p3: TERMS.examplePlural,
-    }),
-    target: "[data-tutorial='compare-examples']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("examples");
-      await waitForElement("[data-tutorial='compare-examples']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 9,
-  },
+  // 2 — Running an optimization. Follows the wizard's own step order, so
+  // the tour never jumps forward and back through the stepper.
 
   {
     id: "dd-stepper",
@@ -503,7 +381,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(0);
     },
-    track: "deep-dive",
+    tracks: ESSENTIAL,
     readingTimeSec: 4,
   },
 
@@ -521,7 +399,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(0);
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 5,
   },
 
@@ -539,7 +417,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       injectSampleDataset();
       setWizardStep(1);
     },
-    track: "deep-dive",
+    tracks: ESSENTIAL,
     readingTimeSec: 7,
   },
   {
@@ -553,26 +431,8 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       injectSampleDataset();
       setWizardStep(1);
     },
-    track: "deep-dive",
+    tracks: ESSENTIAL,
     readingTimeSec: 7,
-  },
-
-  {
-    id: "dd-module",
-    title: TERMS.module,
-    description: formatMsg("auto.features.tutorial.lib.steps.template.45", {
-      p1: TERMS.model,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='module-selector']",
-    placement: "auto",
-    beforeShow: async () => {
-      await ensureSubmit();
-      injectSampleDataset();
-      setWizardStep(3);
-    },
-    track: "deep-dive",
-    readingTimeSec: 9,
   },
   {
     id: "dd-splits",
@@ -593,7 +453,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(2);
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 10,
   },
   {
@@ -606,7 +466,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(2);
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 8,
   },
   {
@@ -625,8 +485,30 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       callTutorialHook("setAdvancedSectionsOpen", true);
       setWizardStep(2);
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 16,
+  },
+
+  {
+    id: "dd-module",
+    title: TERMS.module,
+    description: formatMsg("auto.features.tutorial.lib.steps.template.45", {
+      p1: TERMS.model,
+      p2: TERMS.model,
+    }),
+    target: "[data-tutorial='module-selector']",
+    placement: "auto",
+    beforeShow: async () => {
+      await ensureSubmit();
+      injectSampleDataset();
+      setWizardStep(3);
+      // Walking back into this step from the next one would otherwise find
+      // the picker already answered and the carousel gone.
+      callTutorialHook("reopenModulePicker");
+      await waitForElement("[data-tutorial='module-selector']");
+    },
+    tracks: ESSENTIAL,
+    readingTimeSec: 9,
   },
 
   {
@@ -638,8 +520,12 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     beforeShow: async () => {
       await ensureSubmit();
       setWizardStep(3);
+      // The editors only exist once a module is committed, so the tour makes
+      // the pick the previous step just demonstrated.
+      callTutorialHook("chooseModule", "predict");
+      await waitForElement("[data-tutorial='signature-editor']");
     },
-    track: "deep-dive",
+    tracks: ESSENTIAL,
     readingTimeSec: 11,
   },
   {
@@ -655,8 +541,10 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     beforeShow: async () => {
       await ensureSubmit();
       setWizardStep(3);
+      callTutorialHook("chooseModule", "predict");
+      await waitForElement("[data-tutorial='metric-editor']");
     },
-    track: "deep-dive",
+    tracks: ESSENTIAL,
     readingTimeSec: 8,
   },
 
@@ -674,7 +562,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(4);
     },
-    track: "deep-dive",
+    tracks: ESSENTIAL,
     readingTimeSec: 7,
   },
   {
@@ -692,7 +580,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setOptimizerName("gepa");
       setWizardStep(5);
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 5,
   },
   {
@@ -708,9 +596,11 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(5);
     },
-    track: "deep-dive",
+    tracks: ESSENTIAL,
     readingTimeSec: 8,
   },
+  // 3 — Reading the result. Score first: it is the payoff the previous
+  // twelve steps were building toward.
 
   {
     id: "dd-detail-header",
@@ -735,7 +625,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureDemoDetail();
       setDetailTab("overview");
     },
-    track: "deep-dive",
+    tracks: ESSENTIAL,
     readingTimeSec: 9,
   },
   {
@@ -753,8 +643,42 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureDemoDetail();
       setDetailTab("overview");
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 8,
+  },
+  {
+    id: "dd-scores",
+    title: formatMsg("auto.features.tutorial.lib.steps.template.31", { p1: TERMS.scorePlural }),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.32", {
+      p1: TERMS.baselineScore,
+      p2: TERMS.optimization,
+      p3: TERMS.optimizedScore,
+    }),
+    target: "[data-tutorial='score-cards']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureDemoDetail();
+      setDetailTab("overview");
+    },
+    tracks: ESSENTIAL,
+    readingTimeSec: 5,
+  },
+  {
+    id: "dd-score-chart",
+    title: formatMsg("auto.features.tutorial.lib.steps.template.33", { p1: TERMS.scorePlural }),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.34", {
+      p1: TERMS.score,
+      p2: TERMS.optimizer,
+      p3: TERMS.score,
+    }),
+    target: "[data-tutorial='score-chart']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureDemoDetail();
+      setDetailTab("overview");
+    },
+    tracks: FULL_ONLY,
+    readingTimeSec: 7,
   },
   {
     id: "dd-trajectory",
@@ -773,42 +697,8 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       callTutorialHook("replayDemoSimulation");
       await waitForElement("[data-tutorial='trajectory-panel']");
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 12,
-  },
-  {
-    id: "dd-scores",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.31", { p1: TERMS.scorePlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.32", {
-      p1: TERMS.baselineScore,
-      p2: TERMS.optimization,
-      p3: TERMS.optimizedScore,
-    }),
-    target: "[data-tutorial='score-cards']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDemoDetail();
-      setDetailTab("overview");
-    },
-    track: "deep-dive",
-    readingTimeSec: 5,
-  },
-  {
-    id: "dd-score-chart",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.33", { p1: TERMS.scorePlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.34", {
-      p1: TERMS.score,
-      p2: TERMS.optimizer,
-      p3: TERMS.score,
-    }),
-    target: "[data-tutorial='score-chart']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDemoDetail();
-      setDetailTab("overview");
-    },
-    track: "deep-dive",
-    readingTimeSec: 7,
   },
   {
     id: "dd-playground",
@@ -821,7 +711,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("playground");
       await waitForElement("[data-tutorial='serve-playground']");
     },
-    track: "deep-dive",
+    tracks: ESSENTIAL,
     readingTimeSec: 12,
   },
   {
@@ -843,7 +733,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("data");
       await waitForElement("[data-tutorial='data-table']");
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 9,
   },
   {
@@ -857,7 +747,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("logs");
       await waitForElement("[data-tutorial='live-logs']");
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 6,
   },
   {
@@ -871,7 +761,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("lm-activity");
       await waitForElement("[data-tutorial='lm-activity']");
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 11,
   },
   {
@@ -887,9 +777,126 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("config");
       await waitForElement("[data-tutorial='config-summary']");
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 7,
   },
+  // 4 — Comparing runs. Only meaningful once you have more than one.
+
+  {
+    id: "dd-compare-trigger",
+    title: formatMsg("auto.features.tutorial.lib.steps.template.5", {
+      p1: TERMS.optimizationPlural,
+    }),
+    description: msg("auto.features.tutorial.lib.steps.literal.10"),
+    target: "[data-tutorial='compare-button']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureDashboard();
+      injectDemoDashboardData();
+      setTab("jobs");
+      callTutorialHook("setSelectedJobIds", ["demo-001", "demo-002"]);
+      await waitForElement("[data-tutorial='compare-button']");
+      await new Promise((r) => setTimeout(r, 450));
+    },
+    afterHide: () => {
+      // Drop the demo selection so dashboard steps revisited via PREV
+      // don't show the compare-button still hovering with rows pre-checked.
+      callTutorialHook("setSelectedJobIds", []);
+    },
+    tracks: FULL_ONLY,
+    readingTimeSec: 8,
+  },
+  {
+    id: "dd-compare-verdict",
+    title: formatMsg("auto.features.tutorial.lib.steps.template.6", {
+      p1: TERMS.optimizationPlural,
+    }),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.7", {
+      p1: TERMS.score,
+      p2: TERMS.model,
+    }),
+    target: "[data-tutorial='compare-verdict']",
+    placement: "bottom",
+    beforeShow: async () => {
+      await ensureCompareDemo();
+      setCompareTab("overview");
+    },
+    tracks: FULL_ONLY,
+    readingTimeSec: 8,
+  },
+  {
+    id: "dd-compare-scores",
+    title: formatMsg("auto.features.tutorial.lib.steps.template.8", { p1: TERMS.scorePlural }),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.46", {
+      p1: TERMS.finalScore,
+      p2: TERMS.baselineScore,
+      p3: TERMS.finalScore,
+    }),
+    target: "[data-tutorial='compare-scores']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureCompareDemo();
+      setCompareTab("overview");
+      await waitForElement("[data-tutorial='compare-scores']");
+    },
+    tracks: FULL_ONLY,
+    readingTimeSec: 8,
+  },
+  {
+    id: "dd-compare-config",
+    title: msg("auto.features.tutorial.lib.steps.literal.11"),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.10", {
+      p1: TERMS.module,
+      p2: TERMS.optimizer,
+      p3: TERMS.modelPlural,
+      p4: TERMS.dataset,
+    }),
+    target: "[data-tutorial='compare-config']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureCompareDemo();
+      setCompareTab("config");
+      await waitForElement("[data-tutorial='compare-config']");
+    },
+    tracks: FULL_ONLY,
+    readingTimeSec: 9,
+  },
+  {
+    id: "dd-compare-prompts",
+    title: msg("auto.features.tutorial.lib.steps.literal.12"),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.11", {
+      p1: TERMS.examplePlural,
+      p2: TERMS.model,
+    }),
+    target: "[data-tutorial='compare-prompts']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureCompareDemo();
+      setCompareTab("prompts");
+      await waitForElement("[data-tutorial='compare-prompts']");
+    },
+    tracks: FULL_ONLY,
+    readingTimeSec: 9,
+  },
+  {
+    id: "dd-compare-examples",
+    title: formatMsg("auto.features.tutorial.lib.steps.template.12", { p1: TERMS.examplePlural }),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.13", {
+      p1: TERMS.examplePlural,
+      p2: TERMS.score,
+      p3: TERMS.examplePlural,
+    }),
+    target: "[data-tutorial='compare-examples']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureCompareDemo();
+      setCompareTab("examples");
+      await waitForElement("[data-tutorial='compare-examples']");
+    },
+    tracks: FULL_ONLY,
+    readingTimeSec: 9,
+  },
+  // 5 — Grid search: many runs at once.
 
   {
     id: "dd-grid-overview",
@@ -910,7 +917,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("overview");
       await waitForElement("[data-tutorial='grid-pair-list']");
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 14,
   },
   {
@@ -932,49 +939,84 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureGridPairDetail();
       await waitForElement("[data-tutorial='pair-detail-summary']");
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 11,
   },
-
+  // 6 — The dashboard, which is where all of the above accumulates.
   {
-    id: "dd-tagger-intro",
-    title: msg("auto.features.tutorial.lib.steps.literal.28"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.43", { p1: TERMS.dataset }),
-    target: "[data-tutorial='sidebar-data']",
+    id: "dd-kpis",
+    title: msg("auto.features.tutorial.lib.steps.literal.6"),
+    description: msg("auto.features.tutorial.lib.steps.literal.7"),
+    target: "[data-tutorial='dashboard-kpis']",
+    placement: "bottom",
+    beforeShow: async () => {
+      await ensureDashboard();
+      injectDemoDashboardData();
+      setTab("jobs");
+    },
+    tracks: FULL_ONLY,
+    readingTimeSec: 4,
+  },
+  {
+    id: "dd-table",
+    title: formatMsg("auto.features.tutorial.lib.steps.template.1", {
+      p1: TERMS.optimizationPlural,
+    }),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.2", {
+      p1: TERMS.optimization,
+    }),
+    target: "[data-tutorial='dashboard-table']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureDashboard();
+      injectDemoDashboardData();
+      setTab("jobs");
+    },
+    tracks: FULL_ONLY,
+    readingTimeSec: 6,
+  },
+  {
+    id: "dd-analytics",
+    title: msg("auto.features.tutorial.lib.steps.literal.9"),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.47", {
+      p1: TERMS.scorePlural,
+      p2: TERMS.optimization,
+      p3: TERMS.optimization,
+    }),
+    target: "[data-tutorial='dashboard-stats']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureDashboard();
+      injectDemoDashboardData();
+      setTab("analytics");
+      await waitForElement("[data-tutorial='dashboard-stats']");
+      await new Promise((r) => setTimeout(r, 250));
+    },
+    tracks: FULL_ONLY,
+    readingTimeSec: 5,
+  },
+  {
+    id: "dd-sidebar",
+    title: msg("auto.features.tutorial.lib.steps.literal.8"),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.3", {
+      p1: TERMS.optimization,
+      p2: TERMS.optimization,
+    }),
+    target: "[data-tutorial='sidebar-full']",
     placement: "left",
     beforeShow: async () => {
       await ensureDashboard();
+      injectDemoDashboardData();
+      setTab("jobs");
+      await revealSidebarDrawer();
     },
-    track: "deep-dive",
+    afterHide: () => {
+      callTutorialHook("setSidebarOpen", false);
+    },
+    tracks: FULL_ONLY,
     readingTimeSec: 7,
   },
-  {
-    id: "dd-tagger-setup",
-    title: msg("auto.features.tutorial.lib.steps.literal.29"),
-    description: msg("auto.features.tutorial.lib.steps.literal.30"),
-    target: "[data-tutorial='tagger-setup']",
-    placement: "right",
-    beforeShow: async () => {
-      await ensureTagger();
-      injectDemoTaggerData(0);
-    },
-    track: "deep-dive",
-    readingTimeSec: 8,
-  },
-  {
-    id: "dd-tagger-modes",
-    title: msg("auto.features.tutorial.lib.steps.literal.31"),
-    description: msg("auto.features.tutorial.lib.steps.literal.32"),
-    target: "[data-tutorial='tagger-modes']",
-    placement: "right",
-    beforeShow: async () => {
-      await ensureTagger();
-      injectDemoTaggerData(1);
-      await waitForElement("[data-tutorial='tagger-modes']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 9,
-  },
+  // 7 — Side tools, then the sign-off.
   {
     id: "dd-explore",
     title: msg("auto.features.tutorial.lib.steps.literal.38"),
@@ -984,7 +1026,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     beforeShow: async () => {
       await ensureExplore();
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 14,
   },
   // Agent panel steps. Filtered out below when the generalist agent
@@ -1001,7 +1043,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setGeneralistPanelOpen(false);
       await waitForElement("[data-tutorial='agent-pill']");
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 7,
   },
   {
@@ -1018,7 +1060,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     afterHide: () => {
       setGeneralistPanelOpen(false);
     },
-    track: "deep-dive",
+    tracks: FULL_ONLY,
     readingTimeSec: 10,
   },
   {
@@ -1037,7 +1079,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     afterHide: () => {
       callTutorialHook("setSidebarOpen", false);
     },
-    track: "deep-dive",
+    tracks: ESSENTIAL,
     readingTimeSec: 5,
   },
 ]);
@@ -1052,15 +1094,23 @@ function getVisibleSteps(): TutorialStep[] {
   });
 }
 
+// Reading time alone undersells a step: the tour also navigates, waits for
+// the target to paint, and gives the user a moment to look at it. Padding
+// each step keeps the menu's estimate from reading as optimistic.
+const STEP_OVERHEAD_SEC = 6;
+
 export function getTrack(trackId: TutorialTrack): TutorialTrackDefinition | undefined {
-  if (trackId !== "deep-dive") return undefined;
-  const steps = getVisibleSteps();
+  const steps = getVisibleSteps().filter((s) => s.tracks.includes(trackId));
+  if (steps.length === 0) return undefined;
+  const seconds = steps.reduce((sum, s) => sum + s.readingTimeSec + STEP_OVERHEAD_SEC, 0);
+  const quick = trackId === "quick";
   return {
-    id: "deep-dive",
-    name: msg("auto.features.tutorial.lib.steps.literal.34"),
-    description: msg("auto.features.tutorial.lib.steps.literal.35"),
-    icon: "deep-dive",
+    id: trackId,
+    name: quick ? msg("tutorial.track.quick.name") : msg("tutorial.track.full.name"),
+    description: quick ? msg("tutorial.track.quick.desc") : msg("tutorial.track.full.desc"),
+    icon: trackId,
     stepCount: steps.length,
+    estimatedMinutes: Math.max(1, Math.round(seconds / 60)),
     steps,
   };
 }

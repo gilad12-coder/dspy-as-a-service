@@ -139,7 +139,7 @@ interface TutorialContextValue {
   goToStep: (index: number) => void;
   exitTutorial: () => void;
   completeTrack: () => void;
-  startDeepDive: () => void;
+  openMenu: () => void;
   closeMenu: () => void;
   resetAll: () => void;
   toggleAutoPlay: () => void;
@@ -217,13 +217,14 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   const goToStep = useCallback((index: number) => dispatch({ type: "GO_TO_STEP", index }), []);
   const exitTutorial = useCallback(() => dispatch({ type: "EXIT_TUTORIAL" }), []);
   const completeTrack = useCallback(() => dispatch({ type: "COMPLETE_TRACK" }), []);
-  // We have a single track, so the help button starts it directly rather
-  // than opening a one-option chooser. The first step's beforeShow
-  // (ensureDashboard) handles client-side navigation to "/" via the
-  // routerPush bridge hook.
-  const startDeepDive = useCallback(() => {
-    startTrack("deep-dive" as TutorialTrack);
-  }, [startTrack]);
+  // Always a chooser, never a resumed preference: which track someone wants
+  // depends on how much time they have right now, so the question gets asked
+  // every time the help button is pressed. The load is kicked off here so the
+  // menu can show each track's length without a spinner.
+  const openMenu = useCallback(() => {
+    void loadStepsModule();
+    dispatch({ type: "OPEN_MENU" });
+  }, []);
   const closeMenu = useCallback(() => dispatch({ type: "CLOSE_MENU" }), []);
   const resetAll = useCallback(() => {
     resetLoadedTutorialOneShotState();
@@ -256,7 +257,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
         goToStep,
         exitTutorial,
         completeTrack,
-        startDeepDive,
+        openMenu,
         closeMenu,
         resetAll,
         toggleAutoPlay,
