@@ -126,11 +126,12 @@ export function useSubmitWizard() {
   const [jobName, setJobName] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [moduleName, setModuleName] = useState("predict");
-  // The code step opens straight into the default module's editor; the
-  // header chip reopens the picker on demand. While the picker is open
-  // (moduleChosen=false) the editors and the agent's seed pass wait until
-  // the user commits to a module.
-  const [moduleChosen, setModuleChosen] = useState(true);
+  // The code step opens on the picker and the step will not advance until a
+  // module is committed — `moduleName` is only the carousel's starting slide
+  // until then, never an implicit choice. While the picker is open
+  // (moduleChosen=false) the editors and the agent's seed pass wait. Flows
+  // that carry a decided module (draft, clone, shared state) set it chosen.
+  const [moduleChosen, setModuleChosen] = useState(false);
   const [optimizerName, setOptimizerName] = useState("gepa");
 
   // React (ReAct-agent) tool roster. Only sent when moduleName is "react".

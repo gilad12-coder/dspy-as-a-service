@@ -6,13 +6,17 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Robot, Brain, Check, Repeat, Sparkle, FlowArrow, Lightning } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
+import { Button } from "@/shared/ui/primitives/button";
 import { Label } from "@/shared/ui/primitives/label";
 import { Separator } from "@/shared/ui/primitives/separator";
 import { HelpTip } from "@/shared/ui/help-tip";
+import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { Skeleton } from "@/shared/ui/skeleton";
-import { tip } from "@/shared/lib/tooltips";
+import { tip, type TooltipKey } from "@/shared/lib/tooltips";
+import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
+import { Carousel } from "@/features/agent-panel";
 
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 import type { ArtifactStatus } from "@/shared/hooks/use-code-agent";
@@ -23,12 +27,48 @@ import { workflowUsesTools } from "../../workflow/model";
 
 // The DSPy module choices offered by the picker. Names are technical
 // terms kept in English; descriptions reuse the localized tooltip copy.
+// Each carries the schematic drawn on its carousel slide's banner.
 const MODULE_META = [
-  { value: "predict", label: "Predict", icon: Lightning, tipKey: "module.predict" },
-  { value: "cot", label: "Chain of Thought", icon: Brain, tipKey: "module.cot" },
-  { value: "react", label: "ReAct", icon: Robot, tipKey: "module.react" },
-  { value: "flex", label: "Flex", icon: Sparkle, tipKey: "module.flex" },
-  { value: "workflow", label: "Workflow", icon: FlowArrow, tipKey: "module.workflow" },
+  {
+    value: "predict",
+    label: "Predict",
+    icon: Lightning,
+    tipKey: "module.predict",
+    taglineKey: "submit.module.tagline.predict",
+    Banner: PredictBanner,
+  },
+  {
+    value: "cot",
+    label: "Chain of Thought",
+    icon: Brain,
+    tipKey: "module.cot",
+    taglineKey: "submit.module.tagline.cot",
+    Banner: CotBanner,
+  },
+  {
+    value: "react",
+    label: "ReAct",
+    icon: Robot,
+    tipKey: "module.react",
+    taglineKey: "submit.module.tagline.react",
+    Banner: ReactBanner,
+  },
+  {
+    value: "flex",
+    label: "Flex",
+    icon: Sparkle,
+    tipKey: "module.flex",
+    taglineKey: "submit.module.tagline.flex",
+    Banner: FlexBanner,
+  },
+  {
+    value: "workflow",
+    label: "Workflow",
+    icon: FlowArrow,
+    tipKey: "module.workflow",
+    taglineKey: "submit.module.tagline.workflow",
+    Banner: WorkflowBanner,
+  },
 ] as const;
 
 const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
@@ -110,15 +150,15 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
     onChangeModule: reopenModulePicker,
   };
 
-  // The step opens as the default module's editor; the chip in the header
-  // reopens the picker to switch modules. The three views share one
-  // AnimatePresence so picking or switching a module cross-fades instead of
-  // hard-swapping the card.
+  // The step opens on the picker and stays there until a module is picked;
+  // afterwards the chip in the header reopens it to switch. The three views
+  // share one AnimatePresence so picking or switching a module cross-fades
+  // instead of hard-swapping the card.
   const view = moduleSelectionRequired ? "picker" : isWorkflow ? "workflow" : "code";
 
   let content: React.ReactNode;
   if (view === "picker") {
-    content = <ModulePicker onChoose={chooseModule} />;
+    content = <ModulePicker current={moduleName} onChoose={chooseModule} />;
   } else if (view === "workflow") {
     content = (
       <div className="overflow-hidden rounded-2xl border border-border/50 bg-card/80 backdrop-blur-xl shadow-lg">
@@ -371,38 +411,309 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
   );
 }
 
-function ModulePicker({ onChoose }: { onChoose: (module: string) => void }) {
+function ModulePicker({
+  current,
+  onChoose,
+}: {
+  current: string;
+  onChoose: (module: string) => void;
+}) {
+  // Reopening the picker to switch modules opens on the one already in use.
+  const currentIndex = MODULE_META.findIndex((m) => m.value === current.toLowerCase());
   return (
-    <div className="rounded-2xl border border-border/50 bg-card/80 px-6 py-10 shadow-lg backdrop-blur-xl sm:px-10">
-      <div className="mx-auto max-w-2xl text-center">
-        <h3 className="text-lg font-semibold tracking-tight text-foreground">
-          <HelpTip text={tip("module.choice")}>{msg("submit.module.picker_title")}</HelpTip>
-        </h3>
-        <p className="mt-1 text-sm text-muted-foreground">{msg("submit.module.picker_subtitle")}</p>
-      </div>
-      <div
-        className="mx-auto mt-6 grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2"
-        data-tutorial="module-selector"
-      >
-        {MODULE_META.map(({ value, label, icon: Icon, tipKey }, index) => (
-          <motion.button
-            key={value}
-            type="button"
-            onClick={() => onChoose(value)}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, delay: index * 0.05, ease: "easeOut" }}
-            className="group flex cursor-pointer flex-col items-start gap-2 rounded-xl border border-border/60 bg-background/60 p-4 text-start transition-all duration-150 hover:-translate-y-0.5 hover:border-[#C8A882] hover:shadow-md"
-          >
-            <span className="flex size-9 items-center justify-center rounded-lg bg-[#F3EDE3] text-[#3D2E22] transition-colors duration-150 group-hover:bg-[#3D2E22] group-hover:text-[#FAF8F5]">
-              <Icon className="size-4" />
+    // A container, not a breakpoint: the step card is max-w-5xl in auto mode
+    // and max-w-2xl in manual, so only its own width can say whether the slide
+    // has room to sit banner-beside-copy.
+    <div className="@container rounded-2xl border border-border/50 bg-card/80 px-4 py-5 shadow-lg backdrop-blur-xl sm:px-8 sm:py-7">
+      <div data-tutorial="module-selector">
+        <Carousel
+          items={MODULE_META}
+          itemKey={(m) => m.value}
+          renderItem={(m) => <ModuleSlide module={m} onChoose={onChoose} />}
+          // The step heading rides the carousel's own header row, opposite the
+          // position counter, rather than sitting above it as a second block.
+          title={
+            <span className="text-sm font-semibold tracking-tight">
+              <HelpTip text={tip("module.choice")}>{msg("submit.module.picker_title")}</HelpTip>
             </span>
-            <span className="text-sm font-semibold text-foreground">{label}</span>
-            <span className="text-xs leading-relaxed text-muted-foreground">{tip(tipKey)}</span>
-          </motion.button>
-        ))}
+          }
+          ariaLabel={msg("submit.module.carousel_aria")}
+          jumpIndices={currentIndex >= 0 ? [currentIndex] : undefined}
+          fluid
+        />
       </div>
     </div>
+  );
+}
+
+function ModuleSlide({
+  module,
+  onChoose,
+}: {
+  module: (typeof MODULE_META)[number];
+  onChoose: (module: string) => void;
+}) {
+  const { value, label, icon: Icon, tipKey, taglineKey, Banner } = module;
+  return (
+    <div className="overflow-hidden rounded-xl border border-border/50 bg-background/60 @3xl:flex @3xl:min-h-64 @3xl:items-stretch">
+      <Banner />
+      <div className="flex flex-col items-center justify-center gap-2 px-6 pb-7 pt-6 text-center @3xl:flex-1 @3xl:px-10 @3xl:py-8">
+        <div className="flex items-center gap-2.5">
+          <span className="flex size-9 items-center justify-center rounded-lg bg-[#F3EDE3] text-[#3D2E22]">
+            <Icon className="size-[1.125rem]" />
+          </span>
+          <h4 dir="ltr" className="text-lg font-semibold tracking-tight text-foreground">
+            {label}
+          </h4>
+        </div>
+        <p className="text-sm font-medium text-[#5C4D40]">{msg(taglineKey)}</p>
+        {/* The measure keeps the copy readable at full width; the floor is the
+            longest description's three lines, so the card holds one height as
+            slides change instead of shifting the nav under the cursor. */}
+        <p className="min-h-[4rem] max-w-md text-[0.8125rem] leading-relaxed text-muted-foreground">
+          {moduleDescription(label, tipKey)}
+        </p>
+        <ChooseModuleButton label={label} onClick={() => onChoose(value)} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The slide's commit control: a check that picks the module it sits on.
+ *
+ * Icon-only, so "Use <Module>" carries as the tooltip and as the button's
+ * accessible name — the same string in both, which is what keeps the hover
+ * label and the screen-reader label from drifting apart.
+ */
+function ChooseModuleButton({ label, onClick }: { label: string; onClick: () => void }) {
+  const name = formatMsg("submit.module.choose", { p1: label });
+  return (
+    <TooltipButton tooltip={name} side="top" dir={getActiveDir()}>
+      <Button
+        variant="outline"
+        size="icon-lg"
+        className="mt-2 rounded-full"
+        aria-label={name}
+        onClick={onClick}
+      >
+        <Check />
+      </Button>
+    </TooltipButton>
+  );
+}
+
+/**
+ * A module's description, without the leading `"<Label> — "`.
+ *
+ * The tooltip copy is the one definition of each module in every locale, and
+ * the slide already carries the label as its heading — so the opener is
+ * stripped here rather than maintained as a second description per locale
+ * that would drift from the tooltip. Copy without the opener passes through.
+ * What follows the dash continues the label mid-sentence, so it is recased to
+ * stand alone; scripts without case are unaffected.
+ */
+function moduleDescription(label: string, tipKey: TooltipKey): string {
+  const text = tip(tipKey);
+  const opener = `${label} — `;
+  if (!text.startsWith(opener)) return text;
+  const rest = text.slice(opener.length);
+  return rest.charAt(0).toLocaleUpperCase(getActiveIntlLocale()) + rest.slice(1);
+}
+
+/**
+ * The banner shell every module schematic is drawn into.
+ *
+ * The diagrams read input-to-output left-to-right in every locale, matching
+ * the workflow canvas (which one of them depicts) rather than mirroring.
+ */
+function BannerFrame({ children }: { children: React.ReactNode }) {
+  return (
+    // Sized only by container queries — mixing in a `sm:` height would leave
+    // two utilities competing for `height` from different variant groups.
+    <div className="relative h-36 shrink-0 border-b border-border/50 bg-gradient-to-br from-[#F3EDE3] via-[#FAF8F5] to-[#EDE7DD] @xl:h-44 @3xl:h-auto @3xl:w-[45%] @3xl:border-b-0 @3xl:border-e">
+      {/* The dot grid is CSS rather than an SVG pattern so it covers the whole
+          banner — the schematic letterboxes inside the viewBox, a pattern fill
+          would letterbox with it and leave bare bands at the sides. */}
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        style={{
+          backgroundImage: "radial-gradient(circle, rgba(61,46,34,0.07) 1px, transparent 1px)",
+          backgroundSize: "12px 12px",
+        }}
+      />
+      <svg
+        viewBox="0 0 240 88"
+        preserveAspectRatio="xMidYMid meet"
+        className="absolute inset-0 h-full w-full"
+        aria-hidden="true"
+      >
+        {children}
+      </svg>
+    </div>
+  );
+}
+
+function GBox({
+  x,
+  y,
+  w,
+  h,
+  accent = false,
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  accent?: boolean;
+}) {
+  return (
+    <rect
+      x={x}
+      y={y}
+      width={w}
+      height={h}
+      rx={6}
+      fill={accent ? "#C8A882" : "#FAF8F5"}
+      fillOpacity={accent ? 0.45 : 0.9}
+      stroke="#3D2E22"
+      strokeOpacity={accent ? 0.4 : 0.22}
+      strokeWidth={1.25}
+    />
+  );
+}
+
+function GWire({ d }: { d: string }) {
+  return (
+    <path
+      d={d}
+      fill="none"
+      stroke="#3D2E22"
+      strokeOpacity={0.3}
+      strokeWidth={1.25}
+      strokeLinecap="round"
+    />
+  );
+}
+
+/** A bar standing in for a line of text or code inside a node. */
+function GBar({ x, y, w }: { x: number; y: number; w: number }) {
+  return <rect x={x} y={y} width={w} height={2.5} rx={1.25} fill="#3D2E22" fillOpacity={0.3} />;
+}
+
+/** The arrowhead terminating a wire, tip at `(x, y)`. */
+function GArrow({ x, y, dir }: { x: number; y: number; dir: "up" | "down" | "right" }) {
+  const points =
+    dir === "up"
+      ? `${x},${y} ${x - 2.5},${y + 4.5} ${x + 2.5},${y + 4.5}`
+      : dir === "down"
+        ? `${x},${y} ${x - 2.5},${y - 4.5} ${x + 2.5},${y - 4.5}`
+        : `${x},${y} ${x - 4.5},${y - 2.5} ${x - 4.5},${y + 2.5}`;
+  return <polygon points={points} fill="#3D2E22" fillOpacity={0.35} />;
+}
+
+function PredictBanner() {
+  return (
+    <BannerFrame>
+      <GWire d="M60 44 H98" />
+      <GWire d="M142 44 H180" />
+      <GBox x={26} y={33} w={34} h={22} />
+      <GBar x={34} y={40} w={18} />
+      <GBar x={34} y={46} w={12} />
+      <GBox x={98} y={29} w={44} h={30} accent />
+      <GBar x={110} y={43} w={20} />
+      <GBox x={180} y={33} w={34} h={22} />
+      <GBar x={188} y={40} w={18} />
+      <GBar x={188} y={46} w={12} />
+    </BannerFrame>
+  );
+}
+
+function CotBanner() {
+  return (
+    <BannerFrame>
+      <GWire d="M54 44 H94" />
+      <GWire d="M146 44 H186" />
+      <GBox x={22} y={33} w={32} h={22} />
+      <GBar x={29} y={42} w={18} />
+      <GBox x={94} y={16} w={52} h={56} accent />
+      {/* The reasoning field, then the answer it leads to. */}
+      <GBox x={102} y={23} w={36} h={20} />
+      <GBar x={108} y={29} w={24} />
+      <GBar x={108} y={35} w={16} />
+      <GWire d="M120 43 V51" />
+      <GBox x={102} y={51} w={36} h={14} />
+      <GBar x={108} y={57} w={24} />
+      <GBox x={186} y={33} w={32} h={22} />
+      <GBar x={193} y={42} w={18} />
+    </BannerFrame>
+  );
+}
+
+function ReactBanner() {
+  return (
+    <BannerFrame>
+      <GWire d="M50 34 H90" />
+      <GWire d="M146 34 H190" />
+      {/* The think/act loop: down into a tool, back up with its result. */}
+      <GWire d="M104 46 V62" />
+      <GWire d="M128 62 V46" />
+      <GArrow x={104} y={62} dir="down" />
+      <GArrow x={128} y={46} dir="up" />
+      <GBox x={18} y={23} w={32} h={22} />
+      <GBar x={25} y={32} w={18} />
+      <GBox x={90} y={22} w={56} h={24} accent />
+      <GBar x={104} y={32} w={28} />
+      <GBox x={96} y={62} w={44} h={16} />
+      <GBar x={106} y={69} w={24} />
+      <GBox x={190} y={23} w={32} h={22} />
+      <GBar x={197} y={32} w={18} />
+    </BannerFrame>
+  );
+}
+
+function FlexBanner() {
+  return (
+    <BannerFrame>
+      {/* The program's own code, rewritten by the optimizer. */}
+      <GWire d="M108 44 H128" />
+      <GArrow x={132} y={44} dir="right" />
+      <GBox x={26} y={16} w={78} h={56} />
+      <GBar x={38} y={29} w={44} />
+      <GBar x={38} y={37} w={54} />
+      <GBar x={38} y={45} w={34} />
+      <GBar x={38} y={53} w={46} />
+      <GBox x={136} y={16} w={78} h={56} accent />
+      <GBar x={148} y={29} w={52} />
+      <GBar x={148} y={37} w={36} />
+      <GBar x={148} y={45} w={48} />
+      <GBar x={148} y={53} w={28} />
+      <path
+        d="M204 18 L206 23 L211 25 L206 27 L204 32 L202 27 L197 25 L202 23 Z"
+        fill="#3D2E22"
+        fillOpacity={0.35}
+      />
+    </BannerFrame>
+  );
+}
+
+function WorkflowBanner() {
+  return (
+    <BannerFrame>
+      <GWire d="M44 44 C68 44 70 19 92 19" />
+      <GWire d="M44 44 C68 44 70 69 92 69" />
+      <GWire d="M144 19 C166 19 172 44 196 44" />
+      <GWire d="M144 69 C166 69 172 44 196 44" />
+      <GBox x={14} y={33} w={30} h={22} />
+      <GBar x={21} y={42} w={16} />
+      <GBox x={92} y={8} w={52} h={22} accent />
+      <GBar x={102} y={17} w={32} />
+      <GBox x={92} y={58} w={52} h={22} accent />
+      <GBar x={102} y={67} w={32} />
+      <GBox x={196} y={33} w={30} h={22} />
+      <GBar x={203} y={42} w={16} />
+    </BannerFrame>
   );
 }
 
@@ -461,16 +772,6 @@ function ModeToggle({ value, onChange, disabledReason, module }: ModeToggleProps
             </span>
           </button>
         )}
-        <div className="flex items-center gap-1.5 text-xs text-[#5C4D40]">
-          <Sparkle className="h-3.5 w-3.5 shrink-0 text-[#3D2E22]" />
-          <span className="font-medium">
-            {value === "auto"
-              ? formatMsg("auto.features.submit.components.steps.codestep.template.4", {
-                  p1: TERMS.dataset,
-                })
-              : msg("auto.features.submit.components.steps.codestep.literal.2")}
-          </span>
-        </div>
       </div>
 
       <div className="relative inline-grid grid-cols-2 rounded-lg bg-muted p-1 gap-1">

@@ -144,7 +144,9 @@ export function Carousel<T>({
         ) : (
           <span aria-hidden="true" />
         )}
-        <span className="font-mono tabular-nums text-[0.625rem] text-muted-foreground/70">
+        {/* Kept LTR: the slash is bidi-neutral, so an RTL run reorders the pair
+            and "1 / 5" reads as "5 / 1". */}
+        <span dir="ltr" className="font-mono tabular-nums text-[0.625rem] text-muted-foreground/70">
           {clampedIdx + 1} / {count}
         </span>
       </div>
@@ -218,10 +220,7 @@ export function Carousel<T>({
       </div>
 
       <div
-        className={cn(
-          "mt-2.5 flex items-center justify-between gap-2",
-          framed && "px-2.5 pb-2.5",
-        )}
+        className={cn("mt-2.5 flex items-center justify-between gap-2", framed && "px-2.5 pb-2.5")}
       >
         {/* Prev sits at the inline-start edge — right in RTL, left in LTR. */}
         <CarouselNav
@@ -252,13 +251,7 @@ function CarouselNav({
   // rightward/leftward chevrons in RTL, mirrored in LTR.
   const isRtl = getActiveDir() === "rtl";
   const Icon =
-    direction === "prev"
-      ? isRtl
-        ? CaretRight
-        : CaretLeft
-      : isRtl
-        ? CaretLeft
-        : CaretRight;
+    direction === "prev" ? (isRtl ? CaretRight : CaretLeft) : isRtl ? CaretLeft : CaretRight;
   const label =
     direction === "prev"
       ? msg("auto.features.agent.panel.components.toolscarousel.literal.14")
