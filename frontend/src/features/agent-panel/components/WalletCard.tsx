@@ -84,14 +84,14 @@ export function WalletCard({ call }: WalletCardProps) {
   const customBody = (
     <div className="space-y-3">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span dir="ltr" className="text-[1.25rem] font-semibold tabular-nums text-foreground">
-          {fmtCredits(total)}
+        <span dir="ltr" className="inline-flex items-baseline gap-x-1.5">
+          <span className="text-[1.25rem] font-semibold tabular-nums text-foreground">
+            {fmtCredits(total)}
+          </span>
+          <span className="text-[0.625rem] text-muted-foreground/55">≈ {fmtUsd(total)}</span>
         </span>
         <span className="text-[0.6875rem] text-muted-foreground/70">
           {msg("auto.features.agent.panel.components.walletcard.title")}
-        </span>
-        <span dir="ltr" className="text-[0.625rem] text-muted-foreground/55">
-          ≈ {fmtUsd(total)}
         </span>
       </div>
 
