@@ -304,6 +304,7 @@ export function GlobalSearch() {
       <button
         type="button"
         onClick={() => setOpen(true)}
+        dir={dir}
         className="group inline-flex h-9 w-9 shrink-0 items-center justify-center gap-3 rounded-xl border border-border/70 bg-background/80 px-2.5 text-muted-foreground shadow-none transition-[background-color,border-color,color,box-shadow] duration-150 hover:border-border hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 lg:h-8 lg:w-64 lg:justify-between"
         aria-label={msg("app.shell.search.button_aria")}
         aria-keyshortcuts="Control+K Meta+K"
@@ -316,11 +317,18 @@ export function GlobalSearch() {
             className="size-4 shrink-0 text-muted-foreground transition-colors duration-150 group-hover:text-primary"
             aria-hidden="true"
           />
-          <span className="hidden truncate text-[0.8rem] font-normal tracking-tight text-muted-foreground lg:block">
+          <span
+            dir="auto"
+            className="hidden truncate text-start text-[0.8rem] font-normal tracking-tight text-muted-foreground lg:block"
+          >
             {msg("app.shell.search.label")}
           </span>
         </span>
-        <span className="hidden shrink-0 items-center gap-1 lg:flex" aria-hidden="true">
+        <span
+          dir="ltr"
+          className="hidden shrink-0 items-center gap-1 lg:flex"
+          aria-hidden="true"
+        >
           <kbd className="inline-flex h-[18px] min-w-5 items-center justify-center rounded-md border border-border/70 bg-muted/55 px-1 text-[0.6875rem] font-medium text-muted-foreground">
             {msg("app.shell.search.command_key")}
           </kbd>
