@@ -7,9 +7,11 @@ import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { CircleNotch, GithubLogo, Fingerprint, ArrowLeft } from "@/shared/ui/icons";
 import {
   browserSupportsWebAuthn,
+  browserSupportsWebAuthnAutofill,
   platformAuthenticatorIsAvailable,
   startAuthentication,
   startRegistration,
+  WebAuthnAbortService,
 } from "@simplewebauthn/browser";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
@@ -166,6 +168,40 @@ export function LoginView() {
   useEffect(() => {
     setPasskeySupported(browserSupportsWebAuthn());
   }, []);
+
+  useEffect(() => {
+    if (mode !== "ready" || authMode !== "signin" || !passkeySupported) return;
+    if (twoFactor || passkeyOffer) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (!(await browserSupportsWebAuthnAutofill())) return;
+        const optionsRes = await fetch("/api/webauthn/options", { method: "POST" });
+        if (!optionsRes.ok || cancelled) return;
+        const options = await optionsRes.json();
+        const assertion = await startAuthentication(options, true);
+        if (cancelled) return;
+        const result = await signIn("passkey", {
+          assertion: JSON.stringify(assertion),
+          redirect: false,
+        });
+        if (cancelled) return;
+        if (!result?.error) {
+          track(TelemetryEvent.LoginSucceeded, { method: "passkey_conditional" });
+          finishLogin();
+        }
+      } catch (err) {
+        const name = (err as Error)?.name;
+        if (name === "AbortError" || name === "NotAllowedError") return;
+        const cause = (err as { cause?: { name?: string } })?.cause?.name;
+        if (cause === "AbortError" || cause === "NotAllowedError") return;
+      }
+    })();
+    return () => {
+      cancelled = true;
+      WebAuthnAbortService.cancelCeremony();
+    };
+  }, [mode, authMode, passkeySupported, twoFactor, passkeyOffer]);
 
   useEffect(() => {
     // If the providers endpoint errors (network blip, mis-deployed [...nextauth]
@@ -428,6 +464,7 @@ export function LoginView() {
   async function handlePasskey() {
     setError("");
     setPasskeyLoading(true);
+    WebAuthnAbortService.cancelCeremony();
     try {
       const optionsRes = await fetch("/api/webauthn/options", { method: "POST" });
       if (!optionsRes.ok) {
@@ -448,9 +485,14 @@ export function LoginView() {
       track(TelemetryEvent.LoginSucceeded, { method: "passkey" });
       finishLogin();
     } catch (err) {
-      // The browser throws NotAllowedError when the user dismisses the
-      // platform prompt — that's a cancel, not a failure worth flagging.
-      if ((err as Error)?.name !== "NotAllowedError") {
+      const name = (err as Error)?.name;
+      const cause = (err as { cause?: { name?: string } })?.cause?.name;
+      if (
+        name !== "NotAllowedError" &&
+        cause !== "NotAllowedError" &&
+        name !== "AbortError" &&
+        cause !== "AbortError"
+      ) {
         setError(msg("auth.login.passkey_failed"));
       }
     } finally {
@@ -767,7 +809,7 @@ export function LoginView() {
                           onChange={(e) => setEmail(e.target.value)}
                           placeholder={msg("auth.login.email_placeholder")}
                           autoFocus
-                          autoComplete="email"
+                          autoComplete="username webauthn"
                           dir="ltr"
                           className="h-11 text-left"
                         />
