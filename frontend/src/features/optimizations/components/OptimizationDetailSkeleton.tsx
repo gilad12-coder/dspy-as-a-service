@@ -5,7 +5,11 @@ import { Skeleton } from "@/shared/ui/skeleton";
 export function OptimizationDetailSkeleton() {
   return (
     <div className="space-y-6 pb-12" aria-hidden="true">
-      <div className="rounded-xl border border-border/40 bg-gradient-to-br from-card to-card/80 p-5">
+      <div
+        className="rounded-xl border border-border/40 bg-gradient-to-br from-card to-card/80 p-5"
+        data-tutorial="detail-header-skeleton"
+        aria-hidden="true"
+      >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-3">

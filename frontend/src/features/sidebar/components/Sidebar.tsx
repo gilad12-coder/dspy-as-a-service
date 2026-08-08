@@ -435,7 +435,9 @@ export function Sidebar() {
     root.style.setProperty("--app-sidebar-width", `${effectiveWidth}px`);
     if (snapping) root.setAttribute("data-sidebar-snapping", "");
     else root.removeAttribute("data-sidebar-snapping");
-  }, [effectiveWidth, snapping]);
+    if (isCollapsed) root.setAttribute("data-sidebar-collapsed", "");
+    else root.removeAttribute("data-sidebar-collapsed");
+  }, [effectiveWidth, snapping, isCollapsed]);
 
   return (
     <aside

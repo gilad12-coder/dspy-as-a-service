@@ -50,6 +50,15 @@ export interface TutorialHooks {
   setColumnRoles: (roles: Record<string, "input" | "output" | "ignore">) => void;
   /** Seed the wizard's dataset filename display. */
   setDatasetFileName: (name: string) => void;
+  /**
+   * Commit a module choice in the wizard's code step. Picking one is a
+   * required step for the user, so the tour has to make the same commitment:
+   * until it does, the step shows the picker and the signature and metric
+   * editors the following tour steps spotlight are not rendered at all.
+   */
+  chooseModule: (name: string) => void;
+  /** Send the code step back to the module picker, for the step that shows it. */
+  reopenModulePicker: () => void;
   /** Seed the wizard's signature code editor. */
   setSignatureCode: (code: string) => void;
   /** Seed the wizard's metric code editor. */
@@ -74,6 +83,8 @@ export interface TutorialHooks {
     cols: string[];
     textCol: string | string[];
   }) => void;
+  /** Force the tagger view to show the setup wizard (new session). */
+  setTaggerStartingNew: (value: boolean) => void;
   /** Open or close the generalist agent panel (left-anchored aside). */
   setGeneralistPanelOpen: (open: boolean) => void;
   /**
@@ -89,6 +100,8 @@ export interface TutorialHooks {
    * target exists when the spotlight lands.
    */
   setAdvancedSectionsOpen: (open: boolean) => void;
+  /** Enable or disable the global advanced mode that gates dataset splits and GEPA tuning. */
+  setAdvancedMode: (enabled: boolean) => void;
   /**
    * Replay the demo optimization simulation. The deep-dive tour calls this
    * when reaching the trajectory step so the user sees the tree grow live

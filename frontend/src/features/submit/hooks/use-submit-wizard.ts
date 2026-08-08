@@ -418,6 +418,8 @@ export function useSubmitWizard() {
       registerTutorialHook("setParsedDataset", setParsedDataset),
       registerTutorialHook("setColumnRoles", setColumnRoles),
       registerTutorialHook("setDatasetFileName", setDatasetFileName),
+      registerTutorialHook("chooseModule", chooseModule),
+      registerTutorialHook("reopenModulePicker", reopenModulePicker),
       registerTutorialHook("setSignatureCode", setSignatureCode),
       registerTutorialHook("setMetricCode", setMetricCode),
       registerTutorialHook("setOptimizerName", setOptimizerName),

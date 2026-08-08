@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { List } from "@/shared/ui/icons";
+import { registerTutorialHook } from "@/features/tutorial";
 import type { TaggerSessionDetail } from "@/shared/lib/api";
 import { Button } from "@/shared/ui/primitives/button";
 import { DataHubTabs } from "@/shared/ui/data-hub-tabs";
@@ -48,6 +49,11 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
   useEffect(() => {
     if (new URLSearchParams(window.location.search).has("dataset")) setStartingNew(true);
   }, []);
+
+  useEffect(
+    () => registerTutorialHook("setTaggerStartingNew", setStartingNew),
+    [],
+  );
 
   if (!initialSession && !startingNew) {
     // The shell leaves /tagger unwrapped for the annotation surfaces; the

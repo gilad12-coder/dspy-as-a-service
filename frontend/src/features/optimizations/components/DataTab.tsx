@@ -190,11 +190,15 @@ export function DataTab({
       });
       setTestResults({
         optimized: {
+          7: { index: 7, outputs: { category: "spam" }, score: 0.0, pass: false },
+          8: { index: 8, outputs: { category: "important" }, score: 1.0, pass: true },
           9: { index: 9, outputs: { category: "promotional" }, score: 1.0, pass: true },
-          10: { index: 10, outputs: { category: "important" }, score: 1.0, pass: true },
+          10: { index: 10, outputs: { category: "important" }, score: 0.0, pass: false },
           11: { index: 11, outputs: { category: "spam" }, score: 1.0, pass: true },
         },
         baseline: {
+          7: { index: 7, outputs: { category: "promotional" }, score: 0.0, pass: false },
+          8: { index: 8, outputs: { category: "important" }, score: 1.0, pass: true },
           9: { index: 9, outputs: { category: "spam" }, score: 0.0, pass: false },
           10: { index: 10, outputs: { category: "important" }, score: 1.0, pass: true },
           11: { index: 11, outputs: { category: "promotional" }, score: 0.0, pass: false },

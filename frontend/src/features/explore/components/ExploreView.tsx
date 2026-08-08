@@ -32,7 +32,8 @@ export function ExploreView() {
   const sessionUser = sessionIdentity(session);
   const { points: realPoints, loading: corpusLoading, error: corpusError } = usePublicDashboard();
   const [demoPoints, setDemoPoints] = React.useState<PublicDashboardPoint[] | null>(null);
-  const points = demoPoints ?? realPoints;
+  const rawPoints = demoPoints ?? realPoints;
+  const points = Array.isArray(rawPoints) ? rawPoints : [];
 
   React.useEffect(() => registerTutorialHook("setDemoExplorePoints", setDemoPoints), []);
   React.useEffect(() => {
@@ -362,9 +363,10 @@ function collectDistinct(
   points: PublicDashboardPoint[],
   key: "winning_model" | "optimizer_name" | "module_name",
 ): string[] {
+  if (!Array.isArray(points)) return [];
   const set = new Set<string>();
   for (const p of points) {
-    const v = p[key];
+    const v = (p as PublicDashboardPoint)[key];
     if (typeof v === "string" && v.length > 0) set.add(v);
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b));

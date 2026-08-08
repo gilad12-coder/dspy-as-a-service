@@ -12,7 +12,7 @@ import {
   ToastContainer,
 } from "@/shared/providers";
 import { SplashScreen } from "@/shared/layout/splash-screen";
-import { TutorialOverlay, TutorialMenu, TutorialProvider } from "@/features/tutorial";
+import { TutorialOverlay, TutorialProvider } from "@/features/tutorial";
 import {
   UserPrefsProvider,
   LiteModeProvider,
@@ -238,7 +238,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                               <InsufficientCreditsModalHost />
                             </SettingsModalProvider>
                             <TutorialOverlay />
-                            <TutorialMenu />
                           </TutorialProvider>
                         </AppSkeletonTheme>
                       </TooltipProvider>
