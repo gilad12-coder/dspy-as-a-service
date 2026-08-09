@@ -373,8 +373,8 @@ export function GlobalSearch() {
               aria-expanded="true"
               autoComplete="off"
               spellCheck={false}
-              className="h-full min-w-0 flex-1 bg-transparent text-[0.95rem] text-foreground outline-none placeholder:text-muted-foreground/70"
-              dir="auto"
+              dir={dir}
+              className="h-full min-w-0 flex-1 bg-transparent text-start text-[0.95rem] text-foreground outline-none placeholder:text-start placeholder:text-muted-foreground/70"
             />
           </div>
 

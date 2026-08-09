@@ -333,11 +333,10 @@ export function ModelPicker({
           <MagnifyingGlass className="size-3.5 shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
-            dir="auto"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={msg("auto.features.submit.components.modelpicker.literal.4")}
-            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="flex-1 bg-transparent text-start text-sm outline-none placeholder:text-start placeholder:text-muted-foreground"
           />
           {discoverUrl && (
             <button
