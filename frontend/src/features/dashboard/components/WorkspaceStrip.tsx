@@ -180,11 +180,11 @@ export function WorkspaceStrip() {
         onOpen={() => openTo("billing")}
       >
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <p className="text-xl font-bold leading-none tracking-tight text-foreground tabular-nums">
-            {formatCredits(walletTotal, locale)}
-          </p>
-          <span className="text-xs text-muted-foreground" dir="ltr">
-            ≈ {formatUsd(creditsToUsd(walletTotal), locale)}
+          <span dir="ltr" className="inline-flex items-baseline gap-x-1.5">
+            <span className="text-xl font-bold leading-none tracking-tight text-foreground tabular-nums">
+              {formatCredits(walletTotal, locale)}
+            </span>
+            <span className="text-xs text-muted-foreground">≈ {formatUsd(creditsToUsd(walletTotal), locale)}</span>
           </span>
         </div>
         {wallet.usage.length === 0 ? (
