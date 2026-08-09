@@ -1,3 +1,15 @@
 {
+  "app.shell.search.kw.about": "Info version",
+  "app.shell.search.kw.account": "Konto Sprache preferences lite language",
+  "app.shell.search.kw.admin": "Admin storage quota",
+  "app.shell.search.kw.agent": "Agentenbereich assistant trust memory",
+  "app.shell.search.kw.api": "API token",
+  "app.shell.search.kw.billing": "Abrechnung credits payment",
+  "app.shell.search.kw.privacy": "Datenschutz data analytics",
+  "app.shell.search.kw.providers": "Anbieter keys openai anthropic",
+  "app.shell.search.kw.security": "Sicherheit login passkey",
+  "app.shell.search.kw.tagging": "Tagging labels copilot",
+  "app.shell.search.kw.usage": "Nutzung spend cost tokens",
+  "app.shell.search.kw.wizard": "Optimierung models",
   "auto.features.agent.panel.components.generalistpanel.1": "Grüß Sie, wie kann ich helfen?"
 }
