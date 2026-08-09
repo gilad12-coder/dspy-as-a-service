@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { validateCode } from "@/shared/lib/api";
+import { msg } from "@/shared/lib/messages";
 import { useCodeAgent, type CodeAgentState } from "@/shared/hooks/use-code-agent";
 import { autoLayoutSpec, defaultWorkflowSpec } from "@/features/submit/workflow/model";
 import type { ParsedDataset } from "@/shared/lib/parse-dataset";
@@ -181,7 +182,7 @@ export function useCodeAuthoringAgent(
       } catch (err) {
         return {
           valid: false,
-          errors: [err instanceof Error ? err.message : "Validation failed"],
+          errors: [err instanceof Error ? err.message : msg("agent.validation.failed")],
           warnings: [],
         };
       }

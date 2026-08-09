@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Minus, Plus } from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
+import { msg } from "@/shared/lib/messages";
 
 interface NumberInputProps {
   id?: string;
@@ -85,7 +86,7 @@ export function NumberInput({
         onClick={decrement}
         disabled={disabled || (min != null && numValue <= min)}
         className="flex items-center justify-center size-9 shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-        aria-label="Decrease"
+        aria-label={msg("shared.number_input.decrease")}
       >
         <Minus className="size-3" />
       </button>
@@ -124,7 +125,7 @@ export function NumberInput({
         onClick={increment}
         disabled={disabled || (max != null && numValue >= max)}
         className="flex items-center justify-center size-9 shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-        aria-label="Increase"
+        aria-label={msg("shared.number_input.increase")}
       >
         <Plus className="size-3" />
       </button>

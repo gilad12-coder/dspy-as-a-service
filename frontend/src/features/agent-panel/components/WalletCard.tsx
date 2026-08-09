@@ -83,7 +83,7 @@ export function WalletCard({ call }: WalletCardProps) {
 
   const customBody = (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <div dir="ltr" className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span dir="ltr" className="inline-flex items-baseline gap-x-1.5">
           <span className="text-[1.25rem] font-semibold tabular-nums text-foreground">
             {fmtCredits(total)}

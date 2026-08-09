@@ -3,13 +3,13 @@ import { Suspense } from "react";
 import { CircleNotch } from "@/shared/ui/icons";
 import { TERMS } from "@/shared/lib/terms";
 
-import { formatMsg } from "@/shared/lib/messages";
+import { formatMsg, msg } from "@/shared/lib/messages";
 import { PageContainer } from "@/shared/layout/page-container";
 // generateMetadata, not a static `metadata` object: the description resolves
 // i18n, which must follow the request locale rather than freeze at module load.
 export function generateMetadata(): Metadata {
   return {
-    title: "Text labeling",
+    title: msg("tagger.page.title"),
     description: formatMsg("auto.app.tagger.layout.template.1", { p1: TERMS.dataset }),
   };
 }

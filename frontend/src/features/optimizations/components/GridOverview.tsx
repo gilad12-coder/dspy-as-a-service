@@ -41,7 +41,7 @@ import { formatPercent } from "@/shared/lib";
 import { deleteGridPair, restartGridPair, resumeGridPair } from "@/shared/lib/api";
 import { ChartTable } from "@/shared/charts/chart-table";
 import { useLiteMode } from "@/features/settings";
-import { msg } from "@/shared/lib/messages";
+import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { tip } from "@/shared/lib/tooltips";
 import { computePairScores } from "../lib/pair-scores";
@@ -283,8 +283,10 @@ function GridOverviewImpl({
             </p>
             <p className="text-sm font-mono font-bold tabular-nums text-foreground mt-0.5">
               {speedPair?.avg_response_time_ms != null
-                ? `${(speedPair.avg_response_time_ms / 1000).toFixed(1)}s`
-                : "—"}
+                ? formatMsg("optimizations.grid.response_time_seconds", {
+                    value: (speedPair.avg_response_time_ms / 1000).toFixed(1),
+                  })
+                : msg("common.empty")}
             </p>
           </TiltCard>
         </StaggerItem>
@@ -342,7 +344,11 @@ function GridOverviewImpl({
                           ),
                           align: "end",
                           format: (value) =>
-                            typeof value === "number" ? `${value.toFixed(1)}%` : "—",
+                            typeof value === "number"
+                              ? formatMsg("optimizations.grid.format.percent", {
+                                  value: value.toFixed(1),
+                                })
+                              : msg("common.empty"),
                         },
                         {
                           key: "latency",
@@ -351,7 +357,11 @@ function GridOverviewImpl({
                           ),
                           align: "end",
                           format: (value) =>
-                            typeof value === "number" ? `${value.toFixed(2)}s` : "—",
+                            typeof value === "number"
+                              ? formatMsg("optimizations.grid.format.seconds", {
+                                  value: value.toFixed(2),
+                                })
+                              : msg("common.empty"),
                         },
                       ]}
                     />
@@ -500,7 +510,9 @@ function GridOverviewImpl({
                               ),
                               align: "end",
                               format: (value) =>
-                                typeof value === "number" ? `${value}%` : "—",
+                                typeof value === "number"
+                                  ? formatMsg("optimizations.grid.format.percent", { value: String(value) })
+                                  : msg("common.empty"),
                             },
                             {
                               key: "optimizedScore",
@@ -509,7 +521,9 @@ function GridOverviewImpl({
                               ),
                               align: "end",
                               format: (value) =>
-                                typeof value === "number" ? `${value}%` : "—",
+                                typeof value === "number"
+                                  ? formatMsg("optimizations.grid.format.percent", { value: String(value) })
+                                  : msg("common.empty"),
                             },
                           ]}
                         />
@@ -672,7 +686,9 @@ function GridOverviewImpl({
                               ),
                               align: "end",
                               format: (value) =>
-                                typeof value === "number" ? `${value}%` : "—",
+                                typeof value === "number"
+                                  ? formatMsg("optimizations.grid.format.percent", { value: String(value) })
+                                  : msg("common.empty"),
                             },
                             {
                               key: "speed",
@@ -681,7 +697,9 @@ function GridOverviewImpl({
                               ),
                               align: "end",
                               format: (value) =>
-                                typeof value === "number" ? `${value}%` : "—",
+                                typeof value === "number"
+                                  ? formatMsg("optimizations.grid.format.percent", { value: String(value) })
+                                  : msg("common.empty"),
                             },
                           ]}
                         />
@@ -847,8 +865,8 @@ function GridOverviewImpl({
                               align: "end",
                               format: (value) =>
                                 typeof value === "number"
-                                  ? `${value}${msg("auto.features.optimizations.components.gridoverview.14")}`
-                                  : "—",
+                                  ? formatMsg("optimizations.grid.format.seconds", { value: String(value) })
+                                  : msg("common.empty"),
                             },
                           ]}
                         />
@@ -1021,8 +1039,10 @@ function GridOverviewImpl({
                       </div>
                       <div className={isSpeed ? "font-bold text-[#3D2E22]" : "text-foreground"}>
                         {pr.avg_response_time_ms != null
-                          ? `${(pr.avg_response_time_ms / 1000).toFixed(1)}s`
-                          : "—"}
+                          ? formatMsg("optimizations.grid.response_time_seconds", {
+                              value: (pr.avg_response_time_ms / 1000).toFixed(1),
+                            })
+                          : msg("common.empty")}
                       </div>
                     </div>
                   </div>

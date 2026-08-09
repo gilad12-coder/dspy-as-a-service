@@ -8,7 +8,7 @@ import { InlineErrorRow } from "@/shared/ui/inline-error-row";
 import type { ServeInfoResponse, WorkflowNodeTrace } from "@/shared/types/api";
 import { autoResizeTextarea, MessageActions } from "@/shared/ui/agent";
 import { formatOutput } from "@/shared/lib";
-import { msg } from "@/shared/lib/messages";
+import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 export interface ServeChatProps {
@@ -89,8 +89,10 @@ export function ServeChat({
                     dir="auto"
                   >
                     <div className="text-[0.625rem] font-medium text-[#3D2E22]/50 mb-1">
-                      {msg("auto.features.optimizations.components.servechat.3")}
-                      {i + 1}
+                      {formatMsg("optimizations.servechat.demo_label", {
+                        label: msg("auto.features.optimizations.components.servechat.3"),
+                        index: String(i + 1),
+                      })}
                     </div>
                     <div className="text-xs text-foreground/70 line-clamp-2 font-mono" dir="ltr">
                       {Object.entries(demo.inputs)
@@ -166,7 +168,10 @@ export function ServeChat({
                   >
                     {serveInfo.input_fields.map((k, i, arr) => (
                       <div key={k} className="font-mono leading-relaxed">
-                        <span className="text-[#C8A882] text-xs">{k}: </span>
+                        <span className="text-[#C8A882] text-xs">
+                          {k}
+                          {msg("optimizations.serve.field_separator")}
+                        </span>
                         <span className="whitespace-pre-wrap break-words">
                           {run.inputs[k] ?? ""}
                         </span>
@@ -194,7 +199,10 @@ export function ServeChat({
                       key={k}
                       className={`font-mono text-sm leading-relaxed ${arr.length > 1 ? "mb-1" : ""}`}
                     >
-                      <span className="text-muted-foreground text-xs">{k}: </span>
+                      <span className="text-muted-foreground text-xs">
+                        {k}
+                        {msg("optimizations.serve.field_separator")}
+                      </span>
                       <span className="whitespace-pre-wrap break-words">
                         {formatOutput(run.outputs[k])}
                       </span>
@@ -206,7 +214,7 @@ export function ServeChat({
                   <div className="mt-1">
                     <MessageActions
                       text={serveInfo.output_fields
-                        .map((k) => `${k}: ${formatOutput(run.outputs[k])}`)
+                        .map((k) => `${k}${msg("optimizations.serve.field_separator")}${formatOutput(run.outputs[k])}`)
                         .join("\n")}
                       model={run.model}
                       onRegenerate={
@@ -236,7 +244,10 @@ export function ServeChat({
               >
                 {serveInfo.input_fields.map((k, i, arr) => (
                   <div key={k} className="font-mono leading-relaxed">
-                    <span className="text-[#C8A882] text-xs">{k}: </span>
+                    <span className="text-[#C8A882] text-xs">
+                      {k}
+                      {msg("optimizations.serve.field_separator")}
+                    </span>
                     <span className="whitespace-pre-wrap break-words">
                       {streamingRun.inputs[k] ?? ""}
                     </span>
@@ -269,7 +280,10 @@ export function ServeChat({
                     key={k}
                     className={`font-mono text-sm leading-relaxed ${arr.length > 1 ? "mb-1" : ""}`}
                   >
-                    <span className="text-muted-foreground text-xs">{k}: </span>
+                    <span className="text-muted-foreground text-xs">
+                      {k}
+                      {msg("optimizations.serve.field_separator")}
+                    </span>
                     <span className="whitespace-pre-wrap break-words">
                       {streamingRun.partial[k] ?? ""}
                     </span>

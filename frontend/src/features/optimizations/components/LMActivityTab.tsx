@@ -5,7 +5,7 @@ import { ChatText, Pulse, Timer } from "@/shared/ui/icons";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
 import { ExportTableMenu } from "@/shared/ui/export-table-menu";
-import { msg } from "@/shared/lib/messages";
+import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { tip } from "@/shared/lib/tooltips";
 import type { LMActivity, LMStageStats } from "@/shared/types/api";
@@ -64,10 +64,10 @@ function formatCalls(n: number): string {
 // the diagnostic question is "where did time go", so consistent scale wins
 // over per-cell precision at the millisecond floor.
 function formatSeconds(ms: number | null | undefined): string {
-  if (ms == null) return "—";
+  if (ms == null) return msg("common.empty");
   const seconds = ms / 1000;
-  if (seconds < 0.1) return "<0.1s";
-  return `${seconds.toFixed(1)}s`;
+  if (seconds < 0.1) return msg("optimizations.duration.lt_0_1s");
+  return formatMsg("optimizations.duration.seconds", { value: seconds.toFixed(1) });
 }
 
 function MetricCells({

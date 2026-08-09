@@ -6,7 +6,7 @@ import { msg } from "@/shared/lib/messages";
 // i18n, which must follow the request locale rather than freeze at module load.
 export function generateMetadata(): Metadata {
   return {
-    title: "Storage",
+    title: msg("storage.page.title"),
     description: msg("storage.page.subtitle"),
   };
 }

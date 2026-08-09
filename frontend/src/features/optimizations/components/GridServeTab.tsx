@@ -31,8 +31,8 @@ import { computePairScores } from "../lib/pair-scores";
 function shortEffort(value: string | null | undefined): string | null {
   if (!value) return null;
   const v = value.toLowerCase();
-  if (v === "minimal") return "min";
-  if (v === "medium") return "med";
+  if (v === "minimal") return msg("optimizations.reasoning_effort.short.min");
+  if (v === "medium") return msg("optimizations.reasoning_effort.short.med");
   return v;
 }
 

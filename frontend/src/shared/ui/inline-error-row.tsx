@@ -4,6 +4,7 @@ import * as React from "react";
 import { X, XCircle } from "@/shared/ui/icons";
 
 import { cn } from "@/shared/lib/utils";
+import { msg } from "@/shared/lib/messages";
 
 interface InlineErrorRowProps {
   /** Headline rendered in semibold above the message. Optional. */
@@ -29,9 +30,10 @@ export function InlineErrorRow({
   message,
   onDismiss,
   hideIcon = false,
-  dismissLabel = "Dismiss",
+  dismissLabel,
   className,
 }: InlineErrorRowProps) {
+  const resolvedDismissLabel = dismissLabel ?? msg("shared.dismiss");
   return (
     <div
       role="alert"
@@ -51,7 +53,7 @@ export function InlineErrorRow({
         <button
           type="button"
           onClick={onDismiss}
-          aria-label={dismissLabel}
+          aria-label={resolvedDismissLabel}
           className="close-button shrink-0"
         >
           <X />

@@ -1640,10 +1640,10 @@ export function useSubmitWizard() {
   ): Promise<ValidateCodeResponse | EditorValidationResult> => {
     const code = overrideCode ?? (kind === "signature" ? signatureCode : metricCode);
     if (!code.trim()) {
-      return { valid: false, errors: [`Missing ${kind} code`], warnings: [] };
+      return { valid: false, errors: [formatMsg("submit.validation.missing_code", { kind })], warnings: [] };
     }
     if (!parsedDataset || parsedDataset.rowCount === 0) {
-      return { valid: false, errors: ["Upload a dataset before validating code"], warnings: [] };
+      return { valid: false, errors: [msg("submit.validation.dataset_before_code")], warnings: [] };
     }
     const mapping = currentColumnMapping();
     const sampleRow = parsedDataset.rows[0] as Record<string, unknown>;
@@ -1671,7 +1671,7 @@ export function useSubmitWizard() {
       setSignatureValidation(result as ValidateCodeResponse);
       return result;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Signature validation failed";
+      const errorMessage = err instanceof Error ? err.message : msg("submit.validation.signature_failed");
       return { valid: false, errors: [errorMessage], warnings: [] };
     }
   };
@@ -1684,7 +1684,7 @@ export function useSubmitWizard() {
       setMetricValidation(result as ValidateCodeResponse);
       return result;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Metric validation failed";
+      const errorMessage = err instanceof Error ? err.message : msg("submit.validation.metric_failed");
       return { valid: false, errors: [errorMessage], warnings: [] };
     }
   };
