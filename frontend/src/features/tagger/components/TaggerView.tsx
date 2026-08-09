@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { List } from "@/shared/ui/icons";
 import { registerTutorialHook } from "@/features/tutorial";
 import type { TaggerSessionDetail } from "@/shared/lib/api";
-import { Button } from "@/shared/ui/primitives/button";
 import { DataHubTabs } from "@/shared/ui/data-hub-tabs";
 import { PageContainer } from "@/shared/layout/page-container";
+import { Button } from "@/shared/ui/primitives/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
+import { Check, PencilSimple } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 import { useTagger } from "../hooks/use-tagger";
 import { TaggerResultsTable } from "./TaggerResultsTable";
@@ -32,6 +33,9 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
   // surprise scene change mid-flip) — the overview is one click away instead.
   // Shared-in viewers always land on the table: browsing is their whole job.
   const [focusRow, setFocusRow] = useState(() => !allLabeled && !readOnlyViewer);
+  // A finished AI-labeled session opens read-only so a stray tap can't rewrite a
+  // settled label; "Edit labels" unlocks the row view for the rest of the visit.
+  const [editingFinished, setEditingFinished] = useState(false);
 
   // A finished assist run swaps the row view for the results overview once —
   // the completion accounting rides above that table now, so landing there is
@@ -120,17 +124,11 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
     }
     return (
       <PageContainer full>
-        {backBar}
         <div className="mb-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setFocusRow(false)}
-            className="gap-1.5"
-          >
-            <List className="size-3.5" />
-            {msg("tagger.results.back")}
-          </Button>
+          <TaggerBackLink
+            onExit={() => setFocusRow(false)}
+            label={msg("tagger.results.back")}
+          />
         </div>
         <TaggerAnnotation
           config={tagger.config}
@@ -221,6 +219,17 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
 
   const assistActive = tagger.assist !== null && tagger.phase === "review";
 
+  // A finished AI run browses read-only until the owner opts into editing. Once
+  // unlocked, edits route through the assist mutators (not the plain ones) so
+  // each one restamps that row's provenance human and moves the recap's
+  // AI→Human tally — the very sync the plain mutators skip outside review.
+  const finishedAssist =
+    tagger.assist !== null &&
+    allLabeled &&
+    (tagger.phase === "annotating" || tagger.phase === "complete");
+  const editActive = assistActive || (finishedAssist && editingFinished);
+  const locked = finishedAssist && !editingFinished;
+
   // During a round the header bar tracks the human's audit, not the AI's
   // pre-labels — the same decided/total the rail shows, one number per screen.
   const openRound = tagger.openRound;
@@ -245,12 +254,13 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
       taggedCount={tagger.frameTaggedCount}
       reviewProgress={reviewProgress}
       celebrateCompletion={!tagger.assist}
+      readOnly={locked}
       onNavigate={tagger.navigate}
       onGoTo={tagger.goTo}
       onJumpUntagged={tagger.jumpToUntagged}
-      onToggleBinary={assistActive ? tagger.assistToggleBinary : tagger.toggleBinary}
-      onToggleCategory={assistActive ? tagger.assistToggleCategory : tagger.toggleCategory}
-      onSetFreetext={assistActive ? tagger.assistSetFreetext : tagger.setFreetext}
+      onToggleBinary={editActive ? tagger.assistToggleBinary : tagger.toggleBinary}
+      onToggleCategory={editActive ? tagger.assistToggleCategory : tagger.toggleCategory}
+      onSetFreetext={editActive ? tagger.assistSetFreetext : tagger.setFreetext}
       onBack={tagger.backToSetup}
     />
   );
@@ -305,19 +315,40 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
     }
     return (
       <PageContainer full>
-        {backBar}
-        {browsing && allLabeled && (
-          <div className="mb-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setFocusRow(false)}
-              className="gap-1.5"
-            >
-              <List className="size-3.5" />
-              {msg("tagger.results.back")}
-            </Button>
+        {browsing && allLabeled ? (
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <TaggerBackLink
+              onExit={() => setFocusRow(false)}
+              label={msg("tagger.results.back")}
+            />
+            {finishedAssist && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="shrink-0"
+                    onClick={() => setEditingFinished((v) => !v)}
+                    aria-label={msg(
+                      editingFinished ? "tagger.results.edit_done" : "tagger.results.edit",
+                    )}
+                  >
+                    {editingFinished ? (
+                      <Check className="size-3.5" />
+                    ) : (
+                      <PencilSimple className="size-3.5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {msg(editingFinished ? "tagger.results.edit_done" : "tagger.results.edit")}
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
+        ) : (
+          backBar
         )}
         {annotation}
       </PageContainer>

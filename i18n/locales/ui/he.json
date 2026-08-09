@@ -2643,6 +2643,8 @@
   "tagger.results.col.label": "תווית",
   "tagger.results.col.source": "מקור",
   "tagger.results.col.text": "טקסט",
+  "tagger.results.edit": "עריכת תוויות",
+  "tagger.results.edit_done": "סיום",
   "tagger.results.empty": "אין שורות שמתאימות לסינון הזה.",
   "tagger.results.recap.ai_auto": "תויגו אוטומטית",
   "tagger.results.recap.ai_confirmed": "תיוגי AI שאישרתם",

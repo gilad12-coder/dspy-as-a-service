@@ -2643,6 +2643,8 @@
   "tagger.results.col.label": "Label",
   "tagger.results.col.source": "Source",
   "tagger.results.col.text": "Text",
+  "tagger.results.edit": "Edit labels",
+  "tagger.results.edit_done": "Done",
   "tagger.results.empty": "No rows match this filter.",
   "tagger.results.recap.ai_auto": "Labeled automatically",
   "tagger.results.recap.ai_confirmed": "AI labels you confirmed",

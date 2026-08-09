@@ -2645,6 +2645,8 @@ export type MessageKey =
   | "tagger.results.col.label"
   | "tagger.results.col.source"
   | "tagger.results.col.text"
+  | "tagger.results.edit"
+  | "tagger.results.edit_done"
   | "tagger.results.empty"
   | "tagger.results.recap.ai_auto"
   | "tagger.results.recap.ai_confirmed"
@@ -5614,6 +5616,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.results.col.label": "תווית",
   "tagger.results.col.source": "מקור",
   "tagger.results.col.text": "טקסט",
+  "tagger.results.edit": "עריכת תוויות",
+  "tagger.results.edit_done": "סיום",
   "tagger.results.empty": "אין שורות שמתאימות לסינון הזה.",
   "tagger.results.recap.ai_auto": "תויגו אוטומטית",
   "tagger.results.recap.ai_confirmed": "תיוגי AI שאישרתם",
@@ -14120,6 +14124,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tagger.results.col.label": "Label",
   "tagger.results.col.source": "Source",
   "tagger.results.col.text": "Text",
+  "tagger.results.edit": "Edit labels",
+  "tagger.results.edit_done": "Done",
   "tagger.results.empty": "No rows match this filter.",
   "tagger.results.recap.ai_auto": "Labeled automatically",
   "tagger.results.recap.ai_confirmed": "AI labels you confirmed",

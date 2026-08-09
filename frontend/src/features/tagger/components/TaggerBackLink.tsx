@@ -18,21 +18,24 @@ const ARROW_CLASSES =
  * ``/tagger`` that drops the resume mark — a deliberate exit, so the sidebar's
  * Text-tagging button offers a fresh start instead of bouncing back in. Pass
  * ``onExit`` for sessions still living on ``/tagger`` itself (the pre-persist
- * wizard flow), where "back" must reset local state rather than navigate.
+ * wizard flow), where "back" must reset local state rather than navigate. Pass
+ * ``label`` to relabel the destination — e.g. a finished session's row view
+ * points back to its own results overview, not out to the sessions list.
  */
-export function TaggerBackLink({ onExit }: { onExit?: () => void }) {
+export function TaggerBackLink({ onExit, label }: { onExit?: () => void; label?: string }) {
+  const text = label ?? msg("tagger.session.back");
   if (onExit) {
     return (
       <button type="button" onClick={onExit} className={LINK_CLASSES}>
         <ArrowLeft className={ARROW_CLASSES} aria-hidden="true" />
-        {msg("tagger.session.back")}
+        {text}
       </button>
     );
   }
   return (
     <Link href="/tagger" onClick={() => clearRecentSession("tagger")} className={LINK_CLASSES}>
       <ArrowLeft className={ARROW_CLASSES} aria-hidden="true" />
-      {msg("tagger.session.back")}
+      {text}
     </Link>
   );
 }
