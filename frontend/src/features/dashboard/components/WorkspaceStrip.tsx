@@ -179,12 +179,15 @@ export function WorkspaceStrip() {
         title={msg("dashboard.workspace.credits.title")}
         onOpen={() => openTo("billing")}
       >
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
           <span dir="ltr" className="text-xl font-bold leading-none tracking-tight text-foreground tabular-nums">
             {formatCredits(walletTotal, locale)}
           </span>
+          <span aria-hidden className="text-xs text-muted-foreground">
+            ≈
+          </span>
           <span dir="ltr" className="text-xs text-muted-foreground">
-            ≈ {formatUsd(creditsToUsd(walletTotal), "en")}
+            {formatUsd(creditsToUsd(walletTotal), "en")}
           </span>
         </div>
         {wallet.usage.length === 0 ? (
