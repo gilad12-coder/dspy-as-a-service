@@ -12,7 +12,7 @@ import {
   type AgentPreferencePatch,
   type UserPrefs,
 } from "../lib/prefs";
-import { registerTutorialHook } from "@/features/tutorial/lib/bridge";
+import { registerTutorialHook } from "@/features/tutorial";
 
 interface UserPrefsContextValue {
   prefs: UserPrefs;
