@@ -316,6 +316,17 @@
     unicode-bidi: plaintext;
     text-align: start;
   }
+  /* Text and placeholder start side follows the element's dir.
+     With dir="auto" (default on Input) Hebrew starts on the right,
+     English on the left. Explicit dir="ltr" + text-left overrides
+     for email/code fields. */
+  input,
+  textarea {
+    text-align: start;
+  }
+  textarea {
+    unicode-bidi: plaintext;
+  }
 }
 
 *,
