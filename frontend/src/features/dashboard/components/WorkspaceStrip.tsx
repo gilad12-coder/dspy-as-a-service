@@ -9,6 +9,7 @@ import { formatBytes } from "@/shared/lib/formatters";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { cn } from "@/shared/lib/utils";
+import { Skeleton } from "@/shared/ui/skeleton";
 import { useWorkspaceSummary } from "../hooks/use-workspace-summary";
 
 /** Chrome shared by the three workspace sections: icon tile, title, count, body. */
@@ -85,13 +86,61 @@ function EmptyHint({ text }: { text: string }) {
   return <p className="text-xs text-muted-foreground">{text}</p>;
 }
 
+function SectionDivider() {
+  return (
+    <div
+      aria-hidden="true"
+      className="mx-4 h-px shrink-0 bg-[#DDD4C8]/50 lg:mx-0 lg:my-4 lg:h-auto lg:w-px"
+    />
+  );
+}
+
+function RowSkeleton({ nameWidth }: { nameWidth: number }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <Skeleton width={nameWidth} height={12} />
+      <Skeleton width={40} height={12} />
+    </div>
+  );
+}
+
+/** Section silhouette at the loaded geometry: icon tile, title, count, body. */
+function SectionSkeleton({ children }: { children: ReactNode }) {
+  return (
+    <div aria-hidden="true" className="min-w-0 p-4 sm:p-5 lg:flex-1">
+      <div className="flex items-center gap-2">
+        <Skeleton width={24} height={24} borderRadius={6} />
+        <Skeleton width={104} height={12} />
+        <Skeleton width={16} height={12} />
+      </div>
+      <div className="mt-3 flex flex-col gap-1.5">{children}</div>
+    </div>
+  );
+}
+
+function CreditsSectionSkeleton() {
+  return (
+    <SectionSkeleton>
+      <div className="flex items-baseline gap-1.5">
+        <Skeleton width={64} height={20} />
+        <Skeleton width={48} height={12} />
+      </div>
+      <RowSkeleton nameWidth={148} />
+      <RowSkeleton nameWidth={96} />
+      <RowSkeleton nameWidth={120} />
+    </SectionSkeleton>
+  );
+}
+
 /**
  * The workspace band of the dashboard's summary card (rendered under the
  * KPI band), surfacing the surfaces the run-centric dashboard predates:
  * labeling sessions, the dataset library (with its storage meter), and the
  * credit wallet, as divider-separated sections. Every section is one cheap,
  * mostly-cached call — the band renders nothing for a section whose fetch
- * failed rather than blocking the page.
+ * failed rather than blocking the page. While a fetch is in flight the band
+ * shows section skeletons at the loaded geometry, so values fill in place
+ * instead of the strip popping in.
  */
 export function WorkspaceStrip() {
   const { tagging, datasets, loading } = useWorkspaceSummary();
@@ -101,10 +150,23 @@ export function WorkspaceStrip() {
 
   if (loading) {
     return (
-      <div
-        aria-hidden="true"
-        className="h-40 animate-pulse border-t border-[#DDD4C8]/50 bg-card/60 first:border-t-0 lg:h-28"
-      />
+      <div className="flex flex-col border-t border-[#DDD4C8]/50 first:border-t-0 lg:flex-row lg:items-stretch">
+        <SectionSkeleton>
+          <RowSkeleton nameWidth={168} />
+          <RowSkeleton nameWidth={128} />
+        </SectionSkeleton>
+        <SectionDivider />
+        <SectionSkeleton>
+          <RowSkeleton nameWidth={112} />
+          <RowSkeleton nameWidth={144} />
+          <div className="mt-1 flex items-center gap-2">
+            <Skeleton height={4} borderRadius={999} containerClassName="flex-1" />
+            <Skeleton width={96} height={11} />
+          </div>
+        </SectionSkeleton>
+        <SectionDivider />
+        <CreditsSectionSkeleton />
+      </div>
     );
   }
   if (!tagging && !datasets && walletLoading) return null;
@@ -171,7 +233,9 @@ export function WorkspaceStrip() {
       </WorkspaceSection>,
     );
   }
-  if (!walletLoading) {
+  if (walletLoading) {
+    sections.push(<CreditsSectionSkeleton key="credits" />);
+  } else {
     sections.push(
       <WorkspaceSection
         key="credits"
@@ -219,12 +283,7 @@ export function WorkspaceStrip() {
     <div className="flex flex-col border-t border-[#DDD4C8]/50 first:border-t-0 lg:flex-row lg:items-stretch">
       {sections.map((section, i) => (
         <Fragment key={section.key}>
-          {i > 0 && (
-            <div
-              aria-hidden="true"
-              className="mx-4 h-px shrink-0 bg-[#DDD4C8]/50 lg:mx-0 lg:my-4 lg:h-auto lg:w-px"
-            />
-          )}
+          {i > 0 && <SectionDivider />}
           {section}
         </Fragment>
       ))}
