@@ -2002,6 +2002,7 @@
   "optimization.resume.success": "Run resuming",
   "optimization.resume_tooltip": "Resume the run from where it stopped",
   "optimization.storage_label": "Run storage usage — click to manage",
+  "optimization.workflow.hint": "Scroll to zoom · drag to pan · click a node for details",
   "optimizations.datatab.description": "The data used in the {term.optimization} — split into {term.splitTrain}, {term.splitVal}, and {term.splitTest}, with results for each example.",
   "optimizations.datatab.description_simple": "The measured examples — each one with its result, before and after the {term.optimization}.",
   "optimizations.detail.title": "Optimization Details",

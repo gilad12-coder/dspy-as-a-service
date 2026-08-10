@@ -2004,6 +2004,7 @@ export type MessageKey =
   | "optimization.resume.success"
   | "optimization.resume_tooltip"
   | "optimization.storage_label"
+  | "optimization.workflow.hint"
   | "optimizations.datatab.description"
   | "optimizations.datatab.description_simple"
   | "optimizations.detail.title"
@@ -5020,6 +5021,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "optimization.resume.success": "ההרצה ממשיכה",
   "optimization.resume_tooltip": "המשך/המשיכי את ההרצה מהנקודה שבה נעצרה",
   "optimization.storage_label": "נפח האחסון של הריצה — לחצו לניהול",
+  "optimization.workflow.hint": "גלילה לזום · גרירה להזזה · לחיצה על צומת לפרטים",
   "optimizations.datatab.description": "הנתונים ששימשו ב{term.optimization} — מחולקים ל{term.splitTrain}, {term.splitVal} ו{term.splitTest}, עם התוצאות לכל דוגמה.",
   "optimizations.datatab.description_simple": "הדוגמאות שנמדדו — כל דוגמה עם התוצאה שלה, לפני ואחרי ה{term.optimization}.",
   "optimizations.detail.title": "פרטי אופטימיזציה",
@@ -13686,6 +13688,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "optimization.resume.success": "Run resuming",
   "optimization.resume_tooltip": "Resume the run from where it stopped",
   "optimization.storage_label": "Run storage usage — click to manage",
+  "optimization.workflow.hint": "Scroll to zoom · drag to pan · click a node for details",
   "optimizations.datatab.description": "The data used in the {term.optimization} — split into {term.splitTrain}, {term.splitVal}, and {term.splitTest}, with results for each example.",
   "optimizations.datatab.description_simple": "The measured examples — each one with its result, before and after the {term.optimization}.",
   "optimizations.detail.title": "Optimization Details",

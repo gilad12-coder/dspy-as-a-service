@@ -2002,6 +2002,7 @@
   "optimization.resume.success": "ההרצה ממשיכה",
   "optimization.resume_tooltip": "המשך/המשיכי את ההרצה מהנקודה שבה נעצרה",
   "optimization.storage_label": "נפח האחסון של הריצה — לחצו לניהול",
+  "optimization.workflow.hint": "גלילה לזום · גרירה להזזה · לחיצה על צומת לפרטים",
   "optimizations.datatab.description": "הנתונים ששימשו ב{term.optimization} — מחולקים ל{term.splitTrain}, {term.splitVal} ו{term.splitTest}, עם התוצאות לכל דוגמה.",
   "optimizations.datatab.description_simple": "הדוגמאות שנמדדו — כל דוגמה עם התוצאה שלה, לפני ואחרי ה{term.optimization}.",
   "optimizations.detail.title": "פרטי אופטימיזציה",
