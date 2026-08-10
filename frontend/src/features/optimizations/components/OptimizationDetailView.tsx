@@ -50,7 +50,7 @@ import {
   servePairProgramStream,
   serveSharedOptimization,
 } from "@/shared/lib/api";
-import type { LMActivity, ServeInfoResponse, WorkflowNodeTrace } from "@/shared/types/api";
+import type { LMActivity, ServeInfoResponse, WorkflowNodeTrace, WorkflowSpec } from "@/shared/types/api";
 // Leaf import on purpose — the tutorial barrel deliberately does not re-export
 // the demo fixtures (see features/tutorial/index.ts).
 // eslint-disable-next-line no-restricted-imports -- deliberate leaf import; see above
@@ -810,6 +810,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
 
   const signatureCode = (payload?.payload?.signature_code as string) ?? null;
   const metricCode = (payload?.payload?.metric_code as string) ?? null;
+  const workflowSpec = (payload?.payload?.workflow as WorkflowSpec | undefined) ?? null;
 
   const scorePoints = useMemo(
     () => (jobLogs?.length ? extractScoresFromLogs(jobLogs) : []),
@@ -1455,7 +1456,11 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
             )}
 
             <TabsContent value="code" className="space-y-6 mt-4">
-              <CodeTab signatureCode={signatureCode ?? ""} metricCode={metricCode ?? ""} />
+              <CodeTab
+                signatureCode={signatureCode ?? ""}
+                metricCode={metricCode ?? ""}
+                workflowSpec={workflowSpec}
+              />
             </TabsContent>
 
             {showArtifactTab && (

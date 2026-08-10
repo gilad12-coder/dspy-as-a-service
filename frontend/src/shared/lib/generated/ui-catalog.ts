@@ -1971,6 +1971,9 @@ export type MessageKey =
   | "optimization.artifact.tab"
   | "optimization.cancel.failed"
   | "optimization.cancel.sent"
+  | "optimization.code.tab_program"
+  | "optimization.code.tab_workflow"
+  | "optimization.code.workflow_intro"
   | "optimization.delete.failed"
   | "optimization.file.parse_error"
   | "optimization.logged_metrics.baseline_col"
@@ -2736,6 +2739,7 @@ export type MessageKey =
   | "tooltip.code.predictions_table"
   | "tooltip.code.signature"
   | "tooltip.code.signature_metric"
+  | "tooltip.code.workflow"
   | "tooltip.compare.winner_improvement"
   | "tooltip.compare.winner_models"
   | "tooltip.compare.winner_runtime"
@@ -4983,6 +4987,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "optimization.artifact.tab": "תוצר",
   "optimization.cancel.failed": "ביטול נכשל",
   "optimization.cancel.sent": "בקשת ביטול נשלחה",
+  "optimization.code.tab_program": "תוכנית",
+  "optimization.code.tab_workflow": "תהליך עבודה",
+  "optimization.code.workflow_intro": "תהליך העבודה מקומפל לקוד DSPy, פונקציית המדידה, והגרף עצמו.",
   "optimization.delete.failed": "מחיקה נכשלה",
   "optimization.file.parse_error": "שגיאה בפענוח הקובץ",
   "optimization.logged_metrics.baseline_col": "בסיס",
@@ -5748,6 +5755,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tooltip.code.predictions_table": "תוצאות הרצת ה{term.program} על דוגמאות הבדיקה — {term.score} לכל {term.example} וסיכום כולל",
   "tooltip.code.signature": "הגדרת שדות הקלט והפלט של ה{term.task} — מה ה{term.model} מקבל ומה הוא צריך להחזיר",
   "tooltip.code.signature_metric": "קוד המקור של ה{term.signature} ו{term.metric} שהוגדרו ל{term.optimization} זו",
+  "tooltip.code.workflow": "תהליך העבודה כפי שקומפל ל{term.program} של DSPy — ה{term.signature} של כל צומת עם הפרומפט ההתחלתי שלו — לצד קוד ה{term.metric} והגרף עצמו",
   "tooltip.compare.winner_improvement": "אחוז ה{term.scoreImprovement} של ה{term.optimizationTypeRun} הזוכה — ההפרש בין ה{term.optimizedScore} ל{term.baselineScore}",
   "tooltip.compare.winner_models": "זוג מודלי השפה של ה{term.optimizationTypeRun} הזוכה — {term.generationModel} שמייצר פלט, ו{term.reflectionModel} שמשפר את ההנחיות",
   "tooltip.compare.winner_runtime": "משך הזמן הכולל של ה{term.optimizationTypeRun} הזוכה, מרגע השיגור ועד סיום ה{term.optimization}",
@@ -13645,6 +13653,9 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "optimization.artifact.tab": "Artifact",
   "optimization.cancel.failed": "Cancellation failed",
   "optimization.cancel.sent": "Cancellation request sent",
+  "optimization.code.tab_program": "Program",
+  "optimization.code.tab_workflow": "Workflow",
+  "optimization.code.workflow_intro": "The workflow compiled to DSPy source code, the metric, and the graph itself.",
   "optimization.delete.failed": "Delete failed",
   "optimization.file.parse_error": "Error parsing the file",
   "optimization.logged_metrics.baseline_col": "Baseline",
@@ -14410,6 +14421,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tooltip.code.predictions_table": "Results of running the program on the test examples — a score for each example and an overall summary",
   "tooltip.code.signature": "Defines the input and output fields of the task — what the model receives and what it needs to return",
   "tooltip.code.signature_metric": "The source code of the Signature and metric defined for this optimization",
+  "tooltip.code.workflow": "The workflow compiled to a DSPy program — each node's signature with its initial prompt — plus the metric source and the rendered graph",
   "tooltip.compare.winner_improvement": "The score improvement percentage of the winning run — the difference between the optimized score and the baseline score",
   "tooltip.compare.winner_models": "The language model pair of the winning run — generation model that produces output, and feedback model that improves the instructions",
   "tooltip.compare.winner_runtime": "The total duration of the winning run, from launch until the optimization finished",
