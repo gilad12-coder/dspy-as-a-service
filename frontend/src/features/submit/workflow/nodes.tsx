@@ -13,9 +13,12 @@ import * as React from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import {
   ArrowLineRight,
+  Brain,
   Check,
   Code,
+  FadersHorizontal,
   Flag,
+  Lightning,
   Sparkle,
   Warning,
   Wrench,
@@ -52,7 +55,38 @@ const KIND_ICONS = {
   mcp: Wrench,
 } as const;
 
-const MODULE_LABELS = { predict: "Predict", cot: "CoT", react: "ReAct", flex: "Flex" } as const;
+// Each LLM module reads as its own building block — distinct icon and accent
+// with an "LLM-<module>" badge, so the card needs no separate module caption.
+const MODULE_STYLES = {
+  predict: {
+    icon: Sparkle,
+    label: "LLM-Predict",
+    header: "bg-[#F9F3E4]",
+    accent: "text-[#A07C3B]",
+    border: "border-[#E5D8BC] hover:border-[#A07C3B]",
+  },
+  cot: {
+    icon: Brain,
+    label: "LLM-CoT",
+    header: "bg-[#EDF1F8]",
+    accent: "text-[#4A6FA5]",
+    border: "border-[#CBD7E9] hover:border-[#4A6FA5]",
+  },
+  react: {
+    icon: Lightning,
+    label: "LLM-ReAct",
+    header: "bg-[#EAF3F1]",
+    accent: "text-[#2F7A6E]",
+    border: "border-[#C4DDD7] hover:border-[#2F7A6E]",
+  },
+  flex: {
+    icon: FadersHorizontal,
+    label: "LLM-Flex",
+    header: "bg-[#F1EEF7]",
+    accent: "text-[#7B5EA7]",
+    border: "border-[#D7CDE8] hover:border-[#7B5EA7]",
+  },
+} as const;
 
 function kindLabel(spec: WorkflowNodeSpec): string {
   switch (spec.kind) {
@@ -61,7 +95,7 @@ function kindLabel(spec: WorkflowNodeSpec): string {
     case "output":
       return msg("workflow.node.output");
     case "signature":
-      return MODULE_LABELS[spec.module_name];
+      return MODULE_STYLES[spec.module_name].label;
     case "transform":
       return msg("workflow.node.transform");
     case "mcp":
@@ -103,7 +137,8 @@ function PortRow({ port, side, nodeId }: { port: PortInfo; side: "in" | "out"; n
 
 function NodeCard({ data, selected }: NodeProps<CanvasNode>) {
   const { spec, issues, trace, pulse } = data;
-  const Icon = KIND_ICONS[spec.kind];
+  const moduleStyle = spec.kind === "signature" ? MODULE_STYLES[spec.module_name] : null;
+  const Icon = moduleStyle?.icon ?? KIND_ICONS[spec.kind];
   const ports = nodePorts(spec);
   const isAnchor = spec.kind === "input" || spec.kind === "output";
   const hasIssues = issues.length > 0;
@@ -115,7 +150,10 @@ function NodeCard({ data, selected }: NodeProps<CanvasNode>) {
         "shadow-[0_1px_3px_rgba(61,46,34,0.08)] transition-[box-shadow,border-color] duration-150",
         selected
           ? "border-[#3D2E22] shadow-[0_4px_16px_rgba(61,46,34,0.16)] ring-4 ring-[#3D2E22]/10"
-          : "border-[#E2D8CA] hover:border-[#C8A882] hover:shadow-[0_3px_10px_rgba(61,46,34,0.12)]",
+          : cn(
+              moduleStyle?.border ?? "border-[#E2D8CA] hover:border-[#C8A882]",
+              "hover:shadow-[0_3px_10px_rgba(61,46,34,0.12)]",
+            ),
         trace?.status === "error" && "border-destructive",
         pulse && "animate-pulse border-[#C8A882] ring-4 ring-[#C8A882]/40",
       )}
@@ -124,14 +162,19 @@ function NodeCard({ data, selected }: NodeProps<CanvasNode>) {
       <div
         className={cn(
           "flex items-center gap-1.5 rounded-t-[10px] border-b border-border/60 px-3 py-1.5",
-          isAnchor ? "bg-[#F3EDE3]" : "bg-[#FAF8F5]",
+          moduleStyle?.header ?? (isAnchor ? "bg-[#F3EDE3]" : "bg-[#FAF8F5]"),
         )}
       >
-        <Icon className="size-3.5 shrink-0 text-[#3D2E22]" />
+        <Icon className={cn("size-3.5 shrink-0", moduleStyle?.accent ?? "text-[#3D2E22]")} />
         <span className="truncate text-xs font-semibold text-foreground" dir="ltr">
           {displayName(spec)}
         </span>
-        <span className="ms-auto shrink-0 text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
+        <span
+          className={cn(
+            "ms-auto shrink-0 text-[0.625rem] font-medium uppercase tracking-wide",
+            moduleStyle?.accent ?? "text-muted-foreground",
+          )}
+        >
           {kindLabel(spec)}
         </span>
       </div>

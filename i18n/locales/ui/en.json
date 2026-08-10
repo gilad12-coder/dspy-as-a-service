@@ -2996,7 +2996,6 @@
   "workflow.node.input": "Input",
   "workflow.node.mcp": "Tool",
   "workflow.node.output": "Output",
-  "workflow.node.signature": "LLM",
   "workflow.node.transform": "Transform",
   "workflow.playground.trace_title": "Graph execution trace",
   "workflow.step.metric_hint": "The metric receives the graph's final output (the output node's fields) and returns a score — optimization tunes every node against it",

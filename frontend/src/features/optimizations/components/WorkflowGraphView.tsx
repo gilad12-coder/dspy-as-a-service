@@ -39,10 +39,8 @@ import { Skeleton } from "@/shared/ui/skeleton";
 import { cn } from "@/shared/lib/utils";
 import { msg } from "@/shared/lib/messages";
 import { autoLayoutSpec } from "@/features/submit/workflow/model";
-import { flowTypeFor } from "@/features/submit/workflow/nodes";
+import { NODE_TYPES, flowTypeFor, type CanvasNode } from "@/features/submit/workflow/nodes";
 import type { WorkflowNodeSpec, WorkflowSpec } from "@/shared/types/api";
-
-import { VIEW_NODE_TYPES, type ViewNode } from "./WorkflowGraphNodes";
 
 const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
   ssr: false,
@@ -70,14 +68,14 @@ function GraphView({ spec }: { spec: WorkflowSpec }) {
     () => (spec.nodes.every((n) => n.position) ? spec : autoLayoutSpec(spec)),
     [spec],
   );
-  const nodes: ViewNode[] = React.useMemo(
+  const nodes: CanvasNode[] = React.useMemo(
     () =>
       laid.nodes.map((node) => ({
         id: node.id,
         type: flowTypeFor(node),
         position: node.position ?? { x: 0, y: 0 },
         selected: node.id === inspectorId,
-        data: { spec: node },
+        data: { spec: node, issues: [], trace: null, pulse: false },
       })),
     [laid, inspectorId],
   );
@@ -143,7 +141,7 @@ function GraphView({ spec }: { spec: WorkflowSpec }) {
           <ReactFlow
             nodes={nodes}
             edges={edges}
-            nodeTypes={VIEW_NODE_TYPES}
+            nodeTypes={NODE_TYPES}
             onNodeClick={(_, node) => setInspectorId(node.id)}
             onPaneClick={() => setInspectorId(null)}
             nodesDraggable={false}
