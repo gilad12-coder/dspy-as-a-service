@@ -83,6 +83,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
     autoLevel,
     reflectionMinibatchSize,
     maxFullEvals,
+    maxMetricCalls,
     useMerge,
     targetScore,
     signatureCode,
@@ -434,6 +435,15 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                           {msg("auto.features.submit.components.steps.summarystep.21")}
                         </span>
                         <span className="text-sm font-medium font-mono">{maxFullEvals || "—"}</span>
+                      </div>
+                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Gauge className="size-3.5" />
+                          {msg("submit.metric_calls")}
+                        </span>
+                        <span className="text-sm font-medium font-mono">
+                          {maxMetricCalls || "—"}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                         <span className="flex items-center gap-2 text-xs text-muted-foreground">

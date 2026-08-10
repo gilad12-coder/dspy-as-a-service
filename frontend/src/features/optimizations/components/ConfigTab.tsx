@@ -50,6 +50,7 @@ const OPT_PARAM_LABELS: Record<string, string> = perLocale(() => ({
   minibatch_size: msg("auto.features.optimizations.components.configtab.literal.5"),
   reflection_minibatch_size: msg("auto.features.optimizations.components.configtab.literal.6"),
   max_full_evals: msg("auto.features.optimizations.components.configtab.literal.7"),
+  max_metric_calls: msg("submit.metric_calls"),
   use_merge: msg("auto.features.optimizations.components.configtab.literal.8"),
   metric: TERMS.metric,
 }));
@@ -69,6 +70,7 @@ const OPT_PARAM_TIPS: Record<string, string> = perLocale(() => ({
     { p1: TERMS.model },
   ),
   max_full_evals: msg("auto.features.optimizations.components.configtab.literal.12"),
+  max_metric_calls: msg("tooltip.submit.metric_calls"),
   use_merge: msg("auto.features.optimizations.components.configtab.literal.13"),
 }));
 
@@ -86,6 +88,8 @@ const PARAM_ICONS: Record<string, ReactNode> = {
   minibatch_size: <Ruler className="size-3.5" />,
   reflection_minibatch_size: <Brain className="size-3.5" />,
   max_full_evals: <Repeat className="size-3.5" />,
+  // Shares Gauge with `auto`: both are the run's (mutually exclusive) budget knob.
+  max_metric_calls: <Gauge className="size-3.5" />,
   use_merge: <GitMerge className="size-3.5" />,
 };
 

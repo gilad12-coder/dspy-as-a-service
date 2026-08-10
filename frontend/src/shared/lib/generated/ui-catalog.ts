@@ -2494,6 +2494,9 @@ export type MessageKey =
   | "submit.dataset.library_picker_title"
   | "submit.dataset.library_search"
   | "submit.dataset.library_search_empty"
+  | "submit.metric_calls"
+  | "submit.metric_calls.clear"
+  | "submit.metric_calls.hint"
   | "submit.modelpicker.purpose.all"
   | "submit.modelpicker.purpose.aria"
   | "submit.modelpicker.purpose.multilingual"
@@ -2799,6 +2802,7 @@ export type MessageKey =
   | "tooltip.submit.depth"
   | "tooltip.submit.eval_rounds"
   | "tooltip.submit.merge"
+  | "tooltip.submit.metric_calls"
   | "tooltip.submit.pxn_parents"
   | "tooltip.submit.pxn_proposals"
   | "tooltip.submit.reflection_minibatch"
@@ -5502,6 +5506,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.dataset.library_picker_title": "בחירת {term.dataset} מהספרייה",
   "submit.dataset.library_search": "חיפוש {term.dataset}…",
   "submit.dataset.library_search_empty": "לא נמצאו דאטאסטים תואמים",
+  "submit.metric_calls": "תקציב קריאות מדד",
+  "submit.metric_calls.clear": "ניקוי",
+  "submit.metric_calls.hint": "עוקף את סבבי ההערכה — הריצה נעצרת אחרי מספר זה של קריאות מדד",
   "submit.modelpicker.purpose.all": "הכל",
   "submit.modelpicker.purpose.aria": "סינון מודלים לפי ייעוד",
   "submit.modelpicker.purpose.multilingual": "רב-לשוני",
@@ -5807,6 +5814,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tooltip.submit.depth": "כמה רחב החיפוש של GEPA: קל רץ מהר עם פחות ניסיונות; מעמיק בודק יותר אפשרויות ולוקח יותר זמן",
   "tooltip.submit.eval_rounds": "כמה פעמים להריץ הערכה מלאה כדי לבדוק מועמדים לפרומפט",
   "tooltip.submit.merge": "כשפעיל, GEPA יכול לבצע merge ולשלב רעיונות מכמה מועמדים טובים לפרומפט אחד",
+  "tooltip.submit.metric_calls": "סך קריאות המדד (rollouts) שהריצה כולה רשאית לצרוך — יחידת התקציב מהמאמר של GEPA. הגדרה כאן עוקפת את סבבי ההערכה; בחירת עומק חיפוש עוקפת את שניהם",
   "tooltip.submit.pxn_parents": "כמה מועמדים שונים לשפר בכל סבב. ערך גבוה יותר בודק כיוונים מגוונים יותר, בעלות גבוהה יותר",
   "tooltip.submit.pxn_proposals": "כמה הצעות לייצר מכל מועמד. סך הכול נבדקים p×n מועמדים בכל סבב, במקביל",
   "tooltip.submit.reflection_minibatch": "כמה דוגמאות ה{term.model} בודק בכל סבב משוב כדי למצוא דפוסי שגיאה",
@@ -14160,6 +14168,9 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.dataset.library_picker_title": "Pick a dataset from the library",
   "submit.dataset.library_search": "Search datasets…",
   "submit.dataset.library_search_empty": "No matching datasets found",
+  "submit.metric_calls": "Metric-call budget",
+  "submit.metric_calls.clear": "Clear",
+  "submit.metric_calls.hint": "Overrides evaluation rounds — the run stops after this many metric calls",
   "submit.modelpicker.purpose.all": "All",
   "submit.modelpicker.purpose.aria": "Filter models by purpose",
   "submit.modelpicker.purpose.multilingual": "Multilingual",
@@ -14465,6 +14476,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "tooltip.submit.depth": "How wide GEPA's search is: light runs fast with fewer attempts; deeper checks more options and takes more time",
   "tooltip.submit.eval_rounds": "How many times to run a full evaluation to check prompt candidates",
   "tooltip.submit.merge": "When enabled, GEPA can merge and combine ideas from several good candidates into one prompt",
+  "tooltip.submit.metric_calls": "Total metric calls (rollouts) the entire run may spend — the budget unit used in the GEPA paper. Setting it overrides evaluation rounds; choosing a search depth overrides both",
   "tooltip.submit.pxn_parents": "How many different candidates to improve each round. Higher explores more directions in parallel, at higher cost",
   "tooltip.submit.pxn_proposals": "How many rewrites to draw from each candidate. p×n candidates are evaluated per round, batched together",
   "tooltip.submit.reflection_minibatch": "How many examples the model checks in each feedback round to find error patterns",

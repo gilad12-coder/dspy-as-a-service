@@ -344,6 +344,10 @@ export function useSubmitWizard() {
     DEFAULT_REFLECTION_MINIBATCH,
   );
   const [maxFullEvals, setMaxFullEvals] = useState<string>(DEFAULT_MAX_FULL_EVALS);
+  // Explicit GEPA metric-call (rollout) budget. Opt-in and empty by default —
+  // when set it outranks maxFullEvals in buildOptimizerKwargs, since that
+  // field always carries its default.
+  const [maxMetricCalls, setMaxMetricCalls] = useState<string>("");
   const [useMerge, setUseMerge] = useState(true);
   const [targetScore, setTargetScore] = useState<string>(DEFAULT_TARGET_SCORE);
   const [pxnParents, setPxnParents] = useState<string>(DEFAULT_PXN);
@@ -370,6 +374,7 @@ export function useSubmitWizard() {
     if (
       reflectionMinibatchSize !== DEFAULT_REFLECTION_MINIBATCH ||
       maxFullEvals !== DEFAULT_MAX_FULL_EVALS ||
+      maxMetricCalls !== "" ||
       !useMerge ||
       targetScore !== DEFAULT_TARGET_SCORE ||
       pxnParents !== DEFAULT_PXN ||
@@ -381,6 +386,7 @@ export function useSubmitWizard() {
     advancedMode,
     reflectionMinibatchSize,
     maxFullEvals,
+    maxMetricCalls,
     useMerge,
     targetScore,
     pxnParents,
@@ -494,6 +500,7 @@ export function useSubmitWizard() {
       autoLevel,
       reflectionMinibatchSize,
       maxFullEvals,
+      maxMetricCalls,
       useMerge,
       targetScore,
       pxnParents,
@@ -569,6 +576,7 @@ export function useSubmitWizard() {
     setAutoLevel(d.autoLevel);
     setReflectionMinibatchSize(d.reflectionMinibatchSize);
     setMaxFullEvals(d.maxFullEvals);
+    setMaxMetricCalls(d.maxMetricCalls ?? "");
     setUseMerge(d.useMerge);
     setTargetScore(d.targetScore ?? "");
     setPxnParents(d.pxnParents ?? DEFAULT_PXN);
@@ -691,12 +699,22 @@ export function useSubmitWizard() {
         setIsPrivate(sharedState.is_private);
       } else if (key === "optimizer_kwargs" && sharedState.optimizer_kwargs) {
         const kw = sharedState.optimizer_kwargs as Record<string, unknown>;
-        if (typeof kw.auto === "string") setAutoLevel(kw.auto);
+        // GEPA takes exactly one of auto/max_full_evals/max_metric_calls; an
+        // explicit budget without an auto tier must also clear the tier, or
+        // the "light" default would win the rebuild and drop the budget.
+        if (typeof kw.auto === "string") {
+          setAutoLevel(kw.auto);
+        } else if (kw.max_full_evals != null || kw.max_metric_calls != null) {
+          setAutoLevel("");
+        }
         if (typeof kw.reflection_minibatch_size === "number") {
           setReflectionMinibatchSize(String(kw.reflection_minibatch_size));
         }
         if (typeof kw.max_full_evals === "number") {
           setMaxFullEvals(String(kw.max_full_evals));
+        }
+        if (typeof kw.max_metric_calls === "number") {
+          setMaxMetricCalls(String(kw.max_metric_calls));
         }
         if (typeof kw.use_merge === "boolean") setUseMerge(kw.use_merge);
       } else if (key === "target_score") {
@@ -761,6 +779,7 @@ export function useSubmitWizard() {
     return projectCostBracket({
       autoLevel,
       maxFullEvals: advancedMode ? maxFullEvals : DEFAULT_MAX_FULL_EVALS,
+      maxMetricCalls: advancedMode ? maxMetricCalls : "",
       datasetRows: parsedDataset?.rowCount ?? 0,
       pairs: gridPairs,
       taskModel,
@@ -770,6 +789,7 @@ export function useSubmitWizard() {
     autoLevel,
     advancedMode,
     maxFullEvals,
+    maxMetricCalls,
     parsedDataset?.rowCount,
     effectiveJobType,
     modelConfig.name,
@@ -1047,6 +1067,7 @@ export function useSubmitWizard() {
     const kw = buildOptimizerKwargs({
       autoLevel,
       maxFullEvals: advancedMode ? maxFullEvals : DEFAULT_MAX_FULL_EVALS,
+      maxMetricCalls: advancedMode ? maxMetricCalls : "",
       reflectionMinibatchSize: advancedMode
         ? reflectionMinibatchSize
         : DEFAULT_REFLECTION_MINIBATCH,
@@ -1066,6 +1087,7 @@ export function useSubmitWizard() {
     advancedMode,
     autoLevel,
     maxFullEvals,
+    maxMetricCalls,
     reflectionMinibatchSize,
     useMerge,
     pxnParents,
@@ -1364,10 +1386,15 @@ export function useSubmitWizard() {
 
       const optKw = payload.optimizer_kwargs as Record<string, unknown> | undefined;
       if (optKw) {
+        // A cloned explicit budget (max_full_evals / max_metric_calls) must
+        // clear the auto tier — GEPA takes exactly one of the three, and the
+        // "light" default would otherwise win the kwargs rebuild.
         if (optKw.auto) setAutoLevel(String(optKw.auto));
+        else if (optKw.max_full_evals != null || optKw.max_metric_calls != null) setAutoLevel("");
         if (optKw.reflection_minibatch_size != null)
           setReflectionMinibatchSize(String(optKw.reflection_minibatch_size));
         if (optKw.max_full_evals != null) setMaxFullEvals(String(optKw.max_full_evals));
+        if (optKw.max_metric_calls != null) setMaxMetricCalls(String(optKw.max_metric_calls));
         if (optKw.use_merge != null) setUseMerge(Boolean(optKw.use_merge));
       }
       if (typeof payload.target_score === "number") {
@@ -1934,6 +1961,7 @@ export function useSubmitWizard() {
       const optKw = buildOptimizerKwargs({
         autoLevel,
         maxFullEvals: advancedMode ? maxFullEvals : DEFAULT_MAX_FULL_EVALS,
+        maxMetricCalls: advancedMode ? maxMetricCalls : "",
         reflectionMinibatchSize: advancedMode
           ? reflectionMinibatchSize
           : DEFAULT_REFLECTION_MINIBATCH,
@@ -2352,6 +2380,8 @@ export function useSubmitWizard() {
     setReflectionMinibatchSize,
     maxFullEvals,
     setMaxFullEvals,
+    maxMetricCalls,
+    setMaxMetricCalls,
     useMerge,
     setUseMerge,
     targetScore,

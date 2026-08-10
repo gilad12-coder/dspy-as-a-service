@@ -57,6 +57,8 @@ export interface CostBracketInput {
   autoLevel: string;
   /** Explicit `max_full_evals` as a string from the wizard (used when `autoLevel` is empty). */
   maxFullEvals: string;
+  /** Explicit `max_metric_calls` budget — already in metric-call space, so it wins over evals. */
+  maxMetricCalls?: string;
   /** Dataset row count — scales the per-eval work; 0 when no dataset is loaded yet. */
   datasetRows: number;
   /** For a grid search, the number of (gen × refl) model pairs swept; 1 for a single run. */
@@ -75,9 +77,17 @@ export interface CostBracket {
 }
 
 /** Resolve the metric-call budget the bracket scales from. */
-function resolveMetricCalls(autoLevel: string, maxFullEvals: string): number {
+function resolveMetricCalls(
+  autoLevel: string,
+  maxFullEvals: string,
+  maxMetricCalls?: string,
+): number {
   const tier = autoLevel ? AUTO_METRIC_CALLS[autoLevel] : undefined;
   if (tier !== undefined) return tier;
+  // An explicit metric-call budget is already the quantity this bracket
+  // scales from — no conversion, and it outranks evals (mirrors build-kwargs).
+  const calls = maxMetricCalls ? parseInt(maxMetricCalls, 10) : NaN;
+  if (Number.isFinite(calls) && calls > 0) return calls;
   const evals = parseInt(maxFullEvals, 10);
   // max_full_evals counts full valset passes; a pass is on the order of a few
   // hundred calls, so scale it into the same metric-call space as the auto tiers.
@@ -128,12 +138,13 @@ export function projectCostBracket(input: CostBracketInput): CostBracket {
   const {
     autoLevel,
     maxFullEvals,
+    maxMetricCalls,
     datasetRows,
     pairs = 1,
     taskModel = null,
     reflectionModel = null,
   } = input;
-  const calls = resolveMetricCalls(autoLevel, maxFullEvals);
+  const calls = resolveMetricCalls(autoLevel, maxFullEvals, maxMetricCalls);
   // Larger datasets mean longer prompts and more baseline/eval rollouts; fold in
   // a gentle, sub-linear factor so a big dataset widens the bracket without
   // exploding it. Clamp the row factor so an empty/tiny dataset still projects.

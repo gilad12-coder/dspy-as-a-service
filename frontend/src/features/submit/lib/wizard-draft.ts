@@ -49,6 +49,8 @@ export interface WizardDraftData {
   autoLevel: string;
   reflectionMinibatchSize: string;
   maxFullEvals: string;
+  // Optional: drafts saved before the explicit metric-call budget existed.
+  maxMetricCalls?: string;
   useMerge: boolean;
   targetScore: string;
   // Optional: drafts saved before PxN sampling existed carry neither field.

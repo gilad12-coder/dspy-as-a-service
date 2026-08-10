@@ -6,6 +6,7 @@
 export interface OptimizerKwargsInput {
   autoLevel: string;
   maxFullEvals: string;
+  maxMetricCalls?: string;
   reflectionMinibatchSize: string;
   useMerge: boolean;
   pxnParents?: string;
@@ -13,12 +14,23 @@ export interface OptimizerKwargsInput {
 }
 
 export function buildOptimizerKwargs(input: OptimizerKwargsInput): Record<string, unknown> {
-  const { autoLevel, maxFullEvals, reflectionMinibatchSize, useMerge, pxnParents, pxnProposals } =
-    input;
+  const {
+    autoLevel,
+    maxFullEvals,
+    maxMetricCalls,
+    reflectionMinibatchSize,
+    useMerge,
+    pxnParents,
+    pxnProposals,
+  } = input;
   const kw: Record<string, unknown> = {};
-  // GEPA requires exactly one of: auto, max_full_evals, max_metric_calls
+  // GEPA requires exactly one of: auto, max_full_evals, max_metric_calls.
+  // An explicit metric-call budget outranks max_full_evals because the latter
+  // always holds its "6" default — the budget field is opt-in.
   if (autoLevel) {
     kw.auto = autoLevel;
+  } else if (maxMetricCalls) {
+    kw.max_metric_calls = parseInt(maxMetricCalls, 10);
   } else if (maxFullEvals) {
     kw.max_full_evals = parseInt(maxFullEvals, 10);
   }

@@ -39,6 +39,8 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
     setReflectionMinibatchSize,
     maxFullEvals,
     setMaxFullEvals,
+    maxMetricCalls,
+    setMaxMetricCalls,
     useMerge,
     setUseMerge,
     optimizerName,
@@ -261,7 +263,12 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className={cn("text-xs", autoLevel && "text-muted-foreground/50")}>
+                      <Label
+                        className={cn(
+                          "text-xs",
+                          (autoLevel || maxMetricCalls) && "text-muted-foreground/50",
+                        )}
+                      >
                         <HelpTip text={tip("submit.eval_rounds")}>
                           {msg("auto.features.submit.components.steps.paramsstep.14")}
                         </HelpTip>
@@ -272,7 +279,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                         step={1}
                         value={maxFullEvals ? parseInt(maxFullEvals, 10) : ""}
                         onChange={(v) => setMaxFullEvals(String(v))}
-                        disabled={!!autoLevel}
+                        disabled={!!autoLevel || !!maxMetricCalls}
                       />
                     </div>
                     <div className="col-span-2 flex items-center justify-between">
@@ -285,6 +292,44 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                     </div>
                     {optimizerName.toLowerCase() === "gepa" && (
                       <>
+                        <div className="col-span-2 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Label
+                              htmlFor="max-metric-calls"
+                              className={cn("text-xs", autoLevel && "text-muted-foreground/50")}
+                            >
+                              <HelpTip text={tip("submit.metric_calls")}>
+                                {msg("submit.metric_calls")}
+                              </HelpTip>
+                            </Label>
+                            {/* NumberInput can't emit an empty value, so an explicit
+                                clear is the only way back to the eval-rounds path. */}
+                            {maxMetricCalls && (
+                              <button
+                                type="button"
+                                onClick={() => setMaxMetricCalls("")}
+                                className="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
+                              >
+                                {msg("submit.metric_calls.clear")}
+                              </button>
+                            )}
+                          </div>
+                          <NumberInput
+                            id="max-metric-calls"
+                            min={1}
+                            max={100000}
+                            step={1}
+                            value={maxMetricCalls ? parseInt(maxMetricCalls, 10) : ""}
+                            onChange={(v) => setMaxMetricCalls(String(v))}
+                            disabled={!!autoLevel}
+                            className="max-w-48"
+                          />
+                          {maxMetricCalls && !autoLevel && (
+                            <p className="text-xs text-muted-foreground">
+                              {msg("submit.metric_calls.hint")}
+                            </p>
+                          )}
+                        </div>
                         <div className="space-y-1.5">
                           <Label htmlFor="pxn-parents" className="text-xs">
                             <HelpTip text={tip("submit.pxn_parents")}>
