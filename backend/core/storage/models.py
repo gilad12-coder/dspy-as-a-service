@@ -14,6 +14,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -184,6 +185,19 @@ class BillingCustomerModel(Base):
     """
 
     __tablename__ = "billing_customers"
+    # Credits are prepaid: a balance below zero would mean the platform lent
+    # tokens, so the DB refuses it outright — the clamped debit in
+    # ``StripeBillingService.debit_run`` keeps writes inside these bounds.
+    __table_args__ = (
+        CheckConstraint(
+            "credit_balance >= 0",
+            name="ck_billing_customers_credit_balance_non_negative",
+        ),
+        CheckConstraint(
+            "grant_remaining IS NULL OR grant_remaining >= 0",
+            name="ck_billing_customers_grant_remaining_non_negative",
+        ),
+    )
 
     username: Mapped[str] = mapped_column(String(255), primary_key=True)
     stripe_customer_id: Mapped[str] = mapped_column(

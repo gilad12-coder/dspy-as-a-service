@@ -177,18 +177,75 @@ def test_debit_run_overflows_grant_into_paid_balance(engine: object) -> None:
 def test_debit_run_creates_local_row_for_customerless_account(engine: object) -> None:
     """A run for an account that never touched Stripe seeds a local billing row.
 
-    With no free allowance the whole cost lands on the paid balance (negative
-    until reconciled) — nothing is given away.
+    Credits are prepaid, so with no free allowance and no purchased balance
+    there is nothing to draw from: the charge clamps to zero (the shortfall is
+    absorbed, never lent) and the balance stays at exactly zero.
     """
     service = StripeBillingService(engine=engine)
     usages = _usages(20_000)
-    service.debit_run("free@x.com", usages, model=None, description="r")
+    charged = service.debit_run("free@x.com", usages, model=None, description="r")
+    assert charged == 0
     with Session(engine) as session:
         customer = session.get(BillingCustomerModel, "free@x.com")
+        ledger_rows = session.query(CreditLedgerModel).filter_by(username="free@x.com").count()
     assert customer is not None
     assert customer.stripe_customer_id.startswith("local:")
     assert customer.grant_remaining == 0
-    assert customer.credit_balance == -credits_for_usage(usages)
+    assert customer.credit_balance == 0
+    assert ledger_rows == 0
+
+
+def test_debit_run_clamps_charge_to_available_balance(engine: object) -> None:
+    """A run costing more than grant + paid drains both to zero, never below.
+
+    The ledger row records the clamped amount actually charged, so the audit
+    trail still sums to the stored balance.
+    """
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="u@x.com",
+                stripe_customer_id="cus_u",
+                credit_balance=3,
+                grant_remaining=5,
+            )
+        )
+        session.commit()
+    service = StripeBillingService(engine=engine)
+    usages = _usages(200_000)
+    assert credits_for_usage(usages) > 8
+    charged = service.debit_run("u@x.com", usages, model=None, description="big")
+    assert charged == 8
+    snapshot = service.get_wallet("u@x.com")
+    assert snapshot.free_grant_remaining == 0
+    assert snapshot.paid_balance_credits == 0
+    with Session(engine) as session:
+        (row,) = session.query(CreditLedgerModel).filter_by(username="u@x.com").all()
+    assert row.delta_credits == -8
+
+
+def test_debit_run_repeated_overdraw_floors_at_zero(engine: object) -> None:
+    """A second overdrawing run charges nothing — the balance can never go negative."""
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="u@x.com",
+                stripe_customer_id="cus_u",
+                credit_balance=2,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
+    service = StripeBillingService(engine=engine)
+    usages = _usages(200_000)
+    assert service.debit_run("u@x.com", usages, model=None, description="first") == 2
+    assert service.debit_run("u@x.com", usages, model=None, description="second") == 0
+    assert service.spendable_credits("u@x.com") == 0
+    with Session(engine) as session:
+        customer = session.get(BillingCustomerModel, "u@x.com")
+        ledger_rows = session.query(CreditLedgerModel).filter_by(username="u@x.com").all()
+    assert customer.credit_balance == 0
+    assert [row.delta_credits for row in ledger_rows] == [-2]
 
 
 def test_debit_run_zero_cost_writes_nothing(engine: object) -> None:
@@ -285,7 +342,16 @@ def test_debit_run_byok_charges_only_platform_fee(engine: object) -> None:
 
 def test_debit_run_managed_still_charges_full_cost(engine: object) -> None:
     """A managed run is unaffected — it still pays the full per-token credit cost."""
-    _seed_customer(engine, "u@x.com")
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="u@x.com",
+                stripe_customer_id="cus_u",
+                credit_balance=1000,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
     service = StripeBillingService(engine=engine)
     usages = _usages(200_000)
     cost = service.debit_run("u@x.com", usages, model="m1", description="managed-run")
@@ -381,6 +447,16 @@ def test_get_usage_aggregates_runs_by_day_and_model(engine: object) -> None:
 
 def test_debit_run_stamps_token_counts(engine: object) -> None:
     """The ledger row records the measured input/output tokens behind the charge."""
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="u@x.com",
+                stripe_customer_id="cus_u",
+                credit_balance=1000,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
     service = StripeBillingService(engine=engine)
     service.debit_run("u@x.com", _usages(100_000, 40_000), model="m", description="Run")
     with Session(engine) as session:

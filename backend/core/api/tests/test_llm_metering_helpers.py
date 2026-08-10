@@ -53,6 +53,24 @@ def _deplete(engine: Engine, username: str) -> None:
         session.commit()
 
 
+def _fund(engine: Engine, username: str, credits: int = 100_000) -> None:
+    """Seed a billing row with a paid balance so a metered turn has credit to draw.
+
+    The clamped debit charges at most what the account holds, so a test that
+    asserts a debit landed must start from a funded balance.
+    """
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username=username,
+                stripe_customer_id=f"cus_{username}",
+                credit_balance=credits,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
+
+
 class _FakeLm:
     """History-carrying LM double matching what ``usage_by_model_from_history`` reads."""
 
@@ -100,6 +118,7 @@ def test_enforce_llm_credits_skips_engineless_store(engine: Engine) -> None:
 
 async def test_stream_with_llm_metering_bills_on_completion(engine: Engine) -> None:
     """A fully-drained stream passes events through and writes the debit."""
+    _fund(engine, "alice@x.io")
     sink = [_FakeLm([{"usage": {"prompt_tokens": 100_000, "completion_tokens": 40_000}}])]
 
     async def source() -> AsyncIterator[dict[str, Any]]:
@@ -126,6 +145,7 @@ async def test_stream_with_llm_metering_bills_on_completion(engine: Engine) -> N
 
 async def test_stream_with_llm_metering_bills_on_early_teardown(engine: Engine) -> None:
     """A stream dropped before its terminal event still bills the sink's usage."""
+    _fund(engine, "alice@x.io")
     sink = [_FakeLm([{"usage": {"prompt_tokens": 50_000, "completion_tokens": 5_000}}])]
 
     async def source() -> AsyncIterator[dict[str, Any]]:

@@ -14,6 +14,7 @@ without keys degrades to a read-only free tier. Mutations (checkout) require
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -35,6 +36,8 @@ from ..storage.models import (
     CreditLedgerModel,
 )
 from .pricing import ModelUsage, credits_for_usage
+
+logger = logging.getLogger("skynet.billing.service")
 
 # Credits granted per one-time pack. Mirrors the frontend CREDIT_PACKS catalog;
 # the dollar price lives in Stripe (the price id), the credits granted live here.
@@ -611,6 +614,15 @@ class StripeBillingService:
         a redelivered/re-run job never double-charges. A run costing zero credits
         writes nothing.
 
+        The debit can never drive the account negative: the customer row is read
+        under ``FOR UPDATE`` so concurrent debits serialize, and the charge is
+        clamped to what the account actually holds — a run that cost more than
+        the remaining balance drains it to exactly zero, the shortfall is logged
+        as absorbed, and the ledger row records the clamped (actually charged)
+        amount. The DB backs this up with ``CHECK`` constraints on the balance
+        columns, so a bug here fails the transaction instead of persisting a
+        negative.
+
         Args:
             username: Account the run is billed to.
             usages: Per-model token usage for the run; priced per-model into the
@@ -621,7 +633,9 @@ class StripeBillingService:
                 only); defaults to managed.
 
         Returns:
-            The credit cost charged (``0`` when nothing was billed).
+            The credit cost actually charged (``0`` when nothing was billed) —
+            at most the account's spendable balance, so it can undershoot the
+            run's full cost on a depleted account.
         """
         usage_rows = list(usages)
         cost = run_cost_credits(usage_rows, token_source)
@@ -634,7 +648,7 @@ class StripeBillingService:
         output_tokens = sum(usage.output_tokens for usage in usage_rows)
         now = datetime.now(UTC)
         with Session(self._engine) as session:
-            customer = session.get(BillingCustomerModel, username)
+            customer = session.get(BillingCustomerModel, username, with_for_update=True)
             if customer is None:
                 # A run can finish for an account that never touched Stripe; seed a
                 # customer-less billing row so the debit lands and the grant tracks.
@@ -650,23 +664,36 @@ class StripeBillingService:
                 )
                 session.add(customer)
             self._resolve_grant(customer, now)
-            from_grant = min(int(customer.grant_remaining or 0), cost)
-            customer.grant_remaining = int(customer.grant_remaining or 0) - from_grant
-            customer.credit_balance = int(customer.credit_balance) - (cost - from_grant)
-            customer.updated_at = now
-            session.add(
-                CreditLedgerModel(
-                    username=username,
-                    delta_credits=-cost,
-                    kind="run",
-                    description=description or "Run",
-                    model=model,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
+            grant = max(int(customer.grant_remaining or 0), 0)
+            paid = max(int(customer.credit_balance), 0)
+            charged = min(cost, grant + paid)
+            if charged < cost:
+                logger.warning(
+                    "debit for %s clamped to balance: cost=%d charged=%d absorbed=%d (%s)",
+                    username,
+                    cost,
+                    charged,
+                    cost - charged,
+                    description or "Run",
                 )
-            )
+            from_grant = min(grant, charged)
+            customer.grant_remaining = grant - from_grant
+            customer.credit_balance = paid - (charged - from_grant)
+            customer.updated_at = now
+            if charged > 0:
+                session.add(
+                    CreditLedgerModel(
+                        username=username,
+                        delta_credits=-charged,
+                        kind="run",
+                        description=description or "Run",
+                        model=model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                    )
+                )
             session.commit()
-        return cost
+        return charged
 
     def handle_webhook(self, payload: bytes, sig_header: str | None) -> None:
         """Verify and apply a Stripe webhook event, exactly once.

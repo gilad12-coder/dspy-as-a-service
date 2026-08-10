@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from core.billing.metering import meter_llm_run
+from core.billing.metering import estimate_run_credits, meter_llm_run
 from core.storage.models import Base, BillingCustomerModel, CreditLedgerModel
 
 
@@ -56,8 +56,32 @@ def _ledger_rows(engine: object) -> list[CreditLedgerModel]:
         return session.query(CreditLedgerModel).order_by(CreditLedgerModel.id).all()
 
 
+def _fund(engine: object, username: str, credits: int = 100_000) -> None:
+    """Seed a billing row with a paid balance so a debit has something to draw.
+
+    The clamped debit charges at most what the account holds, so a test that
+    asserts a real charge landed must start from a funded balance.
+
+    Args:
+        engine: The SQLite engine to write to.
+        username: Account to fund.
+        credits: Paid balance to seed.
+    """
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username=username,
+                stripe_customer_id=f"cus_{username}",
+                credit_balance=credits,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
+
+
 def test_meter_llm_run_debits_and_stamps_tokens(engine: object) -> None:
     """A tracked run writes one run row with the measured token counts."""
+    _fund(engine, "alice@x.io")
     lm = _FakeLm([{"usage": {"prompt_tokens": 100_000, "completion_tokens": 40_000}}])
     credits = meter_llm_run(engine, "alice@x.io", [lm], description="Agent chat")
     assert credits > 0
@@ -73,11 +97,12 @@ def test_meter_llm_run_debits_and_stamps_tokens(engine: object) -> None:
     with Session(engine) as session:
         customer = session.get(BillingCustomerModel, "alice@x.io")
         assert customer is not None
-        assert int(customer.grant_remaining) < 500
+        assert int(customer.credit_balance) == 100_000 - credits
 
 
 def test_meter_llm_run_rekeys_auto_route_to_served_model(engine: object) -> None:
     """An auto-routed run's charge lands on the concrete model the router served."""
+    _fund(engine, "alice@x.io")
     lm = _FakeLm(
         [{"usage": {"prompt_tokens": 50_000, "completion_tokens": 10_000}}],
         model="litellm_proxy/openrouter/auto-beta",
@@ -90,6 +115,7 @@ def test_meter_llm_run_rekeys_auto_route_to_served_model(engine: object) -> None
 
 def test_meter_llm_run_strips_proxy_prefix(engine: object) -> None:
     """An explicit pick behind the managed proxy books under its catalog id."""
+    _fund(engine, "alice@x.io")
     lm = _FakeLm(
         [{"usage": {"prompt_tokens": 50_000, "completion_tokens": 10_000}}],
         model="litellm_proxy/openrouter/test/unpriced",
@@ -113,6 +139,23 @@ def test_meter_llm_run_skips_without_engine_or_username(engine: object) -> None:
     assert meter_llm_run(None, "alice@x.io", [lm], description="x") == 0
     assert meter_llm_run(engine, "", [lm], description="x") == 0
     assert _ledger_rows(engine) == []
+
+
+def test_estimate_run_credits_prices_without_debiting(engine: object) -> None:
+    """The in-flight estimate matches what a debit would charge and writes nothing."""
+    _fund(engine, "alice@x.io")
+    history = [{"usage": {"prompt_tokens": 100_000, "completion_tokens": 40_000}}]
+    estimate = estimate_run_credits([_FakeLm(history)])
+    assert estimate > 0
+    assert _ledger_rows(engine) == []
+    assert estimate == meter_llm_run(engine, "alice@x.io", [_FakeLm(history)], description="x")
+
+
+def test_estimate_run_credits_handles_empty_and_untracked_lms() -> None:
+    """No LMs or no tracked usage estimates to zero instead of raising."""
+    assert estimate_run_credits([]) == 0
+    assert estimate_run_credits([None]) == 0
+    assert estimate_run_credits([_FakeLm([{"response": "hi"}])]) == 0
 
 
 def test_meter_llm_run_never_raises_on_billing_failure(engine: object) -> None:

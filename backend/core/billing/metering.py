@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 
 from ..service_gateway.language_models import served_model_from, usage_by_model_from_history
-from .pricing import usages_from_breakdown
+from .pricing import ModelUsage, credits_for_usage, usages_from_breakdown
 from .service import StripeBillingService
 
 logger = logging.getLogger("skynet.billing.metering")
@@ -32,6 +32,70 @@ def _normalize_model_key(model: str) -> str:
         The catalog-shaped id the ledger and pricing table understand.
     """
     return model.removeprefix(_PROXY_PREFIX)
+
+
+def _coerce_lms(language_models) -> list:
+    """Return the non-``None`` LM objects behind a single-LM-or-iterable arg.
+
+    Args:
+        language_models: A single LM object or a list/tuple of them.
+    """
+    lms = list(language_models) if isinstance(language_models, (list, tuple)) else [language_models]
+    return [lm for lm in lms if lm is not None]
+
+
+def _harvest_usages(lms: list) -> tuple[list[ModelUsage], str | None]:
+    """Harvest per-model usage from LMs, rekeyed to catalog-priced model ids.
+
+    Args:
+        lms: Non-empty list of the run's LM objects.
+
+    Returns:
+        The priced usage rows plus the model id to stamp on a ledger row, or
+        ``([], None)`` when the LMs tracked no usage.
+    """
+    breakdown = usage_by_model_from_history(*lms)
+    if not breakdown:
+        return [], None
+    served = served_model_from(lms[-1]) if len(lms) == 1 else None
+    rekeyed: dict[str, tuple[int, int]] = {}
+    for key, in_out in breakdown.items():
+        normalized = _normalize_model_key(key)
+        # An auto-routed turn's usage is keyed by the router's own id;
+        # the concrete pick is what the price table knows.
+        if served and len(breakdown) == 1:
+            normalized = served
+        prior = rekeyed.get(normalized, (0, 0))
+        rekeyed[normalized] = (prior[0] + in_out[0], prior[1] + in_out[1])
+    return usages_from_breakdown(rekeyed), next(iter(rekeyed))
+
+
+def estimate_run_credits(language_models) -> int:
+    """Price the managed-token usage a set of LMs has accumulated so far.
+
+    A ``MeteredLM``'s running totals are current at any point, so this can be
+    polled mid-run — the auto-tag job's credit watch uses it to stop a bulk
+    job once its accrued cost reaches the account's balance, before the final
+    debit clamps. Read-only: nothing is debited. Never raises; a harvest
+    failure prices as ``0`` so a watcher fails open rather than killing a run
+    on a metering hiccup.
+
+    Args:
+        language_models: The run's LM objects (a single LM or an iterable).
+
+    Returns:
+        The full managed credit cost of the usage so far (``0`` when nothing
+        was tracked).
+    """
+    lms = _coerce_lms(language_models)
+    if not lms:
+        return 0
+    try:
+        usages, _ = _harvest_usages(lms)
+        return credits_for_usage(usages)
+    except Exception:
+        logger.exception("failed to price in-flight LLM usage")
+        return 0
 
 
 def meter_llm_run(
@@ -66,28 +130,17 @@ def meter_llm_run(
     """
     if engine is None or not username:
         return 0
-    lms = list(language_models) if isinstance(language_models, (list, tuple)) else [language_models]
-    lms = [lm for lm in lms if lm is not None]
+    lms = _coerce_lms(language_models)
     if not lms:
         return 0
     try:
-        breakdown = usage_by_model_from_history(*lms)
-        if not breakdown:
+        usages, harvested_model = _harvest_usages(lms)
+        if not usages:
             return 0
-        served = served_model_from(lms[-1]) if len(lms) == 1 else None
-        rekeyed: dict[str, tuple[int, int]] = {}
-        for key, in_out in breakdown.items():
-            normalized = _normalize_model_key(key)
-            # An auto-routed turn's usage is keyed by the router's own id;
-            # the concrete pick is what the price table knows.
-            if served and len(breakdown) == 1:
-                normalized = served
-            prior = rekeyed.get(normalized, (0, 0))
-            rekeyed[normalized] = (prior[0] + in_out[0], prior[1] + in_out[1])
-        ledger_model = model or next(iter(rekeyed))
-        usages = usages_from_breakdown(rekeyed)
         service = StripeBillingService(engine=engine)
-        credits = service.debit_run(username, usages, model=ledger_model, description=description)
+        credits = service.debit_run(
+            username, usages, model=model or harvested_model, description=description
+        )
     except Exception:
         logger.exception("failed to debit LLM usage for %s (%s)", username, description)
         return 0
