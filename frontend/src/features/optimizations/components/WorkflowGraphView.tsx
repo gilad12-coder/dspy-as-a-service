@@ -39,8 +39,10 @@ import { Skeleton } from "@/shared/ui/skeleton";
 import { cn } from "@/shared/lib/utils";
 import { msg } from "@/shared/lib/messages";
 import { autoLayoutSpec } from "@/features/submit/workflow/model";
-import { NODE_TYPES, flowTypeFor, type CanvasNode } from "@/features/submit/workflow/nodes";
+import { flowTypeFor } from "@/features/submit/workflow/nodes";
 import type { WorkflowNodeSpec, WorkflowSpec } from "@/shared/types/api";
+
+import { VIEW_NODE_TYPES, type ViewNode } from "./WorkflowGraphNodes";
 
 const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
   ssr: false,
@@ -48,13 +50,6 @@ const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m
 });
 
 const FIT_VIEW = { padding: 0.2, maxZoom: 1 };
-
-const MODULE_LABELS = {
-  predict: "Predict",
-  cot: "CoT",
-  react: "ReAct",
-  flex: "Flex",
-} as const;
 
 export function WorkflowGraphView({ spec }: { spec: WorkflowSpec }) {
   return (
@@ -75,14 +70,14 @@ function GraphView({ spec }: { spec: WorkflowSpec }) {
     () => (spec.nodes.every((n) => n.position) ? spec : autoLayoutSpec(spec)),
     [spec],
   );
-  const nodes: CanvasNode[] = React.useMemo(
+  const nodes: ViewNode[] = React.useMemo(
     () =>
       laid.nodes.map((node) => ({
         id: node.id,
         type: flowTypeFor(node),
         position: node.position ?? { x: 0, y: 0 },
         selected: node.id === inspectorId,
-        data: { spec: node, issues: [], trace: null, pulse: false },
+        data: { spec: node },
       })),
     [laid, inspectorId],
   );
@@ -148,7 +143,7 @@ function GraphView({ spec }: { spec: WorkflowSpec }) {
           <ReactFlow
             nodes={nodes}
             edges={edges}
-            nodeTypes={NODE_TYPES}
+            nodeTypes={VIEW_NODE_TYPES}
             onNodeClick={(_, node) => setInspectorId(node.id)}
             onPaneClick={() => setInspectorId(null)}
             nodesDraggable={false}
@@ -318,11 +313,6 @@ function NodeDetails({ spec, onClose }: { spec: WorkflowNodeSpec; onClose: () =>
 
         {spec.kind === "signature" && (
           <>
-            <Section label={msg("workflow.inspector.module")}>
-              <span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
-                {MODULE_LABELS[spec.module_name]}
-              </span>
-            </Section>
             {spec.tool_filter && spec.tool_filter.length > 0 && (
               <FieldList label={msg("workflow.inspector.flex_tools")} names={spec.tool_filter} />
             )}

@@ -2998,6 +2998,7 @@ export type MessageKey =
   | "workflow.node.input"
   | "workflow.node.mcp"
   | "workflow.node.output"
+  | "workflow.node.signature"
   | "workflow.node.transform"
   | "workflow.playground.trace_title"
   | "workflow.step.metric_hint"
@@ -6015,6 +6016,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "workflow.node.input": "קלט",
   "workflow.node.mcp": "כלי",
   "workflow.node.output": "פלט",
+  "workflow.node.signature": "LLM",
   "workflow.node.transform": "עיבוד",
   "workflow.playground.trace_title": "מסלול הריצה בגרף",
   "workflow.step.metric_hint": "המדד מקבל את הפלט הסופי של הגרף (שדות צומת הפלט) ומחזיר ציון — האופטימיזציה מכוונת את כל הצמתים לפיו",
@@ -14682,6 +14684,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "workflow.node.input": "Input",
   "workflow.node.mcp": "Tool",
   "workflow.node.output": "Output",
+  "workflow.node.signature": "LLM",
   "workflow.node.transform": "Transform",
   "workflow.playground.trace_title": "Graph execution trace",
   "workflow.step.metric_hint": "The metric receives the graph's final output (the output node's fields) and returns a score — optimization tunes every node against it",
