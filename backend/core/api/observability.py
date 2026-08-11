@@ -42,6 +42,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..config import settings
 from ..storage.usage import purge_expired_staged_datasets
+from .alerts import install_alert_log_handler
 from .routers.agent_history import purge_stale_conversations
 
 # python-json-logger ships its formatter under two different names depending
@@ -218,7 +219,10 @@ def configure_logging() -> None:
     * ``LOG_FORMAT`` — ``json`` or ``text`` (default ``text``).
 
     Existing handlers (e.g. one installed by Uvicorn or pytest at import
-    time) are removed so log output has a single, predictable shape.
+    time) are removed so log output has a single, predictable shape. When
+    ``ALERT_WEBHOOK_URL`` is set, an :class:`~core.api.alerts.AlertLogHandler`
+    is also attached so records at or above ``ALERT_MIN_LEVEL`` are forwarded
+    to the chat webhook.
     """
     level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
@@ -231,6 +235,7 @@ def configure_logging() -> None:
         root.removeHandler(existing)
     root.addHandler(handler)
     root.setLevel(level)
+    install_alert_log_handler(root)
 
 
 def install_metrics(app: FastAPI) -> None:

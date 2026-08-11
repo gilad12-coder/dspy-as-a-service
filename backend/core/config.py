@@ -496,6 +496,66 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
 
+    alert_webhook_url: str = Field(
+        default="",
+        alias="ALERT_WEBHOOK_URL",
+        description=(
+            "Incoming chat webhook (Slack-compatible {\"text\": …} payload; also "
+            "accepted by Mattermost and Google Chat) that receives operational "
+            "alerts — unhandled 500s, a dead worker, and code paths that call "
+            "send_alert() directly. Unset (the default) disables outbound "
+            "alerting: records still reach the logs, they just aren't forwarded."
+        ),
+    )
+    alert_min_level: str = Field(
+        default="ERROR",
+        alias="ALERT_MIN_LEVEL",
+        description=(
+            "Minimum log level forwarded to ALERT_WEBHOOK_URL by the log handler "
+            "(DEBUG/INFO/WARNING/ERROR/CRITICAL). Effective only at or above "
+            "LOG_LEVEL, which gates the root logger first. Direct send_alert() "
+            "calls ignore this threshold."
+        ),
+    )
+    alert_environment: str = Field(
+        default="",
+        alias="ALERT_ENVIRONMENT",
+        description=(
+            "Short label prefixed to every alert (e.g. 'prod', 'staging') so a "
+            "shared channel can attribute an alert to its source. Empty omits "
+            "the prefix."
+        ),
+    )
+    alert_throttle_seconds: float = Field(
+        default=300.0,
+        ge=0.0,
+        alias="ALERT_THROTTLE_SECONDS",
+        description=(
+            "Cooldown during which an identical alert (same level, title and "
+            "body) is forwarded at most once, so an error loop can't flood the "
+            "webhook. 0 disables throttling."
+        ),
+    )
+
+    @field_validator("alert_min_level")
+    @classmethod
+    def _validate_alert_min_level(cls, v: str) -> str:
+        """Normalise ALERT_MIN_LEVEL to a canonical upper-case logging level name.
+
+        Args:
+            v: Raw ALERT_MIN_LEVEL value from the environment.
+
+        Returns:
+            The upper-cased level name.
+
+        Raises:
+            ValueError: When the value is not a standard logging level name.
+        """
+        name = v.strip().upper()
+        if name not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError("ALERT_MIN_LEVEL must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL")
+        return name
+
     code_agent_model: str = Field(
         default=DEFAULT_AGENT_MODEL_ID,
         description=(
