@@ -151,6 +151,7 @@ export type MessageKey =
   | "auth.login.email"
   | "auth.login.email_placeholder"
   | "auth.login.error"
+  | "auth.login.forgot"
   | "auth.login.form_aria"
   | "auth.login.invalid_credentials"
   | "auth.login.loading"
@@ -167,6 +168,14 @@ export type MessageKey =
   | "auth.login.password_rule_email"
   | "auth.login.password_rule_max"
   | "auth.login.register_failed"
+  | "auth.login.reset_code_label"
+  | "auth.login.reset_confirm_hint"
+  | "auth.login.reset_failed"
+  | "auth.login.reset_heading"
+  | "auth.login.reset_new_password"
+  | "auth.login.reset_request_hint"
+  | "auth.login.reset_send"
+  | "auth.login.reset_submit"
   | "auth.login.signin_submit"
   | "auth.login.signup_submit"
   | "auth.login.tab_signin"
@@ -3176,6 +3185,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auth.login.email": "אימייל",
   "auth.login.email_placeholder": "you@example.com",
   "auth.login.error": "ההתחברות נכשלה",
+  "auth.login.forgot": "שכחת סיסמה?",
   "auth.login.form_aria": "טופס התחברות",
   "auth.login.invalid_credentials": "האימייל או הסיסמה שגויים",
   "auth.login.loading": "מתחבר/ת…",
@@ -3192,6 +3202,14 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auth.login.password_rule_email": "הסיסמה לא יכולה להכיל את כתובת האימייל",
   "auth.login.password_rule_max": "עד 128 תווים",
   "auth.login.register_failed": "יצירת החשבון נכשלה. נסה/י שוב",
+  "auth.login.reset_code_label": "קוד איפוס",
+  "auth.login.reset_confirm_hint": "אם קיים חשבון לכתובת הזו, נשלח אליו קוד. הזינו אותו למטה יחד עם הסיסמה החדשה.",
+  "auth.login.reset_failed": "איפוס הסיסמה נכשל. נסה/י שוב",
+  "auth.login.reset_heading": "איפוס סיסמה",
+  "auth.login.reset_new_password": "סיסמה חדשה",
+  "auth.login.reset_request_hint": "הזינו את כתובת האימייל של החשבון ונשלח אליכם קוד איפוס.",
+  "auth.login.reset_send": "שליחת קוד איפוס",
+  "auth.login.reset_submit": "אפס/י סיסמה",
   "auth.login.signin_submit": "התחבר/י",
   "auth.login.signup_submit": "צור/צרי חשבון",
   "auth.login.tab_signin": "התחברות",
@@ -11839,6 +11857,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auth.login.email": "Email",
   "auth.login.email_placeholder": "you@example.com",
   "auth.login.error": "Sign-in failed",
+  "auth.login.forgot": "Forgot password?",
   "auth.login.form_aria": "Sign-in form",
   "auth.login.invalid_credentials": "Incorrect email or password",
   "auth.login.loading": "Signing in…",
@@ -11855,6 +11874,14 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auth.login.password_rule_email": "The password can't contain your email address",
   "auth.login.password_rule_max": "At most 128 characters",
   "auth.login.register_failed": "Account creation failed. Please try again",
+  "auth.login.reset_code_label": "Reset code",
+  "auth.login.reset_confirm_hint": "If an account exists for that email, a code is on its way. Enter it below with your new password.",
+  "auth.login.reset_failed": "Couldn't reset your password. Please try again",
+  "auth.login.reset_heading": "Reset your password",
+  "auth.login.reset_new_password": "New password",
+  "auth.login.reset_request_hint": "Enter your account email and we'll send you a reset code.",
+  "auth.login.reset_send": "Send reset code",
+  "auth.login.reset_submit": "Reset password",
   "auth.login.signin_submit": "Sign in",
   "auth.login.signup_submit": "Create account",
   "auth.login.tab_signin": "Sign in",

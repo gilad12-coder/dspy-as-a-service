@@ -32,6 +32,7 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "agent_memory.wrong_block": "Wrong block: {block}. Blocks are compressed in order; the next is {next_block}.",
     "accounts.email_delivery_unavailable": "Email delivery isn't configured on this server.",
     "accounts.email_send_failed": "Couldn't send the verification email. Try again.",
+    "accounts.invalid_reset_code": "That reset code is incorrect or has expired.",
     "accounts.invalid_second_factor": "That verification code is incorrect or has expired.",
     "accounts.password_common": "That password is too common and easy to guess. Pick a different one.",
     "accounts.password_contains_email": "The password can't contain your email address.",

@@ -17,6 +17,7 @@ class I18nKey(StrEnum):
     ACCOUNTS_EMAIL_TAKEN = 'accounts.email_taken'
     ACCOUNTS_INVALID_CREDENTIALS = 'accounts.invalid_credentials'
     ACCOUNTS_INVALID_EMAIL = 'accounts.invalid_email'
+    ACCOUNTS_INVALID_RESET_CODE = 'accounts.invalid_reset_code'
     ACCOUNTS_INVALID_SECOND_FACTOR = 'accounts.invalid_second_factor'
     ACCOUNTS_PASSWORD_COMMON = 'accounts.password_common'
     ACCOUNTS_PASSWORD_CONTAINS_EMAIL = 'accounts.password_contains_email'

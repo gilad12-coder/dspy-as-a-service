@@ -56,7 +56,7 @@ from ..two_factor import (
     totp_provisioning_uri,
     verify_totp,
 )
-from .accounts import AccountInfo, _normalise_email, _require_internal_auth, _role_for
+from .accounts import AccountInfo, OkResponse, _normalise_email, _require_internal_auth, _role_for
 
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
 
@@ -267,11 +267,6 @@ class PasskeyAssertRequest(BaseModel):
 class EmailCodeSendRequest(BaseModel):
     email: str = Field(description="Account email.")
     password: str = Field(description="Account password, re-verified before any email is sent.")
-
-
-# Simple acknowledgement for state-changing security calls.
-class OkResponse(BaseModel):
-    ok: bool = Field(default=True, description="Always true on success.")
 
 
 def create_account_security_router(*, job_store) -> APIRouter:

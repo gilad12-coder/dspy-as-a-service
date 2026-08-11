@@ -145,6 +145,11 @@ interface TwoFactorState {
   emailSent: boolean;
 }
 
+interface ResetState {
+  /** Which step of the two-step forgot-password flow is showing. */
+  step: "request" | "confirm";
+}
+
 export function LoginView() {
   const router = useRouter();
   const prefersReduced = useReducedMotion();
@@ -164,6 +169,11 @@ export function LoginView() {
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [passkeySupported, setPasskeySupported] = useState(false);
   const [passkeyOffer, setPasskeyOffer] = useState<"offer" | "saving" | null>(null);
+  const [reset, setReset] = useState<ResetState | null>(null);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetNewPassword, setResetNewPassword] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
 
   useEffect(() => {
     setPasskeySupported(browserSupportsWebAuthn());
@@ -171,7 +181,7 @@ export function LoginView() {
 
   useEffect(() => {
     if (mode !== "ready" || authMode !== "signin" || !passkeySupported) return;
-    if (twoFactor || passkeyOffer) return;
+    if (twoFactor || passkeyOffer || reset) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -201,7 +211,7 @@ export function LoginView() {
       cancelled = true;
       WebAuthnAbortService.cancelCeremony();
     };
-  }, [mode, authMode, passkeySupported, twoFactor, passkeyOffer]);
+  }, [mode, authMode, passkeySupported, twoFactor, passkeyOffer, reset]);
 
   useEffect(() => {
     // If the providers endpoint errors (network blip, mis-deployed [...nextauth]
@@ -245,6 +255,128 @@ export function LoginView() {
   function describeRegisterError(code: string): string {
     if (code.startsWith("accounts.") || code === "auth.not_configured") return tI18n(code);
     return msg("auth.login.register_failed");
+  }
+
+  /**
+   * Localize an error returned by the password-reset proxies. Backend semantic
+   * codes (``accounts.*``, ``auth.not_configured``) resolve through the shared
+   * catalog; anything else collapses to a generic "couldn't reset your password".
+   */
+  function describeResetError(code: string): string {
+    if (code.startsWith("accounts.") || code === "auth.not_configured") return tI18n(code);
+    return msg("auth.login.reset_failed");
+  }
+
+  /** Open the forgot-password flow, seeding it with any email already typed. */
+  function enterReset() {
+    setReset({ step: "request" });
+    setResetEmail(email.trim().toLowerCase());
+    setResetCode("");
+    setResetNewPassword("");
+    setError("");
+  }
+
+  function leaveReset() {
+    setReset(null);
+    setError("");
+  }
+
+  /**
+   * Ask the backend to email a reset code. The response is deliberately identical
+   * for known and unknown addresses, so a success only advances the card to the
+   * code step; it never reveals whether the email has an account. Doubles as the
+   * "resend" action on the code step.
+   */
+  async function requestResetCode(): Promise<void> {
+    const cleanEmail = resetEmail.trim().toLowerCase();
+    if (!cleanEmail) return;
+    setError("");
+    setResetLoading(true);
+    try {
+      const res = await fetch("/api/password-reset/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(describeResetError(data.error ?? "auth.login.reset_failed"));
+        return;
+      }
+      setReset({ step: "confirm" });
+      setResetCode("");
+    } catch {
+      setError(msg("auth.login.error"));
+    } finally {
+      setResetLoading(false);
+    }
+  }
+
+  function handleResetRequest(e: React.FormEvent) {
+    e.preventDefault();
+    void requestResetCode();
+  }
+
+  /**
+   * Verify the emailed code, set the new password, then sign in with it. A
+   * 2FA-protected account still answers the fresh password with a "code required"
+   * signal, so the same second-factor step the normal sign-in uses is reused
+   * here rather than letting a reset slip past 2FA.
+   */
+  async function handleResetConfirm(e: React.FormEvent) {
+    e.preventDefault();
+    const cleanEmail = resetEmail.trim().toLowerCase();
+    const code = resetCode.trim();
+    if (!cleanEmail || !code || !resetNewPassword) return;
+    setError("");
+    setResetLoading(true);
+    try {
+      const res = await fetch("/api/password-reset/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail, code, new_password: resetNewPassword }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(describeResetError(data.error ?? "auth.login.reset_failed"));
+        setResetLoading(false);
+        return;
+      }
+      // Password updated — mint a session from the new credentials the same way a
+      // fresh signup does, pivoting to the 2FA step if the account has one.
+      setEmail(cleanEmail);
+      setPassword(resetNewPassword);
+      const result = await signIn("credentials", {
+        email: cleanEmail,
+        password: resetNewPassword,
+        redirect: false,
+      });
+      if (result?.error) {
+        const signal = result.code ?? "";
+        if (signal.startsWith("2fa_required:")) {
+          const methods = signal.slice("2fa_required:".length).split(" ").filter(Boolean);
+          setReset(null);
+          setTwoFactor({
+            methods,
+            mode: methods.includes("totp") ? "totp" : "email",
+            emailSent: false,
+          });
+          setTwoFactorCode("");
+          setResetLoading(false);
+          return;
+        }
+        setReset(null);
+        setError(msg("auth.login.invalid_credentials"));
+        setResetLoading(false);
+        return;
+      }
+      setReset(null);
+      track(TelemetryEvent.LoginSucceeded, { method: "password_reset" });
+      await offerPasskeyOrFinish();
+    } catch {
+      setError(msg("auth.login.error"));
+      setResetLoading(false);
+    }
   }
 
   function switchMode(next: AuthMode) {
@@ -509,6 +641,10 @@ export function LoginView() {
   const canSubmit = !loading && !!email.trim() && password.length > 0;
   const passwordRules =
     authMode === "signup" && password.length > 0 ? unmetPasswordRules(password, email) : [];
+  const resetPasswordRules =
+    reset?.step === "confirm" && resetNewPassword.length > 0
+      ? unmetPasswordRules(resetNewPassword, resetEmail)
+      : [];
 
   return (
     <div className="relative flex min-h-dvh w-full items-center justify-center px-4 py-10">
@@ -695,6 +831,156 @@ export function LoginView() {
                       )}
                     </div>
                   </div>
+                ) : reset ? (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={leaveReset}
+                      className="mb-4 flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <ArrowLeft className="size-3.5 rtl:-scale-x-100" aria-hidden="true" />
+                      {msg("auth.login.twofa_back")}
+                    </button>
+                    <p className="text-sm font-semibold text-foreground">
+                      {msg("auth.login.reset_heading")}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {reset.step === "request"
+                        ? msg("auth.login.reset_request_hint")
+                        : msg("auth.login.reset_confirm_hint")}
+                    </p>
+                    {reset.step === "request" ? (
+                      <form onSubmit={handleResetRequest} className="mt-4 space-y-3.5">
+                        <div>
+                          <Label
+                            htmlFor="reset-email"
+                            className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                          >
+                            {msg("auth.login.email")}
+                          </Label>
+                          <Input
+                            id="reset-email"
+                            type="email"
+                            value={resetEmail}
+                            onChange={(e) => setResetEmail(e.target.value)}
+                            placeholder={msg("auth.login.email_placeholder")}
+                            autoFocus
+                            autoComplete="username"
+                            dir="ltr"
+                            className="h-11 text-left"
+                          />
+                        </div>
+                        <AnimatePresence>
+                          {error && (
+                            <motion.p
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="text-sm text-destructive"
+                              role="alert"
+                            >
+                              {error}
+                            </motion.p>
+                          )}
+                        </AnimatePresence>
+                        <Button
+                          type="submit"
+                          size="lg"
+                          disabled={resetLoading || !resetEmail.trim()}
+                          className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                        >
+                          {resetLoading && <CircleNotch className="size-4 animate-spin" />}
+                          {msg("auth.login.reset_send")}
+                        </Button>
+                      </form>
+                    ) : (
+                      <form onSubmit={handleResetConfirm} className="mt-4 space-y-3.5">
+                        <div>
+                          <Label
+                            htmlFor="reset-code"
+                            className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                          >
+                            {msg("auth.login.reset_code_label")}
+                          </Label>
+                          <Input
+                            id="reset-code"
+                            value={resetCode}
+                            onChange={(e) => setResetCode(e.target.value)}
+                            placeholder="123456"
+                            autoFocus
+                            autoComplete="one-time-code"
+                            inputMode="numeric"
+                            dir="ltr"
+                            className="h-11 text-left"
+                          />
+                        </div>
+                        <div>
+                          <Label
+                            htmlFor="reset-password"
+                            className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                          >
+                            {msg("auth.login.reset_new_password")}
+                          </Label>
+                          <Input
+                            id="reset-password"
+                            type="password"
+                            value={resetNewPassword}
+                            onChange={(e) => setResetNewPassword(e.target.value)}
+                            placeholder={msg("auth.login.password_placeholder")}
+                            autoComplete="new-password"
+                            dir="ltr"
+                            className="h-11 text-left"
+                          />
+                          <AnimatePresence initial={false}>
+                            {resetPasswordRules.map((rule) => (
+                              <motion.p
+                                key={rule}
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="mt-1.5 text-xs text-muted-foreground"
+                              >
+                                {msg(rule)}
+                              </motion.p>
+                            ))}
+                          </AnimatePresence>
+                        </div>
+                        <AnimatePresence>
+                          {error && (
+                            <motion.p
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="text-sm text-destructive"
+                              role="alert"
+                            >
+                              {error}
+                            </motion.p>
+                          )}
+                        </AnimatePresence>
+                        <Button
+                          type="submit"
+                          size="lg"
+                          disabled={resetLoading || !resetCode.trim() || !resetNewPassword}
+                          className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                        >
+                          {resetLoading && <CircleNotch className="size-4 animate-spin" />}
+                          {msg("auth.login.reset_submit")}
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => void requestResetCode()}
+                          disabled={resetLoading}
+                          className={TWOFA_LINK_CLASS}
+                        >
+                          {msg("auth.login.twofa_resend")}
+                        </button>
+                      </form>
+                    )}
+                  </div>
                 ) : (
                   <>
                     <div
@@ -847,6 +1133,16 @@ export function LoginView() {
                           ))}
                         </AnimatePresence>
                       </div>
+
+                      {authMode === "signin" && (
+                        <button
+                          type="button"
+                          onClick={enterReset}
+                          className="block w-full cursor-pointer text-end text-xs font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                        >
+                          {msg("auth.login.forgot")}
+                        </button>
+                      )}
 
                       <AnimatePresence>
                         {error && (

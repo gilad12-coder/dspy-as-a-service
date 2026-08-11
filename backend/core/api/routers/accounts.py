@@ -22,9 +22,11 @@ from sqlalchemy.orm import Session
 
 from ...config import settings
 from ...storage.models import UserModel
+from ..email_sender import email_configured, send_email
 from ..errors import DomainError
 from ..login_throttle import LoginThrottle
 from ..password_policy import validate_password
+from ..password_reset import issue_reset_code, reset_code_on_cooldown, verify_reset_code
 from ..passwords import hash_password, verify_password
 from ..two_factor import enforce_second_factor
 
@@ -59,6 +61,25 @@ class AccountInfo(BaseModel):
     email: str = Field(description="Lowercased account email, which is the identity.")
     name: str = Field(description="Display name.")
     role: str = Field(description="Authorization role: 'admin' or 'user'.")
+
+
+# Simple acknowledgement for state-changing auth calls. Lives here (not in the
+# account-security router) because that router imports from this leaf module, so
+# a shared response model can only flow in this direction without a cycle.
+class OkResponse(BaseModel):
+    ok: bool = Field(default=True, description="Always true on success.")
+
+
+# Account email to email a password-reset code to (forgot-password step one).
+class PasswordResetRequest(BaseModel):
+    email: str = Field(description="Account email to send a one-time reset code to.")
+
+
+# Reset code plus the new password (forgot-password step two).
+class PasswordResetConfirm(BaseModel):
+    email: str = Field(description="Account email being reset.")
+    code: str = Field(description="One-time code delivered by email.")
+    new_password: str = Field(description="New plaintext password; stored only as a scrypt hash.")
 
 
 def _normalise_email(raw: str) -> str:
@@ -237,5 +258,92 @@ def create_accounts_router(*, job_store, login_throttle: LoginThrottle | None = 
             session.commit()
         throttle.reset(email)
         return AccountInfo(email=email, name=name, role=_role_for(email))
+
+    @router.post(
+        "/auth/password-reset/request",
+        response_model=OkResponse,
+        summary="Email a one-time password-reset code (internal)",
+    )
+    def password_reset_request(
+        body: PasswordResetRequest,
+        x_internal_auth: Annotated[str | None, Header()] = None,
+    ) -> OkResponse:
+        """Email a reset code to an account that has forgotten its password.
+
+        Returns the same acknowledgement whether or not the address has an
+        account, so this route can't be used to enumerate registered emails. A
+        per-account cooldown bounds how often a code is sent, keeping it from
+        being a mail-bomb oracle since no password is required here.
+
+        Args:
+            body: The account email to send a code to.
+            x_internal_auth: Shared-secret header proving the trusted frontend.
+
+        Returns:
+            Acknowledgement (identical for known and unknown emails).
+
+        Raises:
+            DomainError: 403 on a bad internal secret; 422 when the deployment
+                has no SMTP relay (a global, account-independent condition);
+                502 when the relay rejects the send.
+        """
+        _require_internal_auth(x_internal_auth)
+        if not email_configured():
+            raise DomainError("accounts.email_delivery_unavailable", status=422)
+        email = _normalise_email(body.email)
+        with Session(job_store.engine) as session:
+            if session.get(UserModel, email) is None or reset_code_on_cooldown(session, email):
+                return OkResponse()
+            code = issue_reset_code(session, email)
+            session.commit()
+        try:
+            send_email(
+                email,
+                "Your Skynet password-reset code",
+                f"Your Skynet password-reset code is {code}. It expires in 30 minutes.\n\n"
+                "If you didn't ask to reset your password, you can ignore this email.",
+            )
+        except (OSError, RuntimeError) as exc:
+            raise DomainError("accounts.email_send_failed", status=502) from exc
+        return OkResponse()
+
+    @router.post(
+        "/auth/password-reset/confirm",
+        response_model=OkResponse,
+        summary="Set a new password with a reset code (internal)",
+    )
+    def password_reset_confirm(
+        body: PasswordResetConfirm,
+        x_internal_auth: Annotated[str | None, Header()] = None,
+    ) -> OkResponse:
+        """Verify a reset code and set the account's new password.
+
+        The account's second factor is left untouched, so a reset restores only
+        password knowledge and a later sign-in still passes through 2FA.
+
+        Args:
+            body: Account email, the emailed code, and the new password.
+            x_internal_auth: Shared-secret header proving the trusted frontend.
+
+        Returns:
+            Acknowledgement.
+
+        Raises:
+            DomainError: 403 on a bad internal secret; 422 when the new password
+                fails the acceptance policy, or ``accounts.invalid_reset_code``
+                when the code is unknown, wrong, expired, or spent (also raised
+                for an unknown email, so neither leaks account existence).
+        """
+        _require_internal_auth(x_internal_auth)
+        email = _normalise_email(body.email)
+        validate_password(body.new_password, email)
+        with Session(job_store.engine) as session:
+            row = session.get(UserModel, email)
+            if row is None or not verify_reset_code(session, email, body.code):
+                session.commit()
+                raise DomainError("accounts.invalid_reset_code", status=422)
+            row.password_hash = hash_password(body.new_password)
+            session.commit()
+        return OkResponse()
 
     return router

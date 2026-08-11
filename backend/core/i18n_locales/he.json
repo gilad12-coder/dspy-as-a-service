@@ -69,6 +69,7 @@
     "accounts.email_taken": "כתובת האימייל כבר רשומה.",
     "accounts.invalid_credentials": "האימייל או הסיסמה שגויים.",
     "accounts.invalid_email": "כתובת אימייל לא תקינה.",
+    "accounts.invalid_reset_code": "קוד האיפוס שגוי או שפג תוקפו.",
     "accounts.invalid_second_factor": "קוד האימות שגוי או שפג תוקפו.",
     "accounts.password_common": "הסיסמה הזו נפוצה מדי וקלה לניחוש. בחרו סיסמה אחרת.",
     "accounts.password_contains_email": "הסיסמה לא יכולה להכיל את כתובת האימייל שלכם.",

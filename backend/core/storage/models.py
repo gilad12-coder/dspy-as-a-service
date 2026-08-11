@@ -173,6 +173,27 @@ class TwoFactorEmailCodeModel(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
+class PasswordResetCodeModel(Base):
+    """The active password-reset code for a local account.
+
+    One row per email (requesting again replaces it), holding only the scrypt
+    hash of the emailed 6-digit code. ``attempts`` counts failed verifies so a
+    code dies after a handful of guesses well before ``expires_at``. ``sent_at``
+    backs a per-account resend cooldown: the request route is unauthenticated,
+    so the cooldown is what keeps it from being a mail-bomb oracle.
+    """
+
+    __tablename__ = "password_reset_codes"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class BillingCustomerModel(Base):
     """Per-user billing state synced from Stripe (one row per paying identity).
 
