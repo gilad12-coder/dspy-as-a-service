@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { DotsThree, Gear, SignOut } from "@/shared/ui/icons";
+import Link from "next/link";
+import { DotsThree, FileText, Gear, ShieldCheck, SignOut } from "@/shared/ui/icons";
 import { signOut, useSession } from "next-auth/react";
+import { LEGAL_LINKS } from "@/features/legal/legal-config";
 import { msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
@@ -175,6 +177,18 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
           <Gear className="size-4 text-muted-foreground" aria-hidden="true" />
           {msg("app.shell.account.settings")}
         </button>
+
+        <div role="separator" className="my-1 h-px bg-border/60" />
+
+        <Link href={LEGAL_LINKS.terms} onClick={close} className={MENU_ITEM}>
+          <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+          {msg("legal.terms_link")}
+        </Link>
+        <Link href={LEGAL_LINKS.privacy} onClick={close} className={MENU_ITEM}>
+          <ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" />
+          {msg("legal.privacy_link")}
+        </Link>
+
         <div role="separator" className="my-1 h-px bg-border/60" />
 
         <button

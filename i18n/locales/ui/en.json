@@ -63,6 +63,8 @@
   "app.shell.lite.hint.text": "Site feeling slow? Try lite mode",
   "app.shell.lite.tooltip": "Lite mode is on — click to exit",
   "app.shell.logout": "Log out",
+  "legal.terms_link": "Terms of Service",
+  "legal.privacy_link": "Privacy Policy",
   "app.shell.menu": "Menu",
   "app.shell.menu_close": "Close menu",
   "app.shell.search.button_aria": "Search everything",

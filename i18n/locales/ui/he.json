@@ -63,6 +63,8 @@
   "app.shell.lite.hint.text": "האתר מרגיש איטי? נסו את מצב lite",
   "app.shell.lite.tooltip": "מצב lite פעיל — לחצו ליציאה",
   "app.shell.logout": "התנתק/י",
+  "legal.terms_link": "תנאי שימוש",
+  "legal.privacy_link": "מדיניות פרטיות",
   "app.shell.menu": "תפריט",
   "app.shell.menu_close": "סגור/סגרי את התפריט",
   "app.shell.search.button_aria": "חיפוש בכל המערכת",

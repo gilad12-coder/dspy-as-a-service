@@ -1970,6 +1970,8 @@ export type MessageKey =
   | "export.table.done"
   | "export.table.empty"
   | "export.table.failed"
+  | "legal.privacy_link"
+  | "legal.terms_link"
   | "model.generation.explainer"
   | "model.generation.label"
   | "model.generation.label_plural"
@@ -5009,6 +5011,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "export.table.done": "יוצאו {count} שורות",
   "export.table.empty": "אין נתונים לייצוא",
   "export.table.failed": "הייצוא נכשל",
+  "legal.privacy_link": "מדיניות פרטיות",
+  "legal.terms_link": "תנאי שימוש",
   "model.generation.explainer": "ה{term.model} שמריץ את הפרומפט ומייצר את התשובות בפועל. הוא זה שעושה את המשימה, והפרומפט שלו הוא מה שה{term.optimization} משפרת.",
   "model.generation.label": "{term.generationModel}",
   "model.generation.label_plural": "{term.generationModelPlural}",
@@ -13686,6 +13690,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "export.table.done": "Exported {count} rows",
   "export.table.empty": "No data to export",
   "export.table.failed": "Export failed",
+  "legal.privacy_link": "Privacy Policy",
+  "legal.terms_link": "Terms of Service",
   "model.generation.explainer": "The model that runs your prompt and produces the actual answers. It's the one doing the task, and its prompt is what the optimization improves.",
   "model.generation.label": "Generation model",
   "model.generation.label_plural": "Generation models",

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { signIn, getProviders, getSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { CircleNotch, GithubLogo, Fingerprint, ArrowLeft } from "@/shared/ui/icons";
 import {
@@ -29,6 +30,7 @@ import {
 import { tI18n } from "@/shared/lib/i18n";
 import { cn } from "@/shared/lib/utils";
 import { track, TelemetryEvent } from "@/shared/lib/telemetry";
+import { LEGAL_LINKS } from "@/features/legal/legal-config";
 import { LoginHalo } from "./LoginHalo";
 
 const ENTER_EASE = [0.16, 1, 0.3, 1] as const;
@@ -1362,6 +1364,24 @@ export function LoginView() {
                 )}
               </CardContent>
             </Card>
+
+            <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <Link
+                href={LEGAL_LINKS.terms}
+                className="transition-colors hover:text-foreground hover:underline"
+              >
+                {msg("legal.terms_link")}
+              </Link>
+              <span aria-hidden="true" className="text-muted-foreground/40">
+                {"·"}
+              </span>
+              <Link
+                href={LEGAL_LINKS.privacy}
+                className="transition-colors hover:text-foreground hover:underline"
+              >
+                {msg("legal.privacy_link")}
+              </Link>
+            </p>
           </div>
         )}
       </motion.div>
