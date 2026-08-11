@@ -11,42 +11,9 @@ from core.models.dataset import (
     InputColumnProfile,
     ProfileDatasetRequest,
     ProfileDatasetResponse,
-    ProfileWarning,
-    ProfileWarningCode,
     SplitPlan,
     TargetColumnProfile,
 )
-
-
-def test_profile_warning_code_complete_set() -> None:
-    """Verify ProfileWarningCode exposes the full set of expected codes."""
-    assert {c.value for c in ProfileWarningCode} == {
-        "too_small",
-        "class_imbalance",
-        "rare_class",
-        "duplicates",
-        "missing_target",
-    }
-
-
-def test_profile_warning_minimal_payload() -> None:
-    """Verify ProfileWarning accepts a code and message and defaults details to {}."""
-    w = ProfileWarning(code=ProfileWarningCode.too_small, message="Dataset is small.")
-
-    assert w.code is ProfileWarningCode.too_small
-    assert w.message == "Dataset is small."
-    assert w.details == {}
-
-
-def test_profile_warning_persists_details() -> None:
-    """Verify ProfileWarning persists structured detail metadata."""
-    w = ProfileWarning(
-        code=ProfileWarningCode.class_imbalance,
-        message="Imbalance detected.",
-        details={"max_share": 0.9},
-    )
-
-    assert w.details == {"max_share": 0.9}
 
 
 def test_target_column_profile_required_fields() -> None:
@@ -86,7 +53,7 @@ def test_input_column_profile_persists_kind() -> None:
 
 
 def test_dataset_profile_minimal_construction() -> None:
-    """Verify DatasetProfile defaults targets/inputs/warnings and accepts row/column counts."""
+    """Verify DatasetProfile defaults targets/inputs and accepts row/column counts."""
     profile = DatasetProfile(row_count=10, column_count=2)
 
     assert profile.row_count == 10
@@ -95,7 +62,6 @@ def test_dataset_profile_minimal_construction() -> None:
     assert profile.targets == []
     assert profile.inputs == []
     assert profile.duplicate_count == 0
-    assert profile.warnings == []
 
 
 def test_dataset_profile_rejects_negative_counts() -> None:
@@ -115,7 +81,6 @@ def test_dataset_profile_with_targets_and_inputs() -> None:
         targets=[TargetColumnProfile(name="label", kind="categorical", unique_values=2)],
         inputs=[InputColumnProfile(name="text", kind="text")],
         duplicate_count=4,
-        warnings=[ProfileWarning(code=ProfileWarningCode.duplicates, message="found")],
     )
 
     assert profile.target is not None
@@ -123,7 +88,6 @@ def test_dataset_profile_with_targets_and_inputs() -> None:
     assert len(profile.targets) == 1
     assert profile.inputs[0].kind == "text"
     assert profile.duplicate_count == 4
-    assert profile.warnings[0].code is ProfileWarningCode.duplicates
 
 
 def test_split_plan_round_trip() -> None:

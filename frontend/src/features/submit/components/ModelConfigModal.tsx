@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { CaretDown, Coins, Key, X } from "@/shared/ui/icons";
+import { CaretDown, Key, X } from "@/shared/ui/icons";
 import { useCredits, useByokKeys, litellmProviderForByok } from "@/features/billing";
 import { useSettingsModal } from "@/features/settings";
 import { getByokModelCatalog, cachedByokCatalog } from "@/shared/lib/model-catalog";
@@ -212,35 +212,28 @@ export function ModelConfigModal({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
-            {mode === "managed" ? (
-              <>
-                <Coins className="size-3.5 shrink-0" aria-hidden="true" />
-                <span>{msg("billing.mode.managed_hint")}</span>
-              </>
-            ) : (
-              <>
-                <Key className="size-3.5 shrink-0" aria-hidden="true" />
-                <span>{msg("billing.mode.byok_hint")}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenChange(false);
-                    openTo("providers");
-                  }}
-                  className="cursor-pointer font-medium text-foreground underline-offset-4 hover:underline"
-                >
-                  {msg("billing.mode.manage_keys")}
-                </button>
-                {/* BYOK concurrency note [FG-2]: your-key runs share self-hosted
-                    compute and may queue at peak — stated so it reads as a limit,
-                    not a penalty for not buying credits. */}
-                <span className="w-full text-muted-foreground/80">
-                  {msg("billing.mode.byok_queue_note")}
-                </span>
-              </>
-            )}
-          </div>
+          {mode !== "managed" && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
+              <Key className="size-3.5 shrink-0" aria-hidden="true" />
+              <span>{msg("billing.mode.byok_hint")}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenChange(false);
+                  openTo("providers");
+                }}
+                className="cursor-pointer font-medium text-foreground underline-offset-4 hover:underline"
+              >
+                {msg("billing.mode.manage_keys")}
+              </button>
+              {/* BYOK concurrency note [FG-2]: your-key runs share self-hosted
+                  compute and may queue at peak — stated so it reads as a limit,
+                  not a penalty for not buying credits. */}
+              <span className="w-full text-muted-foreground/80">
+                {msg("billing.mode.byok_queue_note")}
+              </span>
+            </div>
+          )}
 
           {showConnection && (
             <button

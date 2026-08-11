@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkle, Warning, Info } from "@/shared/ui/icons";
+import { Sparkle, Info } from "@/shared/ui/icons";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { cn } from "@/shared/lib/utils";
 import { msg, type MessageKey } from "@/shared/lib/messages";
@@ -9,7 +9,6 @@ import { useLocale } from "@/shared/providers";
 import { dirForLocale } from "@/shared/lib/locale";
 
 import type { SubmitWizardContext } from "../hooks/use-submit-wizard";
-import type { ProfileWarning, ProfileWarningCode } from "@/shared/types/api";
 
 const percent = (value: number): string => `${Math.round(value * 100)}%`;
 
@@ -29,55 +28,8 @@ function rationaleKey(total: number): MessageKey {
   return "submit.split.rationale.large";
 }
 
-const WARNING_KEY: Partial<Record<ProfileWarningCode, MessageKey>> = {
-  too_small: "submit.split.warning.too_small",
-  duplicates: "submit.split.warning.duplicates",
-  missing_target: "submit.split.warning.missing_target",
-  rare_class: "submit.split.warning.rare_class",
-  class_imbalance: "submit.split.warning.class_imbalance",
-};
-
-/** Re-shape a warning's structured `details` into the params its message template expects. */
-function warningParams(
-  details: Record<string, unknown>,
-  code: ProfileWarningCode,
-): Record<string, string | number> {
-  switch (code) {
-    case "too_small":
-      return { row_count: Number(details.row_count ?? 0) };
-    case "duplicates":
-      return { duplicate_count: Number(details.duplicate_count ?? 0) };
-    case "missing_target":
-      return {
-        missing: Number(details.missing_count ?? 0),
-        column_name: String(details.target_column ?? ""),
-      };
-    case "rare_class":
-      return {
-        column_name: String(details.target_column ?? ""),
-        rare_classes: Object.keys((details.rare_classes as Record<string, number> | undefined) ?? {})
-          .sort()
-          .join(", "),
-      };
-    case "class_imbalance": {
-      const majority = Number(details.majority ?? 0);
-      const minority = Number(details.minority ?? 0);
-      return {
-        column_name: String(details.target_column ?? ""),
-        ratio: minority > 0 ? Math.floor(majority / minority) : majority,
-      };
-    }
-  }
-}
-
-/** Localized warning copy from its code + details; falls back to the server message for unknown codes. */
-function warningText(warning: ProfileWarning): string {
-  const key = WARNING_KEY[warning.code];
-  return key ? msg(key, warningParams(warning.details, warning.code)) : warning.message;
-}
-
 export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
-  const { splitPlan, datasetProfile, splitMode, setSplitMode, profileLoading } = w;
+  const { splitPlan, splitMode, setSplitMode, profileLoading } = w;
   // The rationale/warning copy is portaled into a Radix tooltip, where the `rtl:`
   // variant doesn't fire — drive direction off the locale explicitly instead.
   const { locale } = useLocale();
@@ -104,10 +56,7 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
     val_count: counts.val,
     test_count: counts.test,
   });
-  const warnings = datasetProfile?.warnings ?? [];
   const hasRationale = total > 0;
-  const hasWarnings = warnings.length > 0;
-  const hasInfo = hasRationale || hasWarnings;
 
   return (
     <div
@@ -122,7 +71,7 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
             <span className="text-[13px] font-semibold tracking-tight">
               {msg("submit.split.recommended_title")}
             </span>
-            {hasInfo && (
+            {hasRationale && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -139,41 +88,16 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
                   dir={dir}
                   className="max-w-[min(320px,92vw)] rounded-xl border border-[#C8B9A8]/60 bg-[#FAF8F5] px-4 py-3 text-start text-[#3D2E22] shadow-[0_8px_24px_-8px_rgba(61,46,34,0.2)] [&>span]:hidden"
                 >
-                  {hasRationale && (
-                    <>
-                      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#8C7A6B]">
-                        <Sparkle className="h-3 w-3 text-[#C8A882]" />
-                        {msg("submit.split.rationale_title")}
-                      </div>
-                      <ul className="space-y-1.5 text-[12px] leading-relaxed text-[#3D2E22]">
-                        <li className="flex gap-2">
-                          <span className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-[#C8A882]" />
-                          <span>{rationaleText}</span>
-                        </li>
-                      </ul>
-                    </>
-                  )}
-                  {hasWarnings && (
-                    <>
-                      <div
-                        className={cn(
-                          "flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#8C7A6B]",
-                          hasRationale ? "mt-3 mb-2 border-t border-[#DDD6CC]/60 pt-2.5" : "mb-2",
-                        )}
-                      >
-                        <Warning className="h-3 w-3 text-[#C8924A]" />
-                        {msg("submit.split.warnings_title")}
-                      </div>
-                      <ul className="space-y-1.5 text-[12px] leading-relaxed text-[#7A5A38]">
-                        {warnings.map((warning) => (
-                          <li key={warning.code} className="flex gap-2">
-                            <span className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-[#C8924A]" />
-                            <span>{warningText(warning)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
+                  <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#8C7A6B]">
+                    <Sparkle className="h-3 w-3 text-[#C8A882]" />
+                    {msg("submit.split.rationale_title")}
+                  </div>
+                  <ul className="space-y-1.5 text-[12px] leading-relaxed text-[#3D2E22]">
+                    <li className="flex gap-2">
+                      <span className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-[#C8A882]" />
+                      <span>{rationaleText}</span>
+                    </li>
+                  </ul>
                 </TooltipContent>
               </Tooltip>
             )}

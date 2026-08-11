@@ -1,9 +1,8 @@
 """Pure functions that describe an uploaded dataset.
 
 The profiler walks the raw row list once and produces a ``DatasetProfile``
-summarizing its shape, the nature of every output column, duplicate
-counts by input columns, and any warnings the user should see before
-submitting an optimization. No side effects; safe to call from request
+summarizing its shape, the nature of every output column, and duplicate
+counts by input columns. No side effects; safe to call from request
 handlers.
 """
 
@@ -14,15 +13,12 @@ from collections import Counter
 from typing import Any
 
 from ...exceptions import ValidationError
-from ...i18n import t
 from ...i18n_en import t_en
 from ...i18n_keys import I18nKey
 from ...models.common import ColumnMapping
 from ...models.dataset import (
     DatasetProfile,
     InputColumnProfile,
-    ProfileWarning,
-    ProfileWarningCode,
     TargetColumnProfile,
 )
 
@@ -32,14 +28,11 @@ from ...models.dataset import (
 # unique-to-row ratio to be small enough that each class has roughly five+
 # examples on average — otherwise the "classes" are just per-row labels.
 # Above ``MAX_UNIQUE`` no column is categorical — hundreds of micro-classes
-# carry no useful structure for display or warnings.
+# carry no useful structure for display.
 CATEGORICAL_MIN_UNIQUE = 20
 CATEGORICAL_MAX_UNIQUE = 100
 CATEGORICAL_UNIQUE_RATIO = 0.2
 
-RARE_CLASS_THRESHOLD = 5
-IMBALANCE_RATIO_THRESHOLD = 10.0
-MIN_RECOMMENDED_ROWS = 30
 FREEFORM_AVG_LENGTH = 40
 
 # Cell-level image detection. A column is classified ``image`` only when EVERY
@@ -50,7 +43,7 @@ _IMAGE_DATA_URI_RE = re.compile(r"^data:image/[a-zA-Z0-9.+-]+;base64,", re.IGNOR
 
 
 def profile_dataset(dataset: list[dict[str, Any]], mapping: ColumnMapping) -> DatasetProfile:
-    """Return a structural summary and warning list for a raw dataset.
+    """Return a structural summary for a raw dataset.
 
     Args:
         dataset: Raw dataset rows.
@@ -58,7 +51,7 @@ def profile_dataset(dataset: list[dict[str, Any]], mapping: ColumnMapping) -> Da
 
     Returns:
         A populated :class:`DatasetProfile` describing shape, targets,
-        inputs, duplicates, and warnings.
+        inputs, and duplicates.
 
     Raises:
         ValidationError: When ``dataset`` is empty.
@@ -74,29 +67,10 @@ def profile_dataset(dataset: list[dict[str, Any]], mapping: ColumnMapping) -> Da
     for row in dataset:
         columns.update(row.keys())
 
-    warnings: list[ProfileWarning] = []
-    targets = _profile_all_targets(dataset, mapping, warnings)
+    targets = _profile_all_targets(dataset, mapping)
     inputs = _profile_all_inputs(dataset, mapping)
     primary_target = _select_primary_target(targets)
-
-    if row_count < MIN_RECOMMENDED_ROWS:
-        warnings.append(
-            ProfileWarning(
-                code=ProfileWarningCode.too_small,
-                message=t("dataset.profile.too_small", row_count=row_count),
-                details={"row_count": row_count, "minimum_recommended": MIN_RECOMMENDED_ROWS},
-            )
-        )
-
     duplicate_count = _count_duplicates(dataset, mapping)
-    if duplicate_count > 0:
-        warnings.append(
-            ProfileWarning(
-                code=ProfileWarningCode.duplicates,
-                message=t("dataset.profile.duplicates", duplicate_count=duplicate_count),
-                details={"duplicate_count": duplicate_count},
-            )
-        )
 
     return DatasetProfile(
         row_count=row_count,
@@ -105,34 +79,28 @@ def profile_dataset(dataset: list[dict[str, Any]], mapping: ColumnMapping) -> Da
         targets=targets,
         inputs=inputs,
         duplicate_count=duplicate_count,
-        warnings=warnings,
     )
 
 
 def _profile_all_targets(
     dataset: list[dict[str, Any]],
     mapping: ColumnMapping,
-    warnings: list[ProfileWarning],
 ) -> list[TargetColumnProfile]:
     """Profile every output column declared in ``mapping``.
 
-    Each output gets its own categorical/numeric/freeform classification,
-    histogram, and per-column warnings. Warning details always include
-    the originating ``target_column`` so downstream consumers (the
-    planner) can attribute findings back to a specific column. Profile-level
-    warnings are appended to ``warnings`` in-place.
+    Each output gets its own categorical/numeric/freeform classification
+    and histogram.
 
     Args:
         dataset: Raw dataset rows.
         mapping: Column mapping whose ``outputs`` are profiled.
-        warnings: Mutable warning list extended with target-level findings.
 
     Returns:
         A list of :class:`TargetColumnProfile` instances, one per output column.
     """
     profiles: list[TargetColumnProfile] = []
     for column_name in mapping.outputs.values():
-        profile = _profile_single_target(dataset, column_name, warnings)
+        profile = _profile_single_target(dataset, column_name)
         if profile is not None:
             profiles.append(profile)
     return profiles
@@ -214,44 +182,17 @@ def _infer_input_kind(values: list[Any]) -> str:
 def _profile_single_target(
     dataset: list[dict[str, Any]],
     column_name: str,
-    warnings: list[ProfileWarning],
 ) -> TargetColumnProfile | None:
-    """Summarize a single output column and append its warnings.
-
-    Missing-value, rare-class, and class-imbalance warnings are appended
-    to ``warnings`` in-place. Returns ``None`` when the column had no
-    usable data.
+    """Summarize a single output column.
 
     Args:
         dataset: Raw dataset rows.
         column_name: The output column to profile.
-        warnings: Mutable warning list extended with column-level findings.
 
     Returns:
         A :class:`TargetColumnProfile` describing the column.
     """
-    values: list[Any] = []
-    missing = 0
-    for row in dataset:
-        value = row.get(column_name)
-        if value is None or (isinstance(value, str) and not value.strip()):
-            missing += 1
-        else:
-            values.append(value)
-
-    if missing > 0:
-        warnings.append(
-            ProfileWarning(
-                code=ProfileWarningCode.missing_target,
-                message=t(
-                    "dataset.profile.missing_target",
-                    missing=missing,
-                    column_name=column_name,
-                ),
-                details={"missing_count": missing, "target_column": column_name},
-            )
-        )
-
+    values = _collect_values(dataset, column_name)
     kind = _infer_target_kind(values)
     histogram: dict[str, int] = {}
     unique_values = len({_stringify(v) for v in values})
@@ -259,38 +200,6 @@ def _profile_single_target(
     if kind == "categorical" and values:
         counts = Counter(_stringify(v) for v in values)
         histogram = dict(counts.most_common())
-        rare_classes = {k: v for k, v in histogram.items() if v < RARE_CLASS_THRESHOLD}
-        if rare_classes:
-            warnings.append(
-                ProfileWarning(
-                    code=ProfileWarningCode.rare_class,
-                    message=t(
-                        "dataset.profile.rare_class",
-                        column_name=column_name,
-                        rare_classes=", ".join(sorted(rare_classes)),
-                    ),
-                    details={"rare_classes": rare_classes, "target_column": column_name},
-                )
-            )
-        if len(histogram) >= 2:
-            majority = max(histogram.values())
-            minority = min(histogram.values())
-            if minority > 0 and majority / minority > IMBALANCE_RATIO_THRESHOLD:
-                warnings.append(
-                    ProfileWarning(
-                        code=ProfileWarningCode.class_imbalance,
-                        message=t(
-                            "dataset.profile.class_imbalance",
-                            column_name=column_name,
-                            ratio=majority // minority,
-                        ),
-                        details={
-                            "majority": majority,
-                            "minority": minority,
-                            "target_column": column_name,
-                        },
-                    )
-                )
 
     return TargetColumnProfile(
         name=column_name,

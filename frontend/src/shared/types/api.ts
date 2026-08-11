@@ -597,19 +597,6 @@ export interface DiscoverModelsResponse {
   error?: string | null;
 }
 
-export type ProfileWarningCode =
-  | "too_small"
-  | "class_imbalance"
-  | "rare_class"
-  | "duplicates"
-  | "missing_target";
-
-export interface ProfileWarning {
-  code: ProfileWarningCode;
-  message: string;
-  details: Record<string, unknown>;
-}
-
 export interface TargetColumnProfile {
   name: string;
   kind: ProfileKind | (string & {});
@@ -631,7 +618,6 @@ export interface DatasetProfile {
   targets: TargetColumnProfile[];
   inputs: InputColumnProfile[];
   duplicate_count: number;
-  warnings: ProfileWarning[];
 }
 
 export interface SplitPlan {

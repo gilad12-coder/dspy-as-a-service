@@ -7,7 +7,7 @@ import pytest
 from core.exceptions import ValidationError
 from core.i18n_en import t_en
 from core.i18n_keys import I18nKey
-from core.models import ColumnMapping, ProfileWarningCode
+from core.models import ColumnMapping
 from core.service_gateway.datasets.profiler import profile_dataset
 
 
@@ -81,50 +81,12 @@ def test_profile_dataset_detects_freeform_target() -> None:
     assert profile.target.kind == "freeform"
 
 
-def test_profile_dataset_warns_on_too_small() -> None:
-    """Datasets below the recommended minimum surface a too_small warning."""
-    rows = _rows([("q1", "yes"), ("q2", "no")])
-    profile = profile_dataset(rows, _mapping())
-
-    codes = {w.code for w in profile.warnings}
-    assert ProfileWarningCode.too_small in codes
-
-
-def test_profile_dataset_warns_on_duplicates() -> None:
-    """Repeated input rows increment the duplicate count and emit a warning."""
+def test_profile_dataset_counts_duplicates() -> None:
+    """Repeated input rows increment the duplicate count."""
     rows = _rows([("q1", "yes"), ("q1", "no"), ("q2", "yes")])
     profile = profile_dataset(rows, _mapping())
 
     assert profile.duplicate_count == 1
-    assert any(w.code == ProfileWarningCode.duplicates for w in profile.warnings)
-
-
-def test_profile_dataset_warns_on_rare_class() -> None:
-    """A category with fewer than the rare threshold of members triggers a warning."""
-    rows = _rows([("q", "majority")] * 30 + [("q2", "rare")])
-    profile = profile_dataset(rows, _mapping())
-
-    assert any(w.code == ProfileWarningCode.rare_class for w in profile.warnings)
-
-
-def test_profile_dataset_warns_on_imbalance() -> None:
-    """A 20:1 class ratio triggers a class_imbalance warning."""
-    rows = _rows([(f"q{i}", "majority") for i in range(40)] + [("qx", "minority")] * 2)
-    profile = profile_dataset(rows, _mapping())
-
-    assert any(w.code == ProfileWarningCode.class_imbalance for w in profile.warnings)
-
-
-def test_profile_dataset_warns_on_missing_target_values() -> None:
-    """Rows with None or empty target values count as missing and emit a warning."""
-    rows: list[dict[str, object]] = [
-        {"q": "q1", "a": "yes"},
-        {"q": "q2", "a": None},
-        {"q": "q3", "a": ""},
-    ]
-    profile = profile_dataset(rows, _mapping())
-
-    assert any(w.code == ProfileWarningCode.missing_target for w in profile.warnings)
 
 
 def test_profile_dataset_without_output_mapping_has_no_target() -> None:
@@ -196,39 +158,6 @@ def test_profile_dataset_primary_target_prefers_categorical() -> None:
     assert profile.target is not None
     assert profile.target.name == "label"
     assert profile.target.kind == "categorical"
-
-
-def test_profile_dataset_warning_carries_target_column_name() -> None:
-    """Class-imbalance/rare-class warnings include the originating column name in details."""
-    rows = _rows([("q", "majority")] * 30 + [("q2", "rare")])
-    profile = profile_dataset(rows, _mapping())
-
-    rare = next(w for w in profile.warnings if w.code == ProfileWarningCode.rare_class)
-    assert rare.details.get("target_column") == "a"
-
-
-def test_profile_dataset_imbalance_warning_attributed_to_correct_column() -> None:
-    """When two outputs have warnings, each warning carries its own target_column."""
-    rows = [
-        {
-            "q": f"q{i}",
-            "balanced": "yes" if i % 2 == 0 else "no",
-            # 49:1 imbalance on the second column
-            "skewed": "majority" if i < 49 else "minority",
-        }
-        for i in range(50)
-    ]
-    profile = profile_dataset(
-        rows,
-        ColumnMapping(
-            inputs={"question": "q"},
-            outputs={"balanced": "balanced", "skewed": "skewed"},
-        ),
-    )
-
-    imbalance_warnings = [w for w in profile.warnings if w.code == ProfileWarningCode.class_imbalance]
-    assert len(imbalance_warnings) == 1
-    assert imbalance_warnings[0].details.get("target_column") == "skewed"
 
 
 def test_profile_dataset_inputs_default_to_text_for_plain_strings() -> None:
