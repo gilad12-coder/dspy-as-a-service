@@ -20,6 +20,7 @@ from .service import (
     LedgerRow,
     StripeBillingService,
     WalletSnapshot,
+    committed_spend_credits,
     cost_ceiling_budget,
 )
 
@@ -33,6 +34,7 @@ __all__ = [
     "VaultSnapshot",
     "WalletSnapshot",
     "byok_provider_for_litellm",
+    "committed_spend_credits",
     "cost_ceiling_budget",
     "inject_byok_connections",
     "provider_slug_for_model",

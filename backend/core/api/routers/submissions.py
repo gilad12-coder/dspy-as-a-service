@@ -22,6 +22,7 @@ from ...billing import (
     ProviderKeyVault,
     StripeBillingService,
     byok_provider_for_litellm,
+    committed_spend_credits,
     cost_ceiling_budget,
     provider_slug_for_model,
 )
@@ -37,6 +38,7 @@ from ...constants import (
     PAYLOAD_OVERVIEW_ESTIMATED_LOW,
     PAYLOAD_OVERVIEW_GENERATION_MODELS,
     PAYLOAD_OVERVIEW_IS_PRIVATE,
+    PAYLOAD_OVERVIEW_MAX_COST_CREDITS,
     PAYLOAD_OVERVIEW_MODEL_NAME,
     PAYLOAD_OVERVIEW_MODEL_SETTINGS,
     PAYLOAD_OVERVIEW_MODULE_KWARGS,
@@ -329,17 +331,58 @@ def _expand_catalog_grid_payload(payload: GridSearchRequest) -> None:
         payload.reflection_models = expanded
 
 
+# Statuses whose runs hold a live claim on the balance: queued/leased work,
+# plus paused runs — resume re-enqueues those without a fresh credit gate.
+_COMMITTED_JOB_STATUSES = ("pending", "validating", "running", "paused")
+
+
+def _committed_active_credits(job_store, username: str) -> int:
+    """Sum the balance credits the user's still-active runs can yet debit.
+
+    Each active run's stamped cost ceiling (``max_cost_credits`` in its payload
+    overview) is converted to the balance credits it can actually consume
+    (:func:`committed_spend_credits` — the full budget for a managed run, only
+    the platform fee for BYOK) and summed. Rows predating the overview stamp
+    contribute zero; for those the clamped debit remains the backstop. The sum
+    is deliberately conservative for partially-complete runs: the full ceiling
+    is counted even when part of it was already spent and debited.
+
+    Args:
+        job_store: Job-store instance; a store without ``list_jobs`` commits zero.
+        username: Account whose active runs are summed.
+
+    Returns:
+        The non-negative committed credits.
+    """
+    list_jobs = getattr(job_store, "list_jobs", None)
+    if not callable(list_jobs):
+        return 0
+    committed = 0
+    for status in _COMMITTED_JOB_STATUSES:
+        for job in list_jobs(status=status, username=username, limit=200, with_counts=False):
+            overview = job.get("payload_overview") or {}
+            budget = overview.get(PAYLOAD_OVERVIEW_MAX_COST_CREDITS)
+            if budget is None:
+                continue
+            token_source = str(overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or "")
+            committed += committed_spend_credits(int(budget), token_source)
+    return committed
+
+
 def _enforce_credit_balance(job_store, username: str, token_source: str) -> int | None:
-    """Block a depleted account from starting a run, and report its spendable balance.
+    """Block a depleted account from starting a run, and report its free balance.
 
     Reads the account's spendable credits (any remaining legacy grant plus the
-    purchased balance) and refuses the submission when nothing is left. There is
-    no free allowance — a brand-new account is gated until it buys credits. Both
-    run modes are gated: a managed run spends its full per-token cost, and a BYOK
-    run still spends Skynet's platform fee (the provider tokens are on the user's
-    own key), so a zero balance can cover neither. The returned balance feeds the per-run cost ceiling
-    (see :func:`_cap_cost_ceiling_to_balance`) so a run can never spend past what the
-    account holds.
+    purchased balance), subtracts the ceilings its still-active runs are already
+    committed to (:func:`_committed_active_credits`), and refuses the submission
+    when nothing uncommitted is left — so concurrent submissions cannot
+    collectively promise more than the account holds. There is no free
+    allowance — a brand-new account is gated until it buys credits. Both run
+    modes are gated: a managed run spends its full per-token cost, and a BYOK
+    run still spends Skynet's platform fee (the provider tokens are on the
+    user's own key), so a zero balance can cover neither. The returned balance
+    feeds the per-run cost ceiling (see :func:`_cap_cost_ceiling_to_balance`) so
+    a run can never spend past what the account holds.
 
     Args:
         job_store: Job-store instance whose ORM engine backs the billing tables.
@@ -347,11 +390,12 @@ def _enforce_credit_balance(job_store, username: str, token_source: str) -> int 
         token_source: ``"managed"`` or ``"byok"`` — carried to the cost-ceiling cap.
 
     Returns:
-        The account's spendable credits, or ``None`` for a store with no SQL engine
-        (legacy/in-memory).
+        The account's uncommitted spendable credits, or ``None`` for a store
+        with no SQL engine (legacy/in-memory).
 
     Raises:
-        DomainError: 402 when the account has no spendable credits.
+        DomainError: 402 when the account has no spendable credits, or every
+            remaining credit is already committed to active runs.
     """
     engine = getattr(job_store, "engine", None)
     if engine is None or not username:
@@ -360,7 +404,10 @@ def _enforce_credit_balance(job_store, username: str, token_source: str) -> int 
     spendable = service.spendable_credits(username)
     if spendable <= 0:
         raise DomainError("billing.insufficient_credits", status=402)
-    return spendable
+    uncommitted = spendable - _committed_active_credits(job_store, username)
+    if uncommitted <= 0:
+        raise DomainError("billing.insufficient_credits", status=402)
+    return uncommitted
 
 
 def _cap_cost_ceiling_to_balance(
@@ -603,6 +650,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 PAYLOAD_OVERVIEW_COMPILE_KWARGS: dict(payload.compile_kwargs),
                 PAYLOAD_OVERVIEW_TASK_FINGERPRINT: task_fingerprint,
                 PAYLOAD_OVERVIEW_TOKEN_SOURCE: payload.token_source,
+                PAYLOAD_OVERVIEW_MAX_COST_CREDITS: payload.max_cost_credits,
                 PAYLOAD_OVERVIEW_ESTIMATED_LOW: payload.estimated_credits_low,
                 PAYLOAD_OVERVIEW_ESTIMATED_HIGH: payload.estimated_credits_high,
                 PAYLOAD_OVERVIEW_IS_PRIVATE: payload.is_private,
@@ -754,6 +802,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 PAYLOAD_OVERVIEW_REFLECTION_MODELS: [m.model_dump() for m in payload.reflection_models],
                 PAYLOAD_OVERVIEW_TASK_FINGERPRINT: task_fingerprint,
                 PAYLOAD_OVERVIEW_TOKEN_SOURCE: payload.token_source,
+                PAYLOAD_OVERVIEW_MAX_COST_CREDITS: payload.max_cost_credits,
                 PAYLOAD_OVERVIEW_ESTIMATED_LOW: payload.estimated_credits_low,
                 PAYLOAD_OVERVIEW_ESTIMATED_HIGH: payload.estimated_credits_high,
                 PAYLOAD_OVERVIEW_IS_PRIVATE: payload.is_private,

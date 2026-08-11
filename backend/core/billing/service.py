@@ -228,6 +228,35 @@ def cost_ceiling_budget(spendable: int, token_source: str) -> int:
     return budget
 
 
+def committed_spend_credits(budget: int, token_source: str) -> int:
+    """Return the most balance credits a run's cost-ceiling budget can consume.
+
+    The inverse of :func:`cost_ceiling_budget`: given a run's ``max_cost_credits``
+    (a full-cost ceiling), how many credits of the account's balance it holds a
+    claim on. A managed run can debit up to the full budget; a BYOK run debits
+    only the platform fee of it (rounded up to at least one credit, matching
+    :func:`platform_fee_credits_for_usage`). Used at submit time to subtract the
+    commitments of still-active runs from the balance, so concurrent submissions
+    cannot collectively promise more than the account holds.
+
+    Args:
+        budget: The run's cost-ceiling budget in full-cost credits; non-positive
+            yields ``0``.
+        token_source: ``"managed"`` or ``"byok"`` — sets the conversion.
+
+    Returns:
+        The non-negative credits of balance the run can still debit.
+    """
+    if budget <= 0:
+        return 0
+    if token_source != TOKEN_SOURCE_BYOK:
+        return budget
+    fee = budget * PLATFORM_FEE_FRACTION
+    if fee <= 0:
+        return 0
+    return max(1, math.ceil(fee))
+
+
 class StripeBillingService:
     """Mediates between the billing API, the billing tables, and Stripe."""
 

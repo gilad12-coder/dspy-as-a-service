@@ -30,6 +30,7 @@ from core.billing.service import (
     PACK_CREDITS,
     PLATFORM_FEE_FRACTION,
     StripeBillingService,
+    committed_spend_credits,
     cost_ceiling_budget,
     platform_fee_credits_for_usage,
 )
@@ -373,6 +374,28 @@ def test_cost_ceiling_budget_byok_is_fee_aware_and_larger(engine: object) -> Non
     assert budget > 100
     assert math.ceil(budget * PLATFORM_FEE_FRACTION) <= 100
     assert math.ceil((budget + 1) * PLATFORM_FEE_FRACTION) > 100
+
+
+def test_committed_spend_credits_managed_is_the_full_budget() -> None:
+    """A managed run's committed spend equals its full cost ceiling."""
+    assert committed_spend_credits(200, TOKEN_SOURCE_MANAGED) == 200
+    assert committed_spend_credits(0, TOKEN_SOURCE_MANAGED) == 0
+    assert committed_spend_credits(-5, TOKEN_SOURCE_MANAGED) == 0
+
+
+def test_committed_spend_credits_byok_is_fee_sized() -> None:
+    """A BYOK run commits only the platform fee of its ceiling, at least one credit."""
+    assert committed_spend_credits(1000, TOKEN_SOURCE_BYOK) == math.ceil(1000 * PLATFORM_FEE_FRACTION)
+    assert committed_spend_credits(1, TOKEN_SOURCE_BYOK) == 1
+    assert committed_spend_credits(0, TOKEN_SOURCE_BYOK) == 0
+
+
+def test_committed_spend_credits_inverts_cost_ceiling_budget() -> None:
+    """The ceiling granted for a balance never commits more than that balance."""
+    for balance in (1, 12, 100, 500):
+        for source in (TOKEN_SOURCE_MANAGED, TOKEN_SOURCE_BYOK):
+            budget = cost_ceiling_budget(balance, source)
+            assert committed_spend_credits(budget, source) <= balance
 
 
 def _add_ledger(

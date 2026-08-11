@@ -56,6 +56,11 @@ PAYLOAD_OVERVIEW_TOKEN_SOURCE = "token_source"
 # against the actual charge; advisory only — never gates or bills.
 PAYLOAD_OVERVIEW_ESTIMATED_LOW = "estimated_credits_low"
 PAYLOAD_OVERVIEW_ESTIMATED_HIGH = "estimated_credits_high"
+# The run's effective cost ceiling after the balance clamp, in full-cost
+# credits. Persisted in the overview (not just the payload JSON) so the submit
+# gate can sum the commitments of a user's still-active runs without loading
+# every payload; rows predating this stamp contribute zero to that sum.
+PAYLOAD_OVERVIEW_MAX_COST_CREDITS = "max_cost_credits"
 PAYLOAD_OVERVIEW_IS_PRIVATE = "is_private"
 # Id of the personal-library dataset a run was submitted from, when the submit
 # was by-reference. Persisted so the optimization detail surfaces a live link

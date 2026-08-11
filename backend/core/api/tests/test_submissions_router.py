@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from ...billing.service import cost_ceiling_budget
+from ...billing.service import committed_spend_credits, cost_ceiling_budget
 from ...constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
@@ -164,6 +164,28 @@ class _FakeJobStore:
             "payload_overview": row.get("overview", {}),
             "username": row.get("username"),
         }
+
+    def list_jobs(self, *, status: str | None = None, username: str | None = None, **_: Any) -> list[dict]:
+        """Return stored jobs filtered by status and owner.
+
+        Args:
+            status: Exact status filter; ``None`` matches every status. Rows
+                without an explicit status count as ``pending``, matching
+                ``get_job``.
+            username: Owner filter; ``None`` matches every owner.
+            **_: Ignored extra filters (``limit``, ``with_counts``, ...).
+
+        Returns:
+            Job rows shaped like ``get_job`` output, in insertion order.
+        """
+        rows = []
+        for job_id, row in self._jobs.items():
+            if status is not None and row.get("status", "pending") != status:
+                continue
+            if username is not None and row.get("username") != username:
+                continue
+            rows.append(self.get_job(job_id))
+        return rows
 
     def created_ids(self) -> list[str]:
         """Return all job ids that were created via ``create_job``.
@@ -1234,6 +1256,206 @@ def test_submit_run_byok_ceiling_capped_to_fee_aware_budget(
     submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
     assert submitted.max_cost_credits == cost_ceiling_budget(200, "byok")
     assert submitted.max_cost_credits > 200
+
+
+def _seed_active_job(
+    store: _FakeJobStore,
+    *,
+    job_id: str,
+    status: str,
+    max_cost_credits: int | None,
+    token_source: str = "managed",
+) -> None:
+    """Seed a pre-existing job row with a stamped overview at a given status.
+
+    Args:
+        store: Fake store to write into.
+        job_id: Identifier for the seeded row.
+        status: Job status the row should report.
+        max_cost_credits: Stamped cost ceiling; ``None`` mimics a legacy row
+            predating the overview stamp.
+        token_source: Billing mode stamped on the overview.
+    """
+    store.create_job(job_id, username="alice")
+    overview: dict[str, Any] = {"token_source": token_source}
+    if max_cost_credits is not None:
+        overview["max_cost_credits"] = max_cost_credits
+    store.set_payload_overview(job_id, overview)
+    store._jobs[job_id]["status"] = status
+
+
+def test_submit_run_ceiling_reduced_by_active_job_commitment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A new run's ceiling is capped to the balance minus active commitments.
+
+    With 500 credits and a running job already committed to 200, a second
+    submission may only promise the remaining 300.
+    """
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    _seed_active_job(store, job_id="job-running", status="running", max_cost_credits=200)
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_run_payload())
+
+    assert resp.status_code == 201
+    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
+    assert submitted.max_cost_credits == 300
+
+
+def test_submit_run_blocked_when_balance_fully_committed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A submission is refused when active runs already claim the whole balance."""
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    _seed_active_job(store, job_id="job-committed", status="pending", max_cost_credits=500)
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_run_payload())
+
+    assert resp.status_code == 402
+    assert resp.json()["code"] == "billing.insufficient_credits"
+    assert store.created_ids() == ["job-committed"]
+
+
+def test_submit_run_terminal_jobs_do_not_commit_credits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Finished runs release their claim: a terminal job leaves the ceiling whole."""
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    _seed_active_job(store, job_id="job-done", status="success", max_cost_credits=400)
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_run_payload())
+
+    assert resp.status_code == 201
+    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
+    assert submitted.max_cost_credits == 500
+
+
+def test_submit_run_paused_jobs_commit_credits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A paused run keeps its claim: resume re-enqueues it without a fresh gate."""
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    _seed_active_job(store, job_id="job-paused", status="paused", max_cost_credits=200)
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_run_payload())
+
+    assert resp.status_code == 201
+    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
+    assert submitted.max_cost_credits == 300
+
+
+def test_submit_run_legacy_rows_without_stamp_commit_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An active row predating the overview stamp contributes nothing to the sum."""
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    _seed_active_job(store, job_id="job-legacy", status="running", max_cost_credits=None)
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_run_payload())
+
+    assert resp.status_code == 201
+    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
+    assert submitted.max_cost_credits == 500
+
+
+def test_submit_run_byok_commitment_is_fee_sized(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An active BYOK run commits only its platform fee, not its full ceiling."""
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    _seed_active_job(
+        store, job_id="job-byok", status="running", max_cost_credits=1000, token_source="byok"
+    )
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_run_payload())
+
+    assert resp.status_code == 201
+    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
+    assert submitted.max_cost_credits == 500 - committed_spend_credits(1000, "byok")
+
+
+def test_submit_run_overview_stamps_cost_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The clamped ceiling is stamped on the run overview for later commitment sums."""
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_run_payload())
+
+    assert resp.status_code == 201
+    overview = store._jobs[store.created_ids()[0]]["overview"]
+    assert overview["max_cost_credits"] == 500
+
+
+def test_submit_grid_search_overview_stamps_cost_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The grid-search overview carries the same clamped-ceiling stamp as ``/run``."""
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/grid-search", json=_grid_payload())
+
+    assert resp.status_code == 201
+    overview = store._jobs[store.created_ids()[0]]["overview"]
+    assert overview["max_cost_credits"] == 500
 
 
 def test_submit_run_defaults_token_source_to_managed_in_overview(
