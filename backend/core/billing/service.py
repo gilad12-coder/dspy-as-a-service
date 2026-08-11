@@ -807,8 +807,13 @@ class StripeBillingService:
         """
         event_type = str(event["type"])
         obj = event["data"]["object"]
+        event_id = str(event["id"])
         if event_type == "checkout.session.completed":
-            self._on_checkout_completed(session, str(event["id"]), obj)
+            self._on_checkout_completed(session, event_id, obj)
+        elif event_type == "charge.refunded":
+            self._on_charge_refunded(session, event_id, obj)
+        elif event_type == "charge.dispute.created":
+            self._on_dispute_created(session, event_id, obj)
 
     def _on_checkout_completed(self, session: Session, event_id: str, obj: Any) -> None:
         """Credit a completed one-time pack purchase to the buyer's balance.
@@ -824,6 +829,7 @@ class StripeBillingService:
         username = str(metadata.get("username") or obj.get("client_reference_id") or "").lower()
         credits = int(metadata.get("credits") or 0)
         pack_id = str(metadata.get("pack_id") or "")
+        payment_intent = str(obj.get("payment_intent") or "") or None
         if not username or credits <= 0:
             return
         customer = session.get(BillingCustomerModel, username)
@@ -843,5 +849,184 @@ class StripeBillingService:
                 kind="topup",
                 description=f"Top-up · {pack_id}" if pack_id else "Top-up",
                 stripe_event_id=event_id,
+                stripe_payment_intent_id=payment_intent,
+            )
+        )
+
+    def _pi_clawback_context(self, session: Session, payment_intent: str) -> tuple[str | None, int, int]:
+        """Sum a PaymentIntent's ledger into (account, credits granted, credits already reversed).
+
+        Reads every ledger row stamped with ``payment_intent`` — the top-up that
+        granted the credits plus any earlier refund/dispute clawbacks against it —
+        so a handler can cap a new clawback at what the top-up granted and net out
+        what was already reversed. Resolving the account from the top-up row (not
+        the charge's ``customer`` field) is what lets a dispute event, which carries
+        no customer, still find its account.
+
+        Args:
+            session: Open session to read the ledger under.
+            payment_intent: The Stripe PaymentIntent id (``pi_…``) to sum over.
+
+        Returns:
+            ``(username, granted, clawed)`` — the account the PaymentIntent's
+            top-up credited (``None`` when no top-up row matches), the credits that
+            top-up granted, and the credits already reversed by refunds/disputes.
+        """
+        rows = (
+            session.query(
+                CreditLedgerModel.username,
+                CreditLedgerModel.kind,
+                CreditLedgerModel.delta_credits,
+            )
+            .filter(CreditLedgerModel.stripe_payment_intent_id == payment_intent)
+            .all()
+        )
+        username: str | None = None
+        granted = 0
+        clawed = 0
+        for row in rows:
+            if row.kind == "topup":
+                username = row.username
+                granted += int(row.delta_credits)
+            elif row.kind in ("refund", "dispute"):
+                username = username or row.username
+                clawed += -int(row.delta_credits)
+        return username, granted, clawed
+
+    def _on_charge_refunded(self, session: Session, event_id: str, obj: Any) -> None:
+        """Claw back credits for a refunded charge, netting out earlier partial refunds.
+
+        Fires on every ``charge.refunded`` event. ``amount_refunded`` is the
+        charge's cumulative refunded cents (one credit per cent), so the credits to
+        remove now are that cumulative figure — capped at what the top-up granted —
+        minus what earlier refunds already reversed. A charge Skynet never credited
+        (no matching top-up) is logged and skipped.
+
+        Args:
+            session: Open session (caller commits).
+            event_id: Stripe event id, recorded on the clawback ledger row.
+            obj: The Charge object from the event.
+        """
+        payment_intent = str(obj.get("payment_intent") or "")
+        refunded = int(obj.get("amount_refunded") or 0)
+        if not payment_intent or refunded <= 0:
+            return
+        username, granted, clawed = self._pi_clawback_context(session, payment_intent)
+        if username is None:
+            logger.warning(
+                "refund for unrecognized payment_intent %s (event %s); nothing to claw back",
+                payment_intent,
+                event_id,
+            )
+            return
+        delta = max(0, min(refunded, granted) - clawed)
+        if delta <= 0:
+            return
+        self._write_clawback(
+            session,
+            event_id=event_id,
+            payment_intent=payment_intent,
+            username=username,
+            credits=delta,
+            kind="refund",
+            description="Refund",
+        )
+
+    def _on_dispute_created(self, session: Session, event_id: str, obj: Any) -> None:
+        """Claw back credits when a charge is disputed — the chargeback pulls the funds back.
+
+        Fires on ``charge.dispute.created``. ``amount`` is the disputed cents (one
+        credit per cent); the funds have left Skynet's Stripe balance, so the
+        matching credits are removed, capped at the top-up's still-unreversed credits
+        so a dispute after a partial refund never double-counts. A dispute on a charge
+        Skynet never credited is logged and skipped.
+
+        Args:
+            session: Open session (caller commits).
+            event_id: Stripe event id, recorded on the clawback ledger row.
+            obj: The Dispute object from the event.
+        """
+        payment_intent = str(obj.get("payment_intent") or "")
+        disputed = int(obj.get("amount") or 0)
+        if not payment_intent or disputed <= 0:
+            return
+        username, granted, clawed = self._pi_clawback_context(session, payment_intent)
+        if username is None:
+            logger.warning(
+                "dispute for unrecognized payment_intent %s (event %s); nothing to claw back",
+                payment_intent,
+                event_id,
+            )
+            return
+        delta = max(0, min(disputed, granted - clawed))
+        if delta <= 0:
+            return
+        self._write_clawback(
+            session,
+            event_id=event_id,
+            payment_intent=payment_intent,
+            username=username,
+            credits=delta,
+            kind="dispute",
+            description="Chargeback",
+        )
+
+    def _write_clawback(
+        self,
+        session: Session,
+        *,
+        event_id: str,
+        payment_intent: str,
+        username: str,
+        credits: int,
+        kind: str,
+        description: str,
+    ) -> None:
+        """Remove up to ``credits`` from the account's purchased balance, flooring at zero.
+
+        A refund or dispute returns money that only ever bought the purchased
+        balance, so the clawback draws from ``credit_balance`` alone — never the free
+        grant — under ``FOR UPDATE`` so it serializes with concurrent debits. The
+        balance may already be spent below what is owed; the charge is clamped to what
+        remains (the DB ``CHECK`` forbids going negative) and the uncollectable
+        shortfall is logged rather than carried as user debt. A clawback that can
+        collect nothing writes no ledger row, mirroring a zero-credit debit.
+
+        Args:
+            session: Open session (caller commits).
+            event_id: Stripe event id, recorded on the ledger row.
+            payment_intent: The PaymentIntent id, stamped on the ledger row so a
+                later clawback nets against it.
+            username: Account to draw the credits back from.
+            credits: Credits owed back to Stripe (positive).
+            kind: Ledger kind (``"refund"`` or ``"dispute"``).
+            description: Human label for the ledger row.
+        """
+        now = datetime.now(UTC)
+        customer = session.get(BillingCustomerModel, username, with_for_update=True)
+        paid = max(int(customer.credit_balance), 0) if customer is not None else 0
+        charged = min(credits, paid)
+        if charged < credits:
+            logger.warning(
+                "%s clawback for %s clamped to balance: owed=%d collected=%d uncollectable=%d (pi %s)",
+                kind,
+                username,
+                credits,
+                charged,
+                credits - charged,
+                payment_intent,
+            )
+        if charged <= 0:
+            return
+        customer.credit_balance = paid - charged
+        customer.updated_at = now
+        session.add(
+            CreditLedgerModel(
+                username=username,
+                delta_credits=-charged,
+                kind=kind,
+                description=description,
+                stripe_event_id=event_id,
+                stripe_payment_intent_id=payment_intent,
             )
         )

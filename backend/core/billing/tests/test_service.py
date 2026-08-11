@@ -521,7 +521,13 @@ def test_get_usage_excludes_rows_outside_window(engine: object) -> None:
     assert len(snapshot.entries) == 1
 
 
-def _checkout_event(event_id: str, username: str, credits: int, pack_id: str = "pack_small") -> dict:
+def _checkout_event(
+    event_id: str,
+    username: str,
+    credits: int,
+    pack_id: str = "pack_small",
+    payment_intent: str | None = None,
+) -> dict:
     """Build a minimal ``checkout.session.completed`` event for a paid pack purchase.
 
     Args:
@@ -529,6 +535,8 @@ def _checkout_event(event_id: str, username: str, credits: int, pack_id: str = "
         username: Buyer the credits land on.
         credits: Credit quantity the pack grants.
         pack_id: Pack identifier carried in the session metadata.
+        payment_intent: PaymentIntent id stamped on the top-up row, so a later
+            refund/dispute can resolve back to it.
 
     Returns:
         An event dict shaped like the fields ``handle_webhook`` reads.
@@ -541,9 +549,46 @@ def _checkout_event(event_id: str, username: str, credits: int, pack_id: str = "
                 "mode": "payment",
                 "payment_status": "paid",
                 "customer": f"cus_{username}",
+                "payment_intent": payment_intent,
                 "metadata": {"username": username, "credits": str(credits), "pack_id": pack_id},
             }
         },
+    }
+
+
+def _refund_event(event_id: str, payment_intent: str, amount_refunded: int) -> dict:
+    """Build a ``charge.refunded`` event whose charge cumulatively refunded ``amount_refunded``.
+
+    Args:
+        event_id: Stripe event id (the idempotency key the handler records).
+        payment_intent: The PaymentIntent behind the refunded charge.
+        amount_refunded: Cumulative refunded cents on the charge (one credit per cent).
+
+    Returns:
+        An event dict shaped like the fields the refund handler reads.
+    """
+    return {
+        "id": event_id,
+        "type": "charge.refunded",
+        "data": {"object": {"payment_intent": payment_intent, "amount_refunded": amount_refunded}},
+    }
+
+
+def _dispute_event(event_id: str, payment_intent: str, amount: int) -> dict:
+    """Build a ``charge.dispute.created`` event disputing ``amount`` cents of a charge.
+
+    Args:
+        event_id: Stripe event id (the idempotency key the handler records).
+        payment_intent: The PaymentIntent behind the disputed charge.
+        amount: Disputed cents (one credit per cent).
+
+    Returns:
+        An event dict shaped like the fields the dispute handler reads.
+    """
+    return {
+        "id": event_id,
+        "type": "charge.dispute.created",
+        "data": {"object": {"payment_intent": payment_intent, "amount": amount}},
     }
 
 
@@ -642,3 +687,144 @@ def test_custom_checkout_builds_ad_hoc_price_and_metadata(
     assert metadata["credits"] == "1234"
     assert metadata["pack_id"] == "custom"
     assert metadata["username"] == "u@x.com"
+
+
+def _deliver(service: StripeBillingService, event: dict) -> None:
+    """Deliver a prebuilt event dict through the webhook with signature verification stubbed."""
+    with patch("stripe.Webhook.construct_event", return_value=event):
+        service.handle_webhook(b"{}", "sig")
+
+
+def _balance(engine: object, username: str) -> int:
+    """Read the persisted purchased credit balance for an account (0 when it has no row)."""
+    with Session(engine) as session:
+        customer = session.get(BillingCustomerModel, username)
+        return 0 if customer is None else int(customer.credit_balance)
+
+
+def _ledger_rows(engine: object, username: str, kind: str) -> list[CreditLedgerModel]:
+    """Return an account's ledger rows of a given kind, oldest first.
+
+    Args:
+        engine: The SQLite engine to read from.
+        username: Account whose ledger to read.
+        kind: The ``kind`` column value to filter on (e.g. ``"refund"``).
+
+    Returns:
+        The matching rows ordered by insertion.
+    """
+    with Session(engine) as session:
+        return (
+            session.query(CreditLedgerModel)
+            .filter_by(username=username, kind=kind)
+            .order_by(CreditLedgerModel.id)
+            .all()
+        )
+
+
+def test_webhook_refund_claws_back_credits(engine: object, webhook_ready: None) -> None:
+    """A full refund removes the topped-up credits and writes one refund ledger row."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    _deliver(service, _checkout_event("evt_pay", "u@x.com", 500, payment_intent="pi_1"))
+    assert _balance(engine, "u@x.com") == 500
+
+    _deliver(service, _refund_event("evt_ref", "pi_1", 500))
+
+    assert _balance(engine, "u@x.com") == 0
+    rows = _ledger_rows(engine, "u@x.com", "refund")
+    assert len(rows) == 1
+    assert rows[0].delta_credits == -500
+    assert rows[0].stripe_payment_intent_id == "pi_1"
+    assert rows[0].stripe_event_id == "evt_ref"
+
+
+def test_webhook_partial_refunds_are_incremental(engine: object, webhook_ready: None) -> None:
+    """Two partial refunds each claw back only the new slice — the cumulative total is never removed twice."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    _deliver(service, _checkout_event("evt_pay", "u@x.com", 500, payment_intent="pi_1"))
+
+    _deliver(service, _refund_event("evt_ref1", "pi_1", 200))
+    assert _balance(engine, "u@x.com") == 300
+    # The second event carries the charge's cumulative refunded total, not just the new slice.
+    _deliver(service, _refund_event("evt_ref2", "pi_1", 500))
+    assert _balance(engine, "u@x.com") == 0
+
+    rows = _ledger_rows(engine, "u@x.com", "refund")
+    assert [r.delta_credits for r in rows] == [-200, -300]
+
+
+def test_webhook_refund_clamps_to_spent_balance(engine: object, webhook_ready: None) -> None:
+    """A refund of credits already spent claws back only what remains, never below zero."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    _deliver(service, _checkout_event("evt_pay", "u@x.com", 500, payment_intent="pi_1"))
+    # The buyer spent 300 of the 500 before the refund lands.
+    with Session(engine) as session:
+        session.get(BillingCustomerModel, "u@x.com").credit_balance = 200
+        session.commit()
+
+    _deliver(service, _refund_event("evt_ref", "pi_1", 500))
+
+    assert _balance(engine, "u@x.com") == 0
+    rows = _ledger_rows(engine, "u@x.com", "refund")
+    assert len(rows) == 1
+    assert rows[0].delta_credits == -200
+
+
+def test_webhook_refund_is_idempotent_on_redelivery(engine: object, webhook_ready: None) -> None:
+    """A redelivered refund event claws back exactly once."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    _deliver(service, _checkout_event("evt_pay", "u@x.com", 500, payment_intent="pi_1"))
+
+    event = _refund_event("evt_ref", "pi_1", 500)
+    _deliver(service, event)
+    _deliver(service, event)
+
+    assert _balance(engine, "u@x.com") == 0
+    assert len(_ledger_rows(engine, "u@x.com", "refund")) == 1
+
+
+def test_webhook_refund_for_unknown_payment_intent_is_noop(engine: object, webhook_ready: None) -> None:
+    """A refund for a charge Skynet never credited touches no balance and writes no row."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+
+    _deliver(service, _refund_event("evt_ref", "pi_unknown", 500))
+
+    assert _balance(engine, "u@x.com") == 0
+    assert _ledger_rows(engine, "u@x.com", "refund") == []
+
+
+def test_webhook_dispute_claws_back_credits(engine: object, webhook_ready: None) -> None:
+    """A chargeback removes the disputed credits and writes one dispute ledger row."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    _deliver(service, _checkout_event("evt_pay", "u@x.com", 500, payment_intent="pi_2"))
+
+    _deliver(service, _dispute_event("evt_dis", "pi_2", 500))
+
+    assert _balance(engine, "u@x.com") == 0
+    rows = _ledger_rows(engine, "u@x.com", "dispute")
+    assert len(rows) == 1
+    assert rows[0].delta_credits == -500
+    assert rows[0].description == "Chargeback"
+    assert rows[0].stripe_payment_intent_id == "pi_2"
+
+
+def test_webhook_dispute_after_partial_refund_nets(engine: object, webhook_ready: None) -> None:
+    """A dispute after a partial refund claws back only the still-unreversed remainder."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    _deliver(service, _checkout_event("evt_pay", "u@x.com", 500, payment_intent="pi_1"))
+    _deliver(service, _refund_event("evt_ref", "pi_1", 200))
+    assert _balance(engine, "u@x.com") == 300
+
+    _deliver(service, _dispute_event("evt_dis", "pi_1", 500))
+
+    assert _balance(engine, "u@x.com") == 0
+    dispute_rows = _ledger_rows(engine, "u@x.com", "dispute")
+    assert len(dispute_rows) == 1
+    assert dispute_rows[0].delta_credits == -300

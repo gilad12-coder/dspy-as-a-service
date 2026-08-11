@@ -258,6 +258,11 @@ class CreditLedgerModel(Base):
         BigInteger().with_variant(Integer(), "sqlite"), nullable=True
     )
     stripe_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # The PaymentIntent behind a top-up (``pi_…``), the join key a refund or
+    # dispute webhook uses to find the account and the credits to claw back —
+    # it is the one id present on the checkout, charge, and dispute objects
+    # alike. None on grants/runs/adjustments and on top-ups predating this column.
+    stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
     )
