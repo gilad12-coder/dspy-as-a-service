@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import stripe
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..api.errors import DomainError
@@ -35,6 +36,7 @@ from ..storage.models import (
     BillingWebhookEventModel,
     CreditLedgerModel,
 )
+from .openrouter_float import check_float
 from .pricing import ModelUsage, credits_for_usage
 
 logger = logging.getLogger("skynet.billing.service")
@@ -619,6 +621,26 @@ class StripeBillingService:
                 session.commit()
         return max(grant_remaining + paid, 0)
 
+    def total_outstanding_credits(self) -> int:
+        """Return the total unspent credit liability across every account.
+
+        Sums each account's purchased ``credit_balance`` plus its remaining free
+        grant. This is the pool the shared OpenRouter float ultimately backs:
+        credits users have paid for (or been granted) but not yet spent on runs.
+        A pure DB read — no grant seeding, no Stripe call — so it reflects only
+        liability already recorded.
+
+        Returns:
+            Sum of paid balances and remaining grants across all customers,
+            never negative.
+        """
+        with Session(self._engine) as session:
+            paid, granted = session.query(
+                func.coalesce(func.sum(BillingCustomerModel.credit_balance), 0),
+                func.coalesce(func.sum(BillingCustomerModel.grant_remaining), 0),
+            ).one()
+        return max(int(paid) + int(granted), 0)
+
     def debit_run(
         self,
         username: str,
@@ -755,6 +777,25 @@ class StripeBillingService:
             session.add(BillingWebhookEventModel(event_id=event_id, event_type=str(event["type"])))
             self._apply_event(session, event)
             session.commit()
+        # After the top-up commits — so a fresh read sees the new liability — check
+        # that the shared OpenRouter float still covers what users are owed. Runs
+        # only on the freshly-applied path (a redelivery returns above), and never
+        # on the money path itself: the purchase is already committed.
+        if str(event["type"]) == "checkout.session.completed":
+            self._monitor_float()
+
+    def _monitor_float(self) -> None:
+        """Check the OpenRouter float after a purchase, swallowing every failure.
+
+        A best-effort tripwire: reads the master-account balance and warns when
+        it has fallen below the configured floor. Wrapped so a monitor failure
+        (HTTP timeout, DB hiccup on the liability sum) can never propagate into
+        the webhook handler, which has already committed the credit.
+        """
+        try:
+            check_float(self.total_outstanding_credits())
+        except Exception:
+            logger.exception("OpenRouter float monitor failed")
 
     def _apply_event(self, session: Session, event: Any) -> None:
         """Dispatch a verified event to its handler; unknown types are no-ops.

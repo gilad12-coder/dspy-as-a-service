@@ -140,6 +140,16 @@ class Settings(BaseSettings):
         alias="OPENROUTER_PROVISIONING_KEY",
         description="OpenRouter key-management (provisioning) API key. When set, managed runs authenticate with a per-user OpenRouter runtime key whose spend limit is synced to the account's credit balance before each dispatch, capping upstream spend at the provider itself. Unset (the default) sends managed runs through the shared gateway key. Requires BYOK_VAULT_KEY to encrypt the minted secrets at rest.",
     )
+    openrouter_api_key: SecretStr | None = Field(
+        default=None,
+        alias="OPENROUTER_API_KEY",
+        description="OpenRouter master-account (inference) API key. Read-only here: the float monitor uses it to read the shared prepaid balance (GET /api/v1/credits) so it can warn when the OpenRouter float runs thin against outstanding credit liability. Managed inference itself routes through the LiteLLM proxy or per-user provisioned keys, not this field.",
+    )
+    openrouter_balance_floor_credits: int = Field(
+        default=1000,
+        alias="OPENROUTER_BALANCE_FLOOR_CREDITS",
+        description="Low-water mark for the OpenRouter master-account balance, in credits (1 credit = 1 cent; default 1000 = $10). When the balance falls below this floor the float monitor logs a WARNING — native Auto Top-Up may have failed or demand is outrunning refills. 0 disables the monitor. Only consulted when OPENROUTER_API_KEY is set.",
+    )
     worker_enabled: bool = Field(
         default=True,
         alias="WORKER_ENABLED",
