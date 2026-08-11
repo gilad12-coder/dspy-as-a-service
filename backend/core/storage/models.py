@@ -324,6 +324,33 @@ class BillingProviderKeyModel(Base):
     )
 
 
+class BillingOpenRouterKeyModel(Base):
+    """One platform-provisioned OpenRouter runtime key per account.
+
+    Backs provider-side spend capping for managed runs: when
+    ``OPENROUTER_PROVISIONING_KEY`` is configured, the worker mints one
+    OpenRouter runtime key per account and syncs its spend limit to the
+    account's credit balance before each managed dispatch, so upstream spend is
+    capped at OpenRouter itself even if every backend-side gate fails (see
+    ``core.billing.openrouter_keys``). Only the Fernet-encrypted secret is
+    persisted — the same at-rest contract as the BYOK vault — and ``key_hash``
+    addresses the key in OpenRouter's key-management API. Deleting a row forces
+    a fresh key to be minted on the account's next managed dispatch.
+    """
+
+    __tablename__ = "billing_openrouter_keys"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    secret_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
 class SearchQueryLogModel(Base):
     """Anonymous log of public-corpus search queries, powering trending searches.
 

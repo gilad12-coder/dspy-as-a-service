@@ -26,7 +26,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..billing import ProviderKeyVault, StripeBillingService, inject_byok_connections
+from ..billing import (
+    OpenRouterKeyProvisioner,
+    ProviderKeyVault,
+    StripeBillingService,
+    inject_byok_connections,
+    inject_provisioned_openrouter_key,
+)
 from ..billing.pricing import ModelUsage
 from ..config import settings
 from ..constants import (
@@ -629,6 +635,24 @@ class BackgroundWorker:
                         username=byok_payload.username,
                         vault=ProviderKeyVault(engine=byok_engine),
                     )
+                # Managed-run mirror of the BYOK seam: when key provisioning is
+                # configured, dispatch under a per-user OpenRouter runtime key
+                # whose spend limit was just synced to the account's balance —
+                # a provider-side backstop on top of the ledger clamp. Any
+                # failure leaves the payload untouched and the run falls back
+                # to the shared gateway key.
+                elif token_source == TOKEN_SOURCE_MANAGED and byok_engine is not None:
+                    provisioner = OpenRouterKeyProvisioner(engine=byok_engine)
+                    if provisioner.enabled:
+                        managed_payload = grid_payload if is_grid else run_payload
+                        spendable = StripeBillingService(engine=byok_engine).spendable_credits(
+                            managed_payload.username
+                        )
+                        runtime_key = provisioner.ensure_runtime_key(
+                            managed_payload.username, spendable
+                        )
+                        if runtime_key is not None:
+                            inject_provisioned_openrouter_key(payload_dict, api_key=runtime_key)
 
                 event_queue = self._mp_ctx.Queue()
                 run_process = self._mp_ctx.Process(  # type: ignore[attr-defined]

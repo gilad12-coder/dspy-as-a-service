@@ -135,6 +135,11 @@ class Settings(BaseSettings):
         alias="LITELLM_PROXY_API_KEY",
         description="Virtual key the backend presents to the LiteLLM proxy for managed runs. Only consulted when LITELLM_PROXY_URL is set.",
     )
+    openrouter_provisioning_key: SecretStr | None = Field(
+        default=None,
+        alias="OPENROUTER_PROVISIONING_KEY",
+        description="OpenRouter key-management (provisioning) API key. When set, managed runs authenticate with a per-user OpenRouter runtime key whose spend limit is synced to the account's credit balance before each dispatch, capping upstream spend at the provider itself. Unset (the default) sends managed runs through the shared gateway key. Requires BYOK_VAULT_KEY to encrypt the minted secrets at rest.",
+    )
     worker_enabled: bool = Field(
         default=True,
         alias="WORKER_ENABLED",
