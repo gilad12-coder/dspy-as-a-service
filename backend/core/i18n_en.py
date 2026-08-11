@@ -36,6 +36,7 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "accounts.password_common": "That password is too common and easy to guess. Pick a different one.",
     "accounts.password_contains_email": "The password can't contain your email address.",
     "accounts.password_too_long": "The password can be at most 128 characters.",
+    "accounts.too_many_attempts": "Too many failed sign-in attempts. Try again later.",
     "accounts.totp_setup_required": "Start authenticator setup before verifying a code.",
     "accounts.two_factor_required": "Enter a verification code to finish signing in.",
     "accounts.two_factor_unavailable": "Two-factor authentication isn't available for this account.",

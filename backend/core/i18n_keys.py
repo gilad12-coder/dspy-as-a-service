@@ -21,6 +21,7 @@ class I18nKey(StrEnum):
     ACCOUNTS_PASSWORD_COMMON = 'accounts.password_common'
     ACCOUNTS_PASSWORD_CONTAINS_EMAIL = 'accounts.password_contains_email'
     ACCOUNTS_PASSWORD_TOO_LONG = 'accounts.password_too_long'
+    ACCOUNTS_TOO_MANY_ATTEMPTS = 'accounts.too_many_attempts'
     ACCOUNTS_TOTP_SETUP_REQUIRED = 'accounts.totp_setup_required'
     ACCOUNTS_TWO_FACTOR_REQUIRED = 'accounts.two_factor_required'
     ACCOUNTS_TWO_FACTOR_UNAVAILABLE = 'accounts.two_factor_unavailable'

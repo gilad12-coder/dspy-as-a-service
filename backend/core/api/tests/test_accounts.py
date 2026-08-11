@@ -222,3 +222,68 @@ def test_endpoints_require_internal_secret(accounts_client: TestClient) -> None:
         headers={"X-Internal-Auth": "nope"},
     )
     assert wrong_secret.status_code == 403
+
+
+def test_login_locks_out_after_repeated_failures(accounts_client: TestClient) -> None:
+    """Five wrong passwords lock the email; the sixth attempt is a 429."""
+    accounts_client.post(
+        "/auth/register",
+        json={"email": "hank@example.com", "password": "correctpass1"},
+        headers=_AUTH_HEADER,
+    )
+    for _ in range(5):
+        attempt = accounts_client.post(
+            "/auth/login",
+            json={"email": "hank@example.com", "password": "wrongpass1"},
+            headers=_AUTH_HEADER,
+        )
+        assert attempt.status_code == 401
+
+    locked = accounts_client.post(
+        "/auth/login",
+        json={"email": "hank@example.com", "password": "wrongpass1"},
+        headers=_AUTH_HEADER,
+    )
+    assert locked.status_code == 429
+    assert locked.json()["detail"] == "Too many failed sign-in attempts. Try again later."
+
+    # The lockout holds even once the caller supplies the right password.
+    with_right_password = accounts_client.post(
+        "/auth/login",
+        json={"email": "hank@example.com", "password": "correctpass1"},
+        headers=_AUTH_HEADER,
+    )
+    assert with_right_password.status_code == 429
+
+
+def test_login_success_resets_failure_counter(accounts_client: TestClient) -> None:
+    """A successful sign-in clears earlier failures so the count starts over."""
+    accounts_client.post(
+        "/auth/register",
+        json={"email": "iris@example.com", "password": "correctpass1"},
+        headers=_AUTH_HEADER,
+    )
+    for _ in range(4):
+        bad = accounts_client.post(
+            "/auth/login",
+            json={"email": "iris@example.com", "password": "wrongpass1"},
+            headers=_AUTH_HEADER,
+        )
+        assert bad.status_code == 401
+
+    good = accounts_client.post(
+        "/auth/login",
+        json={"email": "iris@example.com", "password": "correctpass1"},
+        headers=_AUTH_HEADER,
+    )
+    assert good.status_code == 200
+
+    # With the counter reset, five fresh failures are needed before a lockout;
+    # without the reset the second of these would already be a 429.
+    for _ in range(5):
+        again = accounts_client.post(
+            "/auth/login",
+            json={"email": "iris@example.com", "password": "wrongpass1"},
+            headers=_AUTH_HEADER,
+        )
+        assert again.status_code == 401

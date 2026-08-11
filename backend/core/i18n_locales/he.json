@@ -73,6 +73,7 @@
     "accounts.password_common": "הסיסמה הזו נפוצה מדי וקלה לניחוש. בחרו סיסמה אחרת.",
     "accounts.password_contains_email": "הסיסמה לא יכולה להכיל את כתובת האימייל שלכם.",
     "accounts.password_too_long": "הסיסמה יכולה להכיל 128 תווים לכל היותר.",
+    "accounts.too_many_attempts": "יותר מדי ניסיונות התחברות כושלים. נסו שוב מאוחר יותר.",
     "accounts.totp_setup_required": "יש להתחיל את הגדרת אפליקציית האימות לפני אימות קוד.",
     "accounts.two_factor_required": "יש להזין קוד אימות כדי להשלים את ההתחברות.",
     "accounts.two_factor_unavailable": "אימות דו-שלבי אינו זמין עבור החשבון הזה.",

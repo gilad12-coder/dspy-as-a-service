@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from ...config import settings
 from ...storage.models import UserModel
 from ..errors import DomainError
+from ..login_throttle import LoginThrottle
 from ..password_policy import validate_password
 from ..passwords import hash_password, verify_password
 from ..two_factor import enforce_second_factor
@@ -118,16 +119,21 @@ def _require_internal_auth(header_value: str | None) -> None:
         raise DomainError("auth.missing_token", status=403)
 
 
-def create_accounts_router(*, job_store) -> APIRouter:
+def create_accounts_router(*, job_store, login_throttle: LoginThrottle | None = None) -> APIRouter:
     """Build the email/password account router.
 
     Args:
         job_store: Job-store instance whose ORM engine backs the routes.
+        login_throttle: Per-email failed-login limiter guarding ``/auth/login``.
+            Defaults to a fresh in-memory instance scoped to this router (and so
+            to the process); tests inject one with a controlled clock or lower
+            threshold.
 
     Returns:
         A FastAPI ``APIRouter`` exposing register + login for local accounts.
     """
     router = APIRouter()
+    throttle = login_throttle or LoginThrottle()
 
     @router.post(
         "/auth/register",
@@ -197,28 +203,39 @@ def create_accounts_router(*, job_store) -> APIRouter:
             The authenticated account (email, display name, role).
 
         Raises:
-            DomainError: 403 on a bad internal secret; 401 when the email is
-                unknown, the password does not match, or the account's second
-                factor is missing (``accounts.two_factor_required``, carrying
-                the usable methods in ``params``) or wrong
-                (``accounts.invalid_second_factor``).
+            DomainError: 403 on a bad internal secret; 429
+                (``accounts.too_many_attempts``) when the email is locked out
+                after repeated failures; 401 when the email is unknown, the
+                password does not match, or the account's second factor is
+                missing (``accounts.two_factor_required``, carrying the usable
+                methods in ``params``) or wrong (``accounts.invalid_second_factor``).
         """
         _require_internal_auth(x_internal_auth)
         email = _normalise_email(body.email)
+        throttle.check(email)
         with Session(job_store.engine) as session:
             row = session.get(UserModel, email)
             if row is None or not verify_password(body.password, str(row.password_hash)):
+                throttle.record_failure(email)
                 raise DomainError("accounts.invalid_credentials", status=401)
-            enforce_second_factor(
-                session,
-                row,
-                totp_code=body.totp_code,
-                email_code=body.email_code,
-                recovery_code=body.recovery_code,
-            )
+            try:
+                enforce_second_factor(
+                    session,
+                    row,
+                    totp_code=body.totp_code,
+                    email_code=body.email_code,
+                    recovery_code=body.recovery_code,
+                )
+            except DomainError as exc:
+                # A missing factor is the benign first leg of a legit 2FA login;
+                # only a *wrong* code counts as a guess against the throttle.
+                if exc.code == "accounts.invalid_second_factor":
+                    throttle.record_failure(email)
+                raise
             row.last_login_at = datetime.now(UTC)
             name = str(row.name)
             session.commit()
+        throttle.reset(email)
         return AccountInfo(email=email, name=name, role=_role_for(email))
 
     return router
