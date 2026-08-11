@@ -195,6 +195,11 @@ export type MessageKey =
   | "auth.login.twofa_use_recovery"
   | "auth.login.twofa_use_totp"
   | "auth.login.twofa_verify"
+  | "auth.login.verify_code_label"
+  | "auth.login.verify_failed"
+  | "auth.login.verify_heading"
+  | "auth.login.verify_hint"
+  | "auth.login.verify_submit"
   | "auth.login.with_github"
   | "auth.login.with_google"
   | "auto.app.compare.layout.template.1"
@@ -3229,6 +3234,11 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auth.login.twofa_use_recovery": "שימוש בקוד שחזור",
   "auth.login.twofa_use_totp": "שימוש בקוד מאפליקציית אימות",
   "auth.login.twofa_verify": "אימות",
+  "auth.login.verify_code_label": "קוד אימות",
+  "auth.login.verify_failed": "לא ניתן לאמת את כתובת האימייל. נסו שוב",
+  "auth.login.verify_heading": "אימות כתובת האימייל",
+  "auth.login.verify_hint": "הזינו את הקוד ששלחנו לאימייל כדי לסיים את הגדרת החשבון.",
+  "auth.login.verify_submit": "אמתו את האימייל",
   "auth.login.with_github": "המשך/המשיכי עם GitHub",
   "auth.login.with_google": "המשך/המשיכי עם Google",
   "auto.app.compare.layout.template.1": "השוואת תוצאות בין שתי {p1}",
@@ -11901,6 +11911,11 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auth.login.twofa_use_recovery": "Use a recovery code",
   "auth.login.twofa_use_totp": "Use an authenticator code",
   "auth.login.twofa_verify": "Verify",
+  "auth.login.verify_code_label": "Verification code",
+  "auth.login.verify_failed": "Couldn't verify your email. Please try again",
+  "auth.login.verify_heading": "Verify your email",
+  "auth.login.verify_hint": "Enter the code we emailed to finish setting up your account.",
+  "auth.login.verify_submit": "Verify email",
   "auth.login.with_github": "Continue with GitHub",
   "auth.login.with_google": "Continue with Google",
   "auto.app.compare.layout.template.1": "Compare results between two {p1}",

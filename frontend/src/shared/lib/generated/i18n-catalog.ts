@@ -65,12 +65,14 @@ export const TERMS = {
 
 export const I18N_MESSAGES = {
   "accounts.email_delivery_unavailable": "שליחת אימייל אינה מוגדרת בשרת הזה.",
+  "accounts.email_not_verified": "יש לאמת את כתובת האימייל לפני ההתחברות.",
   "accounts.email_send_failed": "לא ניתן לשלוח את אימייל האימות. נסו שוב.",
   "accounts.email_taken": "כתובת האימייל כבר רשומה.",
   "accounts.invalid_credentials": "האימייל או הסיסמה שגויים.",
   "accounts.invalid_email": "כתובת אימייל לא תקינה.",
   "accounts.invalid_reset_code": "קוד האיפוס שגוי או שפג תוקפו.",
   "accounts.invalid_second_factor": "קוד האימות שגוי או שפג תוקפו.",
+  "accounts.invalid_verification_code": "קוד האימות שגוי או שפג תוקפו.",
   "accounts.password_common": "הסיסמה הזו נפוצה מדי וקלה לניחוש. בחרו סיסמה אחרת.",
   "accounts.password_contains_email": "הסיסמה לא יכולה להכיל את כתובת האימייל שלכם.",
   "accounts.password_too_long": "הסיסמה יכולה להכיל 128 תווים לכל היותר.",
@@ -696,12 +698,14 @@ export const TERMS_EN: Partial<Record<TermKey, string>> = {
 
 export const I18N_MESSAGES_EN: Partial<Record<I18nMessageKey, string>> = {
   "accounts.email_delivery_unavailable": "Email delivery isn't configured on this server.",
+  "accounts.email_not_verified": "Please verify your email before signing in.",
   "accounts.email_send_failed": "Couldn't send the verification email. Try again.",
   "accounts.email_taken": "That email address is already registered.",
   "accounts.invalid_credentials": "Incorrect email or password.",
   "accounts.invalid_email": "Invalid email address.",
   "accounts.invalid_reset_code": "That reset code is incorrect or has expired.",
   "accounts.invalid_second_factor": "That verification code is incorrect or has expired.",
+  "accounts.invalid_verification_code": "That confirmation code is incorrect or has expired.",
   "accounts.password_common": "That password is too common and easy to guess. Pick a different one.",
   "accounts.password_contains_email": "The password can't contain your email address.",
   "accounts.password_too_long": "The password can be at most 128 characters.",
@@ -3426,12 +3430,14 @@ export const I18N_MESSAGES_BY_LOCALE: Record<string, Record<string, string>> = {
 
 export const I18N_KEY = {
   ACCOUNTS_EMAIL_DELIVERY_UNAVAILABLE: "accounts.email_delivery_unavailable",
+  ACCOUNTS_EMAIL_NOT_VERIFIED: "accounts.email_not_verified",
   ACCOUNTS_EMAIL_SEND_FAILED: "accounts.email_send_failed",
   ACCOUNTS_EMAIL_TAKEN: "accounts.email_taken",
   ACCOUNTS_INVALID_CREDENTIALS: "accounts.invalid_credentials",
   ACCOUNTS_INVALID_EMAIL: "accounts.invalid_email",
   ACCOUNTS_INVALID_RESET_CODE: "accounts.invalid_reset_code",
   ACCOUNTS_INVALID_SECOND_FACTOR: "accounts.invalid_second_factor",
+  ACCOUNTS_INVALID_VERIFICATION_CODE: "accounts.invalid_verification_code",
   ACCOUNTS_PASSWORD_COMMON: "accounts.password_common",
   ACCOUNTS_PASSWORD_CONTAINS_EMAIL: "accounts.password_contains_email",
   ACCOUNTS_PASSWORD_TOO_LONG: "accounts.password_too_long",

@@ -23,7 +23,7 @@ from sqlalchemy.pool import StaticPool
 
 from ...config import settings
 from ...i18n_en import t_en
-from ...storage.models import PasswordResetCodeModel, UserModel
+from ...storage.models import EmailVerificationCodeModel, PasswordResetCodeModel, UserModel
 from .. import password_reset
 from ..password_reset import (
     RESET_CODE_MAX_ATTEMPTS,
@@ -77,6 +77,7 @@ def reset_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, list[dict
     )
     UserModel.__table__.create(engine)
     PasswordResetCodeModel.__table__.create(engine)
+    EmailVerificationCodeModel.__table__.create(engine)
     store = _Store(engine)
     app = FastAPI()
     app.state.job_store = store
@@ -84,11 +85,20 @@ def reset_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, list[dict
     return TestClient(app), sent
 
 
-def _register(client: TestClient, email: str, password: str) -> None:
-    """Register an account so it can later be reset.
+def _register(
+    client: TestClient, sent: list[dict[str, str]], email: str, password: str
+) -> None:
+    """Register an account, mark it verified, and clear the email recorder.
+
+    Under a configured SMTP relay ``register`` creates the account unverified
+    and emails a confirmation code. The reset flows all assume an account that
+    has already confirmed its email, so this flips ``email_verified`` directly
+    and drops the captured confirmation message, restoring the recorder to empty
+    for the reset-email assertions that follow.
 
     Args:
         client: The accounts test client.
+        sent: The fixture's outbound-email recorder, cleared after registration.
         email: Account email.
         password: Initial password.
     """
@@ -96,6 +106,10 @@ def _register(client: TestClient, email: str, password: str) -> None:
         "/auth/register", json={"email": email, "password": password}, headers=_AUTH_HEADER
     )
     assert created.status_code == 201
+    with Session(client.app.state.job_store.engine) as session:
+        session.get(UserModel, email).email_verified = True
+        session.commit()
+    sent.clear()
 
 
 def _last_code(sent: list[dict[str, str]]) -> str:
@@ -117,7 +131,7 @@ def test_request_then_confirm_resets_password(
 ) -> None:
     """A reset code lets the user set a new password; old one stops working."""
     client, sent = reset_client
-    _register(client, "amy@example.com", "originalpass1")
+    _register(client, sent, "amy@example.com", "originalpass1")
 
     requested = client.post(
         "/auth/password-reset/request", json={"email": "amy@example.com"}, headers=_AUTH_HEADER
@@ -180,7 +194,7 @@ def test_request_cooldown_suppresses_second_send(
 ) -> None:
     """A second request inside the cooldown returns 200 without re-sending."""
     client, sent = reset_client
-    _register(client, "cara@example.com", "originalpass1")
+    _register(client, sent, "cara@example.com", "originalpass1")
     first = client.post(
         "/auth/password-reset/request", json={"email": "cara@example.com"}, headers=_AUTH_HEADER
     )
@@ -196,8 +210,8 @@ def test_confirm_wrong_code_is_422(
     reset_client: tuple[TestClient, list[dict[str, str]]],
 ) -> None:
     """A wrong code is rejected and does not change the password."""
-    client, _ = reset_client
-    _register(client, "dan@example.com", "originalpass1")
+    client, sent = reset_client
+    _register(client, sent, "dan@example.com", "originalpass1")
     client.post(
         "/auth/password-reset/request", json={"email": "dan@example.com"}, headers=_AUTH_HEADER
     )
@@ -236,7 +250,7 @@ def test_confirm_weak_password_is_422_and_keeps_code(
 ) -> None:
     """A weak new password is rejected before the code is spent, so retry works."""
     client, sent = reset_client
-    _register(client, "eli@example.com", "originalpass1")
+    _register(client, sent, "eli@example.com", "originalpass1")
     client.post(
         "/auth/password-reset/request", json={"email": "eli@example.com"}, headers=_AUTH_HEADER
     )
@@ -260,7 +274,7 @@ def test_confirm_expired_code_is_422(
 ) -> None:
     """An expired code is rejected even when the digits are correct."""
     client, sent = reset_client
-    _register(client, "fay@example.com", "originalpass1")
+    _register(client, sent, "fay@example.com", "originalpass1")
     client.post(
         "/auth/password-reset/request", json={"email": "fay@example.com"}, headers=_AUTH_HEADER
     )
@@ -283,7 +297,7 @@ def test_confirm_leaves_second_factor_intact(
 ) -> None:
     """Resetting the password does not disable the account's email 2FA."""
     client, sent = reset_client
-    _register(client, "gus@example.com", "originalpass1")
+    _register(client, sent, "gus@example.com", "originalpass1")
     engine = client.app.state.job_store.engine
     with Session(engine) as session:
         session.get(UserModel, "gus@example.com").email_2fa_enabled = True

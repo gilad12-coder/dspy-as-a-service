@@ -97,6 +97,12 @@ class UserModel(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Whether the sign-up email address has been confirmed via an emailed code.
+    # Defaults True so rows created before this column existed, and accounts
+    # created on a deployment with no SMTP relay, are treated as verified; the
+    # register route flips it to False only when it actually sends a code, and
+    # login refuses an unverified account while email delivery is configured.
+    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Optional profile captured on the rich sign-up form. Nullable because OAuth
     # accounts (no ``users`` row) and rows created before these columns existed
     # never set them, and ``job_role`` is optional even on the sign-up form.
@@ -184,6 +190,28 @@ class PasswordResetCodeModel(Base):
     """
 
     __tablename__ = "password_reset_codes"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class EmailVerificationCodeModel(Base):
+    """The active email-confirmation code for a freshly registered account.
+
+    One row per email (re-sending replaces it), holding only the scrypt hash of
+    the emailed 6-digit code. ``attempts`` counts failed verifies so a code dies
+    after a handful of guesses well before ``expires_at``. ``sent_at`` backs a
+    per-account resend cooldown, since the resend route is unauthenticated and
+    would otherwise be a mail-bomb oracle. Kept separate from the sign-in and
+    reset code tables so a pending confirmation never collides with either.
+    """
+
+    __tablename__ = "email_verification_codes"
 
     email: Mapped[str] = mapped_column(String(255), primary_key=True)
     code_hash: Mapped[str] = mapped_column(String(255), nullable=False)

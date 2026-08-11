@@ -68,6 +68,10 @@ def accounts_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         in-memory store holding the ``users`` table.
     """
     monkeypatch.setattr(settings, "backend_auth_secret", SecretStr(_SECRET))
+    # No SMTP relay here, so registration auto-verifies and sign-in needs no
+    # email confirmation; the email-configured path is covered in
+    # test_email_verification.py. Pinned so an ambient .env value can't flip it.
+    monkeypatch.setattr(settings, "smtp_host", None)
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )

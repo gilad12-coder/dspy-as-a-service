@@ -174,6 +174,9 @@ export function LoginView() {
   const [resetCode, setResetCode] = useState("");
   const [resetNewPassword, setResetNewPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
+  const [verify, setVerify] = useState<{ email: string } | null>(null);
+  const [verifyCode, setVerifyCode] = useState("");
+  const [verifyLoading, setVerifyLoading] = useState(false);
 
   useEffect(() => {
     setPasskeySupported(browserSupportsWebAuthn());
@@ -181,7 +184,7 @@ export function LoginView() {
 
   useEffect(() => {
     if (mode !== "ready" || authMode !== "signin" || !passkeySupported) return;
-    if (twoFactor || passkeyOffer || reset) return;
+    if (twoFactor || passkeyOffer || reset || verify) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -211,7 +214,7 @@ export function LoginView() {
       cancelled = true;
       WebAuthnAbortService.cancelCeremony();
     };
-  }, [mode, authMode, passkeySupported, twoFactor, passkeyOffer, reset]);
+  }, [mode, authMode, passkeySupported, twoFactor, passkeyOffer, reset, verify]);
 
   useEffect(() => {
     // If the providers endpoint errors (network blip, mis-deployed [...nextauth]
@@ -265,6 +268,16 @@ export function LoginView() {
   function describeResetError(code: string): string {
     if (code.startsWith("accounts.") || code === "auth.not_configured") return tI18n(code);
     return msg("auth.login.reset_failed");
+  }
+
+  /**
+   * Localize an error from the email-verification proxies. Backend semantic
+   * codes (``accounts.*``, ``auth.not_configured``) resolve through the shared
+   * catalog; anything else collapses to a generic "couldn't verify your email".
+   */
+  function describeVerifyError(code: string): string {
+    if (code.startsWith("accounts.") || code === "auth.not_configured") return tI18n(code);
+    return msg("auth.login.verify_failed");
   }
 
   /** Open the forgot-password flow, seeding it with any email already typed. */
@@ -376,6 +389,99 @@ export function LoginView() {
     } catch {
       setError(msg("auth.login.error"));
       setResetLoading(false);
+    }
+  }
+
+  function leaveVerify() {
+    setVerify(null);
+    setVerifyCode("");
+    setError("");
+  }
+
+  /**
+   * Confirm the emailed code, then sign in with the password still held in
+   * state. A 2FA-protected account answers the now-verified credentials with a
+   * "code required" signal, so the same second-factor step the normal sign-in
+   * uses is reused here rather than letting verification slip past 2FA.
+   */
+  async function handleVerifyConfirm(e: React.FormEvent) {
+    e.preventDefault();
+    if (!verify) return;
+    const cleanEmail = verify.email;
+    const code = verifyCode.trim();
+    if (!cleanEmail || !code) return;
+    setError("");
+    setVerifyLoading(true);
+    try {
+      const res = await fetch("/api/email-verify/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail, code }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(describeVerifyError(data.error ?? "auth.login.verify_failed"));
+        setVerifyLoading(false);
+        return;
+      }
+      const result = await signIn("credentials", {
+        email: cleanEmail,
+        password,
+        redirect: false,
+      });
+      if (result?.error) {
+        const signal = result.code ?? "";
+        if (signal.startsWith("2fa_required:")) {
+          const methods = signal.slice("2fa_required:".length).split(" ").filter(Boolean);
+          setVerify(null);
+          setTwoFactor({
+            methods,
+            mode: methods.includes("totp") ? "totp" : "email",
+            emailSent: false,
+          });
+          setTwoFactorCode("");
+          setVerifyLoading(false);
+          return;
+        }
+        setVerify(null);
+        setError(msg("auth.login.invalid_credentials"));
+        setVerifyLoading(false);
+        return;
+      }
+      setVerify(null);
+      track(TelemetryEvent.LoginSucceeded, { method: "email_verified" });
+      await offerPasskeyOrFinish();
+    } catch {
+      setError(msg("auth.login.error"));
+      setVerifyLoading(false);
+    }
+  }
+
+  /**
+   * Re-send the confirmation code. The backend acknowledges identically for
+   * unknown, already-verified, and on-cooldown addresses, so a success only
+   * clears any error; it never reveals the account's verification state.
+   */
+  async function resendVerifyCode(): Promise<void> {
+    if (!verify) return;
+    setError("");
+    setVerifyLoading(true);
+    try {
+      const res = await fetch("/api/email-verify/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: verify.email }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(describeVerifyError(data.error ?? "auth.login.verify_failed"));
+        return;
+      }
+      setVerifyCode("");
+    } catch {
+      setError(msg("auth.login.error"));
+    } finally {
+      setVerifyLoading(false);
     }
   }
 
@@ -498,6 +604,16 @@ export function LoginView() {
             emailSent: false,
           });
           setTwoFactorCode("");
+          setLoading(false);
+          return;
+        }
+        // An unverified account (email delivery is configured, the address is
+        // not yet confirmed) answers the correct password with this signal —
+        // pivot the card to the email-confirmation step, seeded with the
+        // address just entered, instead of showing a dead-end error.
+        if (code === "email_unverified") {
+          setVerify({ email: cleanEmail });
+          setVerifyCode("");
           setLoading(false);
           return;
         }
@@ -980,6 +1096,75 @@ export function LoginView() {
                         </button>
                       </form>
                     )}
+                  </div>
+                ) : verify ? (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={leaveVerify}
+                      className="mb-4 flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <ArrowLeft className="size-3.5 rtl:-scale-x-100" aria-hidden="true" />
+                      {msg("auth.login.twofa_back")}
+                    </button>
+                    <p className="text-sm font-semibold text-foreground">
+                      {msg("auth.login.verify_heading")}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {msg("auth.login.verify_hint")}
+                    </p>
+                    <form onSubmit={handleVerifyConfirm} className="mt-4 space-y-3.5">
+                      <div>
+                        <Label
+                          htmlFor="verify-code"
+                          className="mb-1.5 block text-xs font-medium text-muted-foreground"
+                        >
+                          {msg("auth.login.verify_code_label")}
+                        </Label>
+                        <Input
+                          id="verify-code"
+                          value={verifyCode}
+                          onChange={(e) => setVerifyCode(e.target.value)}
+                          placeholder="123456"
+                          autoFocus
+                          autoComplete="one-time-code"
+                          inputMode="numeric"
+                          dir="ltr"
+                          className="h-11 text-left"
+                        />
+                      </div>
+                      <AnimatePresence>
+                        {error && (
+                          <motion.p
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="text-sm text-destructive"
+                            role="alert"
+                          >
+                            {error}
+                          </motion.p>
+                        )}
+                      </AnimatePresence>
+                      <Button
+                        type="submit"
+                        size="lg"
+                        disabled={verifyLoading || !verifyCode.trim()}
+                        className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                      >
+                        {verifyLoading && <CircleNotch className="size-4 animate-spin" />}
+                        {msg("auth.login.verify_submit")}
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => void resendVerifyCode()}
+                        disabled={verifyLoading}
+                        className={TWOFA_LINK_CLASS}
+                      >
+                        {msg("auth.login.twofa_resend")}
+                      </button>
+                    </form>
                   </div>
                 ) : (
                   <>

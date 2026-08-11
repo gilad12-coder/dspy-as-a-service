@@ -81,14 +81,15 @@ type CredentialsOutcome =
   | { kind: "ok"; account: BackendAccount }
   | { kind: "2fa_required"; methods: string }
   | { kind: "2fa_invalid" }
+  | { kind: "email_unverified" }
   | { kind: "failed" };
 
 /**
  * Verify email/password (+ optional second-factor code) against the backend's
  * internal /auth/login. Distinguishes the two 2FA outcomes — code missing
- * (with the account's usable methods) vs code wrong — so the login form can
- * pivot to its code step; every other failure collapses into a generic
- * "failed" that never leaks which case occurred.
+ * (with the account's usable methods) vs code wrong — plus an unverified email,
+ * so the login form can pivot to its code or verify step; every other failure
+ * collapses into a generic "failed" that never leaks which case occurred.
  */
 async function verifyBackendCredentials(
   email: string,
@@ -117,6 +118,7 @@ async function verifyBackendCredentials(
       return { kind: "2fa_required", methods: String(body.params?.methods ?? "totp") };
     }
     if (body.code === "accounts.invalid_second_factor") return { kind: "2fa_invalid" };
+    if (body.code === "accounts.email_not_verified") return { kind: "email_unverified" };
     return { kind: "failed" };
   } catch {
     return { kind: "failed" };
@@ -315,6 +317,9 @@ if (adfsConfigured) {
           throw credentialsError(`2fa_required:${result.methods}`);
         }
         if (result.kind === "2fa_invalid") throw credentialsError("2fa_invalid");
+        // Surfaced so the login form can pivot to its email-confirmation step
+        // instead of showing a dead-end "sign-in failed".
+        if (result.kind === "email_unverified") throw credentialsError("email_unverified");
         if (result.kind !== "ok") return null;
         return {
           id: result.account.email,

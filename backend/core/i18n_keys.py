@@ -13,12 +13,14 @@ class I18nKey(StrEnum):
     """Stable identifiers for catalog ``messages`` entries (formatted via ``t()``)."""
 
     ACCOUNTS_EMAIL_DELIVERY_UNAVAILABLE = 'accounts.email_delivery_unavailable'
+    ACCOUNTS_EMAIL_NOT_VERIFIED = 'accounts.email_not_verified'
     ACCOUNTS_EMAIL_SEND_FAILED = 'accounts.email_send_failed'
     ACCOUNTS_EMAIL_TAKEN = 'accounts.email_taken'
     ACCOUNTS_INVALID_CREDENTIALS = 'accounts.invalid_credentials'
     ACCOUNTS_INVALID_EMAIL = 'accounts.invalid_email'
     ACCOUNTS_INVALID_RESET_CODE = 'accounts.invalid_reset_code'
     ACCOUNTS_INVALID_SECOND_FACTOR = 'accounts.invalid_second_factor'
+    ACCOUNTS_INVALID_VERIFICATION_CODE = 'accounts.invalid_verification_code'
     ACCOUNTS_PASSWORD_COMMON = 'accounts.password_common'
     ACCOUNTS_PASSWORD_CONTAINS_EMAIL = 'accounts.password_contains_email'
     ACCOUNTS_PASSWORD_TOO_LONG = 'accounts.password_too_long'
