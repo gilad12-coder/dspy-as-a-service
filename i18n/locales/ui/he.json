@@ -3007,5 +3007,19 @@
   "workflow.toolbar.fullscreen": "מסך מלא",
   "workflow.toolbar.issues": "{p1} בעיות בגרף",
   "workflow.toolbar.tidy": "סידור אוטומטי",
-  "workflow.trace.ms": "מ\"ש"
+  "workflow.trace.ms": "מ\"ש",
+  "settings.privacy.export.label": "ייצוא הנתונים שלי",
+  "settings.privacy.export.description": "הורדת כל הנתונים שבחשבון שלכם כקובץ JSON.",
+  "settings.privacy.export.action": "ייצוא",
+  "settings.privacy.export.success": "הנתונים שלכם יורדים",
+  "settings.privacy.export.error": "ייצוא הנתונים נכשל",
+  "settings.privacy.delete.label": "מחיקת החשבון",
+  "settings.privacy.delete.description": "מחיקה לצמיתות של החשבון וכל הנתונים שבו. לא ניתן לבטל.",
+  "settings.privacy.delete.action": "מחיקת החשבון",
+  "settings.privacy.delete.error": "מחיקת החשבון נכשלה",
+  "settings.privacy.delete.dialog.title": "למחוק את החשבון?",
+  "settings.privacy.delete.dialog.hint": "פעולה זו מוחקת לצמיתות את החשבון וכל הנתונים שבו. לא ניתן לבטל.",
+  "settings.privacy.delete.dialog.password_label": "הסיסמה הנוכחית",
+  "settings.privacy.delete.dialog.confirm_label": "הקלידו {email} לאישור",
+  "settings.privacy.delete.dialog.confirm": "מחיקת החשבון שלי"
 }

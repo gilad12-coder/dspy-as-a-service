@@ -3007,5 +3007,19 @@
   "workflow.toolbar.fullscreen": "Fullscreen",
   "workflow.toolbar.issues": "{p1} graph issues",
   "workflow.toolbar.tidy": "Tidy up",
-  "workflow.trace.ms": "ms"
+  "workflow.trace.ms": "ms",
+  "settings.privacy.export.label": "Export my data",
+  "settings.privacy.export.description": "Download everything in your account as a JSON file.",
+  "settings.privacy.export.action": "Export",
+  "settings.privacy.export.success": "Your data is downloading",
+  "settings.privacy.export.error": "Could not export your data",
+  "settings.privacy.delete.label": "Delete account",
+  "settings.privacy.delete.description": "Permanently delete your account and all its data. This cannot be undone.",
+  "settings.privacy.delete.action": "Delete account",
+  "settings.privacy.delete.error": "Could not delete your account",
+  "settings.privacy.delete.dialog.title": "Delete your account?",
+  "settings.privacy.delete.dialog.hint": "This permanently deletes your account and all its data. This cannot be undone.",
+  "settings.privacy.delete.dialog.password_label": "Current password",
+  "settings.privacy.delete.dialog.confirm_label": "Type {email} to confirm",
+  "settings.privacy.delete.dialog.confirm": "Delete my account"
 }

@@ -2197,6 +2197,20 @@ export type MessageKey =
   | "settings.privacy.clear_cache.success"
   | "settings.privacy.copy_email.label"
   | "settings.privacy.copy_username.label"
+  | "settings.privacy.delete.action"
+  | "settings.privacy.delete.description"
+  | "settings.privacy.delete.dialog.confirm"
+  | "settings.privacy.delete.dialog.confirm_label"
+  | "settings.privacy.delete.dialog.hint"
+  | "settings.privacy.delete.dialog.password_label"
+  | "settings.privacy.delete.dialog.title"
+  | "settings.privacy.delete.error"
+  | "settings.privacy.delete.label"
+  | "settings.privacy.export.action"
+  | "settings.privacy.export.description"
+  | "settings.privacy.export.error"
+  | "settings.privacy.export.label"
+  | "settings.privacy.export.success"
   | "settings.saved"
   | "settings.security.copy_recovery_aria"
   | "settings.security.copy_secret_aria"
@@ -5208,6 +5222,20 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.privacy.clear_cache.success": "הנתונים השמורים נמחקו",
   "settings.privacy.copy_email.label": "אימייל",
   "settings.privacy.copy_username.label": "שם משתמש",
+  "settings.privacy.delete.action": "מחיקת החשבון",
+  "settings.privacy.delete.description": "מחיקה לצמיתות של החשבון וכל הנתונים שבו. לא ניתן לבטל.",
+  "settings.privacy.delete.dialog.confirm": "מחיקת החשבון שלי",
+  "settings.privacy.delete.dialog.confirm_label": "הקלידו {email} לאישור",
+  "settings.privacy.delete.dialog.hint": "פעולה זו מוחקת לצמיתות את החשבון וכל הנתונים שבו. לא ניתן לבטל.",
+  "settings.privacy.delete.dialog.password_label": "הסיסמה הנוכחית",
+  "settings.privacy.delete.dialog.title": "למחוק את החשבון?",
+  "settings.privacy.delete.error": "מחיקת החשבון נכשלה",
+  "settings.privacy.delete.label": "מחיקת החשבון",
+  "settings.privacy.export.action": "ייצוא",
+  "settings.privacy.export.description": "הורדת כל הנתונים שבחשבון שלכם כקובץ JSON.",
+  "settings.privacy.export.error": "ייצוא הנתונים נכשל",
+  "settings.privacy.export.label": "ייצוא הנתונים שלי",
+  "settings.privacy.export.success": "הנתונים שלכם יורדים",
   "settings.saved": "ההגדרה נשמרה",
   "settings.security.copy_recovery_aria": "העתקת קודי השחזור",
   "settings.security.copy_secret_aria": "העתקת הסוד",
@@ -13857,6 +13885,20 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "settings.privacy.clear_cache.success": "Cached data cleared",
   "settings.privacy.copy_email.label": "Email",
   "settings.privacy.copy_username.label": "Username",
+  "settings.privacy.delete.action": "Delete account",
+  "settings.privacy.delete.description": "Permanently delete your account and all its data. This cannot be undone.",
+  "settings.privacy.delete.dialog.confirm": "Delete my account",
+  "settings.privacy.delete.dialog.confirm_label": "Type {email} to confirm",
+  "settings.privacy.delete.dialog.hint": "This permanently deletes your account and all its data. This cannot be undone.",
+  "settings.privacy.delete.dialog.password_label": "Current password",
+  "settings.privacy.delete.dialog.title": "Delete your account?",
+  "settings.privacy.delete.error": "Could not delete your account",
+  "settings.privacy.delete.label": "Delete account",
+  "settings.privacy.export.action": "Export",
+  "settings.privacy.export.description": "Download everything in your account as a JSON file.",
+  "settings.privacy.export.error": "Could not export your data",
+  "settings.privacy.export.label": "Export my data",
+  "settings.privacy.export.success": "Your data is downloading",
   "settings.saved": "Setting saved",
   "settings.security.copy_recovery_aria": "Copy recovery codes",
   "settings.security.copy_secret_aria": "Copy secret",

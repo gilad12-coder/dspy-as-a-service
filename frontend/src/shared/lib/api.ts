@@ -609,6 +609,27 @@ export function deletePasskey(credentialId: string) {
   );
 }
 
+export interface AccountDeletionResult {
+  deleted_rows: number;
+  anonymized_rows: number;
+}
+
+/** Download every record the caller owns as an untyped JSON bundle. */
+export function exportAccountData() {
+  return request<Record<string, unknown>>("/account/export");
+}
+
+/**
+ * Irreversibly delete the caller's account and all its data. Local accounts
+ * must pass their current password; OAuth accounts leave it empty.
+ */
+export function deleteAccount(password: string) {
+  return request<AccountDeletionResult>("/account/delete", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
 export interface MemoryKnob {
   value: number;
   override: number | null;
