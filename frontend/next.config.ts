@@ -17,6 +17,15 @@ const nextConfig: NextConfig = {
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "X-Frame-Options", value: "DENY" },
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        // HSTS: after the first HTTPS response, browsers refuse plain HTTP for
+        // two years. All skynetml.com hosts (apex + www) terminate TLS on
+        // Railway; the API runs on a separate *.up.railway.app host, so
+        // includeSubDomains stays safe. No `preload` — that opts into the
+        // browser preload list, which is slow to reverse.
+        {
+          key: "Strict-Transport-Security",
+          value: "max-age=63072000; includeSubDomains",
+        },
       ],
     },
     {
