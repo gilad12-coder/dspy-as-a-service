@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, cast
 from uuid import uuid4
 
@@ -26,6 +26,7 @@ from ...billing import (
     cost_ceiling_budget,
     provider_slug_for_model,
 )
+from ...config import settings
 from ...constants import (
     COMPOSITION_SINGLE,
     COMPOSITION_WORKFLOW,
@@ -414,6 +415,68 @@ def _enforce_credit_balance(job_store, username: str, token_source: str) -> int 
     return uncommitted
 
 
+def _enforce_global_daily_spend_ceiling(job_store) -> None:
+    """Refuse a submission once platform-wide 24h spend hits the configured ceiling.
+
+    A cost backstop that sits above the per-user credit gate: it caps the whole
+    platform's trailing-24h run spend, so a spike in traffic (or an abusive
+    fleet of funded accounts) cannot run the shared provider float dry. No-op
+    when the ceiling is unset (``0``) or the store has no SQL engine.
+
+    Args:
+        job_store: Job-store instance whose ORM engine backs the billing tables.
+
+    Raises:
+        DomainError: 503 ``submission.capacity_reached`` when the trailing-window
+            spend is at or above the ceiling. The message is deliberately generic
+            so internal budget figures are not leaked to callers.
+    """
+    ceiling = settings.global_daily_spend_ceiling_credits
+    if ceiling <= 0:
+        return
+    engine = getattr(job_store, "engine", None)
+    if engine is None:
+        return
+    service = StripeBillingService(engine=engine)
+    if service.credits_spent_since(datetime.now(UTC) - timedelta(hours=24)) >= ceiling:
+        raise DomainError("submission.capacity_reached", status=503)
+
+
+def _enforce_submission_admission(job_store, username: str) -> None:
+    """Gate a submission on the global kill-switches and the per-user concurrency cap.
+
+    Runs before any dataset materialization or payload validation so an
+    over-cap or globally-paused submission is rejected cheaply, and after the
+    idempotency short-circuit so a retry of an already-accepted run is never
+    blocked. Three controls, in order: a manual global pause (an operator
+    emergency brake), the automatic platform-wide daily spend ceiling
+    (:func:`_enforce_global_daily_spend_ceiling`), and a per-user cap on
+    concurrently active runs. Each is a no-op when its setting is unset/zero.
+
+    Args:
+        job_store: Job-store instance whose ORM engine backs jobs and billing.
+        username: Account attempting the submission.
+
+    Raises:
+        DomainError: 503 ``submission.capacity_reached`` when submissions are
+            paused or the daily spend ceiling is reached; 429
+            ``quota.concurrent_reached`` when the user is at their active-run cap.
+    """
+    if settings.submissions_paused:
+        raise DomainError("submission.capacity_reached", status=503)
+    _enforce_global_daily_spend_ceiling(job_store)
+    limit = settings.max_concurrent_jobs_per_user
+    if limit <= 0:
+        return
+    counter = getattr(job_store, "count_jobs_by_status", None)
+    if not callable(counter):
+        return
+    counts = counter(username=username)
+    active = sum(int(counts.get(status, 0)) for status in _COMMITTED_JOB_STATUSES)
+    if active >= limit:
+        raise DomainError("quota.concurrent_reached", status=429, limit=limit)
+
+
 def _cap_cost_ceiling_to_balance(
     payload: _OptimizationRequestBase, spendable: int | None, token_source: str
 ) -> None:
@@ -570,6 +633,8 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                         normalized_key,
                     )
                     return cached
+
+        _enforce_submission_admission(job_store, payload.username)
 
         staged_id = _materialize_staged_dataset(payload, job_store=job_store, username=payload.username)
         source_dataset_id = _materialize_library_dataset(payload, job_store=job_store, user=current_user)
@@ -751,6 +816,8 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                         normalized_key,
                     )
                     return cached
+
+        _enforce_submission_admission(job_store, payload.username)
 
         staged_id = _materialize_staged_dataset(payload, job_store=job_store, username=payload.username)
         source_dataset_id = _materialize_library_dataset(payload, job_store=job_store, user=current_user)

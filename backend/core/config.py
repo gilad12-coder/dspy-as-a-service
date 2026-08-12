@@ -757,6 +757,37 @@ class Settings(BaseSettings):
         return self
 
     max_jobs_per_user: int = Field(default=100, ge=1, description="Default per-user job cap")
+    max_total_users: int = Field(
+        default=10000,
+        ge=0,
+        description=(
+            "Hard cap on total registered accounts; sign-ups are refused at or above it "
+            "to bound platform cost. 0 disables the cap."
+        ),
+    )
+    max_concurrent_jobs_per_user: int = Field(
+        default=5,
+        ge=0,
+        description=(
+            "Cap on a single user's concurrently active runs (pending/validating/running/"
+            "paused); further submissions are refused until one finishes. 0 disables the cap."
+        ),
+    )
+    global_daily_spend_ceiling_credits: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Platform-wide credit-spend backstop over a trailing 24h; new submissions are "
+            "refused once reached. 0 disables the kill-switch (per-user credit gate still applies)."
+        ),
+    )
+    submissions_paused: bool = Field(
+        default=False,
+        description=(
+            "Operator kill-switch: when true, all new run/grid-search submissions are refused "
+            "(in-flight runs continue). An instant emergency brake independent of spend."
+        ),
+    )
     backend_auth_secret: SecretStr | None = Field(
         default=None,
         description="Shared HS256 secret used by the frontend to sign backend API tokens",

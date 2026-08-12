@@ -641,6 +641,30 @@ class StripeBillingService:
             ).one()
         return max(int(paid) + int(granted), 0)
 
+    def credits_spent_since(self, since: datetime) -> int:
+        """Return platform-wide credits spent on runs since a timestamp.
+
+        Sums the magnitude of the negative ledger deltas (run charges written by
+        :meth:`debit_run`) posted at or after ``since``; positive rows (top-ups,
+        grants, refunds) are excluded. Backs the global daily spend kill-switch,
+        which refuses new submissions once a trailing-window total is reached.
+
+        Args:
+            since: Lower bound (inclusive) on ``created_at``; pass a timezone-aware
+                UTC datetime such as ``now - 24h``.
+
+        Returns:
+            Total credits spent in the window, never negative.
+        """
+        with Session(self._engine) as session:
+            spent = session.query(
+                func.coalesce(func.sum(-CreditLedgerModel.delta_credits), 0)
+            ).filter(
+                CreditLedgerModel.delta_credits < 0,
+                CreditLedgerModel.created_at >= since,
+            ).scalar()
+        return max(int(spent or 0), 0)
+
     def debit_run(
         self,
         username: str,

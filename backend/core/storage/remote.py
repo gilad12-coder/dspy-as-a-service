@@ -44,6 +44,7 @@ from .models import (
     LogEntryModel,
     OptimizationShareGrantModel,
     ProgressEventModel,
+    UserModel,
     UserQuotaAuditModel,
     UserQuotaOverrideModel,
     UserStorageQuotaOverrideModel,
@@ -2749,6 +2750,23 @@ class RemoteDBJobStore:
             else:
                 q = q.filter(_user_facing_jobs())
             return q.scalar() or 0
+        finally:
+            session.close()
+
+    def count_users(self) -> int:
+        """Count total registered accounts.
+
+        Backs the sign-up cap (:data:`core.config.settings.max_total_users`): the
+        registration path refuses new accounts once this reaches the cap. The
+        count is advisory — it runs outside the insert's transaction, so a small
+        overshoot at the boundary under concurrent sign-ups is acceptable.
+
+        Returns:
+            The number of rows in the ``users`` table.
+        """
+        session = self._get_session()
+        try:
+            return session.query(func.count(UserModel.email)).scalar() or 0
         finally:
             session.close()
 

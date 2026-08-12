@@ -159,6 +159,32 @@ def _require_internal_auth(header_value: str | None) -> None:
         raise DomainError("auth.missing_token", status=403)
 
 
+def _enforce_signup_cap(job_store) -> None:
+    """Refuse new registrations once the platform-wide account cap is reached.
+
+    A cost guardrail that bounds total accounts (and thus the ceiling on
+    concurrent demand) at :data:`core.config.settings.max_total_users`. No-op
+    when the cap is disabled (``0``) or the store cannot count users. The cap is
+    soft: the count runs outside the insert transaction, so simultaneous sign-ups
+    at the boundary may overshoot by a few — acceptable for a cost bound.
+
+    Args:
+        job_store: Job-store instance; a store without ``count_users`` is skipped.
+
+    Raises:
+        DomainError: 503 ``accounts.signups_closed`` when the account count is at
+            or above the cap.
+    """
+    cap = settings.max_total_users
+    if cap <= 0:
+        return
+    counter = getattr(job_store, "count_users", None)
+    if not callable(counter):
+        return
+    if counter() >= cap:
+        raise DomainError("accounts.signups_closed", status=503)
+
+
 def create_accounts_router(*, job_store, login_throttle: LoginThrottle | None = None) -> APIRouter:
     """Build the email/password account router.
 
@@ -214,6 +240,7 @@ def create_accounts_router(*, job_store, login_throttle: LoginThrottle | None = 
         validate_password(body.password, email)
         name = body.name.strip() or email
         verified = not email_configured()
+        _enforce_signup_cap(job_store)
         with Session(job_store.engine) as session:
             if session.get(UserModel, email) is not None:
                 raise DomainError("accounts.email_taken", status=409)
