@@ -1,10 +1,11 @@
 /**
  * Operator-supplied constants for the legal pages (Terms, Privacy).
  *
- * Everything here is a fill-in value that the code cannot know. Replace each
- * TODO with a real, lawyer-reviewed value before relying on these documents.
- * The bracketed defaults render verbatim on the public pages precisely so the
- * gaps are impossible to miss until they are filled.
+ * These are the real, operator-specific values the code cannot derive; they
+ * render verbatim on the public /terms and /privacy pages. Keep them accurate
+ * and bump lastUpdated whenever the document text changes. The documents
+ * themselves are launch-ready drafts, not legal advice — have counsel review
+ * them before you rely on them.
  */
 
 export const LEGAL_CONFIG = {
@@ -16,22 +17,23 @@ export const LEGAL_CONFIG = {
   effectiveDate: "August 11, 2026",
   lastUpdated: "August 11, 2026",
 
-  // TODO: replace with the registered legal entity that operates the hosted
-  // service. If you trade under "Skynet" with no separate entity, say so here.
-  legalEntity: "[Legal entity operating Skynet — replace before launch]",
+  // Skynet is operated by an individual (sole proprietor); this legal name is
+  // the operating party and, for the Privacy Policy, the data controller.
+  legalEntity: "Gilad Morad",
 
-  // TODO: set up these mailboxes (or replace with real ones). They are
-  // referenced from both documents as the contact channels.
+  // Contact channels referenced from both documents. These mailboxes must be
+  // live and monitored before launch — privacy@ in particular, since it is the
+  // address for GDPR/CCPA requests — or messages to them bounce.
   contactEmail: "support@skynetml.com",
   privacyEmail: "privacy@skynetml.com",
   legalEmail: "legal@skynetml.com",
 
-  // TODO: registered business address for legal notices.
-  address: "[Registered business address — replace before launch]",
+  // Business address for legal notices.
+  address: "502 Laguardia Place, Apartment 4, New York, NY 10012, USA",
 
-  // TODO: confirm with counsel. Drives the governing-law / venue clause.
-  governingLaw: "[Governing jurisdiction — replace before launch]",
-  venue: "[Courts/venue — replace before launch]",
+  // Governing-law / venue clause.
+  governingLaw: "the State of New York, United States",
+  venue: "New York County, New York",
 } as const;
 
 export const LEGAL_LINKS = {

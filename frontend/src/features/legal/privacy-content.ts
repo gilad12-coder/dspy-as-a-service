@@ -5,8 +5,8 @@
  * datasets sent to third-party LLM providers via OpenRouter, Stripe billing,
  * encrypted-at-rest BYOK keys, operational telemetry, and the retention windows
  * enforced in the backend. This is a launch-ready draft, not legal advice — have
- * counsel review it and fill the placeholders in legal-config.ts before relying
- * on it.
+ * counsel review it before relying on it. Operator-specific values (controller
+ * identity, address, contact emails) live in legal-config.ts.
  */
 
 import { LEGAL_CONFIG as C } from "./legal-config";

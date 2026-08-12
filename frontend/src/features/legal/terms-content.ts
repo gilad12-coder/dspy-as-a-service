@@ -4,8 +4,8 @@
  * Original prose tailored to Skynet's real mechanics (prepaid credits via
  * Stripe, bring-your-own-key runs, third-party LLM providers, AGPL software vs.
  * hosted service). This is a launch-ready draft, not legal advice — have
- * counsel review it and fill the placeholders in legal-config.ts before relying
- * on it.
+ * counsel review it before relying on it. Operator-specific values (entity,
+ * address, governing law, contact emails) live in legal-config.ts.
  */
 
 import { LEGAL_CONFIG as C } from "./legal-config";
