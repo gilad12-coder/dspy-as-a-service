@@ -88,7 +88,7 @@ const MODULE_STYLES = {
   },
 } as const;
 
-function kindLabel(spec: WorkflowNodeSpec): string {
+export function kindLabel(spec: WorkflowNodeSpec): string {
   switch (spec.kind) {
     case "input":
       return msg("workflow.node.input");
@@ -103,7 +103,7 @@ function kindLabel(spec: WorkflowNodeSpec): string {
   }
 }
 
-function displayName(spec: WorkflowNodeSpec): string {
+export function displayName(spec: WorkflowNodeSpec): string {
   if (spec.name) return spec.name;
   if (spec.kind === "mcp" && spec.tool_name) return spec.tool_name;
   return spec.id;

@@ -1985,6 +1985,7 @@
   "optimization.access_banner.viewer": "שיתפו איתך · הרשאת צפייה",
   "optimization.artifact.description": "מה שההרצה ייצרה — הפרומפט המשופר וקובצי התוכנית להורדה.",
   "optimization.artifact.tab": "תוצר",
+  "optimization.artifact.workflow_graph": "תהליך העבודה המשופר",
   "optimization.cancel.failed": "ביטול נכשל",
   "optimization.cancel.sent": "בקשת ביטול נשלחה",
   "optimization.code.tab_program": "תוכנית",

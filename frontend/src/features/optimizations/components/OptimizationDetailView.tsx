@@ -845,6 +845,15 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
     : (job?.result?.program_artifact?.optimized_component_srcs ??
       job?.grid_result?.best_pair?.program_artifact?.optimized_component_srcs);
 
+  // The unified per-node view of a workflow's optimized surface — each node's
+  // prompt, react overlay, or rewritten code, keyed "n_<node_id>". Present only
+  // for workflow runs, where it supersedes the scalar prompt/flex/react
+  // projections above in the artifact tab.
+  const optimizedNodes = isPairContext
+    ? activePair.program_artifact?.optimized_nodes
+    : (job?.result?.program_artifact?.optimized_nodes ??
+      job?.grid_result?.best_pair?.program_artifact?.optimized_nodes);
+
   // Artifact tab appears once the run has produced something durable — an
   // optimized prompt, tuned react tools, or downloadable program files.
   const artifactFiles = isPairContext
@@ -1472,6 +1481,8 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                   reactOverlay={reactOverlay}
                   optimizedModuleSrc={optimizedModuleSrc}
                   optimizedComponentSrcs={optimizedComponentSrcs}
+                  optimizedNodes={optimizedNodes}
+                  workflowSpec={workflowSpec}
                   isShare={isShare}
                 />
               </TabsContent>

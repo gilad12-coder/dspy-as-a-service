@@ -9,11 +9,15 @@ import { HelpTip } from "@/shared/ui/help-tip";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { Carousel, ToolHeader } from "@/features/agent-panel";
 import type {
+  NodeArtifact,
   OptimizationStatusResponse,
   OptimizedPredictor,
   PairResult,
   ReactOverlay,
+  WorkflowSignatureNodeSpec,
+  WorkflowSpec,
 } from "@/shared/types/api";
+import { displayName, kindLabel } from "@/features/submit/workflow/nodes";
 import { tip } from "@/shared/lib/tooltips";
 import { msg } from "@/shared/lib/messages";
 import { CopyButton } from "./ui-primitives";
@@ -24,9 +28,17 @@ const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m
   loading: () => <Skeleton height={180} borderRadius={8} />,
 });
 
+// Reuses the detail page's read-only DAG (its own 480px canvas) to frame the
+// optimized workflow; heavy enough to load on demand like the code editor.
+const WorkflowGraphView = dynamic(
+  () => import("./WorkflowGraphView").then((m) => m.WorkflowGraphView),
+  { ssr: false, loading: () => <Skeleton height={480} borderRadius={12} /> },
+);
+
 // What the run produced, gathered in one place: the export menu (runnable
 // ZIP, pickle, prompt JSON, logs CSV) plus the optimized prompt and — for
-// react runs — the tuned tool roster. The code tab stays inputs-only
+// react runs — the tuned tool roster. A workflow run instead surfaces the whole
+// optimized graph, one card per tuned node. The code tab stays inputs-only
 // (signature + metric source); this tab is the outputs.
 export function ArtifactTab({
   job,
@@ -35,6 +47,8 @@ export function ArtifactTab({
   reactOverlay,
   optimizedModuleSrc,
   optimizedComponentSrcs,
+  optimizedNodes,
+  workflowSpec,
   isShare,
 }: {
   job: OptimizationStatusResponse;
@@ -45,6 +59,10 @@ export function ArtifactTab({
   optimizedModuleSrc?: string | null;
   /** Per-submodule Flex sources (a workflow's flex nodes), one viewer each. */
   optimizedComponentSrcs?: Record<string, string>;
+  /** Per-node optimized surface for a workflow run, keyed "n_<node_id>". */
+  optimizedNodes?: Record<string, NodeArtifact> | null;
+  /** The run's workflow graph, for ordering and labelling the per-node view. */
+  workflowSpec?: WorkflowSpec | null;
   isShare?: boolean;
 }) {
   // The runnable export reconstructs from state JSON + signature_code, which
@@ -63,6 +81,12 @@ export function ArtifactTab({
     !!optimizedModuleSrc ||
     Object.keys(optimizedComponentSrcs ?? {}).length > 0 ||
     (job.logs?.length ?? 0) > 0;
+
+  // A workflow run surfaces every node's optimized output (prompt/code/tools)
+  // as a graph. The scalar prompt/flex/react fields are the first predictor's
+  // projection and would duplicate a node, so the per-node view replaces them
+  // whenever it carries data.
+  const isWorkflowArtifact = !!optimizedNodes && Object.keys(optimizedNodes).length > 0;
 
   return (
     <>
@@ -88,81 +112,215 @@ export function ArtifactTab({
         </div>
       )}
 
-      {optimizedPrompt && (
+      {isWorkflowArtifact ? (
+        <WorkflowArtifactView
+          workflowSpec={workflowSpec ?? null}
+          optimizedNodes={optimizedNodes ?? {}}
+        />
+      ) : (
+        <>
+          {optimizedPrompt && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Sparkle className="size-4" />
+                  <HelpTip text={tip("prompt.optimized")}>
+                    {msg("auto.features.optimizations.components.codetab.5")}
+                  </HelpTip>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <PromptBody predictor={optimizedPrompt} />
+              </CardContent>
+            </Card>
+          )}
+
+          {optimizedModuleSrc && <OptimizedCodeCard source={optimizedModuleSrc} />}
+
+          {Object.entries(optimizedComponentSrcs ?? {}).map(([path, source]) => (
+            <OptimizedCodeCard key={path} source={source} path={path} />
+          ))}
+
+          {reactOverlay && Object.keys(reactOverlay.tool_descriptions).length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Wrench className="size-4" />
+                  <HelpTip text={tip("react.optimized_tools")}>
+                    {msg("optimizations.react.optimized_tools")}
+                  </HelpTip>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ReactToolsCarousel overlay={reactOverlay} />
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+// The optimized prompt as the model sees it — the formatted string with a hover
+// copy, then any few-shot demonstrations. Shared by the scalar prompt card and
+// each workflow node's card.
+function PromptBody({ predictor }: { predictor: OptimizedPredictor }) {
+  return (
+    <>
+      <div className="relative group">
+        <pre
+          className="text-sm font-mono bg-muted/50 rounded-lg p-4 pe-10 overflow-x-auto whitespace-pre-wrap leading-relaxed"
+          dir="ltr"
+        >
+          {predictor.formatted_prompt}
+        </pre>
+        <CopyButton
+          text={predictor.formatted_prompt}
+          className="absolute top-2 end-2 opacity-0 group-hover:opacity-100"
+        />
+      </div>
+      {predictor.demos && predictor.demos.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-border">
+          <p className="text-xs text-muted-foreground mb-2">
+            {predictor.demos.length}{" "}
+            <HelpTip text={tip("prompt.demonstrations")}>
+              {msg("auto.features.optimizations.components.codetab.6")}
+            </HelpTip>
+          </p>
+          <div className="space-y-2">
+            {predictor.demos.map((demo, i) => (
+              <div key={i} className="text-xs font-mono bg-muted/50 rounded-lg p-3" dir="ltr">
+                {Object.entries(demo.inputs).map(([k, v]) => (
+                  <div key={k}>
+                    <span className="text-muted-foreground">{k}:</span> {String(v)}
+                  </div>
+                ))}
+                {Object.entries(demo.outputs).map(([k, v]) => (
+                  <div key={k}>
+                    <span className="text-stone-600">{k}:</span> {String(v)}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// Read-only viewer over GEPA-rewritten code, sized to its content up to a cap.
+function CodeBody({ source }: { source: string }) {
+  return (
+    <CodeEditor
+      value={source}
+      onChange={() => {}}
+      height={`${Math.min((source.split("\n").length + 1) * 19.6 + 8, 600)}px`}
+      readOnly
+    />
+  );
+}
+
+// True when a node carries any optimized output worth a card.
+function nodeHasContent(node: NodeArtifact): boolean {
+  return !!(
+    node.optimized_prompt ||
+    node.optimized_src ||
+    (node.react_overlay && Object.keys(node.react_overlay.tool_descriptions).length > 0)
+  );
+}
+
+// A workflow's optimized artifact IS its graph: the read-only DAG, then one card
+// per node the optimizer tuned, ordered to match the graph. Falls back to the
+// raw "n_<id>" keys when the workflow spec is unavailable (e.g. a share view
+// reached without the workflow payload).
+function WorkflowArtifactView({
+  workflowSpec,
+  optimizedNodes,
+}: {
+  workflowSpec: WorkflowSpec | null;
+  optimizedNodes: Record<string, NodeArtifact>;
+}) {
+  const cards = useMemo(() => {
+    if (workflowSpec) {
+      return workflowSpec.nodes.flatMap((node) => {
+        if (node.kind !== "signature") return [];
+        const artifact = optimizedNodes[`n_${node.id}`];
+        if (!artifact || !nodeHasContent(artifact)) return [];
+        const signature: WorkflowSignatureNodeSpec = node;
+        return [
+          {
+            id: node.id,
+            title: displayName(signature),
+            kind: kindLabel(signature) as string | null,
+            artifact,
+          },
+        ];
+      });
+    }
+    return Object.entries(optimizedNodes).flatMap(([key, artifact]) =>
+      nodeHasContent(artifact)
+        ? [{ id: key, title: key.replace(/^n_/, ""), kind: null as string | null, artifact }]
+        : [],
+    );
+  }, [workflowSpec, optimizedNodes]);
+
+  return (
+    <>
+      {workflowSpec && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Sparkle className="size-4" />
-              <HelpTip text={tip("prompt.optimized")}>
-                {msg("auto.features.optimizations.components.codetab.5")}
-              </HelpTip>
+              {msg("optimization.artifact.workflow_graph")}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="relative group">
-              <pre
-                className="text-sm font-mono bg-muted/50 rounded-lg p-4 pe-10 overflow-x-auto whitespace-pre-wrap leading-relaxed"
-                dir="ltr"
-              >
-                {optimizedPrompt.formatted_prompt}
-              </pre>
-              <CopyButton
-                text={optimizedPrompt.formatted_prompt}
-                className="absolute top-2 end-2 opacity-0 group-hover:opacity-100"
-              />
-            </div>
-            {optimizedPrompt.demos && optimizedPrompt.demos.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-border">
-                <p className="text-xs text-muted-foreground mb-2">
-                  {optimizedPrompt.demos.length}{" "}
-                  <HelpTip text={tip("prompt.demonstrations")}>
-                    {msg("auto.features.optimizations.components.codetab.6")}
-                  </HelpTip>
-                </p>
-                <div className="space-y-2">
-                  {optimizedPrompt.demos.map((demo, i) => (
-                    <div key={i} className="text-xs font-mono bg-muted/50 rounded-lg p-3" dir="ltr">
-                      {Object.entries(demo.inputs).map(([k, v]) => (
-                        <div key={k}>
-                          <span className="text-muted-foreground">{k}:</span> {String(v)}
-                        </div>
-                      ))}
-                      {Object.entries(demo.outputs).map(([k, v]) => (
-                        <div key={k}>
-                          <span className="text-stone-600">{k}:</span> {String(v)}
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <WorkflowGraphView spec={workflowSpec} />
           </CardContent>
         </Card>
       )}
-
-      {optimizedModuleSrc && <OptimizedCodeCard source={optimizedModuleSrc} />}
-
-      {Object.entries(optimizedComponentSrcs ?? {}).map(([path, source]) => (
-        <OptimizedCodeCard key={path} source={source} path={path} />
+      {cards.map((card) => (
+        <NodeArtifactCard key={card.id} title={card.title} kind={card.kind} artifact={card.artifact} />
       ))}
-
-      {reactOverlay && Object.keys(reactOverlay.tool_descriptions).length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Wrench className="size-4" />
-              <HelpTip text={tip("react.optimized_tools")}>
-                {msg("optimizations.react.optimized_tools")}
-              </HelpTip>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ReactToolsCarousel overlay={reactOverlay} />
-          </CardContent>
-        </Card>
-      )}
     </>
+  );
+}
+
+// One tuned node's optimized surface: its prompt, its rewritten code, or its
+// react tools, under a header naming the node and its module kind.
+function NodeArtifactCard({
+  title,
+  kind,
+  artifact,
+}: {
+  title: string;
+  kind: string | null;
+  artifact: NodeArtifact;
+}) {
+  const Icon = artifact.optimized_src ? Code : Sparkle;
+  const overlay = artifact.react_overlay;
+  const hasTools = !!overlay && Object.keys(overlay.tool_descriptions).length > 0;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Icon className="size-4" />
+          <span dir="auto">{title}</span>
+          {kind && (
+            <span className="font-mono text-xs font-normal text-muted-foreground" dir="ltr">
+              {kind}
+            </span>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {artifact.optimized_prompt && <PromptBody predictor={artifact.optimized_prompt} />}
+        {artifact.optimized_src && <CodeBody source={artifact.optimized_src} />}
+        {hasTools && overlay && <ReactToolsCarousel overlay={overlay} />}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -264,12 +422,7 @@ function OptimizedCodeCard({ source, path }: { source: string; path?: string }) 
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <CodeEditor
-          value={source}
-          onChange={() => {}}
-          height={`${Math.min((source.split("\n").length + 1) * 19.6 + 8, 600)}px`}
-          readOnly
-        />
+        <CodeBody source={source} />
       </CardContent>
     </Card>
   );

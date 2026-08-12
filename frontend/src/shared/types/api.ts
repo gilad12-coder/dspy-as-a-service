@@ -358,6 +358,16 @@ export interface ReactOverlay {
   tool_severities?: Record<string, string>;
 }
 
+// The optimized surface of a single workflow node, keyed under its component
+// path (`n_<node_id>`) in `ProgramArtifact.optimized_nodes`. A signature node
+// carries `optimized_prompt` (and, for react nodes, a `react_overlay`); a flex
+// node carries its rewritten `optimized_src`. Mirrors backend NodeArtifact.
+export interface NodeArtifact {
+  optimized_prompt?: OptimizedPredictor | null;
+  react_overlay?: ReactOverlay | null;
+  optimized_src?: string | null;
+}
+
 export interface ProgramArtifact {
   path?: string | null;
   program_state_json?: Record<string, unknown> | null;
@@ -377,6 +387,12 @@ export interface ProgramArtifact {
    * modules rather than being one itself.
    */
   optimized_component_srcs?: Record<string, string>;
+  /**
+   * Per-node optimized surface for a workflow program, keyed by component path
+   * (`n_<node_id>`): each node's prompt, react overlay, or rewritten code. Empty
+   * for scalar (single-module) programs.
+   */
+  optimized_nodes?: Record<string, NodeArtifact>;
 }
 
 export interface EvalExampleResult {

@@ -1985,6 +1985,7 @@
   "optimization.access_banner.viewer": "Shared with you · Viewer access",
   "optimization.artifact.description": "What the run produced — the optimized prompt and the program files to download.",
   "optimization.artifact.tab": "Artifact",
+  "optimization.artifact.workflow_graph": "Optimized workflow",
   "optimization.cancel.failed": "Cancellation failed",
   "optimization.cancel.sent": "Cancellation request sent",
   "optimization.code.tab_program": "Program",
