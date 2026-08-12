@@ -20,7 +20,7 @@ from .analytics import (
     OptimizerStatsItem,
     OptimizerStatsResponse,
 )
-from .artifacts import OptimizedDemo, OptimizedPredictor, ProgramArtifact, ReactOverlay
+from .artifacts import NodeArtifact, OptimizedDemo, OptimizedPredictor, ProgramArtifact, ReactOverlay
 from .common import (
     BulkDeleteByIdsRequest,
     BulkDeleteByIdsResponse,
@@ -119,6 +119,7 @@ __all__ = [
     "ModelConfig",
     "ModelStatsItem",
     "ModelStatsResponse",
+    "NodeArtifact",
     "OptimizationCountsResponse",
     "OptimizationPayloadResponse",
     "OptimizationStatus",

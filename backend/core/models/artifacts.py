@@ -6,6 +6,16 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
+# Workflow nodes register as ``n_<node_id>`` attributes (see workflow.py's
+# WORKFLOW_NODE_ATTR_PREFIX), so their saved predictor-state keys carry that
+# prefix. Hardcoded rather than imported to keep the models layer free of an
+# optimization-layer dependency.
+_WORKFLOW_NODE_KEY_PREFIX = "n_"
+
+# DSPy stamps these bookkeeping keys onto a serialized demo alongside the real
+# field values; they are not prompt content, so the state back-fill drops them.
+_DEMO_METADATA_KEYS = frozenset({"augmented", "dspy_uuid"})
+
 
 class OptimizedDemo(BaseModel):
     """A single few-shot demonstration example from an optimized predictor."""
@@ -49,6 +59,139 @@ class ReactOverlay(BaseModel):
     # tools whose server stated a hint appear; omitted tools carry no severity so
     # the UI never fabricates one. Empty by default for pre-severity artifacts.
     tool_severities: dict[str, str] = Field(default_factory=dict)
+
+
+class NodeArtifact(BaseModel):
+    """The optimized surface of a single workflow node.
+
+    Bundles whichever of a node's optimized outputs exist: a signature node
+    carries its ``optimized_prompt`` (and, for react nodes, a ``react_overlay``);
+    a flex node carries its rewritten ``optimized_src``. Keyed under the node's
+    component path (``n_<node_id>``) in :attr:`ProgramArtifact.optimized_nodes`.
+    """
+
+    optimized_prompt: OptimizedPredictor | None = Field(
+        default=None,
+        description="Extracted prompt and demos for a signature node's predictor.",
+    )
+    react_overlay: ReactOverlay | None = Field(
+        default=None,
+        description=(
+            "Tool overlay for a react node. Unset until per-node overlays are "
+            "captured; back-fill from state cannot recover it."
+        ),
+    )
+    optimized_src: str | None = Field(
+        default=None,
+        description="GEPA-rewritten source for a flex node. Unset for non-flex nodes.",
+    )
+
+
+def _field_label(field: dict[str, Any]) -> str | None:
+    """Render one saved signature field as a prompt label line.
+
+    Args:
+        field: A ``{"prefix": ..., "description": ...}`` entry from a saved
+            ``signature.fields`` list.
+
+    Returns:
+        A ``"Prefix: description"`` line — the description dropped when it is a
+        ``${...}`` adapter placeholder or empty — or ``None`` when the field
+        carries no usable prefix.
+    """
+    prefix = field.get("prefix")
+    if not isinstance(prefix, str) or not prefix.strip():
+        return None
+    desc = field.get("description")
+    if isinstance(desc, str):
+        desc = desc.strip()
+        if desc and not (desc.startswith("${") and desc.endswith("}")):
+            return f"{prefix} {desc}"
+    return prefix
+
+
+def _demo_fields(demo: dict[str, Any]) -> dict[str, Any]:
+    """Strip DSPy bookkeeping keys from a serialized demo dict.
+
+    Args:
+        demo: One serialized demonstration from a predictor's ``demos`` state.
+
+    Returns:
+        The demo's field values, without DSPy metadata or private keys.
+    """
+    return {
+        key: value
+        for key, value in demo.items()
+        if isinstance(key, str) and not key.startswith("_") and key not in _DEMO_METADATA_KEYS
+    }
+
+
+def _predictor_from_node_state(predictor_name: str, state: dict[str, Any]) -> OptimizedPredictor | None:
+    """Rebuild a workflow node's prompt view from its saved predictor state.
+
+    Recovers instructions, few-shot demos, and a readable prompt string from
+    the state JSON alone — the surface a node needs when its run was persisted
+    before per-node prompts were extracted at write time. State carries field
+    *prefixes* (what the LM actually sees) but not field names or input/output
+    roles, so fields render by prefix and demos carry no role split; the
+    live-program extractor recovers those for new runs.
+
+    Args:
+        predictor_name: The predictor's saved-state key (a ``named_predictors``
+            path such as ``n_polish.predict``).
+        state: The predictor's saved state (``{signature, demos, ...}``).
+
+    Returns:
+        The reconstructed :class:`OptimizedPredictor`, or ``None`` when the
+        state carries no signature (e.g. a flex node's code-only state).
+    """
+    signature = state.get("signature")
+    if not isinstance(signature, dict):
+        return None
+
+    raw_instructions = signature.get("instructions")
+    instructions = raw_instructions if isinstance(raw_instructions, str) else ""
+
+    field_lines: list[str] = []
+    fields = signature.get("fields")
+    if isinstance(fields, list):
+        for field in fields:
+            if isinstance(field, dict):
+                line = _field_label(field)
+                if line is not None:
+                    field_lines.append(line)
+
+    raw_demos = state.get("demos")
+    demos: list[OptimizedDemo] = (
+        [OptimizedDemo(inputs=_demo_fields(demo)) for demo in raw_demos if isinstance(demo, dict)]
+        if isinstance(raw_demos, list)
+        else []
+    )
+
+    parts: list[str] = []
+    if instructions:
+        parts.append(instructions)
+        parts.append("")
+    if field_lines:
+        parts.append("Fields:")
+        parts.extend(field_lines)
+        parts.append("")
+    if demos:
+        parts.append("---")
+        parts.append("Examples:")
+        parts.append("")
+        for index, demo in enumerate(demos, 1):
+            parts.append(f"Example {index}:")
+            for name, value in demo.inputs.items():
+                parts.append(f"  {name}: {value}")
+            parts.append("")
+
+    return OptimizedPredictor(
+        predictor_name=predictor_name,
+        instructions=instructions,
+        demos=demos,
+        formatted_prompt="\n".join(parts).strip(),
+    )
 
 
 class ProgramArtifact(BaseModel):
@@ -106,6 +249,14 @@ class ProgramArtifact(BaseModel):
             "nests Flex modules rather than being one itself."
         ),
     )
+    optimized_nodes: dict[str, NodeArtifact] = Field(
+        default_factory=dict,
+        description=(
+            "Per-node optimized surface for a workflow program, keyed by component "
+            "path ('n_<node_id>'): each node's prompt, react overlay, or rewritten "
+            "code. Empty for scalar (single-module) programs."
+        ),
+    )
 
     @model_validator(mode="after")
     def _backfill_module_src(self) -> ProgramArtifact:
@@ -135,4 +286,64 @@ class ProgramArtifact(BaseModel):
                 and isinstance(state.get("module_src"), str)
                 and state["module_src"].strip()
             }
+        return self
+
+    @model_validator(mode="after")
+    def _fold_flex_src_into_nodes(self) -> ProgramArtifact:
+        """Mirror each flex node's rewritten source into ``optimized_nodes``.
+
+        ``optimized_nodes`` is the unified per-node view the workflow-as-artifact
+        UI reads; flex sources are still carried in ``optimized_component_srcs``
+        (and back-filled there for old artifacts) so this folds them in under the
+        same ``n_<node_id>`` key without a data migration. Runs after
+        ``_backfill_module_src`` so the sources are already populated. Prompts are
+        set at persist time; this only supplies the code half, so a flex-only node
+        still gets an entry.
+
+        Returns:
+            The validated artifact, with each flex source attached to its node.
+        """
+        for path, src in self.optimized_component_srcs.items():
+            node = self.optimized_nodes.get(path)
+            if node is None:
+                self.optimized_nodes[path] = NodeArtifact(optimized_src=src)
+            elif node.optimized_src is None:
+                node.optimized_src = src
+        return self
+
+    @model_validator(mode="after")
+    def _backfill_prompts_into_nodes(self) -> ProgramArtifact:
+        """Rebuild per-node prompts from saved state for pre-extraction runs.
+
+        Workflow runs persisted before prompts were extracted at write time
+        carry each node's tuned prompt only inside ``program_state_json``, keyed
+        by predictor path. This surfaces them under ``optimized_nodes`` — keyed
+        by node path (``n_<node_id>``, folding a cot node's ``.predict``
+        predictor back to its node) — so old and new workflow artifacts render
+        identically with no data migration. Nodes already carrying a prompt
+        (new runs, extracted at persist time) are left untouched, and the first
+        predictor per node wins, mirroring the write-time extractor. Scalar
+        runs, whose predictors carry no ``n_`` prefix, are unaffected.
+
+        Returns:
+            The validated artifact, with each recoverable node prompt attached.
+        """
+        if not isinstance(self.program_state_json, dict):
+            return self
+        for key, node_state in self.program_state_json.items():
+            if not (isinstance(key, str) and key.startswith(_WORKFLOW_NODE_KEY_PREFIX)):
+                continue
+            if not isinstance(node_state, dict):
+                continue
+            node_path = key.split(".", 1)[0]
+            existing = self.optimized_nodes.get(node_path)
+            if existing is not None and existing.optimized_prompt is not None:
+                continue
+            prompt = _predictor_from_node_state(key, node_state)
+            if prompt is None:
+                continue
+            if existing is None:
+                self.optimized_nodes[node_path] = NodeArtifact(optimized_prompt=prompt)
+            else:
+                existing.optimized_prompt = prompt
         return self

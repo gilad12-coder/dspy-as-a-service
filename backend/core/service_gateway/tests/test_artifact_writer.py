@@ -18,6 +18,7 @@ from core.exceptions import ServiceError
 from core.models import OptimizedDemo, OptimizedPredictor, ProgramArtifact
 from core.service_gateway.optimization.artifacts import (
     _format_prompt_string,
+    extract_optimized_nodes,
     extract_optimized_prompt,
     persist_program,
 )
@@ -131,6 +132,88 @@ def test_extract_optimized_prompt_demos_extracted() -> None:
     assert len(result.demos) == 1
     assert result.demos[0].inputs == {"q": "What?"}
     assert result.demos[0].outputs == {"a": "42"}
+
+
+def test_extract_optimized_nodes_scalar_program_returns_empty() -> None:
+    """A scalar program's predictors carry no node prefix, so no per-node map is built."""
+    predictor = MagicMock()
+    predictor.signature = _mock_sig()
+    predictor.demos = []
+    program = MagicMock()
+    program.named_predictors.return_value = [("predict", predictor)]
+
+    assert extract_optimized_nodes(program) == {}
+
+
+def test_extract_optimized_nodes_named_predictors_raises_returns_empty() -> None:
+    """Extraction is best-effort: an enumeration error yields an empty map, not a raise."""
+    program = MagicMock()
+    program.named_predictors.side_effect = RuntimeError("boom")
+
+    assert extract_optimized_nodes(program) == {}
+
+
+def test_extract_optimized_nodes_groups_predictors_by_node() -> None:
+    """Workflow predictors group under their ``n_<node_id>`` prefix, one entry per node."""
+    summarize = MagicMock()
+    summarize.signature = _mock_sig(instructions="Summarize.")
+    summarize.demos = []
+    polish = MagicMock()
+    polish.signature = _mock_sig(instructions="Polish.")
+    polish.demos = []
+    program = MagicMock()
+    # A cot node nests its predictor under ``.predict``; grouping must fold it back
+    # to the node key.
+    program.named_predictors.return_value = [("n_summarize", summarize), ("n_polish.predict", polish)]
+
+    nodes = extract_optimized_nodes(program)
+
+    assert set(nodes) == {"n_summarize", "n_polish"}
+    assert nodes["n_summarize"].optimized_prompt is not None
+    assert nodes["n_summarize"].optimized_prompt.instructions == "Summarize."
+    assert nodes["n_polish"].optimized_prompt.instructions == "Polish."
+
+
+def test_extract_optimized_nodes_keeps_first_predictor_per_node() -> None:
+    """A node with several predictors keeps the first, mirroring the scalar path."""
+    first = MagicMock()
+    first.signature = _mock_sig(instructions="First.")
+    first.demos = []
+    second = MagicMock()
+    second.signature = _mock_sig(instructions="Second.")
+    second.demos = []
+    program = MagicMock()
+    program.named_predictors.return_value = [("n_agent.react", first), ("n_agent.extract", second)]
+
+    nodes = extract_optimized_nodes(program)
+
+    assert set(nodes) == {"n_agent"}
+    assert nodes["n_agent"].optimized_prompt.instructions == "First."
+
+
+def test_persist_program_populates_optimized_nodes_for_workflow() -> None:
+    """persist_program extracts a per-node map from a workflow-shaped program."""
+    node_pred = MagicMock()
+    node_pred.signature = _mock_sig(instructions="Node instr.")
+    node_pred.demos = []
+    program = _fake_save_program({"demos": [], "metadata": {"dspy_version": "0"}})
+    program.named_predictors.return_value = [("n_draft", node_pred)]
+
+    result = persist_program(program, artifact_id="wf")
+
+    assert result is not None
+    assert set(result.optimized_nodes) == {"n_draft"}
+    assert result.optimized_nodes["n_draft"].optimized_prompt.instructions == "Node instr."
+
+
+def test_persist_program_scalar_leaves_optimized_nodes_empty() -> None:
+    """A scalar program persists with an empty per-node map."""
+    program = _fake_save_program({"demos": [], "metadata": {"dspy_version": "0"}})
+
+    result = persist_program(program, artifact_id="scalar")
+
+    assert result is not None
+    assert result.optimized_nodes == {}
 
 
 def test_persist_program_save_failure_raises_service_error() -> None:
