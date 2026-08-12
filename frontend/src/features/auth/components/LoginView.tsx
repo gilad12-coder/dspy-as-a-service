@@ -737,12 +737,18 @@ export function LoginView() {
     } catch (err) {
       const name = (err as Error)?.name;
       const cause = (err as { cause?: { name?: string } })?.cause?.name;
-      if (
-        name !== "NotAllowedError" &&
-        cause !== "NotAllowedError" &&
-        name !== "AbortError" &&
-        cause !== "AbortError"
-      ) {
+      const aborted = name === "AbortError" || cause === "AbortError";
+      const notAllowed = name === "NotAllowedError" || cause === "NotAllowedError";
+      if (aborted) {
+        // Programmatic abort (navigating away, or a superseding ceremony) — not
+        // something the user did, so it stays silent.
+      } else if (notAllowed) {
+        // The authenticator offered no passkey for this site, or the prompt was
+        // dismissed. WebAuthn collapses both into NotAllowedError, so rather than
+        // leave the button a silent dead-end, point the user at the only path
+        // that makes passkey sign-in possible: sign in another way, then enroll.
+        setError(msg("auth.login.passkey_none"));
+      } else {
         setError(msg("auth.login.passkey_failed"));
       }
     } finally {

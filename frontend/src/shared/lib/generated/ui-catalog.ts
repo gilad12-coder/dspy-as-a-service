@@ -158,6 +158,7 @@ export type MessageKey =
   | "auth.login.meta_description"
   | "auth.login.passkey"
   | "auth.login.passkey_failed"
+  | "auth.login.passkey_none"
   | "auth.login.passkey_offer_accept"
   | "auth.login.passkey_offer_description"
   | "auth.login.passkey_offer_skip"
@@ -3199,6 +3200,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auth.login.meta_description": "התחברות ל-Skynet, מערכת לאופטימיזציית פרומפטים",
   "auth.login.passkey": "התחברות עם מפתח גישה",
   "auth.login.passkey_failed": "ההתחברות עם מפתח הגישה נכשלה — נסו שוב",
+  "auth.login.passkey_none": "לא נמצא מפתח גישה במכשיר הזה. היכנסו בדרך אחרת והוסיפו מפתח גישה בהגדרות האבטחה.",
   "auth.login.passkey_offer_accept": "הגדרת Face ID / Touch ID",
   "auth.login.passkey_offer_description": "מגדירים פעם אחת את Face ID או Touch ID במכשיר הזה, ובכניסה הבאה לא צריך סיסמה.",
   "auth.login.passkey_offer_skip": "לא עכשיו",
@@ -11878,6 +11880,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "auth.login.meta_description": "Sign in to Skynet, a prompt-optimization platform",
   "auth.login.passkey": "Sign in with a passkey",
   "auth.login.passkey_failed": "Passkey sign-in didn't work — try again",
+  "auth.login.passkey_none": "No passkey found on this device. Sign in another way, then add a passkey in your security settings.",
   "auth.login.passkey_offer_accept": "Set up Face ID / Touch ID",
   "auth.login.passkey_offer_description": "Set up Face ID or Touch ID on this device once, and your next sign-in won't need a password.",
   "auth.login.passkey_offer_skip": "Not now",

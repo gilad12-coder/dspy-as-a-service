@@ -158,6 +158,7 @@
   "auth.login.meta_description": "Sign in to Skynet, a prompt-optimization platform",
   "auth.login.passkey": "Sign in with a passkey",
   "auth.login.passkey_failed": "Passkey sign-in didn't work — try again",
+  "auth.login.passkey_none": "No passkey found on this device. Sign in another way, then add a passkey in your security settings.",
   "auth.login.passkey_offer_accept": "Set up Face ID / Touch ID",
   "auth.login.passkey_offer_description": "Set up Face ID or Touch ID on this device once, and your next sign-in won't need a password.",
   "auth.login.passkey_offer_skip": "Not now",
