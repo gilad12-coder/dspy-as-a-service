@@ -2511,6 +2511,11 @@ export type MessageKey =
   | "submit.code.interview.subtitle"
   | "submit.code.interview.title"
   | "submit.code_validation_failed"
+  | "submit.composition.back"
+  | "submit.composition.single_desc"
+  | "submit.composition.single_label"
+  | "submit.composition.title"
+  | "submit.composition.workflow_desc"
   | "submit.cost_ceiling.bracket"
   | "submit.cost_ceiling.bracket_byok"
   | "submit.cost_ceiling.cap_label"
@@ -5555,6 +5560,11 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "submit.code.interview.subtitle": "כמה שאלות קצרות לפני שנכתוב את ה-Signature וה-Metric — כדי שהקוד ישקף איך אתם חושבים על הדאטה.",
   "submit.code.interview.title": "ראיון על המשימה",
   "submit.code_validation_failed": "שגיאה באימות הקוד",
+  "submit.composition.back": "חזרה",
+  "submit.composition.single_desc": "אופטימיזציה של מודול יחיד בפני עצמו.",
+  "submit.composition.single_label": "מודול יחיד",
+  "submit.composition.title": "בחירת אופן הבנייה",
+  "submit.composition.workflow_desc": "חיבור כמה מודולים לגרף אחד.",
   "submit.cost_ceiling.bracket": "טווח צפוי: {low}–{high} קרדיטים",
   "submit.cost_ceiling.bracket_byok": "עמלת פלטפורמה: {low}–{high} קרדיטים — מפתח הספק שלך משלם על המודל",
   "submit.cost_ceiling.cap_label": "תקרה",
@@ -14237,6 +14247,11 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "submit.code.interview.subtitle": "A few short questions before we write the Signature and Metric — so the code reflects how you think about your data.",
   "submit.code.interview.title": "Task interview",
   "submit.code_validation_failed": "Code validation failed",
+  "submit.composition.back": "Back",
+  "submit.composition.single_desc": "Optimize a single module on its own.",
+  "submit.composition.single_label": "Single module",
+  "submit.composition.title": "How do you want to build?",
+  "submit.composition.workflow_desc": "Wire several modules into one graph.",
   "submit.cost_ceiling.bracket": "Projected range: {low}–{high} credits",
   "submit.cost_ceiling.bracket_byok": "Platform fee: {low}–{high} credits — your provider key pays the model",
   "submit.cost_ceiling.cap_label": "Ceiling",

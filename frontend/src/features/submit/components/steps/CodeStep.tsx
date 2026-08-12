@@ -3,7 +3,17 @@
 import * as React from "react";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
-import { Robot, Brain, Check, Repeat, Sparkle, FlowArrow, Lightning } from "@/shared/ui/icons";
+import {
+  Robot,
+  Brain,
+  Check,
+  Repeat,
+  Sparkle,
+  FlowArrow,
+  Lightning,
+  Cube,
+  CaretLeft,
+} from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { Button } from "@/shared/ui/primitives/button";
@@ -25,10 +35,13 @@ import { CodeInterviewPanel } from "./CodeInterviewPanel";
 import { ReactConfigSection } from "./ReactConfigSection";
 import { workflowUsesTools } from "../../workflow/model";
 
-// The DSPy module choices offered by the picker. Names are technical
-// terms kept in English; descriptions reuse the localized tooltip copy.
-// Each carries the schematic drawn on its carousel slide's banner.
-const MODULE_META = [
+// The atomic DSPy modules offered on the picker's "single module" tier. Names
+// are technical terms kept in English; descriptions reuse the localized tooltip
+// copy. Each carries the schematic drawn on its carousel slide's banner.
+// Workflow is deliberately not here: it is a composition of these modules, not
+// a peer of them, and is offered as its own build type one tier up (see
+// WORKFLOW_META and CompositionChoice).
+const ATOMIC_MODULES = [
   {
     value: "predict",
     label: "Predict",
@@ -61,15 +74,27 @@ const MODULE_META = [
     taglineKey: "submit.module.tagline.flex",
     Banner: FlexBanner,
   },
-  {
-    value: "workflow",
-    label: "Workflow",
-    icon: FlowArrow,
-    tipKey: "module.workflow",
-    taglineKey: "submit.module.tagline.workflow",
-    Banner: WorkflowBanner,
-  },
 ] as const;
+
+// The workflow build type — a DAG composed from the atomic modules above, not
+// one of them. It owns no carousel slide; the composition tier presents it
+// directly with its own schematic.
+const WORKFLOW_META = {
+  value: "workflow",
+  label: "Workflow",
+  icon: FlowArrow,
+  tipKey: "module.workflow",
+  Banner: WorkflowBanner,
+} as const;
+
+// The header chip's label for a committed module. Workflow lives outside
+// ATOMIC_MODULES, so it is matched on its own; anything unrecognised falls
+// back to the raw name.
+function moduleLabel(value: string): string {
+  const v = value.toLowerCase();
+  if (v === WORKFLOW_META.value) return WORKFLOW_META.label;
+  return ATOMIC_MODULES.find((m) => m.value === v)?.label ?? value;
+}
 
 const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
   ssr: false,
@@ -146,7 +171,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
     : undefined;
 
   const moduleChip = {
-    label: MODULE_META.find((m) => m.value === moduleName.toLowerCase())?.label ?? moduleName,
+    label: moduleLabel(moduleName),
     onChangeModule: reopenModulePicker,
   };
 
@@ -418,30 +443,169 @@ function ModulePicker({
   current: string;
   onChoose: (module: string) => void;
 }) {
-  // Reopening the picker to switch modules opens on the one already in use.
-  const currentIndex = MODULE_META.findIndex((m) => m.value === current.toLowerCase());
+  // Two tiers: first the composition (a single module vs a workflow), then —
+  // for "single" — the atomic-module carousel. The step swaps the picker out
+  // once a module is committed, so it remounts on every reopen and the tier
+  // always starts on the composition choice; there is no stale drill-down to
+  // restore, and reopening a workflow run still surfaces both build types.
+  const [tier, setTier] = React.useState<"composition" | "atomic">("composition");
   return (
     // A container, not a breakpoint: the step card is max-w-5xl in auto mode
-    // and max-w-2xl in manual, so only its own width can say whether the slide
-    // has room to sit banner-beside-copy.
-    <div className="@container rounded-2xl border border-border/50 bg-card/80 px-4 py-5 shadow-lg backdrop-blur-xl sm:px-8 sm:py-7">
-      <div data-tutorial="module-selector">
-        <Carousel
-          items={MODULE_META}
-          itemKey={(m) => m.value}
-          renderItem={(m) => <ModuleSlide module={m} onChoose={onChoose} />}
-          // The step heading rides the carousel's own header row, opposite the
-          // position counter, rather than sitting above it as a second block.
-          title={
-            <span className="text-sm font-semibold tracking-tight">
-              <HelpTip text={tip("module.choice")}>{msg("submit.module.picker_title")}</HelpTip>
-            </span>
-          }
-          ariaLabel={msg("submit.module.carousel_aria")}
-          jumpIndices={currentIndex >= 0 ? [currentIndex] : undefined}
-          fluid
+    // and max-w-2xl in manual, so only its own width can say whether a slide
+    // (or the two composition cards) has room to sit side by side.
+    <div
+      className="@container rounded-2xl border border-border/50 bg-card/80 px-4 py-5 shadow-lg backdrop-blur-xl sm:px-8 sm:py-7"
+      data-tutorial="module-selector"
+    >
+      {tier === "composition" ? (
+        <CompositionChoice
+          onSingle={() => setTier("atomic")}
+          onWorkflow={() => onChoose("workflow")}
+        />
+      ) : (
+        <AtomicModulePicker
+          current={current}
+          onChoose={onChoose}
+          onBack={() => setTier("composition")}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Tier one: choose how the run is composed — a single atomic module, or a
+ * workflow that wires several together. The two are not peers, so they read as
+ * two build types side by side rather than as entries in the module carousel.
+ */
+function CompositionChoice({
+  onSingle,
+  onWorkflow,
+}: {
+  onSingle: () => void;
+  onWorkflow: () => void;
+}) {
+  return (
+    <div>
+      <div className="mb-4 flex items-center">
+        <HelpTip text={tip("module.choice")}>
+          <span className="text-sm font-semibold tracking-tight">
+            {msg("submit.composition.title")}
+          </span>
+        </HelpTip>
+      </div>
+      <div className="grid gap-4 @2xl:grid-cols-2">
+        <CompositionCard
+          Banner={PredictBanner}
+          icon={Cube}
+          label={msg("submit.composition.single_label")}
+          description={msg("submit.composition.single_desc")}
+          onClick={onSingle}
+        />
+        <CompositionCard
+          Banner={WORKFLOW_META.Banner}
+          icon={WORKFLOW_META.icon}
+          label={WORKFLOW_META.label}
+          labelLtr
+          description={msg("submit.composition.workflow_desc")}
+          onClick={onWorkflow}
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * One build-type card: a schematic banner over an icon, label and one line of
+ * copy. The whole card commits the choice — the single card drills into the
+ * atomic carousel, the workflow card picks the workflow module outright.
+ *
+ * `labelLtr` keeps a technical term ("Workflow") left-to-right in RTL; a
+ * localized label ("Single module") is left to the ambient direction.
+ */
+function CompositionCard({
+  Banner,
+  icon: Icon,
+  label,
+  labelLtr,
+  description,
+  onClick,
+}: {
+  Banner: React.ComponentType;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  labelLtr?: boolean;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    // Its own @container so the banner's own breakpoints measure the card, not
+    // the picker — a half-width card stays under @3xl and keeps the banner on
+    // top rather than flipping to the beside-copy layout of a full slide.
+    <button
+      type="button"
+      onClick={onClick}
+      className="@container group flex flex-col overflow-hidden rounded-xl border border-border/50 bg-background/60 text-start transition-colors hover:border-[#C8A882] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]"
+    >
+      <Banner />
+      <div className="flex flex-1 flex-col gap-1.5 px-6 py-5">
+        <div className="flex items-center gap-2.5">
+          <span className="flex size-9 items-center justify-center rounded-lg bg-[#F3EDE3] text-[#3D2E22]">
+            <Icon className="size-[1.125rem]" />
+          </span>
+          <h4
+            {...(labelLtr ? { dir: "ltr" } : {})}
+            className="text-lg font-semibold tracking-tight text-foreground"
+          >
+            {label}
+          </h4>
+        </div>
+        <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
+      </div>
+    </button>
+  );
+}
+
+/**
+ * Tier two: the atomic-module carousel, reached from the "single module" card.
+ * A back control returns to the composition choice; picking a slide commits.
+ */
+function AtomicModulePicker({
+  current,
+  onChoose,
+  onBack,
+}: {
+  current: string;
+  onChoose: (module: string) => void;
+  onBack: () => void;
+}) {
+  // Reopening the picker to switch modules opens on the one already in use.
+  const currentIndex = ATOMIC_MODULES.findIndex((m) => m.value === current.toLowerCase());
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <CaretLeft className="size-3.5 rtl:-scale-x-100" aria-hidden />
+        {msg("submit.composition.back")}
+      </button>
+      <Carousel
+        items={ATOMIC_MODULES}
+        itemKey={(m) => m.value}
+        renderItem={(m) => <ModuleSlide module={m} onChoose={onChoose} />}
+        // The step heading rides the carousel's own header row, opposite the
+        // position counter, rather than sitting above it as a second block.
+        title={
+          <span className="text-sm font-semibold tracking-tight">
+            <HelpTip text={tip("module.choice")}>{msg("submit.module.picker_title")}</HelpTip>
+          </span>
+        }
+        ariaLabel={msg("submit.module.carousel_aria")}
+        jumpIndices={currentIndex >= 0 ? [currentIndex] : undefined}
+        fluid
+      />
     </div>
   );
 }
@@ -450,7 +614,7 @@ function ModuleSlide({
   module,
   onChoose,
 }: {
-  module: (typeof MODULE_META)[number];
+  module: (typeof ATOMIC_MODULES)[number];
   onChoose: (module: string) => void;
 }) {
   const { value, label, icon: Icon, tipKey, taglineKey, Banner } = module;
