@@ -2032,6 +2032,8 @@ class RemoteDBJobStore:
                     job.username = (overview or {}).get("username")  # type: ignore[assignment]
                 if "optimization_type" in (overview or {}):
                     job.optimization_type = (overview or {}).get("optimization_type")  # type: ignore[assignment]
+                if "composition" in (overview or {}):
+                    job.composition = (overview or {}).get("composition")  # type: ignore[assignment]
                 job.stored_bytes = (  # type: ignore[assignment]
                     json_byte_size(job.payload) + json_byte_size(job.result) + json_byte_size(overview or {})
                 )

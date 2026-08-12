@@ -581,6 +581,10 @@ class JobModel(Base):
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON_STORE, nullable=True)
     username: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     optimization_type: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # "single" vs "workflow" — orthogonal to optimization_type. Hoisted from the
+    # payload overview at submit so a run's shape is a first-class indexed column
+    # rather than a JSON probe against module_name. NULL on legacy/child rows.
+    composition: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     code_version: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     claimed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)

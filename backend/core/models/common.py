@@ -14,6 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 OptimizationType = Literal["run", "grid_search"]
+Composition = Literal["single", "workflow"]
 
 
 class ColumnMapping(BaseModel):

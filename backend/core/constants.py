@@ -107,6 +107,15 @@ STRUCTURAL_PROGRESS_EVENTS = frozenset(
 PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE = "optimization_type"
 OPTIMIZATION_TYPE_RUN = "run"
 OPTIMIZATION_TYPE_GRID_SEARCH = "grid_search"
+
+# Composition classifier — orthogonal to optimization_type. Distinguishes a run
+# over a single atomic DSPy module from one over a workflow (a DAG of module
+# nodes). Derived at submit time from ``module_name == WORKFLOW_MODULE_NAME`` and
+# hoisted to the indexed ``jobs.composition`` column so it is queryable without
+# parsing JSON or string-matching the module name.
+PAYLOAD_OVERVIEW_COMPOSITION = "composition"
+COMPOSITION_SINGLE = "single"
+COMPOSITION_WORKFLOW = "workflow"
 # Tagger bulk auto-tag jobs: claimed by the same worker fleet but run in the
 # worker thread (no subprocess) — see core.worker.tagging_job.
 OPTIMIZATION_TYPE_TAGGING = "tagging_autotag"

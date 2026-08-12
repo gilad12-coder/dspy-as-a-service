@@ -27,10 +27,13 @@ from ...billing import (
     provider_slug_for_model,
 )
 from ...constants import (
+    COMPOSITION_SINGLE,
+    COMPOSITION_WORKFLOW,
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
     PAYLOAD_OVERVIEW_COLUMN_MAPPING,
     PAYLOAD_OVERVIEW_COMPILE_KWARGS,
+    PAYLOAD_OVERVIEW_COMPOSITION,
     PAYLOAD_OVERVIEW_DATASET_FILENAME,
     PAYLOAD_OVERVIEW_DATASET_ROWS,
     PAYLOAD_OVERVIEW_DESCRIPTION,
@@ -73,6 +76,7 @@ from ...models import (
 )
 from ...models.common import ModelConfig, OptimizationType
 from ...models.submissions import _OptimizationRequestBase
+from ...models.workflow import WORKFLOW_MODULE_NAME
 from ...notifications import notify_job_started
 from ...registry import RegistryError
 from ...service_gateway import ServiceError
@@ -618,11 +622,17 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         payload_dump = payload.model_dump(mode="json", by_alias=True)
         enforce_storage_quota(job_store, payload.username, incoming_bytes=json_byte_size(payload_dump))
 
+        composition = (
+            COMPOSITION_WORKFLOW
+            if payload.module_name.lower() == WORKFLOW_MODULE_NAME
+            else COMPOSITION_SINGLE
+        )
         job_store.create_job(optimization_id, username=payload.username, idempotency_key=normalized_key)
         job_store.set_payload_overview(
             optimization_id,
             {
                 PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE: OPTIMIZATION_TYPE_RUN,
+                PAYLOAD_OVERVIEW_COMPOSITION: composition,
                 PAYLOAD_OVERVIEW_NAME: payload.name,
                 PAYLOAD_OVERVIEW_DESCRIPTION: payload.description,
                 PAYLOAD_OVERVIEW_USERNAME: payload.username,
@@ -782,6 +792,9 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             optimization_id,
             {
                 PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE: OPTIMIZATION_TYPE_GRID_SEARCH,
+                # A grid search sweeps model pairs over a single module — the request
+                # model rejects workflows — so its composition is always "single".
+                PAYLOAD_OVERVIEW_COMPOSITION: COMPOSITION_SINGLE,
                 PAYLOAD_OVERVIEW_NAME: payload.name,
                 PAYLOAD_OVERVIEW_DESCRIPTION: payload.description,
                 PAYLOAD_OVERVIEW_USERNAME: payload.username,

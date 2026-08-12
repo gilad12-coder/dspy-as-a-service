@@ -14,8 +14,11 @@ from sqlalchemy.pool import StaticPool
 
 from ...billing.service import committed_spend_credits, cost_ceiling_budget
 from ...constants import (
+    COMPOSITION_SINGLE,
+    COMPOSITION_WORKFLOW,
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
+    PAYLOAD_OVERVIEW_COMPOSITION,
     PAYLOAD_OVERVIEW_GENERATION_MODELS,
     PAYLOAD_OVERVIEW_IS_PRIVATE,
     PAYLOAD_OVERVIEW_MODEL_NAME,
@@ -648,6 +651,7 @@ def test_submit_run_overview_contains_expected_keys(monkeypatch: pytest.MonkeyPa
     overview = store._jobs[opt_id]["overview"]
 
     assert overview[PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE] == OPTIMIZATION_TYPE_RUN
+    assert overview[PAYLOAD_OVERVIEW_COMPOSITION] == COMPOSITION_SINGLE
     assert overview[PAYLOAD_OVERVIEW_USERNAME] == "alice"
     assert overview[PAYLOAD_OVERVIEW_MODULE_NAME] == "predict"
     assert overview[PAYLOAD_OVERVIEW_OPTIMIZER_NAME] == "gepa"
@@ -673,6 +677,7 @@ def test_submit_grid_search_overview_contains_total_pairs(monkeypatch: pytest.Mo
     overview = store._jobs[opt_id]["overview"]
 
     assert overview[PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE] == OPTIMIZATION_TYPE_GRID_SEARCH
+    assert overview[PAYLOAD_OVERVIEW_COMPOSITION] == COMPOSITION_SINGLE
     assert overview[PAYLOAD_OVERVIEW_TOTAL_PAIRS] == 2
     assert overview[PAYLOAD_OVERVIEW_IS_PRIVATE] is True
 
@@ -1577,5 +1582,6 @@ def test_submit_workflow_run_returns_201_and_persists_spec(monkeypatch: pytest.M
     opt_id = resp.json()["optimization_id"]
     overview = store._jobs[opt_id]["overview"]
     assert overview["module_name"] == "workflow"
+    assert overview[PAYLOAD_OVERVIEW_COMPOSITION] == COMPOSITION_WORKFLOW
     assert overview["workflow"]["nodes"][1]["kind"] == "signature"
     assert overview["signature_code"] is None

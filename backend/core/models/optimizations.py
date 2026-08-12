@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from .artifacts import ProgramArtifact
-from .common import ColumnMapping, OptimizationStatus, OptimizationType, SplitFractions
+from .common import ColumnMapping, Composition, OptimizationStatus, OptimizationType, SplitFractions
 from .results import GridSearchResponse, RunResponse
 from .telemetry import JobLogEntry, ProgressEvent
 
@@ -33,6 +33,9 @@ class _JobResponseBase(BaseModel):
 
     username: str | None = None
     module_name: str | None = None
+    # "single" (one atomic module) vs "workflow" (a DAG of module nodes). Derived
+    # at submit from module_name; null on rows submitted before this field existed.
+    composition: Composition | None = None
     module_kwargs: dict[str, Any] = Field(default_factory=dict)
     optimizer_name: str | None = None
     column_mapping: ColumnMapping | None = None
