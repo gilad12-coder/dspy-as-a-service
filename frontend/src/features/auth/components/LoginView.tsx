@@ -551,25 +551,20 @@ export function LoginView() {
 
   /**
    * Run the browser's platform-authenticator enrollment (Face ID / Touch ID
-   * sheet) and store the credential. A genuine dismissal continues into the app
-   * — enrollment is optional. But a failure *before* any sheet appears (a stale
-   * bearer, the options call erroring) used to be swallowed too, silently
-   * dropping the user into the app as if they had declined; that reads as "the
-   * button does nothing". Those failures now surface a message and keep the
-   * offer so the user can retry.
+   * sheet) and store the credential.
+   *
+   * TEMPORARY diagnostic behaviour: enrollment was dropping users straight into
+   * the app with no sheet and no message. That means create() throws a
+   * cancel-class error (NotAllowedError / AbortError) before any sheet appears,
+   * which is indistinguishable from a real dismissal, so the previous handler
+   * swallowed it. Until the exact cause is pinned down, every failure surfaces
+   * its raw name and message on the offer card and is logged, instead of
+   * silently continuing. Revert to the friendly message once the cause is known.
    */
   async function enrollPasskey() {
     setError("");
     setPasskeyOffer("saving");
     try {
-      // The bearer minted right after sign-in is short-lived and the login page
-      // registers no 401 refresher, so re-mint from the current session before
-      // the authenticated options call — otherwise a stale token 401s the fetch
-      // and the whole ceremony collapses before any prompt shows.
-      const session = await getSession();
-      if (session?.backendAccessToken) {
-        setApiAuthToken(session.backendAccessToken);
-      }
       const options = await getPasskeyRegistrationOptions();
       const credential = await startRegistration(
         options as unknown as Parameters<typeof startRegistration>[0],
@@ -577,20 +572,10 @@ export function LoginView() {
       await registerPasskey(credential, "");
       finishLogin();
     } catch (err) {
-      const name = (err as Error)?.name;
-      const cause = (err as { cause?: { name?: string } })?.cause?.name;
-      const dismissed =
-        name === "NotAllowedError" ||
-        cause === "NotAllowedError" ||
-        name === "AbortError" ||
-        cause === "AbortError";
-      if (dismissed) {
-        // The user closed the Face ID / Touch ID sheet, or a newer ceremony
-        // superseded this one — enrolling is optional, so continue.
-        finishLogin();
-        return;
-      }
-      setError(msg("auth.login.passkey_enroll_failed"));
+      console.error("passkey enroll failed", err);
+      const name = (err as Error)?.name ?? "Error";
+      const detail = (err as Error)?.message ?? String(err);
+      setError(`${name}: ${detail}`);
       setPasskeyOffer("offer");
     }
   }
