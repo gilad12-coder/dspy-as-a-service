@@ -157,6 +157,7 @@
   "auth.login.loading": "Signing in…",
   "auth.login.meta_description": "Sign in to Skynet, a prompt-optimization platform",
   "auth.login.passkey": "Sign in with a passkey",
+  "auth.login.passkey_enroll_failed": "Couldn't set up the passkey — try again, or add one later in your security settings.",
   "auth.login.passkey_failed": "Passkey sign-in didn't work — try again",
   "auth.login.passkey_none": "No passkey found on this device. Sign in another way, then add a passkey in your security settings.",
   "auth.login.passkey_offer_accept": "Set up Face ID / Touch ID",

@@ -165,6 +165,10 @@ export function LoginView() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Reveal "Forgot password?" only after a password was rejected — a wrong
+  // password is the one moment the link is actually useful, so it stays hidden
+  // otherwise instead of nudging every visitor toward a reset.
+  const [badCredentials, setBadCredentials] = useState(false);
   const [twoFactor, setTwoFactor] = useState<TwoFactorState | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [sendingCode, setSendingCode] = useState(false);
@@ -490,6 +494,7 @@ export function LoginView() {
   function switchMode(next: AuthMode) {
     setAuthMode(next);
     setError("");
+    setBadCredentials(false);
   }
 
   function handleOAuth(provider: "google" | "github") {
@@ -546,22 +551,48 @@ export function LoginView() {
 
   /**
    * Run the browser's platform-authenticator enrollment (Face ID / Touch ID
-   * sheet) and store the credential. Enrollment is a nicety on top of an
-   * already-successful sign-in, so every exit — saved, cancelled, or failed —
-   * continues into the app rather than trapping the user on the login card.
+   * sheet) and store the credential. A genuine dismissal continues into the app
+   * — enrollment is optional. But a failure *before* any sheet appears (a stale
+   * bearer, the options call erroring) used to be swallowed too, silently
+   * dropping the user into the app as if they had declined; that reads as "the
+   * button does nothing". Those failures now surface a message and keep the
+   * offer so the user can retry.
    */
   async function enrollPasskey() {
+    setError("");
     setPasskeyOffer("saving");
     try {
+      // The bearer minted right after sign-in is short-lived and the login page
+      // registers no 401 refresher, so re-mint from the current session before
+      // the authenticated options call — otherwise a stale token 401s the fetch
+      // and the whole ceremony collapses before any prompt shows.
+      const session = await getSession();
+      if (session?.backendAccessToken) {
+        setApiAuthToken(session.backendAccessToken);
+      }
       const options = await getPasskeyRegistrationOptions();
       const credential = await startRegistration(
         options as unknown as Parameters<typeof startRegistration>[0],
       );
       await registerPasskey(credential, "");
-    } catch {
-      // NotAllowedError means the user dismissed the sheet — same as "not now".
+      finishLogin();
+    } catch (err) {
+      const name = (err as Error)?.name;
+      const cause = (err as { cause?: { name?: string } })?.cause?.name;
+      const dismissed =
+        name === "NotAllowedError" ||
+        cause === "NotAllowedError" ||
+        name === "AbortError" ||
+        cause === "AbortError";
+      if (dismissed) {
+        // The user closed the Face ID / Touch ID sheet, or a newer ceremony
+        // superseded this one — enrolling is optional, so continue.
+        finishLogin();
+        return;
+      }
+      setError(msg("auth.login.passkey_enroll_failed"));
+      setPasskeyOffer("offer");
     }
-    finishLogin();
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -569,6 +600,7 @@ export function LoginView() {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !password) return;
     setError("");
+    setBadCredentials(false);
     setLoading(true);
     try {
       if (authMode === "signup") {
@@ -623,6 +655,11 @@ export function LoginView() {
           method: authMode === "signup" ? "signup" : "credentials",
         });
         setError(msg("auth.login.invalid_credentials"));
+        // A wrong password is the one case where offering a reset helps, so this
+        // is where "Forgot password?" earns its place on the card.
+        if (authMode === "signin") {
+          setBadCredentials(true);
+        }
         setLoading(false);
         return;
       }
@@ -713,6 +750,10 @@ export function LoginView() {
 
   async function handlePasskey() {
     setError("");
+    // A passkey attempt is a separate flow from the password form; drop any
+    // "wrong password" state so its "Forgot password?" link and error never
+    // linger under a passkey message like "No passkey found on this device".
+    setBadCredentials(false);
     setPasskeyLoading(true);
     WebAuthnAbortService.cancelCeremony();
     try {
@@ -819,6 +860,20 @@ export function LoginView() {
                     <p className="mt-1 max-w-[36ch] text-xs leading-relaxed text-muted-foreground">
                       {msg("auth.login.passkey_offer_description")}
                     </p>
+                    <AnimatePresence>
+                      {error && (
+                        <motion.p
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="mt-3 text-sm text-destructive"
+                          role="alert"
+                        >
+                          {error}
+                        </motion.p>
+                      )}
+                    </AnimatePresence>
                     <Button
                       type="button"
                       size="lg"
@@ -1327,7 +1382,7 @@ export function LoginView() {
                         </AnimatePresence>
                       </div>
 
-                      {authMode === "signin" && (
+                      {authMode === "signin" && badCredentials && (
                         <button
                           type="button"
                           onClick={enterReset}

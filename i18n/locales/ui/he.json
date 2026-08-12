@@ -157,6 +157,7 @@
   "auth.login.loading": "מתחבר/ת…",
   "auth.login.meta_description": "התחברות ל-Skynet, מערכת לאופטימיזציית פרומפטים",
   "auth.login.passkey": "התחברות עם מפתח גישה",
+  "auth.login.passkey_enroll_failed": "הגדרת מפתח הגישה נכשלה — נסו שוב, או הוסיפו מפתח מאוחר יותר בהגדרות האבטחה.",
   "auth.login.passkey_failed": "ההתחברות עם מפתח הגישה נכשלה — נסו שוב",
   "auth.login.passkey_none": "לא נמצא מפתח גישה במכשיר הזה. היכנסו בדרך אחרת והוסיפו מפתח גישה בהגדרות האבטחה.",
   "auth.login.passkey_offer_accept": "הגדרת Face ID / Touch ID",
