@@ -236,13 +236,11 @@ function VerdictBlock({ runs, winnerIdx }: { runs: RunInfo[]; winnerIdx: number 
                 size="icon-sm"
                 variant="default"
                 className="shrink-0 self-start sm:self-auto"
+                aria-label={formatMsg("auto.app.compare.page.template.1", {
+                  p1: TERMS.optimization,
+                })}
               >
-                <Link
-                  href={`/optimizations/${winner.job.optimization_id}`}
-                  aria-label={formatMsg("auto.app.compare.page.template.1", {
-                    p1: TERMS.optimization,
-                  })}
-                >
+                <Link href={`/optimizations/${winner.job.optimization_id}`}>
                   <OpenIcon className="size-3.5" />
                 </Link>
               </Button>

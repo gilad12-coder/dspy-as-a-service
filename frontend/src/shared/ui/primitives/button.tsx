@@ -1,8 +1,17 @@
+"use client";
+
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 
 import { cn } from "@/shared/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  useTooltipTriggerContext,
+} from "@/shared/ui/primitives/tooltip";
 
 const buttonVariants = cva(
   "inline-flex shrink-0 select-none items-center justify-center gap-2 rounded-md border border-transparent text-sm font-medium whitespace-nowrap outline-none cursor-pointer transform-gpu transition-[transform,background-color,color,border-color,box-shadow,opacity] duration-75 ease-out active:scale-[0.97] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none aria-invalid:border-destructive aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -41,27 +50,57 @@ const buttonVariants = cva(
   },
 );
 
+type ButtonVariantProps = VariantProps<typeof buttonVariants>;
+type ButtonSize = NonNullable<ButtonVariantProps["size"]>;
+type IconButtonSize = Extract<ButtonSize, `icon${string}`>;
+type ButtonProps = Omit<React.ComponentProps<"button">, "aria-label"> &
+  Omit<ButtonVariantProps, "size"> & {
+    asChild?: boolean;
+  } & (
+    | {
+        size: IconButtonSize;
+        "aria-label": string;
+      }
+    | {
+        size?: Exclude<ButtonSize, IconButtonSize> | null;
+        "aria-label"?: string;
+      }
+  );
+
 function Button({
   className,
   variant = "default",
   size = "default",
   asChild = false,
+  "aria-label": ariaLabel,
   ...props
-}: React.ComponentProps<"button"> &
-  VariantProps<typeof buttonVariants> & {
-    asChild?: boolean;
-  }) {
+}: ButtonProps) {
+  const hasExplicitTooltip = useTooltipTriggerContext();
   const Comp = asChild ? Slot.Root : "button";
 
-  return (
+  const button = (
     <Comp
       {...(!asChild ? { type: "button" as const } : {})}
       data-slot="button"
       data-variant={variant}
       data-size={size}
+      aria-label={ariaLabel}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
+  );
+
+  if (typeof size !== "string" || !size.startsWith("icon") || hasExplicitTooltip) {
+    return button;
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent>{ariaLabel}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
