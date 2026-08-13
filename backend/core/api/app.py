@@ -47,8 +47,10 @@ except ImportError:  # Optional dep: tests/CI can run without the Scalar docs UI
     get_scalar_api_reference = None  # type: ignore[assignment]
 
 from ..config import settings
+from ..error_reporting import capture_exception
 from ..exceptions import AppError
 from ..models import HEALTH_STATUS_OK, HealthResponse, QueueStatusResponse
+from ..notifications import configure_notification_preferences
 from ..registry import ServiceRegistry
 from ..service_gateway import DspyService
 from ..service_gateway.embedding_pipeline import (
@@ -96,6 +98,7 @@ from .routers.datasets import create_datasets_router
 from .routers.generalist_agent import create_generalist_agent_router
 from .routers.mcp_probe import create_mcp_probe_router
 from .routers.models import create_models_router
+from .routers.notification_preferences import create_notification_preferences_router
 from .routers.optimizations import create_optimizations_router
 from .routers.optimizations_meta import create_optimizations_meta_router
 from .routers.registry import create_registry_router
@@ -687,6 +690,7 @@ def create_app(
     )
 
     job_store = get_job_store()
+    configure_notification_preferences(job_store.engine)
 
     worker: BackgroundWorker | None = None
     queue_metrics_refresher = None
@@ -1111,6 +1115,7 @@ def create_app(
         Returns:
             A 500 :class:`JSONResponse` with a generic ``internal_error`` envelope.
         """
+        capture_exception(exc)
         logger.error(
             "Unhandled exception in %s %s: %s",
             request.method,
@@ -1271,6 +1276,9 @@ def create_app(
     )
     app.include_router(create_account_security_router(job_store=job_store), tags=["Auth"])
     app.include_router(create_account_data_router(job_store=job_store), tags=["Settings"])
+    app.include_router(
+        create_notification_preferences_router(job_store=job_store), tags=["Settings"]
+    )
     app.include_router(create_datasets_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_dataset_library_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_dataset_share_router(job_store=job_store), tags=["Datasets"])

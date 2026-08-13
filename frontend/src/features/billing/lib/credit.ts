@@ -10,10 +10,9 @@
  * platform neither subsidizes a run nor takes profit.
  *
  * Everything here is framework-agnostic (no React / `next/*`) so it imports from
- * server components, client components, and the provider alike. The values are
- * currently served by a STUB (`STUB_WALLET`) until the billing backend (credit
- * ledger + Stripe + OpenRouter metering) lands; the shapes are the contract that
- * backend will fill.
+ * server components, client components, and the provider alike. Wallet values
+ * come from the billing API; the empty value below is only a truthful loading /
+ * unavailable seed and never contains demo balances or activity.
  */
 
 /** Where a job's tokens are billed: through Skynet's credits, or the user's own key. */
@@ -69,13 +68,6 @@ export interface CreditPack {
   popular?: boolean;
 }
 
-/** Opt-in automatic top-up so long-running work isn't interrupted by an empty balance. */
-export interface AutoReload {
-  enabled: boolean;
-  thresholdCredits: number;
-  topUpCredits: number;
-}
-
 /** The whole wallet as the UI needs it. */
 export interface CreditWallet {
   /** Purchased credits, on top of the free grant. */
@@ -83,7 +75,6 @@ export interface CreditWallet {
   freeGrant: FreeGrant;
   /** Which token source the account is actively running jobs on. */
   mode: TokenSourceMode;
-  autoReload: AutoReload;
   /** Most-recent-first ledger rows. */
   usage: UsageEntry[];
 }
@@ -137,62 +128,10 @@ export const CREDIT_PACKS: CreditPack[] = [
   { id: "pro", credits: 5000, usd: 50 },
 ];
 
-/**
- * Placeholder wallet until the billing backend exists. A realistic "has some
- * paid balance + a partly-spent grant + recent activity" account so every UI
- * state renders against real-shaped data, not Lorem Ipsum. Dates are fixed
- * strings (Date.now() is intentionally avoided in shared modules).
- */
-export const STUB_WALLET: CreditWallet = {
-  paidBalanceCredits: 1240,
+/** Truthful zero-value seed used until the billing API returns real data. */
+export const EMPTY_WALLET: CreditWallet = {
+  paidBalanceCredits: 0,
   freeGrant: { creditsRemaining: 0, creditsTotal: 0 },
   mode: "managed",
-  autoReload: { enabled: false, thresholdCredits: 200, topUpCredits: 2000 },
-  usage: [
-    {
-      id: "u1",
-      at: "2026-06-26T08:42:00Z",
-      label: "sentiment-classifier v3",
-      model: "anthropic/claude-opus-4-8",
-      credits: -312,
-      mode: "managed",
-      kind: "run",
-    },
-    {
-      id: "u2",
-      at: "2026-06-25T19:10:00Z",
-      label: "rag-reranker sweep",
-      model: "openai/gpt-5.5",
-      credits: -88,
-      mode: "managed",
-      kind: "run",
-    },
-    {
-      id: "u3",
-      at: "2026-06-24T14:03:00Z",
-      label: "Top-up",
-      model: null,
-      credits: 2000,
-      mode: "managed",
-      kind: "topup",
-    },
-    {
-      id: "u4",
-      at: "2026-06-23T11:27:00Z",
-      label: "entity-extractor tune",
-      model: "openai/gpt-5.5-mini",
-      credits: -14,
-      mode: "managed",
-      kind: "run",
-    },
-    {
-      id: "u5",
-      at: "2026-06-22T09:00:00Z",
-      label: "intent-router (your key)",
-      model: "google/gemini-3-pro",
-      credits: -4,
-      mode: "byok",
-      kind: "run",
-    },
-  ],
+  usage: [],
 };

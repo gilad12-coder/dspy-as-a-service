@@ -133,6 +133,27 @@ class MonthlyActiveUserModel(Base):
     )
 
 
+class NotificationPreferenceModel(Base):
+    """Per-identity preferences for optional product notification emails.
+
+    The row is separate from :class:`UserModel` because OAuth identities own
+    jobs and shares without a local password-account row. Missing rows preserve
+    the historical default: both notification categories are enabled.
+    """
+
+    __tablename__ = "notification_preferences"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    job_updates_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sharing_updates_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class WebAuthnCredentialModel(Base):
     """A registered passkey (WebAuthn credential) owned by one identity.
 
@@ -451,9 +472,10 @@ class TelemetryEventModel(Base):
     """Append-only product-telemetry event — how the app is actually used.
 
     One row per captured interaction (a page view, a labelled click, a named
-    flow event). The pipeline is first-party: the browser SDK batches events to
-    ``POST /telemetry/events`` and they land here, queryable beside the rest of
-    the product data — no third-party analytics service ever sees a user.
+    flow event). The browser SDK batches events to ``POST /telemetry/events``
+    and they land here, queryable beside the rest of the product data. An
+    operator may additionally export accepted events to PostHog with a one-way
+    account hash and without creating a person profile.
 
     Identity is split deliberately. ``username`` is the *server-trusted* caller
     derived from the request's auth token (never from the request body), so it

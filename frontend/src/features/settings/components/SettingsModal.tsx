@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   ChartBar,
+  ChatText,
   BookOpen,
   Robot,
   Brain,
@@ -96,6 +97,7 @@ import { ModelChip } from "@/shared/ui/model-chip";
 import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
 import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
+import { LEGAL_CONFIG } from "@/features/legal";
 import { LanguageSwitcher } from "@/shared/ui/language-switcher";
 import {
   deleteStorageQuotaOverride,
@@ -156,7 +158,6 @@ function WizardTab() {
           </SelectContent>
         </Select>
       </SettingsRow>
-
     </div>
   );
 }
@@ -192,10 +193,7 @@ function TaggingTab() {
         label={msg("settings.tagger.assist.label")}
         description={msg("settings.tagger.assist.description")}
       >
-        <Switch
-          checked={prefs.taggerAssist}
-          onCheckedChange={(v) => setPref("taggerAssist", v)}
-        />
+        <Switch checked={prefs.taggerAssist} onCheckedChange={(v) => setPref("taggerAssist", v)} />
       </SettingsRow>
 
       <SettingsRow
@@ -277,9 +275,9 @@ function MemoryKnobControl({
 function AgentTab() {
   const { prefs, setPref } = useUserPrefs();
   const [memory, setMemory] = React.useState<MemorySettings | null>(null);
-  const saveTimers = React.useRef<
-    Partial<Record<MemoryKnobName, ReturnType<typeof setTimeout>>>
-  >({});
+  const saveTimers = React.useRef<Partial<Record<MemoryKnobName, ReturnType<typeof setTimeout>>>>(
+    {},
+  );
 
   React.useEffect(() => {
     let cancelled = false;
@@ -298,7 +296,10 @@ function AgentTab() {
   const commitKnob = React.useCallback((name: MemoryKnobName, value: number | null) => {
     setMemory((prev) =>
       prev
-        ? { ...prev, [name]: { ...prev[name], value: value ?? prev[name].default, override: value } }
+        ? {
+            ...prev,
+            [name]: { ...prev[name], value: value ?? prev[name].default, override: value },
+          }
         : prev,
     );
     const timers = saveTimers.current;
@@ -717,7 +718,10 @@ function EditableBudgetCell({
       className="group inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs tabular-nums text-muted-foreground hover:bg-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
     >
       <span dir="ltr">{formatStorageSize(bytes)}</span>
-      <PencilSimple className="size-3 opacity-0 transition group-hover:opacity-50" aria-hidden="true" />
+      <PencilSimple
+        className="size-3 opacity-0 transition group-hover:opacity-50"
+        aria-hidden="true"
+      />
     </button>
   );
 }
@@ -1161,6 +1165,9 @@ function AboutTab() {
     resetAll();
     toast.success(msg("settings.about.reset_all.success"));
   }, [resetAll]);
+  const feedbackHref = `mailto:${LEGAL_CONFIG.contactEmail}?subject=${encodeURIComponent(
+    msg("settings.about.feedback.subject"),
+  )}`;
 
   return (
     <div className="space-y-1">
@@ -1174,6 +1181,16 @@ function AboutTab() {
         <span className="text-xs font-mono text-muted-foreground" dir="ltr">
           {apiUrl}
         </span>
+      </SettingsRow>
+
+      <SettingsRow
+        icon={ChatText}
+        label={msg("settings.about.feedback.label")}
+        description={msg("settings.about.feedback.description")}
+      >
+        <Button variant="outline" size="sm" asChild>
+          <a href={feedbackHref}>{msg("settings.about.feedback.action")}</a>
+        </Button>
       </SettingsRow>
 
       <SettingsRow

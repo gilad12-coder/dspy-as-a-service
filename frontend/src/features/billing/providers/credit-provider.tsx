@@ -5,10 +5,9 @@ import { toast } from "react-toastify";
 import { msg } from "@/shared/lib/messages";
 import { getWallet, type BillingWalletResponse } from "@/shared/lib/api";
 import {
-  STUB_WALLET,
+  EMPTY_WALLET,
   totalCredits,
   walletStatus,
-  type AutoReload,
   type CreditWallet,
   type LedgerKind,
   type TokenSourceMode,
@@ -25,10 +24,12 @@ interface CreditContextValue {
    * stale/empty number while the FastAPI→Postgres seam catches up.
    */
   syncing: boolean;
+  /** Whether at least one real wallet response has loaded in this session. */
+  available: boolean;
+  /** Whether the latest wallet request failed. */
+  loadError: boolean;
   status: WalletStatus;
   totalCredits: number;
-  /** Patch the auto-reload settings (stub: local only until the backend lands). */
-  setAutoReload: (patch: Partial<AutoReload>) => void;
   /** Switch the active token source (managed credits vs the user's own key). */
   setMode: (mode: TokenSourceMode) => void;
   /** Re-fetch the wallet from the backend — call after a checkout/portal return. */
@@ -43,8 +44,7 @@ interface CreditContextValue {
 
 /**
  * Overlay a backend wallet response onto the current wallet, preserving the
- * client-only fields the backend doesn't own yet: the active token-source
- * `mode` (a local toggle) and `autoReload` (stub until the backend lands).
+ * client-only active token-source `mode` toggle.
  * Backend ledger rows are all managed-mode credits (BYOK runs aren't billed),
  * so each maps to `mode: "managed"`.
  */
@@ -84,31 +84,31 @@ export function useCredits(): CreditContextValue {
  *
  * Fetches the real wallet (paid balance, free grant, ledger)
  * from the billing backend on mount and after every `refresh()` — e.g. when a
- * Stripe Checkout returns. `STUB_WALLET` is the seed and the fallback: if the
- * fetch fails (no backend, signed-out) the demo wallet stays, so the UI never
- * breaks. The client-only `mode` toggle and `autoReload` survive each refresh.
+ * Stripe Checkout returns. The provider starts with a truthful empty value and
+ * exposes an explicit unavailable state when the request fails; it never shows
+ * invented balances or ledger rows. The client-only `mode` toggle survives
+ * each refresh.
  *
  * Args:
- *   initialWallet: Override the seed wallet (tests / story scenarios).
  *   children: App subtree.
  */
-export function CreditProvider({
-  initialWallet = STUB_WALLET,
-  children,
-}: {
-  initialWallet?: CreditWallet;
-  children: React.ReactNode;
-}) {
-  const [wallet, setWallet] = React.useState<CreditWallet>(initialWallet);
+export function CreditProvider({ children }: { children: React.ReactNode }) {
+  const [wallet, setWallet] = React.useState<CreditWallet>(EMPTY_WALLET);
   const [loading, setLoading] = React.useState(true);
   const [syncing, setSyncing] = React.useState(false);
+  const [available, setAvailable] = React.useState(false);
+  const [loadError, setLoadError] = React.useState(false);
 
   const refresh = React.useCallback(() => {
     setLoading(true);
+    setLoadError(false);
     getWallet()
-      .then((r) => setWallet((prev) => applyWalletResponse(prev, r)))
+      .then((r) => {
+        setWallet((prev) => applyWalletResponse(prev, r));
+        setAvailable(true);
+      })
       .catch(() => {
-        /* keep the current wallet (stub fallback) — no backend or signed-out */
+        setLoadError(true);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -130,9 +130,14 @@ export function CreditProvider({
       void getWallet()
         .then((r) => {
           setWallet((prev) => applyWalletResponse(prev, r));
+          setAvailable(true);
+          setLoadError(false);
           return r.paid_balance_credits !== baseline;
         })
-        .catch(() => false)
+        .catch(() => {
+          setLoadError(true);
+          return false;
+        })
         .then((landed) => {
           // Stop once the webhook's effect is visible, or after ~12s of polling
           // so the shimmer is never permanent if nothing changes (e.g. cancel).
@@ -163,10 +168,6 @@ export function CreditProvider({
     window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : ""));
   }, [beginSync]);
 
-  const setAutoReload = React.useCallback((patch: Partial<AutoReload>) => {
-    setWallet((w) => ({ ...w, autoReload: { ...w.autoReload, ...patch } }));
-  }, []);
-
   const setMode = React.useCallback((mode: TokenSourceMode) => {
     setWallet((w) => ({ ...w, mode }));
   }, []);
@@ -176,14 +177,15 @@ export function CreditProvider({
       wallet,
       loading,
       syncing,
+      available,
+      loadError,
       status: walletStatus(wallet),
       totalCredits: totalCredits(wallet),
-      setAutoReload,
       setMode,
       refresh,
       beginSync,
     }),
-    [wallet, loading, syncing, setAutoReload, setMode, refresh, beginSync],
+    [wallet, loading, syncing, available, loadError, setMode, refresh, beginSync],
   );
 
   return <CreditContext.Provider value={value}>{children}</CreditContext.Provider>;

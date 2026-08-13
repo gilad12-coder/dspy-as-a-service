@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 
 from core.api.app import create_app
 from core.api.observability import configure_logging
+from core.error_reporting import configure_error_reporting
 from core.registry import ServiceRegistry
 from core.service_gateway.react_compat import configure_native_tool_calling
 
@@ -42,6 +43,7 @@ with contextlib.suppress(Exception):
 # Must run before create_app() so loggers acquired during router import
 # inherit the configured formatter, not Uvicorn's default.
 configure_logging()
+configure_error_reporting("backend")
 
 registry = ServiceRegistry()
 app = create_app(registry=registry)

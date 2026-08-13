@@ -12,8 +12,10 @@ from .notifier import (
     notify_role_change,
     notify_share_invite,
 )
+from .preferences import configure_notification_preferences
 
 __all__ = [
+    "configure_notification_preferences",
     "notify_job_completed",
     "notify_job_started",
     "notify_ownership_transfer",

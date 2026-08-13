@@ -28,6 +28,8 @@ from core.api.observability import (
     start_queue_metrics_refresher,
 )
 from core.config import settings
+from core.error_reporting import configure_error_reporting
+from core.notifications import configure_notification_preferences
 from core.service_gateway.embedding_pipeline import start_embedding_index_sweeper
 from core.service_gateway.service_builder import build_default_service
 from core.storage import get_job_store
@@ -41,7 +43,9 @@ logger = logging.getLogger(__name__)
 def run_worker() -> None:
     """Boot the worker and its sweepers, then block until SIGTERM/SIGINT."""
     configure_logging()
+    configure_error_reporting("worker")
     job_store = get_job_store()
+    configure_notification_preferences(job_store.engine)
     job_store.recover_orphaned_jobs()
     pending_ids = job_store.recover_pending_jobs()
     worker = get_worker(

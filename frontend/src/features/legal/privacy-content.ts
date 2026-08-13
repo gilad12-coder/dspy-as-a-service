@@ -3,8 +3,8 @@
  *
  * Written to match Skynet's real data flows: account/auth data, prompts and
  * datasets sent to third-party LLM providers via OpenRouter, Stripe billing,
- * encrypted-at-rest BYOK keys, operational telemetry, and the retention windows
- * enforced in the backend. This is a launch-ready draft, not legal advice — have
+ * encrypted-at-rest BYOK keys, optional observability providers, and the retention
+ * windows enforced in the backend. This is a launch-ready draft, not legal advice — have
  * counsel review it before relying on it. Operator-specific values (controller
  * identity, address, contact emails) live in legal-config.ts.
  */
@@ -118,6 +118,7 @@ export const PRIVACY_POLICY: LegalDocument = {
             "Stripe, to process payments and manage billing.",
             "Speech transcription (Groq) when you use voice input.",
             "Hosting and infrastructure providers that run our application, database, and email delivery.",
+            "Analytics and error-monitoring providers (currently PostHog and Sentry, when enabled) to understand feature usage and diagnose failures. Analytics can be disabled in account settings; we configure these providers to minimize personal data.",
             "Professional advisers, and authorities or other parties, where necessary to comply with law, enforce our Terms, or protect the rights, property, or safety of our users or others.",
             "A successor entity in connection with a merger, acquisition, financing, or sale of assets, subject to this Policy.",
           ],

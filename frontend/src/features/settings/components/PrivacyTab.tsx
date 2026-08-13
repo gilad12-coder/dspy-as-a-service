@@ -3,7 +3,16 @@
 import * as React from "react";
 import { signOut, useSession } from "next-auth/react";
 import { toast } from "react-toastify";
-import { At, ChartBar, CircleNotch, Database, DownloadSimple, Trash, User } from "@/shared/ui/icons";
+import {
+  At,
+  ChartBar,
+  CircleNotch,
+  Database,
+  DownloadSimple,
+  Envelope,
+  Trash,
+  User,
+} from "@/shared/ui/icons";
 
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { tI18n } from "@/shared/lib/i18n";
@@ -11,8 +20,11 @@ import {
   ApiError,
   deleteAccount,
   exportAccountData,
+  getNotificationPreferences,
   getSecurityStatus,
   invalidateCache,
+  updateNotificationPreferences,
+  type NotificationPreferences,
 } from "@/shared/lib/api";
 import { isTelemetryOptedOut, setTelemetryOptOut } from "@/shared/lib/telemetry/client";
 import { SettingsRow } from "@/shared/ui/settings-row";
@@ -70,6 +82,13 @@ export function PrivacyTab() {
   const [deleting, setDeleting] = React.useState(false);
   // null until the security probe resolves; OAuth-only identities have no password.
   const [hasPassword, setHasPassword] = React.useState<boolean | null>(null);
+  const [notificationPreferences, setNotificationPreferences] =
+    React.useState<NotificationPreferences | null>(null);
+  const [notificationLoading, setNotificationLoading] = React.useState(false);
+  const [notificationSaving, setNotificationSaving] = React.useState<
+    keyof NotificationPreferences | null
+  >(null);
+  const [notificationLoadError, setNotificationLoadError] = React.useState(false);
 
   const signedOut = !session?.user;
   const email = session?.user?.email ?? "";
@@ -80,6 +99,40 @@ export function PrivacyTab() {
       .then((s) => setHasPassword(s.has_password))
       .catch(() => setHasPassword(null));
   }, [signedOut]);
+
+  const loadNotificationPreferences = React.useCallback(async () => {
+    if (signedOut) return;
+    setNotificationLoading(true);
+    setNotificationLoadError(false);
+    try {
+      setNotificationPreferences(await getNotificationPreferences());
+    } catch {
+      setNotificationLoadError(true);
+    } finally {
+      setNotificationLoading(false);
+    }
+  }, [signedOut]);
+
+  React.useEffect(() => {
+    void loadNotificationPreferences();
+  }, [loadNotificationPreferences]);
+
+  const setNotificationPreference = React.useCallback(
+    async (field: keyof NotificationPreferences, enabled: boolean) => {
+      setNotificationSaving(field);
+      try {
+        const updated = await updateNotificationPreferences({ [field]: enabled });
+        setNotificationPreferences(updated);
+        setNotificationLoadError(false);
+        toast.success(msg("settings.notifications.saved"));
+      } catch (err) {
+        toast.error(describeError(err, msg("settings.notifications.save_error")));
+      } finally {
+        setNotificationSaving(null);
+      }
+    },
+    [],
+  );
 
   const handleClearCache = React.useCallback(() => {
     invalidateCache();
@@ -148,6 +201,58 @@ export function PrivacyTab() {
             }}
           />
         </SettingsRow>
+
+        {notificationLoadError && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2"
+          >
+            <span className="text-xs text-destructive">
+              {msg("settings.notifications.load_error")}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={notificationLoading}
+              onClick={() => void loadNotificationPreferences()}
+            >
+              {notificationLoading && (
+                <CircleNotch className="size-3.5 animate-spin" aria-hidden="true" />
+              )}
+              {msg("settings.notifications.retry")}
+            </Button>
+          </div>
+        )}
+
+        <SettingsRow
+          icon={Envelope}
+          label={msg("settings.notifications.jobs.label")}
+          description={msg("settings.notifications.jobs.description")}
+        >
+          <Switch
+            checked={notificationPreferences?.job_updates_enabled ?? false}
+            disabled={signedOut || notificationPreferences === null || notificationSaving !== null}
+            onCheckedChange={(enabled) =>
+              void setNotificationPreference("job_updates_enabled", enabled)
+            }
+            aria-label={msg("settings.notifications.jobs.label")}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          icon={Envelope}
+          label={msg("settings.notifications.sharing.label")}
+          description={msg("settings.notifications.sharing.description")}
+        >
+          <Switch
+            checked={notificationPreferences?.sharing_updates_enabled ?? false}
+            disabled={signedOut || notificationPreferences === null || notificationSaving !== null}
+            onCheckedChange={(enabled) =>
+              void setNotificationPreference("sharing_updates_enabled", enabled)
+            }
+            aria-label={msg("settings.notifications.sharing.label")}
+          />
+        </SettingsRow>
       </div>
 
       <Separator />
@@ -203,12 +308,7 @@ export function PrivacyTab() {
           label={msg("settings.privacy.delete.label")}
           description={msg("settings.privacy.delete.description")}
         >
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={signedOut}
-            onClick={openDeleteDialog}
-          >
+          <Button variant="destructive" size="sm" disabled={signedOut} onClick={openDeleteDialog}>
             {msg("settings.privacy.delete.action")}
           </Button>
         </SettingsRow>

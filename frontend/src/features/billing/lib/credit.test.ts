@@ -7,7 +7,7 @@ import {
   formatCredits,
   formatUsd,
   formatResetDate,
-  STUB_WALLET,
+  EMPTY_WALLET,
   type CreditWallet,
 } from "./credit.ts";
 
@@ -17,9 +17,15 @@ function near(actual: number, expected: number): void {
 }
 
 const walletWith = (paidBalanceCredits: number, freeRemaining: number): CreditWallet => ({
-  ...STUB_WALLET,
+  ...EMPTY_WALLET,
   paidBalanceCredits,
-  freeGrant: { ...STUB_WALLET.freeGrant, creditsRemaining: freeRemaining },
+  freeGrant: { ...EMPTY_WALLET.freeGrant, creditsRemaining: freeRemaining },
+});
+
+test("empty wallet never seeds demo balances or activity", () => {
+  assert.equal(EMPTY_WALLET.paidBalanceCredits, 0);
+  assert.equal(EMPTY_WALLET.freeGrant.creditsRemaining, 0);
+  assert.deepEqual(EMPTY_WALLET.usage, []);
 });
 
 test("creditsToUsd values each credit at one cent", () => {

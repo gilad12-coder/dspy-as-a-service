@@ -54,6 +54,7 @@ from ..storage.models import (
     JobEmbeddingModel,
     JobModel,
     LogEntryModel,
+    NotificationPreferenceModel,
     OptimizationShareGrantModel,
     OptimizationShareLinkModel,
     ProgressEventModel,
@@ -151,6 +152,20 @@ def export_account(session: Session, username: str) -> dict[str, Any]:
                 "recovery_codes_remaining": len(recovery_codes),
             },
         }
+
+    notification_row = session.get(NotificationPreferenceModel, username)
+    notification_preferences = {
+        "job_updates_enabled": (
+            bool(notification_row.job_updates_enabled)
+            if notification_row is not None
+            else True
+        ),
+        "sharing_updates_enabled": (
+            bool(notification_row.sharing_updates_enabled)
+            if notification_row is not None
+            else True
+        ),
+    }
 
     jobs = session.scalars(
         select(JobModel).where(JobModel.username == username).order_by(JobModel.created_at)
@@ -325,6 +340,7 @@ def export_account(session: Session, username: str) -> dict[str, Any]:
         "api_token": api_token,
         "provider_keys": provider_keys_out,
         "passkeys": passkeys_out,
+        "notification_preferences": notification_preferences,
     }
 
 
@@ -479,6 +495,11 @@ def delete_account(session: Session, username: str) -> AccountDeletionSummary:
     _run_delete(delete(AgentMemoryModel).where(AgentMemoryModel.username == username))
     _run_delete(delete(AgentMemorySummaryModel).where(AgentMemorySummaryModel.username == username))
     _run_delete(delete(AgentMemorySettingsModel).where(AgentMemorySettingsModel.username == username))
+    _run_delete(
+        delete(NotificationPreferenceModel).where(
+            NotificationPreferenceModel.username == username
+        )
+    )
 
     tombstone = _anonymized_username(username)
     _run_anonymize(

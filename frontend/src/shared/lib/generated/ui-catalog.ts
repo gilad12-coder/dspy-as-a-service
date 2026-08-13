@@ -1739,6 +1739,7 @@ export type MessageKey =
   | "billing.chip.byok"
   | "billing.chip.empty"
   | "billing.chip.low_note"
+  | "billing.chip.unavailable"
   | "billing.history.byok_tag"
   | "billing.mode.aria"
   | "billing.mode.byok"
@@ -1756,6 +1757,7 @@ export type MessageKey =
   | "billing.popover.free_grant"
   | "billing.popover.paid"
   | "billing.popover.title"
+  | "billing.popover.unavailable"
   | "billing.upgrade.buy"
   | "billing.upgrade.success_toast"
   | "billing.upgrade.title"
@@ -1766,6 +1768,8 @@ export type MessageKey =
   | "billing.wallet.filter_all"
   | "billing.wallet.filter_costs"
   | "billing.wallet.filter_empty"
+  | "billing.wallet.load_error"
+  | "billing.wallet.retry"
   | "clipboard.copied"
   | "clipboard.copied_short"
   | "clipboard.copy_failed"
@@ -2063,6 +2067,10 @@ export type MessageKey =
   | "optimizations.source_dataset.view"
   | "search.clear"
   | "settings.about.api_url.label"
+  | "settings.about.feedback.action"
+  | "settings.about.feedback.description"
+  | "settings.about.feedback.label"
+  | "settings.about.feedback.subject"
   | "settings.about.reset_all.action"
   | "settings.about.reset_all.description"
   | "settings.about.reset_all.label"
@@ -2208,6 +2216,14 @@ export type MessageKey =
   | "settings.keys.verify"
   | "settings.keys.verify_failed_toast"
   | "settings.keys.verifying"
+  | "settings.notifications.jobs.description"
+  | "settings.notifications.jobs.label"
+  | "settings.notifications.load_error"
+  | "settings.notifications.retry"
+  | "settings.notifications.save_error"
+  | "settings.notifications.saved"
+  | "settings.notifications.sharing.description"
+  | "settings.notifications.sharing.label"
   | "settings.privacy.analytics.description"
   | "settings.privacy.analytics.label"
   | "settings.privacy.clear_cache.action"
@@ -4788,6 +4804,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "billing.chip.byok": "המפתח שלך",
   "billing.chip.empty": "הוספת קרדיטים",
   "billing.chip.low_note": "היתרה נמוכה. אפשר להוסיף קרדיטים מתי שנוח.",
+  "billing.chip.unavailable": "לא זמין",
   "billing.history.byok_tag": "מפתח שלך",
   "billing.mode.aria": "בחירת אופן החיוב על ההרצות",
   "billing.mode.byok": "המפתח שלך",
@@ -4805,6 +4822,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "billing.popover.free_grant": "מענק חינם",
   "billing.popover.paid": "בתשלום",
   "billing.popover.title": "קרדיטים",
+  "billing.popover.unavailable": "לא הצלחנו לטעון את הארנק. אפשר לפתוח את הגדרות החיוב ולנסות שוב.",
   "billing.upgrade.buy": "רכישה · {p1}",
   "billing.upgrade.success_toast": "התשלום התקבל — מעדכנים את היתרה…",
   "billing.upgrade.title": "הוספת קרדיטים, המשך אופטימיזציה",
@@ -4815,6 +4833,8 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "billing.wallet.filter_all": "הכול",
   "billing.wallet.filter_costs": "עלויות",
   "billing.wallet.filter_empty": "אין פעילות תואמת",
+  "billing.wallet.load_error": "לא הצלחנו לטעון את הארנק. היתרה והפעילות האמיתיות שלך מוסתרות עד שהחיבור יחזור.",
+  "billing.wallet.retry": "ניסיון חוזר",
   "clipboard.copied": "הועתק בהצלחה",
   "clipboard.copied_short": "הועתק",
   "clipboard.copy_failed": "ההעתקה נכשלה",
@@ -5112,6 +5132,10 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "optimizations.source_dataset.view": "מעבר ל{term.dataset}",
   "search.clear": "נקה/נקי את החיפוש",
   "settings.about.api_url.label": "API URL",
+  "settings.about.feedback.action": "שליחת משוב",
+  "settings.about.feedback.description": "ספרו לנו מה עבד, מה היה לא ברור או מה חסר לכם.",
+  "settings.about.feedback.label": "משוב על הבטא הפרטית",
+  "settings.about.feedback.subject": "משוב על הבטא הפרטית של Skynet",
   "settings.about.reset_all.action": "אפס/י הכול",
   "settings.about.reset_all.description": "מחיקת כל ההגדרות וחזרה לברירות המחדל במכשיר זה",
   "settings.about.reset_all.label": "איפוס כל ההעדפות",
@@ -5257,6 +5281,14 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.keys.verify": "אימות",
   "settings.keys.verify_failed_toast": "לא ניתן היה לאמת את המפתח. נסה/י שוב.",
   "settings.keys.verifying": "באימות…",
+  "settings.notifications.jobs.description": "שלחו לי אימייל כשאופטימיזציה מתחילה או מסתיימת.",
+  "settings.notifications.jobs.label": "עדכוני אופטימיזציה",
+  "settings.notifications.load_error": "לא הצלחנו לטעון את העדפות האימייל שלך.",
+  "settings.notifications.retry": "ניסיון חוזר",
+  "settings.notifications.save_error": "לא הצלחנו לשמור את העדפות האימייל שלך",
+  "settings.notifications.saved": "העדפות האימייל נשמרו",
+  "settings.notifications.sharing.description": "שלחו לי אימייל כשמשתפים איתי אופטימיזציה או כשהגישה שלי משתנה.",
+  "settings.notifications.sharing.label": "עדכוני שיתוף וגישה",
   "settings.privacy.analytics.description": "עזרו לשפר את Skynet בשיתוף נתוני שימוש אנונימיים. כבו כדי להפסיק את השליחה.",
   "settings.privacy.analytics.label": "שליחת נתוני שימוש אנונימיים",
   "settings.privacy.clear_cache.action": "ניקוי",
@@ -13475,6 +13507,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "billing.chip.byok": "Your key",
   "billing.chip.empty": "Add credits",
   "billing.chip.low_note": "Running low. Add credits when it suits you.",
+  "billing.chip.unavailable": "Unavailable",
   "billing.history.byok_tag": "BYOK",
   "billing.mode.aria": "Choose how runs are billed",
   "billing.mode.byok": "Your own key",
@@ -13492,6 +13525,7 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "billing.popover.free_grant": "Free grant",
   "billing.popover.paid": "Purchased",
   "billing.popover.title": "Credits",
+  "billing.popover.unavailable": "We couldn't load your wallet. Open billing settings to retry.",
   "billing.upgrade.buy": "Buy · {p1}",
   "billing.upgrade.success_toast": "Payment received — updating your balance…",
   "billing.upgrade.title": "Add credits, keep optimizing",
@@ -13502,6 +13536,8 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "billing.wallet.filter_all": "All",
   "billing.wallet.filter_costs": "Costs",
   "billing.wallet.filter_empty": "No matching activity",
+  "billing.wallet.load_error": "We couldn't load your wallet. Your real balance and activity are hidden until the connection recovers.",
+  "billing.wallet.retry": "Try again",
   "clipboard.copied": "Copied to clipboard",
   "clipboard.copied_short": "Copied",
   "clipboard.copy_failed": "Copy failed",
@@ -13799,6 +13835,10 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "optimizations.source_dataset.view": "Go to {term.dataset}",
   "search.clear": "Clear the search",
   "settings.about.api_url.label": "API URL",
+  "settings.about.feedback.action": "Send feedback",
+  "settings.about.feedback.description": "Tell us what worked, what was confusing, or what you need next.",
+  "settings.about.feedback.label": "Private-beta feedback",
+  "settings.about.feedback.subject": "Skynet private-beta feedback",
   "settings.about.reset_all.action": "Reset everything",
   "settings.about.reset_all.description": "Delete all settings and restore the defaults on this device",
   "settings.about.reset_all.label": "Reset all preferences",
@@ -13944,6 +13984,14 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "settings.keys.verify": "Verify",
   "settings.keys.verify_failed_toast": "Couldn't verify the key. Try again.",
   "settings.keys.verifying": "Verifying…",
+  "settings.notifications.jobs.description": "Email me when my optimization starts or finishes.",
+  "settings.notifications.jobs.label": "Optimization updates",
+  "settings.notifications.load_error": "We couldn't load your email preferences.",
+  "settings.notifications.retry": "Try again",
+  "settings.notifications.save_error": "Could not save your email preferences",
+  "settings.notifications.saved": "Email preferences saved",
+  "settings.notifications.sharing.description": "Email me when an optimization is shared with me or my access changes.",
+  "settings.notifications.sharing.label": "Sharing and access updates",
   "settings.privacy.analytics.description": "Help improve Skynet by sharing anonymous usage data. Turn off to stop sending it.",
   "settings.privacy.analytics.label": "Send anonymous usage analytics",
   "settings.privacy.clear_cache.action": "Clear",

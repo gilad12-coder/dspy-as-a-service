@@ -16,6 +16,7 @@ import os
 from ..i18n import t
 from ._wordmark import WORDMARK_CSS, wordmark_svg
 from .comms import resolve_email, send_mail
+from .preferences import NotificationCategory, notification_category_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -152,15 +153,24 @@ def _html_email(heading: str, body_lines: list[str], cta_label: str, cta_url: st
     )
 
 
-def _deliver(recipient_username: str | None, subject: str, html_body: str) -> None:
+def _deliver(
+    recipient_username: str | None,
+    subject: str,
+    html_body: str,
+    category: NotificationCategory,
+) -> None:
     """Resolve the recipient's address and send, skipping (logged) when unknown.
 
     Args:
         recipient_username: Skynet account to notify.
         subject: Mail subject line.
         html_body: Rendered HTML body.
+        category: Optional product-email category checked against preferences.
     """
     if not recipient_username:
+        return
+    if not notification_category_enabled(recipient_username, category):
+        logger.info("Account notification preference disabled category %s; skipping", category)
         return
     address = resolve_email(recipient_username)
     if address is None:
@@ -193,7 +203,7 @@ def notify_job_started(
     """
     subject = t("notifier.title.new")
     html_body = _html_email(subject, [], t("notifier.link.follow"), _job_url(optimization_id), optimization_id)
-    _deliver(username, subject, html_body)
+    _deliver(username, subject, html_body, "job_updates")
 
 
 def notify_job_completed(
@@ -249,7 +259,7 @@ def notify_job_completed(
         return
 
     html_body = _html_email(subject, lines, cta_label, _job_url(optimization_id), optimization_id)
-    _deliver(username, subject, html_body)
+    _deliver(username, subject, html_body, "job_updates")
 
 
 def notify_share_invite(optimization_id: str, grantee: str, inviter: str, role: str) -> None:
@@ -265,7 +275,7 @@ def notify_share_invite(optimization_id: str, grantee: str, inviter: str, role: 
     subject = t("notifier.share.invite.subject")
     body = t("notifier.share.invite.body", inviter=inviter, role=role_label)
     html_body = _html_email(subject, [body], t("notifier.link.open"), _job_url(optimization_id), optimization_id)
-    _deliver(grantee, subject, html_body)
+    _deliver(grantee, subject, html_body, "sharing_updates")
 
 
 def notify_role_change(optimization_id: str, grantee: str, actor: str, role: str) -> None:
@@ -281,7 +291,7 @@ def notify_role_change(optimization_id: str, grantee: str, actor: str, role: str
     subject = t("notifier.share.role_change.subject")
     body = t("notifier.share.role_change.body", actor=actor, role=role_label)
     html_body = _html_email(subject, [body], t("notifier.link.open"), _job_url(optimization_id), optimization_id)
-    _deliver(grantee, subject, html_body)
+    _deliver(grantee, subject, html_body, "sharing_updates")
 
 
 def notify_ownership_transfer(optimization_id: str, new_owner: str, actor: str) -> None:
@@ -295,4 +305,4 @@ def notify_ownership_transfer(optimization_id: str, new_owner: str, actor: str) 
     subject = t("notifier.share.transfer.subject")
     body = t("notifier.share.transfer.body", actor=actor)
     html_body = _html_email(subject, [body], t("notifier.link.open"), _job_url(optimization_id), optimization_id)
-    _deliver(new_owner, subject, html_body)
+    _deliver(new_owner, subject, html_body, "sharing_updates")

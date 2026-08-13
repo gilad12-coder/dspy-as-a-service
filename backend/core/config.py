@@ -238,6 +238,36 @@ class Settings(BaseSettings):
         ),
         alias="TELEMETRY_ENABLED",
     )
+    posthog_project_api_key: SecretStr | None = Field(
+        default=None,
+        alias="POSTHOG_PROJECT_API_KEY",
+        description=(
+            "PostHog project key for privacy-preserving export of accepted first-party telemetry. "
+            "Unset keeps analytics entirely in Postgres."
+        ),
+    )
+    posthog_host: str = Field(
+        default="https://eu.i.posthog.com",
+        alias="POSTHOG_HOST",
+        description="PostHog event-ingestion origin; defaults to the EU cloud endpoint.",
+    )
+    sentry_dsn: SecretStr | None = Field(
+        default=None,
+        alias="SENTRY_DSN",
+        description="Sentry DSN for backend and worker error reporting. Unset disables the SDK.",
+    )
+    sentry_environment: str = Field(
+        default="development",
+        alias="SENTRY_ENVIRONMENT",
+        description="Deployment environment attached to Sentry events.",
+    )
+    sentry_traces_sample_rate: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=1.0,
+        alias="SENTRY_TRACES_SAMPLE_RATE",
+        description="Fraction of backend performance traces exported to Sentry.",
+    )
     event_loop_lag_threshold_ms: float = Field(
         default=100.0,
         ge=10.0,

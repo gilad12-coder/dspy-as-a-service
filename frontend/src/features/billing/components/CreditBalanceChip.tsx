@@ -20,7 +20,7 @@ import { formatCredits } from "../lib/credit";
  * switches to a key glyph instead of a number, since managed credits aren't spent.
  */
 export function CreditBalanceChip({ className }: { className?: string }) {
-  const { wallet, status, totalCredits, loading, syncing } = useCredits();
+  const { wallet, status, totalCredits, loading, syncing, available } = useCredits();
   const { locale } = useLocale();
   const { openTo } = useSettingsModal();
   const [open, setOpen] = React.useState(false);
@@ -42,8 +42,9 @@ export function CreditBalanceChip({ className }: { className?: string }) {
   // One trigger, three visual registers. Healthy spends the gold accent; low and
   // empty stay in the warm neutrals so the chip never shouts. Empty reframes the
   // chip itself as the "add credits" call to action.
-  const triggerTone =
-    isByok || status === "healthy"
+  const triggerTone = !available
+    ? "border-border/70 text-muted-foreground hover:bg-accent"
+    : isByok || status === "healthy"
       ? "border-border/70 text-foreground hover:bg-accent"
       : status === "low"
         ? "border-border/70 text-muted-foreground hover:bg-accent"
@@ -55,7 +56,11 @@ export function CreditBalanceChip({ className }: { className?: string }) {
         <button
           type="button"
           aria-label={formatMsg("billing.chip.aria", {
-            p1: isByok ? msg("billing.chip.byok") : formatCredits(totalCredits, locale),
+            p1: !available
+              ? msg("billing.chip.unavailable")
+              : isByok
+                ? msg("billing.chip.byok")
+                : formatCredits(totalCredits, locale),
           })}
           aria-busy={syncing || undefined}
           className={cn(
@@ -64,7 +69,12 @@ export function CreditBalanceChip({ className }: { className?: string }) {
             className,
           )}
         >
-          {isByok ? (
+          {!available ? (
+            <>
+              <Coins className="size-3.5 text-muted-foreground" aria-hidden="true" />
+              <span>{msg("billing.chip.unavailable")}</span>
+            </>
+          ) : isByok ? (
             <>
               <Key className="size-3.5 text-muted-foreground" aria-hidden="true" />
               <span>{msg("billing.chip.byok")}</span>
@@ -104,7 +114,11 @@ export function CreditBalanceChip({ className }: { className?: string }) {
             </span>
           </div>
 
-          {isByok ? (
+          {!available ? (
+            <p className="px-4 pb-4 text-xs text-muted-foreground">
+              {msg("billing.popover.unavailable")}
+            </p>
+          ) : isByok ? (
             <div className="flex flex-col gap-1 px-4 pb-4">
               <span className="text-sm font-medium text-foreground">
                 {msg("billing.popover.byok_active")}

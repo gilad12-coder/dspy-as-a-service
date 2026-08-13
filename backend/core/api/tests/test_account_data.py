@@ -31,6 +31,7 @@ from ...storage.models import (
     CreditLedgerModel,
     DatasetModel,
     JobModel,
+    NotificationPreferenceModel,
     TelemetryEventModel,
     UserModel,
 )
@@ -80,6 +81,11 @@ def _seed_user_data(engine: Any, username: str, stripe_id: str) -> None:
                     event_name=f"view-{username}", username=username, received_at=now
                 ),
                 BillingCustomerModel(username=username, stripe_customer_id=stripe_id),
+                NotificationPreferenceModel(
+                    username=username,
+                    job_updates_enabled=False,
+                    sharing_updates_enabled=True,
+                ),
             ]
         )
         session.commit()
@@ -148,6 +154,10 @@ def test_export_returns_owned_data_without_secrets(harness: SimpleNamespace) -> 
     assert body["api_token"]["last4"] == "abcd"
     assert "token_hash" not in body["api_token"]
     assert [m["content"] for m in body["agent_memories"]] == ["remembers a thing"]
+    assert body["notification_preferences"] == {
+        "job_updates_enabled": False,
+        "sharing_updates_enabled": True,
+    }
     # No other account's rows leak into this export.
     assert all(job["optimization_id"] != f"job-{_OTHER}" for job in body["optimizations"])
 
@@ -173,6 +183,7 @@ def test_delete_purges_owned_data_and_anonymizes_records(harness: SimpleNamespac
         assert session.get(JobModel, f"job-{_EMAIL}") is None
         assert session.get(DatasetModel, f"ds-{_EMAIL}") is None
         assert session.get(ApiTokenModel, _EMAIL) is None
+        assert session.get(NotificationPreferenceModel, _EMAIL) is None
 
         tombstone = _anonymized_username(_EMAIL)
         ledger = session.scalars(
@@ -190,6 +201,7 @@ def test_delete_purges_owned_data_and_anonymizes_records(harness: SimpleNamespac
 
         # The bystander account is entirely untouched.
         assert session.get(JobModel, f"job-{_OTHER}") is not None
+        assert session.get(NotificationPreferenceModel, _OTHER) is not None
         assert session.scalars(
             select(CreditLedgerModel).where(CreditLedgerModel.username == _OTHER)
         ).all()

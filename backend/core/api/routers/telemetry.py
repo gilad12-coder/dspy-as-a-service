@@ -15,7 +15,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -24,6 +24,7 @@ from ...config import settings
 from ...storage.models import TelemetryEventModel
 from ..auth import AuthenticatedUser, get_authenticated_user, require_admin_user
 from ..errors import DomainError
+from ..posthog import export_telemetry_events
 
 # Hard caps the public ingest endpoint enforces so a single request can't be
 # used to bulk-load the table or smuggle large blobs in through ``properties``.
@@ -34,9 +35,7 @@ MAX_EVENT_NAME = 80
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
 
 
-def _optional_user(
-    request: Request, authorization: str | None = Header(default=None)
-) -> AuthenticatedUser | None:
+def _optional_user(request: Request, authorization: str | None = Header(default=None)) -> AuthenticatedUser | None:
     """Resolve the caller from the auth header, or ``None`` when absent/invalid.
 
     The ingest endpoint is public — logged-out and pre-login events are part of
@@ -204,7 +203,9 @@ def create_telemetry_router(*, job_store) -> APIRouter:
         summary="Ingest a batch of product-telemetry events (public, best-effort)",
     )
     def ingest_events(
-        batch: TelemetryBatchIn, current_user: OptionalUserDep
+        batch: TelemetryBatchIn,
+        background_tasks: BackgroundTasks,
+        current_user: OptionalUserDep,
     ) -> TelemetryIngestResponse:
         """Persist a batch of interaction events, attributing the caller server-side.
 
@@ -216,6 +217,7 @@ def create_telemetry_router(*, job_store) -> APIRouter:
 
         Args:
             batch: The session-scoped batch of events from the browser SDK.
+            background_tasks: Post-response task queue for optional PostHog export.
             current_user: The token-resolved caller, or ``None`` when anonymous.
 
         Returns:
@@ -245,6 +247,26 @@ def create_telemetry_router(*, job_store) -> APIRouter:
         with Session(job_store.engine) as session:
             session.add_all(rows)
             session.commit()
+        if settings.posthog_project_api_key is not None:
+            export_events = [
+                {
+                    "name": event.name,
+                    "timestamp": (_occurred_at(event.ts) or received_at).isoformat(),
+                    "path": event.path,
+                    "locale": event.locale,
+                    "app_version": event.app_version,
+                    "properties": _clip(event.properties),
+                    "context": _clip(event.context),
+                }
+                for event in batch.events
+            ]
+            background_tasks.add_task(
+                export_telemetry_events,
+                username=username,
+                anonymous_id=batch.anonymous_id,
+                session_id=batch.session_id,
+                events=export_events,
+            )
         return TelemetryIngestResponse(accepted=len(rows))
 
     @router.get(
@@ -273,9 +295,7 @@ def create_telemetry_router(*, job_store) -> APIRouter:
         require_admin_user(current_user)
         cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
         with Session(job_store.engine) as session:
-            in_window = session.query(TelemetryEventModel).filter(
-                TelemetryEventModel.received_at >= cutoff
-            )
+            in_window = session.query(TelemetryEventModel).filter(TelemetryEventModel.received_at >= cutoff)
             total = in_window.with_entities(func.count(TelemetryEventModel.id)).scalar() or 0
             users = (
                 in_window.with_entities(func.count(func.distinct(TelemetryEventModel.username)))
@@ -284,9 +304,7 @@ def create_telemetry_router(*, job_store) -> APIRouter:
                 or 0
             )
             visitors = (
-                in_window.with_entities(
-                    func.count(func.distinct(TelemetryEventModel.anonymous_id))
-                )
+                in_window.with_entities(func.count(func.distinct(TelemetryEventModel.anonymous_id)))
                 .filter(TelemetryEventModel.anonymous_id.isnot(None))
                 .scalar()
                 or 0
@@ -304,9 +322,7 @@ def create_telemetry_router(*, job_store) -> APIRouter:
             total_events=int(total),
             users=int(users),
             visitors=int(visitors),
-            top_events=[
-                TelemetryTopEvent(name=name, count=int(count)) for name, count in top_rows
-            ],
+            top_events=[TelemetryTopEvent(name=name, count=int(count)) for name, count in top_rows],
         )
 
     @router.get(
@@ -338,11 +354,7 @@ def create_telemetry_router(*, job_store) -> APIRouter:
             if name:
                 query = query.filter(TelemetryEventModel.event_name == name)
             rows = (
-                query.order_by(
-                    TelemetryEventModel.received_at.desc(), TelemetryEventModel.id.desc()
-                )
-                .limit(limit)
-                .all()
+                query.order_by(TelemetryEventModel.received_at.desc(), TelemetryEventModel.id.desc()).limit(limit).all()
             )
         return TelemetryRecentResponse(
             events=[

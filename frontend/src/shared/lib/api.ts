@@ -603,15 +603,32 @@ export function renamePasskey(credentialId: string, nickname: string) {
 
 /** Remove one of the caller's passkeys. */
 export function deletePasskey(credentialId: string) {
-  return request<{ ok: boolean }>(
-    `/auth/security/passkeys/${encodeURIComponent(credentialId)}`,
-    { method: "DELETE" },
-  );
+  return request<{ ok: boolean }>(`/auth/security/passkeys/${encodeURIComponent(credentialId)}`, {
+    method: "DELETE",
+  });
 }
 
 export interface AccountDeletionResult {
   deleted_rows: number;
   anonymized_rows: number;
+}
+
+export interface NotificationPreferences {
+  job_updates_enabled: boolean;
+  sharing_updates_enabled: boolean;
+}
+
+/** Fetch the caller's optional product-email preferences. */
+export function getNotificationPreferences() {
+  return request<NotificationPreferences>("/account/notification-preferences");
+}
+
+/** Persist one or more optional product-email preference switches. */
+export function updateNotificationPreferences(patch: Partial<NotificationPreferences>) {
+  return request<NotificationPreferences>("/account/notification-preferences", {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
 }
 
 /** Download every record the caller owns as an untyped JSON bundle. */
@@ -2309,9 +2326,7 @@ export async function streamCodeAgent(
         assistant_message: String(data.assistant_message ?? ""),
         model: typeof rawModel === "string" && rawModel.length > 0 ? rawModel : null,
         served_model:
-          typeof rawServedModel === "string" && rawServedModel.length > 0
-            ? rawServedModel
-            : null,
+          typeof rawServedModel === "string" && rawServedModel.length > 0 ? rawServedModel : null,
         workflow:
           data.workflow && typeof data.workflow === "object"
             ? (data.workflow as WorkflowSpec)
@@ -2459,9 +2474,7 @@ export async function streamCodeInterviewTurn(
             done: data.done === true,
             model: typeof data.model === "string" && data.model ? data.model : null,
             served_model:
-              typeof data.served_model === "string" && data.served_model
-                ? data.served_model
-                : null,
+              typeof data.served_model === "string" && data.served_model ? data.served_model : null,
           });
           break;
         case "error":

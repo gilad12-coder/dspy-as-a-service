@@ -85,6 +85,42 @@ def test_job_started_skips_when_email_unresolved(monkeypatch: pytest.MonkeyPatch
     assert fake_mail.call_count == 0
 
 
+def test_job_started_skips_when_job_emails_are_disabled(monkeypatch: pytest.MonkeyPatch, fake_mail: FakeMail) -> None:
+    """An owner who disabled job updates receives no lifecycle email."""
+    _patch_delivery(monkeypatch, fake_mail)
+    monkeypatch.setattr(
+        notifier_module,
+        "notification_category_enabled",
+        lambda username, category: category != "job_updates",
+    )
+
+    notify_job_started(
+        optimization_id="abc123",
+        username="alice",
+        optimization_type="run",
+        optimizer_name="GEPA",
+        module_name="MyModule",
+    )
+
+    assert fake_mail.call_count == 0
+
+
+def test_share_invite_skips_when_sharing_emails_are_disabled(
+    monkeypatch: pytest.MonkeyPatch, fake_mail: FakeMail
+) -> None:
+    """A grantee who disabled sharing updates receives no invite email."""
+    _patch_delivery(monkeypatch, fake_mail)
+    monkeypatch.setattr(
+        notifier_module,
+        "notification_category_enabled",
+        lambda username, category: category != "sharing_updates",
+    )
+
+    notify_share_invite(optimization_id="abc123", grantee="bob", inviter="alice", role="viewer")
+
+    assert fake_mail.call_count == 0
+
+
 def test_job_completed_success_renders_score_line(monkeypatch: pytest.MonkeyPatch, fake_mail: FakeMail) -> None:
     """A successful job emails the owner with the score improvement line."""
     _patch_delivery(monkeypatch, fake_mail)
