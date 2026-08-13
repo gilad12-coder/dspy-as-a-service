@@ -20,6 +20,7 @@ export interface WizardDraftData {
   step: number;
   furthestReachedStep: number;
   summaryTab: number;
+  summaryCodeTab: string;
   jobType: "run" | "grid_search";
   isPrivate: boolean;
   jobName: string;

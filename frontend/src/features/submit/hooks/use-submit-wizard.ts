@@ -128,6 +128,7 @@ export function useSubmitWizard() {
   const [direction, setDirection] = useState(0);
   const [furthestReachedStep, setFurthestReachedStep] = useState(0);
   const [summaryTab, setSummaryTab] = useState(0);
+  const [summaryCodeTab, setSummaryCodeTab] = useState<string>("signature");
 
   const [jobType, setOptimizationType] = useState<"run" | "grid_search">("run");
   const effectiveJobType = advancedMode ? jobType : "run";
@@ -476,6 +477,7 @@ export function useSubmitWizard() {
       step,
       furthestReachedStep,
       summaryTab,
+      summaryCodeTab,
       jobType: effectiveJobType,
       isPrivate,
       jobName,
@@ -545,6 +547,7 @@ export function useSubmitWizard() {
     setStep(d.step);
     setFurthestReachedStep(d.furthestReachedStep);
     setSummaryTab(d.summaryTab);
+    setSummaryCodeTab(d.summaryCodeTab);
     setOptimizationType(advancedMode ? d.jobType : "run");
     setIsPrivate(d.isPrivate);
     setJobName(d.jobName);
@@ -2257,6 +2260,8 @@ export function useSubmitWizard() {
     setDirection,
     summaryTab,
     setSummaryTab,
+    summaryCodeTab,
+    setSummaryCodeTab,
     goNext,
     goPrev,
     goTo,

@@ -29,16 +29,10 @@ export function SubmitWizard() {
     <SummaryStep key="review" w={w} />,
   ];
 
-  // Code and review use wider working surfaces: code may carry the agent pane,
-  // while review lays out each configuration category as a full carousel slide.
+  // Code step (index 3) renders a two-pane layout with an agent side-panel
+  // in auto mode, so it needs more horizontal room than the other steps.
   const isCodeStep = w.step === 3;
-  const isReviewStep = w.step === 5;
-  const containerWidthClass =
-    isCodeStep && w.codeAssistMode === "auto"
-      ? "max-w-5xl"
-      : isReviewStep
-        ? "max-w-4xl"
-        : "max-w-2xl";
+  const containerWidthClass = isCodeStep && w.codeAssistMode === "auto" ? "max-w-5xl" : "max-w-2xl";
 
   return (
     <div

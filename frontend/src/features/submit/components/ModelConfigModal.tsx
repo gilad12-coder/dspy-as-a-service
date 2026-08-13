@@ -7,6 +7,7 @@ import { useByokKeys, litellmProviderForByok, type TokenSourceMode } from "@/fea
 import { useSettingsModal } from "@/features/settings";
 import { getByokModelCatalog, cachedByokCatalog } from "@/shared/lib/model-catalog";
 import { Dialog, DialogContent, DialogFooter } from "@/shared/ui/primitives/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { DialogTitleRow } from "@/shared/ui/dialog-title-row";
 import { Button } from "@/shared/ui/primitives/button";
 import { Label } from "@/shared/ui/primitives/label";
@@ -283,25 +284,24 @@ export function ModelConfigModal({
           )}
 
           {mode === "byok" && (
-            <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
-              <Key className="size-3.5 shrink-0" aria-hidden="true" />
-              <span>{msg("billing.mode.byok_hint")}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenChange(false);
-                  openTo("providers");
-                }}
-                className="cursor-pointer font-medium text-foreground underline-offset-4 hover:underline"
-              >
-                {msg("billing.mode.manage_keys")}
-              </button>
-              {/* BYOK concurrency note [FG-2]: your-key runs share self-hosted
-                  compute and may queue at peak — stated so it reads as a limit,
-                  not a penalty for not buying credits. */}
-              <span className="w-full text-muted-foreground/80">
-                {msg("billing.mode.byok_queue_note")}
-              </span>
+            <div className="flex items-center gap-2 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
+              <span className="min-w-0 flex-1">{msg("billing.mode.byok_hint")}</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenChange(false);
+                      openTo("providers");
+                    }}
+                    aria-label={msg("billing.mode.manage_keys")}
+                    className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/60"
+                  >
+                    <Key className="size-4" aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{msg("billing.mode.manage_keys")}</TooltipContent>
+              </Tooltip>
             </div>
           )}
 
