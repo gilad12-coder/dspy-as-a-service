@@ -1276,16 +1276,12 @@ def create_app(
     )
     app.include_router(create_account_security_router(job_store=job_store), tags=["Auth"])
     app.include_router(create_account_data_router(job_store=job_store), tags=["Settings"])
-    app.include_router(
-        create_notification_preferences_router(job_store=job_store), tags=["Settings"]
-    )
+    app.include_router(create_notification_preferences_router(job_store=job_store), tags=["Settings"])
     app.include_router(create_datasets_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_dataset_library_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_dataset_share_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_tagging_session_router(job_store=job_store), tags=["Optimizations"])
-    app.include_router(
-        create_tagging_session_share_router(job_store=job_store), tags=["Optimizations"]
-    )
+    app.include_router(create_tagging_session_share_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(
         create_tagger_assist_router(job_store=job_store, get_worker_ref=lambda: worker),
         tags=["Optimizations"],
@@ -1294,7 +1290,7 @@ def create_app(
     app.include_router(create_user_preferences_router(), tags=["Settings"])
     app.include_router(create_telemetry_router(job_store=job_store), tags=["Telemetry"])
     app.include_router(create_wizard_router(), tags=["Wizard"])
-    app.include_router(create_workflows_router(), tags=["Workflows"])
+    app.include_router(create_workflows_router(job_store=job_store), tags=["Workflows"])
     app.include_router(
         create_submissions_router(service=service, job_store=job_store),
         tags=["Optimizations"],

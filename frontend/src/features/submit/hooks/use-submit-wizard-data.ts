@@ -42,12 +42,17 @@ export function useRecentModelConfigs() {
 
   const saveToRecent = useCallback((config: ModelConfig) => {
     if (!config.name) return;
-    // Strip api_key before persisting — recents go to localStorage and the
-    // key must never live on disk. The wizard repopulates a fresh key per
-    // submission anyway.
-    const { api_key: _omit, ...safeExtra } = config.extra ?? {};
+    // Legacy inline connection fields are never persisted; BYOK references
+    // the encrypted Settings → Providers vault by slug instead.
+    const {
+      api_key: _ApiKey,
+      api_base: _ApiBase,
+      base_url: _ExtraBaseUrl,
+      ...safeExtra
+    } = config.extra ?? {};
+    const { base_url: _baseUrl, ...safeFields } = config;
     const safeConfig: ModelConfig = {
-      ...config,
+      ...safeFields,
       extra: Object.keys(safeExtra).length > 0 ? safeExtra : undefined,
     };
     setRecentConfigs((prev) => {

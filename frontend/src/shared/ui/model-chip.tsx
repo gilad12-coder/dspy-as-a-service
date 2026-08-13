@@ -1,7 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { Gear, Copy, Trash, Plus, Thermometer, Hash, Eye, Brain, Info } from "@/shared/ui/icons";
+import {
+  Gear,
+  Copy,
+  Trash,
+  Plus,
+  Thermometer,
+  Hash,
+  Eye,
+  Brain,
+  Info,
+  Coins,
+  Key,
+} from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
 import type { CatalogModel, ModelConfig } from "@/shared/types/api";
 import { msg } from "@/shared/lib/messages";
@@ -55,6 +67,24 @@ function ReasoningPill({ value }: { value: string | null | undefined }) {
   );
 }
 
+function TokenSourcePill({ source }: { source: ModelConfig["token_source"] }) {
+  // Keep this to a compact echo; the dialog owns the explanation and provider management.
+  if (!source) return null;
+  const byok = source === "byok";
+  const Icon = byok ? Key : Coins;
+  const label = msg(byok ? "billing.mode.byok" : "billing.mode.managed");
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-0.5 rounded bg-muted/50 px-1 py-0.5 text-[9px] font-semibold text-muted-foreground/80"
+      title={label}
+      dir="auto"
+    >
+      <Icon className="size-2.5" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
 export function ModelChip({
   config,
   roleLabel,
@@ -99,7 +129,11 @@ export function ModelChip({
             model) renders no parameter row at all — a fabricated temperature
             would read as a setting the surface doesn't actually have. */}
       {!isEmpty &&
-        (config.temperature != null || config.max_tokens || effort || supportsVision) && (
+        (config.temperature != null ||
+          config.max_tokens ||
+          effort ||
+          supportsVision ||
+          config.token_source) && (
           <div
             className="flex items-center gap-2.5 text-[0.625rem] text-muted-foreground"
             dir="ltr"
@@ -117,6 +151,7 @@ export function ModelChip({
               </span>
             )}
             {effort && <ReasoningPill value={effort} />}
+            <TokenSourcePill source={config.token_source} />
             {supportsVision && (
               <span
                 className="inline-flex items-center gap-0.5 rounded-sm bg-primary/10 px-1 py-px text-primary"

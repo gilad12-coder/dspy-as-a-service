@@ -70,11 +70,7 @@ def test_save_key_stores_ciphertext_not_plaintext(engine: object, vault_key: str
     assert view.last4 == "abcd"
     assert view.status == STATUS_VERIFIED
     with Session(engine) as session:
-        row = (
-            session.query(BillingProviderKeyModel)
-            .filter_by(username="u@x.com", provider="openrouter")
-            .one()
-        )
+        row = session.query(BillingProviderKeyModel).filter_by(username="u@x.com", provider="openrouter").one()
         assert row is not None
         assert secret.encode("utf-8") not in row.secret_ciphertext
         # The ciphertext round-trips back to the original secret under the key.
@@ -230,13 +226,36 @@ def test_save_key_custom_api_base_probes_that_endpoint(engine: object, vault_key
         return _probe_response(200)
 
     with patch("core.billing.byok_vault.httpx.get", side_effect=fake_get):
-        view = vault.save_key(
-            "u@x.com", "custom", "sk-custom-1234", api_base="https://host.example/v1"
-        )
+        view = vault.save_key("u@x.com", "custom", "sk-custom-1234", api_base="https://host.example/v1")
     assert view.status == STATUS_VERIFIED
     assert view.api_base == "https://host.example/v1"
     assert captured["url"] == "https://host.example/v1/models"
     assert captured["auth"] == "Bearer sk-custom-1234"
+
+
+def test_save_key_custom_root_falls_back_across_models_paths(
+    engine: object,
+    vault_key: str,
+) -> None:
+    """A root custom URL falls back from ``/v1/models`` to ``/models``."""
+    vault = ProviderKeyVault(engine=engine)
+
+    with patch(
+        "core.billing.byok_vault.httpx.get",
+        side_effect=[_probe_response(404), _probe_response(200)],
+    ) as get:
+        view = vault.save_key(
+            "u@x.com",
+            "custom",
+            "sk-custom-1234",
+            api_base="https://host.example",
+        )
+
+    assert view.status == STATUS_VERIFIED
+    assert [call.args[0] for call in get.call_args_list] == [
+        "https://host.example/v1/models",
+        "https://host.example/models",
+    ]
 
 
 def test_save_key_unknown_provider_without_api_base_rejected(engine: object, vault_key: str) -> None:
@@ -262,6 +281,32 @@ def test_resolve_connection_round_trips_api_base_and_params(engine: object, vaul
     assert resolved is not None
     assert resolved.secret == "sk-resolve-9999"
     assert resolved.api_base == "https://host.example/v1"
+    assert resolved.params == {"organization": "org-1"}
+
+
+def test_save_key_drops_connection_overrides_from_plaintext_params(
+    engine: object,
+    vault_key: str,
+) -> None:
+    """Reserved params cannot persist a second key, endpoint, or model in plaintext."""
+    vault = ProviderKeyVault(engine=engine)
+    with patch("core.billing.byok_vault.httpx.get", return_value=_probe_response(200)):
+        vault.save_key(
+            "u@x.com",
+            "custom",
+            "sk-resolve-9999",
+            api_base="https://host.example/v1",
+            params={
+                "api_key": "plaintext-secret",
+                "base_url": "https://untrusted.example/v1",
+                "api_base": "https://also-untrusted.example/v1",
+                "model": "openai/different-model",
+                "organization": "org-1",
+            },
+        )
+
+    resolved = vault.resolve_connection("u@x.com", "custom")
+    assert resolved is not None
     assert resolved.params == {"organization": "org-1"}
 
 

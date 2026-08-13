@@ -19,6 +19,10 @@ export type ProfileKind = "categorical" | "numeric" | "freeform";
 
 export interface ModelConfig {
   name: string;
+  /** Billing/auth source for this model only. Older saved configs default to managed. */
+  token_source?: "managed" | "byok";
+  /** Vault provider slug when a BYOK model comes from a custom connection. */
+  byok_provider?: string | null;
   base_url?: string | null;
   temperature?: number | null;
   max_tokens?: number | null;
@@ -582,6 +586,8 @@ export interface CatalogModel {
   value: string;
   label: string;
   provider: string;
+  /** Vault provider slug to persist when this model came from a custom BYOK connection. */
+  byok_provider?: string | null;
   data_center?: string | null;
   supports_thinking: boolean;
   supports_vision: boolean;
@@ -605,12 +611,6 @@ export interface CatalogProvider {
 export interface ModelCatalogResponse {
   providers: CatalogProvider[];
   models: CatalogModel[];
-}
-
-export interface DiscoverModelsResponse {
-  models: string[];
-  base_url: string;
-  error?: string | null;
 }
 
 export interface TargetColumnProfile {

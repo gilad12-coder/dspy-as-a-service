@@ -21,13 +21,17 @@ from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
+from ...billing import ProviderKeyVault, resolve_byok_model_config
 from ...billing.metering import meter_llm_run
 from ...config import settings
 from ...constants import (
+    PAYLOAD_OVERVIEW_GENERATION_MODELS,
     PAYLOAD_OVERVIEW_MODEL_NAME,
     PAYLOAD_OVERVIEW_MODEL_SETTINGS,
     PAYLOAD_OVERVIEW_MODULE_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZER_NAME,
+    TOKEN_SOURCE_BYOK,
+    TOKEN_SOURCE_MANAGED,
 )
 from ...models import ModelConfig, ServeInfoResponse, ServeRequest, ServeResponse
 from ...service_gateway.agents.generalist import TrustMode, get_approval_registry
@@ -54,6 +58,61 @@ from ._helpers import (
 logger = logging.getLogger(__name__)
 
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
+
+
+def _resolve_inference_model_config(job_store, username: str, model_config: ModelConfig) -> ModelConfig:
+    """Resolve a caller's stored BYOK connection for interactive inference.
+
+    Args:
+        job_store: Store whose engine backs provider connections.
+        username: Authenticated caller who pays for the inference.
+        model_config: Requested or stored model config.
+
+    Returns:
+        Managed config unchanged, or a BYOK copy carrying runtime credentials.
+
+    Raises:
+        DomainError: 400 when the caller lacks a verified matching connection.
+    """
+    if model_config.token_source != TOKEN_SOURCE_BYOK:
+        return model_config
+    engine = getattr(job_store, "engine", None)
+    if engine is None:
+        raise DomainError("billing.byok_missing_connection", status=400, provider="")
+    try:
+        return resolve_byok_model_config(
+            model_config,
+            username=username,
+            vault=ProviderKeyVault(engine=engine),
+        )
+    except ValueError as exc:
+        raise DomainError("billing.byok_missing_connection", status=400, provider=str(exc)) from exc
+
+
+def _pair_model_config(
+    model_name: str,
+    overview: dict[str, Any],
+    override: ModelConfig | None,
+) -> ModelConfig:
+    """Resolve a grid pair's persisted model config or an explicit override.
+
+    Args:
+        model_name: Pair generation-model identifier.
+        overview: Parent grid payload overview.
+        override: Optional caller-supplied model config.
+
+    Returns:
+        The matching persisted config, explicit override, or legacy name-only config.
+    """
+    if override is not None:
+        return override
+    for raw_config in overview.get(PAYLOAD_OVERVIEW_GENERATION_MODELS, []):
+        if not isinstance(raw_config, dict):
+            continue
+        config = ModelConfig.model_validate(raw_config)
+        if config.normalized_identifier() == model_name.strip("/"):
+            return config
+    return ModelConfig(name=model_name)
 
 
 class RequestUserInferenceRequest(BaseModel):
@@ -409,9 +468,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             output_fields=output_fields,
             instructions=truncate_text(instructions, AGENT_MAX_INSTRUCTIONS),
             demo_count=demo_count,
-            sample_inputs=_sample_inputs(
-                job_store, optimization_id, current_user, artifact, input_fields
-            ),
+            sample_inputs=_sample_inputs(job_store, optimization_id, current_user, artifact, input_fields),
         )
 
     @router.post(
@@ -510,9 +567,7 @@ def create_serve_router(*, job_store) -> APIRouter:
         summary="Run a single inference through an optimized program",
         tags=["agent"],
     )
-    def serve_program(
-        optimization_id: str, req: ServeRequest, current_user: AuthenticatedUserDep
-    ) -> ServeResponse:
+    def serve_program(optimization_id: str, req: ServeRequest, current_user: AuthenticatedUserDep) -> ServeResponse:
         """Run a blocking inference call through the compiled program.
 
         Model resolution: ``model_config_override`` → stored job settings →
@@ -566,6 +621,7 @@ def create_serve_router(*, job_store) -> APIRouter:
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
         enforce_llm_credits(job_store, current_user.username)
+        model_config = _resolve_inference_model_config(job_store, current_user.username, model_config)
         lm = build_language_model(model_config)
 
         node_traces = None
@@ -585,6 +641,7 @@ def create_serve_router(*, job_store) -> APIRouter:
                 current_user.username,
                 [lm],
                 description="Serve inference",
+                token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
             )
 
         outputs: dict[str, Any] = {}
@@ -607,9 +664,7 @@ def create_serve_router(*, job_store) -> APIRouter:
         "/serve/{optimization_id}/stream",
         summary="Run inference and stream partial outputs as SSE",
     )
-    async def serve_program_stream(
-        optimization_id: str, req: ServeRequest, current_user: AuthenticatedUserDep
-    ):
+    async def serve_program_stream(optimization_id: str, req: ServeRequest, current_user: AuthenticatedUserDep):
         """Run inference and stream partial outputs as Server-Sent Events.
 
         Emits one ``token`` event per chunk, keyed by output field, then a
@@ -633,9 +688,7 @@ def create_serve_router(*, job_store) -> APIRouter:
         # Offload the synchronous DB read + program deserialization so it does
         # not block the single event loop (and every other in-flight request /
         # SSE stream) before the first byte is produced.
-        program, result, overview = await asyncio.to_thread(
-            load_program, job_store, optimization_id, current_user
-        )
+        program, result, overview = await asyncio.to_thread(load_program, job_store, optimization_id, current_user)
         artifact = result.program_artifact
 
         if req.model_config_override:
@@ -673,6 +726,7 @@ def create_serve_router(*, job_store) -> APIRouter:
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
         await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
+        model_config = _resolve_inference_model_config(job_store, current_user.username, model_config)
         lm = build_language_model(model_config)
         model_used = model_config.normalized_identifier()
         listeners = [StreamListener(signature_field_name=f) for f in output_fields]
@@ -692,6 +746,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             username=current_user.username,
             description="Serve inference",
             usage_sink=[lm],
+            token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
         )
         return StreamingResponse(
             sse_from_events(metered),
@@ -709,9 +764,7 @@ def create_serve_router(*, job_store) -> APIRouter:
         summary="Describe the program for one grid-search pair",
         tags=["agent"],
     )
-    def serve_pair_info(
-        optimization_id: str, pair_index: int, current_user: AuthenticatedUserDep
-    ) -> ServeInfoResponse:
+    def serve_pair_info(optimization_id: str, pair_index: int, current_user: AuthenticatedUserDep) -> ServeInfoResponse:
         """Describe the program for one grid-search pair without running it.
 
         Same shape as ``GET /serve/{id}/info`` but scoped to a specific
@@ -742,9 +795,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             output_fields=output_fields,
             instructions=truncate_text(instructions, AGENT_MAX_INSTRUCTIONS),
             demo_count=demo_count,
-            sample_inputs=_sample_inputs(
-                job_store, optimization_id, current_user, artifact, input_fields
-            ),
+            sample_inputs=_sample_inputs(job_store, optimization_id, current_user, artifact, input_fields),
         )
 
     @router.post(
@@ -778,10 +829,10 @@ def create_serve_router(*, job_store) -> APIRouter:
                 credits), 404 (unknown / inaccessible), 409 (not finished
                 or pair failed).
         """
-        program, pair, _overview = load_pair_program(job_store, optimization_id, pair_index, current_user)
+        program, pair, overview = load_pair_program(job_store, optimization_id, pair_index, current_user)
         artifact = pair.program_artifact
 
-        model_config = req.model_config_override or ModelConfig(name=pair.generation_model)
+        model_config = _pair_model_config(pair.generation_model, overview, req.model_config_override)
 
         input_fields, output_fields, _instructions, _demo_count = _artifact_prompt_fields(artifact)
 
@@ -798,6 +849,7 @@ def create_serve_router(*, job_store) -> APIRouter:
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
         enforce_llm_credits(job_store, current_user.username)
+        model_config = _resolve_inference_model_config(job_store, current_user.username, model_config)
         lm = build_language_model(model_config)
 
         try:
@@ -811,6 +863,7 @@ def create_serve_router(*, job_store) -> APIRouter:
                 current_user.username,
                 [lm],
                 description="Serve inference",
+                token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
             )
 
         outputs: dict[str, Any] = {}
@@ -860,12 +913,12 @@ def create_serve_router(*, job_store) -> APIRouter:
         """
         # Offload the synchronous DB read + program deserialization so it does
         # not block the single event loop before the first byte is produced.
-        program, pair, _overview = await asyncio.to_thread(
+        program, pair, overview = await asyncio.to_thread(
             load_pair_program, job_store, optimization_id, pair_index, current_user
         )
         artifact = pair.program_artifact
 
-        model_config = req.model_config_override or ModelConfig(name=pair.generation_model)
+        model_config = _pair_model_config(pair.generation_model, overview, req.model_config_override)
 
         input_fields, output_fields, _instructions, _demo_count = _artifact_prompt_fields(artifact)
 
@@ -882,6 +935,7 @@ def create_serve_router(*, job_store) -> APIRouter:
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
         await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
+        model_config = _resolve_inference_model_config(job_store, current_user.username, model_config)
         lm = build_language_model(model_config)
         model_used = model_config.normalized_identifier()
         listeners = [StreamListener(signature_field_name=f) for f in output_fields]
@@ -901,6 +955,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             username=current_user.username,
             description="Serve inference",
             usage_sink=[lm],
+            token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
         )
         return StreamingResponse(
             sse_from_events(metered),
@@ -966,6 +1021,7 @@ def create_serve_router(*, job_store) -> APIRouter:
                 raise DomainError("serve.no_model_config", status=400)
 
         await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
+        model_config = _resolve_inference_model_config(job_store, current_user.username, model_config)
         lm = build_language_model(model_config)
         tool_source = react_overlay.tool_source or {}
         mcp_url = tool_source.get("mcp_url") or settings.generalist_agent_mcp_url
@@ -987,6 +1043,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             username=current_user.username,
             description="Serve chat",
             usage_sink=[lm],
+            token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
         )
         return StreamingResponse(
             sse_from_events(metered),

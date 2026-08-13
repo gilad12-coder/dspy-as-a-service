@@ -32,6 +32,7 @@ from ..billing import (
     StripeBillingService,
     inject_byok_connections,
     inject_provisioned_openrouter_key,
+    payload_uses_token_source,
 )
 from ..billing.pricing import ModelUsage
 from ..config import settings
@@ -45,6 +46,7 @@ from ..constants import (
     PAYLOAD_OVERVIEW_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_TOKEN_SOURCE,
+    PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL,
     PAYLOAD_OVERVIEW_USERNAME,
     PROGRESS_GRID_PAIR_COMPLETED,
     PROGRESS_GRID_PAIR_FAILED,
@@ -628,31 +630,42 @@ class BackgroundWorker:
                 # client-supplied key.
                 token_source = overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED
                 byok_engine = getattr(self._job_store, "engine", None)
-                if token_source == TOKEN_SOURCE_BYOK and byok_engine is not None:
-                    byok_payload = grid_payload if is_grid else run_payload
-                    inject_byok_connections(
+                if byok_engine is not None:
+                    execution_payload = grid_payload if is_grid else run_payload
+                    if payload_uses_token_source(
                         payload_dict,
-                        username=byok_payload.username,
-                        vault=ProviderKeyVault(engine=byok_engine),
-                    )
+                        TOKEN_SOURCE_BYOK,
+                        default_token_source=token_source,
+                    ):
+                        inject_byok_connections(
+                            payload_dict,
+                            username=execution_payload.username,
+                            vault=ProviderKeyVault(engine=byok_engine),
+                            default_token_source=token_source,
+                        )
                 # Managed-run mirror of the BYOK seam: when key provisioning is
                 # configured, dispatch under a per-user OpenRouter runtime key
                 # whose spend limit was just synced to the account's balance —
                 # a provider-side backstop on top of the ledger clamp. Any
                 # failure leaves the payload untouched and the run falls back
                 # to the shared gateway key.
-                elif token_source == TOKEN_SOURCE_MANAGED and byok_engine is not None:
+                if byok_engine is not None and payload_uses_token_source(
+                    payload_dict,
+                    TOKEN_SOURCE_MANAGED,
+                    default_token_source=token_source,
+                ):
                     provisioner = OpenRouterKeyProvisioner(engine=byok_engine)
                     if provisioner.enabled:
-                        managed_payload = grid_payload if is_grid else run_payload
                         spendable = StripeBillingService(engine=byok_engine).spendable_credits(
-                            managed_payload.username
+                            execution_payload.username
                         )
-                        runtime_key = provisioner.ensure_runtime_key(
-                            managed_payload.username, spendable
-                        )
+                        runtime_key = provisioner.ensure_runtime_key(execution_payload.username, spendable)
                         if runtime_key is not None:
-                            inject_provisioned_openrouter_key(payload_dict, api_key=runtime_key)
+                            inject_provisioned_openrouter_key(
+                                payload_dict,
+                                api_key=runtime_key,
+                                default_token_source=token_source,
+                            )
 
                 event_queue = self._mp_ctx.Queue()
                 run_process = self._mp_ctx.Process(  # type: ignore[attr-defined]
@@ -861,6 +874,7 @@ class BackgroundWorker:
                                 run_name=overview.get(PAYLOAD_OVERVIEW_NAME) or "",
                                 model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
                                 token_source=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED,
+                                token_sources_by_model=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL),
                             )
                             # Stamp the billing outcome onto the persisted result so
                             # the result screen can show what the run cost.
@@ -1191,6 +1205,7 @@ class BackgroundWorker:
         run_name: str,
         model: str | None,
         token_source: str = TOKEN_SOURCE_MANAGED,
+        token_sources_by_model: dict[str, str] | None = None,
     ) -> int:
         """Debit a finished run's credit cost from the account's local ledger.
 
@@ -1213,6 +1228,7 @@ class BackgroundWorker:
             model: Model id stamped on the ledger row, or ``None``.
             token_source: ``"managed"`` (full cost) or ``"byok"`` (platform fee
                 only); defaults to managed.
+            token_sources_by_model: Optional model-to-source map for mixed jobs.
 
         Returns:
             The credits charged (``0`` when nothing was billed or the debit was
@@ -1225,12 +1241,17 @@ class BackgroundWorker:
         if not usages:
             return 0
         try:
+            billing_kwargs: dict[str, Any] = {
+                "model": model,
+                "description": run_name or "Run",
+                "token_source": token_source,
+            }
+            if token_sources_by_model is not None:
+                billing_kwargs["token_sources_by_model"] = token_sources_by_model
             return StripeBillingService(engine=engine).debit_run(
                 username,
                 usages,
-                model=model,
-                description=run_name or "Run",
-                token_source=token_source,
+                **billing_kwargs,
             )
         except Exception as exc:  # isolation boundary: a debit failure must never impact job status
             logger.debug("Credit debit for %s failed: %s", username, exc)
@@ -1579,9 +1600,7 @@ class BackgroundWorker:
         except Exception:
             return False
 
-    def _fan_out_grid(
-        self, optimization_id: str, grid_payload: GridSearchRequest, overview: dict[str, Any]
-    ) -> None:
+    def _fan_out_grid(self, optimization_id: str, grid_payload: GridSearchRequest, overview: dict[str, Any]) -> None:
         """Fan a claimed grid parent out into claimable per-pair jobs.
 
         First claim: creates one child row per (generation, reflection) pair
@@ -1817,6 +1836,7 @@ class BackgroundWorker:
                     run_name=overview.get(PAYLOAD_OVERVIEW_NAME) or "",
                     model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
                     token_source=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED,
+                    token_sources_by_model=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL),
                 )
                 self._stamp_billing_outcome(
                     parent_optimization_id,

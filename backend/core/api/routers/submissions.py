@@ -61,11 +61,13 @@ from ...constants import (
     PAYLOAD_OVERVIEW_TASK_FINGERPRINT,
     PAYLOAD_OVERVIEW_TASK_MODEL,
     PAYLOAD_OVERVIEW_TOKEN_SOURCE,
+    PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL,
     PAYLOAD_OVERVIEW_TOOL_SOURCE,
     PAYLOAD_OVERVIEW_TOTAL_PAIRS,
     PAYLOAD_OVERVIEW_USERNAME,
     PAYLOAD_OVERVIEW_WORKFLOW,
     TOKEN_SOURCE_BYOK,
+    TOKEN_SOURCE_MANAGED,
 )
 from ...i18n import t
 from ...i18n_keys import I18nKey
@@ -504,9 +506,7 @@ def _enforce_submission_admission(job_store, username: str) -> None:
         raise DomainError("quota.concurrent_reached", status=429, limit=limit)
 
 
-def _cap_cost_ceiling_to_balance(
-    payload: _OptimizationRequestBase, spendable: int | None, token_source: str
-) -> None:
+def _cap_cost_ceiling_to_balance(payload: _OptimizationRequestBase, spendable: int | None, token_source: str) -> None:
     """Pin a run's cost ceiling to what the account's spendable credits can back.
 
     With model-tier gating gone, any model is runnable and credits are the only
@@ -533,10 +533,69 @@ def _cap_cost_ceiling_to_balance(
     payload.max_cost_credits = budget if current is None else min(current, budget)
 
 
-def _enforce_byok_connections(
-    job_store, username: str, token_source: str, model_values: list[str]
-) -> None:
-    """Refuse a BYOK run when the account has no saved key for a model's provider.
+def _request_model_configs(payload: _OptimizationRequestBase) -> list[ModelConfig]:
+    """Return every executable model config carried by a submission.
+
+    Args:
+        payload: Run or grid request.
+
+    Returns:
+        Model configs in execution order.
+    """
+    if isinstance(payload, RunRequest):
+        return [
+            config
+            for config in (
+                payload.model_settings,
+                payload.reflection_model_settings,
+                payload.task_model_settings,
+            )
+            if config is not None
+        ]
+    if isinstance(payload, GridSearchRequest):
+        return [*payload.generation_models, *payload.reflection_models]
+    return []
+
+
+def _normalize_model_token_sources(
+    payload: _OptimizationRequestBase,
+) -> tuple[list[ModelConfig], dict[str, str]]:
+    """Resolve legacy job-level sources into explicit per-model sources.
+
+    Args:
+        payload: Run or grid request to normalize in place.
+
+    Returns:
+        The model configs and their normalized model-to-source billing map.
+
+    Raises:
+        DomainError: 400 when one model id is assigned conflicting sources.
+    """
+    configs = _request_model_configs(payload)
+    sources: dict[str, str] = {}
+    for config in configs:
+        source = config.token_source or payload.token_source
+        config.token_source = source
+        config.base_url = None
+        for field in ("api_key", "api_base", "base_url"):
+            config.extra.pop(field, None)
+        if source == TOKEN_SOURCE_MANAGED:
+            config.byok_provider = None
+        model = config.normalized_identifier()
+        existing = sources.get(model)
+        if existing is not None and existing != source:
+            raise DomainError("submission.validation_failed", status=400)
+        sources[model] = source
+    payload.token_source = (
+        TOKEN_SOURCE_BYOK
+        if sources and all(source == TOKEN_SOURCE_BYOK for source in sources.values())
+        else TOKEN_SOURCE_MANAGED
+    )
+    return configs, sources
+
+
+def _enforce_byok_connections(job_store, username: str, model_configs: list[ModelConfig]) -> None:
+    """Refuse BYOK models without a verified saved provider connection.
 
     In BYOK mode every model authenticates with the user's own provider key,
     resolved from the encrypt-at-rest vault at run time. If the account saved no
@@ -549,15 +608,12 @@ def _enforce_byok_connections(
     Args:
         job_store: Job-store instance whose ORM engine backs the billing tables.
         username: Account attempting the submission.
-        token_source: ``"managed"`` or ``"byok"``; managed is exempt.
-        model_values: Fully-qualified model ids the run would execute on.
+        model_configs: Executable configs with normalized per-model sources.
 
     Raises:
         DomainError: 400 ``billing.byok_missing_connection`` listing the providers
             the account has no saved connection for.
     """
-    if token_source != TOKEN_SOURCE_BYOK:
-        return
     engine = getattr(job_store, "engine", None)
     if engine is None or not username:
         return
@@ -565,12 +621,18 @@ def _enforce_byok_connections(
     # A model id carries a LiteLLM prefix (``gemini``, ``together_ai``) but the
     # key is saved under the vault slug (``google``, ``together``); bridge the two
     # exactly as the run path does so the gate sees the same connections it will.
-    providers = {
-        byok_provider_for_litellm(prefix)
-        for m in model_values
-        if m and (prefix := provider_slug_for_model(m)) is not None
-    }
-    missing = sorted(p for p in providers if not vault.has_connection(username, p))
+    providers: set[str] = set()
+    for config in model_configs:
+        if config.token_source != TOKEN_SOURCE_BYOK:
+            continue
+        provider = (config.byok_provider or "").strip()
+        if not provider:
+            prefix = provider_slug_for_model(config.normalized_identifier())
+            if prefix is not None:
+                provider = byok_provider_for_litellm(prefix)
+        if provider:
+            providers.add(provider)
+    missing = sorted(provider for provider in providers if not vault.has_verified_connection(username, provider))
     if missing:
         raise DomainError("billing.byok_missing_connection", status=400, provider=", ".join(missing))
 
@@ -682,14 +744,10 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 candidate_models=[payload.model_settings],
             )
 
+        _run_model_configs, _token_sources_by_model = _normalize_model_token_sources(payload)
         _spendable = _enforce_credit_balance(job_store, payload.username, payload.token_source)
         _cap_cost_ceiling_to_balance(payload, _spendable, payload.token_source)
-        _run_model_values = [
-            cfg.normalized_identifier()
-            for cfg in (payload.model_settings, payload.reflection_model_settings, payload.task_model_settings)
-            if cfg is not None
-        ]
-        _enforce_byok_connections(job_store, payload.username, payload.token_source, _run_model_values)
+        _enforce_byok_connections(job_store, payload.username, _run_model_configs)
 
         optimization_id = str(uuid4())
         # Workflow runs fingerprint the whole graph spec in place of the
@@ -715,9 +773,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         enforce_storage_quota(job_store, payload.username, incoming_bytes=json_byte_size(payload_dump))
 
         composition = (
-            COMPOSITION_WORKFLOW
-            if payload.module_name.lower() == WORKFLOW_MODULE_NAME
-            else COMPOSITION_SINGLE
+            COMPOSITION_WORKFLOW if payload.module_name.lower() == WORKFLOW_MODULE_NAME else COMPOSITION_SINGLE
         )
         job_store.create_job(optimization_id, username=payload.username, idempotency_key=normalized_key)
         job_store.set_payload_overview(
@@ -752,6 +808,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 PAYLOAD_OVERVIEW_COMPILE_KWARGS: dict(payload.compile_kwargs),
                 PAYLOAD_OVERVIEW_TASK_FINGERPRINT: task_fingerprint,
                 PAYLOAD_OVERVIEW_TOKEN_SOURCE: payload.token_source,
+                PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL: _token_sources_by_model,
                 PAYLOAD_OVERVIEW_MAX_COST_CREDITS: payload.max_cost_credits,
                 PAYLOAD_OVERVIEW_ESTIMATED_LOW: payload.estimated_credits_low,
                 PAYLOAD_OVERVIEW_ESTIMATED_HIGH: payload.estimated_credits_high,
@@ -861,13 +918,10 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             candidate_models=list(payload.generation_models),
         )
 
+        _grid_model_configs, _token_sources_by_model = _normalize_model_token_sources(payload)
         _spendable = _enforce_credit_balance(job_store, payload.username, payload.token_source)
         _cap_cost_ceiling_to_balance(payload, _spendable, payload.token_source)
-        _grid_model_values = [
-            cfg.normalized_identifier()
-            for cfg in (*payload.generation_models, *payload.reflection_models)
-        ]
-        _enforce_byok_connections(job_store, payload.username, payload.token_source, _grid_model_values)
+        _enforce_byok_connections(job_store, payload.username, _grid_model_configs)
 
         optimization_id = str(uuid4())
         if payload.seed is None:
@@ -908,6 +962,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 PAYLOAD_OVERVIEW_REFLECTION_MODELS: [m.model_dump() for m in payload.reflection_models],
                 PAYLOAD_OVERVIEW_TASK_FINGERPRINT: task_fingerprint,
                 PAYLOAD_OVERVIEW_TOKEN_SOURCE: payload.token_source,
+                PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL: _token_sources_by_model,
                 PAYLOAD_OVERVIEW_MAX_COST_CREDITS: payload.max_cost_credits,
                 PAYLOAD_OVERVIEW_ESTIMATED_LOW: payload.estimated_credits_low,
                 PAYLOAD_OVERVIEW_ESTIMATED_HIGH: payload.estimated_credits_high,

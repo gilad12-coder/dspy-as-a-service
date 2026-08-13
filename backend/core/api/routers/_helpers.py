@@ -39,6 +39,7 @@ from ...constants import (
     PAYLOAD_OVERVIEW_TASK_FINGERPRINT,
     PAYLOAD_OVERVIEW_TOOL_SOURCE,
     PAYLOAD_OVERVIEW_WORKFLOW,
+    TOKEN_SOURCE_MANAGED,
 )
 from ...exceptions import ServiceError
 from ...models import (
@@ -88,9 +89,8 @@ from .constants import TERMINAL_STATUSES
 
 logger = logging.getLogger(__name__)
 
-_USER_FACING_OPTIMIZATION_TYPES = frozenset(
-    {OPTIMIZATION_TYPE_RUN, OPTIMIZATION_TYPE_GRID_SEARCH}
-)
+_USER_FACING_OPTIMIZATION_TYPES = frozenset({OPTIMIZATION_TYPE_RUN, OPTIMIZATION_TYPE_GRID_SEARCH})
+
 
 class _BoundedProgramCache(OrderedDict[str, Any]):
     """OrderedDict-backed LRU for deserialized DSPy programs.
@@ -192,6 +192,7 @@ async def stream_with_llm_metering(
     username: str,
     description: str,
     usage_sink: list,
+    token_source: str = TOKEN_SOURCE_MANAGED,
 ) -> AsyncIterator[dict[str, Any]]:
     """Mirror SSE events and meter the turn's LLM usage when the stream ends.
 
@@ -210,6 +211,7 @@ async def stream_with_llm_metering(
         username: Account the turn is billed to.
         description: Ledger-row label for the charge (e.g. ``"Agent chat"``).
         usage_sink: List the run function appends its ``MeteredLM``(s) to.
+        token_source: Billing source for this interactive model call.
 
     Yields:
         The upstream events, unchanged.
@@ -222,7 +224,12 @@ async def stream_with_llm_metering(
         if engine is not None and usage_sink:
             try:
                 await asyncio.to_thread(
-                    meter_llm_run, engine, username, list(usage_sink), description=description
+                    meter_llm_run,
+                    engine,
+                    username,
+                    list(usage_sink),
+                    description=description,
+                    token_source=token_source,
                 )
             except Exception:
                 logger.exception("LLM turn metering failed for %s", username)
@@ -444,9 +451,7 @@ def load_job_with_role(
         raise DomainError("optimization.not_found", status=404, optimization_id=optimization_id) from None
     overview = parse_overview(job_data)
     optimization_type = (
-        overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE)
-        or job_data.get("optimization_type")
-        or OPTIMIZATION_TYPE_RUN
+        overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE) or job_data.get("optimization_type") or OPTIMIZATION_TYPE_RUN
     )
     if optimization_type not in _USER_FACING_OPTIMIZATION_TYPES:
         raise DomainError("optimization.not_found", status=404, optimization_id=optimization_id)
@@ -526,9 +531,7 @@ def require_role_at_least(
     return job_data, role
 
 
-def grant_roles_for(
-    job_store, optimization_ids: list[str], username: str
-) -> dict[str, str]:
+def grant_roles_for(job_store, optimization_ids: list[str], username: str) -> dict[str, str]:
     """Batch-resolve the caller's grant roles across many optimizations.
 
     One query for the whole id set (see :func:`list_grants_for_user`); stores
@@ -977,9 +980,7 @@ def _materialize_program(artifact: ProgramArtifact, overview: dict) -> Any:
             signature_cls = load_signature_from_code(signature_code)
             module_factory, auto_signature = resolve_module_factory(module_name)
         except ResolverError as exc:
-            raise DomainError(
-                "optimization.module_reconstruction_failed", status=409, error=str(exc)
-            ) from exc
+            raise DomainError("optimization.module_reconstruction_failed", status=409, error=str(exc)) from exc
 
         if auto_signature or "signature" not in module_kwargs:
             module_kwargs["signature"] = signature_cls
@@ -1053,9 +1054,7 @@ def sanitize_port_values(values: dict[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
-def _materialize_workflow_program(
-    artifact: ProgramArtifact, overview: dict, workflow_spec: WorkflowSpec
-) -> Any:
+def _materialize_workflow_program(artifact: ProgramArtifact, overview: dict, workflow_spec: WorkflowSpec) -> Any:
     """Rebuild a served workflow program from its spec and state JSON.
 
     The shell is reconstructed with the same deterministic builder the run
@@ -1135,13 +1134,9 @@ def _materialize_react_program(artifact: ProgramArtifact, overview: dict) -> Any
         # and is intentionally never persisted on the overlay (see
         # _persist_react_program), so serve falls back to the settings-default
         # URL with no header rather than replaying a stored credential.
-        tools, _live_hashes = resolve_react_tools(
-            react_overlay.tool_source, signature_cls, settings
-        )
+        tools, _live_hashes = resolve_react_tools(react_overlay.tool_source, signature_cls, settings)
     except (ResolverError, ValueError) as exc:
-        raise DomainError(
-            "optimization.module_reconstruction_failed", status=409, error=str(exc)
-        ) from exc
+        raise DomainError("optimization.module_reconstruction_failed", status=409, error=str(exc)) from exc
 
     try:
         # Strict: a served run must materialise against the exact tool surface
@@ -1150,9 +1145,7 @@ def _materialize_react_program(artifact: ProgramArtifact, overview: dict) -> Any
         # surfaces gate identically.
         _assert_tool_set_matches(react_overlay.tool_schema_hashes, tools, strict=True)
     except ToolSchemaDriftError as exc:
-        raise DomainError(
-            "optimization.tool_schema_drift", status=409, error=str(exc)
-        ) from exc
+        raise DomainError("optimization.tool_schema_drift", status=409, error=str(exc)) from exc
 
     _apply_bundle_tool_overrides(
         tools,
@@ -1163,9 +1156,7 @@ def _materialize_react_program(artifact: ProgramArtifact, overview: dict) -> Any
     # above key on the original names). None preserves pre-rename behavior.
     _apply_tool_name_overrides(tools, react_overlay.tool_names)
 
-    program = RetryingReActV2(
-        signature_cls, tools=tools, max_iters=react_overlay.max_iters
-    )
+    program = RetryingReActV2(signature_cls, tools=tools, max_iters=react_overlay.max_iters)
     program.load_state(artifact.program_state_json)
     return program
 

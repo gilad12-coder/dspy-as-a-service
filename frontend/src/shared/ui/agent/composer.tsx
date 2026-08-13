@@ -30,6 +30,7 @@ interface ComposerProps {
    *  Codex layout: attach + permissions on the left, model/mic/send on the
    *  right). */
   leadingControls?: React.ReactNode;
+  className?: string;
 }
 
 /**
@@ -52,6 +53,7 @@ export function Composer({
   stopAriaLabel = msg("auto.shared.ui.agent.composer.literal.2"),
   modelMenu,
   leadingControls,
+  className,
 }: ComposerProps) {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const { locale } = useLocale();
@@ -98,7 +100,10 @@ export function Composer({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="border-t border-border/40 px-3 py-3 shrink-0">
+    <form
+      onSubmit={handleSubmit}
+      className={cn("border-t border-border/40 px-3 py-3 shrink-0", className)}
+    >
       <div
         className={cn(
           "rounded-2xl border border-[#DDD4C8] bg-muted/20 transition-colors",

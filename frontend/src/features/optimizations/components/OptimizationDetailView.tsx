@@ -74,6 +74,7 @@ import type { OptimizationStatusResponse, OptimizationPayloadResponse } from "@/
 import type { SharedOptimizationData } from "@/shared/lib/api";
 import type { PipelineStage } from "../constants";
 import { extractScoresFromLogs } from "../lib/extract-scores";
+import { isReactModuleName } from "../lib/is-react-module";
 import { reconstructGridResult } from "../lib/reconstruct-grid";
 import { DataTab } from "./DataTab";
 import { LogsTab } from "./LogsTab";
@@ -801,6 +802,14 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
     if (!isStale()) setServeLoading(false);
   };
 
+  const handleStopServe = () => {
+    streamReqIdRef.current += 1;
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    setServeLoading(false);
+    setStreamingRun(null);
+  };
+
   const handleClearHistory = () => {
     setRunHistory([]);
     setServeError(null);
@@ -1426,7 +1435,8 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                   <GridServeTab job={job} />
                 ) : !isShare &&
                   !isPairContext &&
-                  (job.module_name ?? "").toLowerCase() === "react" ? (
+                  (isReactModuleName(serveInfo?.module_name) ||
+                    isReactModuleName(job.module_name)) ? (
                   <>
                     <ReactServeChat optimizationId={job.optimization_id} />
                     <ReactServeApi optimizationId={job.optimization_id} />
@@ -1443,6 +1453,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                     textareaRefs={textareaRefs}
                     chatScrollRef={chatScrollRef}
                     handleServe={handleServe}
+                    handleStopServe={handleStopServe}
                     demos={playgroundDemos}
                     optimizationId={job.optimization_id}
                     pairIndex={isPairContext ? activePair.pair_index : undefined}

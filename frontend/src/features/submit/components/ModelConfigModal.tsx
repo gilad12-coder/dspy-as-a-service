@@ -2,15 +2,14 @@
 
 import * as React from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { CaretDown, Key, X } from "@/shared/ui/icons";
-import { useCredits, useByokKeys, litellmProviderForByok } from "@/features/billing";
+import { Coins, Key, X } from "@/shared/ui/icons";
+import { useByokKeys, litellmProviderForByok, type TokenSourceMode } from "@/features/billing";
 import { useSettingsModal } from "@/features/settings";
 import { getByokModelCatalog, cachedByokCatalog } from "@/shared/lib/model-catalog";
 import { Dialog, DialogContent, DialogFooter } from "@/shared/ui/primitives/dialog";
 import { DialogTitleRow } from "@/shared/ui/dialog-title-row";
 import { Button } from "@/shared/ui/primitives/button";
 import { Label } from "@/shared/ui/primitives/label";
-import { Input } from "@/shared/ui/primitives/input";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { Separator } from "@/shared/ui/primitives/separator";
 import { ModelPicker, modelSupportsThinking } from "./ModelPicker";
@@ -36,12 +35,40 @@ interface ModelConfigModalProps {
   recentConfigs?: ModelConfig[];
   /** Remove a single recent config by its model name (rendered as a per-row X). */
   onRemoveRecent?: (name: string) => void;
-  /**
-   * Hide the custom-connection section (base URL / API key) for surfaces
-   * that always run through the platform endpoint — e.g. the tagger's
-   * tagging model, which the server restricts to the curated catalog.
-   */
-  showConnection?: boolean;
+  /** Allow this surface to use the account's stored BYOK connections. */
+  allowByok?: boolean;
+}
+
+const TOKEN_SOURCE_SEGMENTS: Array<{
+  mode: TokenSourceMode;
+  icon: typeof Coins;
+  labelKey: "billing.mode.managed" | "billing.mode.byok";
+}> = [
+  { mode: "managed", icon: Coins, labelKey: "billing.mode.managed" },
+  { mode: "byok", icon: Key, labelKey: "billing.mode.byok" },
+];
+
+const TOKEN_SOURCE_TRANSITION = {
+  type: "tween",
+  duration: 0.16,
+  ease: [0.22, 1, 0.36, 1],
+} as const;
+
+function withoutInlineConnection(config: ModelConfig, allowByok: boolean): ModelConfig {
+  const { base_url: _baseUrl, ...rest } = config;
+  const {
+    api_key: _apiKey,
+    api_base: _ApiBase,
+    base_url: _ExtraBaseUrl,
+    ...safeExtra
+  } = rest.extra ?? {};
+  const tokenSource = allowByok ? (rest.token_source ?? "managed") : "managed";
+  return {
+    ...rest,
+    token_source: tokenSource,
+    byok_provider: tokenSource === "byok" ? rest.byok_provider : undefined,
+    extra: Object.keys(safeExtra).length > 0 ? safeExtra : undefined,
+  };
 }
 
 export function ModelConfigModal({
@@ -53,16 +80,19 @@ export function ModelConfigModal({
   catalogModels,
   recentConfigs,
   onRemoveRecent,
-  showConnection = true,
+  allowByok = true,
 }: ModelConfigModalProps) {
-  const { wallet } = useCredits();
   const { keys } = useByokKeys();
   const { openTo } = useSettingsModal();
-  const mode = wallet.mode;
   const prefersReducedMotion = useReducedMotion();
   // Two of these modals coexist (generation + reflection); the sliding-pill
   // layoutId must be unique per instance or Framer pairs them up.
   const effortPillId = React.useId();
+  const tokenSourcePillId = React.useId();
+  const [draft, setDraft] = React.useState<ModelConfig>(() =>
+    withoutInlineConnection(config, allowByok),
+  );
+  const mode = draft.token_source ?? "managed";
 
   // In BYOK mode the picker lists the BYOK catalog narrowed to the providers
   // the user has a *verified* key for (mapped to their LiteLLM prefix), so a
@@ -73,13 +103,14 @@ export function ModelConfigModal({
       keys.filter((k) => k.status === "verified").map((k) => litellmProviderForByok(k.provider)),
     [keys],
   );
+  const byokProviderKey = [...byokProviders].sort().join("\u0000");
   // BYOK catalog models also feed reasoning-toggle detection, since a BYOK model
   // won't appear in the managed `catalogModels`.
   const [byokModels, setByokModels] = React.useState<CatalogModel[] | null>(
     cachedByokCatalog()?.models ?? null,
   );
   React.useEffect(() => {
-    if (mode !== "byok" || byokModels) return;
+    if (mode !== "byok") return;
     let cancelled = false;
     getByokModelCatalog()
       .then((c) => {
@@ -89,23 +120,15 @@ export function ModelConfigModal({
     return () => {
       cancelled = true;
     };
-  }, [mode, byokModels]);
+  }, [mode, byokProviderKey]);
   const detectionModels = mode === "byok" ? (byokModels ?? undefined) : catalogModels;
-
-  const [draft, setDraft] = React.useState<ModelConfig>(config);
-  // Custom-connection section is collapsed for the common (managed) case; it
-  // auto-expands in BYOK mode (where a key is expected) and whenever the opened
-  // config already carries an endpoint or key, so a populated field is never
-  // hidden behind a closed disclosure.
-  const [connectionOpen, setConnectionOpen] = React.useState(false);
 
   // Sync draft when config changes externally (e.g. opening with different model)
   React.useEffect(() => {
     if (open) {
-      setDraft(config);
-      setConnectionOpen(mode === "byok" || !!(config.base_url || config.extra?.api_key));
+      setDraft(withoutInlineConnection(config, allowByok));
     }
-  }, [open, config, mode]);
+  }, [open, config, allowByok]);
 
   // The effort ladder is model-specific (providers reject levels outside
   // their documented set). "none" is expressed by the switch itself, and an
@@ -120,13 +143,6 @@ export function ModelConfigModal({
   const canThink = modelSupportsThinking(draft.name, detectionModels) && effortLadder.length > 0;
   const thinkingEnabled = !!draft.extra?.reasoning_effort;
   const reasoningEffort = (draft.extra?.reasoning_effort as string) ?? "medium";
-
-  // Plaintext http to a remote host sends the API key unencrypted; localhost
-  // loopback (Ollama, LM Studio, llama.cpp) is the common local-model case and
-  // doesn't warrant the warning.
-  const insecureRemoteEndpoint =
-    /^http:\/\//i.test(draft.base_url ?? "") &&
-    !/^http:\/\/(localhost|127\.0\.0\.1|\[?::1\]?)(?::|\/|$)/i.test(draft.base_url ?? "");
 
   const setThinking = (on: boolean) => {
     setDraft((p) => ({
@@ -146,7 +162,7 @@ export function ModelConfigModal({
   };
 
   const handleSave = () => {
-    onSave(draft);
+    onSave(withoutInlineConnection(draft, allowByok));
     onOpenChange(false);
   };
 
@@ -177,11 +193,7 @@ export function ModelConfigModal({
                       <button
                         type="button"
                         onClick={() => {
-                          setDraft({ ...rc });
-                          // Reveal the connection fields when the restored config
-                          // carries a custom endpoint, so the base URL isn't
-                          // hidden behind the collapsed disclosure.
-                          setConnectionOpen(!!(rc.base_url || rc.extra?.api_key));
+                          setDraft(withoutInlineConnection(rc, allowByok));
                         }}
                         className="flex items-center gap-1.5 cursor-pointer outline-none"
                       >
@@ -212,7 +224,65 @@ export function ModelConfigModal({
             </div>
           )}
 
-          {mode !== "managed" && (
+          {allowByok && (
+            <div className="space-y-2">
+              <Label className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
+                {msg("billing.mode.label")}
+              </Label>
+              <div
+                role="group"
+                aria-label={msg("billing.mode.aria")}
+                className="flex w-fit rounded-lg bg-muted p-0.5"
+              >
+                {TOKEN_SOURCE_SEGMENTS.map(({ mode: value, icon: Icon, labelKey }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() =>
+                      setDraft((current) =>
+                        withoutInlineConnection(
+                          {
+                            ...current,
+                            name: "",
+                            token_source: value,
+                            byok_provider: undefined,
+                          },
+                          allowByok,
+                        ),
+                      )
+                    }
+                    aria-pressed={mode === value}
+                    className={cn(
+                      "relative flex cursor-pointer items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                      mode === value
+                        ? "text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {mode === value && (
+                      <motion.span
+                        layoutId={`token-source-pill-${tokenSourcePillId}`}
+                        className="absolute inset-0 rounded-md bg-background shadow-[0_1px_2px_oklch(0.25_0.04_45/.12)]"
+                        transition={
+                          prefersReducedMotion ? { duration: 0 } : TOKEN_SOURCE_TRANSITION
+                        }
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span className="relative z-10 flex items-center gap-1.5">
+                      <Icon className="size-3.5" aria-hidden="true" />
+                      {msg(labelKey)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {mode === "managed" && (
+                <p className="text-xs text-muted-foreground">{msg("billing.mode.managed_hint")}</p>
+              )}
+            </div>
+          )}
+
+          {mode === "byok" && (
             <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
               <Key className="size-3.5 shrink-0" aria-hidden="true" />
               <span>{msg("billing.mode.byok_hint")}</span>
@@ -235,82 +305,6 @@ export function ModelConfigModal({
             </div>
           )}
 
-          {showConnection && (
-            <button
-              type="button"
-              onClick={() => setConnectionOpen((o) => !o)}
-              aria-expanded={connectionOpen}
-              className="flex w-full cursor-pointer items-center justify-between gap-1.5 text-[0.625rem] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <HelpTip text={tip("model_config.connection_section")} className="cursor-pointer">
-                {msg("auto.features.submit.components.modelconfigmodal.section.connection")}
-              </HelpTip>
-              <CaretDown
-                className={cn(
-                  "size-3 shrink-0 transition-transform duration-150",
-                  connectionOpen && "rotate-180",
-                )}
-              />
-            </button>
-          )}
-
-          {showConnection && connectionOpen && (
-            <div className="space-y-4 animate-in fade-in-0 slide-in-from-top-1">
-              <div className="space-y-2">
-                <Label htmlFor="modelConfigBaseUrl">
-                  <HelpTip text={tip("model_config.base_url")}>
-                    {msg("auto.features.submit.components.steps.modelstep.8")}
-                  </HelpTip>
-                </Label>
-                <Input
-                  id="modelConfigBaseUrl"
-                  dir="ltr"
-                  type="url"
-                  inputMode="url"
-                  autoComplete="off"
-                  placeholder="https://my-host:1234/v1"
-                  value={draft.base_url ?? ""}
-                  onChange={(e) => {
-                    const next = e.target.value.trim();
-                    setDraft((p) => ({ ...p, base_url: next ? next : undefined }));
-                  }}
-                />
-                {insecureRemoteEndpoint && (
-                  <p className="text-[0.625rem] text-amber-700 dark:text-amber-400">
-                    {msg("auto.features.submit.components.steps.modelstep.12")}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="modelConfigApiKey">
-                  <HelpTip text={tip("model_config.api_key")}>
-                    {msg("auto.features.submit.components.steps.modelstep.10")}
-                  </HelpTip>
-                </Label>
-                <Input
-                  id="modelConfigApiKey"
-                  dir="ltr"
-                  type="password"
-                  placeholder="sk-..."
-                  autoComplete="new-password"
-                  value={(draft.extra?.api_key as string | undefined) ?? ""}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setDraft((p) => {
-                      const rest = { ...p.extra };
-                      if (next) rest.api_key = next;
-                      else delete rest.api_key;
-                      return { ...p, extra: Object.keys(rest).length ? rest : undefined };
-                    });
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {showConnection && <Separator />}
-
           <div className="space-y-2">
             <Label>
               <HelpTip text={tip("model_config.model")}>
@@ -319,6 +313,7 @@ export function ModelConfigModal({
             </Label>
             <ModelPicker
               value={draft.name}
+              selectedByokProvider={draft.byok_provider}
               onChange={(next) => {
                 setDraft((p) => {
                   const ladder = effortsFor(next).filter((level) => level !== "none");
@@ -332,8 +327,12 @@ export function ModelConfigModal({
                   return { ...p, name: next, extra: Object.keys(rest).length ? rest : undefined };
                 });
               }}
-              discoverUrl={draft.base_url?.trim() || undefined}
-              discoverApiKey={(draft.extra?.api_key as string | undefined) || undefined}
+              onSelect={(model) =>
+                setDraft((current) => ({
+                  ...current,
+                  byok_provider: mode === "byok" ? (model.byok_provider ?? undefined) : undefined,
+                }))
+              }
               byokMode={mode === "byok"}
               byokProviders={byokProviders}
               placeholder={msg("auto.features.submit.components.modelconfigmodal.literal.3")}

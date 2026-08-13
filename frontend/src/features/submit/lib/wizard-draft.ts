@@ -20,7 +20,6 @@ export interface WizardDraftData {
   step: number;
   furthestReachedStep: number;
   summaryTab: number;
-  summaryCodeTab: string;
   jobType: "run" | "grid_search";
   isPrivate: boolean;
   jobName: string;
@@ -38,8 +37,6 @@ export interface WizardDraftData {
   datasetFileName: string | null;
   columnRoles: Record<string, ColumnRole>;
   columnKinds: Record<string, "text" | "image">;
-  globalBaseUrl: string;
-  globalApiKey: string;
   modelConfig: ModelConfig;
   secondModelConfig: ModelConfig | null;
   generationModels: ModelConfig[];

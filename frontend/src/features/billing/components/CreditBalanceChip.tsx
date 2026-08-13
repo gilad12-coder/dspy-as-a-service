@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Coins, Key, Plus } from "@/shared/ui/icons";
+import { Coins, Plus } from "@/shared/ui/icons";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
@@ -16,8 +16,7 @@ import { formatCredits } from "../lib/credit";
  * Sits inline-end beside the language switcher. Shows total spendable credits
  * (free grant + purchased). Theming is calm by design: gold `#C8A882` marks a healthy balance and the
  * primary "Add credits" affordance only; a low balance reads as quiet taupe, not
- * an alarm. When the account is running on its own provider key (BYOK), the chip
- * switches to a key glyph instead of a number, since managed credits aren't spent.
+ * an alarm.
  */
 export function CreditBalanceChip({ className }: { className?: string }) {
   const { wallet, status, totalCredits, loading, syncing, available } = useCredits();
@@ -37,14 +36,12 @@ export function CreditBalanceChip({ className }: { className?: string }) {
     );
   }
 
-  const isByok = wallet.mode === "byok";
-
   // One trigger, three visual registers. Healthy spends the gold accent; low and
   // empty stay in the warm neutrals so the chip never shouts. Empty reframes the
   // chip itself as the "add credits" call to action.
   const triggerTone = !available
     ? "border-border/70 text-muted-foreground hover:bg-accent"
-    : isByok || status === "healthy"
+    : status === "healthy"
       ? "border-border/70 text-foreground hover:bg-accent"
       : status === "low"
         ? "border-border/70 text-muted-foreground hover:bg-accent"
@@ -56,11 +53,7 @@ export function CreditBalanceChip({ className }: { className?: string }) {
         <button
           type="button"
           aria-label={formatMsg("billing.chip.aria", {
-            p1: !available
-              ? msg("billing.chip.unavailable")
-              : isByok
-                ? msg("billing.chip.byok")
-                : formatCredits(totalCredits, locale),
+            p1: !available ? msg("billing.chip.unavailable") : formatCredits(totalCredits, locale),
           })}
           aria-busy={syncing || undefined}
           className={cn(
@@ -73,11 +66,6 @@ export function CreditBalanceChip({ className }: { className?: string }) {
             <>
               <Coins className="size-3.5 text-muted-foreground" aria-hidden="true" />
               <span>{msg("billing.chip.unavailable")}</span>
-            </>
-          ) : isByok ? (
-            <>
-              <Key className="size-3.5 text-muted-foreground" aria-hidden="true" />
-              <span>{msg("billing.chip.byok")}</span>
             </>
           ) : status === "empty" ? (
             <>
@@ -118,15 +106,6 @@ export function CreditBalanceChip({ className }: { className?: string }) {
             <p className="px-4 pb-4 text-xs text-muted-foreground">
               {msg("billing.popover.unavailable")}
             </p>
-          ) : isByok ? (
-            <div className="flex flex-col gap-1 px-4 pb-4">
-              <span className="text-sm font-medium text-foreground">
-                {msg("billing.popover.byok_active")}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {msg("billing.popover.byok_hint")}
-              </span>
-            </div>
           ) : (
             <>
               {/* Balance sits directly under the title. An inline-block (not a

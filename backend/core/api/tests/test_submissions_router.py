@@ -26,6 +26,7 @@ from ...constants import (
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_OPTIMIZER_NAME,
     PAYLOAD_OVERVIEW_REFLECTION_MODELS,
+    PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL,
     PAYLOAD_OVERVIEW_TOTAL_PAIRS,
     PAYLOAD_OVERVIEW_USERNAME,
 )
@@ -922,8 +923,7 @@ def _vision_catalog(*, vision_models: list[str], text_only_models: list[str] | N
         A ``ModelCatalogResponse`` mixing the two groups.
     """
     models: list[CatalogModel] = [
-        CatalogModel(value=v, label=v, provider="openai", available=True, supports_vision=True)
-        for v in vision_models
+        CatalogModel(value=v, label=v, provider="openai", available=True, supports_vision=True) for v in vision_models
     ]
     models.extend(
         CatalogModel(value=v, label=v, provider="openai", available=True, supports_vision=False)
@@ -1061,7 +1061,8 @@ def test_submit_run_returns_402_when_credits_exhausted(monkeypatch: pytest.Monke
                 username="alice",
                 stripe_customer_id="cus_alice",
                 credit_balance=0,
-                grant_remaining=0,            )
+                grant_remaining=0,
+            )
         )
         session.commit()
 
@@ -1088,7 +1089,8 @@ def test_submit_run_allowed_with_remaining_credits(monkeypatch: pytest.MonkeyPat
                 username="alice",
                 stripe_customer_id="cus_alice",
                 credit_balance=0,
-                grant_remaining=50,            )
+                grant_remaining=50,
+            )
         )
         session.commit()
 
@@ -1103,9 +1105,7 @@ def test_submit_run_allowed_with_remaining_credits(monkeypatch: pytest.MonkeyPat
 
 def _billing_engine() -> Any:
     """Build a StaticPool in-memory engine with the billing schema."""
-    engine = create_engine(
-        "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     return engine
 
@@ -1126,7 +1126,8 @@ def test_submit_run_managed_any_model_allowed_and_ceiling_capped(
                 username="alice",
                 stripe_customer_id="cus_alice",
                 credit_balance=0,
-                grant_remaining=200,            )
+                grant_remaining=200,
+            )
         )
         session.commit()
     store = _FakeJobStore()
@@ -1147,11 +1148,7 @@ def test_submit_run_byok_frontier_model_allowed(monkeypatch: pytest.MonkeyPatch)
     with Session(engine) as session:
         # No free allowance exists, so the account is funded to pass the credit
         # gate (a BYOK run still spends the platform fee).
-        session.add(
-            BillingCustomerModel(
-                username="alice", stripe_customer_id="cus_alice", credit_balance=500
-            )
-        )
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
         # BYOK runs now require a saved connection for the model's provider.
         session.add(
             BillingProviderKeyModel(
@@ -1171,8 +1168,67 @@ def test_submit_run_byok_frontier_model_allowed(monkeypatch: pytest.MonkeyPatch)
     resp = client.post("/run", json=payload)
 
     assert resp.status_code == 201
-    overview = store._jobs[store.created_ids()[0]]["overview"]
+    row = store._jobs[store.created_ids()[0]]
+    overview = row["overview"]
     assert overview["token_source"] == "byok"
+    assert overview[PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL] == {"openai/gpt-4o": "byok"}
+    assert row["payload"]["model_config"]["token_source"] == "byok"
+
+
+def test_submit_run_supports_mixed_per_model_sources_and_strips_inline_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each run model keeps its own source while credentials come only from the vault."""
+    engine = _billing_engine()
+    with Session(engine) as session:
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
+        session.add(
+            BillingProviderKeyModel(
+                username="alice",
+                provider="custom",
+                secret_ciphertext=b"ciphertext",
+                last4="abcd",
+                status="verified",
+            )
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+    payload = {
+        **_run_payload(),
+        "token_source": "managed",
+        "model_settings": {
+            "name": "openai/private-chat",
+            "token_source": "byok",
+            "byok_provider": "custom",
+            "base_url": "https://inline.example/v1",
+            "extra": {
+                "api_key": "inline-secret",
+                "base_url": "https://other-inline.example/v1",
+                "reasoning_effort": "medium",
+            },
+        },
+        "reflection_model_settings": {
+            "name": "openrouter/anthropic/claude-3.5-haiku",
+            "token_source": "managed",
+        },
+    }
+
+    resp = client.post("/run", json=payload)
+
+    assert resp.status_code == 201
+    row = store._jobs[store.created_ids()[0]]
+    assert row["overview"]["token_source"] == "managed"
+    assert row["overview"][PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL] == {
+        "openai/private-chat": "byok",
+        "openrouter/anthropic/claude-3.5-haiku": "managed",
+    }
+    stored = row["payload"]["model_config"]
+    assert stored["token_source"] == "byok"
+    assert stored["byok_provider"] == "custom"
+    assert stored["base_url"] is None
+    assert stored["extra"] == {"reasoning_effort": "medium"}
 
 
 def test_submit_run_byok_without_connection_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1180,11 +1236,7 @@ def test_submit_run_byok_without_connection_blocked(monkeypatch: pytest.MonkeyPa
     engine = _billing_engine()
     with Session(engine) as session:
         # Funded so the credit gate passes and the connection check is what fires.
-        session.add(
-            BillingCustomerModel(
-                username="alice", stripe_customer_id="cus_alice", credit_balance=500
-            )
-        )
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
         session.commit()
     store = _FakeJobStore()
     store.engine = engine
@@ -1208,11 +1260,7 @@ def test_submit_run_managed_user_ceiling_wins_when_below_balance(
     """
     engine = _billing_engine()
     with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username="alice", stripe_customer_id="cus_alice", credit_balance=500
-            )
-        )
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
         session.commit()
     store = _FakeJobStore()
     store.engine = engine
@@ -1245,7 +1293,8 @@ def test_submit_run_byok_blocked_without_credits(monkeypatch: pytest.MonkeyPatch
                 username="alice",
                 stripe_customer_id="cus_alice",
                 credit_balance=0,
-                grant_remaining=0,            )
+                grant_remaining=0,
+            )
         )
         session.add(
             BillingProviderKeyModel(
@@ -1285,7 +1334,8 @@ def test_submit_run_byok_ceiling_capped_to_fee_aware_budget(
                 username="alice",
                 stripe_customer_id="cus_alice",
                 credit_balance=0,
-                grant_remaining=200,            )
+                grant_remaining=200,
+            )
         )
         session.add(
             BillingProviderKeyModel(
@@ -1346,9 +1396,7 @@ def test_submit_run_ceiling_reduced_by_active_job_commitment(
     """
     engine = _billing_engine()
     with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
-        )
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
         session.commit()
     store = _FakeJobStore()
     store.engine = engine
@@ -1368,9 +1416,7 @@ def test_submit_run_blocked_when_balance_fully_committed(
     """A submission is refused when active runs already claim the whole balance."""
     engine = _billing_engine()
     with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
-        )
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
         session.commit()
     store = _FakeJobStore()
     store.engine = engine
@@ -1390,9 +1436,7 @@ def test_submit_run_terminal_jobs_do_not_commit_credits(
     """Finished runs release their claim: a terminal job leaves the ceiling whole."""
     engine = _billing_engine()
     with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
-        )
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
         session.commit()
     store = _FakeJobStore()
     store.engine = engine
@@ -1410,9 +1454,7 @@ def test_submit_run_paused_jobs_commit_credits(monkeypatch: pytest.MonkeyPatch) 
     """A paused run keeps its claim: resume re-enqueues it without a fresh gate."""
     engine = _billing_engine()
     with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
-        )
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
         session.commit()
     store = _FakeJobStore()
     store.engine = engine
@@ -1432,9 +1474,7 @@ def test_submit_run_legacy_rows_without_stamp_commit_zero(
     """An active row predating the overview stamp contributes nothing to the sum."""
     engine = _billing_engine()
     with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
-        )
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
         session.commit()
     store = _FakeJobStore()
     store.engine = engine
@@ -1452,15 +1492,11 @@ def test_submit_run_byok_commitment_is_fee_sized(monkeypatch: pytest.MonkeyPatch
     """An active BYOK run commits only its platform fee, not its full ceiling."""
     engine = _billing_engine()
     with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
-        )
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
         session.commit()
     store = _FakeJobStore()
     store.engine = engine
-    _seed_active_job(
-        store, job_id="job-byok", status="running", max_cost_credits=1000, token_source="byok"
-    )
+    _seed_active_job(store, job_id="job-byok", status="running", max_cost_credits=1000, token_source="byok")
     client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
 
     resp = client.post("/run", json=_run_payload())
@@ -1474,9 +1510,7 @@ def test_submit_run_overview_stamps_cost_ceiling(monkeypatch: pytest.MonkeyPatch
     """The clamped ceiling is stamped on the run overview for later commitment sums."""
     engine = _billing_engine()
     with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
-        )
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
         session.commit()
     store = _FakeJobStore()
     store.engine = engine
@@ -1495,9 +1529,7 @@ def test_submit_grid_search_overview_stamps_cost_ceiling(
     """The grid-search overview carries the same clamped-ceiling stamp as ``/run``."""
     engine = _billing_engine()
     with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500)
-        )
+        session.add(BillingCustomerModel(username="alice", stripe_customer_id="cus_alice", credit_balance=500))
         session.commit()
     store = _FakeJobStore()
     store.engine = engine
@@ -1603,9 +1635,7 @@ def _workflow_run_payload() -> dict:
                 "id": "step",
                 "kind": "signature",
                 "signature_code": (
-                    "class Sig(dspy.Signature):\n"
-                    "    q: str = dspy.InputField()\n"
-                    "    a: str = dspy.OutputField()\n"
+                    "class Sig(dspy.Signature):\n    q: str = dspy.InputField()\n    a: str = dspy.OutputField()\n"
                 ),
             },
             {"id": "out", "kind": "output", "fields": [{"name": "a"}]},

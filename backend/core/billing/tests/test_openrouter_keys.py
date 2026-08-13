@@ -126,9 +126,7 @@ def _stored_row(engine: object) -> BillingOpenRouterKeyModel | None:
         return session.get(BillingOpenRouterKeyModel, _USER)
 
 
-def test_disabled_without_provisioning_key(
-    engine: object, vault_key: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_disabled_without_provisioning_key(engine: object, vault_key: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """Without the key-management secret the provisioner is off and makes no calls."""
     monkeypatch.setattr(settings, "openrouter_provisioning_key", None)
     provisioner = OpenRouterKeyProvisioner(engine=engine)
@@ -139,9 +137,7 @@ def test_disabled_without_provisioning_key(
     assert fake.calls == []
 
 
-def test_disabled_without_vault_key(
-    engine: object, provisioning_key: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_disabled_without_vault_key(engine: object, provisioning_key: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """Without the vault key there is nowhere safe to store the secret, so it's off."""
     monkeypatch.setattr(settings, "byok_vault_key", None)
     provisioner = OpenRouterKeyProvisioner(engine=engine)
@@ -152,9 +148,7 @@ def test_disabled_without_vault_key(
     assert fake.calls == []
 
 
-def test_first_use_mints_key_limited_to_balance(
-    engine: object, vault_key: str, provisioning_key: str
-) -> None:
+def test_first_use_mints_key_limited_to_balance(engine: object, vault_key: str, provisioning_key: str) -> None:
     """First dispatch POSTs a create with the balance as a dollar limit and stores ciphertext."""
     provisioner = OpenRouterKeyProvisioner(engine=engine)
     fake = _FakeApi([_api_response({"key": _RUNTIME_SECRET, "data": {"hash": _KEY_HASH}})])
@@ -171,10 +165,7 @@ def test_first_use_mints_key_limited_to_balance(
     assert row is not None
     assert row.key_hash == _KEY_HASH
     assert _RUNTIME_SECRET.encode("utf-8") not in row.secret_ciphertext
-    assert (
-        Fernet(vault_key.encode("utf-8")).decrypt(row.secret_ciphertext).decode()
-        == _RUNTIME_SECRET
-    )
+    assert Fernet(vault_key.encode("utf-8")).decrypt(row.secret_ciphertext).decode() == _RUNTIME_SECRET
 
 
 def test_later_dispatch_syncs_limit_to_usage_plus_balance(
@@ -195,9 +186,7 @@ def test_later_dispatch_syncs_limit_to_usage_plus_balance(
     assert fake.calls[2]["json"] == {"limit": 6.5}
 
 
-def test_sync_skips_patch_when_limit_already_matches(
-    engine: object, vault_key: str, provisioning_key: str
-) -> None:
+def test_sync_skips_patch_when_limit_already_matches(engine: object, vault_key: str, provisioning_key: str) -> None:
     """No PATCH goes out when the key's limit already equals usage + spendable."""
     provisioner = OpenRouterKeyProvisioner(engine=engine)
     create = _api_response({"key": _RUNTIME_SECRET, "data": {"hash": _KEY_HASH}})
@@ -210,9 +199,7 @@ def test_sync_skips_patch_when_limit_already_matches(
     assert [c["method"] for c in fake.calls] == ["POST", "GET"]
 
 
-def test_create_failure_falls_back_to_none(
-    engine: object, vault_key: str, provisioning_key: str
-) -> None:
+def test_create_failure_falls_back_to_none(engine: object, vault_key: str, provisioning_key: str) -> None:
     """A failed mint returns None and persists nothing — dispatch keeps the shared key."""
     provisioner = OpenRouterKeyProvisioner(engine=engine)
     fake = _FakeApi([_api_response({"error": "nope"}, status_code=500)])
@@ -221,9 +208,7 @@ def test_create_failure_falls_back_to_none(
     assert _stored_row(engine) is None
 
 
-def test_create_unexpected_shape_falls_back_to_none(
-    engine: object, vault_key: str, provisioning_key: str
-) -> None:
+def test_create_unexpected_shape_falls_back_to_none(engine: object, vault_key: str, provisioning_key: str) -> None:
     """A create response missing the secret or hash is rejected, not half-stored."""
     provisioner = OpenRouterKeyProvisioner(engine=engine)
     fake = _FakeApi([_api_response({"data": {"hash": _KEY_HASH}})])
@@ -232,9 +217,7 @@ def test_create_unexpected_shape_falls_back_to_none(
     assert _stored_row(engine) is None
 
 
-def test_network_error_falls_back_to_none(
-    engine: object, vault_key: str, provisioning_key: str
-) -> None:
+def test_network_error_falls_back_to_none(engine: object, vault_key: str, provisioning_key: str) -> None:
     """An unreachable key-management API yields None instead of raising."""
     provisioner = OpenRouterKeyProvisioner(engine=engine)
     fake = _FakeApi([httpx.ConnectError("down")])
@@ -242,9 +225,7 @@ def test_network_error_falls_back_to_none(
         assert provisioner.ensure_runtime_key(_USER, 500) is None
 
 
-def test_sync_failure_falls_back_to_none(
-    engine: object, vault_key: str, provisioning_key: str
-) -> None:
+def test_sync_failure_falls_back_to_none(engine: object, vault_key: str, provisioning_key: str) -> None:
     """A stored key whose limit cannot be synced is not handed to the dispatch."""
     provisioner = OpenRouterKeyProvisioner(engine=engine)
     create = _api_response({"key": _RUNTIME_SECRET, "data": {"hash": _KEY_HASH}})
@@ -254,16 +235,10 @@ def test_sync_failure_falls_back_to_none(
         assert provisioner.ensure_runtime_key(_USER, 500) is None
 
 
-def test_undecryptable_ciphertext_falls_back_to_none(
-    engine: object, vault_key: str, provisioning_key: str
-) -> None:
+def test_undecryptable_ciphertext_falls_back_to_none(engine: object, vault_key: str, provisioning_key: str) -> None:
     """A row that no longer decrypts (rotated vault key) yields None without any API call."""
     with Session(engine) as session:
-        session.merge(
-            BillingOpenRouterKeyModel(
-                username=_USER, key_hash=_KEY_HASH, secret_ciphertext=b"not-fernet"
-            )
-        )
+        session.merge(BillingOpenRouterKeyModel(username=_USER, key_hash=_KEY_HASH, secret_ciphertext=b"not-fernet"))
         session.commit()
     provisioner = OpenRouterKeyProvisioner(engine=engine)
     fake = _FakeApi([])
@@ -296,6 +271,26 @@ def test_inject_grid_shape_covers_every_list_entry() -> None:
     for cfg in payload["generation_models"] + payload["reflection_models"]:
         assert cfg["name"].startswith("openrouter/")
         assert cfg["extra"]["api_key"] == "sk-or-x"
+
+
+def test_inject_skips_byok_configs_in_mixed_payload() -> None:
+    """A managed runtime key never overwrites the BYOK side of a mixed payload."""
+    payload = {
+        "model_config": {"name": "openrouter/openai/gpt-4o", "token_source": "byok"},
+        "reflection_model_config": {
+            "name": "openrouter/anthropic/claude-3-5-haiku",
+            "token_source": "managed",
+        },
+    }
+
+    inject_provisioned_openrouter_key(
+        payload,
+        api_key="sk-or-managed",
+        default_token_source="managed",
+    )
+
+    assert "extra" not in payload["model_config"]
+    assert payload["reflection_model_config"]["extra"]["api_key"] == "sk-or-managed"
 
 
 def test_inject_does_not_double_prefix() -> None:

@@ -30,6 +30,11 @@ from dspy.streaming import StreamListener, StreamResponse
 from fastapi import APIRouter, Depends
 from starlette.responses import StreamingResponse
 
+from ...billing import (
+    ProviderKeyVault,
+    resolve_byok_model_config,
+)
+from ...constants import TOKEN_SOURCE_BYOK
 from ...exceptions import ServiceError
 from ...models.submissions import WorkflowDryRunRequest, WorkflowDryRunResponse
 from ...service_gateway.language_models import build_language_model
@@ -48,7 +53,12 @@ logger = logging.getLogger(__name__)
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
 
 
-def _prepare_dry_run(req: WorkflowDryRunRequest) -> tuple[Any, dict[str, Any], Any, str]:
+def _prepare_dry_run(
+    req: WorkflowDryRunRequest,
+    *,
+    username: str | None = None,
+    vault: ProviderKeyVault | None = None,
+) -> tuple[Any, dict[str, Any], Any, str]:
     """Validate the request and build everything a dry-run execution needs.
 
     Shared by the blocking and streaming routes so both enforce identical
@@ -57,6 +67,8 @@ def _prepare_dry_run(req: WorkflowDryRunRequest) -> tuple[Any, dict[str, Any], A
     Args:
         req: The workflow spec, sample inputs, model config, and optional
             tool source.
+        username: Authenticated owner for a BYOK model.
+        vault: Provider vault used to resolve a BYOK model.
 
     Returns:
         ``(program, filtered_inputs, lm, model_used)``.
@@ -82,14 +94,20 @@ def _prepare_dry_run(req: WorkflowDryRunRequest) -> tuple[Any, dict[str, Any], A
     filtered_inputs = {name: req.inputs[name] for name in input_fields}
 
     try:
-        program, _schema_hashes = build_workflow_program(
-            req.workflow, tool_source=req.tool_source, dataset=None
-        )
+        program, _schema_hashes = build_workflow_program(req.workflow, tool_source=req.tool_source, dataset=None)
     except ServiceError as exc:
         raise DomainError("workflow.validation_failed", status=400, error=str(exc)) from exc
 
-    lm = build_language_model(req.model_settings)
-    return program, filtered_inputs, lm, req.model_settings.normalized_identifier()
+    model_settings = req.model_settings
+    if model_settings.token_source == TOKEN_SOURCE_BYOK:
+        if vault is None or username is None:
+            raise DomainError("billing.byok_missing_connection", status=400, provider="")
+        try:
+            model_settings = resolve_byok_model_config(model_settings, username=username, vault=vault)
+        except ValueError as exc:
+            raise DomainError("billing.byok_missing_connection", status=400, provider=str(exc)) from exc
+    lm = build_language_model(model_settings)
+    return program, filtered_inputs, lm, model_settings.normalized_identifier()
 
 
 async def _stream_dry_run_events(
@@ -185,13 +203,18 @@ async def _stream_dry_run_events(
     }
 
 
-def create_workflows_router() -> APIRouter:
+def create_workflows_router(*, job_store=None) -> APIRouter:
     """Build the workflows router.
+
+    Args:
+        job_store: Optional store whose engine backs BYOK connections.
 
     Returns:
         A FastAPI ``APIRouter`` exposing the ``/workflows/dry-run`` endpoint.
     """
     router = APIRouter()
+    engine = getattr(job_store, "engine", None)
+    vault = ProviderKeyVault(engine=engine) if engine is not None else None
 
     @router.post(
         "/workflows/dry-run",
@@ -221,8 +244,7 @@ def create_workflows_router() -> APIRouter:
             DomainError: 400 when the graph fails validation, required
                 inputs are missing, or the program cannot be built.
         """
-        _ = current_user
-        program, filtered_inputs, lm, model_used = _prepare_dry_run(req)
+        program, filtered_inputs, lm, model_used = _prepare_dry_run(req, username=current_user.username, vault=vault)
 
         with capture_node_traces() as raw_traces:
             try:
@@ -272,10 +294,14 @@ def create_workflows_router() -> APIRouter:
         Raises:
             DomainError: 400 mirroring the non-streaming route's validation.
         """
-        _ = current_user
         # Graph validation + program build run safe_exec subprocesses;
         # offload so the event loop isn't blocked before the first byte.
-        program, filtered_inputs, lm, model_used = await asyncio.to_thread(_prepare_dry_run, req)
+        program, filtered_inputs, lm, model_used = await asyncio.to_thread(
+            _prepare_dry_run,
+            req,
+            username=current_user.username,
+            vault=vault,
+        )
         source = _stream_dry_run_events(
             program=program,
             lm=lm,

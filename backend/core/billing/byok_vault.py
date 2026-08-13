@@ -61,6 +61,20 @@ _PROVIDER_PROBES: dict[str, dict[str, str]] = {
 # treated as "couldn't reach a verdict" (status stays ``unverified``), never as
 # an invalid key.
 _PROBE_TIMEOUT_SECONDS = 8.0
+_RESERVED_CONNECTION_PARAMS = frozenset({"api_key", "api_base", "base_url", "model"})
+
+
+def safe_connection_params(params: dict[str, Any] | None) -> dict[str, Any]:
+    """Remove fields that could override the encrypted connection or selected model.
+
+    Args:
+        params: Optional extra LiteLLM keyword arguments from the caller.
+
+    Returns:
+        A copy containing only non-reserved runtime parameters.
+    """
+    return {key: value for key, value in (params or {}).items() if key not in _RESERVED_CONNECTION_PARAMS}
+
 
 def byok_provider_for_litellm(prefix: str) -> str:
     """Return the BYOK vault slug a LiteLLM provider prefix resolves a key for.
@@ -168,9 +182,7 @@ class ProviderKeyVault:
         """
         self._engine = engine
 
-    def _provider_row(
-        self, session: Session, username: str, provider: str
-    ) -> BillingProviderKeyModel | None:
+    def _provider_row(self, session: Session, username: str, provider: str) -> BillingProviderKeyModel | None:
         """Return the account's primary connection for a provider, or ``None``.
 
         When several connections exist for one provider the oldest wins, so the
@@ -257,6 +269,28 @@ class ProviderKeyVault:
                 is not None
             )
 
+    def has_verified_connection(self, username: str, provider: str) -> bool:
+        """Return whether the account has a verified connection for a provider.
+
+        Args:
+            username: Account to check.
+            provider: Provider slug to look for.
+
+        Returns:
+            True when at least one verified connection is stored.
+        """
+        with Session(self._engine) as session:
+            return (
+                session.query(BillingProviderKeyModel.id)
+                .filter(
+                    BillingProviderKeyModel.username == username,
+                    BillingProviderKeyModel.provider == provider,
+                    BillingProviderKeyModel.status == STATUS_VERIFIED,
+                )
+                .first()
+                is not None
+            )
+
     def save_key(
         self,
         username: str,
@@ -304,6 +338,7 @@ class ProviderKeyVault:
         cipher = self._cipher()
         ciphertext = cipher.encrypt(secret.encode("utf-8"))
         status = self._probe(provider, secret, api_base)
+        safe_params = safe_connection_params(params)
         now = datetime.now(UTC)
         with Session(self._engine) as session:
             row = self._provider_row(session, username, provider)
@@ -313,7 +348,7 @@ class ProviderKeyVault:
                     provider=provider,
                     label=label,
                     api_base=api_base,
-                    params=params or {},
+                    params=safe_params,
                     secret_ciphertext=ciphertext,
                     last4=key_last4(secret),
                     status=status,
@@ -327,7 +362,7 @@ class ProviderKeyVault:
                 row.status = status
                 row.label = label
                 row.api_base = api_base
-                row.params = params or {}
+                row.params = safe_params
                 row.updated_at = now
             session.flush()
             view = _row_view(row)
@@ -487,22 +522,38 @@ class ProviderKeyVault:
         """
         probe = _PROVIDER_PROBES.get(provider)
         if probe is not None:
-            url = f"{api_base.rstrip('/')}/models" if api_base else probe["url"]
+            urls = self._model_probe_urls(api_base) if api_base else [probe["url"]]
             headers = {probe["header_name"]: probe["header_value"].format(secret=secret)}
             extra_name = probe.get("extra_header_name")
             if extra_name:
                 headers[extra_name] = probe["extra_header_value"]
         elif api_base:
-            url = f"{api_base.rstrip('/')}/models"
+            urls = self._model_probe_urls(api_base)
             headers = {"Authorization": f"Bearer {secret}"}
         else:
             return STATUS_UNVERIFIED
-        try:
-            response = httpx.get(url, headers=headers, timeout=_PROBE_TIMEOUT_SECONDS)
-        except httpx.HTTPError:
-            return STATUS_UNVERIFIED
-        if response.is_success:
-            return STATUS_VERIFIED
-        if response.status_code in (401, 403):
-            return STATUS_INVALID
+        for url in urls:
+            try:
+                response = httpx.get(url, headers=headers, timeout=_PROBE_TIMEOUT_SECONDS)
+            except httpx.HTTPError:
+                return STATUS_UNVERIFIED
+            if response.is_success:
+                return STATUS_VERIFIED
+            if response.status_code in (401, 403):
+                return STATUS_INVALID
         return STATUS_UNVERIFIED
+
+    @staticmethod
+    def _model_probe_urls(api_base: str) -> list[str]:
+        """Return model-list probe URLs for an OpenAI-compatible API base.
+
+        Args:
+            api_base: User-supplied endpoint root or versioned API base.
+
+        Returns:
+            One or two candidate ``/models`` URLs in preferred order.
+        """
+        base = api_base.rstrip("/")
+        if base.endswith("/v1"):
+            return [f"{base}/models"]
+        return [f"{base}/v1/models", f"{base}/models"]

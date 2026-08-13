@@ -51,6 +51,8 @@ PAYLOAD_OVERVIEW_TASK_FINGERPRINT = "task_fingerprint"
 # (the user's own provider key). Threaded from the wizard so billing mode is
 # enforced server-side, not advisory.
 PAYLOAD_OVERVIEW_TOKEN_SOURCE = "token_source"
+# Per-model token sources used for mixed managed/BYOK billing after completion.
+PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL = "token_sources_by_model"
 # Low/high ends of the projected credit bracket the wizard showed at submit.
 # Persisted alongside the billing stamp so the estimate can be reconciled
 # against the actual charge; advisory only — never gates or bills.

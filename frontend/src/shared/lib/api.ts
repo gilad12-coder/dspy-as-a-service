@@ -3,6 +3,7 @@ import type {
   EvalExampleResult,
   GridSearchResult,
   GridSearchRequest,
+  ModelCatalogResponse,
   OptimizationDatasetResponse,
   OptimizationPayloadResponse,
   OptimizationSubmissionResponse,
@@ -778,6 +779,11 @@ export interface ProviderKeysResponse {
 /** List the caller's stored BYOK provider keys (masked). Reads work without the vault key. */
 export function getProviderKeys() {
   return request<ProviderKeysResponse>("/billing/byok/keys");
+}
+
+/** List BYOK models available through the caller's verified stored connections. */
+export function getByokModels() {
+  return request<ModelCatalogResponse>("/billing/byok/models");
 }
 
 /**

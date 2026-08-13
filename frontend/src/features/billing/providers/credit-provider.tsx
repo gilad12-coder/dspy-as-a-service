@@ -10,7 +10,6 @@ import {
   walletStatus,
   type CreditWallet,
   type LedgerKind,
-  type TokenSourceMode,
   type WalletStatus,
 } from "../lib/credit";
 
@@ -30,8 +29,6 @@ interface CreditContextValue {
   loadError: boolean;
   status: WalletStatus;
   totalCredits: number;
-  /** Switch the active token source (managed credits vs the user's own key). */
-  setMode: (mode: TokenSourceMode) => void;
   /** Re-fetch the wallet from the backend — call after a checkout/portal return. */
   refresh: () => void;
   /**
@@ -42,12 +39,7 @@ interface CreditContextValue {
   beginSync: () => void;
 }
 
-/**
- * Overlay a backend wallet response onto the current wallet, preserving the
- * client-only active token-source `mode` toggle.
- * Backend ledger rows are all managed-mode credits (BYOK runs aren't billed),
- * so each maps to `mode: "managed"`.
- */
+/** Overlay a backend wallet response onto the current wallet. */
 function applyWalletResponse(prev: CreditWallet, r: BillingWalletResponse): CreditWallet {
   return {
     ...prev,
@@ -62,7 +54,6 @@ function applyWalletResponse(prev: CreditWallet, r: BillingWalletResponse): Cred
       label: u.label,
       model: u.model,
       credits: u.credits,
-      mode: "managed",
       kind: u.kind as LedgerKind,
     })),
   };
@@ -86,8 +77,7 @@ export function useCredits(): CreditContextValue {
  * from the billing backend on mount and after every `refresh()` — e.g. when a
  * Stripe Checkout returns. The provider starts with a truthful empty value and
  * exposes an explicit unavailable state when the request fails; it never shows
- * invented balances or ledger rows. The client-only `mode` toggle survives
- * each refresh.
+ * invented balances or ledger rows.
  *
  * Args:
  *   children: App subtree.
@@ -168,10 +158,6 @@ export function CreditProvider({ children }: { children: React.ReactNode }) {
     window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : ""));
   }, [beginSync]);
 
-  const setMode = React.useCallback((mode: TokenSourceMode) => {
-    setWallet((w) => ({ ...w, mode }));
-  }, []);
-
   const value = React.useMemo<CreditContextValue>(
     () => ({
       wallet,
@@ -181,11 +167,10 @@ export function CreditProvider({ children }: { children: React.ReactNode }) {
       loadError,
       status: walletStatus(wallet),
       totalCredits: totalCredits(wallet),
-      setMode,
       refresh,
       beginSync,
     }),
-    [wallet, loading, syncing, available, loadError, setMode, refresh, beginSync],
+    [wallet, loading, syncing, available, loadError, refresh, beginSync],
   );
 
   return <CreditContext.Provider value={value}>{children}</CreditContext.Provider>;

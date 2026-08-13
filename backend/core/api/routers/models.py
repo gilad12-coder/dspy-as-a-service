@@ -158,6 +158,73 @@ class DiscoverModelsResponse(BaseModel):
     total: int | None = None
 
 
+def discover_models_at_endpoint(base_url: str, api_key: str | None = None) -> DiscoverModelsResponse:
+    """Fetch model ids from one validated OpenAI-compatible endpoint.
+
+    Args:
+        base_url: Provider API base URL.
+        api_key: Optional bearer secret.
+
+    Returns:
+        Discovered model ids, or a bounded error response.
+    """
+    base = base_url.rstrip("/")
+    _, pinned_ip, validation_error = _validate_discover_url(base)
+    if validation_error is not None or pinned_ip is None:
+        return DiscoverModelsResponse(
+            models=[],
+            base_url=base,
+            error=truncate_text(validation_error or "Hostname could not be resolved", AGENT_MAX_TEXT),
+        )
+    candidates = [f"{base}/v1/models", f"{base}/models"]
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    last_error: str | None = None
+    for url in candidates:
+        try:
+            with _open_pinned(url, headers, pinned_ip, timeout=8) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+            data = _json.loads(body)
+            raw = data.get("data") if isinstance(data, dict) else data
+            if not isinstance(raw, list):
+                last_error = "Unexpected response shape"
+                continue
+            ids: list[str] = []
+            for item in raw:
+                if isinstance(item, dict):
+                    val = item.get("id") or item.get("name")
+                    if isinstance(val, str) and val:
+                        ids.append(val)
+                elif isinstance(item, str):
+                    ids.append(item)
+            sorted_ids = sorted(set(ids))
+            clipped, truncated, total = cap_list(sorted_ids, AGENT_MAX_LIST)
+            return DiscoverModelsResponse(
+                models=clipped,
+                base_url=base,
+                truncated=truncated,
+                total=total,
+            )
+        except urllib.error.HTTPError as exc:
+            last_error = f"HTTP {exc.code}"
+            if exc.code == 404:
+                continue
+            break
+        except (urllib.error.URLError, TimeoutError) as exc:
+            last_error = str(exc.reason if hasattr(exc, "reason") else exc)
+            break
+        except (ValueError, _json.JSONDecodeError) as exc:
+            last_error = f"Invalid JSON: {exc}"
+            break
+    return DiscoverModelsResponse(
+        models=[],
+        base_url=base,
+        error=truncate_text(last_error or "Unable to fetch models", AGENT_MAX_TEXT),
+    )
+
+
 class AgentModelEntry(BaseModel):
     """Agent-safe model row: single canonical name, no display label.
 
@@ -305,60 +372,6 @@ def create_models_router() -> APIRouter:
             Discovered model ids (clipped) with truncation flag, or an
             error message when the endpoint is unreachable.
         """
-        base = payload.base_url.rstrip("/")
-        _, pinned_ip, validation_error = _validate_discover_url(base)
-        if validation_error is not None or pinned_ip is None:
-            return DiscoverModelsResponse(
-                models=[],
-                base_url=base,
-                error=truncate_text(validation_error or "Hostname could not be resolved", AGENT_MAX_TEXT),
-            )
-        candidates = [f"{base}/v1/models", f"{base}/models"]
-        headers = {"Accept": "application/json"}
-        if payload.api_key:
-            headers["Authorization"] = f"Bearer {payload.api_key}"
-
-        last_error: str | None = None
-        for url in candidates:
-            try:
-                with _open_pinned(url, headers, pinned_ip, timeout=8) as resp:
-                    body = resp.read().decode("utf-8", errors="replace")
-                data = _json.loads(body)
-                raw = data.get("data") if isinstance(data, dict) else data
-                if not isinstance(raw, list):
-                    last_error = "Unexpected response shape"
-                    continue
-                ids: list[str] = []
-                for item in raw:
-                    if isinstance(item, dict):
-                        val = item.get("id") or item.get("name")
-                        if isinstance(val, str) and val:
-                            ids.append(val)
-                    elif isinstance(item, str):
-                        ids.append(item)
-                sorted_ids = sorted(set(ids))
-                clipped, truncated, total = cap_list(sorted_ids, AGENT_MAX_LIST)
-                return DiscoverModelsResponse(
-                    models=clipped,
-                    base_url=base,
-                    truncated=truncated,
-                    total=total,
-                )
-            except urllib.error.HTTPError as exc:
-                last_error = f"HTTP {exc.code}"
-                if exc.code == 404:
-                    continue
-                break
-            except (urllib.error.URLError, TimeoutError) as exc:
-                last_error = str(exc.reason if hasattr(exc, "reason") else exc)
-                break
-            except (ValueError, _json.JSONDecodeError) as exc:
-                last_error = f"Invalid JSON: {exc}"
-                break
-        return DiscoverModelsResponse(
-            models=[],
-            base_url=base,
-            error=truncate_text(last_error or "Unable to fetch models", AGENT_MAX_TEXT),
-        )
+        return discover_models_at_endpoint(payload.base_url, payload.api_key)
 
     return router

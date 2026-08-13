@@ -5,6 +5,7 @@ import { sentenceCase } from "@/shared/lib/formatters";
 
 export const emptyModelConfig = (): ModelConfig => ({
   name: "",
+  token_source: "managed",
   temperature: 0.7,
   max_tokens: 1024,
 });

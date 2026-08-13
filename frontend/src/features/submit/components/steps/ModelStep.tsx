@@ -14,9 +14,9 @@ import { Separator } from "@/shared/ui/primitives/separator";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { TERMS } from "@/shared/lib/terms";
 import { ModelChip, AddModelButton } from "@/shared/ui/model-chip";
-import { TokenSourceToggle, useCredits } from "@/features/billing";
 import { useUserPrefs } from "@/features/settings";
 import { CostCeilingCard } from "../CostCeilingCard";
+import { aggregateTokenSource } from "../../lib/cost-bracket";
 
 import { emptyModelConfig } from "../../constants";
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
@@ -38,7 +38,11 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
     catalog,
   } = w;
 
-  const { wallet } = useCredits();
+  const selectedConfigs =
+    jobType === "run" || !advanced
+      ? [modelConfig, ...(secondModelConfig ? [secondModelConfig] : [])]
+      : [...generationModels, ...reflectionModels];
+  const tokenSource = aggregateTokenSource(selectedConfigs);
   const availableCount = catalog?.models.length ?? 0;
   const catalogEmpty = catalog != null && availableCount === 0;
 
@@ -57,7 +61,6 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        <TokenSourceToggle />
         {jobType === "run" || !advanced ? (
           <div className="space-y-3" data-tutorial="model-catalog">
             <Label className="text-sm font-semibold">
@@ -209,7 +212,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
         {/* Pre-run cost bracket + Max Cost Ceiling [FG-1]. Shown in both modes:
             managed displays the full per-model credit cost, BYOK the platform fee
             (the provider key absorbs the model cost, but credits still meter it). */}
-        <CostCeilingCard w={w} mode={wallet.mode} />
+        <CostCeilingCard w={w} mode={tokenSource} />
       </CardContent>
     </Card>
   );

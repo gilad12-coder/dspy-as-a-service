@@ -50,6 +50,10 @@ class CatalogModel(BaseModel):
         ),
     )
     provider: str = Field(..., description="Provider slug for grouping (e.g. 'openai').")
+    byok_provider: str | None = Field(
+        default=None,
+        description="Stored-connection slug to persist for a custom BYOK model.",
+    )
     data_center: str | None = Field(
         default=None,
         description=(

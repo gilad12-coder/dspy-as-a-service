@@ -212,6 +212,14 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
     if (!isStale()) setServeLoading(false);
   };
 
+  const handleStopServe = () => {
+    streamReqIdRef.current += 1;
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    setServeLoading(false);
+    setStreamingRun(null);
+  };
+
   const handleClearHistory = () => {
     setRunHistory([]);
     setServeError(null);
@@ -342,6 +350,7 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
             textareaRefs={textareaRefs}
             chatScrollRef={chatScrollRef}
             handleServe={handleServe}
+            handleStopServe={handleStopServe}
             demos={selected?.program_artifact?.optimized_prompt?.demos ?? []}
           />
 

@@ -25,6 +25,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import Session
 
 from ..config import settings
+from ..constants import TOKEN_SOURCE_MANAGED
 from ..storage.models import BillingOpenRouterKeyModel
 from .byok_bridge import _model_config_dicts
 
@@ -54,8 +55,13 @@ def provisioning_enabled() -> bool:
     return settings.openrouter_provisioning_key is not None and settings.byok_vault_key is not None
 
 
-def inject_provisioned_openrouter_key(payload_dict: dict[str, Any], *, api_key: str) -> None:
-    """Stamp the account's provisioned OpenRouter key onto a managed payload, in place.
+def inject_provisioned_openrouter_key(
+    payload_dict: dict[str, Any],
+    *,
+    api_key: str,
+    default_token_source: str = TOKEN_SOURCE_MANAGED,
+) -> None:
+    """Stamp a provisioned OpenRouter key onto managed payload configs, in place.
 
     The managed-run mirror of :func:`.byok_bridge.inject_byok_connections`:
     each ModelConfig is pinned to litellm's native ``openrouter/`` provider
@@ -68,8 +74,11 @@ def inject_provisioned_openrouter_key(payload_dict: dict[str, Any], *, api_key: 
     Args:
         payload_dict: The raw run/grid payload, mutated in place.
         api_key: The account's provisioned OpenRouter runtime key.
+        default_token_source: Legacy job-level source for configs without one.
     """
     for cfg in _model_config_dicts(payload_dict):
+        if (cfg.get("token_source") or default_token_source) != TOKEN_SOURCE_MANAGED:
+            continue
         name = (cfg.get("name") or "").strip().strip("/")
         if not name:
             continue
@@ -223,9 +232,7 @@ class OpenRouterKeyProvisioner:
             return None
         headers = {"Authorization": f"Bearer {provisioning_key.get_secret_value()}"}
         try:
-            response = httpx.request(
-                method, url, headers=headers, json=payload, timeout=_REQUEST_TIMEOUT_SECONDS
-            )
+            response = httpx.request(method, url, headers=headers, json=payload, timeout=_REQUEST_TIMEOUT_SECONDS)
         except httpx.HTTPError:
             logger.warning("OpenRouter key API unreachable (%s %s)", method, url)
             return None

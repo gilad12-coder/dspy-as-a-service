@@ -33,6 +33,7 @@ from core.billing.service import (
     committed_spend_credits,
     cost_ceiling_budget,
     platform_fee_credits_for_usage,
+    run_cost_credits,
 )
 from core.config import settings
 from core.constants import TOKEN_SOURCE_BYOK, TOKEN_SOURCE_MANAGED
@@ -359,6 +360,23 @@ def test_debit_run_managed_still_charges_full_cost(engine: object) -> None:
     assert cost == credits_for_usage(usages)
 
 
+def test_mixed_run_cost_prices_each_model_by_its_source() -> None:
+    """Mixed jobs charge managed tokens in full and BYOK tokens at the platform fee."""
+    managed = ModelUsage(model="managed/model", input_tokens=100_000, output_tokens=0)
+    byok = ModelUsage(model="byok/model", input_tokens=200_000, output_tokens=0)
+
+    cost = run_cost_credits(
+        [managed, byok],
+        TOKEN_SOURCE_MANAGED,
+        {
+            managed.model: TOKEN_SOURCE_MANAGED,
+            byok.model: TOKEN_SOURCE_BYOK,
+        },
+    )
+
+    assert cost == credits_for_usage([managed]) + platform_fee_credits_for_usage([byok])
+
+
 def test_cost_ceiling_budget_managed_is_the_balance(engine: object) -> None:
     """A managed run's ceiling budget is exactly the spendable balance."""
     assert cost_ceiling_budget(0, TOKEN_SOURCE_MANAGED) == 0
@@ -662,9 +680,7 @@ def test_custom_checkout_rejects_out_of_bounds_amount(engine: object) -> None:
         assert exc.value.code == "billing.invalid_amount"
 
 
-def test_custom_checkout_builds_ad_hoc_price_and_metadata(
-    engine: object, configured: None
-) -> None:
+def test_custom_checkout_builds_ad_hoc_price_and_metadata(engine: object, configured: None) -> None:
     """A custom top-up charges credits-as-cents and stamps webhook metadata."""
     _seed_customer(engine, "u@x.com")
     service = StripeBillingService(engine=engine)

@@ -16,7 +16,7 @@
  * per-model charge. Pure and side-effect-free so it is trivially testable.
  */
 
-import type { CatalogModel } from "@/shared/types/api";
+import type { CatalogModel, ModelConfig } from "@/shared/types/api";
 import {
   creditsForUsage,
   platformFeeCredits,
@@ -188,6 +188,14 @@ export function chargeableBracket(bracket: CostBracket, mode: TokenSourceMode): 
     };
   }
   return bracket;
+}
+
+/** Collapse per-model sources to the conservative job-level billing stamp. */
+export function aggregateTokenSource(configs: ModelConfig[]): TokenSourceMode {
+  const selected = configs.filter((config) => config.name.trim());
+  return selected.length > 0 && selected.every((config) => config.token_source === "byok")
+    ? "byok"
+    : "managed";
 }
 
 /**

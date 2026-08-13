@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
 import {
   Robot,
   Brain,
@@ -86,6 +86,17 @@ const WORKFLOW_META = {
   tipKey: "module.workflow",
   Banner: WorkflowBanner,
 } as const;
+
+const MODULE_TIER_TRANSITION = {
+  duration: 0.22,
+  ease: [0.2, 0.8, 0.2, 1] as const,
+};
+
+const MODULE_TIER_VARIANTS: Variants = {
+  enter: (offset: number) => ({ opacity: 0, x: offset }),
+  center: { opacity: 1, x: 0 },
+  exit: (offset: number) => ({ opacity: 0, x: -offset }),
+};
 
 // The header chip's label for a committed module. Workflow lives outside
 // ATOMIC_MODULES, so it is matched on its own; anything unrecognised falls
@@ -449,6 +460,21 @@ function ModulePicker({
   // always starts on the composition choice; there is no stale drill-down to
   // restore, and reopening a workflow run still surfaces both build types.
   const [tier, setTier] = React.useState<"composition" | "atomic">("composition");
+  const [tierDirection, setTierDirection] = React.useState(1);
+  const prefersReducedMotion = useReducedMotion();
+  const inlineDirection = getActiveDir() === "rtl" ? -1 : 1;
+  const tierOffset = prefersReducedMotion ? 0 : tierDirection * inlineDirection * 24;
+
+  const showAtomicModules = () => {
+    setTierDirection(1);
+    setTier("atomic");
+  };
+
+  const showCompositionChoice = () => {
+    setTierDirection(-1);
+    setTier("composition");
+  };
+
   return (
     // A container, not a breakpoint: the step card is max-w-5xl in auto mode
     // and max-w-2xl in manual, so only its own width can say whether a slide
@@ -457,18 +483,30 @@ function ModulePicker({
       className="@container rounded-2xl border border-border/50 bg-card/80 px-4 py-5 shadow-lg backdrop-blur-xl sm:px-8 sm:py-7"
       data-tutorial="module-selector"
     >
-      {tier === "composition" ? (
-        <CompositionChoice
-          onSingle={() => setTier("atomic")}
-          onWorkflow={() => onChoose("workflow")}
-        />
-      ) : (
-        <AtomicModulePicker
-          current={current}
-          onChoose={onChoose}
-          onBack={() => setTier("composition")}
-        />
-      )}
+      <AnimatePresence mode="wait" initial={false} custom={tierOffset}>
+        <motion.div
+          key={tier}
+          custom={tierOffset}
+          variants={MODULE_TIER_VARIANTS}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          transition={prefersReducedMotion ? { duration: 0 } : MODULE_TIER_TRANSITION}
+        >
+          {tier === "composition" ? (
+            <CompositionChoice
+              onSingle={showAtomicModules}
+              onWorkflow={() => onChoose("workflow")}
+            />
+          ) : (
+            <AtomicModulePicker
+              current={current}
+              onChoose={onChoose}
+              onBack={showCompositionChoice}
+            />
+          )}
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }

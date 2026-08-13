@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowCounterClockwise, ChatText, XCircle } from "@/shared/ui/icons";
+import { ArrowCounterClockwise, ChatText, CircleNotch, XCircle } from "@/shared/ui/icons";
 
 import { AgentThread } from "@/shared/ui/agent/agent-thread";
 import { ChatTranscript } from "@/shared/ui/agent/chat-transcript";
@@ -83,9 +83,20 @@ export function ReactServeChat({ optimizationId }: ReactServeChatProps) {
           editAndResend={agent.editAndResend}
           thinking={thinking}
           renderToolCall={renderToolCall}
+          toolCallsBeforeContent
           animatePairs
           trailing={() => (
             <>
+              {streaming && agent.statusLabel && !agent.pendingApproval && (
+                <div
+                  className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <CircleNotch className="size-3 animate-spin" aria-hidden="true" />
+                  <span dir="auto">{agent.statusLabel}</span>
+                </div>
+              )}
               {agent.pendingApproval && (
                 <ApprovalCard payload={agent.pendingApproval} onResolve={agent.confirmApproval} />
               )}

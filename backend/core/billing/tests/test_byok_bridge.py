@@ -24,6 +24,7 @@ from core.api.routers.submissions import _enforce_byok_connections
 from core.billing.byok_bridge import inject_byok_connections, provider_slug_for_model
 from core.billing.byok_vault import ProviderKeyVault
 from core.config import settings
+from core.models.common import ModelConfig
 from core.storage.models import Base
 
 
@@ -96,6 +97,34 @@ def test_inject_applies_custom_api_base_and_params(vault: ProviderKeyVault) -> N
     assert cfg["extra"]["organization"] == "org-1"
 
 
+def test_inject_custom_provider_uses_explicit_connection_slug(vault: ProviderKeyVault) -> None:
+    """A discovered OpenAI-compatible model resolves the selected custom connection."""
+    with patch("core.billing.byok_vault.httpx.get", return_value=_ok_response()):
+        vault.save_key(
+            "u@x.com",
+            "custom",
+            "sk-custom-3333",
+            api_base="https://host.example/v1",
+        )
+    payload = {
+        "model_config": {
+            "name": "openai/private-model",
+            "token_source": "byok",
+            "byok_provider": "custom",
+            "base_url": "https://untrusted.example/v1",
+            "extra": {"api_key": "inline-secret", "base_url": "https://also-untrusted.example"},
+        }
+    }
+
+    inject_byok_connections(payload, username="u@x.com", vault=vault)
+
+    cfg = payload["model_config"]
+    assert cfg["name"] == "openai/private-model"
+    assert cfg["base_url"] == "https://host.example/v1"
+    assert cfg["extra"]["api_key"] == "sk-custom-3333"
+    assert "base_url" not in cfg["extra"]
+
+
 def test_inject_stamps_grid_model_lists(vault: ProviderKeyVault) -> None:
     """A grid payload's generation + reflection lists each get the user's key."""
     with patch("core.billing.byok_vault.httpx.get", return_value=_ok_response()):
@@ -107,6 +136,34 @@ def test_inject_stamps_grid_model_lists(vault: ProviderKeyVault) -> None:
     inject_byok_connections(payload, username="u@x.com", vault=vault)
     assert payload["generation_models"][0]["extra"]["api_key"] == "sk-or-4444"
     assert payload["reflection_models"][0]["extra"]["api_key"] == "sk-or-4444"
+
+
+def test_inject_skips_managed_configs_in_mixed_payload(vault: ProviderKeyVault) -> None:
+    """Only the BYOK side of a mixed payload receives a vault connection."""
+    with patch("core.billing.byok_vault.httpx.get", return_value=_ok_response()):
+        vault.save_key("u@x.com", "openrouter", "sk-or-4444")
+    payload = {
+        "model_config": {
+            "name": "openrouter/openai/gpt-4o",
+            "token_source": "byok",
+            "extra": {},
+        },
+        "reflection_model_config": {
+            "name": "openrouter/anthropic/claude-3-5-sonnet",
+            "token_source": "managed",
+            "extra": {},
+        },
+    }
+
+    inject_byok_connections(
+        payload,
+        username="u@x.com",
+        vault=vault,
+        default_token_source="managed",
+    )
+
+    assert payload["model_config"]["extra"]["api_key"] == "sk-or-4444"
+    assert "api_key" not in payload["reflection_model_config"]["extra"]
 
 
 def test_inject_missing_connection_raises(vault: ProviderKeyVault) -> None:
@@ -127,7 +184,11 @@ def test_enforce_byok_connections_blocks_missing(vault: ProviderKeyVault, engine
     """The submit gate rejects a BYOK run the account has no key for."""
     job_store = SimpleNamespace(engine=engine)
     with pytest.raises(DomainError) as exc:
-        _enforce_byok_connections(job_store, "u@x.com", "byok", ["openai/gpt-4o"])
+        _enforce_byok_connections(
+            job_store,
+            "u@x.com",
+            [ModelConfig(name="openai/gpt-4o", token_source="byok")],
+        )
     assert exc.value.status_code == 400
 
 
@@ -136,10 +197,18 @@ def test_enforce_byok_connections_passes_when_present(vault: ProviderKeyVault, e
     with patch("core.billing.byok_vault.httpx.get", return_value=_ok_response()):
         vault.save_key("u@x.com", "openrouter", "sk-or-5555")
     job_store = SimpleNamespace(engine=engine)
-    _enforce_byok_connections(job_store, "u@x.com", "byok", ["openrouter/openai/gpt-4o"])
+    _enforce_byok_connections(
+        job_store,
+        "u@x.com",
+        [ModelConfig(name="openrouter/openai/gpt-4o", token_source="byok")],
+    )
 
 
 def test_enforce_byok_connections_managed_is_noop(engine: object) -> None:
     """Managed runs skip the BYOK gate entirely — no vault access, no raise."""
     job_store = SimpleNamespace(engine=engine)
-    _enforce_byok_connections(job_store, "u@x.com", "managed", ["openai/gpt-4o"])
+    _enforce_byok_connections(
+        job_store,
+        "u@x.com",
+        [ModelConfig(name="openai/gpt-4o", token_source="managed")],
+    )

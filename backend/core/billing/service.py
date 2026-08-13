@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -176,7 +176,11 @@ def platform_fee_credits_for_usage(usages: Iterable[ModelUsage]) -> int:
     return max(1, math.ceil(fee))
 
 
-def run_cost_credits(usages: Iterable[ModelUsage], token_source: str) -> int:
+def run_cost_credits(
+    usages: Iterable[ModelUsage],
+    token_source: str,
+    token_sources_by_model: Mapping[str, str] | None = None,
+) -> int:
     """Return the credits a run costs: full per-model cost, or the BYOK platform fee.
 
     A managed run is charged its full per-model token cost
@@ -186,14 +190,22 @@ def run_cost_credits(usages: Iterable[ModelUsage], token_source: str) -> int:
 
     Args:
         usages: Per-model token usage for the run.
-        token_source: ``"managed"`` (full cost) or ``"byok"`` (platform fee only).
+        token_source: Fallback source for legacy or unrecognized model rows.
+        token_sources_by_model: Optional per-model sources for a mixed job.
 
     Returns:
         The non-negative credit cost.
     """
-    if token_source == TOKEN_SOURCE_BYOK:
-        return platform_fee_credits_for_usage(usages)
-    return credits_for_usage(usages)
+    usage_rows = list(usages)
+    if token_sources_by_model is None:
+        if token_source == TOKEN_SOURCE_BYOK:
+            return platform_fee_credits_for_usage(usage_rows)
+        return credits_for_usage(usage_rows)
+    managed = [
+        usage for usage in usage_rows if token_sources_by_model.get(usage.model, token_source) != TOKEN_SOURCE_BYOK
+    ]
+    byok = [usage for usage in usage_rows if token_sources_by_model.get(usage.model, token_source) == TOKEN_SOURCE_BYOK]
+    return credits_for_usage(managed) + platform_fee_credits_for_usage(byok)
 
 
 def cost_ceiling_budget(spendable: int, token_source: str) -> int:
@@ -563,10 +575,7 @@ class StripeBillingService:
             model[1] += 1
             model[2] += row.input_tokens or 0
             model[3] += row.output_tokens or 0
-        by_day = [
-            UsageDayRow(date=date, billed_credits=credits)
-            for date, credits in sorted(per_day.items())
-        ]
+        by_day = [UsageDayRow(date=date, billed_credits=credits) for date, credits in sorted(per_day.items())]
         by_model = [
             UsageModelRow(
                 model=model,
@@ -657,12 +666,14 @@ class StripeBillingService:
             Total credits spent in the window, never negative.
         """
         with Session(self._engine) as session:
-            spent = session.query(
-                func.coalesce(func.sum(-CreditLedgerModel.delta_credits), 0)
-            ).filter(
-                CreditLedgerModel.delta_credits < 0,
-                CreditLedgerModel.created_at >= since,
-            ).scalar()
+            spent = (
+                session.query(func.coalesce(func.sum(-CreditLedgerModel.delta_credits), 0))
+                .filter(
+                    CreditLedgerModel.delta_credits < 0,
+                    CreditLedgerModel.created_at >= since,
+                )
+                .scalar()
+            )
         return max(int(spent or 0), 0)
 
     def debit_run(
@@ -673,6 +684,7 @@ class StripeBillingService:
         model: str | None,
         description: str,
         token_source: str = TOKEN_SOURCE_MANAGED,
+        token_sources_by_model: Mapping[str, str] | None = None,
     ) -> int:
         """Charge a finished run's per-model credit cost to the account, grant first.
 
@@ -706,6 +718,7 @@ class StripeBillingService:
             description: Human label for the ledger row (typically the run name).
             token_source: ``"managed"`` (full cost) or ``"byok"`` (platform fee
                 only); defaults to managed.
+            token_sources_by_model: Optional per-model source map for a mixed job.
 
         Returns:
             The credit cost actually charged (``0`` when nothing was billed) —
@@ -713,7 +726,7 @@ class StripeBillingService:
             run's full cost on a depleted account.
         """
         usage_rows = list(usages)
-        cost = run_cost_credits(usage_rows, token_source)
+        cost = run_cost_credits(usage_rows, token_source, token_sources_by_model)
         if cost <= 0:
             return 0
         # The ledger row records the measured tokens behind the charge — the

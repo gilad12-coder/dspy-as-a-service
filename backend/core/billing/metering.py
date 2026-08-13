@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 
+from ..constants import TOKEN_SOURCE_MANAGED
 from ..service_gateway.language_models import served_model_from, usage_by_model_from_history
 from .pricing import ModelUsage, credits_for_usage, usages_from_breakdown
 from .service import StripeBillingService
@@ -105,6 +106,7 @@ def meter_llm_run(
     *,
     description: str,
     model: str | None = None,
+    token_source: str = TOKEN_SOURCE_MANAGED,
 ) -> int:
     """Debit the tokens a finished interactive run consumed.
 
@@ -124,6 +126,7 @@ def meter_llm_run(
         description: Human label for the ledger row (e.g. ``"Agent chat"``).
         model: Model id to stamp on the ledger row; ``None`` derives it from
             the served/requested model of the harvest.
+        token_source: Billing source for the interactive model call.
 
     Returns:
         The credits charged, or ``0`` when nothing was billed.
@@ -139,7 +142,11 @@ def meter_llm_run(
             return 0
         service = StripeBillingService(engine=engine)
         credits = service.debit_run(
-            username, usages, model=model or harvested_model, description=description
+            username,
+            usages,
+            model=model or harvested_model,
+            description=description,
+            token_source=token_source,
         )
     except Exception:
         logger.exception("failed to debit LLM usage for %s (%s)", username, description)

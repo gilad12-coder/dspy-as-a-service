@@ -55,7 +55,6 @@ export interface UsageEntry {
   model: string | null;
   /** Signed credit delta: negative for a run (spend), positive for a top-up/grant. */
   credits: number;
-  mode: TokenSourceMode;
   kind: LedgerKind;
 }
 
@@ -73,8 +72,6 @@ export interface CreditWallet {
   /** Purchased credits, on top of the free grant. */
   paidBalanceCredits: number;
   freeGrant: FreeGrant;
-  /** Which token source the account is actively running jobs on. */
-  mode: TokenSourceMode;
   /** Most-recent-first ledger rows. */
   usage: UsageEntry[];
 }
@@ -132,6 +129,5 @@ export const CREDIT_PACKS: CreditPack[] = [
 export const EMPTY_WALLET: CreditWallet = {
   paidBalanceCredits: 0,
   freeGrant: { creditsRemaining: 0, creditsTotal: 0 },
-  mode: "managed",
   usage: [],
 };

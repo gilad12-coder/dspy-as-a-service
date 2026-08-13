@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
 import pytest
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
+from ...billing.byok_vault import ProviderKeyVault
+from ...config import settings
+from ...storage.models import Base
 from ..routers.workflows import create_workflows_router
 from .conftest import bypass_auth
 
@@ -77,9 +87,7 @@ def test_dry_run_node_failure_returns_200_with_failing_node(workflows_client: Te
     resp = workflows_client.post(
         "/workflows/dry-run",
         json={
-            "workflow": _transform_workflow(
-                "def transform(text):\n    raise ValueError('kaput: ' + text)\n"
-            ),
+            "workflow": _transform_workflow("def transform(text):\n    raise ValueError('kaput: ' + text)\n"),
             "inputs": {"text": "boom"},
             "model_config": _MODEL_CFG,
         },
@@ -99,9 +107,7 @@ def test_dry_run_rejects_invalid_graph_with_detail(workflows_client: TestClient)
     resp = workflows_client.post(
         "/workflows/dry-run",
         json={
-            "workflow": _transform_workflow(
-                "def transform(wrong_param):\n    return {'shout': wrong_param}\n"
-            ),
+            "workflow": _transform_workflow("def transform(wrong_param):\n    return {'shout': wrong_param}\n"),
             "inputs": {"text": "x"},
             "model_config": _MODEL_CFG,
         },
@@ -140,3 +146,52 @@ def test_dry_run_rejects_structurally_invalid_graph(workflows_client: TestClient
     )
 
     assert resp.status_code == 422
+
+
+def test_dry_run_resolves_stored_custom_byok_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Workflow dry runs use a verified custom provider connection from the vault."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(
+        settings,
+        "byok_vault_key",
+        SecretStr(Fernet.generate_key().decode("utf-8")),
+    )
+    response = SimpleNamespace(status_code=200, is_success=True)
+    with patch("core.billing.byok_vault.httpx.get", return_value=response):
+        ProviderKeyVault(engine=engine).save_key(
+            "alice",
+            "custom",
+            "private-secret",
+            api_base="https://inference.example/v1",
+        )
+    app = FastAPI()
+    app.include_router(create_workflows_router(job_store=SimpleNamespace(engine=engine)))
+    bypass_auth(app)
+    client = TestClient(app, raise_server_exceptions=False)
+    builder = MagicMock(return_value=MagicMock())
+
+    with patch("core.api.routers.workflows.build_language_model", builder):
+        resp = client.post(
+            "/workflows/dry-run",
+            json={
+                "workflow": _transform_workflow("def transform(text):\n    return {'shout': text.upper()}\n"),
+                "inputs": {"text": "quiet"},
+                "model_config": {
+                    "name": "openai/private-chat",
+                    "token_source": "byok",
+                    "byok_provider": "custom",
+                },
+            },
+        )
+
+    assert resp.status_code == 200
+    resolved = builder.call_args.args[0]
+    assert resolved.base_url == "https://inference.example/v1"
+    assert resolved.extra["api_key"] == "private-secret"

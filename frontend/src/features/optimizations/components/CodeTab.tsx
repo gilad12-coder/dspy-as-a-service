@@ -4,7 +4,15 @@ import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Code } from "@/shared/ui/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
+import {
+  SLIDING_PILL_TABS_INDICATOR_CLASS,
+  SLIDING_PILL_TABS_LIST_CLASS,
+  SLIDING_PILL_TABS_TRIGGER_CLASS,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/shared/ui/primitives/tabs";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
 import { Skeleton } from "@/shared/ui/skeleton";
@@ -23,9 +31,6 @@ const WorkflowGraphView = dynamic(
   () => import("./WorkflowGraphView").then((m) => m.WorkflowGraphView),
   { ssr: false, loading: () => <Skeleton height={480} borderRadius={8} /> },
 );
-
-const TRIGGER_CLASS =
-  "relative z-10 rounded-full px-4 py-2 text-sm font-semibold cursor-pointer border-none bg-transparent text-foreground/65 shadow-none transition-[color,transform] data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:border-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 gap-1.5";
 
 const editorHeight = (code: string): string => `${(code.split("\n").length + 1) * 19.6 + 8}px`;
 
@@ -63,7 +68,10 @@ export function CodeTab({
   const [activeCodeTab, setActiveCodeTab] = useState<string>(
     workflowSpec ? "code" : signatureCode ? "signature" : "metric",
   );
-  const activeIndex = Math.max(0, tabs.findIndex((t) => t.value === activeCodeTab));
+  const activeIndex = Math.max(
+    0,
+    tabs.findIndex((t) => t.value === activeCodeTab),
+  );
   const share = 100 / Math.max(1, tabs.length);
 
   return (
@@ -87,10 +95,10 @@ export function CodeTab({
           </CardHeader>
           <CardContent>
             <Tabs value={activeCodeTab} dir="ltr" onValueChange={setActiveCodeTab}>
-              <TabsList className="relative inline-flex h-auto w-full gap-1 rounded-full border border-border/60 bg-muted/50 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
+              <TabsList className={SLIDING_PILL_TABS_LIST_CLASS}>
                 {tabs.length > 1 && (
                   <div
-                    className="absolute top-1 bottom-1 z-0 rounded-full bg-background shadow-sm transition-[inset-inline-start] duration-200 ease-out"
+                    className={SLIDING_PILL_TABS_INDICATOR_CLASS}
                     style={{
                       width: `calc(${share}% - 6px)`,
                       insetInlineStart:
@@ -99,7 +107,11 @@ export function CodeTab({
                   />
                 )}
                 {tabs.map((t) => (
-                  <TabsTrigger key={t.value} value={t.value} className={TRIGGER_CLASS}>
+                  <TabsTrigger
+                    key={t.value}
+                    value={t.value}
+                    className={SLIDING_PILL_TABS_TRIGGER_CLASS}
+                  >
                     {t.label}
                   </TabsTrigger>
                 ))}
@@ -143,7 +155,6 @@ export function CodeTab({
           </CardContent>
         </Card>
       )}
-
     </>
   );
 }

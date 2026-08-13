@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "react-toastify";
-import { CircleNotch, Tray } from "@/shared/ui/icons";
+import { CircleNotch, ClockCounterClockwise, MagicWand, Tray } from "@/shared/ui/icons";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/shared/ui/primitives/table";
@@ -19,6 +19,7 @@ import { DataTabSkeleton } from "./DataTabSkeleton";
 import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
+import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { msg } from "@/shared/lib/messages";
 import { tip } from "@/shared/lib/tooltips";
 import { getOptimizationDataset, getTestResults, getPairTestResults } from "@/shared/lib/api";
@@ -349,44 +350,59 @@ export function DataTab({
                   </HelpTip>
                 </div>
               </div>
-              {/* The selection pill is a shared-layout element: framer animates it from
-                  the old button's box to the new one, so it always wraps the active
-                  label exactly. A fixed 50% pill drifted because the two labels differ
-                  in width; this also gives the slide+resize the other segmented
-                  controls use. Label sits above the pill and is centred by the px-3. */}
-              <div className="relative inline-flex rounded-lg bg-[#F0EBE4] p-1 gap-1 text-[0.6875rem] shrink-0">
-                <button
-                  onClick={() => setProgramType("baseline")}
-                  className={`relative rounded-md px-3 py-1.5 cursor-pointer transition-colors duration-150 ${programType === "baseline" ? "text-[#FAF8F5] font-semibold" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+              <div className="relative inline-flex shrink-0 gap-1 rounded-lg bg-[#F0EBE4] p-1">
+                <TooltipButton
+                  tooltip={msg("auto.features.optimizations.components.datatab.2")}
+                  side="top"
                 >
-                  {programType === "baseline" && (
-                    <motion.span
-                      layoutId="datatab-program-pill"
-                      className="absolute inset-0 rounded-md bg-[#3D2E22] shadow-sm"
-                      transition={{ type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                      aria-hidden="true"
-                    />
-                  )}
-                  <span className="relative z-10 whitespace-nowrap">
-                    {msg("auto.features.optimizations.components.datatab.2")}
-                  </span>
-                </button>
-                <button
-                  onClick={() => setProgramType("optimized")}
-                  className={`relative rounded-md px-3 py-1.5 cursor-pointer transition-colors duration-150 ${programType === "optimized" ? "text-[#FAF8F5] font-semibold" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+                  <button
+                    type="button"
+                    onClick={() => setProgramType("baseline")}
+                    aria-label={msg("auto.features.optimizations.components.datatab.2")}
+                    aria-pressed={programType === "baseline"}
+                    className={`relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 ${programType === "baseline" ? "text-[#FAF8F5]" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+                  >
+                    {programType === "baseline" && (
+                      <motion.span
+                        layoutId="datatab-program-pill"
+                        className="absolute inset-0 rounded-md bg-[#3D2E22] shadow-sm"
+                        transition={{
+                          type: "tween",
+                          duration: 0.18,
+                          ease: [0.22, 1, 0.36, 1],
+                        }}
+                        aria-hidden="true"
+                      />
+                    )}
+                    <ClockCounterClockwise className="relative z-10 size-4" aria-hidden="true" />
+                  </button>
+                </TooltipButton>
+                <TooltipButton
+                  tooltip={msg("auto.features.optimizations.components.datatab.3")}
+                  side="top"
                 >
-                  {programType === "optimized" && (
-                    <motion.span
-                      layoutId="datatab-program-pill"
-                      className="absolute inset-0 rounded-md bg-[#3D2E22] shadow-sm"
-                      transition={{ type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                      aria-hidden="true"
-                    />
-                  )}
-                  <span className="relative z-10 whitespace-nowrap">
-                    {msg("auto.features.optimizations.components.datatab.3")}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setProgramType("optimized")}
+                    aria-label={msg("auto.features.optimizations.components.datatab.3")}
+                    aria-pressed={programType === "optimized"}
+                    className={`relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 ${programType === "optimized" ? "text-[#FAF8F5]" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+                  >
+                    {programType === "optimized" && (
+                      <motion.span
+                        layoutId="datatab-program-pill"
+                        className="absolute inset-0 rounded-md bg-[#3D2E22] shadow-sm"
+                        transition={{
+                          type: "tween",
+                          duration: 0.18,
+                          ease: [0.22, 1, 0.36, 1],
+                        }}
+                        aria-hidden="true"
+                      />
+                    )}
+                    <MagicWand className="relative z-10 size-4" aria-hidden="true" />
+                  </button>
+                </TooltipButton>
               </div>
               {testResultsLoading && (
                 <CircleNotch className="size-4 animate-spin text-[#8C7A6B] shrink-0" />
@@ -434,7 +450,7 @@ export function DataTab({
           })()}
           <ResetFiltersButton filters={colFilters} />
           <ResetColumnsButton resize={colResize} />
-          <div className="text-[0.625rem] text-muted-foreground tabular-nums ms-auto">
+          <div className="text-[0.625rem] text-muted-foreground tabular-nums me-auto">
             {filtered.length}
             {msg("auto.features.optimizations.components.datatab.4")}
           </div>

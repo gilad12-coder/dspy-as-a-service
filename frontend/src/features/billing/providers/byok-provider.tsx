@@ -10,6 +10,7 @@ import {
   type SaveProviderKeyOptions,
 } from "@/shared/lib/api";
 import { type KeyStatus, type ProviderKey } from "../lib/byok";
+import { invalidateByokModelCatalog } from "@/shared/lib/model-catalog";
 
 interface ByokContextValue {
   /** Saved keys, keyed by provider slug via `keyFor`. */
@@ -102,6 +103,7 @@ export function ByokKeysProvider({
   );
 
   const upsert = React.useCallback((next: ProviderKey) => {
+    invalidateByokModelCatalog();
     setKeys((prev) => [...prev.filter((k) => k.provider !== next.provider), next]);
   }, []);
 
@@ -125,6 +127,7 @@ export function ByokKeysProvider({
 
   const removeKey = React.useCallback(async (provider: string): Promise<void> => {
     const remaining = await removeProviderKey(provider);
+    invalidateByokModelCatalog();
     setKeys(remaining.keys.map(toProviderKey));
   }, []);
 

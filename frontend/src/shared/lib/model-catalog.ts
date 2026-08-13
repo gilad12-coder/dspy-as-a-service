@@ -1,4 +1,5 @@
-import type { ModelCatalogResponse, DiscoverModelsResponse } from "@/shared/types/api";
+import type { ModelCatalogResponse } from "@/shared/types/api";
+import { getByokModels } from "@/shared/lib/api";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 
 // Resolve lazily — a module-load const races the injected window.__SKYNET_ENV__
@@ -72,9 +73,7 @@ export function getByokModelCatalog(): Promise<ModelCatalogResponse> {
   if (typeof window === "undefined") return Promise.resolve(EMPTY_CATALOG);
   _byokReady = (async () => {
     try {
-      const res = await fetch(`${apiBase()}/models/byok`);
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      const data: unknown = await res.json();
+      const data: unknown = await getByokModels();
       if (!isModelCatalogResponse(data)) throw new Error("Invalid BYOK catalog response");
       _byokCache = data;
       return data;
@@ -87,22 +86,13 @@ export function getByokModelCatalog(): Promise<ModelCatalogResponse> {
   return _byokReady;
 }
 
+/** Drop the account-scoped BYOK catalog after a provider connection changes. */
+export function invalidateByokModelCatalog(): void {
+  _byokCache = null;
+  _byokReady = null;
+}
+
 /** Synchronously inspect the cached BYOK catalog (null before its first fetch resolves). */
 export function cachedByokCatalog(): ModelCatalogResponse | null {
   return _byokCache;
-}
-
-export async function discoverModels(
-  baseUrl: string,
-  apiKey?: string,
-  signal?: AbortSignal,
-): Promise<DiscoverModelsResponse> {
-  const res = await fetch(`${apiBase()}/models/discover`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || undefined }),
-    signal,
-  });
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
-  return res.json();
 }

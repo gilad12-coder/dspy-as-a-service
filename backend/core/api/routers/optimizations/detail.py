@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
+from ....billing import ProviderKeyVault, resolve_byok_model_config
 from ....config import settings
 from ....constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
@@ -37,6 +38,7 @@ from ....constants import (
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_SIGNATURE_CODE,
     PAYLOAD_OVERVIEW_WORKFLOW,
+    TOKEN_SOURCE_BYOK,
 )
 from ....models import (
     ColumnMapping,
@@ -196,9 +198,7 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         # payload (the training dataset) — deferring it skips a multi-MB JSONB
         # read per poll. Ownership still resolves via ``payload_overview``,
         # which is denormalized alongside the payload (see _reassign_job_owner).
-        job_data, role = load_job_with_role(
-            job_store, optimization_id, current_user, include_payload=False
-        )
+        job_data, role = load_job_with_role(job_store, optimization_id, current_user, include_payload=False)
         # Null for the owner's own view (implicitly owner); the grant tier when a
         # member reached this run via sharing, so the UI can gate actions.
         effective_role = None if role == ShareRole.owner else str(role)
@@ -514,6 +514,18 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
             else:
                 raise DomainError("optimization.no_model_config", status=400)
 
+        if model_config.token_source == TOKEN_SOURCE_BYOK:
+            engine = getattr(job_store, "engine", None)
+            if engine is None:
+                raise DomainError("billing.byok_missing_connection", status=400, provider="")
+            try:
+                model_config = resolve_byok_model_config(
+                    model_config,
+                    username=current_user.username,
+                    vault=ProviderKeyVault(engine=engine),
+                )
+            except ValueError as exc:
+                raise DomainError("billing.byok_missing_connection", status=400, provider=str(exc)) from exc
         lm = build_language_model(model_config)
 
         if program_type == "baseline":

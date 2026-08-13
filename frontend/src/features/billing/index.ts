@@ -4,12 +4,7 @@ export { CreditBalanceChip } from "./components/CreditBalanceChip";
 export { WalletTab } from "./components/WalletTab";
 export { UsageTab } from "./components/UsageTab";
 export { ByokKeysSection } from "./components/ByokKeysSection";
-export { TokenSourceToggle } from "./components/TokenSourceToggle";
 export { InsufficientCreditsModalHost } from "./components/InsufficientCreditsModalHost";
 export { litellmProviderForByok } from "./lib/byok";
 export { creditsToUsd, formatCredits, formatUsd, type TokenSourceMode } from "./lib/credit";
-export {
-  creditsForUsage,
-  platformFeeCredits,
-  type ModelTokenUsage,
-} from "./lib/pricing";
+export { creditsForUsage, platformFeeCredits, type ModelTokenUsage } from "./lib/pricing";

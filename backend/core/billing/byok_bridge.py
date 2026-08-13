@@ -19,7 +19,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from .byok_vault import ProviderKeyVault, byok_provider_for_litellm
+from ..constants import TOKEN_SOURCE_BYOK
+from ..models.common import ModelConfig
+from .byok_vault import ProviderKeyVault, byok_provider_for_litellm, safe_connection_params
 
 # Payload keys holding ModelConfig blocks. Runs persist their configs under the
 # field *aliases* (``model_settings`` → ``"model_config"``); grids use the plain
@@ -69,10 +71,56 @@ def _model_config_dicts(payload_dict: dict[str, Any]) -> list[dict[str, Any]]:
     return configs
 
 
+def payload_uses_token_source(payload_dict: dict[str, Any], source: str, *, default_token_source: str) -> bool:
+    """Return whether any payload ModelConfig resolves to ``source``.
+
+    Args:
+        payload_dict: Raw run or grid payload.
+        source: Source to find (``managed`` or ``byok``).
+        default_token_source: Legacy job-level source used when a config omits it.
+
+    Returns:
+        True when at least one config uses the requested source.
+    """
+    return any((cfg.get("token_source") or default_token_source) == source for cfg in _model_config_dicts(payload_dict))
+
+
+def resolve_byok_model_config(model_config: ModelConfig, *, username: str, vault: ProviderKeyVault) -> ModelConfig:
+    """Return a model config with its verified BYOK connection injected.
+
+    Args:
+        model_config: Config to resolve; managed configs pass through unchanged.
+        username: Account that owns the stored connection.
+        vault: Encrypted connection vault.
+
+    Returns:
+        A copied config carrying the decrypted runtime key and endpoint.
+
+    Raises:
+        ValueError: When a BYOK config has no verified matching connection.
+    """
+    if model_config.token_source != TOKEN_SOURCE_BYOK:
+        return model_config
+    provider = (model_config.byok_provider or "").strip()
+    if not provider:
+        prefix = provider_slug_for_model(model_config.normalized_identifier())
+        if prefix is not None:
+            provider = byok_provider_for_litellm(prefix)
+    if not provider or not vault.has_verified_connection(username, provider):
+        raise ValueError(provider)
+    payload = {"model_config": model_config.model_dump(mode="json")}
+    inject_byok_connections(payload, username=username, vault=vault)
+    return ModelConfig.model_validate(payload["model_config"])
+
+
 def inject_byok_connections(
-    payload_dict: dict[str, Any], *, username: str, vault: ProviderKeyVault
+    payload_dict: dict[str, Any],
+    *,
+    username: str,
+    vault: ProviderKeyVault,
+    default_token_source: str = TOKEN_SOURCE_BYOK,
 ) -> None:
-    """Stamp the user's vault key onto every ModelConfig in a BYOK payload, in place.
+    """Stamp vault connections onto the BYOK ModelConfigs in a payload, in place.
 
     For each ModelConfig, resolve the provider from its model string and look up
     the account's connection in the vault, then set ``extra['api_key']`` (plus the
@@ -85,6 +133,7 @@ def inject_byok_connections(
         payload_dict: The raw run/grid payload, mutated in place.
         username: Account the run bills to (the vault owner).
         vault: The provider-key vault to resolve connections from.
+        default_token_source: Legacy job-level source for configs without one.
 
     Raises:
         ValueError: When a model's provider has no saved connection — the run
@@ -92,13 +141,16 @@ def inject_byok_connections(
             silently falling back to a platform key.
     """
     for cfg in _model_config_dicts(payload_dict):
+        if (cfg.get("token_source") or default_token_source) != TOKEN_SOURCE_BYOK:
+            continue
         prefix = provider_slug_for_model(cfg.get("name", ""))
-        if prefix is None:
+        configured_provider = str(cfg.get("byok_provider") or "").strip() or None
+        if prefix is None and configured_provider is None:
             continue
         # The model id carries a LiteLLM prefix (``gemini``, ``together_ai``);
         # the user saved their key under the vault slug (``google``,
         # ``together``). Bridge the two so the lookup hits.
-        provider = byok_provider_for_litellm(prefix)
+        provider = configured_provider or byok_provider_for_litellm(prefix or "")
         resolved = vault.resolve_connection(username, provider)
         if resolved is None:
             raise ValueError(
@@ -106,11 +158,11 @@ def inject_byok_connections(
                 "Add one in Settings → Providers to run with your own key."
             )
         extra = cfg.get("extra")
-        if not isinstance(extra, dict):
-            extra = {}
-            cfg["extra"] = extra
-        extra.setdefault("api_key", resolved.secret)
-        if resolved.api_base and not cfg.get("base_url"):
+        extra = {} if not isinstance(extra, dict) else safe_connection_params(extra)
+        cfg["extra"] = extra
+        extra.update(safe_connection_params(resolved.params))
+        extra["api_key"] = resolved.secret
+        if resolved.api_base:
             cfg["base_url"] = resolved.api_base
-        for key, value in resolved.params.items():
-            extra.setdefault(key, value)
+        else:
+            cfg.pop("base_url", None)

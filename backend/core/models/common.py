@@ -46,9 +46,7 @@ class ColumnMapping(BaseModel):
             raise ValueError("At least one input column must be specified.")
         shared_fields = self.inputs.keys() & self.outputs.keys()
         if shared_fields:
-            raise ValueError(
-                f"Signature fields cannot be both input and output: {sorted(shared_fields)}"
-            )
+            raise ValueError(f"Signature fields cannot be both input and output: {sorted(shared_fields)}")
         shared_columns = set(self.inputs.values()) & set(self.outputs.values())
         if shared_columns:
             raise ValueError(
@@ -61,6 +59,8 @@ class ModelConfig(BaseModel):
     """Configuration block for language-model/backbone selection."""
 
     name: str
+    token_source: Literal["managed", "byok"] | None = None
+    byok_provider: str | None = None
     base_url: str | None = None
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1)

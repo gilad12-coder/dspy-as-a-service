@@ -1,12 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ChatText, Check, CircleNotch, PencilSimple, X } from "@/shared/ui/icons";
+import { ChatText, Check, PencilSimple, Square, X } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { InlineErrorRow } from "@/shared/ui/inline-error-row";
 import type { ServeInfoResponse, WorkflowNodeTrace } from "@/shared/types/api";
-import { autoResizeTextarea, MessageActions } from "@/shared/ui/agent";
+import { autoResizeTextarea, Composer, MessageActions } from "@/shared/ui/agent";
 import { formatOutput } from "@/shared/lib";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
@@ -29,6 +29,7 @@ export interface ServeChatProps {
   textareaRefs: React.MutableRefObject<Record<string, HTMLTextAreaElement | null>>;
   chatScrollRef: React.RefObject<HTMLDivElement | null>;
   handleServe: (overrideInputs?: Record<string, string>) => void;
+  handleStopServe: () => void;
   demos: Array<{ inputs: Record<string, unknown> }>;
 }
 
@@ -43,10 +44,14 @@ export function ServeChat({
   textareaRefs,
   chatScrollRef,
   handleServe,
+  handleStopServe,
   demos,
 }: ServeChatProps) {
   const [editingRunTs, setEditingRunTs] = useState<number | null>(null);
+  const [singleDraft, setSingleDraft] = useState("");
   const editTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const singleInputField =
+    serveInfo.input_fields.length === 1 ? serveInfo.input_fields[0] : undefined;
 
   const handleEditAndResend = (runTs: number) => {
     setRunHistory((prev) => {
@@ -77,6 +82,10 @@ export function ServeChat({
                   <button
                     key={i}
                     onClick={() => {
+                      if (singleInputField) {
+                        setSingleDraft(String(demo.inputs[singleInputField] ?? ""));
+                        return;
+                      }
                       for (const f of serveInfo.input_fields) {
                         const el = textareaRefs.current[f];
                         if (el) {
@@ -307,46 +316,65 @@ export function ServeChat({
             className="mb-2 max-w-2xl mx-auto"
           />
         )}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleServe();
-          }}
-          className="max-w-2xl mx-auto"
-        >
-          <div
-            className={`flex gap-2 ${getActiveDir() === "ltr" ? "flex-row-reverse" : ""} ${
-              serveInfo.input_fields.length > 1 ? "items-center" : "items-start"
-            }`}
+        {singleInputField ? (
+          <Composer
+            value={singleDraft}
+            onChange={(value) => {
+              setSingleDraft(value);
+              if (serveError) setServeError(null);
+            }}
+            onSubmit={() => {
+              const value = singleDraft.trim();
+              if (!value || serveLoading) return;
+              handleServe({ [singleInputField]: value });
+              setSingleDraft("");
+            }}
+            onStop={handleStopServe}
+            placeholder={singleInputField}
+            streaming={serveLoading}
+            sendAriaLabel={msg("auto.features.optimizations.components.servechat.literal.2")}
+            className="mx-auto max-w-2xl border-t-0 p-0"
+          />
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleServe();
+            }}
+            className="max-w-2xl mx-auto"
           >
-            <Button
-              type="submit"
-              size="icon"
-              className="shrink-0 rounded-full !size-[42px]"
-              disabled={serveLoading}
-              aria-label={msg("auto.features.optimizations.components.servechat.literal.2")}
-            >
-              {serveLoading ? (
-                <CircleNotch className="size-4 animate-spin" />
-              ) : (
-                <svg viewBox="0 0 24 24" fill="currentColor" className="size-4">
-                  <path
-                    d="M12 2L12 22M12 2L5 9M12 2L19 9"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                  />
-                </svg>
-              )}
-            </Button>
             <div
-              className={`flex-1 ${serveInfo.input_fields.length > 1 ? "space-y-2" : "flex gap-2 items-start"}`}
+              className={`flex gap-2 ${getActiveDir() === "ltr" ? "flex-row-reverse" : ""} items-center`}
             >
-              {serveInfo.input_fields.map((field) => (
-                <div key={field} className="flex-1 min-w-0">
-                  {serveInfo.input_fields.length > 1 && (
+              <Button
+                type={serveLoading ? "button" : "submit"}
+                onClick={serveLoading ? handleStopServe : undefined}
+                size="icon"
+                className="shrink-0 rounded-full !size-[42px]"
+                aria-label={
+                  serveLoading
+                    ? msg("auto.shared.ui.agent.composer.literal.2")
+                    : msg("auto.features.optimizations.components.servechat.literal.2")
+                }
+              >
+                {serveLoading ? (
+                  <Square className="size-3 fill-current" />
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="size-4">
+                    <path
+                      d="M12 2L12 22M12 2L5 9M12 2L19 9"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      fill="none"
+                    />
+                  </svg>
+                )}
+              </Button>
+              <div className="flex-1 space-y-2">
+                {serveInfo.input_fields.map((field) => (
+                  <div key={field} className="flex-1 min-w-0">
                     <label
                       htmlFor={`serve-${field}`}
                       className="text-[0.625rem] text-muted-foreground/50 font-mono px-3 mb-0.5 block"
@@ -354,36 +382,36 @@ export function ServeChat({
                     >
                       {field}
                     </label>
-                  )}
-                  <textarea
-                    id={`serve-${field}`}
-                    ref={(el) => {
-                      textareaRefs.current[field] = el;
-                    }}
-                    dir="auto"
-                    placeholder={field}
-                    defaultValue=""
-                    onChange={(e) => {
-                      autoResizeTextarea(e.target);
-                      if (serveError) setServeError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        const allFilled = serveInfo.input_fields.every((f) =>
-                          textareaRefs.current[f]?.value?.trim(),
-                        );
-                        if (!serveLoading && allFilled) handleServe();
-                      }
-                    }}
-                    rows={1}
-                    className="block w-full bg-muted/20 rounded-2xl border border-[#DDD4C8] px-4 py-[11px] text-sm font-mono leading-[20px] outline-none ring-0 shadow-none resize-none overflow-hidden h-[42px] max-h-[120px] focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus:border-[#C8A882] transition-colors placeholder:text-muted-foreground/40"
-                  />
-                </div>
-              ))}
+                    <textarea
+                      id={`serve-${field}`}
+                      ref={(el) => {
+                        textareaRefs.current[field] = el;
+                      }}
+                      dir="auto"
+                      placeholder={field}
+                      defaultValue=""
+                      onChange={(e) => {
+                        autoResizeTextarea(e.target);
+                        if (serveError) setServeError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          const allFilled = serveInfo.input_fields.every((f) =>
+                            textareaRefs.current[f]?.value?.trim(),
+                          );
+                          if (!serveLoading && allFilled) handleServe();
+                        }
+                      }}
+                      rows={1}
+                      className="block w-full bg-muted/20 rounded-2xl border border-[#DDD4C8] px-4 py-[11px] text-sm font-mono leading-[20px] outline-none ring-0 shadow-none resize-none overflow-hidden h-[42px] max-h-[120px] focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus:border-[#C8A882] transition-colors placeholder:text-muted-foreground/40"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+        )}
       </div>
     </div>
   );

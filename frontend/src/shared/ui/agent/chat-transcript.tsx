@@ -26,6 +26,7 @@ interface ChatTranscriptProps {
   editAndResend: (index: number, content: string) => void;
   thinking?: AgentThinking;
   renderToolCall?: (call: AgentToolCall, ctx: { isRetry: boolean }) => React.ReactNode;
+  toolCallsBeforeContent?: boolean;
   onRunCode?: (code: string, language: string) => void;
   animatePairs?: boolean;
   trailing?: (state: ChatTranscriptState) => React.ReactNode;
@@ -41,6 +42,7 @@ export function ChatTranscript({
   editAndResend,
   thinking,
   renderToolCall,
+  toolCallsBeforeContent,
   onRunCode,
   animatePairs,
   trailing,
@@ -167,6 +169,7 @@ export function ChatTranscript({
                 msg={agentMsg}
                 thinking={pair.key === latestAgentKey ? thinking : undefined}
                 renderToolCall={renderToolCall}
+                toolCallsBeforeContent={toolCallsBeforeContent}
                 onRunCode={onRunCode}
                 className="max-w-full"
               />

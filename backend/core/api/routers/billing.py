@@ -23,6 +23,13 @@ from ...billing import ProviderKeyVault, StripeBillingService
 from ...billing.service import CUSTOM_CREDITS_MAX, CUSTOM_CREDITS_MIN
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
+from ..model_catalog import (
+    CatalogModel,
+    CatalogProvider,
+    ModelCatalogResponse,
+    get_byok_catalog_cached,
+)
+from .models import discover_models_at_endpoint
 
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
 
@@ -53,6 +60,64 @@ def _parse_instant(value: str | None, default: datetime) -> datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
+def _byok_catalog_for_user(vault: ProviderKeyVault, username: str) -> ModelCatalogResponse:
+    """Combine the public BYOK catalog with verified custom connections.
+
+    Args:
+        vault: Encrypted provider-connection vault.
+        username: Account whose verified custom endpoints are discovered.
+
+    Returns:
+        Account-scoped catalog containing static and custom models.
+    """
+    base = get_byok_catalog_cached()
+    providers = list(base.providers)
+    models = list(base.models)
+    provider_keys = {provider.slug for provider in providers}
+    model_keys = {(model.provider, model.value) for model in models}
+    for view in vault.list_keys(username).keys:
+        if view.status != "verified" or not view.api_base:
+            continue
+        resolved = vault.resolve_connection(username, view.provider)
+        if resolved is None:
+            continue
+        discovered = discover_models_at_endpoint(view.api_base, resolved.secret)
+        if discovered.error:
+            continue
+        if view.provider not in provider_keys:
+            providers.append(
+                CatalogProvider(
+                    slug=view.provider,
+                    label=view.label or view.provider,
+                    default_base_url=view.api_base,
+                    has_env_key=True,
+                )
+            )
+            provider_keys.add(view.provider)
+        for model_id in discovered.models:
+            bare = model_id.strip().strip("/")
+            if not bare:
+                continue
+            if view.provider == "openrouter":
+                value = f"openrouter/{bare.removeprefix('openrouter/')}"
+            else:
+                value = f"openai/{bare.removeprefix('openai/')}"
+            key = (view.provider, value)
+            if key in model_keys:
+                continue
+            models.append(
+                CatalogModel(
+                    value=value,
+                    label=bare,
+                    provider=view.provider,
+                    byok_provider=view.provider,
+                    available=True,
+                )
+            )
+            model_keys.add(key)
+    return ModelCatalogResponse(providers=providers, models=models)
+
+
 class FreeGrantResponse(BaseModel):
     """The account's one-time free credit grant."""
 
@@ -76,9 +141,7 @@ class WalletResponse(BaseModel):
 
     paid_balance_credits: int = Field(description="Purchased credit balance, on top of the free grant.")
     free_grant: FreeGrantResponse
-    usage: list[UsageEntryResponse] = Field(
-        default_factory=list, description="Most-recent-first ledger rows."
-    )
+    usage: list[UsageEntryResponse] = Field(default_factory=list, description="Most-recent-first ledger rows.")
 
 
 class UsageDayResponse(BaseModel):
@@ -94,12 +157,8 @@ class UsageModelResponse(BaseModel):
     model: str | None = Field(default=None, description="Model id, or null for runs without one.")
     credits: int = Field(description="Gross run credits billed to this model.")
     runs: int = Field(description="Billed runs attributed to this model.")
-    input_tokens: int = Field(
-        default=0, description="Measured input tokens behind this model's billed runs."
-    )
-    output_tokens: int = Field(
-        default=0, description="Measured output tokens behind this model's billed runs."
-    )
+    input_tokens: int = Field(default=0, description="Measured input tokens behind this model's billed runs.")
+    output_tokens: int = Field(default=0, description="Measured output tokens behind this model's billed runs.")
 
 
 class UsageResponse(BaseModel):
@@ -109,9 +168,7 @@ class UsageResponse(BaseModel):
     end: str = Field(description="ISO-8601 inclusive window end.")
     billed_credits: int = Field(description="Gross run credits billed across the window.")
     runs: int = Field(description="Billed runs across the window.")
-    by_day: list[UsageDayResponse] = Field(
-        default_factory=list, description="Per-day spend series, ascending by date."
-    )
+    by_day: list[UsageDayResponse] = Field(default_factory=list, description="Per-day spend series, ascending by date.")
     by_model: list[UsageModelResponse] = Field(
         default_factory=list, description="Per-model spend series, descending by credits."
     )
@@ -124,9 +181,7 @@ class UsageResponse(BaseModel):
 # or a custom credit amount. Exactly one of the two selects the purchase;
 # ``credits`` wins when both are sent.
 class CheckoutRequest(BaseModel):
-    pack_id: str | None = Field(
-        default=None, description="Credit pack to buy: 'starter', 'plus', or 'pro'."
-    )
+    pack_id: str | None = Field(default=None, description="Credit pack to buy: 'starter', 'plus', or 'pro'.")
     credits: int | None = Field(
         default=None,
         ge=CUSTOM_CREDITS_MIN,
@@ -175,8 +230,12 @@ class SaveProviderKeyRequest(BaseModel):
     provider: str = Field(description="Provider slug to save the connection for (e.g. 'anthropic').")
     secret: str = Field(description="The plaintext provider key; stored encrypted, never echoed back.")
     label: str | None = Field(default=None, description="Optional user-facing name for the connection.")
-    api_base: str | None = Field(default=None, description="Optional custom endpoint; required for an unknown provider.")
-    params: dict[str, Any] = Field(default_factory=dict, description="Optional extra LiteLLM kwargs for the connection.")
+    api_base: str | None = Field(
+        default=None, description="Optional custom endpoint; required for an unknown provider."
+    )
+    params: dict[str, Any] = Field(
+        default_factory=dict, description="Optional extra LiteLLM kwargs for the connection."
+    )
 
 
 def create_billing_router(*, job_store) -> APIRouter:
@@ -263,10 +322,7 @@ def create_billing_router(*, job_store) -> APIRouter:
             end=snapshot.end,
             billed_credits=snapshot.billed_credits,
             runs=snapshot.runs,
-            by_day=[
-                UsageDayResponse(date=day.date, billed_credits=day.billed_credits)
-                for day in snapshot.by_day
-            ],
+            by_day=[UsageDayResponse(date=day.date, billed_credits=day.billed_credits) for day in snapshot.by_day],
             by_model=[
                 UsageModelResponse(
                     model=row.model,
@@ -373,14 +429,28 @@ def create_billing_router(*, job_store) -> APIRouter:
             ]
         )
 
+    @router.get(
+        "/billing/byok/models",
+        response_model=ModelCatalogResponse,
+        summary="List models available through the caller's verified BYOK connections",
+    )
+    def list_byok_models(user: AuthenticatedUserDep) -> ModelCatalogResponse:
+        """Return static BYOK models plus models fetched from custom endpoints.
+
+        Args:
+            user: Authenticated owner of the stored connections.
+
+        Returns:
+            The account-scoped BYOK model catalog.
+        """
+        return _byok_catalog_for_user(vault, user.username)
+
     @router.put(
         "/billing/byok/keys",
         response_model=ProviderKeyResponse,
         summary="Save (or rotate) a BYOK provider key; encrypt at rest and verify on entry",
     )
-    def save_provider_key(
-        body: SaveProviderKeyRequest, user: AuthenticatedUserDep
-    ) -> ProviderKeyResponse:
+    def save_provider_key(body: SaveProviderKeyRequest, user: AuthenticatedUserDep) -> ProviderKeyResponse:
         """Encrypt and store a provider secret, verifying it on entry.
 
         The secret is encrypted before it touches the database and never echoed

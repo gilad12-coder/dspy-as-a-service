@@ -33,6 +33,7 @@ export function RunPlayground({
   textareaRefs,
   chatScrollRef,
   handleServe,
+  handleStopServe,
   demos,
   optimizationId,
   pairIndex,
@@ -87,6 +88,7 @@ export function RunPlayground({
           textareaRefs={textareaRefs}
           chatScrollRef={chatScrollRef}
           handleServe={handleServe}
+          handleStopServe={handleStopServe}
           demos={demos}
         />
       </div>

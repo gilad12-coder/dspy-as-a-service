@@ -9,16 +9,25 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from ...billing.byok_vault import ProviderKeyVault
+from ...config import settings
 from ...i18n_keys import I18nKey
 from ...models import ProgramArtifact
-from ...storage.models import Base, BillingCustomerModel, CreditLedgerModel
+from ...storage.models import (
+    Base,
+    BillingCustomerModel,
+    BillingProviderKeyModel,
+    CreditLedgerModel,
+)
 
 # noinspection PyProtectedMember
 from ..routers import _helpers
@@ -699,7 +708,14 @@ def metered_store(serve_store: _FakeJobStore) -> _FakeJobStore:
         The store with ``engine`` set and both jobs seeded.
     """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[BillingCustomerModel.__table__, CreditLedgerModel.__table__])
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            BillingCustomerModel.__table__,
+            BillingProviderKeyModel.__table__,
+            CreditLedgerModel.__table__,
+        ],
+    )
     serve_store.engine = engine
     _seed_run_job(serve_store, "ok")
     serve_store.seed_raw("grid1", job=make_grid_job("grid1", pair_index=0))
@@ -784,9 +800,7 @@ def test_serve_endpoints_return_402_when_depleted(
     assert resp.json()["code"] == I18nKey.BILLING_INSUFFICIENT_CREDITS.value
 
 
-def test_serve_chat_returns_402_when_depleted(
-    metered_client: TestClient, metered_store: _FakeJobStore
-) -> None:
+def test_serve_chat_returns_402_when_depleted(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
     """The react-serve chat refuses a zero-balance account before streaming."""
     _deplete(metered_store.engine)
     overlay = SimpleNamespace(tool_source={"kind": "live_mcp", "mcp_url": "http://mcp.local"})
@@ -814,6 +828,49 @@ def test_serve_program_debits_the_turn(metered_client: TestClient, metered_store
     assert row.delta_credits < 0
     assert row.input_tokens == 120_000
     assert row.output_tokens == 30_000
+
+
+def test_serve_program_resolves_stored_custom_byok_connection(
+    metered_client: TestClient,
+    metered_store: _FakeJobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Interactive inference uses the caller's verified custom endpoint and key."""
+    _fund(metered_store.engine)
+    monkeypatch.setattr(
+        settings,
+        "byok_vault_key",
+        SecretStr(Fernet.generate_key().decode("utf-8")),
+    )
+    response = SimpleNamespace(status_code=200, is_success=True)
+    with patch("core.billing.byok_vault.httpx.get", return_value=response):
+        ProviderKeyVault(engine=metered_store.engine).save_key(
+            "alice",
+            "custom",
+            "private-secret",
+            api_base="https://inference.example/v1",
+        )
+    metered_store.update_job(
+        "ok",
+        payload_overview={
+            "model_name": "openai/private-chat",
+            "model_settings": {
+                "name": "openai/private-chat",
+                "token_source": "byok",
+                "byok_provider": "custom",
+            },
+        },
+    )
+    builder = MagicMock(return_value=_UsageLm())
+
+    with patch("core.api.routers.serve.build_language_model", builder), _PATCH_DSPY_CTX:
+        resp = metered_client.post("/serve/ok", json={"inputs": {"question": "hi"}})
+
+    assert resp.status_code == 200
+    resolved = builder.call_args.args[0]
+    assert resolved.name == "openai/private-chat"
+    assert resolved.base_url == "https://inference.example/v1"
+    assert resolved.extra["api_key"] == "private-secret"
 
 
 def test_serve_stream_debits_on_completion(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
@@ -859,9 +916,7 @@ def test_serve_chat_debits_the_turn(metered_client: TestClient, metered_store: _
 
 def test_coerce_sample_value_keeps_clean_values_and_drops_unusable() -> None:
     """Short single-line strings and numbers are inlined; junk is dropped."""
-    assert _coerce_sample_value("What is the capital of Australia?") == (
-        "What is the capital of Australia?"
-    )
+    assert _coerce_sample_value("What is the capital of Australia?") == ("What is the capital of Australia?")
     assert _coerce_sample_value(42) == "42"
     assert _coerce_sample_value("  spaced  ") == "spaced"
     assert _coerce_sample_value("line1\nline2") is None

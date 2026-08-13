@@ -160,9 +160,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const [assistMode, setAssistMode] = useState<TaggerAssistMode>("copilot");
   // Empty name = the server's default tagging model. Seeded from the
   // settings-modal default; the chip in the assist step overrides per session.
-  const [assistModel, setAssistModel] = useState<ModelConfig>(() =>
-    readPref("taggerAssistModel"),
-  );
+  const [assistModel, setAssistModel] = useState<ModelConfig>(() => readPref("taggerAssistModel"));
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
   // The same recents the submit wizard's model dialog keeps — one shared
   // localStorage list across every model-config surface.
@@ -716,7 +714,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                 catalogModels={catalogModels ?? undefined}
                 recentConfigs={recentConfigs}
                 onRemoveRecent={removeRecentConfig}
-                showConnection={false}
+                allowByok={false}
               />
             </div>
           )}

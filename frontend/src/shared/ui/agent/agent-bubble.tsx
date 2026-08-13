@@ -22,6 +22,7 @@ interface AgentBubbleProps {
   thinking?: AgentThinking;
   renderToolCall?: (call: AgentToolCall, ctx: { isRetry: boolean }) => React.ReactNode;
   onRunCode?: (code: string, language: string) => void;
+  toolCallsBeforeContent?: boolean;
   className?: string;
 }
 
@@ -30,6 +31,7 @@ export function AgentBubble({
   thinking,
   renderToolCall,
   onRunCode,
+  toolCallsBeforeContent = false,
   className,
 }: AgentBubbleProps) {
   const visibleToolCalls = React.useMemo<Array<{ call: AgentToolCall; isRetry: boolean }>>(() => {
@@ -64,6 +66,19 @@ export function AgentBubble({
 
   if (!hasTools && !hasText && !hasThinking) return null;
 
+  const toolCalls = hasTools && renderToolCall && (
+    <div
+      className={cn(
+        "flex flex-col gap-1.5 px-2.5 py-2",
+        (hasThinking || (!toolCallsBeforeContent && hasText)) && "border-t border-[#3D2E22]/[0.08]",
+      )}
+    >
+      {visibleToolCalls.map(({ call, isRetry }) => (
+        <React.Fragment key={call.id}>{renderToolCall(call, { isRetry })}</React.Fragment>
+      ))}
+    </div>
+  );
+
   return (
     <div
       className={cn(
@@ -72,11 +87,13 @@ export function AgentBubble({
       )}
     >
       {hasThinking && thinking && <ThinkingSection thinking={thinking} />}
+      {toolCallsBeforeContent && toolCalls}
       {hasText && (
         <div
           className={cn(
             "px-4 py-3 text-sm leading-relaxed text-foreground",
-            hasThinking && "border-t border-[#3D2E22]/[0.08]",
+            (hasThinking || (toolCallsBeforeContent && hasTools)) &&
+              "border-t border-[#3D2E22]/[0.08]",
           )}
         >
           <React.Suspense
@@ -86,18 +103,7 @@ export function AgentBubble({
           </React.Suspense>
         </div>
       )}
-      {hasTools && renderToolCall && (
-        <div
-          className={cn(
-            "flex flex-col gap-1.5 px-2.5 py-2",
-            (hasThinking || hasText) && "border-t border-[#3D2E22]/[0.08]",
-          )}
-        >
-          {visibleToolCalls.map(({ call, isRetry }) => (
-            <React.Fragment key={call.id}>{renderToolCall(call, { isRetry })}</React.Fragment>
-          ))}
-        </div>
-      )}
+      {!toolCallsBeforeContent && toolCalls}
     </div>
   );
 }

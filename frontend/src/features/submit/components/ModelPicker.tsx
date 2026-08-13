@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, CaretDown, Eye, MagnifyingGlass, CircleNotch, ArrowsClockwise } from "@/shared/ui/icons";
+import { Check, CaretDown, Eye, MagnifyingGlass } from "@/shared/ui/icons";
 import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
@@ -10,7 +10,6 @@ import {
   cachedCatalog,
   getByokModelCatalog,
   cachedByokCatalog,
-  discoverModels,
 } from "@/shared/lib/model-catalog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
 import type { CatalogModel, CatalogProvider } from "@/shared/types/api";
@@ -18,11 +17,10 @@ import type { CatalogModel, CatalogProvider } from "@/shared/types/api";
 interface ModelPickerProps {
   value: string;
   onChange: (next: string) => void;
+  onSelect?: (model: CatalogModel) => void;
+  selectedByokProvider?: string | null;
   id?: string;
   placeholder?: string;
-  /** If set, also fetch models from this base URL's /v1/models endpoint. */
-  discoverUrl?: string;
-  discoverApiKey?: string;
   disabled?: boolean;
   className?: string;
   /** Constrain picks to this provider slug (e.g. "openai"). */
@@ -37,10 +35,6 @@ interface ModelPickerProps {
   byokProviders?: string[];
 }
 
-interface EnrichedModel extends CatalogModel {
-  fromDiscovery?: boolean;
-}
-
 type ModelPurpose = "all" | "vision" | "reasoning" | "multilingual" | "onprem";
 
 // Model families with a first-class multilingual focus. The catalog is dynamic
@@ -48,7 +42,7 @@ type ModelPurpose = "all" | "vision" | "reasoning" | "multilingual" | "onprem";
 // this id heuristic is the categorization lever — extend the list as needed.
 const MULTILINGUAL_FAMILIES = ["qwen", "glm", "aya", "command", "gemma", "mistral"];
 
-const PURPOSE_PREDICATES: Record<Exclude<ModelPurpose, "all">, (m: EnrichedModel) => boolean> = {
+const PURPOSE_PREDICATES: Record<Exclude<ModelPurpose, "all">, (m: CatalogModel) => boolean> = {
   vision: (m) => Boolean(m.supports_vision),
   reasoning: (m) => Boolean(m.supports_thinking),
   multilingual: (m) => MULTILINGUAL_FAMILIES.some((f) => m.value.toLowerCase().includes(f)),
@@ -71,14 +65,14 @@ function formatCtx(tokens?: number): string {
   return `${Math.round(tokens / 1000)}K`;
 }
 
-/** Searchable combobox for DSPy model IDs. Curated static catalog + live discovery. */
+/** Searchable combobox for managed or account-scoped BYOK model IDs. */
 export function ModelPicker({
   value,
   onChange,
+  onSelect,
+  selectedByokProvider,
   id,
   placeholder = msg("auto.features.submit.components.modelpicker.literal.1"),
-  discoverUrl,
-  discoverApiKey,
   disabled,
   className,
   providerFilter,
@@ -97,10 +91,6 @@ export function ModelPicker({
     providers: CatalogProvider[];
     models: CatalogModel[];
   } | null>(cachedByokCatalog());
-  const [discovered, setDiscovered] = React.useState<string[]>([]);
-  const [discovering, setDiscovering] = React.useState(false);
-  const [discoveryError, setDiscoveryError] = React.useState<string | null>(null);
-
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   // If cache wasn't ready at mount time, await it once
@@ -117,9 +107,12 @@ export function ModelPicker({
     };
   }, [catalog]);
 
-  // Load the BYOK catalog the first time the picker is opened in BYOK mode.
+  const byokProviderKey = [...(byokProviders ?? [])].sort().join("\u0000");
+
+  // A provider mutation invalidates the shared cache; the provider signature
+  // reruns this effect so a newly-added custom connection appears immediately.
   React.useEffect(() => {
-    if (!byokMode || byokCatalog) return;
+    if (!byokMode) return;
     let cancelled = false;
     getByokModelCatalog()
       .then((c) => {
@@ -129,91 +122,21 @@ export function ModelPicker({
     return () => {
       cancelled = true;
     };
-  }, [byokMode, byokCatalog]);
+  }, [byokMode, byokProviderKey]);
 
   const activeCatalog = byokMode ? byokCatalog : catalog;
-  const byokProviderSet = React.useMemo(
-    () => new Set(byokProviders ?? []),
-    [byokProviders],
-  );
+  const byokProviderSet = React.useMemo(() => new Set(byokProviders ?? []), [byokProviders]);
 
-  const runDiscover = React.useCallback(
-    async (signal?: AbortSignal) => {
-      if (!discoverUrl) {
-        setDiscovered([]);
-        setDiscoveryError(null);
-        return;
-      }
-      setDiscovering(true);
-      setDiscoveryError(null);
-      try {
-        const res = await discoverModels(discoverUrl, discoverApiKey, signal);
-        if (signal?.aborted) return;
-        setDiscovered(res.models);
-        if (res.error) setDiscoveryError(res.error);
-      } catch (e) {
-        if (signal?.aborted) return;
-        setDiscoveryError(
-          e instanceof Error
-            ? e.message
-            : msg("auto.features.submit.components.modelpicker.literal.2"),
-        );
-      } finally {
-        if (!signal?.aborted) setDiscovering(false);
-      }
-    },
-    [discoverUrl, discoverApiKey],
-  );
-
-  // Auto-run discovery when URL stabilizes. The AbortController fires on
-  // unmount or URL change so an in-flight fetch can't clobber state of a
-  // newer URL (or a freshly mounted instance).
-  React.useEffect(() => {
-    if (!discoverUrl) {
-      setDiscovered([]);
-      setDiscoveryError(null);
-      return;
-    }
-    const controller = new AbortController();
-    const t = setTimeout(() => {
-      void runDiscover(controller.signal);
-    }, 400);
-    return () => {
-      clearTimeout(t);
-      controller.abort();
-    };
-  }, [discoverUrl, runDiscover]);
-
-  const allModels: EnrichedModel[] = React.useMemo(() => {
+  const allModels: CatalogModel[] = React.useMemo(() => {
     let staticModels = activeCatalog?.models ?? [];
     // In BYOK mode, only surface models for providers the user has connected.
     if (byokMode) {
       staticModels = staticModels.filter((m) => byokProviderSet.has(m.provider));
     }
-    const filtered = providerFilter
+    return providerFilter
       ? staticModels.filter((m) => m.provider === providerFilter)
       : staticModels;
-    if (discovered.length === 0) return filtered;
-    const existingValues = new Set(filtered.map((m) => m.value));
-    const discoveredEntries: EnrichedModel[] = discovered
-      .map((id) => {
-        // A bare id from an OpenAI-compatible endpoint (Ollama, vLLM, LM Studio,
-        // llama.cpp) needs the openai/ prefix so LiteLLM routes it to the custom
-        // base_url; ids that already carry it pass through unchanged.
-        const value = id.startsWith("openai/") ? id : `openai/${id}`;
-        return {
-          value,
-          label: id,
-          provider: "discovered",
-          supports_thinking: false,
-          supports_vision: false,
-          available: true,
-          fromDiscovery: true,
-        };
-      })
-      .filter((m) => !existingValues.has(m.value));
-    return [...discoveredEntries, ...filtered];
-  }, [activeCatalog, byokMode, byokProviderSet, discovered, providerFilter]);
+  }, [activeCatalog, byokMode, byokProviderSet, providerFilter]);
 
   // Purpose chips render only for categories the current catalog actually
   // has — a deploy with no on-prem gateway never shows an empty "On-prem".
@@ -226,8 +149,7 @@ export function ModelPicker({
   }, [allModels]);
 
   const filtered = React.useMemo(() => {
-    const byPurpose =
-      purpose === "all" ? allModels : allModels.filter(PURPOSE_PREDICATES[purpose]);
+    const byPurpose = purpose === "all" ? allModels : allModels.filter(PURPOSE_PREDICATES[purpose]);
     const q = query.trim().toLowerCase();
     if (!q) return byPurpose;
     return byPurpose.filter(
@@ -240,7 +162,7 @@ export function ModelPicker({
   // section per data center so the user can see which endpoint a model
   // resolves through. The NUL byte can't appear in a slug/DC label.
   const grouped = React.useMemo(() => {
-    const groups = new Map<string, EnrichedModel[]>();
+    const groups = new Map<string, CatalogModel[]>();
     for (const m of filtered) {
       const key = `${m.provider}\u0000${m.data_center ?? ""}`;
       const arr = groups.get(key) ?? [];
@@ -253,8 +175,6 @@ export function ModelPicker({
   const providerLabel = React.useCallback(
     (groupKey: string): string => {
       const [slug = "", dataCenter = ""] = groupKey.split("\u0000");
-      if (slug === "discovered")
-        return msg("auto.features.submit.components.modelpicker.template.1");
       const base = activeCatalog?.providers.find((p) => p.slug === slug)?.label ?? slug;
       if (!dataCenter) return base;
       return formatMsg("auto.features.submit.components.modelpicker.template.2", {
@@ -265,10 +185,17 @@ export function ModelPicker({
     [activeCatalog],
   );
 
-  const selectedModel = allModels.find((m) => m.value === value);
+  const isSelected = React.useCallback(
+    (model: CatalogModel) =>
+      model.value === value &&
+      (!selectedByokProvider || model.byok_provider === selectedByokProvider),
+    [selectedByokProvider, value],
+  );
+  const selectedModel = allModels.find(isSelected);
 
-  const commit = (next: string) => {
-    onChange(next);
+  const commit = (model: CatalogModel) => {
+    onChange(model.value);
+    onSelect?.(model);
     setOpen(false);
     setQuery("");
   };
@@ -338,22 +265,6 @@ export function ModelPicker({
             placeholder={msg("auto.features.submit.components.modelpicker.literal.4")}
             className="flex-1 bg-transparent text-start text-sm outline-none placeholder:text-start placeholder:text-muted-foreground"
           />
-          {discoverUrl && (
-            <button
-              type="button"
-              onClick={() => void runDiscover()}
-              disabled={discovering}
-              className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[0.6875rem] font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-              title={msg("auto.features.submit.components.modelpicker.literal.3")}
-            >
-              {discovering ? (
-                <CircleNotch className="size-3 animate-spin" />
-              ) : (
-                <ArrowsClockwise className="size-3" />
-              )}
-              {msg("auto.features.submit.components.modelpicker.1")}
-            </button>
-          )}
         </div>
 
         {purposeOptions.length > 1 && (
@@ -383,12 +294,6 @@ export function ModelPicker({
         )}
 
         <div className="max-h-60 overflow-y-auto py-1">
-          {discoveryError && discoverUrl && (
-            <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-              {msg("auto.features.submit.components.modelpicker.2")}
-              {discoverUrl}: {discoveryError}
-            </div>
-          )}
           {filtered.length === 0 && (
             <div className="px-3 py-8 text-center text-xs text-muted-foreground">
               {msg("auto.features.submit.components.modelpicker.3")}
@@ -404,16 +309,16 @@ export function ModelPicker({
               </div>
               {items.map((m) => (
                 <button
-                  key={m.value}
+                  key={`${m.provider}:${m.value}`}
                   type="button"
-                  onClick={() => commit(m.value)}
+                  onClick={() => commit(m)}
                   className={cn(
                     "flex w-full items-center gap-2 px-3 py-1.5 text-start text-sm transition-colors hover:bg-accent/70",
-                    value === m.value && "bg-accent/50",
+                    isSelected(m) && "bg-accent/50",
                     !m.available && "opacity-60",
                   )}
                   role="option"
-                  aria-selected={value === m.value}
+                  aria-selected={isSelected(m)}
                 >
                   <span className="flex min-w-0 flex-1 items-center gap-1.5" dir="ltr">
                     <span className="truncate text-[0.8125rem]">{m.label}</span>
@@ -432,10 +337,7 @@ export function ModelPicker({
                     )}
                   </span>
                   <Check
-                    className={cn(
-                      "size-3.5 shrink-0",
-                      value === m.value ? "opacity-100" : "opacity-0",
-                    )}
+                    className={cn("size-3.5 shrink-0", isSelected(m) ? "opacity-100" : "opacity-0")}
                   />
                 </button>
               ))}

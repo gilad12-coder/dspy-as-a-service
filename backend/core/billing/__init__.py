@@ -7,7 +7,12 @@ else imports ``stripe``.
 
 from __future__ import annotations
 
-from .byok_bridge import inject_byok_connections, provider_slug_for_model
+from .byok_bridge import (
+    inject_byok_connections,
+    payload_uses_token_source,
+    provider_slug_for_model,
+    resolve_byok_model_config,
+)
 from .byok_vault import (
     ProviderKeyVault,
     ProviderKeyView,
@@ -43,6 +48,8 @@ __all__ = [
     "cost_ceiling_budget",
     "inject_byok_connections",
     "inject_provisioned_openrouter_key",
+    "payload_uses_token_source",
     "provider_slug_for_model",
     "read_account_balance_credits",
+    "resolve_byok_model_config",
 ]
