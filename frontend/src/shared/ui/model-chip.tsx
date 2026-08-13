@@ -7,7 +7,7 @@ import {
   Trash,
   Plus,
   Thermometer,
-  Hash,
+  TextT,
   Eye,
   Brain,
   Info,
@@ -146,7 +146,7 @@ export function ModelChip({
             )}
             {config.max_tokens && (
               <span className="inline-flex items-center gap-0.5">
-                <Hash className="size-2.5" />
+                <TextT className="size-2.5" aria-hidden="true" />
                 {config.max_tokens}
               </span>
             )}

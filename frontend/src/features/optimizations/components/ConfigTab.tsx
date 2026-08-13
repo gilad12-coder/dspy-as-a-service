@@ -13,11 +13,11 @@ import {
   Cube,
   Database,
   DiceFive,
+  FlowArrow,
   Gauge,
   Gear,
   GearSix,
   GitMerge,
-  Hash,
   Repeat,
   Ruler,
   Shuffle,
@@ -25,6 +25,7 @@ import {
   Stack,
   Tag,
   Target,
+  TextT,
   Thermometer,
   Wrench,
 } from "@/shared/ui/icons";
@@ -44,6 +45,7 @@ import { moduleLabel } from "@/shared/lib/formatters";
 import { TERMS } from "@/shared/lib/terms";
 import { cn } from "@/shared/lib/utils";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { ProviderLogo } from "@/shared/ui/provider-logo";
 import { InfoCard, ReasoningPill } from "./ui-primitives";
 
 const CONFIG_SLIDES = perLocale(() => [
@@ -158,7 +160,14 @@ const MODEL_CARD_TIPS: Record<string, string> = perLocale(() => ({
   [TERMS.reflectionModel]: tip("model.reflection"),
 }));
 
-/** Inline model-config card — matches the ModelChip style. */
+/** Resolve a routed model id to the provider mark used by the config card. */
+function modelProviderSlug(id: string): string {
+  const parts = id.split("/");
+  const slug = (parts[0] === "openrouter" && parts.length > 2 ? parts[1] : parts[0]) ?? id;
+  return slug === "x-ai" ? "xai" : slug;
+}
+
+/** Graphical model-config card for the Models carousel slide. */
 function ModelCard({ label, cfg }: { label: string; cfg: Record<string, unknown> }) {
   const labelTip = MODEL_CARD_TIPS[label];
   const name = String(cfg.name || "—");
@@ -168,31 +177,45 @@ function ModelCard({ label, cfg }: { label: string; cfg: Record<string, unknown>
   const extra = (cfg.extra ?? {}) as Record<string, unknown>;
   const reasoning = extra.reasoning_effort as string | undefined;
   return (
-    <div className="flex items-center gap-2.5 rounded-lg border border-border/50 bg-card/80 px-3 py-2">
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
-          {labelTip ? <HelpTip text={labelTip}>{label}</HelpTip> : label}
+    <article className="flex min-h-36 min-w-0 flex-col justify-between gap-5 rounded-2xl border border-border/60 bg-[#F8F4EE] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+      <div className="flex min-w-0 items-start gap-3.5">
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl border border-border/45 bg-background shadow-sm">
+          <ProviderLogo slug={modelProviderSlug(name)} size={30} />
         </span>
-        <span className="truncate text-sm text-foreground font-mono font-medium" dir="ltr">
-          {shortName}
-        </span>
-        <div className="flex items-center gap-2.5 text-[0.625rem] text-muted-foreground" dir="ltr">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <span className="text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+            {labelTip ? <HelpTip text={labelTip}>{label}</HelpTip> : label}
+          </span>
+          <span
+            className="truncate font-mono text-base font-semibold tracking-tight text-foreground sm:text-lg"
+            dir="ltr"
+            title={name}
+          >
+            {shortName}
+          </span>
+        </div>
+      </div>
+      {(temp != null || maxTok != null || reasoning) && (
+        <div
+          className="flex flex-wrap items-center gap-2 text-[0.6875rem] text-muted-foreground"
+          dir="ltr"
+        >
           {temp != null && (
-            <span className="inline-flex items-center gap-0.5">
-              <Thermometer className="size-2.5" />
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/45 bg-background/75 px-2.5 py-1">
+              <Thermometer className="size-3" aria-hidden="true" />
               {temp.toFixed(1)}
             </span>
           )}
           {maxTok != null && (
-            <span className="inline-flex items-center gap-0.5">
-              <Hash className="size-2.5" />
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/45 bg-background/75 px-2.5 py-1">
+              <TextT className="size-3" aria-hidden="true" />
               {maxTok}
             </span>
           )}
           {reasoning && <ReasoningPill value={reasoning} />}
         </div>
-      </div>
-    </div>
+      )}
+    </article>
   );
 }
 
@@ -332,7 +355,7 @@ export function ConfigTab({
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.3 }}
-        className="overflow-hidden rounded-2xl border border-border bg-card/80 shadow-lg backdrop-blur-xl"
+        className="w-full overflow-hidden rounded-2xl border border-border bg-card/80 shadow-lg backdrop-blur-xl"
         data-tutorial="config-summary"
         role="region"
         aria-label={currentSlide.label}
@@ -350,7 +373,7 @@ export function ConfigTab({
           }
         }}
       >
-        <div className="flex items-center justify-between gap-4 border-b border-border/60 bg-secondary/35 px-5 py-4 sm:px-8 sm:py-5">
+        <div className="flex items-center justify-between gap-5 border-b border-border/60 bg-secondary/35 px-5 py-4 sm:px-6 sm:py-5 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#EDE7DD] text-[#3D2E22] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
               {currentSlide.icon}
@@ -367,7 +390,10 @@ export function ConfigTab({
               </h3>
             </div>
           </div>
-          <div className="hidden items-center gap-1.5 sm:flex" aria-label={currentSlide.label}>
+          <div
+            className="hidden min-w-0 flex-1 items-center justify-end gap-2 sm:flex"
+            aria-label={currentSlide.label}
+          >
             {CONFIG_SLIDES.map((slide, index) => (
               <button
                 key={slide.id}
@@ -375,23 +401,34 @@ export function ConfigTab({
                 onClick={() => goToSlide(index)}
                 aria-label={slide.label}
                 aria-current={activeSlide === index ? "step" : undefined}
-                className="flex size-8 cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882] focus-visible:ring-offset-2"
+                className={cn(
+                  "flex min-w-0 cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 text-start transition-[background-color,border-color,color,transform] duration-150",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882] focus-visible:ring-offset-2 active:scale-[0.98]",
+                  activeSlide === index
+                    ? "border-[#C8A882]/70 bg-background text-foreground shadow-sm"
+                    : "border-transparent text-muted-foreground hover:border-border/60 hover:bg-background/55 hover:text-foreground",
+                )}
               >
                 <span
                   className={cn(
-                    "h-1.5 rounded-full transition-[width,background-color] duration-200",
+                    "grid size-8 shrink-0 place-items-center rounded-lg transition-colors [&_svg]:size-4",
                     activeSlide === index
-                      ? "w-6 bg-[#3D2E22]"
-                      : "w-1.5 bg-[#3D2E22]/20 hover:bg-[#3D2E22]/40",
+                      ? "bg-[#3D2E22] text-[#FAF8F5]"
+                      : "bg-[#EDE7DD] text-[#8C7A6B]",
                   )}
-                />
+                >
+                  {slide.icon}
+                </span>
+                <span className="hidden truncate text-xs font-semibold lg:block">
+                  {slide.label}
+                </span>
               </button>
             ))}
           </div>
         </div>
 
         <div
-          className="relative overflow-hidden px-5 py-6 sm:px-8 sm:py-8"
+          className="relative overflow-hidden p-4 sm:p-6 lg:p-8"
           onTouchStart={(event) => {
             const touch = event.touches[0];
             touchStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
@@ -417,34 +454,98 @@ export function ConfigTab({
               animate="center"
               exit="exit"
               transition={prefersReducedMotion ? { duration: 0 } : CONFIG_SLIDE_TRANSITION}
-              className="mx-auto min-h-[22rem] w-full max-w-4xl"
+              className="min-h-[24rem] w-full"
             >
               {activeSlide === 0 && (
-                <div className="grid grid-cols-1 gap-x-10 sm:grid-cols-2">
-                  {items.map((item, i) => (
+                <div className="flex min-h-[24rem] flex-col gap-5">
+                  <div className="grid items-stretch gap-3 md:grid-cols-[minmax(0,1fr)_3rem_minmax(0,1fr)]">
+                    {items.slice(0, 2).map((item, index) => (
+                      <div key={index} className="contents">
+                        <article className="flex min-h-40 min-w-0 flex-col justify-between gap-6 rounded-2xl border border-border/60 bg-[#F8F4EE] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] sm:p-6">
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#3D2E22] text-[#FAF8F5] [&_svg]:size-5">
+                              {item.icon}
+                            </span>
+                            <span
+                              className="font-mono text-[0.625rem] tabular-nums text-[#8C7A6B]/70"
+                              dir="ltr"
+                            >
+                              0{index + 1}
+                            </span>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+                              {item.label}
+                            </div>
+                            <div
+                              className="mt-1 truncate font-mono text-xl font-semibold tracking-tight text-foreground sm:text-2xl"
+                              dir="ltr"
+                              title={item.value}
+                            >
+                              {item.value}
+                            </div>
+                          </div>
+                        </article>
+                        {index === 0 && (
+                          <div className="flex items-center justify-center text-[#A89680]">
+                            <span className="grid size-10 place-items-center rounded-full border border-[#C8A882]/45 bg-[#EDE7DD]">
+                              <FlowArrow
+                                className={cn(
+                                  "size-5 rotate-90 md:rotate-0",
+                                  isRtl && "md:rotate-180",
+                                )}
+                                aria-hidden="true"
+                              />
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {items.length > 2 && (
                     <div
-                      key={i}
-                      className="flex items-center justify-between gap-3 border-b border-border/40 py-3"
+                      className="grid flex-1 gap-3"
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fit, minmax(min(11rem, 100%), 1fr))",
+                      }}
                     >
-                      <span className="flex min-w-0 shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                        <span className="text-[#A89680]">{item.icon}</span>
-                        {item.label}
-                      </span>
-                      <span
-                        className="truncate font-mono text-sm font-semibold text-foreground"
-                        dir="ltr"
-                      >
-                        {item.value}
-                      </span>
+                      {items.slice(2).map((item, index) => (
+                        <article
+                          key={index}
+                          className="flex min-h-28 min-w-0 flex-col justify-between gap-4 rounded-xl border border-border/45 bg-background/65 p-4"
+                        >
+                          <span className="grid size-9 place-items-center rounded-xl bg-[#EDE7DD] text-[#8C7A6B] [&_svg]:size-4">
+                            {item.icon}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="truncate text-[0.6875rem] font-medium text-muted-foreground">
+                              {item.label}
+                            </div>
+                            <div
+                              className="mt-0.5 truncate font-mono text-base font-semibold text-foreground"
+                              dir="ltr"
+                              title={item.value}
+                            >
+                              {item.value}
+                            </div>
+                          </div>
+                        </article>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
 
               {activeSlide === 1 && (
-                <div>
+                <div className="min-h-[24rem]">
                   {job.optimization_type !== "grid_search" ? (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div
+                      className="grid gap-4"
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fit, minmax(min(17rem, 100%), 1fr))",
+                      }}
+                    >
                       {modelCfg && (
                         <ModelCard label={msg("model.generation.label")} cfg={modelCfg} />
                       )}
@@ -466,7 +567,12 @@ export function ConfigTab({
                       )}
                     </div>
                   ) : activePair ? (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div
+                      className="grid gap-4"
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fit, minmax(min(17rem, 100%), 1fr))",
+                      }}
+                    >
                       <ModelCard
                         label={msg("model.generation.label")}
                         cfg={pickPairModelConfig(
@@ -485,9 +591,12 @@ export function ConfigTab({
                       />
                     </div>
                   ) : job.generation_models && job.reflection_models ? (
-                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <p className="text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-[#A89680]">
+                    <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+                      <div className="space-y-3">
+                        <p className="flex items-center gap-2 text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+                          <span className="grid size-7 place-items-center rounded-lg bg-[#3D2E22] text-[#FAF8F5]">
+                            <Cpu className="size-3.5" aria-hidden="true" />
+                          </span>
                           <HelpTip text={tip("grid.generation_models")}>
                             {msg("model.generation.label_plural")}
                           </HelpTip>
@@ -500,8 +609,11 @@ export function ConfigTab({
                           />
                         ))}
                       </div>
-                      <div className="space-y-2">
-                        <p className="text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-[#A89680]">
+                      <div className="space-y-3">
+                        <p className="flex items-center gap-2 text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+                          <span className="grid size-7 place-items-center rounded-lg bg-[#C8A882] text-[#3D2E22]">
+                            <Brain className="size-3.5" aria-hidden="true" />
+                          </span>
                           <HelpTip text={tip("grid.reflection_models")}>
                             {msg("auto.features.optimizations.components.configtab.7")}
                           </HelpTip>
@@ -525,86 +637,91 @@ export function ConfigTab({
               )}
 
               {activeSlide === 2 && (
-                <div className="space-y-6">
+                <div className="flex min-h-[24rem] flex-col gap-6">
                   {job.source_dataset_id && (
                     <Link
                       href={`/datasets?open=${job.source_dataset_id}`}
-                      className="group/srclink flex items-center gap-2.5 rounded-xl border border-border/50 bg-card/80 px-4 py-3 transition-colors hover:border-[#C8A882]/60 hover:bg-accent/40"
+                      className={cn(
+                        "group/srclink flex min-h-28 items-center gap-4 rounded-2xl border border-border/60 bg-[#F8F4EE] p-5 transition-[background-color,border-color,transform] hover:border-[#C8A882]/70 hover:bg-[#F4EEE6] active:scale-[0.995] sm:p-6",
+                        !advanced && "flex-1",
+                      )}
                     >
-                      <Books className="size-4 shrink-0 text-[#A89680]" />
-                      <span className="min-w-0 flex-1 text-sm text-foreground">
-                        {msg("optimizations.source_dataset.label")}
+                      <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[#3D2E22] text-[#FAF8F5] shadow-sm">
+                        <Books className="size-6" aria-hidden="true" />
                       </span>
-                      <span className="shrink-0 text-xs font-medium text-[#7C6350]">
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+                          {msg("optimizations.source_dataset.label")}
+                        </span>
+                        <span
+                          className="mt-1 block truncate font-mono text-base font-semibold text-foreground sm:text-lg"
+                          dir="ltr"
+                        >
+                          {job.source_dataset_id}
+                        </span>
+                      </span>
+                      <span className="hidden shrink-0 text-xs font-semibold text-[#7C6350] sm:block">
                         {msg("optimizations.source_dataset.view")}
                       </span>
                       <ArrowUpRight className="size-4 shrink-0 text-muted-foreground/60 transition-colors group-hover/srclink:text-foreground" />
                     </Link>
                   )}
                   {advanced && (
-                    <div className="space-y-3">
-                      <p className="text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-[#A89680]">
-                        <HelpTip text={tip("data.split_explanation")}>
-                          {msg("auto.features.optimizations.components.configtab.9")}
-                          {TERMS.dataset}
-                        </HelpTip>
-                      </p>
-                      <div className="flex h-2.5 overflow-hidden rounded-full">
-                        <div
-                          className="bg-[#3D2E22] transition-all"
-                          style={{ width: `${splitFractions.train * 100}%` }}
-                        />
-                        <div
-                          className="bg-[#C8A882] transition-all"
-                          style={{ width: `${splitFractions.val * 100}%` }}
-                        />
-                        <div
-                          className="bg-[#8C7A6B] transition-all"
-                          style={{ width: `${splitFractions.test * 100}%` }}
-                        />
+                    <div className="flex flex-1 flex-col gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="grid size-9 place-items-center rounded-xl bg-[#EDE7DD] text-[#8C7A6B]">
+                          <Database className="size-4" aria-hidden="true" />
+                        </span>
+                        <p className="text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+                          <HelpTip text={tip("data.split_explanation")}>
+                            {msg("auto.features.optimizations.components.configtab.9")}
+                            {TERMS.dataset}
+                          </HelpTip>
+                        </p>
                       </div>
-                      <div
-                        className="grid gap-1 text-xs"
-                        style={{
-                          gridTemplateColumns: `${splitFractions.train}fr ${splitFractions.val}fr ${splitFractions.test}fr`,
-                        }}
-                      >
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <span className="inline-block size-2 shrink-0 rounded-full bg-[#3D2E22]" />
-                          <span className="truncate">
-                            {msg("auto.features.optimizations.components.configtab.10")}{" "}
-                            <span
-                              className="font-mono tabular-nums text-muted-foreground"
-                              dir="ltr"
-                            >
-                              {splitFractions.train}
-                            </span>
+                      <div className="flex min-h-28 flex-1 overflow-hidden rounded-2xl border border-border/50 bg-muted/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.42)]">
+                        <div
+                          className="flex min-w-0 flex-col items-center justify-center gap-3 bg-[#3D2E22] p-2 text-[#FAF8F5] transition-[width] sm:items-stretch sm:justify-between sm:p-5"
+                          style={{ width: `${splitFractions.train * 100}%` }}
+                        >
+                          <span className="hidden truncate text-[0.625rem] font-semibold uppercase tracking-[0.08em] opacity-70 sm:block">
+                            {msg("auto.features.optimizations.components.configtab.10")}
                           </span>
-                        </span>
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <span className="inline-block size-2 shrink-0 rounded-full bg-[#C8A882]" />
-                          <span className="truncate">
-                            {msg("auto.features.optimizations.components.configtab.11")}{" "}
-                            <span
-                              className="font-mono tabular-nums text-muted-foreground"
-                              dir="ltr"
-                            >
-                              {splitFractions.val}
-                            </span>
+                          <span
+                            className="font-mono text-sm font-semibold tabular-nums sm:text-2xl"
+                            dir="ltr"
+                          >
+                            {Math.round(splitFractions.train * 100)}%
                           </span>
-                        </span>
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <span className="inline-block size-2 shrink-0 rounded-full bg-[#8C7A6B]" />
-                          <span className="truncate">
-                            {msg("auto.features.optimizations.components.configtab.12")}{" "}
-                            <span
-                              className="font-mono tabular-nums text-muted-foreground"
-                              dir="ltr"
-                            >
-                              {splitFractions.test}
-                            </span>
+                        </div>
+                        <div
+                          className="flex min-w-0 flex-col items-center justify-center gap-3 bg-[#C8A882] p-2 text-[#3D2E22] transition-[width] sm:items-stretch sm:justify-between sm:p-5"
+                          style={{ width: `${splitFractions.val * 100}%` }}
+                        >
+                          <span className="hidden truncate text-[0.625rem] font-semibold uppercase tracking-[0.08em] opacity-70 sm:block">
+                            {msg("auto.features.optimizations.components.configtab.11")}
                           </span>
-                        </span>
+                          <span
+                            className="font-mono text-sm font-semibold tabular-nums sm:text-2xl"
+                            dir="ltr"
+                          >
+                            {Math.round(splitFractions.val * 100)}%
+                          </span>
+                        </div>
+                        <div
+                          className="flex min-w-0 flex-col items-center justify-center gap-3 bg-[#8C7A6B] p-2 text-[#FAF8F5] transition-[width] sm:items-stretch sm:justify-between sm:p-5"
+                          style={{ width: `${splitFractions.test * 100}%` }}
+                        >
+                          <span className="hidden truncate text-[0.625rem] font-semibold uppercase tracking-[0.08em] opacity-70 sm:block">
+                            {msg("auto.features.optimizations.components.configtab.12")}
+                          </span>
+                          <span
+                            className="font-mono text-sm font-semibold tabular-nums sm:text-2xl"
+                            dir="ltr"
+                          >
+                            {Math.round(splitFractions.test * 100)}%
+                          </span>
+                        </div>
                       </div>
                     </div>
                   )}
