@@ -9,6 +9,7 @@ import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
 import { SettingsRow } from "@/shared/ui/settings-row";
 import { Button } from "@/shared/ui/primitives/button";
+import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import {
   createBillingPortalSession,
   createCheckoutSession,
@@ -199,9 +200,7 @@ function BillingDetails() {
     return (
       <div className="flex items-center justify-between gap-3 border-t border-border/40 pt-4">
         <span className="text-xs text-muted-foreground">{msg("billing.profile.load_error")}</span>
-        <Button variant="outline" size="sm" onClick={loadProfile}>
-          {msg("billing.wallet.retry")}
-        </Button>
+        <RetryIconButton label={msg("billing.wallet.retry")} onClick={loadProfile} />
       </div>
     );
   }
@@ -330,10 +329,11 @@ export function WalletTab() {
           className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2"
         >
           <span className="text-xs text-destructive">{msg("billing.wallet.load_error")}</span>
-          <Button variant="outline" size="sm" disabled={loading} onClick={refresh}>
-            {loading && <CircleNotch className="size-3.5 animate-spin" aria-hidden="true" />}
-            {msg("billing.wallet.retry")}
-          </Button>
+          <RetryIconButton
+            label={msg("billing.wallet.retry")}
+            loading={loading}
+            onClick={refresh}
+          />
         </div>
       )}
       <div className="flex flex-wrap items-end justify-between gap-4">

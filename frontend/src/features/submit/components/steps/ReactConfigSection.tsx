@@ -7,12 +7,12 @@ import {
   CaretLeft,
   CaretRight,
   CircleNotch,
-  ArrowsClockwise,
 } from "@/shared/ui/icons";
 
 import { Label } from "@/shared/ui/primitives/label";
 import { Input } from "@/shared/ui/primitives/input";
 import { HelpTip } from "@/shared/ui/help-tip";
+import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { cn } from "@/shared/lib/utils";
 import { tip } from "@/shared/lib/tooltips";
 import { formatMsg, msg } from "@/shared/lib/messages";
@@ -145,17 +145,15 @@ export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
                   <>
                     <Warning className="size-3 shrink-0" />
                     {msg("submit.react.mcp_failed")}
-                    <button
-                      type="button"
-                      onClick={() => runProbe(reactConfig.mcpUrl.trim(), reactConfig.mcpAuthHeader)}
-                      className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 py-0.5 text-[0.625rem] font-medium text-foreground transition-colors hover:border-[#C8A882]"
-                    >
-                      <ArrowsClockwise className="size-2.5" />
-                      {msg("submit.react.mcp_retry")}
-                    </button>
                   </>
                 )}
               </div>
+              {probe.kind === "error" && (
+                <RetryIconButton
+                  label={msg("submit.react.mcp_retry")}
+                  onClick={() => runProbe(reactConfig.mcpUrl.trim(), reactConfig.mcpAuthHeader)}
+                />
+              )}
               {tools.length > 1 && (
                 <div className="flex shrink-0 items-center gap-1.5" dir="ltr">
                   <button

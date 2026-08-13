@@ -4,7 +4,6 @@ import * as React from "react";
 import {
   Robot,
   XCircle,
-  ArrowCounterClockwise,
   Ruler,
   FileCode,
   ChatCenteredDots,
@@ -18,6 +17,7 @@ import { AgentThread, ChatTranscript, Composer } from "@/shared/ui/agent";
 import { ActivityBreadcrumb } from "@/shared/ui/agent/activity-breadcrumb";
 import type { AgentToolCall as SharedAgentToolCall } from "@/shared/ui/agent";
 import { EmptyState as SharedEmptyState } from "@/shared/ui/empty-state";
+import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { IndexPager } from "@/shared/ui/index-pager";
 import { ToolCallRow } from "@/features/agent-panel";
 
@@ -119,20 +119,17 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
               {agent.error && agent.status === "error" && (
                 <div className="rounded-lg bg-[#FCEFEB]/60 border border-[#9B2C1F]/20 px-2.5 py-2 text-xs text-[#7A1E13] space-y-1.5">
                   <div className="flex items-start gap-1.5">
-                    <XCircle className="size-3 shrink-0 mt-0.5 text-[#9B2C1F]" />
-                    <span className="flex-1 break-words min-w-0" dir="auto">
+                    <XCircle className="mt-0.5 size-3 shrink-0 text-[#9B2C1F]" />
+                    <span className="min-w-0 flex-1 break-words" dir="auto">
                       {agent.error}
                     </span>
+                    <RetryIconButton
+                      label={msg("auto.features.submit.components.steps.codeagentpanel.2")}
+                      onClick={agent.retry}
+                      className="size-7 border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13]"
+                    />
                   </div>
                   <div className="flex gap-1.5 ps-4">
-                    <button
-                      type="button"
-                      onClick={agent.retry}
-                      className="inline-flex items-center gap-1 text-[0.6875rem] text-[#7A1E13] bg-[#9B2C1F]/10 hover:bg-[#9B2C1F]/20 px-2 py-0.5 rounded cursor-pointer transition-colors"
-                    >
-                      <ArrowCounterClockwise className="size-3" />
-                      {msg("auto.features.submit.components.steps.codeagentpanel.2")}
-                    </button>
                     <button
                       type="button"
                       onClick={agent.fallbackToManual}

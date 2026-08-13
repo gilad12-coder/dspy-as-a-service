@@ -43,6 +43,7 @@ import {
 import { SkynetDatePicker, toISODate } from "@/shared/ui/skynet-date-picker";
 import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { Button } from "@/shared/ui/primitives/button";
+import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { useCredits } from "../providers/credit-provider";
 import { formatCredits, formatResetDate, type UsageEntry } from "../lib/credit";
 
@@ -257,9 +258,7 @@ function TransactionHistory({
       {failed ? (
         <div className="flex items-center justify-between gap-3 border-y border-border/35 py-3">
           <span className="text-xs text-muted-foreground">{msg("billing.transactions.load_error")}</span>
-          <Button variant="outline" size="sm" onClick={onRetry}>
-            {msg("billing.wallet.retry")}
-          </Button>
+          <RetryIconButton label={msg("billing.wallet.retry")} onClick={onRetry} />
         </div>
       ) : data == null ? (
         <div className="flex h-20 items-center justify-center border-y border-border/35" aria-busy="true">

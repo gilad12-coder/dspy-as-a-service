@@ -30,6 +30,7 @@ import { isTelemetryOptedOut, setTelemetryOptOut } from "@/shared/lib/telemetry/
 import { SettingsRow } from "@/shared/ui/settings-row";
 import { CopyButton } from "@/shared/ui/copy-button";
 import { Button } from "@/shared/ui/primitives/button";
+import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { Input } from "@/shared/ui/primitives/input";
 import { Label } from "@/shared/ui/primitives/label";
 import { Switch } from "@/shared/ui/primitives/switch";
@@ -210,17 +211,11 @@ export function PrivacyTab() {
             <span className="text-xs text-destructive">
               {msg("settings.notifications.load_error")}
             </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={notificationLoading}
+            <RetryIconButton
+              label={msg("settings.notifications.retry")}
+              loading={notificationLoading}
               onClick={() => void loadNotificationPreferences()}
-            >
-              {notificationLoading && (
-                <CircleNotch className="size-3.5 animate-spin" aria-hidden="true" />
-              )}
-              {msg("settings.notifications.retry")}
-            </Button>
+            />
           </div>
         )}
 

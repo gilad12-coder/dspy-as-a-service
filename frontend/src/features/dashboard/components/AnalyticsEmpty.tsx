@@ -1,6 +1,6 @@
 "use client";
 
-import { ChartBar, Database, WarningCircle, ArrowsClockwise } from "@/shared/ui/icons";
+import { ChartBar, Database, WarningCircle } from "@/shared/ui/icons";
 import type { Icon } from "@/shared/ui/icons";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { FadeIn } from "@/shared/ui/motion";
@@ -29,6 +29,7 @@ export function AnalyticsEmpty({
         onClick?: () => void;
         href?: string;
         icon?: Icon;
+        iconOnly?: boolean;
       };
     }
   > = {
@@ -57,7 +58,7 @@ export function AnalyticsEmpty({
         ? {
             label: msg("auto.features.dashboard.components.analyticsempty.2"),
             onClick: onRetry,
-            icon: ArrowsClockwise,
+            iconOnly: true,
           }
         : undefined,
     },

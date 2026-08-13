@@ -1864,7 +1864,7 @@
   "datasets.editor.add_column": "הוספת עמודה",
   "datasets.editor.add_row": "הוספת שורה",
   "datasets.editor.autosave_empty": "הוסיפו שורה כדי לשמור את השינויים",
-  "datasets.editor.autosave_error": "השמירה נכשלה — לחצו לניסיון חוזר",
+  "datasets.editor.autosave_error": "השמירה נכשלה",
   "datasets.editor.autosave_saved": "כל השינויים נשמרו",
   "datasets.editor.autosave_saving": "שומר…",
   "datasets.editor.back": "חזרה לספרייה",

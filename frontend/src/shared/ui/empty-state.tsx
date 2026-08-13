@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Icon } from "@/shared/ui/icons";
 
 import { Button } from "@/shared/ui/primitives/button";
+import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { cn } from "@/shared/lib/utils";
 
 interface EmptyStateProps {
@@ -31,6 +32,9 @@ interface EmptyStateProps {
     href?: string;
     /** Optional leading icon for the action (used by the "list" CTA). */
     icon?: Icon;
+    /** Present simple recovery actions as the shared icon-and-tooltip control. */
+    iconOnly?: boolean;
+    loading?: boolean;
   };
   /** Extra content rendered after the action (e.g. demo cards). */
   children?: React.ReactNode;
@@ -65,13 +69,34 @@ export function EmptyState({
             aria-hidden="true"
           />
         )}
-        <p className="text-[0.8125rem] font-medium text-muted-foreground/75">{title}</p>
-        {description && (
-          <p className="max-w-[11rem] text-[0.6875rem] leading-relaxed text-muted-foreground/45">
-            {description}
-          </p>
+        {action?.iconOnly && action.onClick ? (
+          <div className="flex w-full max-w-sm items-center gap-3 text-start">
+            <div className="min-w-0 flex-1">
+              <p className="text-[0.8125rem] font-medium text-muted-foreground/75">{title}</p>
+              {description && (
+                <p className="mt-1 max-w-[18rem] text-[0.6875rem] leading-relaxed text-muted-foreground/45">
+                  {description}
+                </p>
+              )}
+            </div>
+            <RetryIconButton
+              label={action.label}
+              onClick={action.onClick}
+              loading={action.loading}
+              icon={ActionIcon}
+            />
+          </div>
+        ) : (
+          <>
+            <p className="text-[0.8125rem] font-medium text-muted-foreground/75">{title}</p>
+            {description && (
+              <p className="max-w-[11rem] text-[0.6875rem] leading-relaxed text-muted-foreground/45">
+                {description}
+              </p>
+            )}
+          </>
         )}
-        {action && (
+        {action && !action.iconOnly && (
           <Button
             variant="outline"
             size="sm"
@@ -119,28 +144,49 @@ export function EmptyState({
         </span>
       )}
 
-      <div className={cn(isCompact && (description ? "space-y-1.5 max-w-[260px]" : ""))}>
-        <p
+      <div
+        className={cn(
+          isCompact && description && "max-w-[260px]",
+          action?.iconOnly && "flex w-full max-w-sm items-center gap-3 text-start",
+        )}
+      >
+        <div
           className={cn(
-            isCompact ? "text-sm font-medium text-foreground/70" : "text-base font-medium",
+            isCompact && description && "space-y-1.5",
+            action?.iconOnly && "min-w-0 flex-1",
           )}
         >
-          {title}
-        </p>
-        {description && (
           <p
             className={cn(
-              isCompact
-                ? "text-xs text-muted-foreground/60 leading-relaxed"
-                : "text-sm text-muted-foreground max-w-xs",
+              isCompact ? "text-sm font-medium text-foreground/70" : "text-base font-medium",
             )}
           >
-            {description}
+            {title}
           </p>
+          {description && (
+            <p
+              className={cn(
+                isCompact
+                  ? "text-xs text-muted-foreground/60 leading-relaxed"
+                  : "text-sm text-muted-foreground",
+                !action?.iconOnly && "max-w-xs",
+              )}
+            >
+              {description}
+            </p>
+          )}
+        </div>
+        {action?.iconOnly && action.onClick && (
+          <RetryIconButton
+            label={action.label}
+            onClick={action.onClick}
+            loading={action.loading}
+            icon={ActionIcon}
+          />
         )}
       </div>
 
-      {action && (
+      {action && !action.iconOnly && (
         <Button
           variant="outline"
           size="sm"

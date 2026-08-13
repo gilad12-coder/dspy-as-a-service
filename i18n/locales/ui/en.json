@@ -1864,7 +1864,7 @@
   "datasets.editor.add_column": "Add column",
   "datasets.editor.add_row": "Add row",
   "datasets.editor.autosave_empty": "Add a row to save your changes",
-  "datasets.editor.autosave_error": "Saving failed — click to retry",
+  "datasets.editor.autosave_error": "Saving failed",
   "datasets.editor.autosave_saved": "All changes saved",
   "datasets.editor.autosave_saving": "Saving…",
   "datasets.editor.back": "Back to the library",

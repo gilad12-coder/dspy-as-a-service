@@ -13,6 +13,7 @@ import {
   Trash,
 } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
+import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import {
   Card,
   CardContent,
@@ -219,10 +220,7 @@ export function TaggerInterview({
           {error && (
             <div className="flex items-center justify-between gap-3 border-t border-border/40 px-4 py-2.5">
               <p className="text-sm text-destructive">{msg("tagger.assist.interview.error")}</p>
-              <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5 shrink-0">
-                <ArrowCounterClockwise className="size-3.5" />
-                {msg("tagger.assist.retry")}
-              </Button>
+              <RetryIconButton label={msg("tagger.assist.retry")} onClick={onRetry} />
             </div>
           )}
 

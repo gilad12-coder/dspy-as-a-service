@@ -36,6 +36,7 @@ export function TaggingSessionsPanel({ onStartNew }: { onStartNew: () => void })
   const [sessions, setSessions] = React.useState<TaggerSessionSummary[]>([]);
   const [loaded, setLoaded] = React.useState(false);
   const [loadFailed, setLoadFailed] = React.useState(false);
+  const [loadingSessions, setLoadingSessions] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   // Last-toggled session id — the shift-click range anchor, kept as an id (not
@@ -45,6 +46,7 @@ export function TaggingSessionsPanel({ onStartNew }: { onStartNew: () => void })
   const [bulkDeleting, setBulkDeleting] = React.useState(false);
 
   const fetchSessions = React.useCallback(async () => {
+    setLoadingSessions(true);
     try {
       const res = await listTaggerSessions({ limit: 200 });
       const items = res.items.filter((session) => session.phase !== "complete");
@@ -63,6 +65,7 @@ export function TaggingSessionsPanel({ onStartNew }: { onStartNew: () => void })
       setLoadFailed(true);
     } finally {
       setLoaded(true);
+      setLoadingSessions(false);
     }
   }, []);
 
@@ -150,7 +153,12 @@ export function TaggingSessionsPanel({ onStartNew }: { onStartNew: () => void })
             iconWrap="tile"
             title={msg("tagger.session.load_failed")}
             description={msg("tagger.session.load_failed_body")}
-            action={{ label: msg("tagger.session.retry"), onClick: fetchSessions }}
+            action={{
+              label: msg("tagger.session.retry"),
+              onClick: fetchSessions,
+              iconOnly: true,
+              loading: loadingSessions,
+            }}
           />
         </div>
       </section>

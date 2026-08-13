@@ -22,6 +22,7 @@ import {
   XCircle,
 } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
+import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { Input } from "@/shared/ui/primitives/input";
 import { Badge } from "@/shared/ui/primitives/badge";
 import {
@@ -837,21 +838,25 @@ export function DatasetEditorView() {
         {/* Autosave stays silent on success — only the states that need the
             user's attention (empty, failed, in-flight) surface a chip. */}
         {touched && (blocked || saveState !== "saved") && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-live="polite">
+          <div
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            aria-live="polite"
+          >
             {blocked ? (
               <>
                 <WarningCircle className="size-3.5" />
                 {msg("datasets.editor.autosave_empty")}
               </>
             ) : saveState === "error" ? (
-              <button
-                type="button"
-                onClick={retrySave}
-                className="flex cursor-pointer items-center gap-1.5 text-destructive hover:underline"
-              >
+              <>
                 <WarningCircle className="size-3.5" />
-                {msg("datasets.editor.autosave_error")}
-              </button>
+                <span className="text-destructive">{msg("datasets.editor.autosave_error")}</span>
+                <RetryIconButton
+                  label={msg("shared.agent.regenerate")}
+                  onClick={retrySave}
+                  className="size-7 border-destructive/25 text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive"
+                />
+              </>
             ) : (
               <>
                 <CircleNotch className="size-3.5 animate-spin" />
