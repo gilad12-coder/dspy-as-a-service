@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel, Field
@@ -46,6 +47,7 @@ from ...storage.models import UserModel, WebAuthnChallengeModel, WebAuthnCredent
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..email_sender import email_configured, send_email
 from ..errors import DomainError
+from ..monthly_active_users import enforce_monthly_active_user_limit
 from ..passwords import verify_password
 from ..two_factor import (
     consume_recovery_code,
@@ -75,8 +77,6 @@ def _rp_id() -> str:
     """
     if settings.webauthn_rp_id:
         return settings.webauthn_rp_id
-    from urllib.parse import urlsplit
-
     return urlsplit(settings.app_public_url).hostname or "localhost"
 
 
@@ -728,6 +728,11 @@ def create_account_security_router(*, job_store) -> APIRouter:
             if user_row is not None:
                 user_row.last_login_at = now
                 name = str(user_row.name)
+            enforce_monthly_active_user_limit(
+                job_store,
+                email,
+                exempt=_role_for(email) == "admin",
+            )
             session.commit()
         return AccountInfo(email=email, name=name, role=_role_for(email))
 

@@ -4,10 +4,9 @@ Exercises the producer/consumer wiring task that connects the personal dataset
 library to optimization submission against an in-memory SQLite store (the
 sibling routers' pattern: a ``RemoteDBJobStore`` subclass that skips the
 pgvector bootstrap so ``Base.metadata.create_all`` stands up every table). The
-submissions router is mounted alongside the library router with a worker stub
-that persists the payload exactly as the real worker does, so a by-reference
-submit, the dataset→optimizations reverse link, and saving a run's dataset all
-round-trip through real rows.
+submissions router is mounted alongside the library router with a worker signal
+stub, so a by-reference submit, the dataset→optimizations reverse link, and
+saving a run's dataset all round-trip through real rows.
 """
 
 from __future__ import annotations
@@ -58,28 +57,15 @@ class _MemStore(RemoteDBJobStore):
         self._session_factory = sessionmaker(bind=self._engine)
 
 
-class _PersistingWorker:
-    """Worker stub that persists the payload the way the real engine does."""
+class _QueueSignalWorker:
+    """Worker stub that accepts a local queue hint after DB persistence."""
 
-    def __init__(self, store: _MemStore) -> None:
-        """Bind the stub to the store it writes payloads onto.
-
-        Args:
-            store: The job store whose ``update_job`` records the payload.
-        """
-        self._store = store
-
-    def submit_job(self, optimization_id: str, payload: Any, payload_dump: dict | None = None) -> None:
-        """Write the dumped payload onto the pending job row.
+    def enqueue_job(self, optimization_id: str) -> None:
+        """Accept a queue hint for an already-persisted job.
 
         Args:
-            optimization_id: Id of the job being submitted.
-            payload: The validated request model whose dump is persisted.
-            payload_dump: Optional pre-built dump, mirroring the real worker.
+            optimization_id: Id of the pending job.
         """
-        if payload_dump is None:
-            payload_dump = payload.model_dump(mode="json", by_alias=True)
-        self._store.update_job(optimization_id, payload=payload_dump)
 
 
 class _FakeService:
@@ -103,7 +89,7 @@ def _app_for(store: _MemStore, user: AuthenticatedUser, *, monkeypatch: pytest.M
     Returns:
         A FastAPI app whose ``DomainError``s render the production envelope.
     """
-    worker = _PersistingWorker(store)
+    worker = _QueueSignalWorker()
     monkeypatch.setattr(_sub_mod, "get_worker", lambda *a, **kw: worker)
     monkeypatch.setattr(_sub_mod, "notify_job_started", lambda **_: None)
 

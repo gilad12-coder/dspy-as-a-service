@@ -21,6 +21,7 @@ class I18nKey(StrEnum):
     ACCOUNTS_INVALID_RESET_CODE = 'accounts.invalid_reset_code'
     ACCOUNTS_INVALID_SECOND_FACTOR = 'accounts.invalid_second_factor'
     ACCOUNTS_INVALID_VERIFICATION_CODE = 'accounts.invalid_verification_code'
+    ACCOUNTS_MONTHLY_CAPACITY_REACHED = 'accounts.monthly_capacity_reached'
     ACCOUNTS_PASSWORD_COMMON = 'accounts.password_common'
     ACCOUNTS_PASSWORD_CONTAINS_EMAIL = 'accounts.password_contains_email'
     ACCOUNTS_PASSWORD_TOO_LONG = 'accounts.password_too_long'

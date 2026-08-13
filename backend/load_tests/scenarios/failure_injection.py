@@ -2,7 +2,7 @@
 
 Drives the failure recovery path the orphan sweeper + idempotency layer
 were added for. The scenario submits a fleet of jobs, hard-kills one of
-the three backend replicas while at least one job is in flight, waits
+the three standalone worker replicas while at least one job is in flight, waits
 for the lease to expire and the sweeper to requeue, restarts the pod,
 then asserts: every submitted job reaches a terminal state, the orphan
 count drops back to zero, and an idempotent re-submit of the original
@@ -88,7 +88,7 @@ def _kill_replica(config: FailureInjectionConfig) -> bool:
     if not ids:
         return False
     # When replicas: 3 is used the ids list is ordered, target_replica
-    # passes the desired index (e.g. "api-2" picks index 1).
+    # passes the desired index (e.g. "worker-2" picks index 1).
     parts = config.target_replica.split("-")
     if len(parts) == 2 and parts[1].isdigit():
         idx = int(parts[1]) - 1
@@ -227,10 +227,9 @@ async def run(config: FailureInjectionConfig) -> ScenarioResult:
         recovery + idempotency invariants the scenario asserts on.
     """
     db_inspector.truncate_test_users([config.username])
+    db_inspector.fund_test_users([config.username])
     if shutil.which("docker") is None:
-        raise RuntimeError(
-            "docker CLI is required for the failure_injection scenario."
-        )
+        raise RuntimeError("docker CLI is required for the failure_injection scenario.")
 
     metrics = ScenarioMetrics("failure_injection")
     idempotency_key = "failure-injection-key"
@@ -339,7 +338,7 @@ def default_config(api_base_url: str, mock_lm_url: str) -> FailureInjectionConfi
 
     Returns:
         A :class:`FailureInjectionConfig` calibrated for the local stack:
-        12 chaos jobs, target the second api replica, 70 s lease wait,
+        12 chaos jobs, target the second worker replica, 70 s lease wait,
         4 min total completion timeout.
     """
     return FailureInjectionConfig(
@@ -352,7 +351,7 @@ def default_config(api_base_url: str, mock_lm_url: str) -> FailureInjectionConfi
             str(Path(__file__).parent / ".." / "docker-compose.loadtest.yml"),
         ),
         compose_project=os.environ.get("LOAD_TEST_COMPOSE_PROJECT", "skynet-loadtest"),
-        target_replica=os.environ.get("LOAD_TEST_TARGET_REPLICA", "api-2"),
+        target_replica=os.environ.get("LOAD_TEST_TARGET_REPLICA", "worker-2"),
         lease_expiry_grace_seconds=70.0,
         completion_timeout_seconds=240.0,
     )

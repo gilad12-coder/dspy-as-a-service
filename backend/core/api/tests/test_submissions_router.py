@@ -129,6 +129,18 @@ class _FakeJobStore:
         """
         self._jobs.setdefault(optimization_id, {})["overview"] = dict(overview)
 
+    def update_job(self, optimization_id: str, **kwargs: Any) -> None:
+        """Update fields on an existing fake job row.
+
+        Args:
+            optimization_id: Job id to update.
+            **kwargs: Fields to store on the row.
+
+        Raises:
+            KeyError: When the job does not exist.
+        """
+        self._jobs[optimization_id].update(kwargs)
+
     def find_job_by_idempotency_key(self, username: str, idempotency_key: str) -> str | None:
         """Return the first job id matching ``(username, idempotency_key)``.
 
@@ -361,6 +373,7 @@ def _make_client(
     """
     worker = fake_background_worker()
 
+    monkeypatch.setattr(_sub_mod.settings, "worker_enabled", True)
     monkeypatch.setattr(_sub_mod, "get_worker", lambda *a, **kw: worker)
     monkeypatch.setattr(_sub_mod, "notify_job_started", lambda **_: None)
 
@@ -408,6 +421,40 @@ def test_submit_run_creates_job_in_store(monkeypatch: pytest.MonkeyPatch) -> Non
     created = store.created_ids()
     assert len(created) == 1
     assert created[0] == resp.json()["optimization_id"]
+
+
+@pytest.mark.parametrize(
+    ("path", "payload_factory"),
+    [("/run", _run_payload), ("/grid-search", _grid_payload)],
+)
+def test_submit_persists_without_starting_worker_on_api_only_pods(
+    path: str,
+    payload_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """API-only pods persist submissions without constructing a local worker.
+
+    Args:
+        path: Submission endpoint under test.
+        payload_factory: Callable producing a valid endpoint payload.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    store = _FakeJobStore()
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+    monkeypatch.setattr(_sub_mod.settings, "worker_enabled", False)
+
+    def _unexpected_worker(*_args: Any, **_kwargs: Any) -> None:
+        """Fail if an API-only submission tries to construct a worker."""
+        pytest.fail("API-only submissions must not construct a worker")
+
+    monkeypatch.setattr(_sub_mod, "get_worker", _unexpected_worker)
+
+    resp = client.post(path, json=payload_factory())
+
+    assert resp.status_code == 201
+    row = store._jobs[resp.json()["optimization_id"]]
+    assert row["payload"]["username"] == "alice"
+    assert row["code_version"] == _sub_mod.settings.code_version
 
 
 def test_submit_run_echoes_name_and_authenticated_username(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1090,8 +1137,8 @@ def test_submit_run_managed_any_model_allowed_and_ceiling_capped(
     resp = client.post("/run", json=payload)
 
     assert resp.status_code == 201
-    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
-    assert submitted.max_cost_credits == 200
+    submitted = store._jobs[store.created_ids()[0]]["payload"]
+    assert submitted["max_cost_credits"] == 200
 
 
 def test_submit_run_byok_frontier_model_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1180,8 +1227,8 @@ def test_submit_run_managed_user_ceiling_wins_when_below_balance(
     resp = client.post("/run", json=payload)
 
     assert resp.status_code == 201
-    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
-    assert submitted.max_cost_credits == 50
+    submitted = store._jobs[store.created_ids()[0]]["payload"]
+    assert submitted["max_cost_credits"] == 50
 
 
 def test_submit_run_byok_blocked_without_credits(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1258,9 +1305,9 @@ def test_submit_run_byok_ceiling_capped_to_fee_aware_budget(
     resp = client.post("/run", json=payload)
 
     assert resp.status_code == 201
-    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
-    assert submitted.max_cost_credits == cost_ceiling_budget(200, "byok")
-    assert submitted.max_cost_credits > 200
+    submitted = store._jobs[store.created_ids()[0]]["payload"]
+    assert submitted["max_cost_credits"] == cost_ceiling_budget(200, "byok")
+    assert submitted["max_cost_credits"] > 200
 
 
 def _seed_active_job(
@@ -1311,8 +1358,8 @@ def test_submit_run_ceiling_reduced_by_active_job_commitment(
     resp = client.post("/run", json=_run_payload())
 
     assert resp.status_code == 201
-    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
-    assert submitted.max_cost_credits == 300
+    submitted = store._jobs[resp.json()["optimization_id"]]["payload"]
+    assert submitted["max_cost_credits"] == 300
 
 
 def test_submit_run_blocked_when_balance_fully_committed(
@@ -1355,8 +1402,8 @@ def test_submit_run_terminal_jobs_do_not_commit_credits(
     resp = client.post("/run", json=_run_payload())
 
     assert resp.status_code == 201
-    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
-    assert submitted.max_cost_credits == 500
+    submitted = store._jobs[resp.json()["optimization_id"]]["payload"]
+    assert submitted["max_cost_credits"] == 500
 
 
 def test_submit_run_paused_jobs_commit_credits(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1375,8 +1422,8 @@ def test_submit_run_paused_jobs_commit_credits(monkeypatch: pytest.MonkeyPatch) 
     resp = client.post("/run", json=_run_payload())
 
     assert resp.status_code == 201
-    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
-    assert submitted.max_cost_credits == 300
+    submitted = store._jobs[resp.json()["optimization_id"]]["payload"]
+    assert submitted["max_cost_credits"] == 300
 
 
 def test_submit_run_legacy_rows_without_stamp_commit_zero(
@@ -1397,8 +1444,8 @@ def test_submit_run_legacy_rows_without_stamp_commit_zero(
     resp = client.post("/run", json=_run_payload())
 
     assert resp.status_code == 201
-    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
-    assert submitted.max_cost_credits == 500
+    submitted = store._jobs[resp.json()["optimization_id"]]["payload"]
+    assert submitted["max_cost_credits"] == 500
 
 
 def test_submit_run_byok_commitment_is_fee_sized(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1419,8 +1466,8 @@ def test_submit_run_byok_commitment_is_fee_sized(monkeypatch: pytest.MonkeyPatch
     resp = client.post("/run", json=_run_payload())
 
     assert resp.status_code == 201
-    submitted = _sub_mod.get_worker(store).submit_job.call_args.args[1]
-    assert submitted.max_cost_credits == 500 - committed_spend_credits(1000, "byok")
+    submitted = store._jobs[resp.json()["optimization_id"]]["payload"]
+    assert submitted["max_cost_credits"] == 500 - committed_spend_credits(1000, "byok")
 
 
 def test_submit_run_overview_stamps_cost_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:

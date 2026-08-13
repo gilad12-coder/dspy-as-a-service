@@ -31,6 +31,7 @@ from ..email_verification import (
 )
 from ..errors import DomainError
 from ..login_throttle import LoginThrottle
+from ..monthly_active_users import enforce_monthly_active_user_limit
 from ..password_policy import validate_password
 from ..password_reset import issue_reset_code, reset_code_on_cooldown, verify_reset_code
 from ..passwords import hash_password, verify_password
@@ -161,28 +162,31 @@ def _require_internal_auth(header_value: str | None) -> None:
 
 
 def _enforce_signup_cap(job_store) -> None:
-    """Refuse new registrations once the platform-wide account cap is reached.
+    """Refuse registrations at either the account or monthly-active cap.
 
-    A cost guardrail that bounds total accounts (and thus the ceiling on
-    concurrent demand) at :data:`core.config.settings.max_total_users`. No-op
-    when the cap is disabled (``0``) or the store cannot count users. The cap is
-    soft: the count runs outside the insert transaction, so simultaneous sign-ups
-    at the boundary may overshoot by a few — acceptable for a cost bound.
+    The registered-account ceiling bounds sign-up spam while the monthly-active
+    ceiling controls actual application demand. Both are independently
+    optional. Counts run outside the insert transaction, so simultaneous
+    registrations can overshoot the account ceiling by a few rows; monthly
+    admission itself remains atomic.
 
     Args:
-        job_store: Job-store instance; a store without ``count_users`` is skipped.
+        job_store: Job-store instance exposing the applicable counters.
 
     Raises:
-        DomainError: 503 ``accounts.signups_closed`` when the account count is at
-            or above the cap.
+        DomainError: 503 ``accounts.signups_closed`` when either cap is full.
     """
-    cap = settings.max_total_users
-    if cap <= 0:
+    account_cap = settings.max_total_users
+    account_counter = getattr(job_store, "count_users", None)
+    if account_cap > 0 and callable(account_counter) and account_counter() >= account_cap:
+        raise DomainError("accounts.signups_closed", status=503)
+    monthly_cap = settings.max_monthly_active_users
+    monthly_counter = getattr(job_store, "count_monthly_active_users", None)
+    if monthly_cap <= 0 or not callable(monthly_counter):
         return
-    counter = getattr(job_store, "count_users", None)
-    if not callable(counter):
-        return
-    if counter() >= cap:
+    now = datetime.now(UTC)
+    month_start = now.date().replace(day=1)
+    if monthly_counter(month_start) >= monthly_cap:
         raise DomainError("accounts.signups_closed", status=503)
 
 
@@ -332,6 +336,11 @@ def create_accounts_router(*, job_store, login_throttle: LoginThrottle | None = 
                 if exc.code == "accounts.invalid_second_factor":
                     throttle.record_failure(email)
                 raise
+            enforce_monthly_active_user_limit(
+                job_store,
+                email,
+                exempt=_role_for(email) == "admin",
+            )
             row.last_login_at = datetime.now(UTC)
             name = str(row.name)
             session.commit()

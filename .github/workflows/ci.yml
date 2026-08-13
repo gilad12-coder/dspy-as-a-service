@@ -28,6 +28,8 @@ jobs:
       # nightly concern and is intentionally not gated here.
       - name: Core test suite
         run: uv run pytest core/ -q
+      - name: Load-test release-gate unit tests
+        run: uv run pytest tests/unit/test_load_test_slo.py -q
       # requirements.txt is the pip install path's copy of uv.lock. When only
       # one of the two moves, the pip-path image silently ships a different
       # dependency set than CI ever tested — that drift is how starlette landed

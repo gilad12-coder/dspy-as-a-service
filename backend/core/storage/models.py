@@ -5,7 +5,7 @@ Defines the shared database models used by the PostgreSQL storage backend.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -15,6 +15,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -118,6 +119,18 @@ class UserModel(Base):
     totp_pending_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     email_2fa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     recovery_codes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MonthlyActiveUserModel(Base):
+    """One identity admitted to use the application during a UTC month."""
+
+    __tablename__ = "monthly_active_users"
+
+    month_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
 
 
 class WebAuthnCredentialModel(Base):

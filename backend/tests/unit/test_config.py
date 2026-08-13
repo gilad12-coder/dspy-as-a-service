@@ -42,6 +42,7 @@ _SETTINGS_ENV_VARS = (
     "LOG_LEVEL",
     "MAX_JOBS_PER_USER",
     "MAX_TOTAL_USERS",
+    "MAX_MONTHLY_ACTIVE_USERS",
     "MAX_CONCURRENT_JOBS_PER_USER",
     "GLOBAL_DAILY_SPEND_CEILING_CREDITS",
     "SUBMISSIONS_PAUSED",
@@ -615,10 +616,11 @@ def test_settings_default_agent_models_use_shared_constant() -> None:
 
 
 def test_settings_defaults_cost_guardrails() -> None:
-    """Cost-guardrail defaults: 10k account cap, 5 concurrent runs, spend switch off."""
+    """Hosted population/spend caps are opt-in while per-user concurrency is safe by default."""
     s = Settings(_env_file=None)
 
-    assert s.max_total_users == 10000
+    assert s.max_total_users == 0
+    assert s.max_monthly_active_users == 0
     assert s.max_concurrent_jobs_per_user == 5
     assert s.global_daily_spend_ceiling_credits == 0
     assert s.submissions_paused is False
@@ -649,6 +651,7 @@ def test_settings_rate_limits_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_settings_cost_guardrails_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Each cost guardrail is overridable from its environment variable."""
     monkeypatch.setenv("MAX_TOTAL_USERS", "250")
+    monkeypatch.setenv("MAX_MONTHLY_ACTIVE_USERS", "200")
     monkeypatch.setenv("MAX_CONCURRENT_JOBS_PER_USER", "3")
     monkeypatch.setenv("GLOBAL_DAILY_SPEND_CEILING_CREDITS", "1000000")
     monkeypatch.setenv("SUBMISSIONS_PAUSED", "true")
@@ -656,6 +659,7 @@ def test_settings_cost_guardrails_from_env(monkeypatch: pytest.MonkeyPatch) -> N
     s = Settings(_env_file=None)
 
     assert s.max_total_users == 250
+    assert s.max_monthly_active_users == 200
     assert s.max_concurrent_jobs_per_user == 3
     assert s.global_daily_spend_ceiling_credits == 1000000
     assert s.submissions_paused is True
@@ -664,10 +668,12 @@ def test_settings_cost_guardrails_from_env(monkeypatch: pytest.MonkeyPatch) -> N
 def test_settings_cost_guardrails_disable_values(monkeypatch: pytest.MonkeyPatch) -> None:
     """Zero is accepted (``ge=0``) and is the documented disable value for the caps."""
     monkeypatch.setenv("MAX_TOTAL_USERS", "0")
+    monkeypatch.setenv("MAX_MONTHLY_ACTIVE_USERS", "0")
     monkeypatch.setenv("MAX_CONCURRENT_JOBS_PER_USER", "0")
 
     s = Settings(_env_file=None)
 
     assert s.max_total_users == 0
+    assert s.max_monthly_active_users == 0
     assert s.max_concurrent_jobs_per_user == 0
     assert s.generalist_agent_model == DEFAULT_AGENT_MODEL_ID

@@ -13,7 +13,7 @@ in-memory SQLite engine holding only the ``credit_ledger`` table.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -30,21 +30,42 @@ from core.storage.models import CreditLedgerModel
 class _FakeStore:
     """Minimal duck-typed job store exposing only the counters the guards read."""
 
-    def __init__(self, *, users: int = 0, active: int = 0, engine: object | None = object()) -> None:
+    def __init__(
+        self,
+        *,
+        users: int = 0,
+        monthly_active: int = 0,
+        active: int = 0,
+        engine: object | None = object(),
+    ) -> None:
         """Record the fixed counts and engine the guards will observe.
 
         Args:
             users: Value returned by :meth:`count_users`.
+            monthly_active: Value returned by :meth:`count_monthly_active_users`.
             active: Number of active runs reported by :meth:`count_jobs_by_status`.
             engine: Stand-in ORM engine; ``None`` mimics a legacy/in-memory store.
         """
         self._users = users
+        self._monthly_active = monthly_active
         self._active = active
         self.engine = engine
 
     def count_users(self) -> int:
         """Return the configured total-account count."""
         return self._users
+
+    def count_monthly_active_users(self, month_start: date) -> int:
+        """Return the configured monthly-active count.
+
+        Args:
+            month_start: First UTC date of the month, accepted for parity with
+                the production store.
+
+        Returns:
+            The configured count.
+        """
+        return self._monthly_active
 
     def count_jobs_by_status(self, *, username: str) -> dict[str, int]:
         """Return the configured active-run count under a single status bucket."""
@@ -80,6 +101,7 @@ def _patch_billing_spend(monkeypatch: pytest.MonkeyPatch, spent: int) -> None:
 def test_signup_cap_blocks_at_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     """At or above ``max_total_users`` registration is refused with a 503 code."""
     monkeypatch.setattr(settings, "max_total_users", 10)
+    monkeypatch.setattr(settings, "max_monthly_active_users", 0)
 
     with pytest.raises(DomainError) as exc:
         accounts._enforce_signup_cap(_FakeStore(users=10))
@@ -91,6 +113,7 @@ def test_signup_cap_blocks_at_limit(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_signup_cap_allows_below_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     """Below the cap, registration proceeds without raising."""
     monkeypatch.setattr(settings, "max_total_users", 10)
+    monkeypatch.setattr(settings, "max_monthly_active_users", 0)
 
     accounts._enforce_signup_cap(_FakeStore(users=9))
 
@@ -98,6 +121,7 @@ def test_signup_cap_allows_below_limit(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_signup_cap_disabled_when_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     """A cap of 0 disables the guard even when many accounts exist."""
     monkeypatch.setattr(settings, "max_total_users", 0)
+    monkeypatch.setattr(settings, "max_monthly_active_users", 0)
 
     accounts._enforce_signup_cap(_FakeStore(users=1_000_000))
 
@@ -105,8 +129,23 @@ def test_signup_cap_disabled_when_zero(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_signup_cap_skips_store_without_counter(monkeypatch: pytest.MonkeyPatch) -> None:
     """A store without ``count_users`` is skipped rather than erroring."""
     monkeypatch.setattr(settings, "max_total_users", 1)
+    monkeypatch.setattr(settings, "max_monthly_active_users", 0)
 
     accounts._enforce_signup_cap(_NoCounterStore())
+
+
+def test_signup_cap_blocks_when_monthly_capacity_is_full(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A full monthly-active population pauses further registrations."""
+    monkeypatch.setattr(settings, "max_total_users", 0)
+    monkeypatch.setattr(settings, "max_monthly_active_users", 10)
+
+    with pytest.raises(DomainError) as exc:
+        accounts._enforce_signup_cap(_FakeStore(monthly_active=10))
+
+    assert exc.value.code == "accounts.signups_closed"
+    assert exc.value.status_code == 503
 
 
 def test_admission_paused_switch_blocks(monkeypatch: pytest.MonkeyPatch) -> None:

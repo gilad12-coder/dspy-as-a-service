@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -42,6 +42,7 @@ from .models import (
     JobEmbeddingModel,
     JobModel,
     LogEntryModel,
+    MonthlyActiveUserModel,
     OptimizationShareGrantModel,
     ProgressEventModel,
     UserModel,
@@ -2767,6 +2768,66 @@ class RemoteDBJobStore:
         session = self._get_session()
         try:
             return session.query(func.count(UserModel.email)).scalar() or 0
+        finally:
+            session.close()
+
+    def count_monthly_active_users(self, month_start: date) -> int:
+        """Count identities admitted during one UTC calendar month.
+
+        Args:
+            month_start: First UTC date of the month to count.
+
+        Returns:
+            Number of distinct admitted identities for the month.
+        """
+        session = self._get_session()
+        try:
+            return (
+                session.query(func.count(MonthlyActiveUserModel.username))
+                .filter(MonthlyActiveUserModel.month_start == month_start)
+                .scalar()
+                or 0
+            )
+        finally:
+            session.close()
+
+    def admit_monthly_active_user(self, username: str, month_start: date, limit: int) -> bool:
+        """Atomically admit one identity if monthly capacity remains.
+
+        A transaction-scoped advisory lock serializes only first-seen monthly
+        identities across API replicas. Returning users hit the composite key
+        fast path, while PgBouncer transaction mode safely releases the lock at
+        commit.
+
+        Args:
+            username: Normalized authenticated identity.
+            month_start: First UTC date of the month being admitted.
+            limit: Maximum distinct identities allowed for the month.
+
+        Returns:
+            ``True`` for an existing or newly admitted identity; ``False`` when
+            the month is already at capacity.
+        """
+        session = self._get_session()
+        try:
+            if session.bind is not None and session.bind.dialect.name == "postgresql":
+                session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 742137000004})
+            key = (month_start, username)
+            if session.get(MonthlyActiveUserModel, key) is not None:
+                session.commit()
+                return True
+            count = (
+                session.query(func.count(MonthlyActiveUserModel.username))
+                .filter(MonthlyActiveUserModel.month_start == month_start)
+                .scalar()
+                or 0
+            )
+            if count >= limit:
+                session.rollback()
+                return False
+            session.add(MonthlyActiveUserModel(month_start=month_start, username=username))
+            session.commit()
+            return True
         finally:
             session.close()
 

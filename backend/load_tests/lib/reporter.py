@@ -38,6 +38,11 @@ def print_result(result: ScenarioResult) -> None:
     print(f"  Codes:      {result.status_codes}")
     if result.extras:
         print(f"  Extras:     {result.extras}")
+    if result.slo_passed is not None:
+        verdict = "PASS" if result.slo_passed else "FAIL"
+        print(f"  SLO gate:   {verdict}")
+        if result.slo_violations:
+            print(f"  Violations: {'; '.join(result.slo_violations)}")
 
 
 def write_json_report(results: Iterable[ScenarioResult], out_path: Path) -> Path:
@@ -73,10 +78,10 @@ def write_markdown_report(results: Iterable[ScenarioResult], out_path: Path) -> 
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     rows: list[str] = []
-    rows.append("| Scenario | Reqs | Errors | RPS | p50 | p95 | p99 | Max |")
-    rows.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+    rows.append("| Scenario | Gate | Reqs | Errors | RPS | p50 | p95 | p99 | Max |")
+    rows.append("|---|:---:|---:|---:|---:|---:|---:|---:|---:|")
     rows.extend(
-        f"| {r.name} | {r.total} | {r.errors} | "
+        f"| {r.name} | {_gate_label(r)} | {r.total} | {r.errors} | "
         f"{r.rps:.1f} | {r.latency_p50_ms:.0f}ms | "
         f"{r.latency_p95_ms:.0f}ms | {r.latency_p99_ms:.0f}ms | "
         f"{r.latency_max_ms:.0f}ms |"
@@ -86,8 +91,25 @@ def write_markdown_report(results: Iterable[ScenarioResult], out_path: Path) -> 
     body += f"Generated: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n\n"
     body += "\n".join(rows) + "\n\n"
     for r in results:
+        if r.slo_violations:
+            body += f"## {r.name} — SLO violations\n\n"
+            body += "\n".join(f"- {violation}" for violation in r.slo_violations) + "\n\n"
         if r.extras:
             body += f"## {r.name} — extras\n\n"
             body += "```\n" + json.dumps(r.extras, indent=2) + "\n```\n\n"
     out_path.write_text(body)
     return out_path
+
+
+def _gate_label(result: ScenarioResult) -> str:
+    """Return a compact Markdown gate verdict.
+
+    Args:
+        result: Scenario whose optional SLO verdict should be rendered.
+
+    Returns:
+        ``PASS``, ``FAIL``, or an em dash when no gate was applied.
+    """
+    if result.slo_passed is None:
+        return "—"
+    return "PASS" if result.slo_passed else "FAIL"

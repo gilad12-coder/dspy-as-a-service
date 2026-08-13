@@ -73,6 +73,7 @@
     "accounts.invalid_reset_code": "קוד האיפוס שגוי או שפג תוקפו.",
     "accounts.invalid_second_factor": "קוד האימות שגוי או שפג תוקפו.",
     "accounts.invalid_verification_code": "קוד האימות שגוי או שפג תוקפו.",
+    "accounts.monthly_capacity_reached": "מכסת המשתמשים החודשית התמלאה. משתמשים פעילים קיימים יכולים להמשיך; משתמשים חדשים יוכלו לנסות שוב בחודש הבא.",
     "accounts.password_common": "הסיסמה הזו נפוצה מדי וקלה לניחוש. בחרו סיסמה אחרת.",
     "accounts.password_contains_email": "הסיסמה לא יכולה להכיל את כתובת האימייל שלכם.",
     "accounts.password_too_long": "הסיסמה יכולה להכיל 128 תווים לכל היותר.",

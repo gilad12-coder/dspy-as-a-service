@@ -31,9 +31,7 @@ def _dsn() -> str:
     """
     dsn = os.getenv("LOAD_TEST_DB_URL") or os.getenv("REMOTE_DB_URL")
     if not dsn:
-        raise RuntimeError(
-            "LOAD_TEST_DB_URL or REMOTE_DB_URL must be set for DB inspection."
-        )
+        raise RuntimeError("LOAD_TEST_DB_URL or REMOTE_DB_URL must be set for DB inspection.")
     return dsn
 
 
@@ -114,6 +112,56 @@ def count_orphaned_jobs() -> int:
         )
         row = cur.fetchone()
         return int(row["n"]) if row else 0
+
+
+def count_job_statuses(usernames: list[str]) -> dict[str, int]:
+    """Return job counts grouped by status for the supplied test users.
+
+    Args:
+        usernames: Test owners whose jobs belong to the current scenario.
+
+    Returns:
+        A status-to-count mapping, or an empty dict when no usernames are given.
+    """
+    if not usernames:
+        return {}
+    with cursor() as cur:
+        cur.execute(
+            "SELECT status, COUNT(*) AS n FROM jobs WHERE username = ANY(%s) GROUP BY status",
+            (usernames,),
+        )
+        return {str(row["status"]): int(row["n"]) for row in cur.fetchall()}
+
+
+def fund_test_users(usernames: list[str], credits: int = 100_000) -> int:
+    """Give synthetic load-test users isolated, non-Stripe credit balances.
+
+    The production submit gate correctly refuses unfunded identities. Load tests
+    point every model at the free mock provider, so these rows exist only to let
+    the request traverse the same billing gate; no Stripe or provider account is
+    touched.
+
+    Args:
+        usernames: Synthetic identities to fund in the dedicated test database.
+        credits: Paid-credit balance assigned to each identity.
+
+    Returns:
+        Number of user rows inserted or updated.
+    """
+    if not usernames:
+        return 0
+    with cursor() as cur:
+        cur.execute(
+            "INSERT INTO billing_customers "
+            "(username, stripe_customer_id, credit_balance, grant_remaining, created_at, updated_at) "
+            "SELECT username, 'loadtest_' || md5(username), %s, 0, NOW(), NOW() "
+            "FROM unnest(%s::text[]) AS username "
+            "ON CONFLICT (username) DO UPDATE SET "
+            "credit_balance = EXCLUDED.credit_balance, grant_remaining = 0, updated_at = NOW()",
+            (credits, usernames),
+        )
+        cur.connection.commit()
+        return cur.rowcount or 0
 
 
 def truncate_test_users(usernames: list[str]) -> int:

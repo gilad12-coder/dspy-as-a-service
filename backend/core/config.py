@@ -758,11 +758,20 @@ class Settings(BaseSettings):
 
     max_jobs_per_user: int = Field(default=100, ge=1, description="Default per-user job cap")
     max_total_users: int = Field(
-        default=10000,
+        default=0,
         ge=0,
         description=(
             "Hard cap on total registered accounts; sign-ups are refused at or above it "
             "to bound platform cost. 0 disables the cap."
+        ),
+    )
+    max_monthly_active_users: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Hard cap on distinct non-admin identities admitted during each UTC calendar "
+            "month. Users already admitted that month continue normally; new identities are "
+            "refused once the cap is reached. 0 disables the cap."
         ),
     )
     max_concurrent_jobs_per_user: int = Field(

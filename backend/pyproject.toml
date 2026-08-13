@@ -39,6 +39,7 @@ dependencies = [
     # backend that won't import (0.0.27) or lacks PxN (0.1.1).
     "gepa>=0.1.4",
     "litellm>=1.84.0",
+    "click>=8.3.3",
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "psycopg2-binary>=2.9",

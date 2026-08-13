@@ -17,6 +17,7 @@ Tunables (env):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import random
@@ -236,7 +237,7 @@ async def chat_completions(request: Request) -> JSONResponse:
 
 @app.post("/v1/embeddings")
 async def embeddings(request: Request) -> JSONResponse:
-    """Mimic OpenAI's embeddings endpoint with a fixed 1536-d vector.
+    """Mimic OpenAI's embeddings endpoint with deterministic nonzero vectors.
 
     Args:
         request: Incoming HTTP request whose body contains ``input`` (string
@@ -244,9 +245,9 @@ async def embeddings(request: Request) -> JSONResponse:
 
     Returns:
         A JSON response shaped like ``openai.CreateEmbeddingResponse`` with
-        one zero-vector per input element. Backends with embeddings disabled
-        will never hit this route; it is here for completeness when
-        operators set ``SEARCH_BACKEND=semantic`` in a chaos run.
+        one stable 1536-dimensional vector per input element. Nonzero vectors
+        are required because the production adapter rejects a zero-norm
+        provider response before pgvector storage or query execution.
     """
     if _LATENCY_MS > 0:
         await asyncio.sleep(_LATENCY_MS / 1000.0)
@@ -256,15 +257,27 @@ async def embeddings(request: Request) -> JSONResponse:
     if isinstance(inputs, str):
         inputs = [inputs]
 
+    def _vector(value: object) -> list[float]:
+        """Expand a SHA-256 digest into a stable nonzero vector.
+
+        Args:
+            value: Input value to fingerprint.
+
+        Returns:
+            A deterministic 1536-dimensional vector.
+        """
+        digest = hashlib.sha256(str(value).encode("utf-8")).digest()
+        return [((digest[index % len(digest)] + index) % 255 + 1) / 255.0 for index in range(1536)]
+
     return JSONResponse(
         {
             "object": "list",
             "data": [
-                {"object": "embedding", "index": i, "embedding": [0.0] * 1536}
-                for i in range(len(inputs))
+                {"object": "embedding", "index": index, "embedding": _vector(value)}
+                for index, value in enumerate(inputs)
             ],
             "model": body.get("model", "mock-embedding"),
-            "usage": {"prompt_tokens": 1, "total_tokens": 1},
+            "usage": {"prompt_tokens": max(len(inputs), 1), "total_tokens": max(len(inputs), 1)},
         }
     )
 

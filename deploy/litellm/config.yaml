@@ -22,6 +22,11 @@ model_list:
 
 litellm_settings:
   drop_params: true
+  # Shared daily upstream-spend circuit breaker. This is independent of the
+  # application's credit ledger, so a metering regression cannot create an
+  # unbounded OpenRouter bill. Raise deliberately after observing launch use.
+  max_budget: 50
+  budget_duration: 1d
   # Retry fast transient upstream failures (429/5xx) at the proxy instead of
   # passing every one straight through to the turn/run. Kept low: the backend
   # retries too, and slow failures are bounded by the client-side timeouts.
@@ -55,3 +60,7 @@ general_settings:
   # Postgres backing the proxy's virtual keys + spend tracking. Keep this
   # separate from the Skynet application database.
   database_url: os.environ/LITELLM_DATABASE_URL
+  # Bound in-flight provider work per proxy replica. Excess calls receive 429
+  # and flow through the backend's existing retry/queue behavior instead of
+  # allowing a traffic spike to fan out without limit.
+  global_max_parallel_requests: 64

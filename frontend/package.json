@@ -57,6 +57,9 @@
     "xlsx": "npm:@e965/xlsx@0.20.3"
   },
   "overrides": {
+    "brace-expansion@^1.1.0": "1.1.18",
+    "brace-expansion@^5.0.0": "5.0.9",
+    "nanoid": "3.3.17",
     "postcss": "^8.5.10",
     "sharp": "^0.35.3"
   },

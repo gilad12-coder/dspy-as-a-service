@@ -73,6 +73,7 @@
     "accounts.invalid_reset_code": "That reset code is incorrect or has expired.",
     "accounts.invalid_second_factor": "That verification code is incorrect or has expired.",
     "accounts.invalid_verification_code": "That confirmation code is incorrect or has expired.",
+    "accounts.monthly_capacity_reached": "This month's user capacity has been reached. Existing active users can continue; new users can try again next month.",
     "accounts.password_common": "That password is too common and easy to guess. Pick a different one.",
     "accounts.password_contains_email": "The password can't contain your email address.",
     "accounts.password_too_long": "The password can be at most 128 characters.",

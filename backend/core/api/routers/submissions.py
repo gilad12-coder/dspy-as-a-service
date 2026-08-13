@@ -109,6 +109,29 @@ IdempotencyKeyHeader = Annotated[
 ]
 
 
+def _persist_and_signal_job(
+    job_store,
+    service,
+    optimization_id: str,
+    payload_dump: dict,
+) -> None:
+    """Persist a pending payload and optionally wake the in-process worker.
+
+    Args:
+        job_store: Shared database-backed job store.
+        service: DSPy service passed to an enabled in-process worker.
+        optimization_id: Identifier of the pending job row.
+        payload_dump: JSON-compatible request payload to persist.
+    """
+    job_store.update_job(
+        optimization_id,
+        payload=payload_dump,
+        code_version=settings.code_version,
+    )
+    if settings.worker_enabled:
+        get_worker(job_store, service=service).enqueue_job(optimization_id)
+
+
 def _existing_submission_response(job_store, optimization_id: str) -> OptimizationSubmissionResponse | None:
     """Rehydrate a previous submission's response from the persisted overview.
 
@@ -740,8 +763,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         )
         _evict_staged_dataset(job_store, staged_id, payload.username)
 
-        current_worker = get_worker(job_store, service=service)
-        current_worker.submit_job(optimization_id, payload, payload_dump=payload_dump)
+        _persist_and_signal_job(job_store, service, optimization_id, payload_dump)
 
         logger.info(
             "Enqueued job %s for module=%s optimizer=%s",
@@ -895,8 +917,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         )
         _evict_staged_dataset(job_store, staged_id, payload.username)
 
-        current_worker = get_worker(job_store, service=service)
-        current_worker.submit_job(optimization_id, payload, payload_dump=payload_dump)
+        _persist_and_signal_job(job_store, service, optimization_id, payload_dump)
 
         logger.info(
             "Enqueued grid search %s: %d pairs, module=%s optimizer=%s",

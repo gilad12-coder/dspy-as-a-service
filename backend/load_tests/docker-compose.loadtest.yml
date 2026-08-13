@@ -5,8 +5,11 @@
 #   postgres  -> dedicated DB, separate volume, port published only locally
 #   migrate   -> one-shot alembic upgrade head, exits cleanly
 #   pgbouncer -> transaction-pooling proxy, matches the production topology
+#   redis     -> shared rate-limit and login-lockout state
 #   mock-lm   -> OpenAI-compatible canned-response LM (no real provider calls)
-#   api       -> three backend replicas behind the host port range
+#   api       -> three HTTP-only backend replicas behind nginx
+#   worker    -> three standalone worker replicas consuming the shared queue
+#   frontend  -> production Next.js server measured by the mixed journey
 #
 # Usage
 #   cd backend
@@ -41,6 +44,7 @@ services:
       dockerfile: Dockerfile
     environment:
       REMOTE_DB_URL: postgresql://skynet:loadtest@postgres:5432/skynet_loadtest
+      SEARCH_BACKEND: "semantic"
     command: ["alembic", "upgrade", "head"]
     depends_on:
       postgres:
@@ -65,6 +69,15 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   mock-lm:
     build:
@@ -94,6 +107,12 @@ services:
       DB_POOL_SIZE: "5"
       DB_POOL_MAX_OVERFLOW: "10"
       DB_POOL_TIMEOUT: "10"
+      REDIS_URL: redis://redis:6379/0
+      # Capacity scenarios deliberately exceed the production defaults; keep
+      # the guardrails wired through Redis but above the generated workload so
+      # this rig measures saturation rather than expected 429 responses.
+      RATE_LIMIT_SUBMISSIONS_PER_MINUTE: "1000"
+      MAX_CONCURRENT_JOBS_PER_USER: "100"
       # Shared HS256 signing secret matches what the load-test harness uses
       # to mint bearer tokens; auth.py rejects every request otherwise.
       BACKEND_AUTH_SECRET: loadtest-secret-do-not-use-in-production
@@ -102,15 +121,15 @@ services:
       QUOTA_OVERRIDES: '{"load-user-0":null,"load-user-1":null,"load-user-2":null,"load-user-3":null,"load-user-4":null,"load-user-5":null,"load-user-6":null,"load-user-7":null,"load-user-burst":null,"load-user-lifecycle":null,"load-user-dashboard":null,"load-user-failure":null}'
       OPENAI_API_KEY: fake-loadtest-key
       OPENAI_API_BASE: http://mock-lm:9000/v1
-      WORKER_CONCURRENCY: "4"
-      WORKER_POLL_INTERVAL: "1.0"
+      WORKER_ENABLED: "0"
       LOG_LEVEL: WARNING
       LOG_FORMAT: text
       SKYNET_CODE_VERSION: loadtest
-      # Semantic search would otherwise hit the public Jina/OpenAI embedding
-      # endpoint; the load test does not exercise the explore-map and the
-      # default lexical backend keeps background tasks deterministic.
-      SEARCH_BACKEND: "lexical"
+      SEARCH_BACKEND: "semantic"
+      EMBEDDINGS_BASE_URL: http://mock-lm:9000/v1
+      EMBEDDINGS_MODEL: mock-embedding
+      EMBEDDINGS_DIM: "512"
+      EMBEDDINGS_SUMMARY_MODEL: openai/mock-model
     expose:
       - "8000"
     # No host ports — every host-side request goes through the nginx LB.
@@ -121,6 +140,8 @@ services:
         condition: service_healthy
       pgbouncer:
         condition: service_started
+      redis:
+        condition: service_healthy
       mock-lm:
         condition: service_started
       migrate:
@@ -131,6 +152,45 @@ services:
       timeout: 3s
       retries: 20
       start_period: 15s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    deploy:
+      replicas: 3
+    environment:
+      SERVICE_ROLE: worker
+      REMOTE_DB_URL: postgresql://skynet:loadtest@pgbouncer:5432/skynet_loadtest
+      DB_PGBOUNCER_TRANSACTION_MODE: "true"
+      DB_POOL_SIZE: "5"
+      DB_POOL_MAX_OVERFLOW: "10"
+      DB_POOL_TIMEOUT: "10"
+      REDIS_URL: redis://redis:6379/0
+      OPENAI_API_KEY: fake-loadtest-key
+      OPENAI_API_BASE: http://mock-lm:9000/v1
+      WORKER_CONCURRENCY: "4"
+      JOB_RUN_START_METHOD: spawn
+      WORKER_POLL_INTERVAL: "1.0"
+      LOG_LEVEL: WARNING
+      LOG_FORMAT: text
+      SKYNET_CODE_VERSION: loadtest
+      SEARCH_BACKEND: "semantic"
+      EMBEDDINGS_BASE_URL: http://mock-lm:9000/v1
+      EMBEDDINGS_MODEL: mock-embedding
+      EMBEDDINGS_DIM: "512"
+      EMBEDDINGS_SUMMARY_MODEL: openai/mock-model
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      mock-lm:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
 
   # Round-robin load balancer in front of the 3 api replicas. The
   # orchestrator drives every scenario through this single host port so
@@ -144,6 +204,30 @@ services:
     depends_on:
       api:
         condition: service_started
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SITE_URL: http://127.0.0.1:53001
+    environment:
+      AUTH_SECRET: loadtest-frontend-secret-do-not-use-in-production
+      BACKEND_AUTH_SECRET: loadtest-secret-do-not-use-in-production
+      API_URL: http://lb
+      AUTH_TRUST_HOST: "true"
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "127.0.0.1:53001:3001"
+    depends_on:
+      lb:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
 
 volumes:
   loadtest-pgdata:

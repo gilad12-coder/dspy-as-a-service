@@ -18,7 +18,7 @@ from __future__ import annotations
 import inspect
 import time
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
@@ -113,6 +113,18 @@ def test_create_job_default_fields_are_empty(store: SQLiteJobStore) -> None:
     assert result["started_at"] is None
     assert result["completed_at"] is None
     assert result["attempts"] == 0
+
+
+def test_monthly_active_admission_allows_existing_identity_at_limit(
+    store: SQLiteJobStore,
+) -> None:
+    """A full month blocks a new identity but never ejects an admitted one."""
+    month_start = date(2026, 8, 1)
+
+    assert store.admit_monthly_active_user("alice@example.com", month_start, 1) is True
+    assert store.admit_monthly_active_user("alice@example.com", month_start, 1) is True
+    assert store.admit_monthly_active_user("bob@example.com", month_start, 1) is False
+    assert store.count_monthly_active_users(month_start) == 1
 
 
 def test_get_job_raises_key_error_for_unknown(store: SQLiteJobStore) -> None:
