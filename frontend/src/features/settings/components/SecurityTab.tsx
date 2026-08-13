@@ -407,7 +407,7 @@ export function SecurityTab() {
       )}
 
       <Dialog open={totpSetup !== null} onOpenChange={(open) => !open && closeTotpDialog()}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent data-settings-text-buttons className="sm:max-w-md">
           {recoveryCodes ? (
             <>
               <DialogHeader>
@@ -492,7 +492,7 @@ export function SecurityTab() {
       </Dialog>
 
       <Dialog open={disableOpen} onOpenChange={setDisableOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent data-settings-text-buttons className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{msg("settings.security.disable_dialog.title")}</DialogTitle>
             <DialogDescription>{msg("settings.security.disable_dialog.hint")}</DialogDescription>
@@ -522,7 +522,7 @@ export function SecurityTab() {
       </Dialog>
 
       <Dialog open={passkeyOpen} onOpenChange={setPasskeyOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent data-settings-text-buttons className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{msg("settings.security.passkeys.add")}</DialogTitle>
             <DialogDescription>{msg("settings.security.passkeys.description")}</DialogDescription>

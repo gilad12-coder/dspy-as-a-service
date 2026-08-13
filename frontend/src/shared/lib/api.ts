@@ -743,6 +743,78 @@ export function getUsage(start?: string, end?: string) {
   return request<BillingUsageResponse>(`/billing/usage${qs ? `?${qs}` : ""}`);
 }
 
+/** Display-safe billing address fields stored on the Stripe customer. */
+export interface BillingAddressResponse {
+  line1: string | null;
+  line2: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  country: string | null;
+}
+
+/** Masked saved payment method. Full payment credentials never reach the app. */
+export interface BillingPaymentMethod {
+  id: string;
+  type: string;
+  brand: string | null;
+  last4: string | null;
+  exp_month: number | null;
+  exp_year: number | null;
+  is_default: boolean;
+}
+
+/** Stripe-backed billing details for the authenticated account. */
+export interface BillingProfileResponse {
+  available: boolean;
+  has_customer: boolean;
+  email: string | null;
+  name: string | null;
+  phone: string | null;
+  address: BillingAddressResponse;
+  payment_methods: BillingPaymentMethod[];
+}
+
+/** One completed Stripe Checkout purchase. Amount is in the currency's minor unit. */
+export interface BillingTransaction {
+  id: string;
+  at: string;
+  amount: number;
+  currency: string;
+  status: "paid" | "processing" | "refunded" | "partially_refunded" | "disputed";
+  credits: number | null;
+  pack_id: string | null;
+  document_url: string | null;
+}
+
+/** Date-ranged Stripe purchase history for the authenticated account. */
+export interface BillingTransactionsResponse {
+  available: boolean;
+  entries: BillingTransaction[];
+}
+
+/** Fetch billing contact details and masked saved payment methods from Stripe. */
+export function getBillingProfile() {
+  return request<BillingProfileResponse>("/billing/profile");
+}
+
+/** Fetch completed Stripe purchases over an optional ISO-8601 date window. */
+export function getBillingTransactions(start?: string, end?: string) {
+  const params = new URLSearchParams();
+  if (start) params.set("start", start);
+  if (end) params.set("end", end);
+  const qs = params.toString();
+  return request<BillingTransactionsResponse>(`/billing/transactions${qs ? `?${qs}` : ""}`);
+}
+
+/** Start a Stripe Customer Portal session for billing or payment-method management. */
+export function createBillingPortalSession(flow: "manage" | "payment_method") {
+  return request<{ url: string }>("/billing/portal", {
+    method: "POST",
+    body: JSON.stringify({ flow }),
+  });
+}
+
 /** Start a Stripe Checkout session for a credit pack; redirect the browser to `.url`. */
 export function createCheckoutSession(purchase: { packId: string } | { credits: number }) {
   return request<{ url: string }>("/billing/checkout", {

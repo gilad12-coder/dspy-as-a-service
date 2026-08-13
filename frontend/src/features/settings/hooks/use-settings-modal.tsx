@@ -19,6 +19,16 @@ export function SettingsModalProvider({ children }: { children: React.ReactNode 
   const [open, setOpen] = React.useState(false);
   const [targetTab, setTargetTab] = React.useState<string | null>(null);
 
+  React.useEffect(() => {
+    const url = new URL(window.location.href);
+    const requestedTab = url.searchParams.get("settings");
+    if (!requestedTab) return;
+    setTargetTab(requestedTab);
+    setOpen(true);
+    url.searchParams.delete("settings");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
   const openTo = React.useCallback((tab: string) => {
     setTargetTab(tab);
     setOpen(true);

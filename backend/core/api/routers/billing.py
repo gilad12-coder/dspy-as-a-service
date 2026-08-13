@@ -1,4 +1,4 @@
-"""Managed-credit billing routes: wallet, usage, pack checkout, webhook.
+"""Managed-credit billing routes: wallet, usage, Stripe records, and checkout.
 
 Backs the in-app wallet and the add-credits/paywall page — pay-as-you-go
 prepaid credits are the only plan.
@@ -7,14 +7,15 @@ dependency and key every operation on ``user.username`` (the lowercased email).
 The webhook route is deliberately unauthenticated — Stripe can't present a
 bearer token — and instead verifies the event's signature in the service.
 
-Wallet reads succeed even when Stripe is unconfigured (free-tier zeros);
-mutations raise ``DomainError("billing.not_configured", 503)``.
+Ledger reads succeed even when Stripe is unconfigured (free-tier zeros);
+Stripe-backed reads report unavailability, and mutations raise
+``DomainError("billing.not_configured", 503)``.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -177,6 +178,51 @@ class UsageResponse(BaseModel):
     )
 
 
+class BillingAddressResponse(BaseModel):
+    line1: str | None = None
+    line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+
+
+class PaymentMethodResponse(BaseModel):
+    id: str
+    type: str
+    brand: str | None = None
+    last4: str | None = None
+    exp_month: int | None = None
+    exp_year: int | None = None
+    is_default: bool = False
+
+
+class BillingProfileResponse(BaseModel):
+    available: bool
+    has_customer: bool
+    email: str | None = None
+    name: str | None = None
+    phone: str | None = None
+    address: BillingAddressResponse = Field(default_factory=BillingAddressResponse)
+    payment_methods: list[PaymentMethodResponse] = Field(default_factory=list)
+
+
+class BillingTransactionResponse(BaseModel):
+    id: str
+    at: str
+    amount: int
+    currency: str
+    status: str
+    credits: int | None = None
+    pack_id: str | None = None
+    document_url: str | None = None
+
+
+class BillingTransactionsResponse(BaseModel):
+    available: bool
+    entries: list[BillingTransactionResponse] = Field(default_factory=list)
+
+
 # Request to start a credit checkout: either a named pack (starter/plus/pro)
 # or a custom credit amount. Exactly one of the two selects the purchase;
 # ``credits`` wins when both are sent.
@@ -188,6 +234,10 @@ class CheckoutRequest(BaseModel):
         le=CUSTOM_CREDITS_MAX,
         description="Custom credit amount to buy instead of a pack (1 credit = $0.01).",
     )
+
+
+class PortalSessionRequest(BaseModel):
+    flow: Literal["manage", "payment_method"] = "manage"
 
 
 class CheckoutSessionResponse(BaseModel):
@@ -346,6 +396,90 @@ def create_billing_router(*, job_store) -> APIRouter:
             ],
         )
 
+    @router.get(
+        "/billing/profile",
+        response_model=BillingProfileResponse,
+        summary="Return the caller's saved billing details and payment methods",
+    )
+    def get_billing_profile(user: AuthenticatedUserDep) -> BillingProfileResponse:
+        """Return Stripe-backed billing details without sensitive card data.
+
+        Args:
+            user: Authenticated caller whose Stripe customer is read.
+
+        Returns:
+            Billing contact fields and masked saved payment methods.
+        """
+        snapshot = service.get_billing_profile(user.username)
+        return BillingProfileResponse(
+            available=snapshot.available,
+            has_customer=snapshot.has_customer,
+            email=snapshot.email,
+            name=snapshot.name,
+            phone=snapshot.phone,
+            address=BillingAddressResponse(
+                line1=snapshot.address.line1,
+                line2=snapshot.address.line2,
+                city=snapshot.address.city,
+                state=snapshot.address.state,
+                postal_code=snapshot.address.postal_code,
+                country=snapshot.address.country,
+            ),
+            payment_methods=[
+                PaymentMethodResponse(
+                    id=method.id,
+                    type=method.type,
+                    brand=method.brand,
+                    last4=method.last4,
+                    exp_month=method.exp_month,
+                    exp_year=method.exp_year,
+                    is_default=method.is_default,
+                )
+                for method in snapshot.payment_methods
+            ],
+        )
+
+    @router.get(
+        "/billing/transactions",
+        response_model=BillingTransactionsResponse,
+        summary="Return the caller's Stripe purchase history",
+    )
+    def get_billing_transactions(
+        user: AuthenticatedUserDep,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> BillingTransactionsResponse:
+        """Return completed credit purchases over an optional date window.
+
+        Args:
+            user: Authenticated caller whose Stripe purchases are read.
+            start: ISO-8601 window start, or null for the default window.
+            end: ISO-8601 window end, or null for now.
+
+        Returns:
+            Most-recent-first purchases with receipt or invoice links.
+        """
+        now = datetime.now(UTC)
+        end_dt = _parse_instant(end, now)
+        start_dt = _parse_instant(start, end_dt - timedelta(days=USAGE_DEFAULT_WINDOW_DAYS))
+        snapshot = service.get_transactions(user.username, start_dt, end_dt)
+        return BillingTransactionsResponse(
+            available=snapshot.available,
+            entries=[
+                BillingTransactionResponse(
+                    id=entry.id,
+                    at=entry.at,
+                    amount=entry.amount,
+                    currency=entry.currency,
+                    status=entry.status,
+                    credits=entry.credits,
+                    pack_id=entry.pack_id,
+                    document_url=entry.document_url,
+                )
+                for entry in snapshot.entries
+            ],
+        )
+
     @router.post(
         "/billing/checkout",
         response_model=CheckoutSessionResponse,
@@ -370,6 +504,30 @@ def create_billing_router(*, job_store) -> APIRouter:
             url = service.create_pack_checkout(user.username, body.pack_id)
         else:
             raise DomainError("billing.invalid_amount", status=400)
+        return CheckoutSessionResponse(url=url)
+
+    @router.post(
+        "/billing/portal",
+        response_model=CheckoutSessionResponse,
+        summary="Open Stripe-hosted billing and payment-method management",
+    )
+    def create_billing_portal(
+        body: PortalSessionRequest,
+        user: AuthenticatedUserDep,
+    ) -> CheckoutSessionResponse:
+        """Create a customer portal session for the authenticated account.
+
+        Args:
+            body: Portal destination: general management or payment-method update.
+            user: Authenticated account whose Stripe customer is managed.
+
+        Returns:
+            The hosted Customer Portal URL.
+        """
+        url = service.create_portal_session(
+            user.username,
+            payment_method_update=body.flow == "payment_method",
+        )
         return CheckoutSessionResponse(url=url)
 
     @router.post(

@@ -315,7 +315,7 @@ export function PrivacyTab() {
       </div>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent data-settings-text-buttons className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{msg("settings.privacy.delete.dialog.title")}</DialogTitle>
             <DialogDescription>{msg("settings.privacy.delete.dialog.hint")}</DialogDescription>

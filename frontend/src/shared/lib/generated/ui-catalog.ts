@@ -1749,6 +1749,11 @@ export type MessageKey =
   | "billing.mode.manage_keys"
   | "billing.mode.managed"
   | "billing.mode.managed_hint"
+  | "billing.payment_methods.add"
+  | "billing.payment_methods.default"
+  | "billing.payment_methods.empty"
+  | "billing.payment_methods.expires"
+  | "billing.payment_methods.title"
   | "billing.plans.credits.custom"
   | "billing.plans.credits.custom_amount_aria"
   | "billing.plans.credits.pack_aria"
@@ -1758,6 +1763,28 @@ export type MessageKey =
   | "billing.popover.paid"
   | "billing.popover.title"
   | "billing.popover.unavailable"
+  | "billing.portal.error"
+  | "billing.profile.address"
+  | "billing.profile.edit"
+  | "billing.profile.email"
+  | "billing.profile.empty"
+  | "billing.profile.load_error"
+  | "billing.profile.name"
+  | "billing.profile.phone"
+  | "billing.profile.title"
+  | "billing.profile.unavailable"
+  | "billing.transactions.credits"
+  | "billing.transactions.empty"
+  | "billing.transactions.load_error"
+  | "billing.transactions.purchase"
+  | "billing.transactions.receipt"
+  | "billing.transactions.status.disputed"
+  | "billing.transactions.status.paid"
+  | "billing.transactions.status.partially_refunded"
+  | "billing.transactions.status.processing"
+  | "billing.transactions.status.refunded"
+  | "billing.transactions.title"
+  | "billing.transactions.unavailable"
   | "billing.upgrade.buy"
   | "billing.upgrade.success_toast"
   | "billing.upgrade.title"
@@ -4814,6 +4841,11 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "billing.mode.manage_keys": "ניהול מפתחות",
   "billing.mode.managed": "קרדיטים של Skynet",
   "billing.mode.managed_hint": "ההרצות מחויבות מהקרדיטים שלך ב-Skynet.",
+  "billing.payment_methods.add": "הוספה",
+  "billing.payment_methods.default": "ברירת מחדל",
+  "billing.payment_methods.empty": "אין אמצעי תשלום שמורים",
+  "billing.payment_methods.expires": "בתוקף עד {p1}",
+  "billing.payment_methods.title": "אמצעי תשלום",
   "billing.plans.credits.custom": "מותאם",
   "billing.plans.credits.custom_amount_aria": "כמות קרדיטים מותאמת אישית",
   "billing.plans.credits.pack_aria": "בחירת חבילת קרדיטים",
@@ -4823,6 +4855,28 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "billing.popover.paid": "בתשלום",
   "billing.popover.title": "קרדיטים",
   "billing.popover.unavailable": "לא הצלחנו לטעון את הארנק. אפשר לפתוח את הגדרות החיוב ולנסות שוב.",
+  "billing.portal.error": "לא הצלחנו לפתוח את ניהול החיוב. כדאי לנסות שוב.",
+  "billing.profile.address": "כתובת",
+  "billing.profile.edit": "עריכה",
+  "billing.profile.email": "דוא״ל לחיוב",
+  "billing.profile.empty": "לא נוסף",
+  "billing.profile.load_error": "לא הצלחנו לטעון את פרטי החיוב.",
+  "billing.profile.name": "שם",
+  "billing.profile.phone": "טלפון",
+  "billing.profile.title": "פרטי חיוב",
+  "billing.profile.unavailable": "ניהול החיוב אינו זמין כרגע.",
+  "billing.transactions.credits": "קרדיטים של Skynet · {p1}",
+  "billing.transactions.empty": "אין עסקאות בטווח התאריכים הזה",
+  "billing.transactions.load_error": "לא הצלחנו לטעון את היסטוריית העסקאות.",
+  "billing.transactions.purchase": "רכישת קרדיטים",
+  "billing.transactions.receipt": "פתיחת קבלה",
+  "billing.transactions.status.disputed": "במחלוקת",
+  "billing.transactions.status.paid": "שולם",
+  "billing.transactions.status.partially_refunded": "הוחזר חלקית",
+  "billing.transactions.status.processing": "בעיבוד",
+  "billing.transactions.status.refunded": "הוחזר",
+  "billing.transactions.title": "היסטוריית עסקאות",
+  "billing.transactions.unavailable": "היסטוריית העסקאות אינה זמינה כרגע.",
   "billing.upgrade.buy": "רכישה · {p1}",
   "billing.upgrade.success_toast": "התשלום התקבל — מעדכנים את היתרה…",
   "billing.upgrade.title": "הוספת קרדיטים, המשך אופטימיזציה",
@@ -13517,6 +13571,11 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "billing.mode.manage_keys": "Manage keys",
   "billing.mode.managed": "Skynet credits",
   "billing.mode.managed_hint": "Runs are billed to your Skynet credits.",
+  "billing.payment_methods.add": "Add new",
+  "billing.payment_methods.default": "Default",
+  "billing.payment_methods.empty": "No saved payment methods",
+  "billing.payment_methods.expires": "Expires {p1}",
+  "billing.payment_methods.title": "Payment methods",
   "billing.plans.credits.custom": "Custom",
   "billing.plans.credits.custom_amount_aria": "Custom credit amount",
   "billing.plans.credits.pack_aria": "Choose a credit pack",
@@ -13526,6 +13585,28 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "billing.popover.paid": "Purchased",
   "billing.popover.title": "Credits",
   "billing.popover.unavailable": "We couldn't load your wallet. Open billing settings to retry.",
+  "billing.portal.error": "Couldn't open billing management. Please try again.",
+  "billing.profile.address": "Address",
+  "billing.profile.edit": "Edit",
+  "billing.profile.email": "Billing email",
+  "billing.profile.empty": "Not added",
+  "billing.profile.load_error": "We couldn't load your billing details.",
+  "billing.profile.name": "Name",
+  "billing.profile.phone": "Phone",
+  "billing.profile.title": "Billing information",
+  "billing.profile.unavailable": "Billing management is unavailable right now.",
+  "billing.transactions.credits": "Skynet credits · {p1}",
+  "billing.transactions.empty": "No transactions in this date range",
+  "billing.transactions.load_error": "We couldn't load your transaction history.",
+  "billing.transactions.purchase": "Credit purchase",
+  "billing.transactions.receipt": "Open receipt",
+  "billing.transactions.status.disputed": "Disputed",
+  "billing.transactions.status.paid": "Paid",
+  "billing.transactions.status.partially_refunded": "Partially refunded",
+  "billing.transactions.status.processing": "Processing",
+  "billing.transactions.status.refunded": "Refunded",
+  "billing.transactions.title": "Transaction history",
+  "billing.transactions.unavailable": "Transaction history is unavailable right now.",
   "billing.upgrade.buy": "Buy · {p1}",
   "billing.upgrade.success_toast": "Payment received — updating your balance…",
   "billing.upgrade.title": "Add credits, keep optimizing",

@@ -523,6 +523,24 @@ h3 {
   }
 }
 
+[data-settings-text-buttons] [data-slot="button"]:not([data-size^="icon"]) {
+  @apply h-8 gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground shadow-xs;
+}
+[data-settings-text-buttons] [data-slot="button"]:not([data-size^="icon"]):has(> svg) {
+  @apply px-2.5;
+}
+[data-settings-text-buttons] [data-slot="button"]:not([data-size^="icon"]):hover {
+  @apply bg-accent text-accent-foreground;
+}
+[data-settings-text-buttons]
+  [data-slot="button"][data-variant="destructive"]:not([data-size^="icon"]) {
+  @apply border-destructive/30 text-destructive;
+}
+[data-settings-text-buttons]
+  [data-slot="button"][data-variant="destructive"]:not([data-size^="icon"]):hover {
+  @apply bg-destructive/10 text-destructive;
+}
+
 /* Code font */
 code,
 pre,

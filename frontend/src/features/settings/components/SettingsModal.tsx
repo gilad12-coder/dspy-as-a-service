@@ -1358,15 +1358,14 @@ function ApiTab() {
               <TooltipContent>{msg("settings.api.copy")}</TooltipContent>
             </Tooltip>
           </div>
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setRevealed(null)}
-            className="group relative inline-flex w-full cursor-pointer rounded-lg bg-muted p-1 transform-gpu transition-transform duration-75 ease-out active:scale-[0.97] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="w-full"
           >
-            <span className="flex-1 rounded-md bg-background px-4 py-2.5 text-center text-sm font-medium text-foreground shadow-sm transition-[box-shadow,transform] duration-150 ease-out group-hover:-translate-y-px group-hover:shadow-md">
-              {msg("settings.api.done")}
-            </span>
-          </button>
+            {msg("settings.api.done")}
+          </Button>
         </div>
       )}
 
@@ -1571,7 +1570,7 @@ export function SettingsModal() {
   }, [open]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-4xl">
+      <DialogContent data-settings-text-buttons className="gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="border-b border-border/40 px-5 py-4 pe-12 text-start">
           <div className="min-w-0">
             <DialogTitle>{msg("settings.title")}</DialogTitle>

@@ -15,9 +15,9 @@ section).
 |---|---|
 | Config (`STRIPE_*` env) | `backend/core/config.py`, `backend/.env.example` |
 | DB tables (customer link, credit ledger, webhook idempotency) | `backend/core/storage/models.py`, migration `f0a1b2c3d4e5_add_billing_tables.py` |
-| Stripe service (pack checkout, webhook sync) | `backend/core/billing/service.py` |
-| API (`/billing/wallet`, `/checkout`, `/webhook`) | `backend/core/api/routers/billing.py` |
-| Frontend (real Buy, live wallet) | `frontend/src/features/billing/*` |
+| Stripe service (checkout, billing profile, transactions, portal, webhook sync) | `backend/core/billing/service.py` |
+| API (`/billing/*`) | `backend/core/api/routers/billing.py` |
+| Frontend (wallet, billing details, payment methods, usage, transactions) | `frontend/src/features/billing/*` |
 | Provisioning script | `backend/scripts/provision_stripe.py` |
 
 If `STRIPE_SECRET_KEY` is unset the app still runs: the wallet reads as a free
@@ -65,7 +65,23 @@ STRIPE_PRICE_PACK_PRO=price_...
 > `core/billing/service.py::PACK_CREDITS`. Stripe only holds the dollar price, so
 > you can re-price or change the markup without touching Stripe.
 
-## 4. Wire the webhook
+## 4. Configure the Customer Portal
+
+Dashboard → **Settings → Billing → Customer portal**:
+
+1. Enable customers to update billing information.
+2. Enable payment-method updates.
+3. Enable invoice history.
+4. Leave subscription cancellation and plan switching disabled — Skynet is
+   prepaid credits only.
+5. Set the default return URL to
+   `https://<your-app>/?settings=billing` and save the configuration.
+
+The application creates an authenticated portal session for the signed-in
+Stripe customer. Payment details stay on Stripe-hosted pages; Skynet receives
+only masked display metadata such as brand, last four digits, and expiry.
+
+## 5. Wire the webhook
 
 The webhook is how a completed payment actually credits the account. The
 endpoint is `POST /billing/webhook` and it verifies Stripe's signature, so it
@@ -92,12 +108,14 @@ your local backend.
 
 1. Dashboard → **Developers → Webhooks → Add endpoint**.
 2. URL: `https://<your-host>/billing/webhook`.
-3. Subscribe to this event:
+3. Subscribe to these events:
    - `checkout.session.completed`
+   - `charge.refunded`
+   - `charge.dispute.created`
 4. Copy the endpoint's **Signing secret** (`whsec_…`) into the deployment's
    `STRIPE_WEBHOOK_SECRET`.
 
-## 5. Run the migration
+## 6. Run the migration
 
 ```bash
 cd backend && python manage.py setup        # runs alembic upgrade head
@@ -108,16 +126,19 @@ This creates `billing_customers`, `credit_ledger`, and `billing_webhook_events`.
 (The app also builds them via `create_all` on boot, so a fresh DB needs no
 manual step — the migration is for existing databases.)
 
-## 6. Test it
+## 7. Test it
 
 1. Restart the backend so it picks up the new env.
 2. In the app: settings → **Billing** tab → pick a pack → buy.
 3. On the Stripe Checkout page use a test card: `4242 4242 4242 4242`, any
-   future expiry, any CVC, any ZIP.
+   future expiry, any CVC, and any ZIP. Opt in to save the payment method.
 4. You're redirected back to `/?billing=success`. Within a second or two
    `stripe listen` (or the dashboard endpoint) delivers
    `checkout.session.completed`, the webhook credits the ledger, and the wallet
    balance updates on the next fetch.
+5. Reopen Settings → **Billing** to verify the saved billing fields and masked
+   payment method. Open **Usage** to verify the transaction, amount, status,
+   and hosted invoice link.
 
 Watch events live in Dashboard → **Developers → Events**, or in the
 `stripe listen` terminal.
@@ -127,6 +148,7 @@ Watch events live in Dashboard → **Developers → Events**, or in the
 1. Toggle the dashboard to **Live mode** and grab live keys (`sk_live_…`).
 2. Re-run `python scripts/provision_stripe.py` against the live account (it
    creates live prices; paste the new `price_…` ids).
-3. Add a **live** webhook endpoint (step 4) and use its live signing secret.
+3. Configure the live Customer Portal (step 4), then add a **live** webhook
+   endpoint (step 5) and use its live signing secret.
 4. Swap `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_PRICE_*` in the
    production environment. Done.

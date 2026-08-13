@@ -2,14 +2,20 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { CircleNotch, Coins, Sparkle } from "@/shared/ui/icons";
+import { CircleNotch, Coins, CreditCard, Plus, Sparkle } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
 import { SettingsRow } from "@/shared/ui/settings-row";
 import { Button } from "@/shared/ui/primitives/button";
-import { createCheckoutSession } from "@/shared/lib/api";
+import {
+  createBillingPortalSession,
+  createCheckoutSession,
+  getBillingProfile,
+  type BillingAddressResponse,
+  type BillingProfileResponse,
+} from "@/shared/lib/api";
 import { useCredits } from "../providers/credit-provider";
 import {
   CREDIT_PACKS,
@@ -149,6 +155,162 @@ function AddCreditsControls() {
   );
 }
 
+/** Collapse a Stripe billing address into a compact, locale-safe display line. */
+function formatAddress(address: BillingAddressResponse): string {
+  return [
+    address.line1,
+    address.line2,
+    [address.city, address.state, address.postal_code].filter(Boolean).join(" "),
+    address.country,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+/** Stripe-backed billing identity and masked saved payment methods. */
+function BillingDetails() {
+  const [profile, setProfile] = React.useState<BillingProfileResponse | null>(null);
+  const [loadError, setLoadError] = React.useState(false);
+  const [portalFlow, setPortalFlow] = React.useState<"manage" | "payment_method" | null>(null);
+
+  const loadProfile = React.useCallback(() => {
+    setLoadError(false);
+    getBillingProfile()
+      .then(setProfile)
+      .catch(() => setLoadError(true));
+  }, []);
+
+  React.useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  const openPortal = React.useCallback(async (flow: "manage" | "payment_method") => {
+    setPortalFlow(flow);
+    try {
+      const { url } = await createBillingPortalSession(flow);
+      window.location.assign(url);
+    } catch {
+      setPortalFlow(null);
+      toast.error(msg("billing.portal.error"));
+    }
+  }, []);
+
+  if (loadError) {
+    return (
+      <div className="flex items-center justify-between gap-3 border-t border-border/40 pt-4">
+        <span className="text-xs text-muted-foreground">{msg("billing.profile.load_error")}</span>
+        <Button variant="outline" size="sm" onClick={loadProfile}>
+          {msg("billing.wallet.retry")}
+        </Button>
+      </div>
+    );
+  }
+
+  if (profile == null) {
+    return (
+      <div className="flex h-28 items-center justify-center border-t border-border/40" aria-busy="true">
+        <CircleNotch className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+      </div>
+    );
+  }
+
+  const address = formatAddress(profile.address);
+  const unavailable = !profile.available;
+
+  return (
+    <div className="flex flex-col gap-6 border-t border-border/40 pt-5">
+      <section className="flex flex-col gap-2" aria-labelledby="billing-profile-heading">
+        <div className="flex items-center justify-between gap-3">
+          <h3 id="billing-profile-heading" className="text-sm font-semibold text-foreground">
+            {msg("billing.profile.title")}
+          </h3>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={unavailable || portalFlow !== null}
+            onClick={() => void openPortal("manage")}
+          >
+            {portalFlow === "manage" && <CircleNotch className="animate-spin" aria-hidden="true" />}
+            {msg("billing.profile.edit")}
+          </Button>
+        </div>
+        <dl className="divide-y divide-border/35 border-y border-border/35">
+          {[
+            [msg("billing.profile.email"), profile.email],
+            [msg("billing.profile.name"), profile.name],
+            [msg("billing.profile.address"), address],
+            [msg("billing.profile.phone"), profile.phone],
+          ].map(([label, value]) => (
+            <div key={label} className="grid grid-cols-[minmax(7rem,0.4fr)_1fr] gap-4 py-2.5 text-xs">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd dir="auto" className="min-w-0 break-words text-foreground">
+                {value || msg("billing.profile.empty")}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section className="flex flex-col gap-2" aria-labelledby="payment-methods-heading">
+        <div className="flex items-center justify-between gap-3">
+          <h3 id="payment-methods-heading" className="text-sm font-semibold text-foreground">
+            {msg("billing.payment_methods.title")}
+          </h3>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={unavailable || portalFlow !== null}
+            onClick={() => void openPortal("payment_method")}
+          >
+            {portalFlow === "payment_method" ? (
+              <CircleNotch className="animate-spin" aria-hidden="true" />
+            ) : (
+              <Plus aria-hidden="true" />
+            )}
+            {msg("billing.payment_methods.add")}
+          </Button>
+        </div>
+        {profile.payment_methods.length === 0 ? (
+          <div className="flex items-center gap-2 border-y border-border/35 py-4 text-xs text-muted-foreground">
+            <CreditCard className="size-4 shrink-0" aria-hidden="true" />
+            {unavailable
+              ? msg("billing.profile.unavailable")
+              : msg("billing.payment_methods.empty")}
+          </div>
+        ) : (
+          <ul className="divide-y divide-border/35 border-y border-border/35">
+            {profile.payment_methods.map((method) => (
+              <li key={method.id} className="flex items-center gap-3 py-3">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                  <CreditCard className="size-4" aria-hidden="true" />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+                    <span className="capitalize">{method.brand || method.type.replaceAll("_", " ")}</span>
+                    {method.last4 && <span dir="ltr">•••• {method.last4}</span>}
+                    {method.is_default && (
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.625rem] font-semibold text-muted-foreground">
+                        {msg("billing.payment_methods.default")}
+                      </span>
+                    )}
+                  </span>
+                  {method.exp_month != null && method.exp_year != null && (
+                    <span dir="ltr" className="text-xs text-muted-foreground">
+                      {formatMsg("billing.payment_methods.expires", {
+                        p1: `${String(method.exp_month).padStart(2, "0")}/${String(method.exp_year).slice(-2)}`,
+                      })}
+                    </span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
 /**
  * Wallet — the `billing` settings tab.
  *
@@ -213,6 +375,8 @@ export function WalletTab() {
           <AddCreditsControls />
         </SettingsRow>
       </div>
+
+      <BillingDetails />
     </div>
   );
 }

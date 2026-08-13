@@ -1,4 +1,4 @@
-"""Stripe-backed billing service: customers, pack checkout, webhooks.
+"""Stripe-backed billing service: customers, checkout, portal, and webhooks.
 
 This module is the only place that talks to Stripe. The web app calls the
 billing router, which delegates here. Stripe is the source of truth for money
@@ -6,8 +6,9 @@ billing router, which delegates here. Stripe is the source of truth for money
 a synced cache plus an audit trail, reconciled by
 :meth:`StripeBillingService.handle_webhook` on every event Stripe delivers.
 
-Reads (the wallet) work whether or not Stripe is configured, so a deploy
-without keys degrades to a read-only free tier. Mutations (checkout) require
+Ledger reads work whether or not Stripe is configured, so a deploy without
+keys degrades to a read-only free tier. Stripe profile/history reads report
+the provider as unavailable, while mutations (checkout and portal) require
 ``settings.is_stripe_configured`` and raise
 ``DomainError("billing.not_configured", 503)`` otherwise — never a 500.
 """
@@ -84,6 +85,11 @@ _BYOK_UNCAPPED_CEILING = 10**9
 # (and the per-run breakdown derived from it) is bounded, to cap payload size.
 USAGE_ENTRY_LIMIT = 200
 
+# Stripe-backed billing surfaces stay intentionally bounded. The UI only needs
+# a concise payment-method list and a recent, date-filtered purchase history.
+PAYMENT_METHOD_LIMIT = 20
+TRANSACTION_LIMIT = 100
+
 
 @dataclass(frozen=True)
 class LedgerRow:
@@ -153,6 +159,99 @@ class UsageSnapshot:
     by_day: list[UsageDayRow] = field(default_factory=list)
     by_model: list[UsageModelRow] = field(default_factory=list)
     entries: list[LedgerRow] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class BillingAddressSnapshot:
+    """Represent display-safe billing address fields stored by Stripe."""
+
+    line1: str | None = None
+    line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+
+
+@dataclass(frozen=True)
+class PaymentMethodSnapshot:
+    """Represent a saved payment method without exposing sensitive details."""
+
+    id: str
+    type: str
+    brand: str | None
+    last4: str | None
+    exp_month: int | None
+    exp_year: int | None
+    is_default: bool
+
+
+@dataclass(frozen=True)
+class BillingProfileSnapshot:
+    """Represent the Stripe-backed billing profile shown in Settings."""
+
+    available: bool
+    has_customer: bool
+    email: str | None = None
+    name: str | None = None
+    phone: str | None = None
+    address: BillingAddressSnapshot = field(default_factory=BillingAddressSnapshot)
+    payment_methods: list[PaymentMethodSnapshot] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class BillingTransactionSnapshot:
+    """Represent one completed Stripe Checkout transaction."""
+
+    id: str
+    at: str
+    amount: int
+    currency: str
+    status: str
+    credits: int | None
+    pack_id: str | None
+    document_url: str | None
+
+
+@dataclass(frozen=True)
+class BillingTransactionsSnapshot:
+    """Represent a bounded Stripe purchase history for the current account."""
+
+    available: bool
+    entries: list[BillingTransactionSnapshot] = field(default_factory=list)
+
+
+def _stripe_value(obj: Any, key: str, default: Any = None) -> Any:
+    """Read one field from a Stripe object or a test mapping.
+
+    Args:
+        obj: Stripe resource, mapping, or ``None``.
+        key: Field name to read.
+        default: Value returned when the field is absent.
+
+    Returns:
+        The field value, or ``default``.
+    """
+    if obj is None:
+        return default
+    if isinstance(obj, Mapping):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _stripe_id(value: Any) -> str | None:
+    """Return an expandable Stripe field's id without assuming expansion state.
+
+    Args:
+        value: Resource object, mapping, string id, or ``None``.
+
+    Returns:
+        Stripe id when present, otherwise ``None``.
+    """
+    if isinstance(value, str):
+        return value
+    resource_id = _stripe_value(value, "id")
+    return str(resource_id) if resource_id else None
 
 
 def platform_fee_credits_for_usage(usages: Iterable[ModelUsage]) -> int:
@@ -335,6 +434,29 @@ class StripeBillingService:
         """
         return f"{settings.app_public_url.rstrip('/')}/?billing={status}"
 
+    def _billing_settings_url(self) -> str:
+        """Build the public return URL that reopens Billing settings.
+
+        Returns:
+            An absolute app URL with the billing settings deep link.
+        """
+        return f"{settings.app_public_url.rstrip('/')}/?settings=billing"
+
+    def _existing_customer_id(self, username: str) -> str | None:
+        """Return an account's real Stripe customer id without provisioning one.
+
+        Args:
+            username: Account identity whose billing link is read.
+
+        Returns:
+            A ``cus_...`` id, or ``None`` for a customerless/local-only account.
+        """
+        with Session(self._engine) as session:
+            row = session.get(BillingCustomerModel, username)
+            if row is None or row.stripe_customer_id.startswith(LOCAL_CUSTOMER_PREFIX):
+                return None
+            return row.stripe_customer_id
+
     def get_or_create_customer(self, username: str) -> str:
         """Return the account's Stripe customer id, creating it on first use.
 
@@ -377,6 +499,176 @@ class StripeBillingService:
             )
             session.commit()
         return customer.id
+
+    def get_billing_profile(self, username: str) -> BillingProfileSnapshot:
+        """Return display-safe billing details and saved payment methods from Stripe.
+
+        Opening Settings never provisions a Stripe customer. Accounts that have
+        not checked out yet receive an available, empty profile; configured
+        accounts read Stripe directly so stale billing details are never cached
+        in the application database.
+
+        Args:
+            username: Authenticated account whose Stripe profile is read.
+
+        Returns:
+            Billing details and masked payment-method metadata.
+
+        Raises:
+            DomainError: 502 when Stripe cannot serve the profile read.
+        """
+        customer_id = self._existing_customer_id(username)
+        if customer_id is None:
+            return BillingProfileSnapshot(available=settings.is_stripe_configured, has_customer=False)
+        if not settings.is_stripe_configured:
+            return BillingProfileSnapshot(available=False, has_customer=True)
+        stripe_mod = self._stripe()
+        try:
+            customer = stripe_mod.Customer.retrieve(customer_id)
+            methods = stripe_mod.Customer.list_payment_methods(customer_id, limit=PAYMENT_METHOD_LIMIT)
+        except stripe.StripeError as exc:
+            raise DomainError("billing.provider_unavailable", status=502) from exc
+
+        invoice_settings = _stripe_value(customer, "invoice_settings", {})
+        default_method_id = _stripe_id(_stripe_value(invoice_settings, "default_payment_method"))
+        payment_methods: list[PaymentMethodSnapshot] = []
+        for method in _stripe_value(methods, "data", []) or []:
+            method_type = str(_stripe_value(method, "type", "unknown"))
+            details = _stripe_value(method, method_type, {})
+            method_id = _stripe_id(method)
+            if method_id is None:
+                continue
+            payment_methods.append(
+                PaymentMethodSnapshot(
+                    id=method_id,
+                    type=method_type,
+                    brand=_stripe_value(details, "brand"),
+                    last4=_stripe_value(details, "last4"),
+                    exp_month=_stripe_value(details, "exp_month"),
+                    exp_year=_stripe_value(details, "exp_year"),
+                    is_default=method_id == default_method_id,
+                )
+            )
+
+        address = _stripe_value(customer, "address", {})
+        return BillingProfileSnapshot(
+            available=True,
+            has_customer=True,
+            email=_stripe_value(customer, "email"),
+            name=_stripe_value(customer, "name"),
+            phone=_stripe_value(customer, "phone"),
+            address=BillingAddressSnapshot(
+                line1=_stripe_value(address, "line1"),
+                line2=_stripe_value(address, "line2"),
+                city=_stripe_value(address, "city"),
+                state=_stripe_value(address, "state"),
+                postal_code=_stripe_value(address, "postal_code"),
+                country=_stripe_value(address, "country"),
+            ),
+            payment_methods=payment_methods,
+        )
+
+    def get_transactions(self, username: str, start: datetime, end: datetime) -> BillingTransactionsSnapshot:
+        """Return completed Checkout purchases for a date window from Stripe.
+
+        Args:
+            username: Authenticated account whose purchases are read.
+            start: Inclusive lower bound on Checkout Session creation time.
+            end: Inclusive upper bound on Checkout Session creation time.
+
+        Returns:
+            A bounded, most-recent-first purchase history.
+
+        Raises:
+            DomainError: 502 when Stripe cannot serve the history read.
+        """
+        customer_id = self._existing_customer_id(username)
+        if customer_id is None:
+            return BillingTransactionsSnapshot(available=settings.is_stripe_configured)
+        if not settings.is_stripe_configured:
+            return BillingTransactionsSnapshot(available=False)
+        stripe_mod = self._stripe()
+        try:
+            sessions = stripe_mod.checkout.Session.list(
+                customer=customer_id,
+                status="complete",
+                created={"gte": int(start.timestamp()), "lte": int(end.timestamp())},
+                limit=TRANSACTION_LIMIT,
+                expand=["data.payment_intent.latest_charge", "data.invoice"],
+            )
+        except stripe.StripeError as exc:
+            raise DomainError("billing.provider_unavailable", status=502) from exc
+
+        entries: list[BillingTransactionSnapshot] = []
+        for checkout in _stripe_value(sessions, "data", []) or []:
+            payment_intent = _stripe_value(checkout, "payment_intent", {})
+            charge = _stripe_value(payment_intent, "latest_charge", {})
+            invoice = _stripe_value(checkout, "invoice", {})
+            amount = int(_stripe_value(checkout, "amount_total", 0) or 0)
+            refunded = int(_stripe_value(charge, "amount_refunded", 0) or 0)
+            if _stripe_value(charge, "disputed", False):
+                status = "disputed"
+            elif refunded >= amount > 0:
+                status = "refunded"
+            elif refunded > 0:
+                status = "partially_refunded"
+            elif _stripe_value(checkout, "payment_status") == "paid":
+                status = "paid"
+            else:
+                status = "processing"
+            metadata = _stripe_value(checkout, "metadata", {})
+            credits_raw = _stripe_value(metadata, "credits")
+            try:
+                credits = int(credits_raw) if credits_raw is not None else None
+            except (TypeError, ValueError):
+                credits = None
+            created = int(_stripe_value(checkout, "created", 0) or 0)
+            entries.append(
+                BillingTransactionSnapshot(
+                    id=str(_stripe_value(checkout, "id", "")),
+                    at=datetime.fromtimestamp(created, UTC).isoformat(),
+                    amount=amount,
+                    currency=str(_stripe_value(checkout, "currency", "usd") or "usd").upper(),
+                    status=status,
+                    credits=credits,
+                    pack_id=_stripe_value(metadata, "pack_id"),
+                    document_url=_stripe_value(invoice, "hosted_invoice_url") or _stripe_value(charge, "receipt_url"),
+                )
+            )
+        return BillingTransactionsSnapshot(available=True, entries=entries)
+
+    def create_portal_session(self, username: str, *, payment_method_update: bool) -> str:
+        """Create a Stripe-hosted billing-management session for the account.
+
+        Args:
+            username: Authenticated account whose customer portal is opened.
+            payment_method_update: Deep-link directly into adding/updating a
+                payment method when true; otherwise open the portal home.
+
+        Returns:
+            The hosted Customer Portal URL.
+
+        Raises:
+            DomainError: 502 when Stripe cannot create the portal session; 503
+                when Stripe is not configured.
+        """
+        stripe_mod = self._stripe()
+        customer_id = self.get_or_create_customer(username)
+        return_url = self._billing_settings_url()
+        kwargs: dict[str, Any] = {"customer": customer_id, "return_url": return_url}
+        if payment_method_update:
+            kwargs["flow_data"] = {
+                "type": "payment_method_update",
+                "after_completion": {
+                    "type": "redirect",
+                    "redirect": {"return_url": return_url},
+                },
+            }
+        try:
+            portal = stripe_mod.billing_portal.Session.create(**kwargs)
+        except stripe.StripeError as exc:
+            raise DomainError("billing.provider_unavailable", status=502) from exc
+        return str(portal.url)
 
     def create_pack_checkout(self, username: str, pack_id: str) -> str:
         """Create a one-time Checkout Session for a credit pack and return its URL.
@@ -453,6 +745,13 @@ class StripeBillingService:
             customer=customer_id,
             mode="payment",
             line_items=[line_item],
+            billing_address_collection="required",
+            customer_update={"address": "auto", "name": "auto"},
+            invoice_creation={"enabled": True},
+            saved_payment_method_options={
+                "payment_method_save": "enabled",
+                "payment_method_remove": "enabled",
+            },
             success_url=self._return_url("success"),
             cancel_url=self._return_url("cancel"),
             client_reference_id=username,

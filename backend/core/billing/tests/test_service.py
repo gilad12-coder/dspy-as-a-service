@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -703,6 +704,120 @@ def test_custom_checkout_builds_ad_hoc_price_and_metadata(engine: object, config
     assert metadata["credits"] == "1234"
     assert metadata["pack_id"] == "custom"
     assert metadata["username"] == "u@x.com"
+    assert captured["billing_address_collection"] == "required"
+    assert captured["customer_update"] == {"address": "auto", "name": "auto"}
+    assert captured["invoice_creation"] == {"enabled": True}
+    assert captured["saved_payment_method_options"] == {
+        "payment_method_save": "enabled",
+        "payment_method_remove": "enabled",
+    }
+    assert "payment_method_types" not in captured
+
+
+def test_billing_profile_is_empty_without_stripe_customer(engine: object, configured: None) -> None:
+    """Opening Billing for a customerless account does not provision Stripe state."""
+    service = StripeBillingService(engine=engine)
+    with patch("stripe.Customer.retrieve") as retrieve:
+        snapshot = service.get_billing_profile("new@x.com")
+    assert snapshot.available is True
+    assert snapshot.has_customer is False
+    assert snapshot.payment_methods == []
+    retrieve.assert_not_called()
+
+
+def test_billing_profile_maps_safe_customer_and_payment_fields(engine: object, configured: None) -> None:
+    """The profile includes billing contact data and only masked card metadata."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    customer = {
+        "email": "billing@x.com",
+        "name": "Billing Person",
+        "phone": "+1 212 555 0100",
+        "address": {
+            "line1": "12 Mercer St",
+            "line2": None,
+            "city": "New York",
+            "state": "NY",
+            "postal_code": "10013",
+            "country": "US",
+        },
+        "invoice_settings": {"default_payment_method": "pm_default"},
+    }
+    methods = {
+        "data": [
+            {
+                "id": "pm_default",
+                "type": "card",
+                "card": {"brand": "visa", "last4": "4242", "exp_month": 12, "exp_year": 2030},
+            }
+        ]
+    }
+    with (
+        patch("stripe.Customer.retrieve", return_value=customer),
+        patch("stripe.Customer.list_payment_methods", return_value=methods) as list_methods,
+    ):
+        snapshot = service.get_billing_profile("u@x.com")
+    assert snapshot.available is True
+    assert snapshot.has_customer is True
+    assert snapshot.email == "billing@x.com"
+    assert snapshot.address.city == "New York"
+    assert snapshot.payment_methods[0].last4 == "4242"
+    assert snapshot.payment_methods[0].is_default is True
+    list_methods.assert_called_once_with("cus_u@x.com", limit=20)
+
+
+def test_transactions_map_invoice_and_refund_status(engine: object, configured: None) -> None:
+    """Purchase history exposes totals, credit metadata, refunds, and hosted documents."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    created = int(datetime(2026, 8, 1, tzinfo=UTC).timestamp())
+    checkout = {
+        "id": "cs_1",
+        "created": created,
+        "amount_total": 500,
+        "currency": "usd",
+        "payment_status": "paid",
+        "metadata": {"credits": "500", "pack_id": "starter"},
+        "payment_intent": {"latest_charge": {"amount_refunded": 200, "receipt_url": "https://receipt"}},
+        "invoice": {"hosted_invoice_url": "https://invoice"},
+    }
+    with patch("stripe.checkout.Session.list", return_value={"data": [checkout]}) as list_sessions:
+        snapshot = service.get_transactions(
+            "u@x.com",
+            datetime(2026, 7, 1, tzinfo=UTC),
+            datetime(2026, 9, 1, tzinfo=UTC),
+        )
+    (entry,) = snapshot.entries
+    assert snapshot.available is True
+    assert entry.status == "partially_refunded"
+    assert entry.amount == 500
+    assert entry.currency == "USD"
+    assert entry.credits == 500
+    assert entry.document_url == "https://invoice"
+    kwargs = list_sessions.call_args.kwargs
+    assert kwargs["customer"] == "cus_u@x.com"
+    assert kwargs["status"] == "complete"
+    assert kwargs["expand"] == ["data.payment_intent.latest_charge", "data.invoice"]
+
+
+def test_payment_method_portal_deep_links_and_returns_to_billing(
+    engine: object,
+    configured: None,
+) -> None:
+    """Adding a card uses Stripe's payment-method flow and returns to Billing."""
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    with patch(
+        "stripe.billing_portal.Session.create",
+        return_value=SimpleNamespace(url="https://billing.stripe.test/session"),
+    ) as create:
+        url = service.create_portal_session("u@x.com", payment_method_update=True)
+    assert url == "https://billing.stripe.test/session"
+    kwargs = create.call_args.kwargs
+    assert kwargs["customer"] == "cus_u@x.com"
+    assert kwargs["return_url"].endswith("/?settings=billing")
+    assert kwargs["flow_data"]["type"] == "payment_method_update"
+    assert kwargs["flow_data"]["after_completion"]["redirect"]["return_url"].endswith("/?settings=billing")
 
 
 def _deliver(service: StripeBillingService, event: dict) -> None:
