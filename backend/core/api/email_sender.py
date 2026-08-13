@@ -1,9 +1,6 @@
-"""Outbound SMTP mail for account-security flows.
+"""Outbound SMTP mail for account and notification flows.
 
-Transport-only: callers gate on :func:`email_configured` and translate
-delivery failures into typed :class:`~core.api.errors.DomainError`\\ s. Kept
-separate from :mod:`core.notifications.comms` (the Windows-only Outlook COM
-path) because sign-in codes must deliver from the hosted Linux deployment.
+The same transport serves account-security messages and rich app notifications.
 """
 
 from __future__ import annotations
@@ -19,13 +16,14 @@ def email_configured() -> bool:
     return bool(settings.smtp_host)
 
 
-def send_email(to: str, subject: str, body: str) -> None:
-    """Send a plain-text email through the configured SMTP relay.
+def send_email(to: str, subject: str, body: str, *, html_body: str | None = None) -> None:
+    """Send an email through the configured SMTP relay.
 
     Args:
         to: Recipient address.
         subject: Message subject line.
         body: Plain-text message body.
+        html_body: Optional HTML alternative for rich notifications.
 
     Raises:
         RuntimeError: When no SMTP host is configured.
@@ -38,6 +36,8 @@ def send_email(to: str, subject: str, body: str) -> None:
     message["To"] = to
     message["Subject"] = subject
     message.set_content(body)
+    if html_body is not None:
+        message.add_alternative(html_body, subtype="html")
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as smtp:
         if settings.smtp_starttls:
             smtp.starttls()

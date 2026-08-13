@@ -1,10 +1,10 @@
 """Notification orchestration.
 
 Builds the localized HTML email for each Skynet event (job lifecycle + sharing)
-and hands it to the Outlook transport. Recipient resolution is centralized in
-:func:`core.notifications.comms.resolve_email`; until SSO provides addresses it
-returns ``None`` and sends are skipped (logged), so every helper here is safe to
-call unconditionally from the API and worker layers.
+and hands it to the shared SMTP transport. Recipient resolution is centralized
+in :func:`core.notifications.comms.resolve_email`; non-email identities are
+skipped and logged, so every helper here is safe to call unconditionally from
+the API and worker layers.
 """
 
 from __future__ import annotations
@@ -164,7 +164,7 @@ def _deliver(recipient_username: str | None, subject: str, html_body: str) -> No
         return
     address = resolve_email(recipient_username)
     if address is None:
-        logger.info("No email for %r yet (SSO pending); skipping notification %r", recipient_username, subject)
+        logger.info("Account %r has no email identity; skipping notification %r", recipient_username, subject)
         return
     send_mail(address, subject, html_body)
 

@@ -1,8 +1,8 @@
 """Notification public surface.
 
 Re-exports the helpers used by the worker and API layers for job lifecycle and
-sharing events; the underlying transport (Outlook via ``win32com``) is
-encapsulated in ``core.notifications.comms``.
+sharing events; the shared SMTP transport is encapsulated in
+``core.notifications.comms``.
 """
 
 from .notifier import (

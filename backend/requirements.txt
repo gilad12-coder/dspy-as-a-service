@@ -302,9 +302,7 @@ python-json-logger==4.1.0
 python-multipart==0.0.31
     # via mcp
 pywin32==311 ; sys_platform == 'win32'
-    # via
-    #   mcp
-    #   skynet
+    # via mcp
 pywin32-ctypes==0.2.3 ; sys_platform == 'win32'
     # via keyring
 pyyaml==6.0.3

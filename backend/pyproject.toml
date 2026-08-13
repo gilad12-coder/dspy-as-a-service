@@ -62,9 +62,6 @@ dependencies = [
     "prometheus-client>=0.20",
     "prometheus-fastapi-instrumentator>=7.0",
     "python-json-logger>=2.0",
-    # Outlook mail transport (core.notifications.comms) on the on-prem Windows
-    # deployment. Windows-only; absent elsewhere, where sends become no-ops.
-    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

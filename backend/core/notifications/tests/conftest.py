@@ -21,7 +21,7 @@ class FakeMail:
             html_body: Rendered HTML body.
 
         Returns:
-            Always ``True`` to mimic a successful Outlook delivery.
+            Always ``True`` to mimic successful SMTP delivery.
         """
         self.calls.append({"to": to, "subject": subject, "html": html_body})
         return True
