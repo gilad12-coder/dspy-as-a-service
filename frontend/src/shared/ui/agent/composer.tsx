@@ -30,6 +30,9 @@ interface ComposerProps {
    *  Codex layout: attach + permissions on the left, model/mic/send on the
    *  right). */
   leadingControls?: React.ReactNode;
+  /** Keep controls below the draft by default; model-free playgrounds can opt
+   *  into a single row. */
+  layout?: "stacked" | "inline";
   className?: string;
 }
 
@@ -53,8 +56,10 @@ export function Composer({
   stopAriaLabel = msg("auto.shared.ui.agent.composer.literal.2"),
   modelMenu,
   leadingControls,
+  layout = "stacked",
   className,
 }: ComposerProps) {
+  const inline = layout === "inline";
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const { locale } = useLocale();
   const { prefs } = useUserPrefs();
@@ -88,7 +93,7 @@ export function Composer({
     e.preventDefault();
     if (disabled || streaming || dictating || !value.trim()) return;
     onSubmit();
-    if (textareaRef.current) textareaRef.current.style.height = "42px";
+    if (textareaRef.current) textareaRef.current.style.height = inline ? "36px" : "42px";
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -108,6 +113,7 @@ export function Composer({
         className={cn(
           "rounded-2xl border border-[#DDD4C8] bg-muted/20 transition-colors",
           "focus-within:border-[#C8A882]",
+          inline && "flex min-h-11 items-end gap-1 p-1",
         )}
       >
         {!dictating ? (
@@ -123,16 +129,20 @@ export function Composer({
             rows={1}
             placeholder={placeholder}
             className={cn(
-              "block w-full bg-transparent px-4 py-[11px] text-sm leading-[20px] resize-none overflow-hidden",
-              "h-[42px] max-h-[120px] outline-none ring-0 border-0 shadow-none",
+              "bg-transparent text-sm leading-[20px] resize-none overflow-hidden",
+              "max-h-[120px] outline-none ring-0 border-0 shadow-none",
               "focus:outline-none focus-visible:outline-none focus-visible:ring-0",
               "placeholder:text-muted-foreground/40",
               "disabled:opacity-50 disabled:cursor-not-allowed",
+              inline ? "min-w-0 flex-1 h-9 px-3 py-2" : "block w-full h-[42px] px-4 py-[11px]",
             )}
           />
         ) : (
           <div
-            className="flex h-[42px] items-center gap-2 px-4 text-sm"
+            className={cn(
+              "flex items-center gap-2 text-sm",
+              inline ? "min-w-0 flex-1 h-9 px-3" : "h-[42px] px-4",
+            )}
             role="status"
             aria-live="polite"
           >
@@ -173,7 +183,7 @@ export function Composer({
           </div>
         )}
 
-        <div className="flex items-center gap-1.5 px-2 pb-2 pt-0.5">
+        <div className={cn("flex items-center gap-1.5", inline ? "shrink-0" : "px-2 pb-2 pt-0.5")}>
           {leadingControls && <div className="flex items-center gap-1">{leadingControls}</div>}
           <div className="ms-auto flex items-center gap-1.5">
             {modelMenu}

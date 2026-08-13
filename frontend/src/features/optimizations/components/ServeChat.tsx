@@ -333,6 +333,7 @@ export function ServeChat({
             placeholder={singleInputField}
             streaming={serveLoading}
             sendAriaLabel={msg("auto.features.optimizations.components.servechat.literal.2")}
+            layout="inline"
             className="mx-auto max-w-2xl border-t-0 p-0"
           />
         ) : (

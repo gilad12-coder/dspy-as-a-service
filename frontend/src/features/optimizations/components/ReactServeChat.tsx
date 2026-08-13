@@ -134,6 +134,7 @@ export function ReactServeChat({ optimizationId }: ReactServeChatProps) {
         streaming={streaming}
         sendAriaLabel={msg("optimizations.react.chat_send_aria")}
         stopAriaLabel={msg("optimizations.react.chat_stop_aria")}
+        layout="inline"
       />
     </div>
   );
