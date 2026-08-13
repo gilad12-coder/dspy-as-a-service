@@ -8,6 +8,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/
 import { cn } from "@/shared/lib/utils";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import {
+  COMPACT_POPOVER_ICON_CLASS,
+  COMPACT_POPOVER_ITEM_CLASS,
+  COMPACT_POPOVER_PANEL_CLASS,
+} from "@/shared/ui/compact-popover-menu";
+import {
   COLUMNAR_FORMATS,
   EmptyTableExportError,
   exportTable,
@@ -70,9 +75,6 @@ export function ExportTableMenu({
     }
   }
 
-  const itemCls =
-    "flex w-full items-center gap-2.5 px-3.5 py-2 text-xs text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
-  const iconCls = "size-4 shrink-0 text-muted-foreground/60";
   const extCls = "ms-auto font-mono text-[0.625rem] text-muted-foreground/60";
 
   return (
@@ -117,7 +119,7 @@ export function ExportTableMenu({
           align={align}
           side="bottom"
           sideOffset={6}
-          className="z-50 min-w-[190px] max-w-[min(240px,90vw)] rounded-2xl border border-border/40 bg-card py-1.5 shadow-[0_4px_24px_rgba(28,22,18,0.1)] animate-in fade-in-0 zoom-in-95"
+          className={COMPACT_POPOVER_PANEL_CLASS}
         >
           {TABLE_EXPORT_FORMATS.map((fmt) => {
             const { label, ext, Icon } = FORMAT_META[fmt];
@@ -132,8 +134,12 @@ export function ExportTableMenu({
                   </div>
                 )}
                 <PopoverPrimitive.Close asChild>
-                  <button type="button" onClick={() => handle(fmt)} className={itemCls}>
-                    <Icon className={iconCls} />
+                  <button
+                    type="button"
+                    onClick={() => handle(fmt)}
+                    className={COMPACT_POPOVER_ITEM_CLASS}
+                  >
+                    <Icon className={COMPACT_POPOVER_ICON_CLASS} />
                     <span className="flex-1 text-start">{label}</span>
                     <span className={extCls}>{ext}</span>
                   </button>

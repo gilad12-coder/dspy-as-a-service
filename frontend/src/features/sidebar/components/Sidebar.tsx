@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { Popover as PopoverPrimitive } from "radix-ui";
 import {
   SquaresFour,
   PaperPlaneTilt,
@@ -62,6 +62,11 @@ import { recentResumableId } from "@/shared/lib/recent-session";
 import { TERMS } from "@/shared/lib/terms";
 import { sentenceCase } from "@/shared/lib/formatters";
 import { EmptyState } from "@/shared/ui/empty-state";
+import {
+  COMPACT_POPOVER_ICON_CLASS,
+  COMPACT_POPOVER_ITEM_CLASS,
+  COMPACT_POPOVER_PANEL_CLASS,
+} from "@/shared/ui/compact-popover-menu";
 
 const NAV_ITEMS = perLocale(
   () =>
@@ -812,10 +817,7 @@ function JobRow({
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [renaming, setRenaming] = React.useState(false);
   const [renameValue, setRenameValue] = React.useState("");
-  const [menuPos, setMenuPos] = React.useState<{ top: number; left: number } | null>(null);
   const [expanded, setExpanded] = React.useState(isActive && activePair !== null);
-  const menuRef = React.useRef<HTMLDivElement>(null);
-  const btnRef = React.useRef<HTMLButtonElement>(null);
   const renameRef = React.useRef<HTMLInputElement>(null);
   const isGridSearch = job.optimization_type === "grid_search" && (job.total_pairs ?? 0) > 0;
   const displayName =
@@ -828,32 +830,6 @@ function JobRow({
   // owner-only (and a shared-with-me row is never one the caller owns). On the
   // "mine" tab the caller is always owner/admin, so everything is allowed.
   const canEdit = !isShared || job.role === "editor" || job.role === "owner";
-
-  const dropdownRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e: MouseEvent | TouchEvent) => {
-      const target = e.target as Node;
-      if (menuRef.current?.contains(target)) return;
-      if (dropdownRef.current?.contains(target)) return;
-      setMenuOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setMenuOpen(false);
-        btnRef.current?.focus();
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    document.addEventListener("touchstart", handler);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handler);
-      document.removeEventListener("touchstart", handler);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [menuOpen]);
 
   React.useEffect(() => {
     if (renaming) renameRef.current?.focus();
@@ -978,7 +954,7 @@ function JobRow({
   }
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative">
       <div
         className={cn(
           "flex items-center gap-1.5 rounded-lg px-2 py-2 text-[0.6875rem] transition-all duration-150",
@@ -1031,48 +1007,164 @@ function JobRow({
             />
           </button>
         )}
-        {
-          <button
-            ref={btnRef}
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (!menuOpen && btnRef.current) {
-                const rect = btnRef.current.getBoundingClientRect();
-                const menuWidth = 140;
-                const menuHeightEstimate = 200;
-                const margin = 8;
-                // Right-align by default; clamp to viewport so the menu
-                // never overflows the screen edge on narrow windows.
-                const left = Math.max(
-                  margin,
-                  Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - margin),
-                );
-                const top =
-                  rect.bottom + menuHeightEstimate + margin > window.innerHeight
-                    ? Math.max(margin, rect.top - menuHeightEstimate - 4)
-                    : rect.bottom + 4;
-                setMenuPos({ top, left });
-              }
-              setMenuOpen((o) => !o);
-            }}
-            className="p-0.5 rounded cursor-pointer text-muted-foreground/40 hover:text-foreground transition-colors shrink-0"
-            aria-label={formatMsg("auto.features.sidebar.components.sidebar.template.3", {
-              p1: displayName,
-            })}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-          >
-            <DotsThree
-              className={cn(
-                "size-3.5 transition-[transform,color] duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none motion-reduce:transform-none",
-                menuOpen && "rotate-90 scale-110 text-foreground",
+        <PopoverPrimitive.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <PopoverPrimitive.Trigger asChild>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+              className="shrink-0 cursor-pointer rounded p-0.5 text-muted-foreground/40 transition-colors hover:text-foreground"
+              aria-label={formatMsg("auto.features.sidebar.components.sidebar.template.3", {
+                p1: displayName,
+              })}
+            >
+              <DotsThree
+                className={cn(
+                  "size-3.5 transition-colors duration-150 motion-reduce:transition-none",
+                  menuOpen && "text-foreground",
+                )}
+                aria-hidden="true"
+              />
+            </button>
+          </PopoverPrimitive.Trigger>
+          <PopoverPrimitive.Portal>
+            <PopoverPrimitive.Content
+              align="end"
+              side="bottom"
+              sideOffset={6}
+              collisionPadding={8}
+              className={COMPACT_POPOVER_PANEL_CLASS}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {!isShared && (
+                <PopoverPrimitive.Close asChild>
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    className={COMPACT_POPOVER_ITEM_CLASS}
+                  >
+                    <ShareNetwork className={COMPACT_POPOVER_ICON_CLASS} aria-hidden="true" />
+                    <span className="flex-1 text-start">
+                      {msg("auto.features.sidebar.components.sidebar.7")}
+                    </span>
+                  </button>
+                </PopoverPrimitive.Close>
               )}
-              aria-hidden="true"
-            />
-          </button>
-        }
+
+              {canEdit && (
+                <PopoverPrimitive.Close asChild>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setRenameValue(job.name ?? displayName);
+                      setRenaming(true);
+                    }}
+                    className={COMPACT_POPOVER_ITEM_CLASS}
+                  >
+                    <PencilSimple className={COMPACT_POPOVER_ICON_CLASS} aria-hidden="true" />
+                    <span className="flex-1 text-start">
+                      {msg("auto.features.sidebar.components.sidebar.8")}
+                    </span>
+                  </button>
+                </PopoverPrimitive.Close>
+              )}
+
+              <PopoverPrimitive.Close asChild>
+                <button
+                  type="button"
+                  onClick={handleClone}
+                  className={COMPACT_POPOVER_ITEM_CLASS}
+                >
+                  <Copy className={COMPACT_POPOVER_ICON_CLASS} aria-hidden="true" />
+                  <span className="flex-1 text-start">
+                    {msg("auto.features.sidebar.components.sidebar.9")}
+                  </span>
+                </button>
+              </PopoverPrimitive.Close>
+
+              {canEdit &&
+                (job.status === "failed" || job.status === "cancelled") &&
+                (job.resumable ? (
+                  <PopoverPrimitive.Close asChild>
+                    <button
+                      type="button"
+                      onClick={handleResume}
+                      className={COMPACT_POPOVER_ITEM_CLASS}
+                    >
+                      <Play
+                        className={cn(COMPACT_POPOVER_ICON_CLASS, isRtl && "-scale-x-100")}
+                        aria-hidden="true"
+                      />
+                      <span className="flex-1 text-start">{msg("sidebar.resume")}</span>
+                    </button>
+                  </PopoverPrimitive.Close>
+                ) : (
+                  <PopoverPrimitive.Close asChild>
+                    <button
+                      type="button"
+                      onClick={handleRetry}
+                      className={COMPACT_POPOVER_ITEM_CLASS}
+                    >
+                      <ArrowCounterClockwise
+                        className={COMPACT_POPOVER_ICON_CLASS}
+                        aria-hidden="true"
+                      />
+                      <span className="flex-1 text-start">{msg("sidebar.rerun")}</span>
+                    </button>
+                  </PopoverPrimitive.Close>
+                ))}
+
+              {canEdit && (
+                <>
+                  <div role="separator" className="mx-3.5 my-1 border-t border-border/40" />
+                  <PopoverPrimitive.Close asChild>
+                    <button
+                      type="button"
+                      onClick={handlePin}
+                      className={COMPACT_POPOVER_ITEM_CLASS}
+                    >
+                      <PushPin
+                        className={cn(
+                          COMPACT_POPOVER_ICON_CLASS,
+                          job.pinned && "text-foreground",
+                        )}
+                        aria-hidden="true"
+                      />
+                      <span className="flex-1 text-start">
+                        {job.pinned
+                          ? msg("auto.features.sidebar.components.sidebar.literal.13")
+                          : msg("auto.features.sidebar.components.sidebar.literal.14")}
+                      </span>
+                    </button>
+                  </PopoverPrimitive.Close>
+                </>
+              )}
+
+              {!isShared && (
+                <PopoverPrimitive.Close asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      setMenuOpen(false);
+                      onDelete(e, job.optimization_id);
+                    }}
+                    className={cn(
+                      COMPACT_POPOVER_ITEM_CLASS,
+                      "text-destructive hover:bg-destructive/10 hover:text-destructive",
+                    )}
+                  >
+                    <Trash className="size-4 shrink-0" aria-hidden="true" />
+                    <span className="flex-1 text-start">
+                      {msg("auto.features.sidebar.components.sidebar.10")}
+                    </span>
+                  </button>
+                </PopoverPrimitive.Close>
+              )}
+            </PopoverPrimitive.Content>
+          </PopoverPrimitive.Portal>
+        </PopoverPrimitive.Root>
       </div>
 
       <AnimatePresence>
@@ -1116,123 +1208,6 @@ function JobRow({
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Dropdown menu — portaled to body to escape overflow clipping */}
-      {menuOpen &&
-        menuPos &&
-        createPortal(
-          <motion.div
-            ref={dropdownRef}
-            role="menu"
-            initial={{ opacity: 0, scale: 0.95, y: -4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -4 }}
-            transition={{ duration: 0.12 }}
-            className="fixed z-[9999] min-w-[140px] rounded-2xl border border-border/40 bg-card shadow-[0_4px_24px_rgba(28,22,18,0.1)] py-1.5"
-            style={{ top: menuPos.top, left: menuPos.left, right: "auto" }}
-          >
-            {!isShared && (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={handleShare}
-                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-              >
-                <ShareNetwork className="size-3.5 text-muted-foreground" />
-                {msg("auto.features.sidebar.components.sidebar.7")}
-              </button>
-            )}
-
-            {canEdit && (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setRenameValue(job.name ?? displayName);
-                  setRenaming(true);
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-              >
-                <PencilSimple className="size-3.5 text-muted-foreground" />
-                {msg("auto.features.sidebar.components.sidebar.8")}
-              </button>
-            )}
-
-            <button
-              type="button"
-              role="menuitem"
-              onClick={handleClone}
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-            >
-              <Copy className="size-3.5 text-muted-foreground" />
-              {msg("auto.features.sidebar.components.sidebar.9")}
-            </button>
-
-            {canEdit &&
-              (job.status === "failed" || job.status === "cancelled") &&
-              (job.resumable ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleResume}
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-                >
-                  <Play className={cn("size-3.5 text-muted-foreground", isRtl && "-scale-x-100")} />
-                  {msg("sidebar.resume")}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleRetry}
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-                >
-                  <ArrowCounterClockwise className="size-3.5 text-muted-foreground" />
-                  {msg("sidebar.rerun")}
-                </button>
-              ))}
-
-            {canEdit && (
-              <>
-                <div className="h-px bg-border/20 mx-2 my-1" />
-
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handlePin}
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-                >
-                  <PushPin
-                    className={cn(
-                      "size-3.5",
-                      job.pinned ? "text-foreground" : "text-muted-foreground",
-                    )}
-                  />
-                  {job.pinned
-                    ? msg("auto.features.sidebar.components.sidebar.literal.13")
-                    : msg("auto.features.sidebar.components.sidebar.literal.14")}
-                </button>
-              </>
-            )}
-
-            {!isShared && (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={(e) => {
-                  setMenuOpen(false);
-                  onDelete(e, job.optimization_id);
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-red-500 hover:bg-red-500/5 cursor-pointer transition-colors"
-              >
-                <Trash className="size-3.5" />
-                {msg("auto.features.sidebar.components.sidebar.10")}
-              </button>
-            )}
-          </motion.div>,
-          document.body,
-        )}
 
       {!isShared && (
         <ShareDialog
