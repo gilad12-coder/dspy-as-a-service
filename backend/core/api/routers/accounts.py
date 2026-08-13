@@ -34,6 +34,7 @@ from ..login_throttle import LoginThrottle
 from ..password_policy import validate_password
 from ..password_reset import issue_reset_code, reset_code_on_cooldown, verify_reset_code
 from ..passwords import hash_password, verify_password
+from ..rate_limit import enforce_account_rate
 from ..two_factor import enforce_second_factor
 
 logger = logging.getLogger(__name__)
@@ -237,6 +238,7 @@ def create_accounts_router(*, job_store, login_throttle: LoginThrottle | None = 
         email = _normalise_email(body.email)
         if not _EMAIL_RE.match(email):
             raise DomainError("accounts.invalid_email", status=422)
+        enforce_account_rate(email, "register")
         validate_password(body.password, email)
         name = body.name.strip() or email
         verified = not email_configured()
@@ -368,6 +370,7 @@ def create_accounts_router(*, job_store, login_throttle: LoginThrottle | None = 
         if not email_configured():
             raise DomainError("accounts.email_delivery_unavailable", status=422)
         email = _normalise_email(body.email)
+        enforce_account_rate(email, "pwreset")
         with Session(job_store.engine) as session:
             if session.get(UserModel, email) is None or reset_code_on_cooldown(session, email):
                 return OkResponse()
@@ -456,6 +459,7 @@ def create_accounts_router(*, job_store, login_throttle: LoginThrottle | None = 
         if not email_configured():
             raise DomainError("accounts.email_delivery_unavailable", status=422)
         email = _normalise_email(body.email)
+        enforce_account_rate(email, "verify")
         with Session(job_store.engine) as session:
             row = session.get(UserModel, email)
             nothing_to_send = (

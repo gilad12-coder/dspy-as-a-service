@@ -145,6 +145,7 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "optimization.pair_not_resumable": "This pair has no saved checkpoint to resume — restart it instead.",
     "quota.concurrent_reached": "You already have {limit} runs in progress. Wait for one to finish before starting another.",
     "quota.reached": "Per-user limit of {quota} optimizations reached. Delete old optimizations to create new ones.",
+    "rate_limit.exceeded": "Too many requests. Please wait {retry_after} seconds and try again.",
     "serve.chat_not_react": "Live chat is available only for ReAct-module optimizations.",
     "serve.chat_requires_live_mcp": "Live chat requires a live-MCP tool source; this run used a dataset snapshot.",
     "serve.missing_inputs": "Missing required input fields: {missing}. Expected: {input_fields}",

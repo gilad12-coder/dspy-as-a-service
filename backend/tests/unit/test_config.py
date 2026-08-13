@@ -45,6 +45,9 @@ _SETTINGS_ENV_VARS = (
     "MAX_CONCURRENT_JOBS_PER_USER",
     "GLOBAL_DAILY_SPEND_CEILING_CREDITS",
     "SUBMISSIONS_PAUSED",
+    "REDIS_URL",
+    "RATE_LIMIT_SUBMISSIONS_PER_MINUTE",
+    "RATE_LIMIT_ACCOUNT_REQUESTS_PER_HOUR",
     "ADMIN_USERNAMES",
     "QUOTA_OVERRIDES",
 )
@@ -619,6 +622,28 @@ def test_settings_defaults_cost_guardrails() -> None:
     assert s.max_concurrent_jobs_per_user == 5
     assert s.global_daily_spend_ceiling_credits == 0
     assert s.submissions_paused is False
+
+
+def test_settings_defaults_rate_limits() -> None:
+    """Rate-limit defaults: no Redis URL, 30 submissions/min, 20 account acts/hr."""
+    s = Settings(_env_file=None)
+
+    assert s.redis_url is None
+    assert s.rate_limit_submissions_per_minute == 30
+    assert s.rate_limit_account_requests_per_hour == 20
+
+
+def test_settings_rate_limits_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rate-limit knobs and the Redis URL are overridable from the environment."""
+    monkeypatch.setenv("REDIS_URL", "redis://cache:6379/1")
+    monkeypatch.setenv("RATE_LIMIT_SUBMISSIONS_PER_MINUTE", "5")
+    monkeypatch.setenv("RATE_LIMIT_ACCOUNT_REQUESTS_PER_HOUR", "0")
+
+    s = Settings(_env_file=None)
+
+    assert s.redis_url == "redis://cache:6379/1"
+    assert s.rate_limit_submissions_per_minute == 5
+    assert s.rate_limit_account_requests_per_hour == 0
 
 
 def test_settings_cost_guardrails_from_env(monkeypatch: pytest.MonkeyPatch) -> None:

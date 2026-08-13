@@ -139,6 +139,7 @@ class I18nKey(StrEnum):
     OPTIMIZATION_RETRY_WRONG_STATUS = 'optimization.retry_wrong_status'
     QUOTA_CONCURRENT_REACHED = 'quota.concurrent_reached'
     QUOTA_REACHED = 'quota.reached'
+    RATE_LIMIT_EXCEEDED = 'rate_limit.exceeded'
     SERVE_CHAT_NOT_REACT = 'serve.chat_not_react'
     SERVE_CHAT_REQUIRES_LIVE_MCP = 'serve.chat_requires_live_mcp'
     SERVE_MISSING_INPUTS = 'serve.missing_inputs'

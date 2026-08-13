@@ -77,6 +77,7 @@ from .observability import (
     start_staged_dataset_sweeper,
     start_stale_conversation_sweeper,
 )
+from .rate_limit import build_login_throttle
 from .routers.account_data import create_account_data_router
 from .routers.account_security import create_account_security_router
 from .routers.accounts import create_accounts_router
@@ -1264,7 +1265,10 @@ def create_app(
     app.include_router(create_agent_history_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_api_tokens_router(job_store=job_store), tags=["Settings"])
     app.include_router(create_billing_router(job_store=job_store), tags=["Billing"])
-    app.include_router(create_accounts_router(job_store=job_store), tags=["Auth"])
+    app.include_router(
+        create_accounts_router(job_store=job_store, login_throttle=build_login_throttle()),
+        tags=["Auth"],
+    )
     app.include_router(create_account_security_router(job_store=job_store), tags=["Auth"])
     app.include_router(create_account_data_router(job_store=job_store), tags=["Settings"])
     app.include_router(create_datasets_router(job_store=job_store), tags=["Datasets"])

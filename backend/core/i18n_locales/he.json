@@ -142,6 +142,7 @@
     "filter.invalid_optimization_type": "סינון סוג {term.optimization} לא תקין '{value}'. ערכים חוקיים: {allowed}",
     "quota.concurrent_reached": "כבר יש לך {limit} ריצות פעילות. המתן/המתיני שאחת תסתיים לפני שתתחיל/י חדשה.",
     "quota.reached": "הגעת למגבלת {quota} {term.optimizationPlural} לכל משתמש. מחק/י {term.optimizationPlural} ישנות כדי ליצור חדשות.",
+    "rate_limit.exceeded": "יותר מדי בקשות. המתן/המתיני {retry_after} שניות ונסה/י שוב.",
     "user.storage.quota_exceeded": "חרגת ממכסת האחסון שלך ({used_mb}MB מתוך {quota_mb}MB). פנה/י מקום ונסה/י שוב.",
     "webauthn.challenge_expired": "פג תוקף בקשת מפתח הגישה — נסו שוב.",
     "webauthn.invalid_credential": "לא ניתן לאמת את מפתח הגישה הזה.",

@@ -89,6 +89,7 @@ from ..auth import AuthenticatedUser, get_authenticated_user
 from ..dataset_access import resolve_effective_role
 from ..errors import DomainError
 from ..model_catalog import get_catalog_cached
+from ..rate_limit import enforce_submission_rate
 from ._helpers import compute_task_fingerprint, enforce_storage_quota, stable_seed, strip_api_key
 
 logger = logging.getLogger(__name__)
@@ -448,9 +449,10 @@ def _enforce_submission_admission(job_store, username: str) -> None:
     Runs before any dataset materialization or payload validation so an
     over-cap or globally-paused submission is rejected cheaply, and after the
     idempotency short-circuit so a retry of an already-accepted run is never
-    blocked. Three controls, in order: a manual global pause (an operator
-    emergency brake), the automatic platform-wide daily spend ceiling
-    (:func:`_enforce_global_daily_spend_ceiling`), and a per-user cap on
+    blocked. Four controls, in order: a per-user request-rate cap (the
+    cross-replica limiter that stops a runaway script), a manual global pause
+    (an operator emergency brake), the automatic platform-wide daily spend
+    ceiling (:func:`_enforce_global_daily_spend_ceiling`), and a per-user cap on
     concurrently active runs. Each is a no-op when its setting is unset/zero.
 
     Args:
@@ -458,10 +460,12 @@ def _enforce_submission_admission(job_store, username: str) -> None:
         username: Account attempting the submission.
 
     Raises:
-        DomainError: 503 ``submission.capacity_reached`` when submissions are
-            paused or the daily spend ceiling is reached; 429
+        DomainError: 429 ``rate_limit.exceeded`` when the user exceeds the
+            per-minute submission rate; 503 ``submission.capacity_reached`` when
+            submissions are paused or the daily spend ceiling is reached; 429
             ``quota.concurrent_reached`` when the user is at their active-run cap.
     """
+    enforce_submission_rate(username)
     if settings.submissions_paused:
         raise DomainError("submission.capacity_reached", status=503)
     _enforce_global_daily_spend_ceiling(job_store)

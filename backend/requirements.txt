@@ -36,6 +36,8 @@ anyio==4.13.0
     #   sse-starlette
     #   starlette
     #   watchfiles
+async-timeout==5.0.1 ; python_full_version < '3.11.3'
+    # via redis
 attrs==26.1.0
     # via
     #   aiohttp
@@ -279,7 +281,9 @@ pydantic-settings==2.14.2
 pygments==2.20.0
     # via rich
 pyjwt==2.13.0
-    # via mcp
+    # via
+    #   mcp
+    #   redis
 pyopenssl==26.4.0
     # via webauthn
 pyotp==2.10.0
@@ -307,6 +311,8 @@ pyyaml==6.0.3
     #   fastmcp
     #   huggingface-hub
     #   jsonschema-path
+redis==5.3.1
+    # via skynet
 referencing==0.37.0
     # via
     #   jsonschema

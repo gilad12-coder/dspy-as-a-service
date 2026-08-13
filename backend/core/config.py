@@ -788,6 +788,30 @@ class Settings(BaseSettings):
             "(in-flight runs continue). An instant emergency brake independent of spend."
         ),
     )
+    redis_url: str | None = Field(
+        default=None,
+        description=(
+            "Redis connection URL backing the cross-replica rate limiter and login lockout. "
+            "When unset the limiters fail open (allow) and the login lockout falls back to "
+            "per-process in-memory state — correct for a single backend instance."
+        ),
+    )
+    rate_limit_submissions_per_minute: int = Field(
+        default=30,
+        ge=0,
+        description=(
+            "Per-account cap on run/grid-search submissions per rolling minute, enforced across "
+            "replicas via Redis. Bounds a runaway script or abusive key. 0 disables the cap."
+        ),
+    )
+    rate_limit_account_requests_per_hour: int = Field(
+        default=20,
+        ge=0,
+        description=(
+            "Per-email cap on account-action requests (register, password-reset, email-verify) "
+            "per rolling hour, enforced across replicas via Redis. 0 disables the cap."
+        ),
+    )
     backend_auth_secret: SecretStr | None = Field(
         default=None,
         description="Shared HS256 secret used by the frontend to sign backend API tokens",
