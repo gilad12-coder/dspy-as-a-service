@@ -714,7 +714,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                 catalogModels={catalogModels ?? undefined}
                 recentConfigs={recentConfigs}
                 onRemoveRecent={removeRecentConfig}
-                allowByok={false}
               />
             </div>
           )}

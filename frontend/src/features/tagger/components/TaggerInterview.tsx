@@ -667,7 +667,6 @@ function RubricCard({
                 catalogModels={catalogModels ?? undefined}
                 recentConfigs={recentConfigs}
                 onRemoveRecent={removeRecentConfig}
-                allowByok={false}
               />
             </CardContent>
           </Card>

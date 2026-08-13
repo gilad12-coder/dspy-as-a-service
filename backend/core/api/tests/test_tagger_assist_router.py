@@ -14,14 +14,19 @@ from __future__ import annotations
 
 import threading
 from types import SimpleNamespace
+from unittest.mock import patch
 
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from ...billing import ProviderKeyVault
+from ...config import settings
 from ...constants import OPTIMIZATION_TYPE_TAGGING
 from ...service_gateway import tagging
 from ...storage.models import Base, BillingCustomerModel, TaggingSessionModel
@@ -31,7 +36,11 @@ from .. import model_catalog, model_router
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..routers import tagger_assist
-from ..routers.tagger_assist import _effective_config, create_tagger_assist_router
+from ..routers.tagger_assist import (
+    _effective_config,
+    _resolve_assist_model,
+    create_tagger_assist_router,
+)
 from ..routers.tagging_sessions import create_tagging_session_router
 
 _ALICE = AuthenticatedUser(username="alice", role="user", groups=())
@@ -374,7 +383,15 @@ def test_predict_excludes_requested_rows_from_examples(monkeypatch) -> None:
     """Predictions come back per row; requested ids never leak into examples."""
     captured: dict = {}
 
-    def fake_predict(config, instructions, rows, on_batch=None, cancel=None, usage_sink=None):
+    def fake_predict(
+        config,
+        instructions,
+        rows,
+        on_batch=None,
+        cancel=None,
+        usage_sink=None,
+        model_config=None,
+    ):
         """Return a canned prediction for every requested row."""
         captured["instructions"] = instructions
         return (
@@ -406,7 +423,7 @@ def test_predict_stream_emits_rows_then_done(monkeypatch) -> None:
     """The SSE predict route relays per-row events, then the terminal summary."""
     captured: dict = {}
 
-    async def fake_stream(config, instructions, rows, usage_sink=None):
+    async def fake_stream(config, instructions, rows, usage_sink=None, model_config=None):
         """Yield one event per requested row, then the merged summary."""
         captured["instructions"] = instructions
         captured["ids"] = [str(r["id"]) for r in rows]
@@ -469,6 +486,60 @@ def test_estimate_runs_on_chosen_model(monkeypatch) -> None:
     assert resp.json()["model"] == "openai/gpt-test"
 
 
+def test_resolve_assist_model_injects_verified_byok_connection(monkeypatch) -> None:
+    """A tagging BYOK selection resolves its verified key only at execution time."""
+    store = _MemStore()
+    monkeypatch.setattr(
+        settings,
+        "byok_vault_key",
+        SecretStr(Fernet.generate_key().decode("utf-8")),
+    )
+    with patch(
+        "core.billing.byok_vault.httpx.get",
+        return_value=SimpleNamespace(status_code=200, is_success=True),
+    ):
+        ProviderKeyVault(engine=store.engine).save_key(
+            _ALICE.username,
+            "openrouter",
+            "sk-or-test",
+        )
+    resolved = _resolve_assist_model(
+        store,
+        _ALICE.username,
+        {
+            "model": "openrouter/openai/gpt-test",
+            "modelParams": {
+                "token_source": "byok",
+                "byok_provider": "openrouter",
+                "extra": {"api_key": "inline-secret"},
+            },
+        },
+    )
+    assert resolved.token_source == "byok"
+    assert resolved.byok_provider == "openrouter"
+    assert resolved.extra == {"api_key": "sk-or-test"}
+
+
+def test_byok_tagger_without_verified_connection_is_blocked() -> None:
+    """A tagging BYOK model never starts spending without its vault connection."""
+    client, _ = _client(_ALICE)
+    body = dict(_SESSION_BODY)
+    body["assist"] = {
+        **_SESSION_BODY["assist"],
+        "model": "openrouter/openai/gpt-test",
+        "modelParams": {
+            "token_source": "byok",
+            "byok_provider": "openrouter",
+        },
+    }
+    resp = client.post("/tagging-sessions", json=body)
+    assert resp.status_code == 201, resp.text
+    session_id = resp.json()["id"]
+    resp = client.post(f"/tagging-sessions/{session_id}/assist/estimate")
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "billing.byok_missing_connection"
+
+
 def test_unknown_model_rejected_before_spending(monkeypatch) -> None:
     """A model outside the curated catalog is refused on every spend route."""
     monkeypatch.setattr(
@@ -523,7 +594,15 @@ def test_autotag_start_submits_worker_job(monkeypatch) -> None:
     assert resp.json()["code"] == "tagger.assist.autotag_running"
 
     # Run the job body the worker would execute; the session row completes.
-    def fake_predict(config, instructions, rows, on_batch=None, cancel=None, usage_sink=None):
+    def fake_predict(
+        config,
+        instructions,
+        rows,
+        on_batch=None,
+        cancel=None,
+        usage_sink=None,
+        model_config=None,
+    ):
         """Emit one canned batch through on_batch, like the real engine."""
         batch = {
             str(r["id"]): {"value": "no", "confidence": 0.4, "reason": "test"} for r in rows

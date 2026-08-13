@@ -29,8 +29,10 @@ from typing import Any, cast
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..billing import ProviderKeyVault, resolve_byok_model_config
 from ..billing.metering import estimate_run_credits, meter_llm_run
 from ..billing.service import StripeBillingService
+from ..constants import TOKEN_SOURCE_MANAGED
 from ..service_gateway import tagging
 from ..storage.models import TaggingSessionModel
 
@@ -159,6 +161,7 @@ def run_autotag_job(
     credits = 0
     usage_sink: list = []
     billing = StripeBillingService(engine=engine) if username else None
+    token_source = TOKEN_SOURCE_MANAGED
 
     def monitor() -> None:
         """Renew the lease and fold every cancel source into ``stop``.
@@ -178,7 +181,7 @@ def run_autotag_job(
                 return
             if billing is not None:
                 try:
-                    spent = estimate_run_credits(usage_sink)
+                    spent = estimate_run_credits(usage_sink, token_source)
                     if spent >= billing.spendable_credits(username):
                         logger.warning(
                             "autotag %s stopped: accrued cost %d credits reached the balance",
@@ -215,6 +218,14 @@ def run_autotag_job(
             data = cast("list[dict[str, Any]]", row.data)
             annotations = dict(cast("dict[str, Any]", row.annotations))
             assist = dict(cast("dict[str, Any]", row.assist) or {})
+        model_config = tagging.assist_model_config(assist)
+        token_source = model_config.token_source or TOKEN_SOURCE_MANAGED
+        if model_config.token_source == "byok":
+            model_config = resolve_byok_model_config(
+                model_config,
+                username=username,
+                vault=ProviderKeyVault(engine=engine),
+            )
         # The interview's task refinements — including the inferred answer
         # style and categories — live beside the immutable config.
         config = tagging.effective_task_config(config, assist)
@@ -257,7 +268,13 @@ def run_autotag_job(
                 db.commit()
 
         tagged, credits = tagging.predict_rows(
-            config, instructions, pending, on_batch=persist_batch, cancel=stop, usage_sink=usage_sink
+            config,
+            instructions,
+            pending,
+            on_batch=persist_batch,
+            cancel=stop,
+            usage_sink=usage_sink,
+            model_config=model_config,
         )
     except Exception:
         done.set()
@@ -268,7 +285,13 @@ def run_autotag_job(
         # Every exit path — success, cancel, failure, even a lease-loss abort —
         # debits the LM calls this pod actually made; a resumed job re-tags only
         # still-unlabeled rows, so reruns never double-bill.
-        meter_llm_run(engine, username, usage_sink, description="Auto-tagging")
+        meter_llm_run(
+            engine,
+            username,
+            usage_sink,
+            description="Auto-tagging",
+            token_source=token_source,
+        )
 
     if stop.is_set():
         if cancel_event.is_set() and not _job_cancelled(job_store, optimization_id):

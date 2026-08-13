@@ -23,8 +23,10 @@ from typing import Any
 
 import dspy
 
-from ..billing.pricing import ModelUsage, credits_for_usage
+from ..billing.pricing import ModelUsage
+from ..billing.service import run_cost_credits
 from ..config import settings
+from ..constants import TOKEN_SOURCE_BYOK, TOKEN_SOURCE_MANAGED
 from ..models import ModelConfig
 from .agents.code import ReasoningStreamListener, _reply_language
 from .agents.code_interview import INTERVIEW_TURN_ATTEMPTS, normalize_options
@@ -63,13 +65,13 @@ _REASONING_EFFORT_LEVELS = frozenset({"none", "minimal", "low", "medium", "high"
 
 
 def _sanitize_model_params(params: Any) -> dict[str, Any]:
-    """Reduce stored model params to the sampling knobs tagging honors.
+    """Reduce stored model params to the safe model settings tagging honors.
 
     ``assist`` is a free-form JSON column any API caller can write, so only
-    temperature, max_tokens, top_p and the reasoning-effort extra pass
-    through — coerced and clamped to the ``ModelConfig`` bounds — and
-    connection fields (endpoints, keys, arbitrary LiteLLM kwargs) never
-    reach the tagging LM.
+    temperature, max_tokens, top_p, the reasoning-effort extra, and the
+    non-secret billing/provider selectors pass through. Connection fields
+    (endpoints, keys, arbitrary LiteLLM kwargs) never reach the tagging LM;
+    the API or worker resolves a verified vault connection separately.
 
     Args:
         params: The ``modelParams`` mapping stored on the assist state.
@@ -91,7 +93,27 @@ def _sanitize_model_params(params: Any) -> dict[str, Any]:
     effort = extra.get("reasoning_effort") if isinstance(extra, dict) else None
     if isinstance(effort, str) and effort.lower() in _REASONING_EFFORT_LEVELS:
         out["extra"] = {"reasoning_effort": effort.lower()}
+    token_source = params.get("token_source")
+    if token_source in {"managed", "byok"}:
+        out["token_source"] = token_source
+    byok_provider = params.get("byok_provider")
+    if token_source == "byok" and isinstance(byok_provider, str) and byok_provider.strip():
+        out["byok_provider"] = byok_provider.strip()
     return out
+
+
+def assist_model_config(assist: dict[str, Any]) -> ModelConfig:
+    """Build the safe model config selected for a tagging session.
+
+    Args:
+        assist: Persisted tagging-assist state carrying ``model`` and
+            ``modelParams``.
+
+    Returns:
+        A validated config with no inline connection secret or endpoint.
+    """
+    model_name = str((assist or {}).get("model") or "").strip() or assist_model_name()
+    return ModelConfig(name=model_name, **_sanitize_model_params((assist or {}).get("modelParams")))
 
 
 def _build_assist_lm(
@@ -99,6 +121,7 @@ def _build_assist_lm(
     params: dict[str, Any] | None = None,
     reasoning_effort: str | None = None,
     lm_extra_body: dict[str, Any] | None = None,
+    model_config: ModelConfig | None = None,
 ) -> dspy.LM:
     """Build the assist LM from settings, mirroring the generalist agent.
 
@@ -111,6 +134,9 @@ def _build_assist_lm(
             composer's model menu; ``None`` keeps the model's default.
         lm_extra_body: Extra request-body fields merged into the provider
             call (the auto router's plugin dial rides here).
+        model_config: Optional fully resolved config. Interactive and worker
+            BYOK callers pass a vault-backed copy here so the secret remains
+            outside persisted session state.
 
     Returns:
         A cache-disabled ``dspy.LM`` on the requested model.
@@ -120,11 +146,18 @@ def _build_assist_lm(
         extra = dict(kwargs.get("extra") or {})
         extra["extra_body"] = {**dict(extra.get("extra_body") or {}), **lm_extra_body}
         kwargs["extra"] = extra
-    config = ModelConfig(
-        name=model_name or assist_model_name(),
-        base_url=settings.tagger_assist_base_url or settings.generalist_agent_base_url or None,
-        **kwargs,
-    )
+    if model_config is not None:
+        config = model_config
+        if config.token_source != TOKEN_SOURCE_BYOK and not config.base_url:
+            config = config.model_copy(
+                update={"base_url": settings.tagger_assist_base_url or settings.generalist_agent_base_url or None}
+            )
+    else:
+        config = ModelConfig(
+            name=model_name or assist_model_name(),
+            base_url=settings.tagger_assist_base_url or settings.generalist_agent_base_url or None,
+            **kwargs,
+        )
     config = apply_reasoning_effort(config, reasoning_effort)
     return build_language_model(apply_model_reasoning_config(config), disable_cache=True)
 
@@ -1071,6 +1104,7 @@ def predict_rows(
     on_batch: Callable[[dict[str, dict[str, Any]]], None] | None = None,
     cancel: threading.Event | None = None,
     usage_sink: list | None = None,
+    model_config: ModelConfig | None = None,
 ) -> tuple[dict[str, dict[str, Any]], int]:
     """Label rows in concurrent batches and report the credit cost.
 
@@ -1085,12 +1119,17 @@ def predict_rows(
         cancel: Cooperative cancellation; pending batches are skipped once set.
         usage_sink: Optional list the built LM is appended to, so the caller
             can debit the run's token usage on any exit path.
+        model_config: Optional resolved model config, including an in-memory
+            BYOK vault connection when that source was selected.
 
     Returns:
         ``(predictions, credits)`` — the merged ``{row_id: prediction}`` map
         and the credit cost of the LM calls actually made.
     """
-    lm = _build_assist_lm(str(config.get("model") or "").strip() or None, config.get("modelParams"))
+    selected = model_config or assist_model_config(
+        {"model": config.get("model"), "modelParams": config.get("modelParams")}
+    )
+    lm = _build_assist_lm(model_config=selected)
     if usage_sink is not None:
         usage_sink.append(lm)
     prepared = [{"id": str(r.get("id")), "text": _row_text(r)} for r in rows]
@@ -1110,8 +1149,9 @@ def predict_rows(
         for result in pool.map(work, batches):
             merged.update(result)
     usage = usage_by_model_from_history(lm)
-    credits = credits_for_usage(
-        ModelUsage(model=model, input_tokens=tokens[0], output_tokens=tokens[1]) for model, tokens in usage.items()
+    credits = run_cost_credits(
+        (ModelUsage(model=model, input_tokens=tokens[0], output_tokens=tokens[1]) for model, tokens in usage.items()),
+        selected.token_source or TOKEN_SOURCE_MANAGED,
     )
     return merged, credits
 
@@ -1253,6 +1293,7 @@ async def predict_rows_stream(
     instructions: str,
     rows: list[dict[str, Any]],
     usage_sink: list | None = None,
+    model_config: ModelConfig | None = None,
 ) -> Any:
     """Label rows concurrently, yielding each row's prediction as it lands.
 
@@ -1273,8 +1314,13 @@ async def predict_rows_stream(
         rows: Row payloads (each needs ``id`` and ``text``).
         usage_sink: Optional list the built LM is appended to, so the caller
             can debit the run's token usage on any exit path.
+        model_config: Optional resolved model config, including an in-memory
+            BYOK vault connection when that source was selected.
     """
-    lm = _build_assist_lm(str(config.get("model") or "").strip() or None, config.get("modelParams"))
+    selected = model_config or assist_model_config(
+        {"model": config.get("model"), "modelParams": config.get("modelParams")}
+    )
+    lm = _build_assist_lm(model_config=selected)
     if usage_sink is not None:
         usage_sink.append(lm)
     prepared = [{"id": str(r.get("id")), "text": _row_text(r)} for r in rows]
@@ -1315,14 +1361,18 @@ async def predict_rows_stream(
         task.cancel()
         raise
     usage = usage_by_model_from_history(lm)
-    credits = credits_for_usage(
-        ModelUsage(model=model, input_tokens=tokens[0], output_tokens=tokens[1]) for model, tokens in usage.items()
+    credits = run_cost_credits(
+        (ModelUsage(model=model, input_tokens=tokens[0], output_tokens=tokens[1]) for model, tokens in usage.items()),
+        selected.token_source or TOKEN_SOURCE_MANAGED,
     )
     yield {"event": "predict_done", "data": {"predictions": merged, "credits": credits}}
 
 
 def estimate_credits_for_rows(
-    instructions: str, rows: list[dict[str, Any]], model: str | None = None
+    instructions: str,
+    rows: list[dict[str, Any]],
+    model: str | None = None,
+    token_source: str = TOKEN_SOURCE_MANAGED,
 ) -> dict[str, Any]:
     """Estimate the credit cost of auto-tagging the given rows.
 
@@ -1334,6 +1384,8 @@ def estimate_credits_for_rows(
         rows: The rows that would be tagged.
         model: LiteLLM id of the session's chosen tagging model; falls back
             to the configured default when empty.
+        token_source: ``managed`` for full model cost or ``byok`` for the
+            platform-fee portion only.
 
     Returns:
         ``{"rows", "model", "credits_low", "credits_high"}``.
@@ -1345,7 +1397,10 @@ def estimate_credits_for_rows(
     row_chars = sum(len(_row_text(r)) for r in rows)
     input_tokens = (len(instructions) * batch_count + row_chars) // CHARS_PER_TOKEN
     output_tokens = OUTPUT_TOKENS_PER_ROW * len(rows)
-    base = credits_for_usage([ModelUsage(model=model, input_tokens=input_tokens, output_tokens=output_tokens)])
+    base = run_cost_credits(
+        [ModelUsage(model=model, input_tokens=input_tokens, output_tokens=output_tokens)],
+        token_source,
+    )
     return {
         "rows": len(rows),
         "model": model,

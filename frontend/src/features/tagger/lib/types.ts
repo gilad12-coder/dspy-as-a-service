@@ -124,10 +124,11 @@ export interface AssistState {
    */
   model?: string;
   /**
-   * Sampling parameters saved with the chosen model from the shared model
-   * config dialog (temperature, max_tokens, top_p, extra.reasoning_effort).
-   * Only ever present alongside ``model``; the server merges them into the
-   * tagging LM the same way optimizations do.
+   * Safe settings saved with the chosen model from the shared model config
+   * dialog: sampling parameters plus its managed/BYOK source and vault
+   * provider slug. Secrets and custom endpoints never live here. Only ever
+   * present alongside ``model``; the server resolves the connection and
+   * merges the settings into the tagging LM the same way optimizations do.
    */
   modelParams?: Omit<ModelConfig, "name">;
   /** LiteLLM id of the model conducting the interview (the composer's model

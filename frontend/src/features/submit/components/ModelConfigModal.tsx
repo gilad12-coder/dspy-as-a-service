@@ -36,8 +36,6 @@ interface ModelConfigModalProps {
   recentConfigs?: ModelConfig[];
   /** Remove a single recent config by its model name (rendered as a per-row X). */
   onRemoveRecent?: (name: string) => void;
-  /** Allow this surface to use the account's stored BYOK connections. */
-  allowByok?: boolean;
 }
 
 const TOKEN_SOURCE_SEGMENTS: Array<{
@@ -55,7 +53,7 @@ const TOKEN_SOURCE_TRANSITION = {
   ease: [0.22, 1, 0.36, 1],
 } as const;
 
-function withoutInlineConnection(config: ModelConfig, allowByok: boolean): ModelConfig {
+function withoutInlineConnection(config: ModelConfig): ModelConfig {
   const { base_url: _baseUrl, ...rest } = config;
   const {
     api_key: _apiKey,
@@ -63,7 +61,7 @@ function withoutInlineConnection(config: ModelConfig, allowByok: boolean): Model
     base_url: _ExtraBaseUrl,
     ...safeExtra
   } = rest.extra ?? {};
-  const tokenSource = allowByok ? (rest.token_source ?? "managed") : "managed";
+  const tokenSource = rest.token_source ?? "managed";
   return {
     ...rest,
     token_source: tokenSource,
@@ -81,7 +79,6 @@ export function ModelConfigModal({
   catalogModels,
   recentConfigs,
   onRemoveRecent,
-  allowByok = true,
 }: ModelConfigModalProps) {
   const { keys } = useByokKeys();
   const { openTo } = useSettingsModal();
@@ -90,9 +87,7 @@ export function ModelConfigModal({
   // layoutId must be unique per instance or Framer pairs them up.
   const effortPillId = React.useId();
   const tokenSourcePillId = React.useId();
-  const [draft, setDraft] = React.useState<ModelConfig>(() =>
-    withoutInlineConnection(config, allowByok),
-  );
+  const [draft, setDraft] = React.useState<ModelConfig>(() => withoutInlineConnection(config));
   const mode = draft.token_source ?? "managed";
 
   // In BYOK mode the picker lists the BYOK catalog narrowed to the providers
@@ -127,9 +122,9 @@ export function ModelConfigModal({
   // Sync draft when config changes externally (e.g. opening with different model)
   React.useEffect(() => {
     if (open) {
-      setDraft(withoutInlineConnection(config, allowByok));
+      setDraft(withoutInlineConnection(config));
     }
-  }, [open, config, allowByok]);
+  }, [open, config]);
 
   // The effort ladder is model-specific (providers reject levels outside
   // their documented set). "none" is expressed by the switch itself, and an
@@ -163,7 +158,7 @@ export function ModelConfigModal({
   };
 
   const handleSave = () => {
-    onSave(withoutInlineConnection(draft, allowByok));
+    onSave(withoutInlineConnection(draft));
     onOpenChange(false);
   };
 
@@ -194,7 +189,7 @@ export function ModelConfigModal({
                       <button
                         type="button"
                         onClick={() => {
-                          setDraft(withoutInlineConnection(rc, allowByok));
+                          setDraft(withoutInlineConnection(rc));
                         }}
                         className="flex items-center gap-1.5 cursor-pointer outline-none"
                       >
@@ -225,63 +220,56 @@ export function ModelConfigModal({
             </div>
           )}
 
-          {allowByok && (
-            <div className="space-y-2">
-              <Label className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
-                {msg("billing.mode.label")}
-              </Label>
-              <div
-                role="group"
-                aria-label={msg("billing.mode.aria")}
-                className="flex w-fit rounded-lg bg-muted p-0.5"
-              >
-                {TOKEN_SOURCE_SEGMENTS.map(({ mode: value, icon: Icon, labelKey }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() =>
-                      setDraft((current) =>
-                        withoutInlineConnection(
-                          {
-                            ...current,
-                            name: "",
-                            token_source: value,
-                            byok_provider: undefined,
-                          },
-                          allowByok,
-                        ),
-                      )
-                    }
-                    aria-pressed={mode === value}
-                    className={cn(
-                      "relative flex cursor-pointer items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                      mode === value
-                        ? "text-foreground"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {mode === value && (
-                      <motion.span
-                        layoutId={`token-source-pill-${tokenSourcePillId}`}
-                        className="absolute inset-0 rounded-md bg-background shadow-[0_1px_2px_oklch(0.25_0.04_45/.12)]"
-                        transition={
-                          prefersReducedMotion ? { duration: 0 } : TOKEN_SOURCE_TRANSITION
-                        }
-                        aria-hidden="true"
-                      />
-                    )}
-                    <span className="relative z-10 flex items-center gap-1.5">
-                      <Icon className="size-3.5" aria-hidden="true" />
-                      {msg(labelKey)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {mode === "managed" && (
-                <p className="text-xs text-muted-foreground">{msg("billing.mode.managed_hint")}</p>
-              )}
+          <div className="space-y-2">
+            <Label className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
+              {msg("billing.mode.label")}
+            </Label>
+            <div
+              role="group"
+              aria-label={msg("billing.mode.aria")}
+              className="flex w-fit rounded-lg bg-muted p-0.5"
+            >
+              {TOKEN_SOURCE_SEGMENTS.map(({ mode: value, icon: Icon, labelKey }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() =>
+                    setDraft((current) =>
+                      withoutInlineConnection({
+                        ...current,
+                        name: "",
+                        token_source: value,
+                        byok_provider: undefined,
+                      }),
+                    )
+                  }
+                  aria-pressed={mode === value}
+                  className={cn(
+                    "relative flex cursor-pointer items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    mode === value
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {mode === value && (
+                    <motion.span
+                      layoutId={`token-source-pill-${tokenSourcePillId}`}
+                      className="absolute inset-0 rounded-md bg-background shadow-[0_1px_2px_oklch(0.25_0.04_45/.12)]"
+                      transition={prefersReducedMotion ? { duration: 0 } : TOKEN_SOURCE_TRANSITION}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="relative z-10 flex items-center gap-1.5">
+                    <Icon className="size-3.5" aria-hidden="true" />
+                    {msg(labelKey)}
+                  </span>
+                </button>
+              ))}
             </div>
-          )}
+            {mode === "managed" && (
+              <p className="text-xs text-muted-foreground">{msg("billing.mode.managed_hint")}</p>
+            )}
+          </div>
 
           {mode === "byok" && (
             <div className="flex items-center gap-2 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">

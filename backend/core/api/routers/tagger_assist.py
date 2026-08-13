@@ -33,13 +33,17 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ...billing import ProviderKeyVault, resolve_byok_model_config
 from ...billing.metering import meter_llm_run
 from ...constants import (
     OPTIMIZATION_TYPE_TAGGING,
     PAYLOAD_OVERVIEW_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_USERNAME,
+    TOKEN_SOURCE_BYOK,
+    TOKEN_SOURCE_MANAGED,
 )
+from ...models import ModelConfig
 from ...service_gateway import tagging
 from ...storage.models import TaggingSessionModel
 from ...worker.tagging_job import TaggingAutotagPayload, untagged_rows
@@ -215,11 +219,47 @@ def _require_known_model(assist: dict[str, Any]) -> None:
     Raises:
         DomainError: 422 when a chosen model is not in the curated catalog.
     """
+    model_config = tagging.assist_model_config(assist)
+    if model_config.token_source == TOKEN_SOURCE_BYOK:
+        return
     model = str((assist or {}).get("model") or "").strip()
     if not model:
         return
     if all(entry.value != model for entry in get_catalog_cached().models):
         raise DomainError("tagger.assist.unknown_model", status=422)
+
+
+def _resolve_assist_model(job_store: Any, username: str, assist: dict[str, Any]) -> ModelConfig:
+    """Validate and resolve the session's tagging model for execution.
+
+    Args:
+        job_store: Job store whose engine backs the encrypted provider vault.
+        username: Account that owns the selected BYOK connection.
+        assist: Persisted session assist state.
+
+    Returns:
+        The managed model config or a BYOK copy carrying its decrypted runtime
+        connection only in memory.
+
+    Raises:
+        DomainError: 400 when BYOK lacks a verified matching connection, or
+            422 when a managed model is outside the curated catalog.
+    """
+    _require_known_model(assist)
+    model_config = tagging.assist_model_config(assist)
+    if model_config.token_source != TOKEN_SOURCE_BYOK:
+        return model_config
+    engine = getattr(job_store, "engine", None)
+    if engine is None:
+        raise DomainError("billing.byok_missing_connection", status=400, provider="")
+    try:
+        return resolve_byok_model_config(
+            model_config,
+            username=username,
+            vault=ProviderKeyVault(engine=engine),
+        )
+    except ValueError as exc:
+        raise DomainError("billing.byok_missing_connection", status=400, provider=str(exc)) from exc
 
 
 def _interview_config(row: TaggingSessionModel) -> dict[str, Any]:
@@ -410,7 +450,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             data = cast("list[dict[str, Any]]", row.data)
             annotations = cast("dict[str, Any]", row.annotations)
             assist = cast("dict[str, Any]", row.assist) or {}
-        _require_known_model(assist)
+        model_config = _resolve_assist_model(job_store, user.username, assist)
         wanted = set(req.row_ids)
         rows = [r for r in data if str(r.get("id")) in wanted]
         if not rows:
@@ -422,7 +462,11 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         usage_sink: list = []
         try:
             predictions, credits = tagging.predict_rows(
-                config, instructions, rows, usage_sink=usage_sink
+                config,
+                instructions,
+                rows,
+                usage_sink=usage_sink,
+                model_config=model_config,
             )
         except Exception as exc:
             logger.exception("prediction failed for session %s", session_id)
@@ -430,7 +474,11 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         finally:
             # A failed batch's completed calls still consumed tokens; bill what ran.
             meter_llm_run(
-                job_store.engine, user.username, usage_sink, description="Tagging predictions"
+                job_store.engine,
+                user.username,
+                usage_sink,
+                description="Tagging predictions",
+                token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
             )
         return PredictResponse(predictions=predictions, credits=credits)
 
@@ -463,7 +511,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             data = cast("list[dict[str, Any]]", row.data)
             annotations = cast("dict[str, Any]", row.annotations)
             assist = cast("dict[str, Any]", row.assist) or {}
-        _require_known_model(assist)
+        model_config = _resolve_assist_model(job_store, user.username, assist)
         wanted = set(req.row_ids)
         rows = [r for r in data if str(r.get("id")) in wanted]
         if not rows:
@@ -477,7 +525,11 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             """Relay engine events, translating failures into an error event."""
             try:
                 async for event in tagging.predict_rows_stream(
-                    config, instructions, rows, usage_sink=usage_sink
+                    config,
+                    instructions,
+                    rows,
+                    usage_sink=usage_sink,
+                    model_config=model_config,
                 ):
                     yield event
             except Exception:
@@ -490,6 +542,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             username=user.username,
             description="Tagging predictions",
             usage_sink=usage_sink,
+            token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
         )
         return StreamingResponse(
             sse_from_events(metered),
@@ -522,14 +575,17 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             data = cast("list[dict[str, Any]]", row.data)
             annotations = cast("dict[str, Any]", row.annotations)
             assist = cast("dict[str, Any]", row.assist) or {}
-        _require_known_model(assist)
+        model_config = _resolve_assist_model(job_store, user.username, assist)
         rubric = [str(r) for r in assist.get("rubric") or []]
         examples = tagging.select_examples(config, data, annotations, assist)
         instructions = tagging.compile_instructions(config, rubric, examples)
         pending = untagged_rows(data, annotations)
         return EstimateResponse(
             **tagging.estimate_credits_for_rows(
-                instructions, pending, model=cast("str | None", config.get("model"))
+                instructions,
+                pending,
+                model=model_config.name,
+                token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
             )
         )
 
@@ -570,7 +626,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             if not pending:
                 raise DomainError("tagger.assist.nothing_to_tag", status=422)
             state = dict(cast("dict[str, Any]", row.assist) or {})
-            _require_known_model(state)
+            _resolve_assist_model(job_store, user.username, state)
             prior = dict(state.get("autotag") or {})
             prior_job = str(prior.get("job_id") or "")
             if (

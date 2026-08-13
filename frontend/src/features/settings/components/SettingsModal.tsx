@@ -225,7 +225,6 @@ function TaggingTab() {
         catalogModels={catalogModels ?? undefined}
         recentConfigs={recentConfigs}
         onRemoveRecent={removeRecentConfig}
-        allowByok={false}
       />
     </div>
   );

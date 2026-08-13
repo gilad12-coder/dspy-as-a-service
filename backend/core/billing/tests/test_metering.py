@@ -151,6 +151,14 @@ def test_estimate_run_credits_prices_without_debiting(engine: object) -> None:
     assert estimate == meter_llm_run(engine, "alice@x.io", [_FakeLm(history)], description="x")
 
 
+def test_estimate_run_credits_applies_byok_platform_fee() -> None:
+    """The live credit watch prices BYOK usage at the same reduced source rate."""
+    history = [{"usage": {"prompt_tokens": 100_000, "completion_tokens": 40_000}}]
+    managed = estimate_run_credits([_FakeLm(history)], "managed")
+    byok = estimate_run_credits([_FakeLm(history)], "byok")
+    assert 0 < byok < managed
+
+
 def test_estimate_run_credits_handles_empty_and_untracked_lms() -> None:
     """No LMs or no tracked usage estimates to zero instead of raising."""
     assert estimate_run_credits([]) == 0

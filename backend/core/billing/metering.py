@@ -14,8 +14,8 @@ import logging
 
 from ..constants import TOKEN_SOURCE_MANAGED
 from ..service_gateway.language_models import served_model_from, usage_by_model_from_history
-from .pricing import ModelUsage, credits_for_usage, usages_from_breakdown
-from .service import StripeBillingService
+from .pricing import ModelUsage, usages_from_breakdown
+from .service import StripeBillingService, run_cost_credits
 
 logger = logging.getLogger("skynet.billing.metering")
 
@@ -71,8 +71,8 @@ def _harvest_usages(lms: list) -> tuple[list[ModelUsage], str | None]:
     return usages_from_breakdown(rekeyed), next(iter(rekeyed))
 
 
-def estimate_run_credits(language_models) -> int:
-    """Price the managed-token usage a set of LMs has accumulated so far.
+def estimate_run_credits(language_models, token_source: str = TOKEN_SOURCE_MANAGED) -> int:
+    """Price the billable usage a set of LMs has accumulated so far.
 
     A ``MeteredLM``'s running totals are current at any point, so this can be
     polled mid-run — the auto-tag job's credit watch uses it to stop a bulk
@@ -83,17 +83,19 @@ def estimate_run_credits(language_models) -> int:
 
     Args:
         language_models: The run's LM objects (a single LM or an iterable).
+        token_source: ``managed`` for full model cost or ``byok`` for the
+            platform-fee portion only.
 
     Returns:
-        The full managed credit cost of the usage so far (``0`` when nothing
-        was tracked).
+        The billable credit cost of the usage so far (``0`` when nothing was
+        tracked).
     """
     lms = _coerce_lms(language_models)
     if not lms:
         return 0
     try:
         usages, _ = _harvest_usages(lms)
-        return credits_for_usage(usages)
+        return run_cost_credits(usages, token_source)
     except Exception:
         logger.exception("failed to price in-flight LLM usage")
         return 0

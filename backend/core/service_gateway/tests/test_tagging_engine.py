@@ -20,6 +20,7 @@ from ..tagging import (
     _parse_interview_prediction,
     _parse_json,
     _StreamedArrayItems,
+    assist_model_config,
     assist_model_name,
     compile_instructions,
     effective_task_config,
@@ -317,6 +318,14 @@ def test_estimate_prices_on_chosen_model() -> None:
     assert fallback["model"] == assist_model_name()
 
 
+def test_estimate_applies_byok_platform_fee() -> None:
+    """A BYOK estimate charges only the platform-fee share of the same usage."""
+    rows = [{"id": i, "text": "x" * 4000} for i in range(100)]
+    managed = estimate_credits_for_rows("instructions", rows, model="openai/gpt-test", token_source="managed")
+    byok = estimate_credits_for_rows("instructions", rows, model="openai/gpt-test", token_source="byok")
+    assert 0 < byok["credits_low"] < managed["credits_low"]
+
+
 def test_effective_task_config_lifts_chosen_model() -> None:
     """``assist.model`` merges into the effective config; blank stays absent."""
     merged = effective_task_config(_BINARY, {"model": " openai/gpt-test "})
@@ -344,6 +353,8 @@ def test_sanitize_model_params_bounds_and_filters() -> None:
             "top_p": -1,
             "max_tokens": 512.0,
             "base_url": "http://evil",
+            "token_source": "byok",
+            "byok_provider": " openrouter ",
             "extra": {"reasoning_effort": "High", "api_key": "sk-leak"},
         }
     )
@@ -351,6 +362,8 @@ def test_sanitize_model_params_bounds_and_filters() -> None:
         "temperature": 2.0,
         "top_p": 0.0,
         "max_tokens": 512,
+        "token_source": "byok",
+        "byok_provider": "openrouter",
         "extra": {"reasoning_effort": "high"},
     }
     assert tagging._sanitize_model_params(None) == {}
@@ -358,6 +371,26 @@ def test_sanitize_model_params_bounds_and_filters() -> None:
     assert tagging._sanitize_model_params(
         {"temperature": "hot", "max_tokens": 0, "extra": {"reasoning_effort": "extreme"}}
     ) == {}
+
+
+def test_assist_model_config_preserves_source_without_inline_connection() -> None:
+    """Tagging keeps BYOK selectors while rejecting persisted connection fields."""
+    config = assist_model_config(
+        {
+            "model": " openrouter/openai/gpt-test ",
+            "modelParams": {
+                "token_source": "byok",
+                "byok_provider": "openrouter",
+                "base_url": "https://untrusted.example",
+                "extra": {"api_key": "sk-inline", "reasoning_effort": "high"},
+            },
+        }
+    )
+    assert config.name == "openrouter/openai/gpt-test"
+    assert config.token_source == "byok"
+    assert config.byok_provider == "openrouter"
+    assert config.base_url is None
+    assert config.extra == {"reasoning_effort": "high"}
 
 
 def test_build_assist_lm_honors_model_override(monkeypatch) -> None:

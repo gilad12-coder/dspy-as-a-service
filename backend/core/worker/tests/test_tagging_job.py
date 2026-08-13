@@ -119,7 +119,15 @@ def _seed_job(store: _MemStore, job_id: str, status: str | None = None) -> None:
         store.update_job(job_id, status=status)
 
 
-def _fake_predict_all(config, instructions, rows, on_batch=None, cancel=None, usage_sink=None):
+def _fake_predict_all(
+    config,
+    instructions,
+    rows,
+    on_batch=None,
+    cancel=None,
+    usage_sink=None,
+    model_config=None,
+):
     """Label every row 'no' through on_batch, like the real engine."""
     batch = {str(r["id"]): {"value": "no", "confidence": 0.9, "reason": "t"} for r in rows}
     if on_batch is not None and batch:
@@ -165,7 +173,15 @@ def test_run_autotag_job_user_cancel(monkeypatch) -> None:
     """A cancelled job row stops the loop and marks the session canceled."""
     monkeypatch.setattr(tagging_job, "MONITOR_TICK_SECONDS", 0.01)
 
-    def waiting_predict(config, instructions, rows, on_batch=None, cancel=None, usage_sink=None):
+    def waiting_predict(
+        config,
+        instructions,
+        rows,
+        on_batch=None,
+        cancel=None,
+        usage_sink=None,
+        model_config=None,
+    ):
         """Block until the stop signal arrives, like a long real run."""
         assert cancel is not None
         cancel.wait(5.0)
@@ -190,7 +206,15 @@ def test_run_autotag_job_lease_loss_abandons_silently(monkeypatch) -> None:
     """A stolen lease stops the loop without writing a terminal session state."""
     monkeypatch.setattr(tagging_job, "MONITOR_TICK_SECONDS", 0.01)
 
-    def waiting_predict(config, instructions, rows, on_batch=None, cancel=None, usage_sink=None):
+    def waiting_predict(
+        config,
+        instructions,
+        rows,
+        on_batch=None,
+        cancel=None,
+        usage_sink=None,
+        model_config=None,
+    ):
         """Block until the stop signal arrives, like a long real run."""
         assert cancel is not None
         cancel.wait(5.0)
@@ -215,7 +239,15 @@ def test_run_autotag_job_lease_loss_abandons_silently(monkeypatch) -> None:
 def test_run_autotag_job_failure_marks_session(monkeypatch) -> None:
     """A batch-loop failure marks the session failed and re-raises."""
 
-    def broken_predict(config, instructions, rows, on_batch=None, cancel=None, usage_sink=None):
+    def broken_predict(
+        config,
+        instructions,
+        rows,
+        on_batch=None,
+        cancel=None,
+        usage_sink=None,
+        model_config=None,
+    ):
         """Blow up like an exhausted provider."""
         raise RuntimeError("provider down")
 
@@ -260,9 +292,19 @@ def test_run_autotag_job_depleted_account_stops_before_first_call(monkeypatch) -
 def test_run_autotag_job_credit_watch_stops_mid_run(monkeypatch) -> None:
     """The monitor stops the loop once accrued cost reaches the balance."""
     monkeypatch.setattr(tagging_job, "MONITOR_TICK_SECONDS", 0.01)
-    monkeypatch.setattr(tagging_job, "estimate_run_credits", lambda sink: 10_000)
+    monkeypatch.setattr(
+        tagging_job, "estimate_run_credits", lambda sink, token_source="managed": 10_000
+    )
 
-    def waiting_predict(config, instructions, rows, on_batch=None, cancel=None, usage_sink=None):
+    def waiting_predict(
+        config,
+        instructions,
+        rows,
+        on_batch=None,
+        cancel=None,
+        usage_sink=None,
+        model_config=None,
+    ):
         """Block until the stop signal arrives, like a long real run."""
         assert cancel is not None
         cancel.wait(5.0)
