@@ -267,7 +267,9 @@ export function ModelConfigModal({
               ))}
             </div>
             {mode === "managed" && (
-              <p className="text-xs text-muted-foreground">{msg("billing.mode.managed_hint")}</p>
+              <div className="flex items-center gap-2 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
+                <span className="min-w-0 flex-1">{msg("billing.mode.managed_hint")}</span>
+              </div>
             )}
           </div>
 
