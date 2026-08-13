@@ -3,12 +3,9 @@
 import * as React from "react";
 import {
   ArrowDownLeft,
-  ArrowSquareOut,
   ArrowsClockwise,
   ChartBar,
-  CircleNotch,
   Coins,
-  CreditCard,
   Gift,
   Plus,
   Sparkle,
@@ -33,17 +30,13 @@ import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
 import {
-  getBillingTransactions,
   getUsage,
-  type BillingTransaction,
-  type BillingTransactionsResponse,
   type BillingUsageEntry,
   type BillingUsageResponse,
 } from "@/shared/lib/api";
 import { SkynetDatePicker, toISODate } from "@/shared/ui/skynet-date-picker";
 import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { Button } from "@/shared/ui/primitives/button";
-import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { useCredits } from "../providers/credit-provider";
 import { formatCredits, formatResetDate, type UsageEntry } from "../lib/credit";
 
@@ -88,14 +81,6 @@ const MODEL_RAMP = [
   "var(--color-chart-5)",
 ];
 const BILLED_FILL = "var(--color-chart-1)";
-
-const TRANSACTION_STATUS_LABEL: Record<BillingTransaction["status"], MessageKey> = {
-  paid: "billing.transactions.status.paid",
-  processing: "billing.transactions.status.processing",
-  refunded: "billing.transactions.status.refunded",
-  partially_refunded: "billing.transactions.status.partially_refunded",
-  disputed: "billing.transactions.status.disputed",
-};
 
 // Mirrors the wallet ledger pill so every segmented control in billing slides alike.
 const PILL_TRANSITION = { type: "tween", duration: 0.16, ease: [0.22, 1, 0.36, 1] } as const;
@@ -218,111 +203,6 @@ function PanelHeading({ children }: { children: React.ReactNode }) {
     <p className="text-[0.6875rem] font-semibold uppercase tracking-widest text-muted-foreground">
       {children}
     </p>
-  );
-}
-
-/** Format a Stripe minor-unit amount in its declared currency. */
-function formatTransactionAmount(amount: number, currency: string, locale: string): string {
-  try {
-    return new Intl.NumberFormat(locale, {
-      style: "currency",
-      currency: currency.toUpperCase(),
-    }).format(amount / 100);
-  } catch {
-    return `${(amount / 100).toFixed(2)} ${currency.toUpperCase()}`;
-  }
-}
-
-/** Stripe purchase history, separate from the internal credit activity ledger. */
-function TransactionHistory({
-  data,
-  loading,
-  failed,
-  locale,
-  onRetry,
-}: {
-  data: BillingTransactionsResponse | null;
-  loading: boolean;
-  failed: boolean;
-  locale: string;
-  onRetry: () => void;
-}) {
-  return (
-    <section className="flex flex-col gap-2" aria-label={msg("billing.transactions.title")}>
-      <div className="flex items-center justify-between gap-3">
-        <PanelHeading>{msg("billing.transactions.title")}</PanelHeading>
-        {loading && data != null && (
-          <CircleNotch className="size-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
-        )}
-      </div>
-      {failed ? (
-        <div className="flex items-center justify-between gap-3 border-y border-border/35 py-3">
-          <span className="text-xs text-muted-foreground">{msg("billing.transactions.load_error")}</span>
-          <RetryIconButton label={msg("billing.wallet.retry")} onClick={onRetry} />
-        </div>
-      ) : data == null ? (
-        <div className="flex h-20 items-center justify-center border-y border-border/35" aria-busy="true">
-          <CircleNotch className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
-        </div>
-      ) : data.entries.length === 0 ? (
-        <div className="flex items-center gap-2 border-y border-border/35 py-4 text-xs text-muted-foreground">
-          <CreditCard className="size-4 shrink-0" aria-hidden="true" />
-          {data.available
-            ? msg("billing.transactions.empty")
-            : msg("billing.transactions.unavailable")}
-        </div>
-      ) : (
-        <ul className="divide-y divide-border/35 border-y border-border/35">
-          {data.entries.map((transaction) => {
-            const statusTone =
-              transaction.status === "paid"
-                ? "bg-emerald-700/10 text-emerald-800"
-                : transaction.status === "processing"
-                  ? "bg-amber-700/10 text-amber-800"
-                  : "bg-destructive/10 text-destructive";
-            return (
-              <li key={transaction.id} className="flex flex-wrap items-center gap-3 py-3">
-                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-                  <CreditCard className="size-4" aria-hidden="true" />
-                </span>
-                <span className="flex min-w-36 flex-1 flex-col gap-0.5">
-                  <span className="text-sm font-medium text-foreground">
-                    {transaction.credits == null
-                      ? msg("billing.transactions.purchase")
-                      : formatMsg("billing.transactions.credits", {
-                          p1: formatCredits(transaction.credits, locale),
-                        })}
-                  </span>
-                  <span dir="ltr" className="text-xs text-muted-foreground">
-                    {formatResetDate(transaction.at, locale)}
-                  </span>
-                </span>
-                <span className="ms-auto flex shrink-0 items-center gap-2">
-                  <span className={cn("rounded-full px-2 py-0.5 text-[0.625rem] font-semibold", statusTone)}>
-                    {msg(TRANSACTION_STATUS_LABEL[transaction.status])}
-                  </span>
-                  <span dir="ltr" className="text-sm font-semibold tabular-nums text-foreground">
-                    {formatTransactionAmount(transaction.amount, transaction.currency, locale)}
-                  </span>
-                  {transaction.document_url && (
-                    <a
-                      href={transaction.document_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={msg("billing.transactions.receipt")}
-                      title={msg("billing.transactions.receipt")}
-                      className="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
-                    >
-                      <ArrowSquareOut className="size-3.5" aria-hidden="true" />
-                    </a>
-                  )}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
   );
 }
 
@@ -659,9 +539,6 @@ export function UsageTab() {
   const [groupBy, setGroupBy] = React.useState<GroupBy>("day");
   const [data, setData] = React.useState<BillingUsageResponse | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [transactions, setTransactions] = React.useState<BillingTransactionsResponse | null>(null);
-  const [transactionsLoading, setTransactionsLoading] = React.useState(true);
-  const [transactionsFailed, setTransactionsFailed] = React.useState(false);
   const reqId = React.useRef(0);
 
   const todayIso = React.useMemo(() => toISODate(new Date()), []);
@@ -683,8 +560,6 @@ export function UsageTab() {
     const { startIso, endIso, startMs, endMs } = rangeBounds(range, customFrom, customTo);
     const id = ++reqId.current;
     setLoading(true);
-    setTransactionsLoading(true);
-    setTransactionsFailed(false);
     getUsage(startIso, endIso)
       .then((resp) => {
         if (id === reqId.current) setData(resp);
@@ -694,16 +569,6 @@ export function UsageTab() {
       })
       .finally(() => {
         if (id === reqId.current) setLoading(false);
-      });
-    getBillingTransactions(startIso, endIso)
-      .then((resp) => {
-        if (id === reqId.current) setTransactions(resp);
-      })
-      .catch(() => {
-        if (id === reqId.current) setTransactionsFailed(true);
-      })
-      .finally(() => {
-        if (id === reqId.current) setTransactionsLoading(false);
       });
   }, [range, customFrom, customTo, wallet.usage]);
 
@@ -808,13 +673,6 @@ export function UsageTab() {
     return (
       <div className="flex flex-col gap-5">
         {toolbar}
-        <TransactionHistory
-          data={transactions}
-          loading={transactionsLoading}
-          failed={transactionsFailed}
-          locale={locale}
-          onRetry={load}
-        />
         <EmptyState
           variant="list"
           icon={ChartBar}
@@ -841,14 +699,6 @@ export function UsageTab() {
           value={formatCredits(data.runs, locale)}
         />
       </div>
-
-      <TransactionHistory
-        data={transactions}
-        loading={transactionsLoading}
-        failed={transactionsFailed}
-        locale={locale}
-        onRetry={load}
-      />
 
       <div className="flex flex-col gap-3">
         <PanelHeading>{msg("usage.panel.over_time")}</PanelHeading>

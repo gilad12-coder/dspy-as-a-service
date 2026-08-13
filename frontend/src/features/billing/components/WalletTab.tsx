@@ -2,9 +2,16 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { CircleNotch, Coins, CreditCard, Plus, Sparkle } from "@/shared/ui/icons";
+import {
+  ArrowSquareOut,
+  CircleNotch,
+  Coins,
+  CreditCard,
+  Plus,
+  Sparkle,
+} from "@/shared/ui/icons";
 import { toast } from "react-toastify";
-import { formatMsg, msg } from "@/shared/lib/messages";
+import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
 import { SettingsRow } from "@/shared/ui/settings-row";
@@ -14,8 +21,11 @@ import {
   createBillingPortalSession,
   createCheckoutSession,
   getBillingProfile,
+  getBillingTransactions,
   type BillingAddressResponse,
   type BillingProfileResponse,
+  type BillingTransaction,
+  type BillingTransactionsResponse,
 } from "@/shared/lib/api";
 import { useCredits } from "../providers/credit-provider";
 import {
@@ -24,6 +34,7 @@ import {
   CUSTOM_CREDITS_MIN,
   creditsToUsd,
   formatCredits,
+  formatResetDate,
   formatUsd,
   type CreditPack,
 } from "../lib/credit";
@@ -31,6 +42,14 @@ import {
 // Slide transition for the credit-pack selector's shared-layout pill — matches the
 // runs-source segmented control in explore/SearchBar so the two read identically.
 const PILL_TRANSITION = { type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1] } as const;
+
+const TRANSACTION_STATUS_LABEL: Record<BillingTransaction["status"], MessageKey> = {
+  paid: "billing.transactions.status.paid",
+  processing: "billing.transactions.status.processing",
+  refunded: "billing.transactions.status.refunded",
+  partially_refunded: "billing.transactions.status.partially_refunded",
+  disputed: "billing.transactions.status.disputed",
+};
 
 /** Whole-dollar USD (no cents) for the buy button — "$20", not "$20.00". */
 function formatUsdWhole(usd: number, locale: string): string {
@@ -166,6 +185,132 @@ function formatAddress(address: BillingAddressResponse): string {
   ]
     .filter(Boolean)
     .join(", ");
+}
+
+/** Format a Stripe minor-unit amount in its declared currency. */
+function formatTransactionAmount(amount: number, currency: string, locale: string): string {
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: currency.toUpperCase(),
+    }).format(amount / 100);
+  } catch {
+    return `${(amount / 100).toFixed(2)} ${currency.toUpperCase()}`;
+  }
+}
+
+/** Render Stripe purchase history within the billing settings tab. */
+function TransactionHistory() {
+  const { locale } = useLocale();
+  const [data, setData] = React.useState<BillingTransactionsResponse | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [failed, setFailed] = React.useState(false);
+
+  const load = React.useCallback(() => {
+    setLoading(true);
+    setFailed(false);
+    getBillingTransactions()
+      .then(setData)
+      .catch(() => setFailed(true))
+      .finally(() => setLoading(false));
+  }, []);
+
+  React.useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <section
+      className="flex flex-col gap-2 border-t border-border/40 pt-5"
+      aria-labelledby="transaction-history-heading"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h3 id="transaction-history-heading" className="text-sm font-semibold text-foreground">
+          {msg("billing.transactions.title")}
+        </h3>
+        {loading && data != null && (
+          <CircleNotch className="size-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
+        )}
+      </div>
+      {failed ? (
+        <div className="flex items-center justify-between gap-3 border-y border-border/35 py-3">
+          <span className="text-xs text-muted-foreground">
+            {msg("billing.transactions.load_error")}
+          </span>
+          <RetryIconButton label={msg("billing.wallet.retry")} onClick={load} />
+        </div>
+      ) : data == null ? (
+        <div
+          className="flex h-20 items-center justify-center border-y border-border/35"
+          aria-busy="true"
+        >
+          <CircleNotch className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+        </div>
+      ) : data.entries.length === 0 ? (
+        <div className="flex items-center gap-2 border-y border-border/35 py-4 text-xs text-muted-foreground">
+          <CreditCard className="size-4 shrink-0" aria-hidden="true" />
+          {data.available
+            ? msg("billing.transactions.empty")
+            : msg("billing.transactions.unavailable")}
+        </div>
+      ) : (
+        <ul className="divide-y divide-border/35 border-y border-border/35">
+          {data.entries.map((transaction) => {
+            const statusTone =
+              transaction.status === "paid"
+                ? "bg-emerald-700/10 text-emerald-800"
+                : transaction.status === "processing"
+                  ? "bg-amber-700/10 text-amber-800"
+                  : "bg-destructive/10 text-destructive";
+            return (
+              <li key={transaction.id} className="flex flex-wrap items-center gap-3 py-3">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                  <CreditCard className="size-4" aria-hidden="true" />
+                </span>
+                <span className="flex min-w-36 flex-1 flex-col gap-0.5">
+                  <span className="text-sm font-medium text-foreground">
+                    {transaction.credits == null
+                      ? msg("billing.transactions.purchase")
+                      : formatMsg("billing.transactions.credits", {
+                          p1: formatCredits(transaction.credits, locale),
+                        })}
+                  </span>
+                  <span dir="ltr" className="text-xs text-muted-foreground">
+                    {formatResetDate(transaction.at, locale)}
+                  </span>
+                </span>
+                <span className="ms-auto flex shrink-0 items-center gap-2">
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[0.625rem] font-semibold",
+                      statusTone,
+                    )}
+                  >
+                    {msg(TRANSACTION_STATUS_LABEL[transaction.status])}
+                  </span>
+                  <span dir="ltr" className="text-sm font-semibold tabular-nums text-foreground">
+                    {formatTransactionAmount(transaction.amount, transaction.currency, locale)}
+                  </span>
+                  {transaction.document_url && (
+                    <a
+                      href={transaction.document_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={msg("billing.transactions.receipt")}
+                      title={msg("billing.transactions.receipt")}
+                      className="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+                    >
+                      <ArrowSquareOut className="size-3.5" aria-hidden="true" />
+                    </a>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 /** Stripe-backed billing identity and masked saved payment methods. */
@@ -377,6 +522,7 @@ export function WalletTab() {
       </div>
 
       <BillingDetails />
+      <TransactionHistory />
     </div>
   );
 }
