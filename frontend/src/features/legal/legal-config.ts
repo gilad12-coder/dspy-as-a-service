@@ -15,7 +15,7 @@ export const LEGAL_CONFIG = {
 
   // Dates shown on both documents. Update lastUpdated whenever the text changes.
   effectiveDate: "August 11, 2026",
-  lastUpdated: "August 13, 2026",
+  lastUpdated: "August 14, 2026",
 
   // Skynet is operated by an individual (sole proprietor); this legal name is
   // the operating party and, for the Privacy Policy, the data controller.
@@ -27,9 +27,6 @@ export const LEGAL_CONFIG = {
   contactEmail: "support@skynetml.com",
   privacyEmail: "privacy@skynetml.com",
   legalEmail: "legal@skynetml.com",
-
-  // Business address for legal notices.
-  address: "502 Laguardia Place, Apartment 4, New York, NY 10012, USA",
 
   // Governing-law / venue clause.
   governingLaw: "the State of New York, United States",

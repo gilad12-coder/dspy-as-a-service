@@ -6,7 +6,7 @@
  * encrypted-at-rest BYOK keys, optional observability providers, and the retention
  * windows enforced in the backend. This is a launch-ready draft, not legal advice — have
  * counsel review it before relying on it. Operator-specific values (controller
- * identity, address, contact emails) live in legal-config.ts.
+ * identity and contact emails) live in legal-config.ts.
  */
 
 import { LEGAL_CONFIG as C } from "./legal-config";
@@ -255,7 +255,7 @@ export const PRIVACY_POLICY: LegalDocument = {
           kind: "paragraph",
           text:
             `If you have questions about this Policy or how we handle your information, contact us at ` +
-            `${C.privacyEmail}. The Service is operated by ${C.legalEntity}, ${C.address}.`,
+            `${C.privacyEmail}.`,
         },
       ],
     },

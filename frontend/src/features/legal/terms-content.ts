@@ -5,7 +5,7 @@
  * Stripe, bring-your-own-key runs, third-party LLM providers, AGPL software vs.
  * hosted service). This is a launch-ready draft, not legal advice — have
  * counsel review it before relying on it. Operator-specific values (entity,
- * address, governing law, contact emails) live in legal-config.ts.
+ * governing law and contact emails) live in legal-config.ts.
  */
 
 import { LEGAL_CONFIG as C } from "./legal-config";
@@ -325,9 +325,7 @@ export const TERMS_OF_SERVICE: LegalDocument = {
       blocks: [
         {
           kind: "paragraph",
-          text:
-            `Questions about these Terms can be sent to ${C.legalEmail} (or ${C.contactEmail}). The ` +
-            `Service is operated by ${C.legalEntity}, ${C.address}.`,
+          text: `Questions about these Terms can be sent to ${C.legalEmail} (or ${C.contactEmail}).`,
         },
       ],
     },

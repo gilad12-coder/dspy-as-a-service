@@ -26,12 +26,13 @@ import {
   User,
   Users,
 } from "@/shared/ui/icons";
+import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
+import { Button } from "@/shared/ui/primitives/button";
 import { LEGAL_CONFIG } from "./legal-config";
 import type { LegalBlock, LegalDocument as LegalDoc } from "./types";
 import styles from "./legal-document.module.css";
 
 const CHROME = {
-  wordmark: "SKYNET",
   legal: "Legal",
   homeAria: "Skynet home",
   contents: "On this page",
@@ -149,34 +150,23 @@ export function LegalDocument({
             aria-label={CHROME.homeAria}
             className="flex min-h-11 items-center gap-3 rounded-lg px-1 text-foreground outline-none transition-colors hover:text-[#6F5541] focus-visible:ring-2 focus-visible:ring-[#C8A882]/60"
           >
-            <span
-              className="text-sm font-bold uppercase tracking-[0.14em]"
-              style={{ fontFamily: "var(--font-ui)" }}
-            >
-              {CHROME.wordmark}
-            </span>
+            <AnimatedWordmark
+              size={16}
+              className="cursor-pointer"
+              autoMorph
+              autoMorphDuration={10000}
+              morphSpeed={250}
+            />
             <span aria-hidden="true" className="h-4 w-px bg-border" />
             <span className="text-sm font-medium text-muted-foreground">{CHROME.legal}</span>
           </Link>
 
-          <nav aria-label={CHROME.relatedDocument} className="flex items-center gap-1 sm:gap-2">
-            <Link
-              href={related.href}
-              aria-label={related.label}
-              className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm font-medium text-foreground/70 outline-none transition-colors hover:bg-[#F0EBE4] hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#C8A882]/60 sm:px-4"
-            >
-              <FileText className="size-4" aria-hidden="true" />
-              <span className="hidden sm:inline">{related.label}</span>
-            </Link>
-            <Link
-              href="/"
-              aria-label={CHROME.backToApp}
-              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[#3D2E22] px-3 text-sm font-semibold text-[#FAF8F5] outline-none transition-colors hover:bg-[#523F31] focus-visible:ring-2 focus-visible:ring-[#C8A882] sm:px-4"
-            >
+          <Button asChild size="pill" className="px-3 sm:px-5">
+            <Link href="/" aria-label={CHROME.backToApp}>
               <ArrowLeft className="size-4" aria-hidden="true" />
               <span className="hidden sm:inline">{CHROME.backToApp}</span>
             </Link>
-          </nav>
+          </Button>
         </div>
       </header>
 
@@ -349,13 +339,12 @@ export function LegalDocument({
                 {CHROME.contactPrompt}
               </p>
             </div>
-            <a
-              href={`mailto:${contactEmail}`}
-              className="inline-flex min-h-11 w-fit items-center gap-2 rounded-full bg-[#3D2E22] px-5 text-sm font-semibold text-[#FAF8F5] outline-none transition-colors hover:bg-[#523F31] focus-visible:ring-2 focus-visible:ring-[#C8A882]"
-            >
-              <Envelope className="size-4" aria-hidden="true" />
-              {contactEmail}
-            </a>
+            <Button asChild size="pill" className="w-fit">
+              <a href={`mailto:${contactEmail}`}>
+                <Envelope className="size-4" aria-hidden="true" />
+                {contactEmail}
+              </a>
+            </Button>
           </div>
 
           <div className="flex flex-col justify-between gap-8 border-t border-border/70 bg-[#F0EBE4] p-6 sm:p-8 md:border-l md:border-t-0 lg:p-10">
@@ -370,21 +359,15 @@ export function LegalDocument({
                 {related.label}
               </h2>
             </div>
-            <Link
-              href={related.href}
-              className="group inline-flex min-h-11 w-fit items-center gap-2 rounded-full border border-[#BFAF9D] bg-[#FAF8F5] px-5 text-sm font-semibold text-foreground outline-none transition-colors hover:border-[#8C7A6B] hover:bg-white focus-visible:ring-2 focus-visible:ring-[#C8A882]/60"
-            >
-              {related.label}
-              <ArrowRight
-                className="size-4 transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transition-none"
-                aria-hidden="true"
-              />
-            </Link>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-6 py-4 text-xs text-muted-foreground md:col-span-2 sm:px-8 lg:px-10">
-            <p>{`${CHROME.lastUpdated}: ${LEGAL_CONFIG.lastUpdated}`}</p>
-            <p>{`${LEGAL_CONFIG.legalEntity} · ${LEGAL_CONFIG.websiteLabel}`}</p>
+            <Button asChild variant="outline" size="pill" className="group w-fit">
+              <Link href={related.href}>
+                {related.label}
+                <ArrowRight
+                  className="size-4 transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transition-none"
+                  aria-hidden="true"
+                />
+              </Link>
+            </Button>
           </div>
         </footer>
       </article>
