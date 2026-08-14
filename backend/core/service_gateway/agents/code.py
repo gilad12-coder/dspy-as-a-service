@@ -1078,23 +1078,27 @@ class _SubmitArgExtractor:
     loop iteration starts with a clean accumulator.
     """
 
-    def __init__(self, target_arg: str):
+    def __init__(self, target_arg: str, *, exclusive_submit: bool = False):
         """Bind the extractor to a specific submit argument name.
 
         Args:
             target_arg: Name of the ``submit`` arg to extract — e.g.
                 ``assistant_message`` for the generalist agent or
                 ``reply`` for the code agent.
+            exclusive_submit: Buffer until the field ends and suppress the
+                reply when submit appeared beside a non-submit tool.
         """
         self._target_arg = target_arg
+        self._exclusive_submit = exclusive_submit
         self._buffer = ""
         self._emitted_chars = 0
 
-    def feed(self, chunk: str) -> str | None:
+    def feed(self, chunk: str, *, final: bool = False) -> str | None:
         """Append a chunk and return the newly streamed slice of the target arg.
 
         Args:
             chunk: Latest streaming chunk from the ``tool_calls`` listener.
+            final: Whether this is the field's terminal chunk.
 
         Returns:
             The new characters of ``args[target_arg]`` since the last
@@ -1104,6 +1108,8 @@ class _SubmitArgExtractor:
         if not chunk:
             return None
         self._buffer += chunk
+        if self._exclusive_submit and not final:
+            return None
         try:
             parsed = jiter.from_json(
                 self._buffer.encode("utf-8"),
@@ -1115,6 +1121,10 @@ class _SubmitArgExtractor:
             return None
         tool_calls = parsed.get("tool_calls")
         if not isinstance(tool_calls, list):
+            return None
+        if self._exclusive_submit and any(
+            isinstance(call, dict) and call.get("name") != "submit" for call in tool_calls
+        ):
             return None
         for call in tool_calls:
             if not isinstance(call, dict) or call.get("name") != "submit":
@@ -1407,7 +1417,10 @@ class ReactReplyStream:
         elif self._native:
             self._extractor = _NativeSubmitArgExtractor(reply_field)
         else:
-            self._extractor = _SubmitArgExtractor(reply_field)
+            self._extractor = _SubmitArgExtractor(
+                reply_field,
+                exclusive_submit=bool(getattr(self._program.react, "_serial_tool_calls", False)),
+            )
 
     def listeners(self) -> list[dspy.streaming.StreamListener]:
         """Return the reply + reasoning stream listeners for this program.
@@ -1458,7 +1471,13 @@ class ReactReplyStream:
         if chunk.signature_field_name != self._stream_field:
             return None
         if self._extractor is not None:
-            delta = self._extractor.feed(chunk.chunk)
+            if isinstance(self._extractor, _SubmitArgExtractor):
+                delta = self._extractor.feed(
+                    chunk.chunk,
+                    final=chunk.is_last_chunk,
+                )
+            else:
+                delta = self._extractor.feed(chunk.chunk)
             if chunk.is_last_chunk:
                 self._extractor.reset()
             return delta

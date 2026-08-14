@@ -112,6 +112,32 @@ def test_submit_program_decodes_partial_tool_call_json() -> None:
     assert (first or "") + (second or "") == "Hi there"
 
 
+def test_serial_submit_stream_suppresses_reply_that_races_a_tool() -> None:
+    """A mixed tool turn never leaks its premature submit text to the user."""
+    base = REACT_CLASS(_Sig, tools=[_noop], max_iters=3)
+    base.react._serial_tool_calls = True
+    stream = ReactReplyStream(_SubmitProgram(base.react), "reply")
+
+    first = stream.reply_delta(
+        _response(
+            "tool_calls",
+            '{"tool_calls":[{"name":"count","args":{}},{"name":"submit","args":{"reply":"Checking',
+        )
+    )
+    second = stream.reply_delta(_response("tool_calls", ' now."}}]}', last=True))
+    final = stream.reply_delta(
+        _response(
+            "tool_calls",
+            '{"tool_calls":[{"name":"submit","args":{"reply":"You have 3."}}]}',
+            last=True,
+        )
+    )
+
+    assert first is None
+    assert second is None
+    assert final == "You have 3."
+
+
 def _lm_chunk(tool_calls: list | None = None, finish: str | None = None) -> SimpleNamespace:
     """Build a stand-in LiteLLM streaming chunk.
 

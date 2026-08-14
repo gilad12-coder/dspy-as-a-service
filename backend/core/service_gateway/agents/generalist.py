@@ -1755,7 +1755,15 @@ async def _drive_generalist_agent(
         # minimax-class, which occasionally breaks the turn protocol and raises
         # AdapterParseError — the retrying loop resamples the turn instead of
         # failing the whole chat reply.
-        react = RetryingReActV2(GeneralistSig, tools=dspy_tools, max_iters=8)
+        # A final ``submit`` issued in parallel with a read tool cannot see that
+        # tool's result. Serial calls guarantee the result enters ReAct history
+        # before the model writes the user-facing answer.
+        react = RetryingReActV2(
+            GeneralistSig,
+            tools=dspy_tools,
+            max_iters=8,
+            serial_tool_calls=True,
+        )
         # The user's ``assistant_message`` rides a ``submit`` tool call on ReActV2
         # or a separate ``extract`` predictor on classic ReAct; ``ReactReplyStream``
         # wires the right listeners and decodes whichever shape into reply deltas.
