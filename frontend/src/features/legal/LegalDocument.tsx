@@ -161,7 +161,7 @@ export function LegalDocument({
             <span className="text-sm font-medium text-muted-foreground">{CHROME.legal}</span>
           </Link>
 
-          <Button asChild size="pill" className="px-3 sm:px-5">
+          <Button asChild variant="outline" size="sm">
             <Link href="/" aria-label={CHROME.backToApp}>
               <ArrowLeft className="size-4" aria-hidden="true" />
               <span className="hidden sm:inline">{CHROME.backToApp}</span>
@@ -339,7 +339,7 @@ export function LegalDocument({
                 {CHROME.contactPrompt}
               </p>
             </div>
-            <Button asChild size="pill" className="w-fit">
+            <Button asChild variant="outline" size="sm" className="w-fit">
               <a href={`mailto:${contactEmail}`}>
                 <Envelope className="size-4" aria-hidden="true" />
                 {contactEmail}
@@ -359,7 +359,7 @@ export function LegalDocument({
                 {related.label}
               </h2>
             </div>
-            <Button asChild variant="outline" size="pill" className="group w-fit">
+            <Button asChild variant="outline" size="sm" className="group w-fit">
               <Link href={related.href}>
                 {related.label}
                 <ArrowRight
