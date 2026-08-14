@@ -73,7 +73,7 @@ export function TutorialOverlay() {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       const pw = Math.min(360, vw * 0.9 - 16);
-      const ph = opts?.popoverHeight ?? 280;
+      const ph = opts?.popoverHeight ?? 260;
       const gap = FIXED_GAP;
       const offsetY = opts?.offsetY ?? 0;
 
@@ -459,7 +459,11 @@ export function TutorialOverlay() {
       {splashPortal}
       {createPortal(
         <div className="fixed inset-0 z-[9998] pointer-events-none">
-          <SpotlightMask targetRect={targetRect} padding={highlightPadding} borderRadius={highlightRadius} />
+          <SpotlightMask
+            targetRect={targetRect}
+            padding={highlightPadding}
+            borderRadius={highlightRadius}
+          />
 
           <AnimatePresence mode="wait">
             {stepReady && popoverPosition && (

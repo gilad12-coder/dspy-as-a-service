@@ -95,11 +95,11 @@ import type { CatalogModel } from "@/shared/types/api";
 import { ComposerModelMenu } from "@/shared/ui/agent";
 import { ModelChip } from "@/shared/ui/model-chip";
 import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
-import { registerTutorialHook } from "@/features/tutorial";
 import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { LEGAL_CONFIG } from "@/features/legal";
 import { LanguageSwitcher } from "@/shared/ui/language-switcher";
+import { useTutorialContext } from "@/features/tutorial";
 import {
   deleteStorageQuotaOverride,
   generateApiToken,
@@ -1359,12 +1359,7 @@ function ApiTab() {
               <TooltipContent>{msg("settings.api.copy")}</TooltipContent>
             </Tooltip>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setRevealed(null)}
-            className="w-full"
-          >
+          <Button variant="outline" size="sm" onClick={() => setRevealed(null)} className="w-full">
             {msg("settings.api.done")}
           </Button>
         </div>
@@ -1537,6 +1532,7 @@ function SettingsPanelHeader({ tab }: { tab: SettingsTab }) {
 
 export function SettingsModal() {
   const { open, setOpen, targetTab, clearTarget } = useSettingsModal();
+  const { state: tutorialState } = useTutorialContext();
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
   const prefersReduced = useReducedMotion();
@@ -1552,18 +1548,6 @@ export function SettingsModal() {
   React.useEffect(() => {
     if (!tabs.includes(activeTab)) setActiveTab("wizard");
   }, [activeTab, tabs]);
-  React.useEffect(
-    () =>
-      registerTutorialHook("setSettingsTab", (tab) => {
-        if (tab === null) {
-          setOpen(false);
-          return;
-        }
-        if ((tabs as readonly string[]).includes(tab)) setActiveTab(tab as SettingsTab);
-        setOpen(true);
-      }),
-    [setOpen, tabs],
-  );
   // Honor a deep-link (e.g. the credit chip → wallet): when something opens the
   // modal targeting a tab, jump there once, then clear so a later manual open
   // keeps whatever tab the user last left it on.
@@ -1582,7 +1566,7 @@ export function SettingsModal() {
     wasOpen.current = open;
   }, [open]);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} modal={!tutorialState.isVisible}>
       <DialogContent data-settings-text-buttons className="gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="border-b border-border/40 px-5 py-4 pe-12 text-start">
           <div className="min-w-0">
@@ -1666,7 +1650,7 @@ export function SettingsModal() {
               <TabsContent value="privacy" data-tutorial="settings-privacy">
                 <PrivacyTab />
               </TabsContent>
-              <TabsContent value="billing" data-tutorial="settings-billing">
+              <TabsContent value="billing">
                 <WalletTab />
               </TabsContent>
               <TabsContent value="usage">

@@ -1,41 +1,38 @@
 "use client";
 
-import { motion } from "framer-motion";
-import * as React from "react";
-
 interface SpotlightMaskProps {
   targetRect: DOMRect | null;
   padding?: number;
   borderRadius?: number;
 }
 
-const spring = { type: "spring", stiffness: 400, damping: 35, mass: 0.8 } as const;
-
 export function SpotlightMask({ targetRect, padding = 8, borderRadius = 12 }: SpotlightMaskProps) {
   if (!targetRect) {
     return (
-      <svg className="absolute inset-0 w-full h-full pointer-events-auto">
-        <rect x="0" y="0" width="100%" height="100%" fill="rgba(28,22,18,0.50)" />
+      <svg aria-hidden="true" className="pointer-events-auto absolute inset-0 h-full w-full">
+        <rect x="0" y="0" width="100%" height="100%" fill="rgba(28,22,18,0.56)" />
       </svg>
     );
   }
 
-  const x = targetRect.x - padding;
-  const y = targetRect.y - padding;
-  const w = targetRect.width + padding * 2;
-  const h = targetRect.height + padding * 2;
+  const edge = 8;
+  const x = Math.max(edge, targetRect.x - padding);
+  const y = Math.max(edge, targetRect.y - padding);
+  const right = Math.min(window.innerWidth - edge, targetRect.right + padding);
+  const bottom = Math.min(window.innerHeight - edge, targetRect.bottom + padding);
+  const w = Math.max(1, right - x);
+  const h = Math.max(1, bottom - y);
 
   return (
-    <svg className="absolute inset-0 w-full h-full pointer-events-auto">
+    <svg
+      aria-hidden="true"
+      className="pointer-events-auto absolute inset-0 h-full w-full"
+      data-tutorial-spotlight="true"
+    >
       <defs>
         <mask id="tutorial-spotlight-mask">
           <rect x="0" y="0" width="100%" height="100%" fill="white" />
-          <motion.rect
-            animate={{ x, y, width: w, height: h }}
-            transition={spring}
-            rx={borderRadius}
-            fill="black"
-          />
+          <rect x={x} y={y} width={w} height={h} rx={borderRadius} fill="black" />
         </mask>
       </defs>
 
@@ -44,30 +41,32 @@ export function SpotlightMask({ targetRect, padding = 8, borderRadius = 12 }: Sp
         y="0"
         width="100%"
         height="100%"
-        fill="rgba(28,22,18,0.50)"
+        fill="rgba(28,22,18,0.56)"
         mask="url(#tutorial-spotlight-mask)"
       />
 
-      <motion.rect
-        animate={{ x, y, width: w, height: h }}
-        transition={spring}
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
         rx={borderRadius}
         fill="none"
-        stroke="rgba(229,221,212,0.35)"
-        strokeWidth="1.5"
+        stroke="rgba(200,168,130,0.95)"
+        strokeWidth="2"
+        vectorEffect="non-scaling-stroke"
       />
 
-      <motion.rect
-        animate={{ x, y, width: w, height: h, opacity: [0.3, 0.5, 0.3] }}
-        transition={{
-          ...spring,
-          opacity: { duration: 2.5, repeat: Infinity, ease: "easeInOut" },
-        }}
-        rx={borderRadius}
+      <rect
+        x={x + 2}
+        y={y + 2}
+        width={Math.max(1, w - 4)}
+        height={Math.max(1, h - 4)}
+        rx={Math.max(0, borderRadius - 2)}
         fill="none"
-        stroke="rgba(229,221,212,0.2)"
-        strokeWidth="3"
-        filter="blur(4px)"
+        stroke="rgba(250,248,245,0.72)"
+        strokeWidth="1"
+        vectorEffect="non-scaling-stroke"
       />
     </svg>
   );

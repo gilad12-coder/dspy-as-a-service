@@ -2,14 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import {
-  ArrowSquareOut,
-  CircleNotch,
-  Coins,
-  CreditCard,
-  Plus,
-  Sparkle,
-} from "@/shared/ui/icons";
+import { ArrowSquareOut, CircleNotch, Coins, CreditCard, Plus, Sparkle } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -352,7 +345,10 @@ function BillingDetails() {
 
   if (profile == null) {
     return (
-      <div className="flex h-28 items-center justify-center border-t border-border/40" aria-busy="true">
+      <div
+        className="flex h-28 items-center justify-center border-t border-border/40"
+        aria-busy="true"
+      >
         <CircleNotch className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
       </div>
     );
@@ -385,7 +381,10 @@ function BillingDetails() {
             [msg("billing.profile.address"), address],
             [msg("billing.profile.phone"), profile.phone],
           ].map(([label, value]) => (
-            <div key={label} className="grid grid-cols-[minmax(7rem,0.4fr)_1fr] gap-4 py-2.5 text-xs">
+            <div
+              key={label}
+              className="grid grid-cols-[minmax(7rem,0.4fr)_1fr] gap-4 py-2.5 text-xs"
+            >
               <dt className="text-muted-foreground">{label}</dt>
               <dd dir="auto" className="min-w-0 break-words text-foreground">
                 {value || msg("billing.profile.empty")}
@@ -430,7 +429,9 @@ function BillingDetails() {
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
-                    <span className="capitalize">{method.brand || method.type.replaceAll("_", " ")}</span>
+                    <span className="capitalize">
+                      {method.brand || method.type.replaceAll("_", " ")}
+                    </span>
                     {method.last4 && <span dir="ltr">•••• {method.last4}</span>}
                     {method.is_default && (
                       <span className="rounded-full bg-muted px-1.5 py-0.5 text-[0.625rem] font-semibold text-muted-foreground">
@@ -459,8 +460,8 @@ function BillingDetails() {
  * Wallet — the `billing` settings tab.
  *
  * A calm, left-aligned balance block (not a centered hero metric) and the
- * add-credits row. Spend history lives in its own
- * Usage tab. Balances read in credits only — no dollar equivalent is shown.
+ * add-credits row. Billing details, payment methods, and transaction history
+ * follow below. Balances read in credits only — no dollar equivalent is shown.
  */
 export function WalletTab() {
   const { totalCredits, status, syncing, loading, available, loadError, refresh } = useCredits();
@@ -481,45 +482,49 @@ export function WalletTab() {
           />
         </div>
       )}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {msg("billing.popover.title")}
-          </span>
-          <div className="flex items-center gap-2" aria-busy={syncing || undefined}>
-            {/* Same gold coin as the header chip so the balance reads as credits at a glance. */}
-            <Coins
-              className={cn(
-                "size-6 shrink-0",
-                syncing ? "text-muted-foreground" : "text-[#C8A882]",
-              )}
-              aria-hidden="true"
-            />
-            {/* Post-checkout sync [FG-3]: shimmer over the prior balance until the
-                webhook lands, mirroring the header chip so the two never disagree. */}
-            <span
-              dir="ltr"
-              className={cn(
-                "text-3xl font-semibold text-foreground tabular-nums",
-                syncing && "animate-pulse text-muted-foreground",
-              )}
-            >
-              {available ? formatCredits(totalCredits, locale) : "—"}
+      <section className="flex flex-col gap-5" data-tutorial="settings-billing">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {msg("billing.popover.title")}
             </span>
+            <div className="flex items-center gap-2" aria-busy={syncing || undefined}>
+              {/* Same gold coin as the header chip so the balance reads as credits at a glance. */}
+              <Coins
+                className={cn(
+                  "size-6 shrink-0",
+                  syncing ? "text-muted-foreground" : "text-[#C8A882]",
+                )}
+                aria-hidden="true"
+              />
+              {/* Post-checkout sync [FG-3]: shimmer over the prior balance until the
+                  webhook lands, mirroring the header chip so the two never disagree. */}
+              <span
+                dir="ltr"
+                className={cn(
+                  "text-3xl font-semibold text-foreground tabular-nums",
+                  syncing && "animate-pulse text-muted-foreground",
+                )}
+              >
+                {available ? formatCredits(totalCredits, locale) : "—"}
+              </span>
+            </div>
+            {/* Low balance stays an operational metric here too — same calm line as
+                the header chip, no red, no urgency. */}
+            {available && status === "low" && (
+              <span className="text-xs text-muted-foreground/80">
+                {msg("billing.chip.low_note")}
+              </span>
+            )}
           </div>
-          {/* Low balance stays an operational metric here too — same calm line as
-              the header chip, no red, no urgency. */}
-          {available && status === "low" && (
-            <span className="text-xs text-muted-foreground/80">{msg("billing.chip.low_note")}</span>
-          )}
         </div>
-      </div>
 
-      <div>
-        <SettingsRow icon={Sparkle} label={msg("billing.action.add_credits")}>
-          <AddCreditsControls />
-        </SettingsRow>
-      </div>
+        <div>
+          <SettingsRow icon={Sparkle} label={msg("billing.action.add_credits")}>
+            <AddCreditsControls />
+          </SettingsRow>
+        </div>
+      </section>
 
       <BillingDetails />
       <TransactionHistory />

@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const STEPS_PATH = join(HERE, "steps.ts");
 const MENU_PATH = join(HERE, "../components/tutorial-menu.tsx");
+const DEMO_DATA_PATH = join(HERE, "demo-data.ts");
+const DETAIL_VIEW_PATH = join(HERE, "../../optimizations/components/OptimizationDetailView.tsx");
+const SUBMIT_WIZARD_PATH = join(HERE, "../../submit/hooks/use-submit-wizard.ts");
 const SRC_PATH = fileURLToPath(new URL("../../../", import.meta.url));
 const EN_PATH = fileURLToPath(new URL("../../../../../i18n/locales/ui/en.json", import.meta.url));
 const HE_PATH = fileURLToPath(new URL("../../../../../i18n/locales/ui/he.json", import.meta.url));
@@ -43,14 +46,53 @@ test("every tutorial spotlight target is still declared by the application", () 
 test("tutorial workflow tracks stay synchronized with the chooser", () => {
   const steps = readFileSync(STEPS_PATH, "utf8");
   const menu = readFileSync(MENU_PATH, "utf8");
-  const tracks = ["quick", "data", "build", "results", "workspace"];
+  const tracks = ["quick", "data", "results", "workspace"];
 
   for (const track of tracks) {
     assert.match(steps, new RegExp(`\\b${track}: \\{`));
     assert.ok(menu.includes(`id: "${track}"`));
   }
+  assert.doesNotMatch(menu, /id: "build"/);
+  assert.doesNotMatch(steps, /\| "build"/);
   assert.doesNotMatch(steps, /deep-dive/);
   assert.doesNotMatch(menu, /deep-dive/);
+});
+
+test("each guided workflow stays at seven steps or fewer", () => {
+  const steps = readFileSync(STEPS_PATH, "utf8");
+  const counts = {
+    quick:
+      (steps.match(/tracks: QUICK_ONLY/g) ?? []).length +
+      (steps.match(/tracks: QUICK_AND_RESULTS/g) ?? []).length,
+    data: (steps.match(/tracks: DATA_ONLY/g) ?? []).length,
+    results:
+      (steps.match(/tracks: RESULTS_ONLY/g) ?? []).length +
+      (steps.match(/tracks: QUICK_AND_RESULTS/g) ?? []).length,
+    workspace: (steps.match(/tracks: WORKSPACE_ONLY/g) ?? []).length,
+  };
+
+  assert.deepEqual(counts, { quick: 7, data: 3, results: 7, workspace: 7 });
+  for (const [track, count] of Object.entries(counts)) {
+    assert.ok(count <= 7, `${track} guide has ${count} steps`);
+  }
+});
+
+test("the demo result includes the source code highlighted by the guide", () => {
+  const demo = readFileSync(DEMO_DATA_PATH, "utf8");
+  const detail = readFileSync(DETAIL_VIEW_PATH, "utf8");
+
+  assert.match(demo, /signature_code: DEMO_SIGNATURE_CODE/);
+  assert.match(demo, /metric_code: DEMO_METRIC_CODE/);
+  assert.match(detail, /setPayload\(buildDemoOptimizationPayload\(\)\)/);
+});
+
+test("the quick-start guide keeps demo code deterministic and cost-free", () => {
+  const steps = readFileSync(STEPS_PATH, "utf8");
+  const wizard = readFileSync(SUBMIT_WIZARD_PATH, "utf8");
+
+  assert.match(steps, /callTutorialHook\("setCodeAssistMode", "manual"\)/);
+  assert.match(wizard, /setSignatureManuallyEdited\(true\)/);
+  assert.match(wizard, /setMetricManuallyEdited\(true\)/);
 });
 
 test("tutorial-owned message keys exist in both base catalogs", () => {

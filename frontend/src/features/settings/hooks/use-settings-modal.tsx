@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { registerTutorialHook } from "@/features/tutorial";
 
 interface SettingsModalContextValue {
   open: boolean;
@@ -26,13 +27,26 @@ export function SettingsModalProvider({ children }: { children: React.ReactNode 
     setTargetTab(requestedTab);
     setOpen(true);
     url.searchParams.delete("settings");
-    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
   }, []);
 
   const openTo = React.useCallback((tab: string) => {
     setTargetTab(tab);
     setOpen(true);
   }, []);
+
+  React.useEffect(
+    () =>
+      registerTutorialHook("setSettingsTab", (tab) => {
+        if (tab === null) setOpen(false);
+        else openTo(tab);
+      }),
+    [openTo],
+  );
 
   const clearTarget = React.useCallback(() => setTargetTab(null), []);
 

@@ -432,6 +432,7 @@ export function useSubmitWizard() {
       registerTutorialHook("setDatasetFileName", setDatasetFileName),
       registerTutorialHook("chooseModule", chooseModule),
       registerTutorialHook("reopenModulePicker", reopenModulePicker),
+      registerTutorialHook("setCodeAssistMode", setCodeAssistMode),
       registerTutorialHook("setModelConfigOpen", (open) => {
         setEditingModel(
           open
@@ -443,8 +444,14 @@ export function useSubmitWizard() {
             : null,
         );
       }),
-      registerTutorialHook("setSignatureCode", setSignatureCode),
-      registerTutorialHook("setMetricCode", setMetricCode),
+      registerTutorialHook("setSignatureCode", (code) => {
+        setSignatureCode(code);
+        setSignatureManuallyEdited(true);
+      }),
+      registerTutorialHook("setMetricCode", (code) => {
+        setMetricCode(code);
+        setMetricManuallyEdited(true);
+      }),
       registerTutorialHook("setOptimizerName", setOptimizerName),
       registerTutorialHook("setAdvancedSectionsOpen", (open) => {
         setOptimizationTypeOpen(open);

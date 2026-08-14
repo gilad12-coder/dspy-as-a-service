@@ -52,6 +52,8 @@ export interface TutorialHooks {
   chooseModule: (name: string) => void;
   /** Send the code step back to the module picker, for the step that shows it. */
   reopenModulePicker: () => void;
+  /** Keep the cost-free tutorial on the deterministic manual code surface. */
+  setCodeAssistMode: (mode: "auto" | "manual") => void;
   /** Open or close the generation model's config dialog. */
   setModelConfigOpen: (open: boolean) => void;
   /** Seed the wizard's signature code editor. */

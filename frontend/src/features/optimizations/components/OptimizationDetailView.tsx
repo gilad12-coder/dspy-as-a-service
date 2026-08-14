@@ -50,7 +50,12 @@ import {
   servePairProgramStream,
   serveSharedOptimization,
 } from "@/shared/lib/api";
-import type { LMActivity, ServeInfoResponse, WorkflowNodeTrace, WorkflowSpec } from "@/shared/types/api";
+import type {
+  LMActivity,
+  ServeInfoResponse,
+  WorkflowNodeTrace,
+  WorkflowSpec,
+} from "@/shared/types/api";
 // Leaf import on purpose — the tutorial barrel deliberately does not re-export
 // the demo fixtures (see features/tutorial/index.ts).
 // eslint-disable-next-line no-restricted-imports -- deliberate leaf import; see above
@@ -58,6 +63,7 @@ import {
   DEMO_OPTIMIZATION_ID,
   DEMO_GRID_OPTIMIZATION_ID,
   DEMO_TRAJECTORY_PREVIEW_LAYOUT,
+  buildDemoOptimizationPayload,
   buildGridDemoJob,
   resetDemoSimulation,
   startDemoSimulation,
@@ -297,6 +303,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
 
   useEffect(() => {
     if (!isDemoMode) return;
+    setPayload(buildDemoOptimizationPayload());
     const fromTrajectory = demoReplayKey > 0;
     return startDemoSimulation({ setJob: (fn) => setJob(fn), setLoading }, { fromTrajectory });
   }, [isDemoMode, demoReplayKey]);
@@ -1153,7 +1160,9 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                         disabled={retrying}
                         aria-label={msg("optimization.rerun")}
                       >
-                        <ArrowCounterClockwise className={`size-4${retrying ? " animate-spin" : ""}`} />
+                        <ArrowCounterClockwise
+                          className={`size-4${retrying ? " animate-spin" : ""}`}
+                        />
                       </Button>
                     </TooltipButton>
                   ))}

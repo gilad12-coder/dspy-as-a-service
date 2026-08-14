@@ -13,6 +13,7 @@ import type {
   PairResult,
   GridSearchResult,
   PaginatedJobsResponse,
+  OptimizationPayloadResponse,
   OptimizationSummaryResponse,
 } from "@/shared/types/api";
 import type {
@@ -27,6 +28,31 @@ import { perLocale } from "@/shared/lib/per-locale";
 
 export const DEMO_OPTIMIZATION_ID = "a7e3b291-4d2f-4f8c-b142-9d5e6f8a1c3b";
 export const DEMO_GRID_OPTIMIZATION_ID = "c3f9d215-8a47-4e6b-a1d3-7b2f9c58e4a1";
+
+export const DEMO_SIGNATURE_CODE = `class EmailClassifier(dspy.Signature):
+    """Classify an email into a category: spam, important, or promotional."""
+
+    # inputs
+    email_text: str = dspy.InputField(desc="The email content to classify")
+
+    # outputs
+    category: str = dspy.OutputField(desc="One of: spam, important, promotional")
+`;
+
+export const DEMO_METRIC_CODE = `def metric(example: dspy.Example, prediction: dspy.Prediction, trace: bool = None) -> float:
+    return float(example.category.strip().lower() == prediction.category.strip().lower())
+`;
+
+export function buildDemoOptimizationPayload(): OptimizationPayloadResponse {
+  return {
+    optimization_id: DEMO_OPTIMIZATION_ID,
+    optimization_type: "run",
+    payload: {
+      signature_code: DEMO_SIGNATURE_CODE,
+      metric_code: DEMO_METRIC_CODE,
+    },
+  };
+}
 
 function ts(start: Date, offsetMs: number): string {
   return new Date(start.getTime() + offsetMs).toISOString();

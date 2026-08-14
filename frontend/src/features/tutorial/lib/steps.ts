@@ -8,8 +8,9 @@
 
 import {
   resetDemoSimulation,
-  DEMO_GRID_OPTIMIZATION_ID,
+  DEMO_METRIC_CODE,
   DEMO_OPTIMIZATION_ID,
+  DEMO_SIGNATURE_CODE,
   getCachedDemoDashboardAnalytics,
   getCachedDemoDashboardJobs,
   getCachedDemoExplorePoints,
@@ -19,21 +20,19 @@ import { formatMsg, msg } from "@/shared/lib/messages";
 import { perLocale } from "@/shared/lib/per-locale";
 
 /**
- * The short end-to-end path plus four focused workflow guides.
+ * The short end-to-end path plus three focused workflow guides.
  *
  * Keeping each guide narrow makes the tutorial useful after onboarding too:
  * users can replay only the part they need instead of stepping through the
  * entire application again.
  */
-export type TutorialTrack = "quick" | "data" | "build" | "results" | "workspace";
+export type TutorialTrack = "quick" | "data" | "results" | "workspace";
 
-const QUICK_AND_BUILD: readonly TutorialTrack[] = ["quick", "build"];
+const QUICK_ONLY: readonly TutorialTrack[] = ["quick"];
 const QUICK_AND_RESULTS: readonly TutorialTrack[] = ["quick", "results"];
 const DATA_ONLY: readonly TutorialTrack[] = ["data"];
-const BUILD_ONLY: readonly TutorialTrack[] = ["build"];
 const RESULTS_ONLY: readonly TutorialTrack[] = ["results"];
 const WORKSPACE_ONLY: readonly TutorialTrack[] = ["workspace"];
-const QUICK_AND_WORKSPACE: readonly TutorialTrack[] = ["quick", "workspace"];
 
 export interface TutorialStep {
   id: string;
@@ -177,28 +176,6 @@ async function ensureDemoDetail() {
   await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
 
-async function ensureGridDemo() {
-  const path = `/optimizations/${DEMO_GRID_OPTIMIZATION_ID}`;
-  if (window.location.pathname === path && !window.location.search.includes("pair=")) {
-    await waitForHook("setDetailTab");
-    await new Promise<void>((r) => requestAnimationFrame(() => r()));
-    return;
-  }
-  navigateTo(path);
-  await waitForElement("[data-tutorial='grid-search']");
-  await waitForHook("setDetailTab");
-  await new Promise<void>((r) => requestAnimationFrame(() => r()));
-}
-
-async function ensureGridPairDetail() {
-  const path = `/optimizations/${DEMO_GRID_OPTIMIZATION_ID}`;
-  const wantSearch = "?pair=0";
-  const alreadyThere = window.location.pathname === path && window.location.search === wantSearch;
-  if (alreadyThere) return;
-  navigateTo(`${path}${wantSearch}`);
-  await waitForElement("[data-tutorial='pair-detail']");
-}
-
 function setTab(tab: string) {
   callTutorialHook("setTab", tab);
 }
@@ -262,20 +239,6 @@ function setGeneralistPanelOpen(open: boolean) {
   callTutorialHook("setGeneralistPanelOpen", open);
 }
 
-/**
- * Slide the off-canvas sidebar drawer into view before a step spotlights it.
- * Below 768px the sidebar is translated off-screen, so its target rect would
- * sit off the viewport edge and the spotlight would highlight nothing. Open
- * the drawer and let its 300ms transform settle before the overlay measures.
- * On desktop the sidebar is permanently docked, so we skip the work entirely.
- */
-async function revealSidebarDrawer() {
-  if (typeof window === "undefined") return;
-  if (!window.matchMedia("(max-width: 767.98px)").matches) return;
-  callTutorialHook("setSidebarOpen", true);
-  await new Promise((r) => setTimeout(r, 340));
-}
-
 /** Inject demo data into tagger setup when empty and advance to the requested step */
 function injectDemoTaggerData(targetStep: number) {
   if (!queryTutorialHook("hasTaggerData")) {
@@ -315,48 +278,11 @@ function injectSampleDataset() {
     category: "output",
   });
   callTutorialHook("setDatasetFileName", "emails_sample.csv");
-  callTutorialHook(
-    "setSignatureCode",
-    `class EmailClassifier(dspy.Signature):
-    """Classify an email into a category: spam, important, or promotional."""
-
-    # inputs
-    email_text: str = dspy.InputField(desc="The email content to classify")
-
-    # outputs
-    category: str = dspy.OutputField(desc="One of: spam, important, promotional")
-`,
-  );
-  callTutorialHook(
-    "setMetricCode",
-    `def metric(example: dspy.Example, prediction: dspy.Prediction, trace: bool = None) -> float:
-    return float(example.category.strip().lower() == prediction.category.strip().lower())
-`,
-  );
+  callTutorialHook("setSignatureCode", DEMO_SIGNATURE_CODE);
+  callTutorialHook("setMetricCode", DEMO_METRIC_CODE);
 }
 
 const tutorialSteps: TutorialStep[] = perLocale(() => [
-  // 1 — Where a dataset comes from. The tour opens here because nothing
-  // downstream is reachable without labelled data.
-
-  {
-    id: "dd-tagger-intro",
-    title: msg("auto.features.tutorial.lib.steps.literal.28"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.43", { p1: TERMS.dataset }),
-    target: "[data-tutorial='sidebar-data']",
-    placement: "right",
-    highlightPadding: 6,
-    highlightRadius: 8,
-    beforeShow: async () => {
-      await ensureDashboard();
-      await revealSidebarDrawer();
-    },
-    afterHide: () => {
-      callTutorialHook("setSidebarOpen", false);
-    },
-    tracks: DATA_ONLY,
-    readingTimeSec: 7,
-  },
   {
     id: "dd-dataset-library",
     title: msg("tutorial.step.dataset_library.title"),
@@ -394,51 +320,13 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     tracks: DATA_ONLY,
     readingTimeSec: 9,
   },
-  // 2 — Running an optimization. Follows the wizard's own step order, so
-  // the tour never jumps forward and back through the stepper.
-
-  {
-    id: "dd-stepper",
-    title: msg("auto.features.tutorial.lib.steps.literal.13"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.14", {
-      p1: TERMS.dataset,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='wizard-stepper']",
-    placement: "bottom",
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(0);
-    },
-    tracks: QUICK_AND_BUILD,
-    readingTimeSec: 4,
-  },
-
-  {
-    id: "dd-basics",
-    title: msg("auto.features.tutorial.lib.steps.literal.14"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.15", {
-      p1: TERMS.optimization,
-      p2: TERMS.optimizationTypeRun,
-      p3: TERMS.optimizationTypeGrid,
-    }),
-    target: "[data-tutorial='wizard-step-1']",
-    placement: "left",
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(0);
-    },
-    tracks: BUILD_ONLY,
-    readingTimeSec: 5,
-  },
-
   {
     id: "dd-data-upload",
     title: formatMsg("auto.features.tutorial.lib.steps.template.16", { p1: TERMS.dataset }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.17", {
+    description: `${formatMsg("auto.features.tutorial.lib.steps.template.17", {
       p1: TERMS.examplePlural,
       p2: TERMS.optimization,
-    }),
+    })} ${formatMsg("auto.features.tutorial.lib.steps.template.18", { p1: TERMS.model })}`,
     target: "[data-tutorial='wizard-step-2']",
     placement: "left",
     beforeShow: async () => {
@@ -446,176 +334,33 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       injectSampleDataset();
       setWizardStep(1);
     },
-    tracks: QUICK_AND_BUILD,
+    tracks: QUICK_ONLY,
     readingTimeSec: 7,
   },
   {
-    id: "dd-columns",
-    title: msg("auto.features.tutorial.lib.steps.literal.15"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.18", { p1: TERMS.model }),
-    target: "[data-tutorial='column-mapping']",
-    placement: "top",
-    offsetY: 0,
-    beforeShow: async () => {
-      await ensureSubmit();
-      injectSampleDataset();
-      setWizardStep(1);
-    },
-    tracks: QUICK_AND_BUILD,
-    readingTimeSec: 7,
-  },
-  {
-    id: "dd-splits",
-    title: msg("auto.features.tutorial.lib.steps.literal.16"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.20", {
-      p1: TERMS.splitTrain,
-      p2: TERMS.optimizer,
-      p3: TERMS.examplePlural,
-      p4: TERMS.splitVal,
-      p5: TERMS.examplePlural,
-      p6: TERMS.splitTest,
-      p7: TERMS.examplePlural,
-      p8: TERMS.optimizer,
-    }),
-    target: "[data-tutorial='data-splits']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureSubmit();
-      callTutorialHook("setAdvancedMode", true);
-      callTutorialHook("setAdvancedSectionsOpen", true);
-      setWizardStep(2);
-      await waitForElement("[data-tutorial='data-splits']");
-    },
-    tracks: BUILD_ONLY,
-    readingTimeSec: 10,
-  },
-  {
-    id: "dd-auto-level",
-    title: msg("auto.features.tutorial.lib.steps.literal.17"),
-    description: msg("auto.features.tutorial.lib.steps.literal.18"),
-    target: "[data-tutorial='auto-level']",
-    placement: "top",
-    offsetY: 0,
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(2);
-    },
-    tracks: BUILD_ONLY,
-    readingTimeSec: 8,
-  },
-  {
-    id: "dd-gepa",
-    title: msg("auto.features.tutorial.lib.steps.literal.19"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.21", {
-      p1: TERMS.examplePlural,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='gepa-params']",
-    placement: "top",
-    offsetY: 24,
-    beforeShow: async () => {
-      await ensureSubmit();
-      callTutorialHook("setAdvancedMode", true);
-      setOptimizerName("gepa");
-      // The GEPA grid lives inside the collapsed optimizer disclosure.
-      callTutorialHook("setAdvancedSectionsOpen", true);
-      setWizardStep(2);
-      await waitForElement("[data-tutorial='gepa-params']");
-    },
-    tracks: BUILD_ONLY,
-    readingTimeSec: 16,
-  },
-
-  {
-    id: "dd-module",
-    title: TERMS.module,
-    description: formatMsg("auto.features.tutorial.lib.steps.template.45", {
+    id: "dd-code-setup",
+    title: `${msg("auto.features.tutorial.lib.steps.literal.20")} + ${TERMS.metric}`,
+    description: `${formatMsg("auto.features.tutorial.lib.steps.template.22", {
       p1: TERMS.model,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='module-selector']",
-    placement: "bottom",
-    beforeShow: async () => {
-      await ensureSubmit();
-      injectSampleDataset();
-      setWizardStep(3);
-      // Walking back into this step from the next one would otherwise find
-      // the picker already answered and the carousel gone.
-      callTutorialHook("reopenModulePicker");
-      await waitForElement("[data-tutorial='module-selector']");
-    },
-    tracks: QUICK_AND_BUILD,
-    readingTimeSec: 9,
-  },
-  {
-    id: "dd-workflow-canvas",
-    title: msg("tutorial.step.workflow_canvas.title"),
-    description: msg("tutorial.step.workflow_canvas.body"),
-    target: "[data-tutorial='workflow-canvas']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureSubmit();
-      injectSampleDataset();
-      setWizardStep(3);
-      callTutorialHook("chooseModule", "workflow");
-      await waitForElement("[data-tutorial='workflow-canvas']");
-    },
-    tracks: BUILD_ONLY,
-    readingTimeSec: 12,
-  },
-  {
-    id: "dd-react-tools",
-    title: msg("tutorial.step.react_tools.title"),
-    description: msg("tutorial.step.react_tools.body"),
-    target: "[data-tutorial='react-config']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureSubmit();
-      injectSampleDataset();
-      setWizardStep(3);
-      callTutorialHook("chooseModule", "react");
-      await waitForElement("[data-tutorial='react-config']");
-    },
-    tracks: BUILD_ONLY,
-    readingTimeSec: 11,
-  },
-
-  {
-    id: "dd-signature",
-    title: msg("auto.features.tutorial.lib.steps.literal.20"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.22", { p1: TERMS.model }),
+    })} ${formatMsg("auto.features.tutorial.lib.steps.template.23", {
+      p1: TERMS.score,
+      p2: TERMS.optimizer,
+      p3: TERMS.score,
+    })}`,
     target: "[data-tutorial='signature-editor']",
     placement: "top",
     beforeShow: async () => {
       await ensureSubmit();
+      injectSampleDataset();
       setWizardStep(3);
-      // The editors only exist once a module is committed, so the tour makes
-      // the pick the previous step just demonstrated.
+      callTutorialHook("setCodeAssistMode", "manual");
       callTutorialHook("chooseModule", "predict");
+      callTutorialHook("setSignatureCode", DEMO_SIGNATURE_CODE);
+      callTutorialHook("setMetricCode", DEMO_METRIC_CODE);
       await waitForElement("[data-tutorial='signature-editor']");
     },
-    tracks: QUICK_AND_BUILD,
-    readingTimeSec: 11,
-  },
-  {
-    id: "dd-metric",
-    title: TERMS.metric,
-    description: formatMsg("auto.features.tutorial.lib.steps.template.23", {
-      p1: TERMS.score,
-      p2: TERMS.optimizer,
-      p3: TERMS.score,
-    }),
-    target: "[data-tutorial='metric-editor']",
-    placement: "top",
-    offsetY: 0,
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(3);
-      callTutorialHook("chooseModule", "predict");
-      await waitForElement("[data-tutorial='metric-editor']");
-    },
-    tracks: QUICK_AND_BUILD,
-    readingTimeSec: 8,
+    tracks: QUICK_ONLY,
+    readingTimeSec: 12,
   },
 
   {
@@ -632,27 +377,8 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(4);
     },
-    tracks: QUICK_AND_BUILD,
+    tracks: QUICK_ONLY,
     readingTimeSec: 7,
-  },
-  {
-    id: "dd-model-billing",
-    title: msg("tutorial.step.model_billing.title"),
-    description: msg("tutorial.step.model_billing.body"),
-    target: "[data-tutorial='model-billing-source']",
-    placement: "bottom",
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(4);
-      await waitForHook("setModelConfigOpen");
-      callTutorialHook("setModelConfigOpen", true);
-      await waitForElement("[data-tutorial='model-billing-source']");
-    },
-    afterHide: () => {
-      callTutorialHook("setModelConfigOpen", false);
-    },
-    tracks: BUILD_ONLY,
-    readingTimeSec: 10,
   },
   {
     id: "dd-review",
@@ -669,55 +395,8 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setOptimizerName("gepa");
       setWizardStep(5);
     },
-    tracks: QUICK_AND_BUILD,
+    tracks: QUICK_ONLY,
     readingTimeSec: 5,
-  },
-  {
-    id: "dd-submit",
-    title: msg("auto.features.tutorial.lib.steps.template.27"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.28", {
-      p1: TERMS.baselineScore,
-      p2: TERMS.optimizer,
-    }),
-    target: "[data-tutorial='submit-button']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(5);
-    },
-    tracks: QUICK_AND_BUILD,
-    readingTimeSec: 8,
-  },
-  // 3 — Reading the result. Score first: it is the payoff the previous
-  // twelve steps were building toward.
-
-  {
-    id: "dd-detail-header",
-    title: msg("auto.features.tutorial.lib.steps.literal.22"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.29", {
-      p1: TERMS.optimization,
-      p2: TERMS.optimization,
-      p3: TERMS.optimization,
-    }),
-    target: "[data-tutorial='detail-header']",
-    placement: "bottom",
-    offsetY: 0,
-    beforeShow: async () => {
-      const onDetail = window.location.pathname === `/optimizations/${DEMO_OPTIMIZATION_ID}`;
-      // Splash plays whenever we cross into /detail from another route
-      // (typically /submit). When the user is already on /detail (e.g.
-      // PREV-then-NEXT cycling within the detail tabs), the splash is
-      // suppressed so the morph isn't gratuitously replayed.
-      if (!onDetail) {
-        resetDemoSimulation();
-        await showSubmitSplash();
-      }
-      await ensureDemoDetail();
-      setDetailTab("overview");
-      await waitForElement("[data-tutorial='detail-header']");
-    },
-    tracks: QUICK_AND_RESULTS,
-    readingTimeSec: 9,
   },
   {
     id: "dd-result-actions",
@@ -762,10 +441,15 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     target: "[data-tutorial='score-cards']",
     placement: "bottom",
     beforeShow: async () => {
+      const onDetail = window.location.pathname === `/optimizations/${DEMO_OPTIMIZATION_ID}`;
+      if (!onDetail) {
+        resetDemoSimulation();
+        await showSubmitSplash();
+      }
       await ensureDemoDetail();
       setDetailTab("overview");
     },
-    tracks: QUICK_AND_RESULTS,
+    tracks: QUICK_ONLY,
     readingTimeSec: 5,
   },
   {
@@ -777,33 +461,13 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("overview");
-      // Re-stream the candidates so the user sees the tree grow live (with
-      // the GEPA TQDM bar visible in the pipeline) instead of jumping to
-      // the completed graph. Shown before the score chart because the tree
-      // sits vertically above the chart in the layout — narrative follows
-      // visual order.
+      // Re-stream the candidates so the user sees the tree grow instead of
+      // landing on a completed graph with no explanation of its branches.
       callTutorialHook("replayDemoSimulation");
       await waitForElement("[data-tutorial='trajectory-panel']");
     },
     tracks: RESULTS_ONLY,
     readingTimeSec: 12,
-  },
-  {
-    id: "dd-score-chart",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.33", { p1: TERMS.scorePlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.34", {
-      p1: TERMS.score,
-      p2: TERMS.optimizer,
-      p3: TERMS.score,
-    }),
-    target: "[data-tutorial='score-chart']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDemoDetail();
-      setDetailTab("overview");
-    },
-    tracks: RESULTS_ONLY,
-    readingTimeSec: 7,
   },
   {
     id: "dd-playground",
@@ -817,19 +481,19 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("playground");
       await waitForElement("[data-tutorial='serve-playground']");
     },
-    tracks: QUICK_AND_RESULTS,
+    tracks: QUICK_ONLY,
     readingTimeSec: 12,
   },
   {
     id: "dd-code",
     title: msg("tutorial.step.code.title"),
     description: msg("tutorial.step.code.body"),
-    target: "[data-tutorial='code-output']",
+    target: "[data-tutorial='code-sources']",
     placement: "top",
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("code");
-      await waitForElement("[data-tutorial='code-output']");
+      await waitForElement("[data-tutorial='code-sources']");
     },
     tracks: RESULTS_ONLY,
     readingTimeSec: 9,
@@ -886,85 +550,6 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     readingTimeSec: 6,
   },
   {
-    id: "dd-lm-activity",
-    title: msg("auto.features.tutorial.lib.steps.literal.52"),
-    description: msg("auto.features.tutorial.lib.steps.literal.53"),
-    target: "[data-tutorial='lm-activity']",
-    placement: "auto",
-    offsetY: 0,
-    beforeShow: async () => {
-      await ensureDemoDetail();
-      setDetailTab("lm-activity");
-      await waitForElement("[data-tutorial='lm-activity']");
-    },
-    tracks: RESULTS_ONLY,
-    readingTimeSec: 11,
-  },
-  {
-    id: "dd-config",
-    title: msg("auto.features.tutorial.lib.steps.literal.27"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.38", {
-      p1: TERMS.modelPlural,
-    }),
-    target: "[data-tutorial='config-summary']",
-    placement: "bottom",
-    beforeShow: async () => {
-      await ensureDemoDetail();
-      setDetailTab("config");
-      await waitForElement("[data-tutorial='config-summary']");
-    },
-    tracks: RESULTS_ONLY,
-    readingTimeSec: 7,
-  },
-  // 4 — Grid search: many runs at once.
-
-  {
-    id: "dd-grid-overview",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.39", { p1: TERMS.modelPlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.40", {
-      p1: TERMS.model,
-      p2: TERMS.pairPlural,
-      p3: TERMS.generationModel,
-      p4: TERMS.reflectionModel,
-      p5: TERMS.task,
-      p6: TERMS.pair,
-      p7: TERMS.score,
-    }),
-    target: "[data-tutorial='grid-pair-list']",
-    placement: "top",
-    offsetY: 0,
-    beforeShow: async () => {
-      await ensureGridDemo();
-      setDetailTab("overview");
-      await waitForElement("[data-tutorial='grid-pair-list']");
-    },
-    tracks: RESULTS_ONLY,
-    readingTimeSec: 14,
-  },
-  {
-    id: "dd-grid-pair",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.41", {
-      p1: TERMS.pair,
-      p2: TERMS.modelPlural,
-    }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.42", {
-      p1: TERMS.pair,
-      p2: TERMS.scorePlural,
-      p3: TERMS.modelPlural,
-      p4: TERMS.pair,
-      p5: TERMS.model,
-    }),
-    target: "[data-tutorial='pair-detail-summary']",
-    placement: "auto",
-    beforeShow: async () => {
-      await ensureGridPairDetail();
-      await waitForElement("[data-tutorial='pair-detail-summary']");
-    },
-    tracks: RESULTS_ONLY,
-    readingTimeSec: 11,
-  },
-  // 6 — The dashboard, which is where all of the above accumulates.
-  {
     id: "dd-kpis",
     title: msg("auto.features.tutorial.lib.steps.literal.6"),
     description: msg("auto.features.tutorial.lib.steps.literal.7"),
@@ -1019,28 +604,6 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     readingTimeSec: 5,
   },
   {
-    id: "dd-sidebar",
-    title: msg("auto.features.tutorial.lib.steps.literal.8"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.3", {
-      p1: TERMS.optimization,
-      p2: TERMS.optimization,
-    }),
-    target: "[data-tutorial='sidebar-full']",
-    placement: "auto",
-    beforeShow: async () => {
-      await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("jobs");
-      await revealSidebarDrawer();
-    },
-    afterHide: () => {
-      callTutorialHook("setSidebarOpen", false);
-    },
-    tracks: WORKSPACE_ONLY,
-    readingTimeSec: 7,
-  },
-  // 7 — Side tools, then the sign-off.
-  {
     id: "dd-explore",
     title: msg("auto.features.tutorial.lib.steps.literal.38"),
     description: msg("auto.features.tutorial.lib.steps.literal.49"),
@@ -1052,8 +615,6 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     tracks: WORKSPACE_ONLY,
     readingTimeSec: 14,
   },
-  // Agent panel: only the chat window. The pill alone is just the
-  // floating button and is now covered by the chat step's intro.
   {
     id: "dd-agent-panel",
     title: msg("auto.features.tutorial.lib.steps.literal.44"),
@@ -1093,47 +654,6 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     tracks: WORKSPACE_ONLY,
     readingTimeSec: 9,
   },
-  {
-    id: "dd-settings-privacy",
-    title: msg("tutorial.step.settings_privacy.title"),
-    description: msg("tutorial.step.settings_privacy.body"),
-    target: "[data-tutorial='settings-privacy']",
-    placement: "left",
-    beforeShow: () => openSettingsTab("privacy"),
-    afterHide: closeSettings,
-    tracks: WORKSPACE_ONLY,
-    readingTimeSec: 11,
-  },
-  {
-    id: "dd-settings-navigation",
-    title: msg("tutorial.step.settings_navigation.title"),
-    description: msg("tutorial.step.settings_navigation.body"),
-    target: "[data-tutorial='settings-navigation']",
-    placement: "right",
-    beforeShow: () => openSettingsTab("account"),
-    afterHide: closeSettings,
-    tracks: WORKSPACE_ONLY,
-    readingTimeSec: 12,
-  },
-  {
-    id: "dd-done",
-    title: msg("auto.features.tutorial.lib.steps.literal.33"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.44", {
-      p1: TERMS.optimization,
-      p2: TERMS.scorePlural,
-    }),
-    target: "[data-tutorial='sidebar-full']",
-    placement: "auto",
-    beforeShow: async () => {
-      await ensureDashboard();
-      await revealSidebarDrawer();
-    },
-    afterHide: () => {
-      callTutorialHook("setSidebarOpen", false);
-    },
-    tracks: QUICK_AND_WORKSPACE,
-    readingTimeSec: 5,
-  },
 ]);
 
 const AGENT_PANEL_STEP_IDS = new Set(["dd-agent-panel"]);
@@ -1163,10 +683,6 @@ export function getTrack(trackId: TutorialTrack): TutorialTrackDefinition | unde
     data: {
       name: msg("tutorial.track.data.name"),
       description: msg("tutorial.track.data.desc"),
-    },
-    build: {
-      name: msg("tutorial.track.build.name"),
-      description: msg("tutorial.track.build.desc"),
     },
     results: {
       name: msg("tutorial.track.results.name"),

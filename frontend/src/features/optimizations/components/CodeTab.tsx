@@ -84,7 +84,7 @@ export function CodeTab({
         </p>
       </FadeIn>
       {(signatureCode || metricCode || workflowSpec) && (
-        <Card>
+        <Card data-tutorial="code-sources">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Code className="size-4" />

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Popover as PopoverPrimitive } from "radix-ui";
-import { Compass, Database, FlowArrow, Lightning, TrendUp } from "@/shared/ui/icons";
+import { Compass, Database, Lightning, TrendUp } from "@/shared/ui/icons";
 import { useTutorialContext } from "./tutorial-provider";
 import type { TutorialTrack } from "../lib/steps";
 import { getLoadedTrack, loadStepsModule } from "../lib/steps-loader";
@@ -29,12 +29,6 @@ const TRACKS = [
     icon: Database,
     nameKey: "tutorial.track.data.name",
     descKey: "tutorial.track.data.desc",
-  },
-  {
-    id: "build",
-    icon: FlowArrow,
-    nameKey: "tutorial.track.build.name",
-    descKey: "tutorial.track.build.desc",
   },
   {
     id: "results",

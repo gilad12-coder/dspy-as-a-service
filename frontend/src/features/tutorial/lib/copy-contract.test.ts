@@ -7,6 +7,7 @@ const TITLE_KEYS = [
   "auto.features.tutorial.lib.steps.template.24",
   "auto.features.tutorial.lib.steps.template.27",
 ] as const;
+const USED_TITLE_KEYS = [TITLE_KEYS[0]] as const;
 
 test("tutorial titles are complete localized phrases", () => {
   const localeDir = path.join(process.cwd(), "..", "i18n", "locales", "ui");
@@ -40,7 +41,7 @@ test("tutorial title call sites do not compose grammar from term placeholders", 
     "utf8",
   );
 
-  for (const key of TITLE_KEYS) {
+  for (const key of USED_TITLE_KEYS) {
     assert.match(source, new RegExp(`title: msg\\("${key.replaceAll(".", "\\.")}"\\)`));
     assert.doesNotMatch(source, new RegExp(`title: formatMsg\\("${key.replaceAll(".", "\\.")}"`));
   }
