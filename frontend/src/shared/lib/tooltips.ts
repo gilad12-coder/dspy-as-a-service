@@ -9,7 +9,7 @@
  *
  * Keys are grouped by domain concept, not by feature slice — the same
  * definition of "baseline score" should read identically on the overview
- * tab, the pair detail view, and the compare page.
+ * tab and the pair detail view.
  *
  * The copy itself lives in the UI catalog (`i18n/locales/ui/<locale>.json`)
  * under the `tooltip.` key prefix, so tooltips get the same per-locale

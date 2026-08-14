@@ -1,7 +1,5 @@
 export const FETCH_PAGE_SIZE = 50;
 
-export const COMPARE_MAX = 4;
-
 export const STATUS_COLORS: Record<string, string> = {
   success: "var(--success)",
   failed: "var(--danger)",

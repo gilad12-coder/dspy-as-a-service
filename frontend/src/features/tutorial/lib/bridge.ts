@@ -20,12 +20,7 @@
  * full type checking at both ends.
  */
 import type { ParsedDataset } from "@/shared/lib/parse-dataset";
-import type {
-  PaginatedJobsResponse,
-  OptimizationStatusResponse,
-  EvalExampleResult,
-  OptimizationDatasetResponse,
-} from "@/shared/types/api";
+import type { PaginatedJobsResponse } from "@/shared/types/api";
 import type { DashboardAnalytics, PublicDashboardPoint } from "@/shared/lib/api";
 
 /**
@@ -40,8 +35,6 @@ export interface TutorialHooks {
   setWizardStep: (step: number) => void;
   /** Switch the optimization-detail page between its tabs. */
   setDetailTab: (tab: string) => void;
-  /** Switch the /compare page between its tabs (overview / config / prompts / examples). */
-  setCompareTab: (tab: string) => void;
   /** Seed the wizard's optimizer selector. */
   setOptimizerName: (name: string) => void;
   /** Seed the wizard's parsed dataset. */
@@ -69,8 +62,6 @@ export interface TutorialHooks {
   routerPush: (path: string) => void;
   /** Inject demo jobs into the dashboard table when empty. */
   setDemoJobs: (data: PaginatedJobsResponse) => void;
-  /** Programmatically select job IDs in the dashboard table (for the compare-flow demo). */
-  setSelectedJobIds: (ids: string[]) => void;
   /** Inject demo analytics into the dashboard charts when empty. */
   setDemoAnalytics: (data: DashboardAnalytics) => void;
   /** Inject demo points into the explore scatter canvas when empty. */
@@ -260,41 +251,4 @@ function makeOneShot<T>() {
       return v;
     },
   };
-}
-
-/**
- * One-shot payload for the /compare page. The tutorial seeds this
- * BEFORE navigating, and the compare page consumes it on mount in
- * place of the normal backend fetch. Cleared on a 1s delay so a
- * subsequent non-tutorial visit falls back to the live API.
- */
-const compareDemoSlot = makeOneShot<OptimizationStatusResponse[]>();
-
-export function setPendingCompareDemo(jobs: OptimizationStatusResponse[]): void {
-  compareDemoSlot.set(jobs);
-}
-
-export function consumePendingCompareDemo(): OptimizationStatusResponse[] | null {
-  return compareDemoSlot.consume();
-}
-
-/**
- * One-shot payload for the /compare page's "examples" tab. Provides
- * per-example results keyed by optimization_id and the shared dataset
- * so the PerExampleSection can render without hitting the backend
- * during the tutorial.
- */
-export interface PendingCompareExamples {
-  byJobId: Record<string, EvalExampleResult[]>;
-  dataset: OptimizationDatasetResponse;
-}
-
-const compareExamplesSlot = makeOneShot<PendingCompareExamples>();
-
-export function setPendingCompareExamples(value: PendingCompareExamples): void {
-  compareExamplesSlot.set(value);
-}
-
-export function consumePendingCompareExamples(): PendingCompareExamples | null {
-  return compareExamplesSlot.consume();
 }

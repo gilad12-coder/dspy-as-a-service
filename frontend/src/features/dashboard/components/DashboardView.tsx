@@ -6,7 +6,6 @@ import { useSession } from "next-auth/react";
 import { motion, useReducedMotion } from "framer-motion";
 import { ChartBar, Table } from "@/shared/ui/icons";
 import { DashboardSkeleton } from "./DashboardSkeleton";
-import { toast } from "react-toastify";
 import { Card } from "@/shared/ui/primitives/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
 import { FadeIn } from "@/shared/ui/motion";
@@ -26,7 +25,6 @@ import { useJobsList } from "../hooks/use-jobs-list";
 import { useDashboardAnalytics } from "../hooks/use-dashboard-analytics";
 import { useJobsRealtime } from "../hooks/use-jobs-realtime";
 import { useBulkDelete } from "../hooks/use-bulk-delete";
-import { COMPARE_MAX } from "../constants";
 import { DashboardHeader } from "./DashboardHeader";
 import { WorkspaceStrip } from "./WorkspaceStrip";
 import { QueueStatusAlert } from "./QueueStatusAlert";
@@ -184,22 +182,6 @@ export function DashboardView() {
     confirmBulkDelete,
   } = useBulkDelete({ data, setData, setPageOffset, fetchJobs, visibleData: effectiveData });
 
-  useEffect(
-    () => registerTutorialHook("setSelectedJobIds", (ids) => setSelectedIds(new Set(ids))),
-    [setSelectedIds],
-  );
-
-  // Compare-eligible subset of the current selection. Exact metric/test-set
-  // compatibility is validated on the compare page after loading payloads.
-  const compareEligibleIds = useMemo(() => {
-    if (!effectiveData || !Array.isArray(effectiveData.items) || selectedIds.size === 0) return [];
-    const selectedItems = effectiveData.items.filter(
-      (j) => selectedIds.has(j.optimization_id) && j.status === "success",
-    );
-    return selectedItems.map((j) => j.optimization_id);
-  }, [effectiveData, selectedIds]);
-  const canCompare = compareEligibleIds.length >= 2;
-
   // Admins delete anything; everyone else may bulk-delete only runs they own
   // outright (role null/absent) or co-own (role "owner"). Shared viewer/editor
   // grants can't delete. Mirrors the detail page's canDeleteRun (effective_role
@@ -213,15 +195,6 @@ export function DashboardView() {
     if (selected.length !== selectedIds.size) return false;
     return selected.every((j) => j.role == null || j.role === "owner");
   }, [isAdmin, effectiveData, selectedIds]);
-
-  const onCompare = useCallback(() => {
-    if (compareEligibleIds.length < 2) return;
-    if (compareEligibleIds.length > COMPARE_MAX) {
-      toast.error(msg("compare.cap_reached"));
-      return;
-    }
-    router.push(`/compare?jobs=${compareEligibleIds.join(",")}`);
-  }, [compareEligibleIds, router]);
 
   const filteredItems = useMemo(() => {
     if (!effectiveData || !Array.isArray(effectiveData.items)) return [];
@@ -428,10 +401,7 @@ export function DashboardView() {
         <BulkActionBar
           canDelete={canBulkDelete}
           selectedCount={selectedIds.size}
-          compareEligibleCount={compareEligibleIds.length}
-          canCompare={canCompare}
           onClear={clearSelection}
-          onCompare={onCompare}
           onRequestBulkDelete={() => setBulkDeleteOpen(true)}
         />
         <DeleteDialogs

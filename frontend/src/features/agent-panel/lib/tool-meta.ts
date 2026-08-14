@@ -9,7 +9,6 @@ import {
   Database,
   FadersHorizontal,
   FileMagnifyingGlass,
-  GitDiff,
   ListChecks,
   MagicWand,
   MagnifyingGlass,
@@ -188,15 +187,6 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.32"),
     severity: "warning",
     icon: ArrowsClockwise,
-  },
-  compare_jobs_optimizations_compare_post: {
-    title: () => formatMsg("auto.features.agent.panel.lib.tool.meta.template.20", {
-      p1: TERMS.optimizationPlural,
-    }),
-    description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.33"),
-    confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.34"),
-    severity: "info",
-    icon: GitDiff,
   },
   bulk_pin_jobs_optimizations_bulk_pin_post: {
     title: () => formatMsg("auto.features.agent.panel.lib.tool.meta.template.21", {

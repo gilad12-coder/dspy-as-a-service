@@ -189,7 +189,7 @@ export function TutorialOverlay() {
       // Wait for the target to mount (handles route transitions and
       // late-mounting React subtrees). Window must exceed the longest
       // beforeShow waitForElement so steps that navigate to a slow-mounting
-      // route (e.g. /compare with demo data, /optimizations/[id]) aren't
+      // route (e.g. /optimizations/[id] with demo data) aren't
       // auto-skipped while their anchor is still hydrating.
       const isVisible = (e: Element | null) => {
         if (!e) return false;
@@ -235,7 +235,7 @@ export function TutorialOverlay() {
 
       // Always center the target in the viewport when it fits — otherwise
       // the spotlight reads as "off-center" whenever a step's anchor sits
-      // near the top of a tall page (most wizard / detail / compare steps).
+      // near the top of a tall page (most wizard and detail steps).
       // Skip centering for elements that span (or exceed) the viewport;
       // those have no useful "centered" position. Use "instant" so the rect
       // we measure right after is the final position — "smooth" left the
@@ -318,7 +318,7 @@ export function TutorialOverlay() {
   React.useEffect(() => {
     if (!state.isVisible || !stepReady) return;
     if (!stepPathRef.current) return;
-    // Compare against window.location.pathname (truth) instead of pathname
+    // Check window.location.pathname (truth) instead of pathname
     // (React state from usePathname). The React value can lag behind during
     // route transitions, causing a transient mismatch with stepPathRef
     // (which init() sets from window.location.pathname). pathname stays in
@@ -371,7 +371,7 @@ export function TutorialOverlay() {
     exitTutorial();
     // Always return to the dashboard so the user never lands on a page
     // still showing fake tutorial data (demo optimization, demo grid,
-    // demo compare, etc.). The dashboard clears its demo overlay via
+    // demo grid, etc.). The dashboard clears its demo overlay via
     // the `tutorial-exited` event.
     if (window.location.pathname !== "/") {
       router.push("/");

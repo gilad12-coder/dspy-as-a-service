@@ -300,8 +300,6 @@ export interface OptimizationSummaryResponse {
   optimized_test_metric?: number | null;
   metric_improvement?: number | null;
   best_pair_label?: string | null;
-  task_fingerprint?: string | null;
-  compare_fingerprint?: string | null;
   summary_text?: string | null;
   /** Caller's share role when this run was reached via a member grant; null/absent for owned runs. */
   role?: "viewer" | "editor" | "owner" | null;

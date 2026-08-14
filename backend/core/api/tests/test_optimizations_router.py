@@ -73,6 +73,13 @@ def test_list_jobs_returns_empty_when_store_is_empty(opt_client: TestClient) -> 
     assert resp.json()["items"] == []
 
 
+def test_compare_endpoint_is_not_registered(opt_client: TestClient) -> None:
+    """Keep the removed cross-optimization comparison API out of OpenAPI."""
+    schema = opt_client.get("/openapi.json").json()
+
+    assert "/optimizations/compare" not in schema["paths"]
+
+
 def test_list_jobs_invalid_status_returns_422(opt_client: TestClient) -> None:
     """Unknown ``status`` query values are rejected with 422."""
     resp = opt_client.get("/optimizations?status=bogus")

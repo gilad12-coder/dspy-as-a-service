@@ -829,7 +829,6 @@ _ALWAYS_TOOLS = frozenset(
         # Job lifecycle tools that can run on an existing optimization at any time.
         "clone_job_optimizations",
         "retry_job_optimizations",
-        "compare_jobs_optimizations_compare_post",
         "bulk_pin_jobs_optimizations_bulk_pin_post",
         # Wizard-prefill tools — safe to expose before a dataset is staged;
         # they patch wizard state, they don't consume rows.
@@ -1360,8 +1359,7 @@ class GeneralistSig(dspy.Signature):
       configuration with ``set_column_roles`` if needed. Never invent
       column names — use what the user confirms verbatim.
     * Existing jobs: ``clone_job`` duplicates a job (1–5 copies),
-      ``retry_job`` re-runs a failed/cancelled one, ``compare_jobs`` gives
-      a side-by-side snapshot of 2–5 optimizations, ``bulk_pin_jobs``
+      ``retry_job`` re-runs a failed/cancelled one, ``bulk_pin_jobs``
       toggles pin state in batch, ``bulk_cancel_jobs`` stops many
       running/pending jobs at once, ``bulk_delete_jobs`` removes many
       terminal jobs at once.

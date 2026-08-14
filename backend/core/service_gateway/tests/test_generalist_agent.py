@@ -36,6 +36,11 @@ def test_empty_state_hides_dataset_and_submit_tools() -> None:
     assert "list_models_for_agent" in allowed
 
 
+def test_comparison_tool_is_not_exposed() -> None:
+    """Keep cross-optimization comparison out of every agent state."""
+    assert "compare_jobs_optimizations_compare_post" not in tools_for(WizardState())
+
+
 def test_dataset_ready_unlocks_diagnostics_but_not_code_without_name() -> None:
     """``dataset_ready`` exposes the diagnostic tools, but code authoring stays
     hidden until the run is named — mirroring the wizard's Basics → Code order."""

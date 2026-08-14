@@ -28,7 +28,6 @@ const FEATURED_TOOLS: readonly string[] = [
   "get_analytics_summary_analytics_summary_get",
   "get_job_logs_optimizations",
   "get_test_results_optimizations",
-  "compare_jobs_optimizations_compare_post",
   "list_jobs_optimizations_get",
   "get_wallet_for_agent",
   "list_tagging_sessions_for_agent",
@@ -73,9 +72,6 @@ const TOUR_DESCRIPTIONS: Record<string, string> = perLocale(() => ({
   toggle_pin_job_optimizations: formatMsg(
     "auto.features.agent.panel.components.toolscarousel.template.4",
     { p1: TERMS.optimization },
-  ),
-  compare_jobs_optimizations_compare_post: msg(
-    "auto.features.agent.panel.components.toolscarousel.literal.5",
   ),
   list_jobs_optimizations_get: formatMsg(
     "auto.features.agent.panel.components.toolscarousel.template.6",

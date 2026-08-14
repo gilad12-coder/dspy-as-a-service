@@ -108,7 +108,6 @@ def test_optimization_summary_response_metric_fields_default_none() -> None:
     assert resp.optimized_test_metric is None
     assert resp.metric_improvement is None
     assert resp.best_pair_label is None
-    assert resp.task_fingerprint is None
     assert resp.progress_count == 0
     assert resp.log_count == 0
 

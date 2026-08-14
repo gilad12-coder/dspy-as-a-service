@@ -9,12 +9,8 @@
 
 import {
   resetDemoSimulation,
-  DEMO_COMPARE_IDS,
-  DEMO_COMPARE_EXAMPLES,
-  DEMO_COMPARE_DATASET,
   DEMO_GRID_OPTIMIZATION_ID,
   DEMO_OPTIMIZATION_ID,
-  getCachedDemoCompareJobs,
   getCachedDemoDashboardAnalytics,
   getCachedDemoDashboardJobs,
   getCachedDemoExplorePoints,
@@ -82,8 +78,6 @@ import {
   hasTutorialHook,
   setTutorialNavigating,
   queryTutorialHook,
-  setPendingCompareDemo,
-  setPendingCompareExamples,
   waitForHook,
 } from "./bridge";
 import { isGeneralistAgentEnabled } from "@/features/agent-panel";
@@ -183,25 +177,6 @@ async function ensureDemoDetail() {
   await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
 
-async function ensureCompareDemo() {
-  const query = `?jobs=${DEMO_COMPARE_IDS.join(",")}`;
-  const alreadyThere = window.location.pathname === "/compare" && window.location.search === query;
-  if (alreadyThere) {
-    await waitForHook("setCompareTab");
-    await new Promise<void>((r) => requestAnimationFrame(() => r()));
-    return;
-  }
-  setPendingCompareDemo(getCachedDemoCompareJobs());
-  setPendingCompareExamples({
-    byJobId: DEMO_COMPARE_EXAMPLES,
-    dataset: DEMO_COMPARE_DATASET,
-  });
-  navigateTo(`/compare${query}`);
-  await waitForElement("[data-tutorial='compare-verdict']");
-  await waitForHook("setCompareTab");
-  await new Promise<void>((r) => requestAnimationFrame(() => r()));
-}
-
 async function ensureGridDemo() {
   const path = `/optimizations/${DEMO_GRID_OPTIMIZATION_ID}`;
   if (window.location.pathname === path && !window.location.search.includes("pair=")) {
@@ -234,10 +209,6 @@ function setWizardStep(step: number) {
 
 function setDetailTab(tab: string) {
   callTutorialHook("setDetailTab", tab);
-}
-
-function setCompareTab(tab: string) {
-  callTutorialHook("setCompareTab", tab);
 }
 
 function setOptimizerName(name: string) {
@@ -824,108 +795,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     tracks: FULL_ONLY,
     readingTimeSec: 7,
   },
-  // 4 — Comparing runs. Only meaningful once you have more than one.
-
-  {
-    id: "dd-compare-trigger",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.5", {
-      p1: TERMS.optimizationPlural,
-    }),
-    description: msg("auto.features.tutorial.lib.steps.literal.10"),
-    target: "[data-tutorial='compare-button']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("jobs");
-      callTutorialHook("setSelectedJobIds", ["demo-001", "demo-002"]);
-      await waitForElement("[data-tutorial='compare-button']");
-      await new Promise((r) => setTimeout(r, 450));
-    },
-    afterHide: () => {
-      // Drop the demo selection so dashboard steps revisited via PREV
-      // don't show the compare-button still hovering with rows pre-checked.
-      callTutorialHook("setSelectedJobIds", []);
-    },
-    tracks: FULL_ONLY,
-    readingTimeSec: 8,
-  },
-  {
-    id: "dd-compare-verdict",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.6", {
-      p1: TERMS.optimizationPlural,
-    }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.7", {
-      p1: TERMS.score,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='compare-verdict']",
-    placement: "bottom",
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("overview");
-    },
-    tracks: FULL_ONLY,
-    readingTimeSec: 8,
-  },
-  {
-    id: "dd-compare-config",
-    title: msg("auto.features.tutorial.lib.steps.literal.11"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.10", {
-      p1: TERMS.module,
-      p2: TERMS.optimizer,
-      p3: TERMS.modelPlural,
-      p4: TERMS.dataset,
-    }),
-    target: "[data-tutorial='compare-config']",
-    placement: "bottom",
-    offsetY: 0,
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("config");
-      await waitForElement("[data-tutorial='compare-config']");
-    },
-    tracks: FULL_ONLY,
-    readingTimeSec: 9,
-  },
-  {
-    id: "dd-compare-prompts",
-    title: msg("auto.features.tutorial.lib.steps.literal.12"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.11", {
-      p1: TERMS.examplePlural,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='compare-prompts']",
-    placement: "top",
-    offsetY: 0,
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("prompts");
-      await waitForElement("[data-tutorial='compare-prompts']");
-    },
-    tracks: FULL_ONLY,
-    readingTimeSec: 9,
-  },
-  {
-    id: "dd-compare-examples",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.12", { p1: TERMS.examplePlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.13", {
-      p1: TERMS.examplePlural,
-      p2: TERMS.score,
-      p3: TERMS.examplePlural,
-    }),
-    target: "[data-tutorial='compare-examples']",
-    placement: "top",
-    offsetY: 0,
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("examples");
-      await waitForElement("[data-tutorial='compare-examples']");
-    },
-    tracks: FULL_ONLY,
-    readingTimeSec: 9,
-  },
-  // 5 — Grid search: many runs at once.
+  // 4 — Grid search: many runs at once.
 
   {
     id: "dd-grid-overview",

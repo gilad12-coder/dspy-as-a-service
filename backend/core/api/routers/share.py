@@ -103,7 +103,6 @@ from ..sharing_access import (
 )
 from ._helpers import (
     _artifact_has_payload,
-    compute_compare_fingerprint,
     job_owner,
     load_program,
     stable_seed,
@@ -446,7 +445,6 @@ def _build_status_response(
         elapsed_seconds=elapsed_secs,
         estimated_remaining=est_remaining,
         **base_fields,
-        compare_fingerprint=compute_compare_fingerprint(optimization_id, overview),
         message=job_data.get("message"),
         latest_metrics=latest_metrics,
         completed_pairs=completed_pairs,

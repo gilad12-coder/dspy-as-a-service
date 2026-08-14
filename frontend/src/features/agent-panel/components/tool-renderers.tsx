@@ -7,7 +7,6 @@ import { TERMS } from "@/shared/lib/terms";
 import { UUID_RE } from "../lib/entry-format";
 
 import { AnalyticsSummaryCard } from "./AnalyticsSummaryCard";
-import { CompareJobsCard } from "./CompareJobsCard";
 import { JobSummaryCard } from "./JobSummaryCard";
 import { SearchResultsCard } from "./SearchResultsCard";
 import { SubmitSummaryCard } from "./SubmitSummaryCard";
@@ -287,22 +286,6 @@ const RENDERERS: Record<string, ToolRenderer> = {
       return count !== null
         ? `${count} ${TERMS.optimizationPlural}`
         : msg("auto.features.agent.panel.lib.tool.renderers.literal.27");
-    },
-  },
-
-  compare_jobs_optimizations_compare_post: {
-    card: (call) => <CompareJobsCard call={call} />,
-    summary: (call) => {
-      const n = pickIds(getArgs(call)).length;
-      return byStatus(call, {
-        running: n
-          ? formatMsg("auto.features.agent.panel.lib.tool.renderers.template.34", { p1: n })
-          : msg("auto.features.agent.panel.lib.tool.renderers.literal.40"),
-        done: n
-          ? formatMsg("auto.features.agent.panel.lib.tool.renderers.template.35", { p1: n })
-          : msg("auto.features.agent.panel.lib.tool.renderers.literal.41"),
-        error: msg("auto.features.agent.panel.lib.tool.renderers.literal.42"),
-      });
     },
   },
 

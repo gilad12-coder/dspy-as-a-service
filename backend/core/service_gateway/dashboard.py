@@ -366,9 +366,6 @@ def _fetch_corpus_points(session: Session, je_rel: str) -> list[dict[str, Any]]:
                 "module_name": row["module_name"],
                 "optimizer_name": row["optimizer_name"],
                 "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-                "siblings": [],
-                "task_fingerprint": None,
-                "compare_fingerprint": None,
             }
         )
     return points

@@ -12,9 +12,6 @@ import type {
   OptimizationLogEntry,
   PairResult,
   GridSearchResult,
-  EvalExampleResult,
-  OptimizationDatasetResponse,
-  DatasetRow,
   PaginatedJobsResponse,
   OptimizationSummaryResponse,
 } from "@/shared/types/api";
@@ -969,136 +966,6 @@ export const DEMO_DASHBOARD_ANALYTICS: DashboardAnalytics = perLocale(() => ({
   ],
 }));
 
-/**
- * Demo compare data — three completed runs on the same task. IDs are
- * well-known so the /compare page can recognize and render them
- * without a backend fetch.
- */
-export const DEMO_COMPARE_IDS = ["tutorial-compare-a", "tutorial-compare-b", "tutorial-compare-c"];
-
-const compareTaskName = () => msg("auto.features.tutorial.lib.demo.data.literal.16");
-const COMPARE_FINGERPRINT = "tutorial-fingerprint-email-classifier";
-
-function compareInstructions(variant: "a" | "b" | "c"): string {
-  if (variant === "a") {
-    return `Classify the email into exactly one category: spam, important, or promotional.
-
-Use these signals:
-- Promotional language ("free", "% off", "limited time") → promotional
-- Personal or work content (meetings, reports, requests) → important
-- Unsolicited offers with suspicious sender behavior → spam
-
-Respond with only the category label, lowercase, no punctuation.`;
-  }
-  if (variant === "b") {
-    return `Read the email_text and decide whether it is spam, important, or promotional.
-Return the single best-fit category.`;
-  }
-  return `Given email_text, output category as one of {spam, important, promotional}.
-Think step-by-step about the intent of the message before answering.`;
-}
-
-function compareDemos(variant: "a" | "b" | "c") {
-  const shared = [
-    {
-      inputs: { email_text: "Your quarterly report is ready for review" },
-      outputs: { category: "important" },
-    },
-    {
-      inputs: { email_text: "50% off all items this weekend only" },
-      outputs: { category: "promotional" },
-    },
-  ];
-  if (variant === "a") {
-    return [
-      ...shared,
-      {
-        inputs: { email_text: "Click here to win $1000 now!" },
-        outputs: { category: "spam" },
-      },
-    ];
-  }
-  if (variant === "b") {
-    return shared;
-  }
-  return [
-    shared[0]!,
-    {
-      inputs: { email_text: "Meeting moved to 3pm tomorrow" },
-      outputs: { category: "important" },
-    },
-  ];
-}
-
-function buildCompareJob(opts: {
-  id: string;
-  name: string;
-  description: string;
-  modelName: string;
-  moduleName: string;
-  baseline: number;
-  optimized: number;
-  runtimeSeconds: number;
-  numLmCalls: number;
-  variant: "a" | "b" | "c";
-}): OptimizationStatusResponse {
-  const elapsed = opts.runtimeSeconds;
-  const improvement = opts.optimized - opts.baseline;
-  const prompt = {
-    predictor_name: "EmailClassifier",
-    signature_name: "EmailClassifier",
-    instructions: compareInstructions(opts.variant),
-    input_fields: ["email_text"],
-    output_fields: ["category"],
-    demos: compareDemos(opts.variant),
-    formatted_prompt: "",
-  };
-  return {
-    optimization_id: opts.id,
-    optimization_type: "run",
-    status: "success",
-    name: opts.name,
-    description: opts.description,
-    username: "demo",
-    created_at: daysAgo(4),
-    started_at: daysAgo(4),
-    completed_at: daysAgo(4),
-    elapsed_seconds: elapsed,
-    elapsed: fmtElapsed(elapsed),
-    module_name: opts.moduleName,
-    module_kwargs: {},
-    optimizer_name: "GEPA",
-    optimizer_kwargs: { auto: "light" },
-    compile_kwargs: {},
-    model_name: opts.modelName,
-    dataset_rows: 200,
-    column_mapping: { inputs: { email_text: "str" }, outputs: { category: "str" } },
-    split_fractions: { train: 0.6, val: 0.2, test: 0.2 },
-    shuffle: true,
-    seed: 42,
-    baseline_test_metric: opts.baseline,
-    optimized_test_metric: opts.optimized,
-    metric_improvement: improvement,
-    task_fingerprint: COMPARE_FINGERPRINT,
-    progress_events: [],
-    logs: [],
-    latest_metrics: {},
-    progress_count: 0,
-    log_count: 0,
-    result: {
-      module_name: opts.moduleName,
-      optimizer_name: "GEPA",
-      baseline_test_metric: opts.baseline,
-      optimized_test_metric: opts.optimized,
-      metric_improvement: improvement,
-      runtime_seconds: elapsed,
-      num_lm_calls: opts.numLmCalls,
-      split_counts: { train: 120, val: 40, test: 40 },
-      program_artifact: { optimized_prompt: prompt },
-    },
-  };
-}
-
 const gridTaskName = () => msg("auto.features.tutorial.lib.demo.data.literal.17");
 
 function gridInstructions(variant: 0 | 1 | 2 | 3): string {
@@ -1330,144 +1197,6 @@ export function buildGridDemoJob(): OptimizationStatusResponse {
   };
 }
 
-export const DEMO_COMPARE_JOBS: OptimizationStatusResponse[] = perLocale(() => [
-  buildCompareJob({
-    id: DEMO_COMPARE_IDS[0]!,
-    name: `${compareTaskName()} · gpt-4o-mini`,
-    description: formatMsg("auto.features.tutorial.lib.demo.data.template.4", { p1: TERMS.model }),
-    modelName: "gpt-4o-mini",
-    moduleName: "ChainOfThought",
-    baseline: 0.62,
-    optimized: 0.84,
-    runtimeSeconds: 165,
-    numLmCalls: 148,
-    variant: "a",
-  }),
-  buildCompareJob({
-    id: DEMO_COMPARE_IDS[1]!,
-    name: `${compareTaskName()} · gpt-4o`,
-    description: formatMsg("auto.features.tutorial.lib.demo.data.template.5", { p1: TERMS.model }),
-    modelName: "gpt-4o",
-    moduleName: "ChainOfThought",
-    baseline: 0.62,
-    optimized: 0.79,
-    runtimeSeconds: 272,
-    numLmCalls: 156,
-    variant: "b",
-  }),
-  buildCompareJob({
-    id: DEMO_COMPARE_IDS[2]!,
-    name: `${compareTaskName()} · Predict`,
-    description: msg("auto.features.tutorial.lib.demo.data.literal.18"),
-    modelName: "gpt-4o-mini",
-    moduleName: "Predict",
-    baseline: 0.62,
-    optimized: 0.71,
-    runtimeSeconds: 110,
-    numLmCalls: 92,
-    variant: "c",
-  }),
-]);
-
-/**
- * Per-example test-set outputs for the three compare runs.
- * Designed so A=6/8 (0.75), B=6/8 (0.75), C=5/8 (0.625) — close to
- * the overall optimized scores in DEMO_COMPARE_JOBS — with a mix of
- * agreements and principled disagreements so the "hide agreements"
- * filter has something meaningful to hide.
- */
-const COMPARE_EXAMPLE_ROWS: Array<{
-  email_text: string;
-  category: "spam" | "important" | "promotional";
-}> = [
-  { email_text: "Your quarterly report is ready for review", category: "important" },
-  { email_text: "50% off all items this weekend only", category: "promotional" },
-  { email_text: "Meeting moved to 3pm tomorrow", category: "important" },
-  { email_text: "Click here to win $1000 now!", category: "spam" },
-  { email_text: "Payroll update: new pay period starts Monday", category: "important" },
-  { email_text: "Limited time: free shipping on orders over $50", category: "promotional" },
-  { email_text: "Reminder: your subscription renews tomorrow", category: "promotional" },
-  {
-    email_text: "Urgent: verify your account to avoid suspension",
-    category: "spam",
-  },
-];
-
-const COMPARE_PASS_MATRIX: Record<"a" | "b" | "c", boolean[]> = {
-  a: [true, true, true, false, true, true, false, true],
-  b: [true, true, false, true, true, true, true, false],
-  c: [true, true, false, true, false, true, true, false],
-};
-
-const COMPARE_PRED_MATRIX: Record<"a" | "b" | "c", string[]> = {
-  a: [
-    "important",
-    "promotional",
-    "important",
-    "promotional",
-    "important",
-    "promotional",
-    "important",
-    "spam",
-  ],
-  b: [
-    "important",
-    "promotional",
-    "promotional",
-    "spam",
-    "important",
-    "promotional",
-    "promotional",
-    "promotional",
-  ],
-  c: [
-    "important",
-    "promotional",
-    "spam",
-    "spam",
-    "promotional",
-    "promotional",
-    "promotional",
-    "important",
-  ],
-};
-
-function buildCompareExamples(variant: "a" | "b" | "c"): EvalExampleResult[] {
-  const passes = COMPARE_PASS_MATRIX[variant];
-  const preds = COMPARE_PRED_MATRIX[variant];
-  return COMPARE_EXAMPLE_ROWS.map((_, i) => ({
-    index: i,
-    outputs: { category: preds[i]! },
-    score: passes[i]! ? 1 : 0,
-    pass: passes[i]!,
-  }));
-}
-
-export const DEMO_COMPARE_EXAMPLES: Record<string, EvalExampleResult[]> = {
-  [DEMO_COMPARE_IDS[0]!]: buildCompareExamples("a"),
-  [DEMO_COMPARE_IDS[1]!]: buildCompareExamples("b"),
-  [DEMO_COMPARE_IDS[2]!]: buildCompareExamples("c"),
-};
-
-const COMPARE_DATASET_ROWS: DatasetRow[] = COMPARE_EXAMPLE_ROWS.map((r, i) => ({
-  index: i,
-  row: { email_text: r.email_text, category: r.category },
-}));
-
-export const DEMO_COMPARE_DATASET: OptimizationDatasetResponse = {
-  total_rows: COMPARE_DATASET_ROWS.length,
-  splits: {
-    train: [],
-    val: [],
-    test: COMPARE_DATASET_ROWS,
-  },
-  column_mapping: {
-    inputs: { email_text: "email_text" },
-    outputs: { category: "category" },
-  },
-  split_counts: { train: 0, val: 0, test: COMPARE_DATASET_ROWS.length },
-};
-
 const EXPLORE_TASKS: string[] = perLocale(() => [
   msg("auto.features.tutorial.lib.demo.data.literal.1"),
   msg("auto.features.tutorial.lib.demo.data.literal.9"),
@@ -1538,9 +1267,6 @@ function buildExploreDemoPoints(): PublicDashboardPoint[] {
       module_name: "Predict",
       optimizer_name: EXPLORE_OPTIMIZERS[optimizerIdx] ?? null,
       created_at: new Date(now - daysAgo * 86400_000).toISOString(),
-      siblings: [],
-      task_fingerprint: null,
-      compare_fingerprint: null,
     });
   }
   return points;
@@ -1623,17 +1349,6 @@ export function getCachedDemoDashboardAnalytics(): DashboardAnalytics {
   return v;
 }
 
-export function getCachedDemoCompareJobs(): OptimizationStatusResponse[] {
-  const v = DEMO_COMPARE_JOBS;
-  const plain = Array.from(v as unknown as Iterable<OptimizationStatusResponse>);
-  try {
-    writeTutorialCache("compare-jobs", plain);
-  } catch {}
-  const cached = readTutorialCache<OptimizationStatusResponse[]>("compare-jobs");
-  if (cached && Array.isArray(cached)) return cached;
-  return plain;
-}
-
 export function getCachedDemoExplorePoints(): PublicDashboardPoint[] {
   const v = DEMO_EXPLORE_POINTS;
   const plain = Array.from(v as unknown as Iterable<PublicDashboardPoint>);
@@ -1648,11 +1363,9 @@ export function getCachedDemoExplorePoints(): PublicDashboardPoint[] {
 export function primeTutorialCacheFromLiveData(opts?: {
   jobs?: PaginatedJobsResponse;
   analytics?: DashboardAnalytics;
-  compareJobs?: OptimizationStatusResponse[];
   explorePoints?: PublicDashboardPoint[];
 }): void {
   if (opts?.jobs) writeTutorialCache("dashboard-jobs", opts.jobs);
   if (opts?.analytics) writeTutorialCache("dashboard-analytics", opts.analytics);
-  if (opts?.compareJobs) writeTutorialCache("compare-jobs", opts.compareJobs);
   if (opts?.explorePoints) writeTutorialCache("explore-points", opts.explorePoints);
 }

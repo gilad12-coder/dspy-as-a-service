@@ -759,8 +759,7 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         )
         task_fingerprint = compute_task_fingerprint(program_source, payload.metric_code, payload.dataset)
         # Derive the default seed from the task fingerprint (not the optimization id)
-        # so submissions of the same task share train/val/test splits — a prerequisite
-        # for the compare flow to line up per-row test results across deduplicated runs.
+        # so repeated submissions of the same task retain reproducible data splits.
         if payload.seed is None:
             payload.seed = stable_seed(task_fingerprint)
 

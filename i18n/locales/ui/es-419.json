@@ -21,7 +21,6 @@
   "auto.features.tutorial.components.concepts.guide.literal.140": "En lugar de un valor predeterminado fijo, Skynet muestra en la tarjeta “Partición recomendada” una partición basada en el tamaño del conjunto de datos: los conjuntos diminutos, con menos de 30 ejemplos, se asignan todos a entrenamiento y GEPA usa el mismo conjunto también para validación; los conjuntos pequeños, de 30 a 79 ejemplos, reciben 80/20/0 para dejar suficientes ejemplos para entrenamiento; y los conjuntos de 80 ejemplos en adelante reciben la partición clásica 60/20/20. A partir de 300 ejemplos, se mantiene la misma partición con límites para validación y prueba. En el modo “Selección manual” puedes establecer tú mismo las proporciones, barajar las filas y fijar una semilla para la reproducibilidad.",
   "common.aria.missing_result": "No result",
   "common.empty": "—",
-  "compare.page.title": "Compare",
   "datasets.page.title": "Datasets",
   "datasets.share.page.title": "Shared dataset",
   "explore.page.title": "Explore",

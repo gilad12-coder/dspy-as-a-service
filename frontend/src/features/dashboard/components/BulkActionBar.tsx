@@ -1,30 +1,23 @@
 import { AnimatePresence, motion } from "framer-motion";
 import * as React from "react";
-import { ArrowsLeftRight, Trash, X } from "@/shared/ui/icons";
+import { Trash, X } from "@/shared/ui/icons";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { TERMS } from "@/shared/lib/terms";
-import { formatMsg, msg } from "@/shared/lib/messages";
+import { msg } from "@/shared/lib/messages";
 
 type BulkActionBarProps = {
   canDelete: boolean;
   selectedCount: number;
-  compareEligibleCount: number;
-  canCompare: boolean;
   onClear: () => void;
-  onCompare: () => void;
   onRequestBulkDelete: () => void;
 };
 
 export function BulkActionBar({
   canDelete,
   selectedCount,
-  compareEligibleCount,
-  canCompare,
   onClear,
-  onCompare,
   onRequestBulkDelete,
 }: BulkActionBarProps) {
-  const skipped = selectedCount - compareEligibleCount;
   return (
     <AnimatePresence>
       {selectedCount > 0 && (
@@ -77,30 +70,6 @@ export function BulkActionBar({
                 aria-label={msg("auto.features.dashboard.components.bulkactionbar.literal.1")}
               >
                 <X />
-              </button>
-            </TooltipButton>
-            <TooltipButton
-              tooltip={
-                canCompare
-                  ? skipped > 0
-                    ? formatMsg("auto.features.dashboard.components.bulkactionbar.template.1", {
-                        p1: skipped,
-                      })
-                    : msg("auto.features.dashboard.components.bulkactionbar.literal.3")
-                  : msg("auto.features.dashboard.components.bulkactionbar.literal.4")
-              }
-              side="top"
-              delayDuration={150}
-            >
-              <button
-                type="button"
-                onClick={onCompare}
-                disabled={!canCompare}
-                className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-                aria-label={msg("auto.features.dashboard.components.bulkactionbar.literal.2")}
-                data-tutorial="compare-button"
-              >
-                <ArrowsLeftRight className="size-4" />
               </button>
             </TooltipButton>
             {canDelete && (

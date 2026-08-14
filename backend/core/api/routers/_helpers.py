@@ -36,7 +36,6 @@ from ...constants import (
     PAYLOAD_OVERVIEW_SHUFFLE,
     PAYLOAD_OVERVIEW_SIGNATURE_CODE,
     PAYLOAD_OVERVIEW_SPLIT_FRACTIONS,
-    PAYLOAD_OVERVIEW_TASK_FINGERPRINT,
     PAYLOAD_OVERVIEW_TOOL_SOURCE,
     PAYLOAD_OVERVIEW_WORKFLOW,
     TOKEN_SOURCE_MANAGED,
@@ -332,8 +331,8 @@ def compute_task_fingerprint(
     """Return a stable SHA256 fingerprint identifying the ML task.
 
     Two jobs share a fingerprint iff their signature source, metric source,
-    and dataset content are byte-identical. Used by the frontend to gate
-    apples-to-apples run comparisons.
+    and dataset content are byte-identical. The stable identity makes default
+    data splits repeatable across submissions and retries.
 
     Args:
         signature_code: Source code of the user's DSPy signature.
@@ -347,41 +346,6 @@ def compute_task_fingerprint(
     dataset_hash = hashlib.sha256(dataset_blob.encode("utf-8")).hexdigest()
     task_blob = f"{signature_code}\x00{metric_code}\x00{dataset_hash}"
     return hashlib.sha256(task_blob.encode("utf-8")).hexdigest()
-
-
-def compute_compare_fingerprint(optimization_id: str, overview: dict[str, Any]) -> str | None:
-    """Return a fingerprint identifying compareability (same task + same split).
-
-    Two jobs share a ``compare_fingerprint`` iff they share a ``task_fingerprint``
-    AND evaluate on byte-identical train/val/test splits. ``task_fingerprint``
-    alone only proves the signature/metric/dataset match; jobs with mismatching
-    seeds, shuffle flags, or split fractions land on different test rows and
-    must not be compared row-by-row.
-
-    The effective seed mirrors the fallback in ``/dataset`` and ``/test-results``:
-    use the stored seed when present, otherwise derive ``stable_seed(optimization_id)``
-    — the same value those endpoints used to compute the actual split.
-
-    Args:
-        optimization_id: Optimization id; used as the seed fallback.
-        overview: Parsed ``payload_overview`` dict for the job.
-
-    Returns:
-        A hex-encoded SHA256 digest, or ``None`` when the base ``task_fingerprint``
-        is missing (legacy job; can't be compared either way).
-    """
-    task_fp = overview.get(PAYLOAD_OVERVIEW_TASK_FINGERPRINT)
-    if not isinstance(task_fp, str) or not task_fp:
-        return None
-    stored_seed = overview.get(PAYLOAD_OVERVIEW_SEED)
-    effective_seed = stored_seed if stored_seed is not None else stable_seed(optimization_id)
-    shuffle = overview.get(PAYLOAD_OVERVIEW_SHUFFLE, True)
-    fractions = overview.get(PAYLOAD_OVERVIEW_SPLIT_FRACTIONS) or {}
-    if hasattr(fractions, "model_dump"):
-        fractions = fractions.model_dump()
-    fractions_blob = json.dumps(fractions, sort_keys=True, separators=(",", ":"))
-    blob = f"{task_fp}\x00{effective_seed}\x00{bool(shuffle)}\x00{fractions_blob}"
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _grant_role(job_store, optimization_id: str, username: str) -> ShareRole | None:
@@ -887,9 +851,8 @@ def build_summary(job_data: dict) -> OptimizationSummaryResponse:
         created_at, started_at, completed_at, job_data.get("accumulated_runtime_seconds") or 0.0
     )
 
-    optimization_id = job_data["optimization_id"]
     return OptimizationSummaryResponse(
-        optimization_id=optimization_id,
+        optimization_id=job_data["optimization_id"],
         status=job_status,
         message=job_data.get("message"),
         created_at=created_at,
@@ -899,7 +862,6 @@ def build_summary(job_data: dict) -> OptimizationSummaryResponse:
         elapsed_seconds=elapsed_secs,
         estimated_remaining=est_remaining,
         **overview_to_base_fields(overview),
-        compare_fingerprint=compute_compare_fingerprint(optimization_id, overview),
         split_fractions=overview.get(PAYLOAD_OVERVIEW_SPLIT_FRACTIONS),
         shuffle=overview.get(PAYLOAD_OVERVIEW_SHUFFLE),
         seed=overview.get(PAYLOAD_OVERVIEW_SEED),
