@@ -432,6 +432,17 @@ export function useSubmitWizard() {
       registerTutorialHook("setDatasetFileName", setDatasetFileName),
       registerTutorialHook("chooseModule", chooseModule),
       registerTutorialHook("reopenModulePicker", reopenModulePicker),
+      registerTutorialHook("setModelConfigOpen", (open) => {
+        setEditingModel(
+          open
+            ? {
+                config: modelConfig,
+                onSave: setModelConfig,
+                label: msg("model.generation.label"),
+              }
+            : null,
+        );
+      }),
       registerTutorialHook("setSignatureCode", setSignatureCode),
       registerTutorialHook("setMetricCode", setMetricCode),
       registerTutorialHook("setOptimizerName", setOptimizerName),

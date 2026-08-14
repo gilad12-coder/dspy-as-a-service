@@ -2,8 +2,7 @@
  * Tutorial System — Step Definitions
  * Skynet prompt optimization platform
  *
- * One ordered walkthrough of every feature, published as two tracks: the
- * essentials, and the essentials plus everything else.
+ * Focused, replayable walkthroughs for the product's main user workflows.
  * Works even for users with zero optimizations.
  */
 
@@ -20,20 +19,21 @@ import { formatMsg, msg } from "@/shared/lib/messages";
 import { perLocale } from "@/shared/lib/per-locale";
 
 /**
- * The two ways through the tour.
+ * The short end-to-end path plus four focused workflow guides.
  *
- * Users abandon a walkthrough at wildly different points, so the steps are
- * ordered by necessity rather than by screen: whenever someone quits, what
- * they already saw is the part that mattered most. "quick" is that ordering
- * cut down to the single path that gets a first result; "deep-dive" is the
- * same path with every remaining feature slotted in where it belongs.
+ * Keeping each guide narrow makes the tutorial useful after onboarding too:
+ * users can replay only the part they need instead of stepping through the
+ * entire application again.
  */
-export type TutorialTrack = "quick" | "deep-dive";
+export type TutorialTrack = "quick" | "data" | "build" | "results" | "workspace";
 
-/** Steps on the shortest path to a first result — shown in both tracks. */
-const ESSENTIAL: readonly TutorialTrack[] = ["quick", "deep-dive"];
-/** Steps that deepen or widen that path — the full tour only. */
-const FULL_ONLY: readonly TutorialTrack[] = ["deep-dive"];
+const QUICK_AND_BUILD: readonly TutorialTrack[] = ["quick", "build"];
+const QUICK_AND_RESULTS: readonly TutorialTrack[] = ["quick", "results"];
+const DATA_ONLY: readonly TutorialTrack[] = ["data"];
+const BUILD_ONLY: readonly TutorialTrack[] = ["build"];
+const RESULTS_ONLY: readonly TutorialTrack[] = ["results"];
+const WORKSPACE_ONLY: readonly TutorialTrack[] = ["workspace"];
+const QUICK_AND_WORKSPACE: readonly TutorialTrack[] = ["quick", "workspace"];
 
 export interface TutorialStep {
   id: string;
@@ -57,7 +57,7 @@ export interface TutorialStep {
    * the return value is not awaited.
    */
   afterHide?: () => void | Promise<void>;
-  /** Tracks this step belongs to — {@link ESSENTIAL} or {@link FULL_ONLY}. */
+  /** Focused guides that include this step. */
   tracks: readonly TutorialTrack[];
   readingTimeSec: number;
 }
@@ -240,6 +240,24 @@ async function ensureExplore() {
   callTutorialHook("setDemoExplorePoints", getCachedDemoExplorePoints());
 }
 
+async function ensureDatasets() {
+  if (window.location.pathname !== "/datasets") {
+    navigateTo("/datasets");
+    await waitForElement("[data-tutorial='datasets-library']");
+  }
+}
+
+async function openSettingsTab(tab: string) {
+  await ensureDashboard();
+  await waitForHook("setSettingsTab");
+  callTutorialHook("setSettingsTab", tab);
+  await waitForElement(`[data-tutorial='settings-${tab}']`);
+}
+
+function closeSettings() {
+  callTutorialHook("setSettingsTab", null);
+}
+
 function setGeneralistPanelOpen(open: boolean) {
   callTutorialHook("setGeneralistPanelOpen", open);
 }
@@ -336,8 +354,18 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     afterHide: () => {
       callTutorialHook("setSidebarOpen", false);
     },
-    tracks: ESSENTIAL,
+    tracks: DATA_ONLY,
     readingTimeSec: 7,
+  },
+  {
+    id: "dd-dataset-library",
+    title: msg("tutorial.step.dataset_library.title"),
+    description: msg("tutorial.step.dataset_library.body"),
+    target: "[data-tutorial='datasets-library']",
+    placement: "bottom",
+    beforeShow: ensureDatasets,
+    tracks: DATA_ONLY,
+    readingTimeSec: 10,
   },
   {
     id: "dd-tagger-setup",
@@ -349,7 +377,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureTagger();
       injectDemoTaggerData(0);
     },
-    tracks: FULL_ONLY,
+    tracks: DATA_ONLY,
     readingTimeSec: 8,
   },
   {
@@ -363,7 +391,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       injectDemoTaggerData(1);
       await waitForElement("[data-tutorial='tagger-modes']");
     },
-    tracks: FULL_ONLY,
+    tracks: DATA_ONLY,
     readingTimeSec: 9,
   },
   // 2 — Running an optimization. Follows the wizard's own step order, so
@@ -382,7 +410,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(0);
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_BUILD,
     readingTimeSec: 4,
   },
 
@@ -400,7 +428,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(0);
     },
-    tracks: FULL_ONLY,
+    tracks: BUILD_ONLY,
     readingTimeSec: 5,
   },
 
@@ -418,7 +446,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       injectSampleDataset();
       setWizardStep(1);
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_BUILD,
     readingTimeSec: 7,
   },
   {
@@ -433,7 +461,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       injectSampleDataset();
       setWizardStep(1);
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_BUILD,
     readingTimeSec: 7,
   },
   {
@@ -458,7 +486,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setWizardStep(2);
       await waitForElement("[data-tutorial='data-splits']");
     },
-    tracks: FULL_ONLY,
+    tracks: BUILD_ONLY,
     readingTimeSec: 10,
   },
   {
@@ -472,7 +500,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(2);
     },
-    tracks: FULL_ONLY,
+    tracks: BUILD_ONLY,
     readingTimeSec: 8,
   },
   {
@@ -494,7 +522,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setWizardStep(2);
       await waitForElement("[data-tutorial='gepa-params']");
     },
-    tracks: FULL_ONLY,
+    tracks: BUILD_ONLY,
     readingTimeSec: 16,
   },
 
@@ -516,8 +544,40 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       callTutorialHook("reopenModulePicker");
       await waitForElement("[data-tutorial='module-selector']");
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_BUILD,
     readingTimeSec: 9,
+  },
+  {
+    id: "dd-workflow-canvas",
+    title: msg("tutorial.step.workflow_canvas.title"),
+    description: msg("tutorial.step.workflow_canvas.body"),
+    target: "[data-tutorial='workflow-canvas']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureSubmit();
+      injectSampleDataset();
+      setWizardStep(3);
+      callTutorialHook("chooseModule", "workflow");
+      await waitForElement("[data-tutorial='workflow-canvas']");
+    },
+    tracks: BUILD_ONLY,
+    readingTimeSec: 12,
+  },
+  {
+    id: "dd-react-tools",
+    title: msg("tutorial.step.react_tools.title"),
+    description: msg("tutorial.step.react_tools.body"),
+    target: "[data-tutorial='react-config']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureSubmit();
+      injectSampleDataset();
+      setWizardStep(3);
+      callTutorialHook("chooseModule", "react");
+      await waitForElement("[data-tutorial='react-config']");
+    },
+    tracks: BUILD_ONLY,
+    readingTimeSec: 11,
   },
 
   {
@@ -534,7 +594,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       callTutorialHook("chooseModule", "predict");
       await waitForElement("[data-tutorial='signature-editor']");
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_BUILD,
     readingTimeSec: 11,
   },
   {
@@ -554,13 +614,13 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       callTutorialHook("chooseModule", "predict");
       await waitForElement("[data-tutorial='metric-editor']");
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_BUILD,
     readingTimeSec: 8,
   },
 
   {
     id: "dd-models",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.24", { p1: TERMS.modelPlural }),
+    title: msg("auto.features.tutorial.lib.steps.template.24"),
     description: formatMsg("auto.features.tutorial.lib.steps.template.25", {
       p1: TERMS.generationModel,
       p2: TERMS.reflectionModel,
@@ -572,8 +632,27 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(4);
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_BUILD,
     readingTimeSec: 7,
+  },
+  {
+    id: "dd-model-billing",
+    title: msg("tutorial.step.model_billing.title"),
+    description: msg("tutorial.step.model_billing.body"),
+    target: "[data-tutorial='model-billing-source']",
+    placement: "bottom",
+    beforeShow: async () => {
+      await ensureSubmit();
+      setWizardStep(4);
+      await waitForHook("setModelConfigOpen");
+      callTutorialHook("setModelConfigOpen", true);
+      await waitForElement("[data-tutorial='model-billing-source']");
+    },
+    afterHide: () => {
+      callTutorialHook("setModelConfigOpen", false);
+    },
+    tracks: BUILD_ONLY,
+    readingTimeSec: 10,
   },
   {
     id: "dd-review",
@@ -590,12 +669,12 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setOptimizerName("gepa");
       setWizardStep(5);
     },
-    tracks: FULL_ONLY,
+    tracks: QUICK_AND_BUILD,
     readingTimeSec: 5,
   },
   {
     id: "dd-submit",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.27", { p1: TERMS.optimization }),
+    title: msg("auto.features.tutorial.lib.steps.template.27"),
     description: formatMsg("auto.features.tutorial.lib.steps.template.28", {
       p1: TERMS.baselineScore,
       p2: TERMS.optimizer,
@@ -606,7 +685,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureSubmit();
       setWizardStep(5);
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_BUILD,
     readingTimeSec: 8,
   },
   // 3 — Reading the result. Score first: it is the payoff the previous
@@ -637,7 +716,21 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("overview");
       await waitForElement("[data-tutorial='detail-header']");
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_RESULTS,
+    readingTimeSec: 9,
+  },
+  {
+    id: "dd-result-actions",
+    title: msg("tutorial.step.result_actions.title"),
+    description: msg("tutorial.step.result_actions.body"),
+    target: "[data-tutorial='result-actions']",
+    placement: "left",
+    beforeShow: async () => {
+      await ensureDemoDetail();
+      setDetailTab("overview");
+      await waitForElement("[data-tutorial='result-actions']");
+    },
+    tracks: RESULTS_ONLY,
     readingTimeSec: 9,
   },
   {
@@ -655,7 +748,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureDemoDetail();
       setDetailTab("overview");
     },
-    tracks: FULL_ONLY,
+    tracks: RESULTS_ONLY,
     readingTimeSec: 8,
   },
   {
@@ -672,7 +765,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureDemoDetail();
       setDetailTab("overview");
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_RESULTS,
     readingTimeSec: 5,
   },
   {
@@ -692,7 +785,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       callTutorialHook("replayDemoSimulation");
       await waitForElement("[data-tutorial='trajectory-panel']");
     },
-    tracks: ESSENTIAL,
+    tracks: RESULTS_ONLY,
     readingTimeSec: 12,
   },
   {
@@ -709,7 +802,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureDemoDetail();
       setDetailTab("overview");
     },
-    tracks: FULL_ONLY,
+    tracks: RESULTS_ONLY,
     readingTimeSec: 7,
   },
   {
@@ -724,7 +817,35 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("playground");
       await waitForElement("[data-tutorial='serve-playground']");
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_RESULTS,
+    readingTimeSec: 12,
+  },
+  {
+    id: "dd-code",
+    title: msg("tutorial.step.code.title"),
+    description: msg("tutorial.step.code.body"),
+    target: "[data-tutorial='code-output']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureDemoDetail();
+      setDetailTab("code");
+      await waitForElement("[data-tutorial='code-output']");
+    },
+    tracks: RESULTS_ONLY,
+    readingTimeSec: 9,
+  },
+  {
+    id: "dd-artifact",
+    title: msg("tutorial.step.artifact.title"),
+    description: msg("tutorial.step.artifact.body"),
+    target: "[data-tutorial='artifact-output']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureDemoDetail();
+      setDetailTab("artifact");
+      await waitForElement("[data-tutorial='artifact-output']");
+    },
+    tracks: QUICK_AND_RESULTS,
     readingTimeSec: 12,
   },
   {
@@ -747,7 +868,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("data");
       await waitForElement("[data-tutorial='data-table']");
     },
-    tracks: FULL_ONLY,
+    tracks: RESULTS_ONLY,
     readingTimeSec: 9,
   },
   {
@@ -761,7 +882,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("logs");
       await waitForElement("[data-tutorial='live-logs']");
     },
-    tracks: FULL_ONLY,
+    tracks: RESULTS_ONLY,
     readingTimeSec: 6,
   },
   {
@@ -776,7 +897,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("lm-activity");
       await waitForElement("[data-tutorial='lm-activity']");
     },
-    tracks: FULL_ONLY,
+    tracks: RESULTS_ONLY,
     readingTimeSec: 11,
   },
   {
@@ -792,7 +913,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("config");
       await waitForElement("[data-tutorial='config-summary']");
     },
-    tracks: FULL_ONLY,
+    tracks: RESULTS_ONLY,
     readingTimeSec: 7,
   },
   // 4 — Grid search: many runs at once.
@@ -817,7 +938,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setDetailTab("overview");
       await waitForElement("[data-tutorial='grid-pair-list']");
     },
-    tracks: FULL_ONLY,
+    tracks: RESULTS_ONLY,
     readingTimeSec: 14,
   },
   {
@@ -839,7 +960,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await ensureGridPairDetail();
       await waitForElement("[data-tutorial='pair-detail-summary']");
     },
-    tracks: FULL_ONLY,
+    tracks: RESULTS_ONLY,
     readingTimeSec: 11,
   },
   // 6 — The dashboard, which is where all of the above accumulates.
@@ -854,7 +975,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       injectDemoDashboardData();
       setTab("jobs");
     },
-    tracks: FULL_ONLY,
+    tracks: WORKSPACE_ONLY,
     readingTimeSec: 4,
   },
   {
@@ -874,7 +995,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       setTab("jobs");
       await waitForElement("[data-tutorial='dashboard-table']");
     },
-    tracks: FULL_ONLY,
+    tracks: WORKSPACE_ONLY,
     readingTimeSec: 6,
   },
   {
@@ -894,7 +1015,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       await waitForElement("[data-tutorial='dashboard-stats']");
       await new Promise((r) => setTimeout(r, 250));
     },
-    tracks: FULL_ONLY,
+    tracks: WORKSPACE_ONLY,
     readingTimeSec: 5,
   },
   {
@@ -915,7 +1036,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     afterHide: () => {
       callTutorialHook("setSidebarOpen", false);
     },
-    tracks: FULL_ONLY,
+    tracks: WORKSPACE_ONLY,
     readingTimeSec: 7,
   },
   // 7 — Side tools, then the sign-off.
@@ -928,7 +1049,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     beforeShow: async () => {
       await ensureExplore();
     },
-    tracks: FULL_ONLY,
+    tracks: WORKSPACE_ONLY,
     readingTimeSec: 14,
   },
   // Agent panel: only the chat window. The pill alone is just the
@@ -947,8 +1068,52 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     afterHide: () => {
       setGeneralistPanelOpen(false);
     },
-    tracks: FULL_ONLY,
+    tracks: WORKSPACE_ONLY,
     readingTimeSec: 10,
+  },
+  {
+    id: "dd-settings-billing",
+    title: msg("tutorial.step.settings_billing.title"),
+    description: msg("tutorial.step.settings_billing.body"),
+    target: "[data-tutorial='settings-billing']",
+    placement: "left",
+    beforeShow: () => openSettingsTab("billing"),
+    afterHide: closeSettings,
+    tracks: WORKSPACE_ONLY,
+    readingTimeSec: 11,
+  },
+  {
+    id: "dd-settings-providers",
+    title: msg("tutorial.step.settings_providers.title"),
+    description: msg("tutorial.step.settings_providers.body"),
+    target: "[data-tutorial='settings-providers']",
+    placement: "left",
+    beforeShow: () => openSettingsTab("providers"),
+    afterHide: closeSettings,
+    tracks: WORKSPACE_ONLY,
+    readingTimeSec: 9,
+  },
+  {
+    id: "dd-settings-privacy",
+    title: msg("tutorial.step.settings_privacy.title"),
+    description: msg("tutorial.step.settings_privacy.body"),
+    target: "[data-tutorial='settings-privacy']",
+    placement: "left",
+    beforeShow: () => openSettingsTab("privacy"),
+    afterHide: closeSettings,
+    tracks: WORKSPACE_ONLY,
+    readingTimeSec: 11,
+  },
+  {
+    id: "dd-settings-navigation",
+    title: msg("tutorial.step.settings_navigation.title"),
+    description: msg("tutorial.step.settings_navigation.body"),
+    target: "[data-tutorial='settings-navigation']",
+    placement: "right",
+    beforeShow: () => openSettingsTab("account"),
+    afterHide: closeSettings,
+    tracks: WORKSPACE_ONLY,
+    readingTimeSec: 12,
   },
   {
     id: "dd-done",
@@ -966,7 +1131,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     afterHide: () => {
       callTutorialHook("setSidebarOpen", false);
     },
-    tracks: ESSENTIAL,
+    tracks: QUICK_AND_WORKSPACE,
     readingTimeSec: 5,
   },
 ]);
@@ -990,11 +1155,32 @@ export function getTrack(trackId: TutorialTrack): TutorialTrackDefinition | unde
   const steps = getVisibleSteps().filter((s) => s.tracks.includes(trackId));
   if (steps.length === 0) return undefined;
   const seconds = steps.reduce((sum, s) => sum + s.readingTimeSec + STEP_OVERHEAD_SEC, 0);
-  const quick = trackId === "quick";
+  const metadata: Record<TutorialTrack, { name: string; description: string }> = {
+    quick: {
+      name: msg("tutorial.track.quick.name"),
+      description: msg("tutorial.track.quick.desc"),
+    },
+    data: {
+      name: msg("tutorial.track.data.name"),
+      description: msg("tutorial.track.data.desc"),
+    },
+    build: {
+      name: msg("tutorial.track.build.name"),
+      description: msg("tutorial.track.build.desc"),
+    },
+    results: {
+      name: msg("tutorial.track.results.name"),
+      description: msg("tutorial.track.results.desc"),
+    },
+    workspace: {
+      name: msg("tutorial.track.workspace.name"),
+      description: msg("tutorial.track.workspace.desc"),
+    },
+  };
   return {
     id: trackId,
-    name: quick ? msg("tutorial.track.quick.name") : msg("tutorial.track.full.name"),
-    description: quick ? msg("tutorial.track.quick.desc") : msg("tutorial.track.full.desc"),
+    name: metadata[trackId].name,
+    description: metadata[trackId].description,
     icon: trackId,
     stepCount: steps.length,
     estimatedMinutes: Math.max(1, Math.round(seconds / 60)),

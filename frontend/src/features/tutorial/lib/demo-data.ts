@@ -579,6 +579,28 @@ function buildDone(start: Date): OptimizationStatusResponse {
           training: { calls: 12, avg_response_time_ms: 5240 },
         },
       },
+      program_artifact: {
+        program_state_json: {
+          "predict.signature.instructions":
+            "Classify each email as spam, important, or promotional. Use the message's intent, urgency, and requested action; do not classify from isolated keywords alone.",
+        },
+        optimized_prompt: {
+          predictor_name: "EmailClassifier",
+          signature_name: "EmailClassifier",
+          instructions:
+            "Classify each email as spam, important, or promotional. Use the message's intent, urgency, and requested action; do not classify from isolated keywords alone.",
+          input_fields: ["email_text"],
+          output_fields: ["category"],
+          demos: [
+            {
+              inputs: { email_text: "Your quarterly report is ready for review" },
+              outputs: { category: "important" },
+            },
+          ],
+          formatted_prompt:
+            "Classify each email as spam, important, or promotional.\n\nInput: {email_text}\nOutput: {category}",
+        },
+      },
     },
   };
 }

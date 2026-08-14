@@ -52,6 +52,8 @@ export interface TutorialHooks {
   chooseModule: (name: string) => void;
   /** Send the code step back to the module picker, for the step that shows it. */
   reopenModulePicker: () => void;
+  /** Open or close the generation model's config dialog. */
+  setModelConfigOpen: (open: boolean) => void;
   /** Seed the wizard's signature code editor. */
   setSignatureCode: (code: string) => void;
   /** Seed the wizard's metric code editor. */
@@ -78,6 +80,8 @@ export interface TutorialHooks {
   setTaggerStartingNew: (value: boolean) => void;
   /** Open or close the generalist agent panel (left-anchored aside). */
   setGeneralistPanelOpen: (open: boolean) => void;
+  /** Open a settings tab, or close the settings dialog with null. */
+  setSettingsTab: (tab: string | null) => void;
   /**
    * Open or close the navigation sidebar drawer. Below 768px the sidebar is
    * off-canvas, so steps that spotlight it must slide it in first; a no-op on
@@ -94,7 +98,7 @@ export interface TutorialHooks {
   /** Enable or disable the global advanced mode that gates dataset splits and GEPA tuning. */
   setAdvancedMode: (enabled: boolean) => void;
   /**
-   * Replay the demo optimization simulation. The deep-dive tour calls this
+   * Replay the demo optimization simulation. The results guide calls this
    * when reaching the trajectory step so the user sees the tree grow live
    * instead of jumping to the completed state.
    */

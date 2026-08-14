@@ -227,6 +227,7 @@ export function ModelConfigModal({
             <div
               role="group"
               aria-label={msg("billing.mode.aria")}
+              data-tutorial="model-billing-source"
               className="flex w-fit rounded-lg bg-muted p-0.5"
             >
               {TOKEN_SOURCE_SEGMENTS.map(({ mode: value, icon: Icon, labelKey }) => (

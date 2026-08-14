@@ -165,7 +165,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
       setTimeout(() => {
         void loadStepsModule().then(() => {
           dispatch({ type: "SET_AUTO_PLAY", value: true });
-          dispatch({ type: "START_TRACK", track: "deep-dive" as TutorialTrack });
+          dispatch({ type: "START_TRACK", track: "quick" });
         });
       }, 1000);
     }

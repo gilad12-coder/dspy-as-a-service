@@ -182,9 +182,8 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="flex items-center gap-1.5" dir={dir}>
-          {/* The tour comes in two lengths, and which one someone wants depends
-              on how much time they have right now — so the button opens a
-              chooser anchored to itself rather than starting a remembered one. */}
+          {/* Tutorials are grouped by workflow so this button opens a replayable
+              guide chooser rather than starting one long product tour. */}
           <PopoverPrimitive.Root>
             <Tooltip>
               <TooltipTrigger asChild>

@@ -1108,7 +1108,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
               </div>
             </div>
             {!isShare && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" data-tutorial="result-actions">
                 {canManageShare && <ShareDialog optimizationId={job.optimization_id} />}
                 <TooltipButton tooltip={msg("auto.app.optimizations.id.page.4")}>
                   <Button

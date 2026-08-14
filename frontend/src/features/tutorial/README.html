@@ -377,7 +377,7 @@
 <header class="doc-header">
   <p class="eyebrow">Skynet · Frontend Feature</p>
   <h1>Tutorial System</h1>
-  <p class="lede">Complete interactive tutorial system with two tracks: Quick Tour (12 steps) and Deep Dive (24 steps).</p>
+  <p class="lede">Replayable, bilingual product guides for the five workflows users need most: quick start, data preparation, building, results, and workspace settings.</p>
   <div class="meta-row">
     <span class="pill">React · TypeScript</span>
     <span class="pill">RTL · Hebrew</span>
@@ -389,19 +389,19 @@
 <section id="architecture">
   <h2>Architecture</h2>
   <div class="tree">
-<span class="dir">src/</span>
+<span class="dir">src/features/tutorial/</span>
 ├── <span class="dir">lib/</span>
-│   └── tutorial-steps.ts          <span class="file-comment"># Step definitions and types</span>
-├── <span class="dir">hooks/</span>
-│   └── use-tutorial.ts            <span class="file-comment"># State management with localStorage</span>
-└── <span class="dir">components/</span>
-    └── <span class="dir">tutorial/</span>
-        ├── spotlight-mask.tsx      <span class="file-comment"># SVG cutout effect</span>
-        ├── tutorial-popover.tsx    <span class="file-comment"># Main popover UI</span>
-        ├── tutorial-overlay.tsx    <span class="file-comment"># Orchestrator (keyboard nav, positioning)</span>
-        ├── tutorial-menu.tsx       <span class="file-comment"># Track selection modal</span>
-        ├── tutorial-provider.tsx   <span class="file-comment"># Context provider (optional)</span>
-        └── index.ts                <span class="file-comment"># Re-exports</span>
+│   ├── steps.ts                   <span class="file-comment"># Workflow steps and track definitions</span>
+│   ├── steps-loader.ts            <span class="file-comment"># Lazy track loading</span>
+│   ├── bridge.ts                  <span class="file-comment"># Route and feature hooks</span>
+│   └── demo-data.ts               <span class="file-comment"># Cost-free tutorial results</span>
+├── <span class="dir">components/</span>
+│   ├── spotlight-mask.tsx         <span class="file-comment"># SVG cutout effect</span>
+│   ├── tutorial-popover.tsx       <span class="file-comment"># Step card and navigation</span>
+│   ├── tutorial-overlay.tsx       <span class="file-comment"># Positioning and keyboard controls</span>
+│   ├── tutorial-menu.tsx          <span class="file-comment"># Workflow chooser</span>
+│   └── tutorial-provider.tsx      <span class="file-comment"># Tutorial state and persistence</span>
+└── index.ts                       <span class="file-comment"># Public feature API</span>
   </div>
 </section>
 
@@ -453,59 +453,11 @@
   <h2>Tutorial Tracks</h2>
 
   <div class="tracks">
-    <div class="track">
-      <div class="head">
-        <span class="name">סיור מהיר · Quick Tour</span>
-        <span class="count">11 steps</span>
-      </div>
-      <ol>
-        <li><strong>Welcome</strong> — Introduction to Skynet</li>
-        <li><strong>Sidebar</strong> — Navigation overview</li>
-        <li><strong>Dashboard KPIs</strong> — Stats cards</li>
-        <li><strong>Dashboard Table</strong> — Optimization history</li>
-        <li><strong>Dashboard Stats</strong> — Analytics view</li>
-        <li><strong>New Optimization</strong> — Start wizard</li>
-        <li><strong>Submit Wizard</strong> — 6-step workflow</li>
-        <li><strong>Job Detail</strong> — Pipeline + logs</li>
-        <li><strong>Serve</strong> — Test optimized program</li>
-        <li><strong>Grid Search</strong> — Multi-model runs</li>
-        <li><strong>Done</strong> — Ready to optimize!</li>
-      </ol>
-    </div>
-
-    <div class="track">
-      <div class="head">
-        <span class="name">הבנת המערכת · Deep Dive</span>
-        <span class="count">23 steps</span>
-      </div>
-
-      <p class="group">Part 1 · Concepts (4 steps)</p>
-      <ul>
-        <li>Prompt optimization explanation</li>
-        <li>Modules (Predict/CoT)</li>
-        <li>Optimizer (GEPA)</li>
-        <li>Scoring/metrics</li>
-      </ul>
-
-      <p class="group">Part 2 · Submit Wizard (13 steps)</p>
-      <ul>
-        <li>Detailed walkthrough of each wizard step</li>
-        <li>Column mapping, splits, models</li>
-        <li>Code editor and metric templates</li>
-        <li>Parameters and auto level</li>
-        <li>Optimizer-specific settings</li>
-      </ul>
-
-      <p class="group">Part 3 · Results (6 steps)</p>
-      <ul>
-        <li>Pipeline stages</li>
-        <li>Live logs</li>
-        <li>Score progression chart</li>
-        <li>Inference/serve</li>
-        <li>Grid search results</li>
-        <li>Completion</li>
-      </ul>
-    </div>
+    <div class="track"><div class="head"><span class="name">Quick start</span><span class="count">end to end</span></div><p>Prepare a dataset, configure one optimization, submit it, inspect the score, try the result in Usage, and export the artifact.</p></div>
+    <div class="track"><div class="head"><span class="name">Prepare data</span><span class="count">focused guide</span></div><p>Dataset library, CSV/JSON/Excel reuse, sheet editing, sharing, and the tagger's manual, co-pilot, and autopilot modes.</p></div>
+    <div class="track"><div class="head"><span class="name">Build an optimization</span><span class="count">focused guide</span></div><p>Privacy, splits, modules, ReAct tools, visual workflows, signatures, metrics, model roles, per-model Credits or BYOK, and cost caps.</p></div>
+    <div class="track"><div class="head"><span class="name">Use the result</span><span class="count">focused guide</span></div><p>Pipeline state, score trajectory, structured ReAct activity, source code, optimized artifacts, logs, model activity, config, grid-search pairs, and export.</p></div>
+    <div class="track"><div class="head"><span class="name">Workspace and settings</span><span class="count">focused guide</span></div><p>Dashboard, semantic exploration, the general agent, billing, payment methods, transactions, BYOK providers, notifications, privacy, security, and feedback.</p></div>
   </div>
 </section>
 
@@ -535,14 +487,11 @@
   <h3>Submit Wizard</h3>
   <table>
     <tbody>
-      <tr><td><code>submit-wizard</code></td><td>Wizard container</td></tr>
-      <tr><td><code>wizard-step-1</code></td><td>Basics step</td></tr>
-      <tr><td><code>wizard-step-2</code></td><td>Dataset step</td></tr>
-      <tr><td><code>wizard-step-3</code></td><td>Model step</td></tr>
-      <tr><td><code>wizard-step-4</code></td><td>Code step</td></tr>
-      <tr><td><code>wizard-step-5</code></td><td>Parameters step</td></tr>
-      <tr><td><code>wizard-step-6</code></td><td>Review step</td></tr>
-      <tr><td><code>wizard-next</code></td><td>Next button</td></tr>
+      <tr><td><code>wizard-stepper</code></td><td>Wizard progress and composition</td></tr>
+      <tr><td><code>wizard-step-1</code> … <code>wizard-step-6</code></td><td>Current wizard sections</td></tr>
+      <tr><td><code>workflow-canvas</code></td><td>Visual multi-module builder</td></tr>
+      <tr><td><code>react-config</code></td><td>ReAct tools and iteration settings</td></tr>
+      <tr><td><code>model-billing-source</code></td><td>Per-model Credits or BYOK controls</td></tr>
     </tbody>
   </table>
 
@@ -553,8 +502,22 @@
       <tr><td><code>score-chart</code></td><td>Score progression</td></tr>
       <tr><td><code>live-logs</code></td><td>Logs tab</td></tr>
       <tr><td><code>serve-playground</code></td><td>Playground tab content</td></tr>
-      <tr><td><code>playground-tab</code></td><td>Playground tab trigger</td></tr>
+      <tr><td><code>code-output</code></td><td>Source code tab</td></tr>
+      <tr><td><code>artifact-output</code></td><td>Optimized artifact and exports</td></tr>
+      <tr><td><code>result-actions</code></td><td>Share and clone actions</td></tr>
       <tr><td><code>grid-search</code></td><td>Grid search results</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Data and Settings</h3>
+  <table>
+    <tbody>
+      <tr><td><code>datasets-library</code></td><td>Reusable datasets</td></tr>
+      <tr><td><code>tagger-setup</code></td><td>Dataset tagging workflow</td></tr>
+      <tr><td><code>settings-navigation</code></td><td>Settings rail</td></tr>
+      <tr><td><code>settings-billing</code></td><td>Billing, payment methods, and transactions</td></tr>
+      <tr><td><code>settings-providers</code></td><td>Verified BYOK providers</td></tr>
+      <tr><td><code>settings-privacy</code></td><td>Notifications, analytics, and account data</td></tr>
     </tbody>
   </table>
 
@@ -564,44 +527,31 @@
   <h2>Usage</h2>
 
   <h3>1. Add to Layout</h3>
-  <p>Already integrated in <code>src/app/layout.tsx</code>:</p>
-<pre><span class="k">import</span> { TutorialOverlay, TutorialMenu } <span class="k">from</span> <span class="s">"@/components/tutorial"</span>;
-
-<span class="k">export default function</span> RootLayout({ children }) {
-  <span class="k">return</span> (
-    &lt;<span class="t">html</span>&gt;
-      &lt;<span class="t">body</span>&gt;
-        {children}
-        &lt;<span class="t">TutorialOverlay</span> /&gt;
-        &lt;<span class="t">TutorialMenu</span> /&gt;
-      &lt;/<span class="t">body</span>&gt;
-    &lt;/<span class="t">html</span>&gt;
-  );
-}</pre>
+  <p>The app shell mounts <code>TutorialProvider</code>. Its header help button owns the menu trigger, while the provider renders the overlay and restores completion state.</p>
 
   <h3>2. Trigger from Anywhere</h3>
-  <p>Use the <code>useTutorial</code> hook:</p>
-<pre><span class="k">import</span> { useTutorial } <span class="k">from</span> <span class="s">"@/hooks/use-tutorial"</span>;
+  <p>Use the tutorial context:</p>
+<pre><span class="k">import</span> { useTutorialContext } <span class="k">from</span> <span class="s">"@/features/tutorial"</span>;
 
 <span class="k">function</span> MyComponent() {
-  <span class="k">const</span> { openMenu } = useTutorial();
+  <span class="k">const</span> { startTrack } = useTutorialContext();
 
-  <span class="k">return</span> &lt;<span class="t">button</span> <span class="a">onClick</span>={openMenu}&gt;Open Tutorial&lt;/<span class="t">button</span>&gt;;
+  <span class="k">return</span> &lt;<span class="t">button</span> <span class="a">onClick</span>={() =&gt; startTrack(<span class="s">"quick"</span>)}&gt;Start&lt;/<span class="t">button</span>&gt;;
 }</pre>
 
   <p>The help button in the sidebar automatically opens the tutorial menu.</p>
 
   <h3>3. Add New Steps</h3>
-  <p>Edit <code>src/lib/tutorial-steps.ts</code>:</p>
+  <p>Edit <code>src/features/tutorial/lib/steps.ts</code>:</p>
 <pre><span class="k">const</span> newStep<span class="k">: TutorialStep</span> = {
   id: <span class="s">"my-step"</span>,
   title: <span class="s">"כותרת בעברית"</span>,
   description: <span class="s">"תיאור מפורט של השלב"</span>,
   target: <span class="s">"[data-tutorial='my-target']"</span>,
   placement: <span class="s">"bottom"</span>,
-  track: <span class="s">"quick-tour"</span>,
+  tracks: [<span class="s">"quick"</span>],
+  readingTimeSec: <span class="s">20</span>,
   beforeShow: <span class="k">async</span> () =&gt; {
-    <span class="c">// Optional: Navigate or prepare UI</span>
     router.push(<span class="s">"/some-page"</span>);
     <span class="k">await new</span> Promise((r) =&gt; setTimeout(r, <span class="s">100</span>));
   },
@@ -668,7 +618,7 @@ bg-gradient-to-br from-card to-card/60</pre>
   <h3>localStorage Schema</h3>
 <pre>{
   <span class="s">"skynet-tutorial-state"</span>: {
-    <span class="s">"completedTracks"</span>: [<span class="s">"quick-tour"</span>]
+    <span class="s">"completedTracks"</span>: [<span class="s">"quick"</span>, <span class="s">"data"</span>]
   }
 }</pre>
 

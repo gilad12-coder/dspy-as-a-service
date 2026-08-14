@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Popover as PopoverPrimitive } from "radix-ui";
-import { Lightning, Compass } from "@/shared/ui/icons";
+import { Compass, Database, FlowArrow, Lightning, TrendUp } from "@/shared/ui/icons";
 import { useTutorialContext } from "./tutorial-provider";
 import type { TutorialTrack } from "../lib/steps";
 import { getLoadedTrack, loadStepsModule } from "../lib/steps-loader";
@@ -12,17 +12,52 @@ import { formatMsg, msg } from "@/shared/lib/messages";
 type TrackSize = { steps: number; minutes: number };
 
 const ITEM_CLS =
-  "flex w-full items-center gap-2.5 whitespace-nowrap px-4 py-2 text-xs text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
-const ICON_CLS = "size-4 shrink-0 text-muted-foreground/60";
-const META_CLS = "ms-auto shrink-0 whitespace-nowrap font-mono text-[0.625rem] text-muted-foreground/60";
+  "flex w-full items-start gap-2.5 px-4 py-2.5 text-xs text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
+const ICON_CLS = "mt-0.5 size-4 shrink-0 text-muted-foreground/60";
+const META_CLS =
+  "ms-auto shrink-0 whitespace-nowrap font-mono text-[0.625rem] text-muted-foreground/60";
+
+const TRACKS = [
+  {
+    id: "quick",
+    icon: Lightning,
+    nameKey: "tutorial.track.quick.name",
+    descKey: "tutorial.track.quick.desc",
+  },
+  {
+    id: "data",
+    icon: Database,
+    nameKey: "tutorial.track.data.name",
+    descKey: "tutorial.track.data.desc",
+  },
+  {
+    id: "build",
+    icon: FlowArrow,
+    nameKey: "tutorial.track.build.name",
+    descKey: "tutorial.track.build.desc",
+  },
+  {
+    id: "results",
+    icon: TrendUp,
+    nameKey: "tutorial.track.results.name",
+    descKey: "tutorial.track.results.desc",
+  },
+  {
+    id: "workspace",
+    icon: Compass,
+    nameKey: "tutorial.track.workspace.name",
+    descKey: "tutorial.track.workspace.desc",
+  },
+] as const satisfies ReadonlyArray<{
+  id: TutorialTrack;
+  icon: typeof Lightning;
+  nameKey: Parameters<typeof msg>[0];
+  descKey: Parameters<typeof msg>[0];
+}>;
 
 /**
- * The tour's track chooser — the popover half of the header's tour button,
+ * The tutorial's workflow chooser — the popover half of the header button,
  * which supplies the `Popover.Root` and trigger around it.
- *
- * Both tracks walk the same ordered steps; the short one stops at the
- * essentials. The question gets asked on every press rather than remembered,
- * because the answer depends on how much time the user has right now.
  */
 export function TutorialMenu() {
   const { startTrack } = useTutorialContext();
@@ -36,10 +71,15 @@ export function TutorialMenu() {
     void loadStepsModule().then(() => {
       if (cancelled) return;
       const next: Partial<Record<TutorialTrack, TrackSize>> = {};
-      const quick = getLoadedTrack("quick");
-      if (quick) next.quick = { steps: quick.stepCount, minutes: quick.estimatedMinutes };
-      const deep = getLoadedTrack("deep-dive");
-      if (deep) next["deep-dive"] = { steps: deep.stepCount, minutes: deep.estimatedMinutes };
+      for (const track of TRACKS) {
+        const definition = getLoadedTrack(track.id);
+        if (definition) {
+          next[track.id] = {
+            steps: definition.stepCount,
+            minutes: definition.estimatedMinutes,
+          };
+        }
+      }
       setSizes(next);
     });
     return () => {
@@ -53,22 +93,23 @@ export function TutorialMenu() {
         align="end"
         side="bottom"
         sideOffset={6}
-        className="z-50 min-w-[230px] max-w-[min(280px,90vw)] rounded-2xl border border-border/40 bg-card py-1.5 shadow-[0_4px_24px_rgba(28,22,18,0.1)] animate-in fade-in-0 zoom-in-95"
+        className="z-50 min-w-[310px] max-w-[min(360px,92vw)] rounded-2xl border border-border/40 bg-card py-1.5 shadow-[0_4px_24px_rgba(28,22,18,0.1)] animate-in fade-in-0 zoom-in-95"
       >
-        <TrackItem
-          track="quick"
-          Icon={Lightning}
-          label={msg("tutorial.track.quick.name")}
-          size={sizes.quick}
-          onStart={startTrack}
-        />
-        <TrackItem
-          track="deep-dive"
-          Icon={Compass}
-          label={msg("tutorial.track.full.name")}
-          size={sizes["deep-dive"]}
-          onStart={startTrack}
-        />
+        <p className="px-4 pb-1.5 pt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
+          {msg("tutorial.menu.subtitle")}
+        </p>
+        <div role="separator" className="mx-3 mb-1 h-px bg-border/40" />
+        {TRACKS.map(({ id, icon: Icon, nameKey, descKey }) => (
+          <TrackItem
+            key={id}
+            track={id}
+            Icon={Icon}
+            label={msg(nameKey)}
+            description={msg(descKey)}
+            size={sizes[id]}
+            onStart={startTrack}
+          />
+        ))}
       </PopoverPrimitive.Content>
     </PopoverPrimitive.Portal>
   );
@@ -79,12 +120,14 @@ function TrackItem({
   track,
   Icon,
   label,
+  description,
   size,
   onStart,
 }: {
   track: TutorialTrack;
   Icon: typeof Lightning;
   label: string;
+  description: string;
   size?: TrackSize;
   onStart: (track: TutorialTrack) => void;
 }) {
@@ -92,10 +135,19 @@ function TrackItem({
     <PopoverPrimitive.Close asChild>
       <button type="button" onClick={() => onStart(track)} className={ITEM_CLS}>
         <Icon className={ICON_CLS} />
-        <span className="flex-1 whitespace-nowrap text-start">{label}</span>
-        {size && (
-          <span className={META_CLS}>{formatMsg("tutorial.menu.meta", { p1: size.steps, p2: size.minutes })}</span>
-        )}
+        <span className="min-w-0 flex-1 text-start">
+          <span className="flex items-center gap-2">
+            <span className="font-medium">{label}</span>
+            {size && (
+              <span className={META_CLS}>
+                {formatMsg("tutorial.menu.meta", { p1: size.steps, p2: size.minutes })}
+              </span>
+            )}
+          </span>
+          <span className="mt-0.5 block text-[0.6875rem] leading-snug text-muted-foreground">
+            {description}
+          </span>
+        </span>
       </button>
     </PopoverPrimitive.Close>
   );

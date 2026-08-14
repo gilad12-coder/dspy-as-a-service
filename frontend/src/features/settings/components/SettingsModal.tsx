@@ -95,6 +95,7 @@ import type { CatalogModel } from "@/shared/types/api";
 import { ComposerModelMenu } from "@/shared/ui/agent";
 import { ModelChip } from "@/shared/ui/model-chip";
 import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
+import { registerTutorialHook } from "@/features/tutorial";
 import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { LEGAL_CONFIG } from "@/features/legal";
@@ -1551,6 +1552,18 @@ export function SettingsModal() {
   React.useEffect(() => {
     if (!tabs.includes(activeTab)) setActiveTab("wizard");
   }, [activeTab, tabs]);
+  React.useEffect(
+    () =>
+      registerTutorialHook("setSettingsTab", (tab) => {
+        if (tab === null) {
+          setOpen(false);
+          return;
+        }
+        if ((tabs as readonly string[]).includes(tab)) setActiveTab(tab as SettingsTab);
+        setOpen(true);
+      }),
+    [setOpen, tabs],
+  );
   // Honor a deep-link (e.g. the credit chip → wallet): when something opens the
   // modal targeting a tab, jump there once, then clear so a later manual open
   // keeps whatever tab the user last left it on.
@@ -1588,6 +1601,7 @@ export function SettingsModal() {
         >
           <TabsList
             aria-label={msg("settings.title")}
+            data-tutorial="settings-navigation"
             className="relative flex h-auto w-full shrink-0 items-stretch justify-start gap-1 overflow-x-auto rounded-none border-0 border-b border-border/40 bg-transparent px-3 pb-3 pt-2 shadow-none no-scrollbar max-md:flex-row! md:w-[220px] md:overflow-x-visible md:overflow-y-auto md:border-b-0 md:border-e"
           >
             {SETTINGS_GROUPS.map((group) => (
@@ -1643,22 +1657,22 @@ export function SettingsModal() {
               <TabsContent value="agent">
                 <AgentTab />
               </TabsContent>
-              <TabsContent value="account">
+              <TabsContent value="account" data-tutorial="settings-account">
                 <AccountTab />
               </TabsContent>
               <TabsContent value="security">
                 <SecurityTab />
               </TabsContent>
-              <TabsContent value="privacy">
+              <TabsContent value="privacy" data-tutorial="settings-privacy">
                 <PrivacyTab />
               </TabsContent>
-              <TabsContent value="billing">
+              <TabsContent value="billing" data-tutorial="settings-billing">
                 <WalletTab />
               </TabsContent>
               <TabsContent value="usage">
                 <UsageTab />
               </TabsContent>
-              <TabsContent value="providers">
+              <TabsContent value="providers" data-tutorial="settings-providers">
                 <ByokKeysSection />
               </TabsContent>
               <TabsContent value="api">

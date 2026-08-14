@@ -92,7 +92,7 @@ export function ArtifactTab({
   const isWorkflowArtifact = !!optimizedNodes && Object.keys(optimizedNodes).length > 0;
 
   return (
-    <>
+    <div className="space-y-6" data-tutorial="artifact-output">
       <FadeIn>
         <p className="text-sm text-muted-foreground">{msg("optimization.artifact.description")}</p>
       </FadeIn>
@@ -162,7 +162,7 @@ export function ArtifactTab({
           )}
         </>
       )}
-    </>
+    </div>
   );
 }
 

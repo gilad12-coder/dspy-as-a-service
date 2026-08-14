@@ -173,7 +173,7 @@ export function DatasetsView() {
 
   if (loading) {
     return (
-      <div className="pb-16">
+      <div className="pb-16" data-tutorial="datasets-library">
         <DataHubTabs active="datasets" />
         <ListPageSkeleton />
       </div>
@@ -181,7 +181,7 @@ export function DatasetsView() {
   }
 
   return (
-    <div className="pb-16">
+    <div className="pb-16" data-tutorial="datasets-library">
       <DataHubTabs active="datasets" />
       <input
         ref={fileInputRef}
