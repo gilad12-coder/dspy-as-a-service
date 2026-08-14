@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 import dspy
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -733,24 +733,29 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         "/optimizations/{optimization_id}/program-export",
         summary="Download a self-contained, runnable export of the compiled DSPy program",
     )
-    def export_job_program(optimization_id: str, current_user: AuthenticatedUserDep) -> StreamingResponse:
+    def export_job_program(
+        optimization_id: str,
+        current_user: AuthenticatedUserDep,
+        pair_index: Annotated[int | None, Query(ge=0)] = None,
+    ) -> StreamingResponse:
         """Stream a zip that reconstructs and runs the program with plain ``dspy``.
 
         Unlike ``/serve`` (which runs the program on the platform's key), this
         packages the persisted state JSON, the signature source, the module
         recipe, and a standalone loader so the caller owns and runs the program
-        themselves — no platform endpoint required. Single-run only, matching
-        ``/artifact``; grid searches 404 here.
+        themselves — no platform endpoint required. Grid searches export the
+        requested pair, or their winning pair when ``pair_index`` is omitted.
 
         Args:
             optimization_id: Optimization id whose program should be exported.
             current_user: Authenticated caller resolved from the bearer token.
+            pair_index: Optional grid-search pair to export instead of the winner.
 
         Returns:
             A ``StreamingResponse`` carrying the zip as a file attachment.
 
         Raises:
-            DomainError: 404 (unknown / inaccessible / grid), 409 (not success,
+            DomainError: 404 (unknown / inaccessible / pair), 409 (not success,
                 or no reconstructable program), 500 (corrupt result).
         """
 
@@ -758,9 +763,6 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
 
         overview = parse_overview(job_data)
         optimization_type = overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE, OPTIMIZATION_TYPE_RUN)
-
-        if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
-            raise DomainError("grid_search.artifact_per_pair_redirect", status=404)
 
         status = status_to_job_status(job_data.get("status", "pending"))
 
@@ -777,13 +779,42 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         result_data = job_data.get("result")
         if not (result_data and isinstance(result_data, dict)):
             raise DomainError("optimization.no_artifact_generic", status=409)
-        try:
-            result = RunResponse.model_validate(result_data)
-        except ValidationError:
-            logger.warning("Optimization %s has corrupted result data", optimization_id)
-            raise DomainError("optimization.corrupt_result", status=500) from None
+        export_overview = overview
+        export_pair_index: int | None = None
+        if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
+            try:
+                grid_result = GridSearchResponse.model_validate(result_data)
+            except ValidationError:
+                logger.warning("Grid search %s has corrupted result data", optimization_id)
+                raise DomainError("grid_search.corrupt_result", status=500) from None
+            pair = grid_result.best_pair
+            if pair_index is not None:
+                pair = next((item for item in grid_result.pair_results if item.pair_index == pair_index), None)
+                if pair is None:
+                    raise DomainError(
+                        "grid_search.pair_position_missing",
+                        status=404,
+                        pair_index=pair_index,
+                    )
+            if pair is None:
+                raise DomainError("grid_search.no_best_pair", status=409)
+            artifact = pair.program_artifact
+            export_pair_index = pair.pair_index
+            export_overview = {**overview, PAYLOAD_OVERVIEW_MODEL_NAME: pair.generation_model}
+            if artifact is None or artifact.program_state_json is None:
+                raise DomainError(
+                    "grid_search.pair_no_artifact",
+                    status=409,
+                    pair_index=pair.pair_index,
+                )
+        else:
+            try:
+                result = RunResponse.model_validate(result_data)
+            except ValidationError:
+                logger.warning("Optimization %s has corrupted result data", optimization_id)
+                raise DomainError("optimization.corrupt_result", status=500) from None
+            artifact = result.program_artifact
 
-        artifact = result.program_artifact
         # The export reconstructs from state JSON; a legacy pickle-only artifact
         # carries no signature_code and isn't portably rebuildable, so it's 409.
         if artifact is None or artifact.program_state_json is None:
@@ -796,9 +827,10 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         zip_bytes = build_program_export_zip(
             optimization_id=optimization_id,
             artifact=artifact,
-            overview=overview,
+            overview=export_overview,
         )
-        filename = f"dspy_program_{optimization_id[:8]}.zip"
+        pair_suffix = f"_pair_{export_pair_index}" if export_pair_index is not None else ""
+        filename = f"dspy_program_{optimization_id[:8]}{pair_suffix}.zip"
         return StreamingResponse(
             iter([zip_bytes]),
             media_type="application/zip",

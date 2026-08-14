@@ -60,7 +60,9 @@ the "Workflow graphs" section of README.md.
 
 from __future__ import annotations
 
+import copy
 import heapq
+import importlib
 import json
 import pathlib
 
@@ -72,10 +74,10 @@ _META = json.loads((_HERE / "metadata.json").read_text(encoding="utf-8"))
 # Short aliases the platform uses; a stored module_name may instead be a
 # fully-qualified ``dspy.*`` path, which the resolver below also accepts.
 _MODULE_ALIASES = {
-    "predict": "dspy.Predict",
-    "cot": "dspy.ChainOfThought",
-    "react": "dspy.ReAct",
-    "flex": "dspy.Flex",
+    "predict": ("dspy.Predict",),
+    "cot": ("dspy.modules.ChainOfThought", "dspy.ChainOfThought"),
+    "react": ("dspy.ReActV2", "dspy.ReAct"),
+    "flex": ("dspy.Flex",),
 }
 
 # Workflow node ids become sub-module attributes under this prefix, matching
@@ -134,13 +136,71 @@ def _load_transform(code, node_id):
 
 def _resolve_module(name):
     """Resolve a module alias or ``dspy.*`` path to a dspy module class."""
-    path = _MODULE_ALIASES.get(name.lower(), name)
-    if not path.startswith("dspy."):
-        raise RuntimeError(f"unsupported module {name!r}; expected a dspy.* class")
-    obj = dspy
-    for attr in path.split(".")[1:]:
-        obj = getattr(obj, attr)
-    return obj
+    paths = _MODULE_ALIASES.get(name.lower(), (name,))
+    for path in paths:
+        if not path.startswith("dspy."):
+            raise RuntimeError(f"unsupported module {name!r}; expected a dspy.* class")
+        try:
+            module_path, attribute = path.rsplit(".", 1)
+            obj = getattr(importlib.import_module(module_path), attribute)
+        except (AttributeError, ModuleNotFoundError):
+            continue
+        if callable(obj):
+            return obj
+    raise RuntimeError(f"module {name!r} is unavailable in this dspy installation")
+
+
+def _prepare_tools(tools, overlay=None):
+    """Clone supplied tools and apply the optimized ReAct tool overlay.
+
+    Args:
+        tools: Callables or ``dspy.Tool`` objects supplied by the user.
+        overlay: Saved descriptions, argument descriptions, and tool names.
+
+    Returns:
+        An isolated list of ``dspy.Tool`` objects matching the optimized roster.
+    """
+    normalized = [tool if isinstance(tool, dspy.Tool) else dspy.Tool(tool) for tool in (tools or [])]
+    isolated = [
+        tool.model_copy(deep=True) if hasattr(tool, "model_copy") else copy.deepcopy(tool)
+        for tool in normalized
+    ]
+    if not overlay:
+        return isolated
+
+    by_name = {tool.name: tool for tool in isolated}
+    for tool_name, description in (overlay.get("tool_descriptions") or {}).items():
+        tool = by_name.get(tool_name)
+        if tool is not None and description:
+            tool.desc = description
+    for tool_name, arg_descriptions in (overlay.get("tool_arg_descriptions") or {}).items():
+        tool = by_name.get(tool_name)
+        if tool is None or not isinstance(tool.args, dict):
+            continue
+        for arg_name, description in arg_descriptions.items():
+            schema = tool.args.get(arg_name)
+            if isinstance(schema, dict) and description:
+                schema["description"] = description
+
+    proposed_names = overlay.get("tool_names") or {}
+    original_names = set(by_name)
+    desired = {
+        tool.name: proposed_names.get(tool.name) or tool.name
+        for tool in isolated
+    }
+    claimants = {}
+    for canonical, desired_name in desired.items():
+        claimants.setdefault(desired_name, []).append(canonical)
+    for tool in isolated:
+        canonical = tool.name
+        desired_name = desired[canonical]
+        if (
+            desired_name != canonical
+            and len(claimants[desired_name]) == 1
+            and desired_name not in original_names
+        ):
+            tool.name = desired_name
+    return isolated
 
 
 def _topological_order(spec):
@@ -255,7 +315,7 @@ def _build_workflow(tools):
             "matched to nodes by name."
         )
 
-    roster = {tool.name: tool for tool in (tools or [])}
+    roster = {tool.name: tool for tool in _prepare_tools(tools)}
     modules, output_fields, transforms, node_tools = {}, {}, {}, {}
     for node in spec["nodes"]:
         node_id = node["id"]
@@ -265,7 +325,9 @@ def _build_workflow(tools):
             factory = _resolve_module(node.get("module_name") or "predict")
             selected = _node_tools(node, roster)
             modules[node_id] = (
-                factory(signature) if selected is None else factory(signature, tools=selected)
+                factory(signature=signature)
+                if selected is None
+                else factory(signature=signature, tools=selected)
             )
         elif node["kind"] == "transform":
             transforms[node_id] = _load_transform(node["transform_code"], node_id)
@@ -299,9 +361,17 @@ def load_program(tools=None):
                     "against: load_program(tools=[my_tool, ...]). The optimized tool "
                     "descriptions are in react_overlay.json."
                 )
-            program = factory(signature, tools=tools, **kwargs)
+            overlay = json.loads((_HERE / "react_overlay.json").read_text(encoding="utf-8"))
+            kwargs.pop("tools", None)
+            kwargs["max_iters"] = overlay.get("max_iters", kwargs.get("max_iters", 20))
+            program = factory(
+                signature=signature,
+                tools=_prepare_tools(tools, overlay),
+                **kwargs,
+            )
         else:
-            program = factory(signature, **kwargs)
+            kwargs["signature"] = signature
+            program = factory(**kwargs)
     state = json.loads((_HERE / "program.json").read_text(encoding="utf-8"))
     program.load_state(state)
     return program
@@ -369,16 +439,22 @@ def _build_metadata(optimization_id: str, artifact: ProgramArtifact, overview: d
         A JSON-serializable dict carrying the module recipe, default model, and
         provenance the standalone loader and README need.
     """
+    module_name = overview.get(PAYLOAD_OVERVIEW_MODULE_NAME) or "predict"
+    module_leaf = str(module_name).rsplit(".", 1)[-1].lower()
     return {
         "export_format_version": EXPORT_FORMAT_VERSION,
         "optimization_id": optimization_id,
-        "module_name": overview.get(PAYLOAD_OVERVIEW_MODULE_NAME) or "predict",
+        "module_name": module_name,
         "module_kwargs": dict(overview.get(PAYLOAD_OVERVIEW_MODULE_KWARGS, {})),
         "model": overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
         "optimizer": overview.get(PAYLOAD_OVERVIEW_OPTIMIZER_NAME),
         "dspy_version": _installed_dspy_version(),
-        "is_react": artifact.react_overlay is not None,
-        "is_flex": artifact.optimized_module_src is not None or bool(artifact.optimized_component_srcs),
+        "is_react": artifact.react_overlay is not None or module_leaf in {"react", "reactv2"},
+        "is_flex": (
+            artifact.optimized_module_src is not None
+            or bool(artifact.optimized_component_srcs)
+            or module_leaf == "flex"
+        ),
         "flex_components": sorted(artifact.optimized_component_srcs),
         "is_workflow": bool(overview.get(PAYLOAD_OVERVIEW_WORKFLOW)),
     }
@@ -546,10 +622,21 @@ def build_program_export_zip(
                 f"optimized_modules/{path}.py",
                 _optimized_module_file(module_src),
             )
-        if artifact.react_overlay is not None:
+        if metadata["is_react"]:
+            react_overlay = (
+                artifact.react_overlay.model_dump()
+                if artifact.react_overlay is not None
+                else {
+                    "tool_descriptions": {},
+                    "tool_arg_descriptions": {},
+                    "tool_schema_hashes": {},
+                    "max_iters": metadata["module_kwargs"].get("max_iters", 20),
+                    "tool_names": None,
+                }
+            )
             archive.writestr(
                 "react_overlay.json",
-                artifact.react_overlay.model_dump_json(indent=2),
+                json.dumps(react_overlay, indent=2, ensure_ascii=False),
             )
         dspy_version = metadata.get("dspy_version")
         requirement = f"dspy=={dspy_version}\n" if dspy_version else "dspy\n"

@@ -1016,9 +1016,13 @@ export function getTestResults(optimizationId: string) {
  * (a `StreamingResponse` attachment), so it goes through `fetchWithAuthRetry`
  * and reads the body as a Blob rather than JSON.
  */
-export async function downloadProgramExport(optimizationId: string): Promise<void> {
+export async function downloadProgramExport(
+  optimizationId: string,
+  pairIndex?: number,
+): Promise<void> {
+  const pairQuery = pairIndex == null ? "" : `?pair_index=${encodeURIComponent(String(pairIndex))}`;
   const res = await fetchWithAuthRetry(
-    `${apiBase()}/optimizations/${optimizationId}/program-export`,
+    `${apiBase()}/optimizations/${optimizationId}/program-export${pairQuery}`,
     {
       method: "GET",
     },
@@ -1034,7 +1038,8 @@ export async function downloadProgramExport(optimizationId: string): Promise<voi
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `dspy_program_${optimizationId.slice(0, 8)}.zip`;
+  const pairSuffix = pairIndex == null ? "" : `_pair_${pairIndex}`;
+  a.download = `dspy_program_${optimizationId.slice(0, 8)}${pairSuffix}.zip`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }

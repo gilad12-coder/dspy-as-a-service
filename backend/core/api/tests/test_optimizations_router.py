@@ -26,7 +26,7 @@ from ...billing.byok_vault import ProviderKeyVault
 from ...config import settings
 from ...models.artifacts import ProgramArtifact
 from ...models.common import SplitCounts
-from ...models.results import RunResponse
+from ...models.results import GridSearchResponse, PairResult, RunResponse
 from ...storage.models import Base
 from ..errors import DomainError
 from ..routers.optimizations import create_optimizations_router
@@ -516,6 +516,92 @@ def test_program_export_serves_a_workflow_run(opt_client: TestClient, store: _Ex
     names = set(zipfile.ZipFile(io.BytesIO(resp.content)).namelist())
     assert "workflow.json" in names
     assert "signature.py" not in names
+
+
+def test_program_export_serves_the_requested_grid_pair(opt_client: TestClient, store: _ExtendedFakeJobStore) -> None:
+    """A grid export packages the requested pair's state and generation model."""
+    first_pair = PairResult(
+        pair_index=0,
+        generation_model="openai/gpt-4o-mini",
+        reflection_model="openai/gpt-4o",
+        program_artifact=ProgramArtifact(program_state_json={"pair": "first"}),
+    )
+    winning_pair = PairResult(
+        pair_index=1,
+        generation_model="anthropic/claude-3-5-haiku",
+        reflection_model="openai/gpt-4o",
+        program_artifact=ProgramArtifact(program_state_json={"pair": "winner"}),
+    )
+    grid_result = GridSearchResponse(
+        module_name="predict",
+        optimizer_name="gepa",
+        split_counts=SplitCounts(train=4, val=1, test=1),
+        total_pairs=2,
+        completed_pairs=2,
+        pair_results=[first_pair, winning_pair],
+        best_pair=winning_pair,
+    )
+    store.seed_job(
+        "grid-export",
+        status="success",
+        payload_overview={
+            "optimization_type": "grid_search",
+            "module_name": "predict",
+            "module_kwargs": {},
+            "optimizer_name": "gepa",
+            "signature_code": "import dspy\nclass QA(dspy.Signature):\n    pass\n",
+        },
+        result=grid_result.model_dump(),
+    )
+
+    resp = opt_client.get("/optimizations/grid-export/program-export?pair_index=0")
+
+    assert resp.status_code == 200
+    assert "pair_0.zip" in resp.headers["content-disposition"]
+    archive = zipfile.ZipFile(io.BytesIO(resp.content))
+    assert json.loads(archive.read("program.json")) == {"pair": "first"}
+    assert json.loads(archive.read("metadata.json"))["model"] == "openai/gpt-4o-mini"
+
+
+def test_program_export_defaults_to_the_winning_grid_pair(opt_client: TestClient, store: _ExtendedFakeJobStore) -> None:
+    """A grid export without a pair index packages the winning program."""
+    winning_pair = PairResult(
+        pair_index=3,
+        generation_model="openai/gpt-4o",
+        reflection_model="anthropic/claude-3-5-haiku",
+        program_artifact=ProgramArtifact(program_state_json={"pair": "winner"}),
+    )
+    grid_result = GridSearchResponse(
+        module_name="cot",
+        optimizer_name="dspy.teleprompt.GEPA",
+        split_counts=SplitCounts(train=4, val=1, test=1),
+        total_pairs=1,
+        completed_pairs=1,
+        pair_results=[winning_pair],
+        best_pair=winning_pair,
+    )
+    store.seed_job(
+        "grid-winner-export",
+        status="success",
+        payload_overview={
+            "optimization_type": "grid_search",
+            "module_name": "cot",
+            "module_kwargs": {},
+            "optimizer_name": "dspy.teleprompt.GEPA",
+            "signature_code": "import dspy\nclass QA(dspy.Signature):\n    pass\n",
+        },
+        result=grid_result.model_dump(),
+    )
+
+    resp = opt_client.get("/optimizations/grid-winner-export/program-export")
+
+    assert resp.status_code == 200
+    assert "pair_3.zip" in resp.headers["content-disposition"]
+    archive = zipfile.ZipFile(io.BytesIO(resp.content))
+    assert json.loads(archive.read("program.json")) == {"pair": "winner"}
+    metadata = json.loads(archive.read("metadata.json"))
+    assert metadata["model"] == "openai/gpt-4o"
+    assert metadata["optimizer"] == "dspy.teleprompt.GEPA"
 
 
 def test_program_export_409s_without_any_program_definition(

@@ -84,6 +84,7 @@ export function ExportMenu({
   optimizedModuleSrc,
   optimizedComponentSrcs,
   pickleBase64,
+  programPairIndex,
   isShare,
 }: {
   job: OptimizationStatusResponse;
@@ -94,6 +95,8 @@ export function ExportMenu({
   optimizedComponentSrcs?: Record<string, string>;
   /** Pair-scoped pickle override; falls back to the run / grid-best artifact. */
   pickleBase64?: string | null;
+  /** Pair selected for a runnable grid-search export; omitted for single runs. */
+  programPairIndex?: number;
   /** The /program-export endpoint is authed, so the public share view hides the ZIP item. */
   isShare?: boolean;
 }) {
@@ -114,9 +117,15 @@ export function ExportMenu({
     job.grid_result?.best_pair?.program_artifact?.program_pickle_base64 ??
     null;
   const hasPkl = !!pklB64;
-  // The runnable export reconstructs from state JSON + signature_code, which the
-  // /program-export endpoint serves for single-run (non-grid) jobs only.
-  const hasProgram = !isShare && !!job.result?.program_artifact?.program_state_json;
+  const selectedGridPair =
+    job.grid_result?.pair_results.find((pair) => pair.pair_index === programPairIndex) ??
+    job.grid_result?.best_pair;
+  const hasProgram =
+    !isShare &&
+    !!(
+      job.result?.program_artifact?.program_state_json ||
+      selectedGridPair?.program_artifact?.program_state_json
+    );
   // A top-level Flex is one nameless download; a workflow's flex nodes are one each.
   const moduleDownloads: Array<[string, string]> = optimizedModuleSrc
     ? [["", optimizedModuleSrc]]
@@ -154,7 +163,7 @@ export function ExportMenu({
                 onClick={async () => {
                   setOpen(false);
                   try {
-                    await downloadProgramExport(job.optimization_id);
+                    await downloadProgramExport(job.optimization_id, programPairIndex);
                   } catch (err) {
                     toast.error(
                       err instanceof Error ? err.message : msg("optimization.file.parse_error"),

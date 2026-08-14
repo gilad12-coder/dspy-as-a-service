@@ -70,7 +70,13 @@ def _persisted_artifact(module_alias: str = "predict") -> tuple[ProgramArtifact,
     """
     namespace: dict = {"dspy": dspy}
     exec(compile(_SIGNATURE_CODE, "<sig>", "exec", dont_inherit=True), namespace)
-    factory = {"predict": dspy.Predict, "cot": dspy.ChainOfThought}[module_alias]
+    factory = {
+        "predict": dspy.Predict,
+        "cot": dspy.ChainOfThought,
+        "dspy.Predict": dspy.Predict,
+        "dspy.ChainOfThought": dspy.ChainOfThought,
+        "dspy.predict.chain_of_thought.ChainOfThought": dspy.ChainOfThought,
+    }[module_alias]
     program = factory(namespace["QA"])
     demo = dspy.Example(question="2+2?", answer="four").with_inputs("question")
     # Set on every predictor so the optimized state survives for both the
@@ -148,9 +154,7 @@ def test_bundle_contains_expected_entries() -> None:
     """The export zip ships state, signature, loader, metadata, prompt, and docs."""
     artifact, overview = _persisted_artifact()
 
-    zip_bytes = build_program_export_zip(
-        optimization_id="abcd1234-export", artifact=artifact, overview=overview
-    )
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-export", artifact=artifact, overview=overview)
 
     names = set(zipfile.ZipFile(io.BytesIO(zip_bytes)).namelist())
     assert {
@@ -168,9 +172,7 @@ def test_metadata_records_module_recipe() -> None:
     """metadata.json carries the module recipe the loader rebuilds from."""
     artifact, overview = _persisted_artifact()
 
-    zip_bytes = build_program_export_zip(
-        optimization_id="abcd1234-export", artifact=artifact, overview=overview
-    )
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-export", artifact=artifact, overview=overview)
 
     meta = json.loads(zipfile.ZipFile(io.BytesIO(zip_bytes)).read("metadata.json"))
     assert meta["module_name"] == "predict"
@@ -183,9 +185,7 @@ def test_loader_uses_only_dspy_and_stdlib() -> None:
     """The shipped loader must not import platform code, or it isn't standalone."""
     artifact, overview = _persisted_artifact()
 
-    zip_bytes = build_program_export_zip(
-        optimization_id="abcd1234-export", artifact=artifact, overview=overview
-    )
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-export", artifact=artifact, overview=overview)
 
     loader_src = zipfile.ZipFile(io.BytesIO(zip_bytes)).read("load_program.py").decode("utf-8")
     assert "import core" not in loader_src
@@ -195,7 +195,13 @@ def test_loader_uses_only_dspy_and_stdlib() -> None:
 
 @pytest.mark.parametrize(
     ("module_alias", "expected_type"),
-    [("predict", "Predict"), ("cot", "ChainOfThought")],
+    [
+        ("predict", "Predict"),
+        ("cot", "ChainOfThought"),
+        ("dspy.Predict", "Predict"),
+        ("dspy.ChainOfThought", "ChainOfThought"),
+        ("dspy.predict.chain_of_thought.ChainOfThought", "ChainOfThought"),
+    ],
 )
 def test_export_reconstructs_optimized_program(tmp_path, module_alias, expected_type) -> None:
     """The standalone loader rebuilds the program with its optimized state intact.
@@ -205,9 +211,7 @@ def test_export_reconstructs_optimized_program(tmp_path, module_alias, expected_
     live on an inner predictor).
     """
     artifact, overview = _persisted_artifact(module_alias)
-    zip_bytes = build_program_export_zip(
-        optimization_id="abcd1234-export", artifact=artifact, overview=overview
-    )
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-export", artifact=artifact, overview=overview)
 
     loader = _load_program_from_zip(zip_bytes, tmp_path)
     program = loader.load_program()
@@ -218,6 +222,104 @@ def test_export_reconstructs_optimized_program(tmp_path, module_alias, expected_
     assert any(len(p.demos) == 1 and p.demos[0]["answer"] == "four" for p in predictors)
 
 
+def test_optimizer_recipe_does_not_change_program_reconstruction(tmp_path) -> None:
+    """An optimizer's dotted identity remains provenance and never affects loading."""
+    artifact, overview = _persisted_artifact()
+    overview["optimizer_name"] = "dspy.teleprompt.GEPA"
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-optimizer", artifact=artifact, overview=overview)
+
+    archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    assert json.loads(archive.read("metadata.json"))["optimizer"] == "dspy.teleprompt.GEPA"
+    loader = _load_program_from_zip(zip_bytes, tmp_path)
+    assert isinstance(loader.load_program(), dspy.Predict)
+
+
+def test_react_export_restores_current_class_loop_budget_and_tool_overlay(tmp_path) -> None:
+    """A ReAct export rebuilds the installed class and its complete optimized tool surface."""
+    namespace: dict = {"dspy": dspy}
+    exec(compile(_SIGNATURE_CODE, "<sig>", "exec", dont_inherit=True), namespace)
+    react_class = getattr(dspy, "ReActV2", None) or dspy.ReAct
+    optimized_tool = dspy.Tool(
+        lambda query: f"hit:{query}",
+        name="lookup",
+        desc="Search the optimized knowledge source.",
+    )
+    program = react_class(namespace["QA"], tools=[optimized_tool], max_iters=7)
+    artifact = ProgramArtifact(
+        program_state_json=program.dump_state(),
+        react_overlay=ReactOverlay(
+            tool_descriptions={"search": "Search the optimized knowledge source."},
+            tool_arg_descriptions={"search": {"query": "The optimized search query."}},
+            tool_schema_hashes={},
+            max_iters=7,
+            tool_names={"search": "lookup"},
+        ),
+    )
+    overview = {
+        "signature_code": _SIGNATURE_CODE,
+        "module_name": "react",
+        "module_kwargs": {"max_iters": 2},
+        "optimizer_name": "gepa",
+    }
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-react", artifact=artifact, overview=overview)
+
+    loader = _load_program_from_zip(zip_bytes, tmp_path)
+    canonical_tool = dspy.Tool(lambda query: query, name="search", desc="Original description.")
+    loaded = loader.load_program(tools=[canonical_tool])
+
+    assert type(loaded) is react_class
+    assert loaded.max_iters == 7
+    assert loaded.tools["lookup"].desc == "Search the optimized knowledge source."
+    assert loaded.tools["lookup"].args["query"]["description"] == "The optimized search query."
+    assert canonical_tool.name == "search"
+    assert canonical_tool.desc == "Original description."
+
+
+def test_react_export_falls_back_to_classic_dspy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The standalone loader uses classic ReAct when ReActV2 is unavailable."""
+    namespace: dict = {"dspy": dspy}
+    exec(compile(_SIGNATURE_CODE, "<sig>", "exec", dont_inherit=True), namespace)
+    tool = dspy.Tool(lambda query: query, name="search", desc="Search.")
+    program = dspy.ReAct(namespace["QA"], tools=[tool], max_iters=4)
+    artifact = ProgramArtifact(
+        program_state_json=program.dump_state(),
+        react_overlay=ReactOverlay(max_iters=4),
+    )
+    overview = {
+        "signature_code": _SIGNATURE_CODE,
+        "module_name": "react",
+        "module_kwargs": {},
+        "optimizer_name": "gepa",
+    }
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-classic-react", artifact=artifact, overview=overview)
+    monkeypatch.delattr(dspy, "ReActV2")
+
+    loader = _load_program_from_zip(zip_bytes, tmp_path)
+    loaded = loader.load_program(tools=[tool])
+
+    assert type(loaded) is dspy.ReAct
+    assert loaded.max_iters == 4
+
+
+@pytest.mark.skipif(not hasattr(dspy, "Flex"), reason="dspy.Flex requires the preview DSPy line")
+def test_flex_export_reconstructs_the_flex_program(tmp_path) -> None:
+    """A preview-line Flex export rebuilds the Flex shell before loading its code state."""
+    namespace: dict = {"dspy": dspy}
+    exec(compile(_SIGNATURE_CODE, "<sig>", "exec", dont_inherit=True), namespace)
+    program = dspy.Flex(namespace["QA"])
+    artifact = ProgramArtifact(program_state_json=program.dump_state())
+    overview = {
+        "signature_code": _SIGNATURE_CODE,
+        "module_name": "flex",
+        "module_kwargs": {},
+        "optimizer_name": "gepa",
+    }
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-flex", artifact=artifact, overview=overview)
+
+    loader = _load_program_from_zip(zip_bytes, tmp_path)
+    assert isinstance(loader.load_program(), dspy.Flex)
+
+
 def test_flex_export_ships_readable_module_source() -> None:
     """A Flex export adds ``optimized_module.py`` with the rewritten source and flags is_flex."""
     artifact, overview = _persisted_artifact()
@@ -225,9 +327,7 @@ def test_flex_export_ships_readable_module_source() -> None:
     artifact = artifact.model_copy(update={"optimized_module_src": module_src})
     overview["module_name"] = "flex"
 
-    zip_bytes = build_program_export_zip(
-        optimization_id="abcd1234-flex", artifact=artifact, overview=overview
-    )
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-flex", artifact=artifact, overview=overview)
 
     archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
     assert "optimized_module.py" in set(archive.namelist())
@@ -245,9 +345,7 @@ def test_nested_flex_export_ships_one_file_per_component() -> None:
     artifact = artifact.model_copy(update={"optimized_component_srcs": {"n_refine": module_src}})
     overview["module_name"] = "workflow"
 
-    zip_bytes = build_program_export_zip(
-        optimization_id="abcd1234-workflow", artifact=artifact, overview=overview
-    )
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-workflow", artifact=artifact, overview=overview)
 
     archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
     names = set(archive.namelist())
@@ -264,9 +362,7 @@ def test_non_flex_export_omits_module_source() -> None:
     """A non-Flex export leaves out ``optimized_module.py`` and marks is_flex False."""
     artifact, overview = _persisted_artifact()
 
-    zip_bytes = build_program_export_zip(
-        optimization_id="abcd1234-export", artifact=artifact, overview=overview
-    )
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-export", artifact=artifact, overview=overview)
 
     archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
     assert "optimized_module.py" not in set(archive.namelist())
@@ -278,9 +374,7 @@ def test_workflow_bundle_ships_the_graph_instead_of_a_signature() -> None:
     """A workflow has no top-level signature: the graph is the program definition."""
     artifact, overview = _persisted_workflow_artifact()
 
-    zip_bytes = build_program_export_zip(
-        optimization_id="abcd1234-workflow", artifact=artifact, overview=overview
-    )
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-workflow", artifact=artifact, overview=overview)
 
     archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
     names = set(archive.namelist())
@@ -293,9 +387,7 @@ def test_workflow_bundle_ships_the_graph_instead_of_a_signature() -> None:
 def test_workflow_export_rebuilds_and_runs_the_graph(tmp_path) -> None:
     """The standalone loader reconstructs every node, restores state, and executes the DAG."""
     artifact, overview = _persisted_workflow_artifact()
-    zip_bytes = build_program_export_zip(
-        optimization_id="abcd1234-workflow", artifact=artifact, overview=overview
-    )
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-workflow", artifact=artifact, overview=overview)
 
     loader = _load_program_from_zip(zip_bytes, tmp_path)
     program = loader.load_program()
@@ -316,9 +408,7 @@ def test_workflow_export_restores_a_flex_node_rewritten_source(tmp_path) -> None
     state["n_draft"] = {**state["n_draft"], "module_src": rewritten}
     artifact = artifact.model_copy(update={"program_state_json": state})
 
-    zip_bytes = build_program_export_zip(
-        optimization_id="abcd1234-workflow-flex", artifact=artifact, overview=overview
-    )
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-workflow-flex", artifact=artifact, overview=overview)
 
     loader = _load_program_from_zip(zip_bytes, tmp_path)
     program = loader.load_program()
@@ -384,9 +474,7 @@ def test_react_export_requires_tools(tmp_path) -> None:
     artifact = artifact.model_copy(update={"react_overlay": ReactOverlay(max_iters=5)})
     overview["module_name"] = "react"
 
-    zip_bytes = build_program_export_zip(
-        optimization_id="abcd1234-react", artifact=artifact, overview=overview
-    )
+    zip_bytes = build_program_export_zip(optimization_id="abcd1234-react", artifact=artifact, overview=overview)
 
     names = set(zipfile.ZipFile(io.BytesIO(zip_bytes)).namelist())
     assert "react_overlay.json" in names

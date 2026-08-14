@@ -65,10 +65,13 @@ export function ArtifactTab({
   workflowSpec?: WorkflowSpec | null;
   isShare?: boolean;
 }) {
-  // The runnable export reconstructs from state JSON + signature_code, which
-  // the /program-export endpoint serves for single-run (non-grid) jobs only —
-  // and it is an authed endpoint, so the public share view hides it.
-  const hasProgram = !isShare && !!job.result?.program_artifact?.program_state_json;
+  const exportPair = activePair ?? job.grid_result?.best_pair ?? null;
+  const hasProgram =
+    !isShare &&
+    !!(
+      job.result?.program_artifact?.program_state_json ||
+      exportPair?.program_artifact?.program_state_json
+    );
   const pickleBase64 = activePair?.program_artifact?.program_pickle_base64 ?? null;
   const hasPickle =
     !!pickleBase64 ||
@@ -107,6 +110,7 @@ export function ArtifactTab({
             optimizedModuleSrc={optimizedModuleSrc}
             optimizedComponentSrcs={optimizedComponentSrcs}
             pickleBase64={pickleBase64}
+            programPairIndex={exportPair?.pair_index}
             isShare={isShare}
           />
         </div>
