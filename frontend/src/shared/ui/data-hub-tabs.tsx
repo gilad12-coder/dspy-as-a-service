@@ -13,7 +13,7 @@ import { msg } from "@/shared/lib/messages";
 // the trigger itself stays transparent and only fades text color + reacts to
 // the press transform.
 const DATA_HUB_TAB_CLASS =
-  "relative z-10 min-h-10 rounded-full px-3 py-2 text-sm font-semibold cursor-pointer border-none bg-transparent text-foreground/65 shadow-none transition-[color,transform] data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:px-4";
+  "relative z-10 min-h-[44px] rounded-full px-3 py-2 text-sm font-semibold cursor-pointer border-none bg-transparent text-foreground/65 shadow-none transition-[color,transform] data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:px-4 lg:min-h-10";
 
 /**
  * Segmented navigation between the two halves of the Data hub: the dataset

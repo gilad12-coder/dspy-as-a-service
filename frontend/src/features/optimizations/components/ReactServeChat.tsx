@@ -110,7 +110,7 @@ export function ReactServeChat({ optimizationId }: ReactServeChatProps) {
                   <RetryIconButton
                     label={msg("optimizations.react.chat_retry")}
                     onClick={agent.retry}
-                    className="size-7 border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13]"
+                    className="size-[44px] border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13] sm:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                   />
                 </div>
               )}

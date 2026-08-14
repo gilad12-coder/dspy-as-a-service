@@ -117,7 +117,7 @@ export function FiltersDrawer({
               type="button"
               onClick={() => onOpenChange(false)}
               aria-label={msg("explore.filters.close")}
-              className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] cursor-pointer hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+              className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:size-9"
             >
               <X className="size-4" aria-hidden="true" />
             </button>
@@ -134,9 +134,7 @@ export function FiltersDrawer({
                   icon={Cube}
                   options={moduleOptions}
                   selected={selectedModules}
-                  onToggle={(v) =>
-                    onChangeModules(toggleValue(selectedModules, v))
-                  }
+                  onToggle={(v) => onChangeModules(toggleValue(selectedModules, v))}
                   dir="auto"
                 />
 
@@ -146,9 +144,7 @@ export function FiltersDrawer({
                   options={modelOptions}
                   selected={selectedModels}
                   onToggle={(v) => onChangeModels(toggleValue(selectedModels, v))}
-                  labels={Object.fromEntries(
-                    modelOptions.map((m) => [m, modelDisplayName(m)]),
-                  )}
+                  labels={Object.fromEntries(modelOptions.map((m) => [m, modelDisplayName(m)]))}
                   dir="ltr"
                 />
 
@@ -157,9 +153,7 @@ export function FiltersDrawer({
                   icon={Target}
                   options={optimizerOptions}
                   selected={selectedOptimizers}
-                  onToggle={(v) =>
-                    onChangeOptimizers(toggleValue(selectedOptimizers, v))
-                  }
+                  onToggle={(v) => onChangeOptimizers(toggleValue(selectedOptimizers, v))}
                   dir="ltr"
                 />
               </div>
@@ -172,13 +166,9 @@ export function FiltersDrawer({
                 >
                   <ChipGroup
                     options={TYPE_VALUES.map((t) => t.value)}
-                    labels={Object.fromEntries(
-                      TYPE_VALUES.map((t) => [t.value, msg(t.labelKey)]),
-                    )}
+                    labels={Object.fromEntries(TYPE_VALUES.map((t) => [t.value, msg(t.labelKey)]))}
                     selected={selectedTypes}
-                    onToggle={(v) =>
-                      onChangeTypes(toggleValue(selectedTypes, v))
-                    }
+                    onToggle={(v) => onChangeTypes(toggleValue(selectedTypes, v))}
                     dir="auto"
                   />
                 </FilterSection>
@@ -231,9 +221,7 @@ export function FiltersDrawer({
 }
 
 function toggleValue(current: string[], value: string): string[] {
-  return current.includes(value)
-    ? current.filter((v) => v !== value)
-    : [...current, value];
+  return current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
 }
 
 type IconComponent = React.ComponentType<{
@@ -405,9 +393,7 @@ function ChipGroup({
 }) {
   if (options.length === 0) {
     return (
-      <p className="text-[12.5px] text-foreground/45">
-        {msg("explore.filters.empty_section")}
-      </p>
+      <p className="text-[12.5px] text-foreground/45">{msg("explore.filters.empty_section")}</p>
     );
   }
   return (
@@ -452,18 +438,13 @@ function SelectableChip({
       aria-pressed={active}
       title={title}
       dir={dir}
-      className={`group inline-flex max-w-full items-center gap-1 rounded-full border px-3 py-1.5 text-[12.5px] transition-[background-color,border-color,color] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 ${
+      className={`group inline-flex min-h-[44px] max-w-full cursor-pointer items-center gap-1 rounded-full border px-3 py-1.5 text-[12.5px] transition-[background-color,border-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:min-h-0 ${
         active
           ? "border-foreground/40 bg-foreground/[0.06] text-foreground"
           : "border-border bg-background text-foreground/70 hover:border-foreground/30 hover:text-foreground"
       }`}
     >
-      {active && (
-        <Check
-          className="size-3 shrink-0 text-foreground/70"
-          aria-hidden="true"
-        />
-      )}
+      {active && <Check className="size-3 shrink-0 text-foreground/70" aria-hidden="true" />}
       <span className="min-w-0 truncate tabular-nums">{label}</span>
     </button>
   );

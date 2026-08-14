@@ -211,7 +211,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
           )}
         >
           {codeAssistMode === "auto" && (
-            <div className="relative min-h-[700px] self-stretch overflow-hidden border-b border-border/40 lg:border-b-0 lg:border-e">
+            <div className="relative h-[70svh] min-h-[30rem] max-h-[700px] self-stretch overflow-hidden border-b border-border/40 lg:h-auto lg:min-h-[700px] lg:max-h-none lg:border-b-0 lg:border-e">
               {interviewActive ? (
                 <CodeInterviewPanel interview={interview} className="absolute inset-0" />
               ) : (
@@ -225,7 +225,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
             </div>
           )}
           <div className="flex min-w-0 flex-col self-stretch">
-            <div className="border-b border-border/30 px-6 py-3">
+            <div className="border-b border-border/30 px-4 py-3 sm:px-6">
               <h3 className="inline-flex text-lg font-semibold tracking-tight text-foreground">
                 <HelpTip text={tip("module.workflow")}>{msg("workflow.step.title")}</HelpTip>
               </h3>
@@ -263,7 +263,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
               />
             )}
             <div
-              className="space-y-2 border-t border-border/30 px-6 py-4"
+              className="space-y-2 border-t border-border/30 px-4 py-4 sm:px-6"
               data-tutorial="metric-editor"
             >
               <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -272,22 +272,24 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
               <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
                 {msg("workflow.step.metric_hint")}
               </p>
-              <CodeEditor
-                value={metricCode}
-                onChange={(v) => {
-                  setMetricCode(v);
-                  setMetricManuallyEdited(true);
-                  setMetricValidation(null);
-                }}
-                height="180px"
-                onRun={runMetricValidation}
-                validationResult={metricValidation}
-                streaming={codeAssistMode === "auto" && agent.metricStatus === "writing"}
-                flashLines={codeAssistMode === "auto" ? agent.metricFlashLines : undefined}
-              />
+              <MobileCodeEditorActions>
+                <CodeEditor
+                  value={metricCode}
+                  onChange={(v) => {
+                    setMetricCode(v);
+                    setMetricManuallyEdited(true);
+                    setMetricValidation(null);
+                  }}
+                  height="180px"
+                  onRun={runMetricValidation}
+                  validationResult={metricValidation}
+                  streaming={codeAssistMode === "auto" && agent.metricStatus === "writing"}
+                  flashLines={codeAssistMode === "auto" ? agent.metricFlashLines : undefined}
+                />
+              </MobileCodeEditorActions>
             </div>
             {workflowSpec && workflowUsesTools(workflowSpec) && (
-              <div className="border-t border-border/30 px-6 py-4">
+              <div className="border-t border-border/30 px-4 py-4 sm:px-6">
                 <ReactConfigSection w={w} />
               </div>
             )}
@@ -311,7 +313,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
           )}
         >
           {codeAssistMode === "auto" && (
-            <div className="relative min-h-[700px] self-stretch overflow-hidden border-b border-border/40 lg:border-b-0 lg:border-e">
+            <div className="relative h-[70svh] min-h-[30rem] max-h-[700px] self-stretch overflow-hidden border-b border-border/40 lg:h-auto lg:min-h-[700px] lg:max-h-none lg:border-b-0 lg:border-e">
               {interviewActive ? (
                 <CodeInterviewPanel interview={interview} className="absolute inset-0" />
               ) : (
@@ -325,7 +327,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
             </div>
           )}
           <div className="flex min-w-0 flex-col self-stretch">
-            <div className="shrink-0 border-b border-border/30 px-6 py-3">
+            <div className="shrink-0 border-b border-border/30 px-4 py-3 sm:px-6">
               <h3 className="inline-flex text-lg font-semibold tracking-tight text-foreground">
                 <HelpTip
                   text={
@@ -343,7 +345,7 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
                 </HelpTip>
               </h3>
             </div>
-            <div className="space-y-4 px-6 py-4">
+            <div className="space-y-4 px-4 py-4 sm:px-6">
               <div
                 className={cn(
                   "space-y-2 transition-opacity duration-300",
@@ -366,19 +368,21 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
                     )}
                   </div>
                 </div>
-                <CodeEditor
-                  value={signatureCode}
-                  onChange={(v) => {
-                    setSignatureCode(v);
-                    setSignatureManuallyEdited(true);
-                    setSignatureValidation(null);
-                  }}
-                  height="260px"
-                  onRun={runSignatureValidation}
-                  validationResult={signatureValidation}
-                  streaming={codeAssistMode === "auto" && agent.signatureStatus === "writing"}
-                  flashLines={codeAssistMode === "auto" ? agent.signatureFlashLines : undefined}
-                />
+                <MobileCodeEditorActions>
+                  <CodeEditor
+                    value={signatureCode}
+                    onChange={(v) => {
+                      setSignatureCode(v);
+                      setSignatureManuallyEdited(true);
+                      setSignatureValidation(null);
+                    }}
+                    height="260px"
+                    onRun={runSignatureValidation}
+                    validationResult={signatureValidation}
+                    streaming={codeAssistMode === "auto" && agent.signatureStatus === "writing"}
+                    flashLines={codeAssistMode === "auto" ? agent.signatureFlashLines : undefined}
+                  />
+                </MobileCodeEditorActions>
               </div>
               <Separator />
               <div
@@ -403,19 +407,21 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
                     )}
                   </div>
                 </div>
-                <CodeEditor
-                  value={metricCode}
-                  onChange={(v) => {
-                    setMetricCode(v);
-                    setMetricManuallyEdited(true);
-                    setMetricValidation(null);
-                  }}
-                  height="260px"
-                  onRun={runMetricValidation}
-                  validationResult={metricValidation}
-                  streaming={codeAssistMode === "auto" && agent.metricStatus === "writing"}
-                  flashLines={codeAssistMode === "auto" ? agent.metricFlashLines : undefined}
-                />
+                <MobileCodeEditorActions>
+                  <CodeEditor
+                    value={metricCode}
+                    onChange={(v) => {
+                      setMetricCode(v);
+                      setMetricManuallyEdited(true);
+                      setMetricValidation(null);
+                    }}
+                    height="260px"
+                    onRun={runMetricValidation}
+                    validationResult={metricValidation}
+                    streaming={codeAssistMode === "auto" && agent.metricStatus === "writing"}
+                    flashLines={codeAssistMode === "auto" ? agent.metricFlashLines : undefined}
+                  />
+                </MobileCodeEditorActions>
               </div>
               {isReact && (
                 <>
@@ -431,7 +437,10 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
   }
 
   return (
-    <div data-tutorial="wizard-step-4">
+    <div
+      data-tutorial="wizard-step-4"
+      className="[&_button]:min-h-[44px] [&_button]:min-w-[44px] lg:[&_button]:min-h-0 lg:[&_button]:min-w-0"
+    >
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={view}
@@ -443,6 +452,14 @@ export function CodeStep({ w }: { w: SubmitWizardContext }) {
           {content}
         </motion.div>
       </AnimatePresence>
+    </div>
+  );
+}
+
+function MobileCodeEditorActions({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-w-0 [&>div>div:first-child]:overflow-x-auto [&>div>div:first-child>button]:shrink-0 lg:[&>div>div:first-child]:overflow-visible">
+      {children}
     </div>
   );
 }
@@ -586,7 +603,7 @@ function CompositionCard({
       className="@container group flex flex-col overflow-hidden rounded-xl border border-border/50 bg-background/60 text-start transition-colors hover:border-[#C8A882] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]"
     >
       <Banner />
-      <div className="flex flex-1 flex-col gap-1.5 px-6 py-5">
+      <div className="flex flex-1 flex-col gap-1.5 px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex items-center gap-2.5">
           <span className="flex size-9 items-center justify-center rounded-lg bg-[#F3EDE3] text-[#3D2E22]">
             <Icon className="size-[1.125rem]" />
@@ -624,7 +641,7 @@ function AtomicModulePicker({
       <button
         type="button"
         onClick={onBack}
-        className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="mb-3 inline-flex min-h-[44px] items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground lg:min-h-0"
       >
         <CaretLeft className="size-3.5 rtl:-scale-x-100" aria-hidden />
         {msg("submit.composition.back")}
@@ -659,7 +676,7 @@ function ModuleSlide({
   return (
     <div className="overflow-hidden rounded-xl border border-border/50 bg-background/60 @3xl:flex @3xl:min-h-64 @3xl:items-stretch">
       <Banner />
-      <div className="flex flex-col items-center justify-center gap-2 px-6 pb-7 pt-6 text-center @3xl:flex-1 @3xl:px-10 @3xl:py-8">
+      <div className="flex flex-col items-center justify-center gap-2 px-4 pb-6 pt-5 text-center sm:px-6 sm:pb-7 sm:pt-6 @3xl:flex-1 @3xl:px-10 @3xl:py-8">
         <div className="flex items-center gap-2.5">
           <span className="flex size-9 items-center justify-center rounded-lg bg-[#F3EDE3] text-[#3D2E22]">
             <Icon className="size-[1.125rem]" />
@@ -695,7 +712,7 @@ function ChooseModuleButton({ label, onClick }: { label: string; onClick: () => 
       <Button
         variant="outline"
         size="icon-lg"
-        className="mt-2 rounded-full"
+        className="mt-2 size-[44px] rounded-full lg:size-10"
         aria-label={name}
         onClick={onClick}
       >
@@ -957,14 +974,14 @@ function ModeToggle({ value, onChange, disabledReason, module }: ModeToggleProps
   const autoDisabled = !!disabledReason && value !== "auto";
 
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border/40 bg-[#FAF8F5] px-4 py-2.5">
-      <div className="flex min-w-0 items-center gap-2.5">
+    <div className="flex flex-col items-stretch gap-2.5 border-b border-border/40 bg-[#FAF8F5] px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+      <div className="flex min-w-0 items-center gap-2.5 sm:w-auto">
         {module && (
           <button
             type="button"
             onClick={module.onChangeModule}
             data-tutorial="module-selector"
-            className="group inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border/60 bg-background px-2 py-1 text-xs shadow-xs transition-colors hover:border-[#C8A882]"
+            className="group inline-flex min-h-[44px] w-full min-w-0 shrink-0 cursor-pointer items-center justify-between gap-1.5 rounded-md border border-border/60 bg-background px-2 py-1 text-xs shadow-xs transition-colors hover:border-[#C8A882] sm:w-auto lg:min-h-0"
           >
             <span className="font-semibold text-foreground">{module.label}</span>
             <span aria-hidden className="h-3 w-px bg-border/80" />
@@ -976,7 +993,7 @@ function ModeToggle({ value, onChange, disabledReason, module }: ModeToggleProps
         )}
       </div>
 
-      <div className="relative inline-grid grid-cols-2 rounded-lg bg-muted p-1 gap-1">
+      <div className="relative inline-grid w-full [grid-template-columns:repeat(2,minmax(0,1fr))] gap-1 rounded-lg bg-muted p-1 sm:w-auto">
         <div
           aria-hidden
           className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-150 ease-out pointer-events-none"
@@ -989,7 +1006,7 @@ function ModeToggle({ value, onChange, disabledReason, module }: ModeToggleProps
           title={autoDisabled ? disabledReason : undefined}
           aria-pressed={value === "auto"}
           className={cn(
-            "relative z-[1] rounded-md px-4 py-1 text-xs font-medium leading-none text-center transition-colors cursor-pointer",
+            "relative z-[1] min-h-[44px] cursor-pointer rounded-md px-3 py-1 text-center text-xs font-medium leading-none transition-colors sm:px-4 lg:min-h-0",
             value === "auto" ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             autoDisabled && "opacity-40 cursor-not-allowed hover:text-muted-foreground",
           )}
@@ -1001,7 +1018,7 @@ function ModeToggle({ value, onChange, disabledReason, module }: ModeToggleProps
           onClick={() => onChange("manual")}
           aria-pressed={value === "manual"}
           className={cn(
-            "relative z-[1] rounded-md px-4 py-1 text-xs font-medium leading-none text-center transition-colors cursor-pointer",
+            "relative z-[1] min-h-[44px] cursor-pointer rounded-md px-3 py-1 text-center text-xs font-medium leading-none transition-colors sm:px-4 lg:min-h-0",
             value === "manual" ? "text-foreground" : "text-muted-foreground hover:text-foreground",
           )}
         >

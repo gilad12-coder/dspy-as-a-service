@@ -121,7 +121,10 @@ export function StorageView() {
               const pct = used > 0 ? Math.max(2, (bytes / used) * 100) : 0;
               const bar = (
                 <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-[#E5DDD4]/60">
-                  <div className="h-full rounded-full bg-[#3D2E22]/30" style={{ width: `${pct}%` }} />
+                  <div
+                    className="h-full rounded-full bg-[#3D2E22]/30"
+                    style={{ width: `${pct}%` }}
+                  />
                 </div>
               );
 
@@ -131,7 +134,7 @@ export function StorageView() {
                     type="button"
                     onClick={() => setOpenCategory(key)}
                     aria-label={formatMsg("storage.category.open", { category: label })}
-                    className="group w-full cursor-pointer rounded-lg px-2 py-2 text-start transition-colors duration-150 hover:bg-muted/40"
+                    className="group min-h-12 w-full cursor-pointer rounded-lg px-2 py-2 text-start transition-colors duration-150 hover:bg-muted/40"
                   >
                     <div className="flex items-baseline justify-between gap-2 text-sm">
                       <span className="flex items-center gap-1.5 text-foreground">
@@ -141,7 +144,9 @@ export function StorageView() {
                           aria-hidden="true"
                         />
                       </span>
-                      <span className="tabular-nums text-muted-foreground">{formatStorageSize(bytes)}</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {formatStorageSize(bytes)}
+                      </span>
                     </div>
                     {bar}
                   </button>

@@ -521,6 +521,12 @@ h3 {
     pointer-events: none;
     flex-shrink: 0;
   }
+
+  @media (max-width: 767px), (any-pointer: coarse) {
+    .close-button {
+      --close-btn-size: 44px !important;
+    }
+  }
 }
 
 [data-settings-text-buttons] [data-slot="button"]:not([data-size^="icon"]) {
@@ -1118,12 +1124,20 @@ header {
 }
 
 /* Touch device optimizations */
-@media (hover: none) and (pointer: coarse) {
-  /* Touch-friendly tap targets — only on actual touch devices,
-     not desktop users in narrow split-screen windows */
+@media (any-pointer: coarse) {
+  /* Keep touch targets usable on tablets and hybrid devices even when a
+     mouse is also connected or the viewport crosses a desktop breakpoint. */
   button,
   a,
-  [role="button"] {
+  [role="button"],
+  [role="tab"],
+  [role="radio"],
+  [role="switch"],
+  [role="combobox"],
+  [role="slider"],
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  textarea,
+  select {
     min-height: 44px;
     min-width: 44px;
   }

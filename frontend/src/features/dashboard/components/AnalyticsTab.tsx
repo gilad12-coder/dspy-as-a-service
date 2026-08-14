@@ -209,18 +209,12 @@ function AnalyticsTabImpl({
           <StaggerContainer className="space-y-6" staggerDelay={0.03}>
             {chartData.kpis && (
               <StaggerItem>
-                <div
-                  data-tutorial="dashboard-stats"
-                  className="flex flex-wrap gap-3 sm:gap-4"
-                >
+                <div data-tutorial="dashboard-stats" className="flex flex-wrap gap-3 sm:gap-4">
                   <KpiCard
                     label={msg("auto.features.dashboard.components.analyticstab.4")}
                     accent="default"
                     value={
-                      <AnimatedNumber
-                        value={Math.round(chartData.kpis.successRate)}
-                        suffix="%"
-                      />
+                      <AnimatedNumber value={Math.round(chartData.kpis.successRate)} suffix="%" />
                     }
                   />
                   <KpiCard
@@ -298,7 +292,7 @@ function AnalyticsTabImpl({
                           key={s.key}
                           role="button"
                           tabIndex={0}
-                          className="space-y-1.5 cursor-pointer hover:opacity-80 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md"
+                          className="min-h-[44px] cursor-pointer space-y-1.5 rounded-md py-1 transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                           onClick={() => setStatus(s.key)}
                           onKeyDown={(e) => activateOnKey(e, () => setStatus(s.key))}
                         >
@@ -459,7 +453,7 @@ function AnalyticsTabImpl({
                         key={m.name}
                         role="button"
                         tabIndex={0}
-                        className="space-y-1.5 cursor-pointer hover:opacity-80 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md"
+                        className="min-h-[44px] cursor-pointer space-y-1.5 rounded-md py-1 transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                         onClick={() => setModel(m.name)}
                         onKeyDown={(e) => activateOnKey(e, () => setModel(m.name))}
                       >
@@ -470,7 +464,9 @@ function AnalyticsTabImpl({
                           <span className="font-mono truncate min-w-0" title={m.name}>
                             {modelDisplayName(m.name)}
                           </span>
-                          <span className="ms-auto tabular-nums font-medium shrink-0">{m.count}</span>
+                          <span className="ms-auto tabular-nums font-medium shrink-0">
+                            {m.count}
+                          </span>
                         </div>
                         <div className="h-2 rounded-full bg-muted overflow-hidden ms-6" dir="ltr">
                           <div
@@ -507,7 +503,6 @@ function AnalyticsTabImpl({
                 </AnalyticsSection>
               </StaggerItem>
             )}
-
           </StaggerContainer>
         </motion.div>
       </AnimatePresence>

@@ -37,7 +37,7 @@ import { AnalyticsTab } from "./AnalyticsTab";
 // triggers via Framer's layoutId (see DashboardView). The button itself stays
 // transparent and only fades text color + reacts to the press transform.
 const DASHBOARD_TAB_CLASS =
-  "relative z-10 min-h-10 rounded-full px-3 py-2 text-sm font-semibold cursor-pointer border-none bg-transparent text-foreground/65 shadow-none transition-[color,transform] data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:px-4";
+  "relative z-10 min-h-[44px] rounded-full px-3 py-2 text-sm font-semibold cursor-pointer border-none bg-transparent text-foreground/65 shadow-none transition-[color,transform] data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:px-4 lg:min-h-10";
 
 function getJobField(job: OptimizationSummaryResponse, key: string): unknown {
   return (job as unknown as Record<string, unknown>)[key];
@@ -190,7 +190,8 @@ export function DashboardView() {
   // when the server actually skipped them.
   const canBulkDelete = useMemo(() => {
     if (isAdmin) return true;
-    if (!effectiveData || !Array.isArray(effectiveData.items) || selectedIds.size === 0) return false;
+    if (!effectiveData || !Array.isArray(effectiveData.items) || selectedIds.size === 0)
+      return false;
     const selected = effectiveData.items.filter((j) => selectedIds.has(j.optimization_id));
     if (selected.length !== selectedIds.size) return false;
     return selected.every((j) => j.role == null || j.role === "owner");
@@ -316,10 +317,7 @@ export function DashboardView() {
           {mounted && (
             <Tabs value={activeTab} onValueChange={handleTabChange}>
               <TabsList className="inline-flex h-auto w-full gap-1 rounded-full border border-border/60 bg-muted/50 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
-                <TabsTrigger
-                  value="jobs"
-                  className={DASHBOARD_TAB_CLASS}
-                >
+                <TabsTrigger value="jobs" className={DASHBOARD_TAB_CLASS}>
                   {activeTab === "jobs" && (
                     <motion.span
                       layoutId="dashboardTabPill"
@@ -393,7 +391,6 @@ export function DashboardView() {
                   sessionUser={sessionUser}
                 />
               </TabsContent>
-
             </Tabs>
           )}
         </FadeIn>

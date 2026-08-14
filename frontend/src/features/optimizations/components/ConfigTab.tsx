@@ -794,7 +794,7 @@ export function ConfigTab({
             onClick={() => goToSlide(activeSlide - 1)}
             disabled={!previousSlide}
             aria-label={msg("auto.features.agent.panel.components.toolscarousel.literal.14")}
-            className="inline-flex min-h-11 min-w-11 cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882] disabled:cursor-not-allowed disabled:opacity-30"
+            className="inline-flex min-h-[44px] min-w-[44px] cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882] disabled:cursor-not-allowed disabled:opacity-30"
           >
             <PreviousIcon className="size-4" aria-hidden="true" />
             <span className="hidden sm:inline">{previousSlide?.label}</span>
@@ -808,7 +808,7 @@ export function ConfigTab({
                 onClick={() => goToSlide(index)}
                 aria-label={slide.label}
                 aria-current={activeSlide === index ? "step" : undefined}
-                className="flex size-8 cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]"
+                className="flex size-[44px] cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]"
               >
                 <span
                   className={cn(
@@ -825,7 +825,7 @@ export function ConfigTab({
             onClick={() => goToSlide(activeSlide + 1)}
             disabled={!nextSlide}
             aria-label={msg("auto.features.agent.panel.components.toolscarousel.literal.15")}
-            className="inline-flex min-h-11 min-w-11 cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882] disabled:cursor-not-allowed disabled:opacity-30"
+            className="inline-flex min-h-[44px] min-w-[44px] cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882] disabled:cursor-not-allowed disabled:opacity-30"
           >
             <span className="hidden sm:inline">{nextSlide?.label}</span>
             <NextIcon className="size-4" aria-hidden="true" />

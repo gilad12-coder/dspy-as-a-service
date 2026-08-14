@@ -38,10 +38,9 @@ export function SelectionBar({ count, onClear, onDelete }: SelectionBarProps) {
               <button
                 type="button"
                 onClick={onClear}
-                className="close-button"
+                className="close-button [--close-btn-size:44px] lg:[--close-btn-size:32px]"
                 style={
                   {
-                    "--close-btn-size": "32px",
                     "--close-btn-radius": "9999px",
                     "--close-btn-icon": "16px",
                   } as React.CSSProperties
@@ -55,7 +54,7 @@ export function SelectionBar({ count, onClear, onDelete }: SelectionBarProps) {
               <button
                 type="button"
                 onClick={onDelete}
-                className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive active:scale-95 transition-all cursor-pointer"
+                className="flex size-[44px] items-center justify-center rounded-full text-muted-foreground transition-all hover:bg-destructive/10 hover:text-destructive active:scale-95 cursor-pointer lg:size-8"
                 aria-label={msg("shared.selection.delete")}
               >
                 <Trash className="size-4" />

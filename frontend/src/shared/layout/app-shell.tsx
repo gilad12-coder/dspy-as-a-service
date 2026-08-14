@@ -138,7 +138,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-background/60 backdrop-blur-2xl backdrop-saturate-[1.8] px-4 py-2.5 border-b border-border/40 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)]"
+        className="fixed inset-x-0 top-0 z-30 flex h-[var(--header-height)] items-center justify-between border-b border-border/40 bg-background/60 px-2 py-0 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)] backdrop-blur-2xl backdrop-saturate-[1.8] sm:px-4"
         dir="ltr"
         style={{
           borderImage:
@@ -190,7 +190,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
                 <PopoverPrimitive.Trigger asChild>
                   <button
                     type="button"
-                    className="rounded-lg p-1.5 hover:bg-accent/80 active:scale-95 transition-all duration-200 cursor-pointer text-muted-foreground hover:text-foreground inline-flex items-center justify-center"
+                    className="inline-flex size-[44px] cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-all duration-200 hover:bg-accent/80 hover:text-foreground active:scale-95 lg:size-8"
                     aria-label={msg("app.shell.tour_aria")}
                   >
                     <GraduationCap className="size-4" />
@@ -208,7 +208,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => setConceptsOpen(true)}
-                className="rounded-lg p-1.5 hover:bg-accent/80 active:scale-95 transition-all duration-200 cursor-pointer text-muted-foreground hover:text-foreground inline-flex items-center justify-center"
+                className="inline-flex size-[44px] cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-all duration-200 hover:bg-accent/80 hover:text-foreground active:scale-95 lg:size-8"
                 aria-label={msg("app.shell.concepts_aria")}
               >
                 <Lightbulb className="size-4" />
@@ -221,7 +221,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="rounded-lg p-2 hover:bg-accent/80 active:scale-95 transition-all duration-200 md:hidden"
+            className="inline-flex size-[44px] items-center justify-center rounded-lg transition-all duration-200 hover:bg-accent/80 active:scale-95 md:hidden"
             aria-label={msg("app.shell.menu")}
             aria-expanded={sidebarOpen}
             aria-controls={SIDEBAR_ID}
@@ -249,11 +249,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
               surface vs the capped session chooser), so its routes render bare
               and wrap themselves in PageContainer — nesting it inside the
               shell's box would double the inline padding. */}
-          {pathname.startsWith("/tagger") ? (
-            children
-          ) : (
-            <PageContainer>{children}</PageContainer>
-          )}
+          {pathname.startsWith("/tagger") ? children : <PageContainer>{children}</PageContainer>}
         </main>
 
         {/* The sidebar lives after <main> in source order (content-first for

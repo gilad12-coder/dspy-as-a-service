@@ -12,15 +12,7 @@ import {
   type Icon,
 } from "@/shared/ui/icons";
 import { motion } from "framer-motion";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartTooltip, ChartEmptyState } from "@/shared/charts/chart-utils";
 import { ChartTable } from "@/shared/charts/chart-table";
 import { useLiteMode } from "@/features/settings";
@@ -29,11 +21,7 @@ import { modelDisplayName } from "@/shared/lib/formatters";
 import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
-import {
-  getUsage,
-  type BillingUsageEntry,
-  type BillingUsageResponse,
-} from "@/shared/lib/api";
+import { getUsage, type BillingUsageEntry, type BillingUsageResponse } from "@/shared/lib/api";
 import { SkynetDatePicker, toISODate } from "@/shared/ui/skynet-date-picker";
 import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { Button } from "@/shared/ui/primitives/button";
@@ -112,12 +100,22 @@ function rangeBounds(
     const start = customFrom
       ? new Date(`${customFrom}T00:00:00.000`)
       : new Date(end.getTime() - 30 * 86_400_000);
-    return { startIso: start.toISOString(), endIso: end.toISOString(), startMs: start.getTime(), endMs: end.getTime() };
+    return {
+      startIso: start.toISOString(),
+      endIso: end.toISOString(),
+      startMs: start.getTime(),
+      endMs: end.getTime(),
+    };
   }
   const end = new Date();
   const days = RANGE_DAYS[range];
   const start = days == null ? new Date(0) : new Date(end.getTime() - days * 86_400_000);
-  return { startIso: start.toISOString(), endIso: end.toISOString(), startMs: start.getTime(), endMs: end.getTime() };
+  return {
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+    startMs: start.getTime(),
+    endMs: end.getTime(),
+  };
 }
 
 /**
@@ -235,7 +233,7 @@ function Segmented<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(option.value)}
             className={cn(
-              "relative cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45",
+              "relative min-h-[44px] cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]",
               active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -255,15 +253,7 @@ function Segmented<T extends string>({
   );
 }
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: Icon;
-  label: string;
-  value: string;
-}) {
+function StatCard({ icon: Icon, label, value }: { icon: Icon; label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1 rounded-xl border border-border/60 bg-muted/20 px-4 py-3.5">
       <span className="flex items-center gap-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -314,7 +304,10 @@ function SpendChart({ buckets }: { buckets: Bucket[] }) {
             allowDecimals={false}
             width={36}
           />
-          <Tooltip content={<ChartTooltip />} cursor={{ fill: "var(--color-chart-5)", opacity: 0.35 }} />
+          <Tooltip
+            content={<ChartTooltip />}
+            cursor={{ fill: "var(--color-chart-5)", opacity: 0.35 }}
+          />
           <Bar
             dataKey="billed"
             name={msg("usage.series.billed")}
@@ -565,7 +558,8 @@ export function UsageTab() {
         if (id === reqId.current) setData(resp);
       })
       .catch(() => {
-        if (id === reqId.current) setData(deriveUsage(wallet.usage, startMs, endMs, startIso, endIso));
+        if (id === reqId.current)
+          setData(deriveUsage(wallet.usage, startMs, endMs, startIso, endIso));
       })
       .finally(() => {
         if (id === reqId.current) setLoading(false);
@@ -594,14 +588,16 @@ export function UsageTab() {
 
   const toolbar = (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Segmented
-          options={rangeOptions}
-          value={range}
-          onChange={onRangeChange}
-          ariaLabel={msg("usage.range.label")}
-          layoutId="usage-range-pill"
-        />
+      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="max-w-full overflow-x-auto pb-0.5 no-scrollbar">
+          <Segmented
+            options={rangeOptions}
+            value={range}
+            onChange={onRangeChange}
+            ariaLabel={msg("usage.range.label")}
+            layoutId="usage-range-pill"
+          />
+        </div>
         <div className="flex items-center gap-2">
           <Segmented
             options={groupOptions}
@@ -628,8 +624,8 @@ export function UsageTab() {
         </div>
       </div>
       {range === "custom" && (
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="w-[150px]">
+        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[150px_auto_150px]">
+          <div className="w-full sm:w-[150px]">
             <SkynetDatePicker
               value={customFrom}
               onChange={setCustomFrom}
@@ -638,10 +634,10 @@ export function UsageTab() {
               placeholder={msg("usage.range.from")}
             />
           </div>
-          <span className="text-xs text-muted-foreground" aria-hidden="true">
+          <span className="hidden text-xs text-muted-foreground sm:inline" aria-hidden="true">
             –
           </span>
-          <div className="w-[150px]">
+          <div className="w-full sm:w-[150px]">
             <SkynetDatePicker
               value={customTo}
               onChange={setCustomTo}
@@ -661,7 +657,10 @@ export function UsageTab() {
       <div className="flex flex-col gap-5">
         {toolbar}
         <div className="flex h-64 items-center justify-center" aria-busy="true">
-          <ArrowsClockwise className="size-5 animate-spin text-muted-foreground" aria-hidden="true" />
+          <ArrowsClockwise
+            className="size-5 animate-spin text-muted-foreground"
+            aria-hidden="true"
+          />
         </div>
       </div>
     );
@@ -687,7 +686,10 @@ export function UsageTab() {
     <div className="flex flex-col gap-6">
       {toolbar}
 
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+      <div
+        className="grid gap-3"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}
+      >
         <StatCard
           icon={Coins}
           label={msg("usage.stat.spent")}

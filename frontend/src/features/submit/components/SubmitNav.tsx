@@ -22,8 +22,12 @@ export function SubmitNav({ w }: { w: SubmitWizardContext }) {
 
   if (step < STEPS.length - 1) {
     return (
-      <div className="flex items-center justify-between">
-        <Button onClick={goPrev} disabled={step === 0 || advancing} className="gap-2">
+      <div className="flex items-stretch justify-between gap-3">
+        <Button
+          onClick={goPrev}
+          disabled={step === 0 || advancing}
+          className="min-h-[44px] min-w-0 flex-1 gap-2 whitespace-normal sm:flex-none sm:whitespace-nowrap"
+        >
           <BackChevron className="h-4 w-4" />
           {msg("auto.features.submit.components.submitnav.1")}
         </Button>
@@ -32,7 +36,7 @@ export function SubmitNav({ w }: { w: SubmitWizardContext }) {
           disabled={advancing}
           aria-busy={advancing || undefined}
           aria-live="polite"
-          className="gap-2 min-w-[88px] justify-center"
+          className="min-h-[44px] min-w-0 flex-1 justify-center gap-2 whitespace-normal sm:min-w-[88px] sm:flex-none sm:whitespace-nowrap"
           data-tutorial="wizard-next"
         >
           {advancing ? (

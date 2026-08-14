@@ -52,8 +52,8 @@ export function TutorialPopover({
       className="fixed z-[9999] pointer-events-auto"
       style={{ top: position.top, left: position.left }}
     >
-      <div className="relative w-[min(90vw,360px)] rounded-2xl border border-[#E5DDD4] bg-gradient-to-b from-[#FAF8F5] to-[#F5F1EC] shadow-[0_8px_32px_rgba(28,22,18,0.14)] overflow-hidden">
-        <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-2">
+      <div className="relative max-h-[50dvh] w-[min(calc(100vw-24px),360px)] overflow-y-auto overscroll-contain rounded-2xl border border-[#E5DDD4] bg-gradient-to-b from-[#FAF8F5] to-[#F5F1EC] shadow-[0_8px_32px_rgba(28,22,18,0.14)] md:max-h-[calc(100dvh-24px)]">
+        <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-3 sm:px-5 sm:pt-4">
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-bold text-[#3D2E22] leading-tight">{step.title}</h3>
             <div className="flex items-center gap-1.5 mt-0.5">
@@ -66,7 +66,7 @@ export function TutorialPopover({
                 variant="ghost"
                 size="icon-xs"
                 onClick={onToggleAutoPlay}
-                className="text-[#8C7A6B] hover:bg-[#E5DDD4]/60 hover:text-[#3D2E22]"
+                className="size-[44px] text-[#8C7A6B] hover:bg-[#E5DDD4]/60 hover:text-[#3D2E22] md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                 aria-label={
                   isAutoPlaying
                     ? msg("auto.features.tutorial.components.tutorial.popover.literal.1")
@@ -81,17 +81,18 @@ export function TutorialPopover({
             variant="ghost"
             size="icon-sm"
             onClick={onExit}
+            className="size-[44px] md:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
             aria-label={msg("auto.features.tutorial.components.tutorial.popover.literal.5")}
           >
             <X className="size-4" />
           </Button>
         </div>
 
-        <div className="px-5 pb-3">
+        <div className="px-4 pb-3 sm:px-5">
           <p className="text-xs text-[#3D2E22]/75 leading-relaxed">{step.description}</p>
         </div>
 
-        <div className="px-5 pb-3">
+        <div className="px-4 pb-3 sm:px-5">
           <div className="h-1 bg-[#E5DDD4]/50 rounded-full overflow-hidden">
             <motion.div
               className="h-full bg-[#3D2E22] rounded-full"
@@ -104,18 +105,27 @@ export function TutorialPopover({
 
         <div
           className={cn(
-            "flex items-center gap-2 px-5 pb-4",
+            "flex items-center gap-2 px-4 pb-3 sm:px-5 sm:pb-4",
             isFirst ? "justify-end" : "justify-between",
           )}
         >
           {!isFirst && (
-            <Button variant="outline" size="sm" onClick={onPrev} className="text-xs">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onPrev}
+              className="min-h-[44px] text-xs md:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
+            >
               <BackArrow className="size-3" />
               {msg("auto.features.tutorial.components.tutorial.popover.2")}
             </Button>
           )}
 
-          <Button size="sm" onClick={onNext} className="text-xs">
+          <Button
+            size="sm"
+            onClick={onNext}
+            className="min-h-[44px] text-xs md:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
+          >
             {isLast
               ? msg("auto.features.tutorial.components.tutorial.popover.literal.6")
               : msg("auto.features.tutorial.components.tutorial.popover.literal.7")}

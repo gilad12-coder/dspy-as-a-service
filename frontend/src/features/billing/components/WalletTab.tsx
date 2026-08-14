@@ -92,7 +92,7 @@ function AddCreditsControls() {
     <div
       role="group"
       aria-label={msg("billing.plans.credits.pack_aria")}
-      className="relative flex shrink-0 items-center gap-0.5 rounded-full border border-border/50 bg-muted/40 p-0.5"
+      className="relative flex w-full max-w-full flex-wrap items-center gap-0.5 rounded-xl border border-border/50 bg-muted/40 p-0.5 sm:w-auto sm:flex-nowrap sm:rounded-full"
     >
       {CREDIT_PACKS.map((p) => {
         const active = p.id === selection;
@@ -104,7 +104,7 @@ function AddCreditsControls() {
             aria-checked={active}
             onClick={() => setSelection(p.id)}
             className={cn(
-              "relative rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums transition-colors duration-150 cursor-pointer",
+              "relative min-h-[44px] min-w-[44px] rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums transition-colors duration-150 cursor-pointer sm:min-h-0 sm:min-w-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px] [@media(hover:none)_and_(pointer:coarse)]:min-w-[44px]",
               active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -148,18 +148,21 @@ function AddCreditsControls() {
           placeholder={msg("billing.plans.credits.custom")}
           aria-label={msg("billing.plans.credits.custom_amount_aria")}
           className={cn(
-            "relative z-10 w-16 rounded-full bg-transparent px-2 py-0.5 text-center text-[0.6875rem] font-semibold tabular-nums outline-none transition-colors duration-150 placeholder:font-normal placeholder:text-muted-foreground/70",
+            "relative z-10 h-[44px] w-16 rounded-full bg-transparent px-2 py-0.5 text-center text-[0.6875rem] font-semibold tabular-nums outline-none transition-colors duration-150 placeholder:font-normal placeholder:text-muted-foreground/70 sm:h-auto [@media(hover:none)_and_(pointer:coarse)]:h-[44px]",
             customActive ? "text-foreground" : "text-muted-foreground",
           )}
         />
       </span>
-      <span aria-hidden="true" className="mx-0.5 h-3.5 w-px shrink-0 bg-border/70" />
+      <span
+        aria-hidden="true"
+        className="mx-0.5 hidden h-3.5 w-px shrink-0 bg-border/70 sm:block"
+      />
       <Button
         variant="outline"
         size="sm"
         onClick={onBuy}
         disabled={buying || (!pack && !customValid)}
-        className="h-6 rounded-full px-2.5 text-[0.6875rem] font-semibold border-[#C8A882]/70 text-[#8a6d44] hover:bg-[#C8A882]/10 hover:text-[#8a6d44] [&_svg:not([class*='size-'])]:size-3"
+        className="h-[44px] rounded-full px-2.5 text-[0.6875rem] font-semibold border-[#C8A882]/70 text-[#8a6d44] hover:bg-[#C8A882]/10 hover:text-[#8a6d44] sm:h-6 [@media(hover:none)_and_(pointer:coarse)]:h-[44px] [&_svg:not([class*='size-'])]:size-3"
       >
         {buying ? <CircleNotch className="animate-spin" /> : <Sparkle aria-hidden="true" />}
         {formatMsg("billing.upgrade.buy", { p1: priceLabel })}
@@ -272,7 +275,7 @@ function TransactionHistory() {
                     {formatResetDate(transaction.at, locale)}
                   </span>
                 </span>
-                <span className="ms-auto flex shrink-0 items-center gap-2">
+                <span className="ms-11 flex w-[calc(100%_-_2.75rem)] min-w-0 items-center justify-between gap-2 sm:ms-auto sm:w-auto sm:shrink-0 sm:justify-start">
                   <span
                     className={cn(
                       "rounded-full px-2 py-0.5 text-[0.625rem] font-semibold",
@@ -291,7 +294,7 @@ function TransactionHistory() {
                       rel="noreferrer"
                       aria-label={msg("billing.transactions.receipt")}
                       title={msg("billing.transactions.receipt")}
-                      className="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+                      className="grid size-[44px] place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                     >
                       <ArrowSquareOut className="size-3.5" aria-hidden="true" />
                     </a>
@@ -369,6 +372,7 @@ function BillingDetails() {
             size="sm"
             disabled={unavailable || portalFlow !== null}
             onClick={() => void openPortal("manage")}
+            className="min-h-[44px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
           >
             {portalFlow === "manage" && <CircleNotch className="animate-spin" aria-hidden="true" />}
             {msg("billing.profile.edit")}
@@ -383,7 +387,7 @@ function BillingDetails() {
           ].map(([label, value]) => (
             <div
               key={label}
-              className="grid grid-cols-[minmax(7rem,0.4fr)_1fr] gap-4 py-2.5 text-xs"
+              className="grid grid-cols-1 gap-1 py-2.5 text-xs sm:grid-cols-[minmax(7rem,0.4fr)_1fr] sm:gap-4"
             >
               <dt className="text-muted-foreground">{label}</dt>
               <dd dir="auto" className="min-w-0 break-words text-foreground">
@@ -404,6 +408,7 @@ function BillingDetails() {
             size="sm"
             disabled={unavailable || portalFlow !== null}
             onClick={() => void openPortal("payment_method")}
+            className="min-h-[44px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
           >
             {portalFlow === "payment_method" ? (
               <CircleNotch className="animate-spin" aria-hidden="true" />

@@ -132,14 +132,18 @@ export function ExportMenu({
     : Object.entries(optimizedComponentSrcs ?? {});
   const hasModuleSrc = moduleDownloads.length > 0;
   const itemCls =
-    "w-full flex items-center gap-2.5 px-3.5 py-2 text-[0.75rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
+    "flex min-h-[44px] w-full items-center gap-2.5 px-3.5 py-2 text-[0.75rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
   const iconCls = "size-4 shrink-0 text-muted-foreground/60";
   const extCls = "text-muted-foreground/60 font-mono text-[0.625rem] ms-auto";
   const divider = <div className="h-px bg-border/40 mx-2 my-1" />;
 
   return (
     <div className="relative" ref={ref}>
-      <Button size="sm" onClick={() => setOpen((o) => !o)} className="gap-1.5">
+      <Button
+        size="sm"
+        onClick={() => setOpen((o) => !o)}
+        className="min-h-[44px] gap-1.5 sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
+      >
         <DownloadSimple className="size-4" />
         {msg("auto.features.optimizations.components.exportmenu.1")}
         <CaretDown

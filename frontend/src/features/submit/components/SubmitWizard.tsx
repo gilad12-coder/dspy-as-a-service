@@ -36,7 +36,7 @@ export function SubmitWizard() {
 
   return (
     <div
-      className={`space-y-6 ${containerWidthClass} mx-auto pb-8 -mt-2 md:-mt-4 transition-[max-width] duration-300`}
+      className={`mx-auto w-full min-w-0 space-y-4 pb-6 transition-[max-width] duration-300 md:-mt-4 md:space-y-6 md:pb-8 ${containerWidthClass}`}
     >
       <SubmitStepper w={w} />
 

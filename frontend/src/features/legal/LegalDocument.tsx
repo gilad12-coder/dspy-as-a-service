@@ -148,7 +148,7 @@ export function LegalDocument({
           <Link
             href="/"
             aria-label={CHROME.homeAria}
-            className="flex min-h-11 items-center gap-3 rounded-lg px-1 text-foreground outline-none transition-colors hover:text-[#6F5541] focus-visible:ring-2 focus-visible:ring-[#C8A882]/60"
+            className="flex min-h-[44px] items-center gap-3 rounded-lg px-1 text-foreground outline-none transition-colors hover:text-[#6F5541] focus-visible:ring-2 focus-visible:ring-[#C8A882]/60"
           >
             <AnimatedWordmark
               size={16}
@@ -161,7 +161,7 @@ export function LegalDocument({
             <span className="text-sm font-medium text-muted-foreground">{CHROME.legal}</span>
           </Link>
 
-          <Button asChild variant="outline" size="sm">
+          <Button asChild variant="outline" size="sm" className="min-h-[44px] lg:min-h-0">
             <Link href="/" aria-label={CHROME.backToApp}>
               <ArrowLeft className="size-4" aria-hidden="true" />
               <span className="hidden sm:inline">{CHROME.backToApp}</span>
@@ -191,7 +191,7 @@ export function LegalDocument({
               </div>
               <h1
                 id="legal-document-title"
-                className={`${styles.title} mt-7 max-w-4xl !text-[clamp(3rem,5vw,4.75rem)] !leading-[0.96] font-bold tracking-[-0.055em]`}
+                className={`${styles.title} mt-7 max-w-4xl !text-[clamp(2.5rem,12vw,4.75rem)] !leading-[0.96] font-bold tracking-[-0.055em]`}
               >
                 {title}
               </h1>
@@ -280,7 +280,7 @@ export function LegalDocument({
                   <li key={section.heading}>
                     <a
                       href={`#${slugifyLegalHeading(section.heading)}`}
-                      className="group grid min-h-10 grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-2 rounded-lg px-2 py-2 text-sm text-foreground/60 outline-none transition-colors hover:bg-[#EDE7DD] hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#C8A882]/60"
+                      className="group grid min-h-[44px] grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-2 rounded-lg px-2 py-2 text-sm text-foreground/60 outline-none transition-colors hover:bg-[#EDE7DD] hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#C8A882]/60"
                     >
                       <span className="font-mono text-[0.6875rem] leading-5 text-[#9B8877]">
                         {String(index + 1).padStart(2, "0")}
@@ -339,10 +339,15 @@ export function LegalDocument({
                 {CHROME.contactPrompt}
               </p>
             </div>
-            <Button asChild variant="outline" size="sm" className="w-fit">
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="min-h-[44px] max-w-full lg:min-h-0"
+            >
               <a href={`mailto:${contactEmail}`}>
                 <Envelope className="size-4" aria-hidden="true" />
-                {contactEmail}
+                <span className="truncate">{contactEmail}</span>
               </a>
             </Button>
           </div>
@@ -359,7 +364,12 @@ export function LegalDocument({
                 {related.label}
               </h2>
             </div>
-            <Button asChild variant="outline" size="sm" className="group w-fit">
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="group min-h-[44px] w-fit lg:min-h-0"
+            >
               <Link href={related.href}>
                 {related.label}
                 <ArrowRight

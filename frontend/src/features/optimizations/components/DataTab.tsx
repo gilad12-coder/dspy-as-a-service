@@ -332,7 +332,11 @@ export function DataTab({
     <div className="space-y-4 mt-4">
       <FadeIn>
         <p className="text-sm text-muted-foreground">
-          {msg(advanced ? "optimizations.datatab.description" : "optimizations.datatab.description_simple")}
+          {msg(
+            advanced
+              ? "optimizations.datatab.description"
+              : "optimizations.datatab.description_simple",
+          )}
         </p>
       </FadeIn>
       {/* Test evaluation bar — shows cached results */}
@@ -360,7 +364,7 @@ export function DataTab({
                     onClick={() => setProgramType("baseline")}
                     aria-label={msg("auto.features.optimizations.components.datatab.2")}
                     aria-pressed={programType === "baseline"}
-                    className={`relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 ${programType === "baseline" ? "text-[#FAF8F5]" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+                    className={`relative inline-flex size-[44px] cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px] ${programType === "baseline" ? "text-[#FAF8F5]" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
                   >
                     {programType === "baseline" && (
                       <motion.span
@@ -386,7 +390,7 @@ export function DataTab({
                     onClick={() => setProgramType("optimized")}
                     aria-label={msg("auto.features.optimizations.components.datatab.3")}
                     aria-pressed={programType === "optimized"}
-                    className={`relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 ${programType === "optimized" ? "text-[#FAF8F5]" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+                    className={`relative inline-flex size-[44px] cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px] ${programType === "optimized" ? "text-[#FAF8F5]" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
                   >
                     {programType === "optimized" && (
                       <motion.span
@@ -417,37 +421,37 @@ export function DataTab({
           {advanced &&
             (() => {
               const splits: Array<[Split, string]> = [
-              ["all", msg("auto.features.optimizations.components.datatab.literal.4")],
-              ["train", msg("auto.features.optimizations.components.datatab.literal.5")],
-              ["val", msg("auto.features.optimizations.components.datatab.literal.6")],
-              ["test", msg("auto.features.optimizations.components.datatab.literal.7")],
-            ];
-            const idx = splits.findIndex(([s]) => s === split);
-            const count = splits.length;
-            return (
-              <div
-                className="relative flex w-full rounded-lg bg-muted p-1 gap-1 text-[0.6875rem]"
-                data-tutorial="split-selector"
-              >
+                ["all", msg("auto.features.optimizations.components.datatab.literal.4")],
+                ["train", msg("auto.features.optimizations.components.datatab.literal.5")],
+                ["val", msg("auto.features.optimizations.components.datatab.literal.6")],
+                ["test", msg("auto.features.optimizations.components.datatab.literal.7")],
+              ];
+              const idx = splits.findIndex(([s]) => s === split);
+              const count = splits.length;
+              return (
                 <div
-                  className="absolute top-1 bottom-1 rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-150 ease-out"
-                  style={{
-                    width: `calc(${100 / count}% - 6px)`,
-                    insetInlineStart: `calc(${(idx / count) * 100}% + 4px)`,
-                  }}
-                />
-                {splits.map(([s, label]) => (
-                  <button
-                    key={s}
-                    onClick={() => setSplit(s)}
-                    className={`relative z-10 flex-1 rounded-md px-3 py-1.5 cursor-pointer text-center transition-colors duration-150 ${split === s ? "text-foreground font-semibold" : "text-foreground/50 hover:text-foreground"}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            );
-          })()}
+                  className="relative flex w-full rounded-lg bg-muted p-1 gap-1 text-[0.6875rem]"
+                  data-tutorial="split-selector"
+                >
+                  <div
+                    className="absolute top-1 bottom-1 rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-150 ease-out"
+                    style={{
+                      width: `calc(${100 / count}% - 6px)`,
+                      insetInlineStart: `calc(${(idx / count) * 100}% + 4px)`,
+                    }}
+                  />
+                  {splits.map(([s, label]) => (
+                    <button
+                      key={s}
+                      onClick={() => setSplit(s)}
+                      className={`relative z-10 flex-1 rounded-md px-3 py-1.5 cursor-pointer text-center transition-colors duration-150 ${split === s ? "text-foreground font-semibold" : "text-foreground/50 hover:text-foreground"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
           <ResetFiltersButton filters={colFilters} />
           <ResetColumnsButton resize={colResize} />
           <div className="text-[0.625rem] text-muted-foreground tabular-nums me-auto">

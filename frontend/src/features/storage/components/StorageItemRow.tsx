@@ -70,7 +70,13 @@ interface StorageItemRowProps {
  * Only the checkbox (and the open/delete controls) is interactive — the row body
  * is inert so selection is never triggered by a stray click.
  */
-export function StorageItemRow({ item, selected, onToggle, onDelete, onNavigate }: StorageItemRowProps) {
+export function StorageItemRow({
+  item,
+  selected,
+  onToggle,
+  onDelete,
+  onNavigate,
+}: StorageItemRowProps) {
   const meta = TYPE_META[item.type];
   const Icon = meta.icon;
   const href = meta.href(item.id);
@@ -92,7 +98,7 @@ export function StorageItemRow({ item, selected, onToggle, onDelete, onNavigate 
         aria-label={msg("storage.select.item")}
         onClick={(event) => onToggle(item, event.shiftKey)}
         className={cn(
-          "grid size-5 shrink-0 cursor-pointer place-items-center rounded-md border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45",
+          "grid size-[44px] shrink-0 cursor-pointer place-items-center rounded-md border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:size-5",
           selected
             ? "border-transparent bg-foreground text-background"
             : "border-border/70 bg-background hover:border-foreground/40",
@@ -108,13 +114,22 @@ export function StorageItemRow({ item, selected, onToggle, onDelete, onNavigate 
           <bdi>{item.name}</bdi>
         </p>
         <p className="text-xs text-muted-foreground">{msg(meta.label)}</p>
+        <p className="text-xs tabular-nums text-muted-foreground sm:hidden">
+          {formatStorageSize(item.bytes)}
+        </p>
       </div>
-      <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+      <span className="hidden shrink-0 text-sm tabular-nums text-muted-foreground sm:inline">
         {formatStorageSize(item.bytes)}
       </span>
       <div className="flex shrink-0 items-center gap-0.5">
         {href && (
-          <Button asChild variant="ghost" size="icon-sm" aria-label={msg("storage.item.open")}>
+          <Button
+            asChild
+            variant="ghost"
+            size="icon-sm"
+            aria-label={msg("storage.item.open")}
+            className="!size-[44px] lg:!size-8"
+          >
             <Link href={href} onClick={() => onNavigate?.()}>
               <OpenArrow className="size-4" />
             </Link>
@@ -125,7 +140,7 @@ export function StorageItemRow({ item, selected, onToggle, onDelete, onNavigate 
           size="icon-sm"
           onClick={() => onDelete(item)}
           aria-label={msg("storage.item.delete")}
-          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          className="size-[44px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive lg:size-8"
         >
           <Trash className="size-4" />
         </Button>

@@ -80,7 +80,9 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
   // render emphasized below in an isolated <bdi>, matching the optimization dialog.
   // Resolved per-render (not at module scope) so it can't capture a raw key before
   // the message shim has loaded.
-  const [transferBodyBefore, transferBodyAfter] = msg("share.transfer.confirm_body").split("{name}");
+  const [transferBodyBefore, transferBodyAfter] = msg("share.transfer.confirm_body").split(
+    "{name}",
+  );
 
   const isOwner = !!state?.owner && state.owner.toLowerCase() === me;
 
@@ -116,7 +118,9 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
   const handleLinkRoleChange = async (role: LinkRole) => {
     setSavingAccess(true);
     try {
-      setState(await putDatasetSharing(datasetId, { general_access: "anyone", general_role: role }));
+      setState(
+        await putDatasetSharing(datasetId, { general_access: "anyone", general_role: role }),
+      );
       toast.success(msg("share.access_updated"));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
@@ -181,7 +185,7 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="size-11 text-muted-foreground hover:text-foreground sm:size-8"
+          className="size-[44px] text-muted-foreground hover:text-foreground lg:size-8"
           onClick={() => handleOpenChange(true)}
           aria-label={msg("share.button")}
         >
@@ -191,11 +195,11 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent
-          className="w-[min(32rem,92vw)] max-w-[min(32rem,92vw)] sm:max-w-lg p-0 overflow-hidden"
+          className="w-[min(32rem,92vw)] max-w-[min(32rem,92vw)] overflow-hidden p-0 max-lg:[&_[data-slot=dialog-close]]:!size-[44px] sm:max-w-lg"
           aria-describedby={undefined}
         >
           <div className="flex max-h-[85vh] flex-col">
-            <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/40">
+            <DialogHeader className="shrink-0 border-b border-border/40 px-4 pb-4 pt-6 sm:px-6">
               <DialogTitle>{msg("share.dialog_title")}</DialogTitle>
             </DialogHeader>
 
@@ -206,7 +210,7 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
               </div>
             ) : (
               <>
-                <div className="shrink-0 border-b border-border/40 px-6 py-4">
+                <div className="shrink-0 border-b border-border/40 px-4 py-4 sm:px-6">
                   <InvitePeople
                     ownerName={state.owner}
                     onInvite={handleInvite}
@@ -215,7 +219,7 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
                   />
                 </div>
 
-                <div className="shrink-0 px-6 pt-3 pb-1">
+                <div className="shrink-0 px-4 pb-1 pt-3 sm:px-6">
                   <p className="text-sm font-medium text-foreground">
                     {msg("share.people_with_access")}
                     <span className="ms-1.5 text-xs font-normal tabular-nums text-muted-foreground">
@@ -224,7 +228,7 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
                   </p>
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-y-auto px-6">
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6">
                   {state.owner && (
                     <SettingsRow
                       icon={User}
@@ -291,7 +295,7 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
                         >
                           <SelectTrigger
                             size="sm"
-                            className="min-w-[120px]"
+                            className="!h-[44px] min-w-[120px] lg:!h-8"
                             aria-label={msg("share.role.change_aria")}
                           >
                             <SelectValue />
@@ -325,7 +329,7 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
                   )}
                 </div>
 
-                <div className="shrink-0 space-y-3 border-t border-border/40 px-6 py-4">
+                <div className="shrink-0 space-y-3 border-t border-border/40 px-4 py-4 sm:px-6">
                   <SettingsRow
                     icon={state.general_access === "anyone" ? Globe : Lock}
                     label={msg("share.general_access")}
@@ -335,13 +339,13 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
                         : undefined
                     }
                   >
-                    <div className="flex flex-wrap items-center justify-end gap-2">
+                    <div className="flex w-[140px] flex-wrap items-center justify-end gap-2 sm:w-auto">
                       <Select
                         value={state.general_access}
                         onValueChange={(next) => handleAccessChange(next as GeneralAccess)}
                         disabled={savingAccess}
                       >
-                        <SelectTrigger size="sm" className="min-w-[140px]">
+                        <SelectTrigger size="sm" className="!h-[44px] min-w-[140px] lg:!h-8">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -361,7 +365,7 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
                         >
                           <SelectTrigger
                             size="sm"
-                            className="min-w-[104px]"
+                            className="!h-[44px] min-w-[104px] lg:!h-8"
                             aria-label={msg("share.role.change_aria")}
                           >
                             <SelectValue />
@@ -547,7 +551,7 @@ function InvitePeople({
             aria-label={msg("share.invite_label")}
             disabled={inviting}
             dir="ltr"
-            className="h-8 flex-1 rounded-none border-0 bg-transparent px-0 text-xs shadow-none backdrop-blur-none focus-visible:border-transparent focus-visible:ring-0"
+            className="!h-[44px] flex-1 rounded-none border-0 bg-transparent px-0 text-xs shadow-none backdrop-blur-none focus-visible:border-transparent focus-visible:ring-0 lg:!h-8"
           />
           <div aria-hidden className="h-5 w-px shrink-0 bg-border/70" />
           <Select
@@ -556,7 +560,7 @@ function InvitePeople({
           >
             <SelectTrigger
               size="sm"
-              className="h-7 gap-1 rounded-md border-0 bg-transparent px-2 text-xs shadow-none hover:border-transparent hover:bg-accent/55 hover:shadow-none focus-visible:border-transparent focus-visible:bg-accent/55 focus-visible:ring-0 data-[state=open]:border-transparent data-[state=open]:bg-accent/60 data-[state=open]:shadow-none"
+              className="!h-[44px] gap-1 rounded-md border-0 bg-transparent px-2 text-xs shadow-none hover:border-transparent hover:bg-accent/55 hover:shadow-none focus-visible:border-transparent focus-visible:bg-accent/55 focus-visible:ring-0 data-[state=open]:border-transparent data-[state=open]:bg-accent/60 data-[state=open]:shadow-none lg:!h-7"
               aria-label={msg("share.role.change_aria")}
             >
               <SelectValue />
@@ -568,9 +572,7 @@ function InvitePeople({
                 </SelectItem>
               ))}
               {canTransfer && (
-                <SelectItem value={TRANSFER_VALUE}>
-                  {msg("share.transfer.action")}
-                </SelectItem>
+                <SelectItem value={TRANSFER_VALUE}>{msg("share.transfer.action")}</SelectItem>
               )}
             </SelectContent>
           </Select>
@@ -581,7 +583,7 @@ function InvitePeople({
               onClick={() => void submit(query)}
               disabled={inviting || query.trim().length === 0}
               aria-label={msg("share.invite")}
-              className="size-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0"
+              className="!size-[44px] shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0 lg:!size-7"
             >
               {inviting ? (
                 <CircleNotch className="size-4 animate-spin" />
@@ -613,7 +615,7 @@ function InvitePeople({
                         e.preventDefault();
                         void submit(name);
                       }}
-                      className="flex w-full items-center px-3 py-1.5 text-start font-mono text-xs hover:bg-accent/60"
+                      className="flex min-h-[44px] w-full items-center px-3 py-1.5 text-start font-mono text-xs hover:bg-accent/60 lg:min-h-0"
                     >
                       {name}
                     </button>

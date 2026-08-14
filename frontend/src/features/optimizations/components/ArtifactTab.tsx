@@ -98,7 +98,7 @@ export function ArtifactTab({
       </FadeIn>
 
       {hasExports && (
-        <div className="flex items-center gap-3 p-5 rounded-xl border border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10 shadow-[0_0_20px_rgba(var(--primary),0.06)]">
+        <div className="flex flex-col items-stretch gap-3 rounded-xl border border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10 p-4 shadow-[0_0_20px_rgba(var(--primary),0.06)] sm:flex-row sm:items-center sm:p-5">
           <p className="flex-1 text-sm font-medium">
             {activePair
               ? msg("auto.features.optimizations.components.pairdetailview.2")
@@ -181,7 +181,7 @@ function PromptBody({ predictor }: { predictor: OptimizedPredictor }) {
         </pre>
         <CopyButton
           text={predictor.formatted_prompt}
-          className="absolute top-2 end-2 opacity-0 group-hover:opacity-100"
+          className="absolute end-1.5 top-1.5 opacity-100 sm:end-2 sm:top-2 sm:opacity-0 sm:group-hover:opacity-100"
         />
       </div>
       {predictor.demos && predictor.demos.length > 0 && (
@@ -286,7 +286,12 @@ function WorkflowArtifactView({
         </Card>
       )}
       {cards.map((card) => (
-        <NodeArtifactCard key={card.id} title={card.title} kind={card.kind} artifact={card.artifact} />
+        <NodeArtifactCard
+          key={card.id}
+          title={card.title}
+          kind={card.kind}
+          artifact={card.artifact}
+        />
       ))}
     </>
   );
@@ -332,10 +337,7 @@ function NodeArtifactCard({
 // chrome (counter, dots, RTL prev/next, keyboard) instead of a long vertical
 // list — the same paging the trajectory drawer uses for tool descriptions.
 function ReactToolsCarousel({ overlay }: { overlay: ReactOverlay }) {
-  const tools = useMemo(
-    () => Object.keys(overlay.tool_descriptions),
-    [overlay.tool_descriptions],
-  );
+  const tools = useMemo(() => Object.keys(overlay.tool_descriptions), [overlay.tool_descriptions]);
   return (
     <Carousel
       items={tools}

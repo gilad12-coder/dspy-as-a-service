@@ -1,14 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  Robot,
-  XCircle,
-  Ruler,
-  FileCode,
-  ChatCenteredDots,
-  ShareNetwork,
-} from "@/shared/ui/icons";
+import { Robot, XCircle, Ruler, FileCode, ChatCenteredDots, ShareNetwork } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
@@ -69,7 +62,7 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
             className={cn(
               "group flex w-full items-center justify-center gap-1.5 rounded-full",
               "border border-[#3D2E22]/10 bg-[#3D2E22]/[0.02]",
-              "px-2.5 py-1.5 text-[0.6875rem] font-medium text-[#3D2E22]/75",
+              "min-h-[44px] px-2.5 py-1.5 text-[0.6875rem] font-medium text-[#3D2E22]/75 lg:min-h-0",
               "shadow-[inset_0_-1px_0_rgba(61,46,34,0.04)]",
               "transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-out",
               "hover:border-[#3D2E22]/20 hover:bg-[#3D2E22]/[0.06] hover:text-[#3D2E22]",
@@ -126,14 +119,14 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
                     <RetryIconButton
                       label={msg("auto.features.submit.components.steps.codeagentpanel.2")}
                       onClick={agent.retry}
-                      className="size-7 border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13]"
+                      className="size-[44px] border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13] lg:size-7"
                     />
                   </div>
                   <div className="flex gap-1.5 ps-4">
                     <button
                       type="button"
                       onClick={agent.fallbackToManual}
-                      className="text-[0.6875rem] text-[#7A1E13] hover:bg-[#9B2C1F]/10 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                      className="min-h-[44px] cursor-pointer rounded px-2 py-0.5 text-[0.6875rem] text-[#7A1E13] transition-colors hover:bg-[#9B2C1F]/10 lg:min-h-0"
                     >
                       {msg("auto.features.submit.components.steps.codeagentpanel.3")}
                     </button>

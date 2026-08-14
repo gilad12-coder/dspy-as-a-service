@@ -45,10 +45,10 @@ export default function DatasetSharePage() {
 
   if (failed) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-3 px-6 text-center">
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
         <h1 className="text-lg font-semibold">{msg("datasets.share.not_found_title")}</h1>
         <p className="text-sm text-muted-foreground">{msg("datasets.share.not_found_body")}</p>
-        <Button asChild variant="outline" className="mt-2">
+        <Button asChild variant="outline" className="mt-2 min-h-[44px]">
           <Link href="/">{msg("not_found.back_dashboard")}</Link>
         </Button>
       </div>
@@ -56,7 +56,7 @@ export default function DatasetSharePage() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
+    <div className="flex min-h-dvh items-center justify-center">
       <CircleNotch className="size-8 animate-spin text-primary" />
     </div>
   );

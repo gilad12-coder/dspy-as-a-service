@@ -142,7 +142,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
               type="button"
               onClick={() => setSummaryTab(i)}
               className={cn(
-                "relative z-10 flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs font-medium transition-colors duration-150 cursor-pointer",
+                "relative z-10 flex min-h-[44px] flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs font-medium transition-colors duration-150 lg:min-h-0",
                 summaryTab === i
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground/80",
@@ -154,7 +154,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
           ))}
         </div>
 
-        <div className="p-5">
+        <div className="p-4 sm:p-5">
           <AnimatePresence mode="wait">
             <motion.div
               key={summaryTab}
@@ -164,7 +164,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
               transition={{ duration: 0.15 }}
             >
               {summaryTab === 0 && (
-                <div className="space-y-0">
+                <div className="space-y-0 [&>div]:min-w-0 [&>div]:gap-3 [&>div>span:first-child]:min-w-0 [&>div>span:last-child]:max-w-[55%] [&>div>span:last-child]:break-words [&>div>span:last-child]:text-end">
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Tag className="size-3.5" />
@@ -207,7 +207,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
               )}
 
               {summaryTab === 1 && (
-                <div className="space-y-4">
+                <div className="space-y-4 [&>div.flex]:min-w-0 [&>div.flex]:gap-3 [&>div.flex>span:first-child]:min-w-0 [&>div.flex>span:last-child]:max-w-[55%] [&>div.flex>span:last-child]:break-words [&>div.flex>span:last-child]:text-end">
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
                       <FileText className="size-3.5" />
@@ -392,7 +392,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
               )}
 
               {summaryTab === 3 && (
-                <div className="space-y-0">
+                <div className="space-y-0 [&>div]:min-w-0 [&>div]:gap-3 [&>div>span:first-child]:min-w-0 [&>div>span:last-child]:max-w-[55%] [&>div>span:last-child]:break-words [&>div>span:last-child]:text-end">
                   {isReact && (
                     <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                       <span className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -536,14 +536,14 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
       </motion.div>
 
       <div className="rounded-xl border border-[#C8B9A8]/50 bg-[#FAF8F5] px-3.5 py-3 shadow-[0_1px_2px_rgba(61,46,34,0.04)]">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <span className="flex items-center gap-2 text-[13px] font-semibold text-[#3D2E22]">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#C8A882]/15 text-[#A8895E]">
               <Gauge className="h-3 w-3" />
             </span>
             {byok ? msg("submit.summary.estimate_fee") : msg("submit.summary.estimate_cost")}
           </span>
-          <span className="text-[13px] font-medium text-[#3D2E22]" dir="auto">
+          <span className="text-[13px] font-medium text-[#3D2E22] sm:text-end" dir="auto">
             {/* Isolate "low–high" as one LTR run (U+2066…U+2069) so the en-dash
                 between the two number groups doesn't flip them under RTL. */}
             {formatMsg("submit.summary.estimate_range", {

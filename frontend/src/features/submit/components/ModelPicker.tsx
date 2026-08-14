@@ -216,7 +216,7 @@ export function ModelPicker({
           id={id}
           disabled={disabled}
           className={cn(
-            "flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm",
+            "flex min-h-[44px] w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm lg:min-h-0",
             "shadow-xs cursor-pointer transition-[border-color,background-color,box-shadow] duration-120",
             "hover:border-foreground/20 hover:bg-accent/40",
             "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
@@ -263,7 +263,7 @@ export function ModelPicker({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={msg("auto.features.submit.components.modelpicker.literal.4")}
-            className="flex-1 bg-transparent text-start text-sm outline-none placeholder:text-start placeholder:text-muted-foreground"
+            className="min-h-[44px] flex-1 bg-transparent text-start text-base outline-none placeholder:text-start placeholder:text-muted-foreground lg:min-h-0 lg:text-sm"
           />
         </div>
 
@@ -281,7 +281,7 @@ export function ModelPicker({
                 aria-checked={purpose === p}
                 onClick={() => setPurpose(p)}
                 className={cn(
-                  "rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium transition-colors duration-150 cursor-pointer",
+                  "min-h-[44px] cursor-pointer rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium transition-colors duration-150 lg:min-h-0",
                   purpose === p
                     ? "border-foreground/25 bg-accent text-foreground"
                     : "border-border/50 text-muted-foreground hover:text-foreground",
@@ -313,7 +313,7 @@ export function ModelPicker({
                   type="button"
                   onClick={() => commit(m)}
                   className={cn(
-                    "flex w-full items-center gap-2 px-3 py-1.5 text-start text-sm transition-colors hover:bg-accent/70",
+                    "flex min-h-[44px] w-full items-center gap-2 px-3 py-1.5 text-start text-sm transition-colors hover:bg-accent/70 lg:min-h-0",
                     isSelected(m) && "bg-accent/50",
                     !m.available && "opacity-60",
                   )}

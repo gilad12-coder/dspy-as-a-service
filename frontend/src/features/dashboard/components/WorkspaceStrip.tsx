@@ -48,7 +48,7 @@ function WorkspaceSection({
       {href ? (
         <Link
           href={href}
-          className="block rounded-md focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex min-h-[44px] items-center rounded-md focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 lg:min-h-0"
         >
           {header}
         </Link>
@@ -56,7 +56,7 @@ function WorkspaceSection({
         <button
           type="button"
           onClick={onOpen}
-          className="w-full cursor-pointer rounded-md text-start focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="min-h-[44px] w-full cursor-pointer rounded-md text-start focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 lg:min-h-0"
         >
           {header}
         </button>
@@ -70,9 +70,12 @@ function ItemRow({ href, name, meta }: { href: string; name: string; meta: strin
   return (
     <Link
       href={href}
-      className="flex items-baseline justify-between gap-3 rounded-md text-xs hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="flex min-h-[44px] items-center justify-between gap-3 rounded-md text-xs hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 lg:min-h-0"
     >
-      <span className="min-w-0 truncate text-foreground/80 hover:underline underline-offset-2" dir="auto">
+      <span
+        className="min-w-0 truncate text-foreground/80 hover:underline underline-offset-2"
+        dir="auto"
+      >
         {name}
       </span>
       <span className="shrink-0 text-muted-foreground tabular-nums" dir="ltr">
@@ -172,7 +175,10 @@ export function WorkspaceStrip() {
   if (!tagging && !datasets && walletLoading) return null;
 
   const usagePct = datasets
-    ? Math.min(100, Math.round((datasets.usage.used_bytes / Math.max(1, datasets.usage.quota_bytes)) * 100))
+    ? Math.min(
+        100,
+        Math.round((datasets.usage.used_bytes / Math.max(1, datasets.usage.quota_bytes)) * 100),
+      )
     : 0;
   const walletTotal = wallet.paidBalanceCredits + wallet.freeGrant.creditsRemaining;
 
@@ -244,7 +250,10 @@ export function WorkspaceStrip() {
         onOpen={() => openTo("billing")}
       >
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
-          <span dir="ltr" className="text-xl font-bold leading-none tracking-tight text-foreground tabular-nums">
+          <span
+            dir="ltr"
+            className="text-xl font-bold leading-none tracking-tight text-foreground tabular-nums"
+          >
             {formatCredits(walletTotal, locale)}
           </span>
           <span aria-hidden className="text-xs text-muted-foreground">

@@ -135,7 +135,7 @@ function WizardTab() {
           value={prefs.wizardCodeAssist}
           onValueChange={(v) => setPref("wizardCodeAssist", v as typeof prefs.wizardCodeAssist)}
         >
-          <SelectTrigger className="min-w-[160px]">
+          <SelectTrigger className="h-[44px] w-full min-w-0 sm:h-8 sm:w-auto sm:min-w-[160px] [@media(hover:none)_and_(pointer:coarse)]:h-[44px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -150,7 +150,7 @@ function WizardTab() {
           value={prefs.wizardSplitMode}
           onValueChange={(v) => setPref("wizardSplitMode", v as typeof prefs.wizardSplitMode)}
         >
-          <SelectTrigger className="min-w-[160px]">
+          <SelectTrigger className="h-[44px] w-full min-w-0 sm:h-8 sm:w-auto sm:min-w-[160px] [@media(hover:none)_and_(pointer:coarse)]:h-[44px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -252,6 +252,7 @@ function MemoryKnobControl({
               variant="ghost"
               size="icon-sm"
               onClick={() => onCommit(null)}
+              className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
               aria-label={msg("settings.agent.memory.reset")}
             >
               <ArrowCounterClockwise className="size-3.5" />
@@ -357,7 +358,7 @@ function AgentTab() {
           value={prefs.agentTrustMode}
           onValueChange={(v) => setPref("agentTrustMode", v as typeof prefs.agentTrustMode)}
         >
-          <SelectTrigger className="min-w-[160px]">
+          <SelectTrigger className="h-[44px] w-full min-w-0 sm:h-8 sm:w-auto sm:min-w-[160px] [@media(hover:none)_and_(pointer:coarse)]:h-[44px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -1077,6 +1078,7 @@ function AdminTab() {
                             size="icon-sm"
                             onClick={() => void addPendingUser()}
                             disabled={busy || !pendingUsername.trim() || pendingBudgetMb === ""}
+                            className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                             aria-label={msg("settings.admin.storage.add_row")}
                           >
                             <Plus className="size-3.5 text-primary" />
@@ -1178,7 +1180,7 @@ function AboutTab() {
       </SettingsRow>
 
       <SettingsRow icon={HardDrives} label={msg("settings.about.api_url.label")}>
-        <span className="text-xs font-mono text-muted-foreground" dir="ltr">
+        <span className="max-w-full break-all text-xs font-mono text-muted-foreground" dir="ltr">
           {apiUrl}
         </span>
       </SettingsRow>
@@ -1204,7 +1206,7 @@ function AboutTab() {
               variant="outline"
               size="icon-sm"
               onClick={handleResetAll}
-              className="text-destructive hover:text-destructive"
+              className="size-[44px] text-destructive hover:text-destructive sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
               aria-label={msg("settings.about.reset_all.action")}
             >
               <ArrowCounterClockwise className="size-3.5" />
@@ -1307,7 +1309,7 @@ function ApiTab() {
                   variant="outline"
                   disabled={busy}
                   onClick={handleRevoke}
-                  className="text-destructive hover:text-destructive"
+                  className="size-[44px] text-destructive hover:text-destructive sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                   aria-label={msg("settings.api.revoke")}
                 >
                   <Trash className="size-3.5" />
@@ -1323,6 +1325,7 @@ function ApiTab() {
                   size="icon-sm"
                   disabled={busy}
                   onClick={handleGenerate}
+                  className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                   aria-label={msg("settings.api.generate")}
                 >
                   <Key className="size-3.5" />
@@ -1403,6 +1406,7 @@ function ApiTab() {
               variant="outline"
               size="icon-sm"
               asChild
+              className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
               aria-label={msg("settings.api.docs_action")}
             >
               <a href={docsUrl} target="_blank" rel="noopener noreferrer">
@@ -1516,7 +1520,7 @@ const SETTINGS_GROUPS = [
 // to scan when the list is filtered. On mobile the rail becomes a horizontal
 // strip, so each item drops back to its intrinsic width.
 const SETTINGS_RAIL_ITEM_CLASS =
-  "h-auto w-full flex-none justify-start gap-2.5 rounded-lg px-3 py-2 font-medium text-sidebar-foreground/60 data-[state=inactive]:hover:bg-sidebar-accent/40 data-[state=inactive]:hover:text-sidebar-foreground data-[state=active]:bg-transparent data-[state=active]:border-transparent data-[state=active]:font-medium data-[state=active]:text-primary data-[state=active]:hover:text-primary max-md:w-auto!";
+  "min-h-[44px] w-full flex-none justify-start gap-2.5 rounded-lg px-3 py-2 font-medium text-sidebar-foreground/60 data-[state=inactive]:hover:bg-sidebar-accent/40 data-[state=inactive]:hover:text-sidebar-foreground data-[state=active]:bg-transparent data-[state=active]:border-transparent data-[state=active]:font-medium data-[state=active]:text-primary data-[state=active]:hover:text-primary max-md:w-auto! md:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]";
 
 function SettingsPanelHeader({ tab }: { tab: SettingsTab }) {
   const { icon: Icon, labelKey } = SETTINGS_TAB_META[tab];
@@ -1567,8 +1571,11 @@ export function SettingsModal() {
   }, [open]);
   return (
     <Dialog open={open} onOpenChange={setOpen} modal={!tutorialState.isVisible}>
-      <DialogContent data-settings-text-buttons className="gap-0 overflow-hidden p-0 sm:max-w-4xl">
-        <DialogHeader className="border-b border-border/40 px-5 py-4 pe-12 text-start">
+      <DialogContent
+        data-settings-text-buttons
+        className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] gap-0 overflow-hidden p-0 sm:max-w-4xl [&_[data-slot=button]]:min-h-[44px] [&_[data-slot=button]]:min-w-[44px] [&_[data-slot=select-trigger]]:min-h-[44px] sm:[&_[data-slot=button]]:min-h-0 sm:[&_[data-slot=button]]:min-w-0 sm:[&_[data-slot=select-trigger]]:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:[&_[data-slot=button]]:min-h-[44px] [@media(hover:none)_and_(pointer:coarse)]:[&_[data-slot=button]]:min-w-[44px] [@media(hover:none)_and_(pointer:coarse)]:[&_[data-slot=select-trigger]]:min-h-[44px]"
+      >
+        <DialogHeader className="border-b border-border/40 px-4 py-3 pe-12 text-start sm:px-5 sm:py-4">
           <div className="min-w-0">
             <DialogTitle>{msg("settings.title")}</DialogTitle>
             <DialogDescription className="mt-1 text-xs">
@@ -1581,7 +1588,7 @@ export function SettingsModal() {
           orientation="vertical"
           value={activeTab}
           onValueChange={(v) => selectTab(v as SettingsTab)}
-          className="flex h-[min(72vh,680px)] min-h-0 flex-col gap-0 md:flex-row"
+          className="flex h-[calc(100dvh-5.75rem)] max-h-[680px] min-h-0 flex-col gap-0 sm:h-[min(72vh,680px)] md:flex-row"
         >
           <TabsList
             aria-label={msg("settings.title")}
@@ -1624,7 +1631,7 @@ export function SettingsModal() {
             ))}
           </TabsList>
 
-          <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4 md:px-6 md:py-5">
+          <div className="min-w-0 flex-1 overscroll-contain overflow-y-auto px-4 py-4 md:px-6 md:py-5">
             <motion.div
               key={activeTab}
               initial={prefersReduced ? false : { opacity: 0, y: 6 }}

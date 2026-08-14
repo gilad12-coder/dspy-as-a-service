@@ -184,9 +184,7 @@ function fitView(size: { w: number; h: number }, layoutW: number, layoutH: numbe
     return { k: 1, tx: 0, ty: 0 };
   }
   const padded = FIT_PADDING_PX * 2;
-  const k = clampScale(
-    Math.min((size.w - padded) / layoutW, (size.h - padded) / layoutH),
-  );
+  const k = clampScale(Math.min((size.w - padded) / layoutW, (size.h - padded) / layoutH));
   const tx = (size.w - layoutW * k) / 2;
   const ty = (size.h - layoutH * k) / 2;
   return { k, tx, ty };
@@ -542,9 +540,7 @@ export function TrajectoryTree({
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center">
-        <div
-          className="pointer-events-auto inline-flex flex-wrap items-center gap-x-1 gap-y-1 rounded-lg border border-[#DDD4C8]/70 bg-background/85 px-2 py-1 text-[11px] font-medium text-muted-foreground/90 backdrop-blur-sm"
-        >
+        <div className="pointer-events-auto inline-flex flex-wrap items-center gap-x-1 gap-y-1 rounded-lg border border-[#DDD4C8]/70 bg-background/85 px-2 py-1 text-[11px] font-medium text-muted-foreground/90 backdrop-blur-sm">
           <LegendToggle
             pressed={layers.pass}
             onToggle={() => toggleLayer("pass")}
@@ -883,9 +879,7 @@ const TreeContent = memo(function TreeContent({
               <motion.g
                 initial={false}
                 animate={{ y: node.isWinner && !showWinner ? -20 : 0 }}
-                transition={
-                  reduceMotion ? { duration: 0 } : { duration: 0.25, ease: "easeOut" }
-                }
+                transition={reduceMotion ? { duration: 0 } : { duration: 0.25, ease: "easeOut" }}
               >
                 <text
                   x={node.x}
@@ -923,15 +917,7 @@ function WinnerBadge({ x, y }: { x: number; y: number }) {
   const top = y + 4;
   return (
     <g pointerEvents="none">
-      <rect
-        x={cx - w / 2}
-        y={top}
-        width={w}
-        height={h}
-        rx={3}
-        ry={3}
-        fill={WINNER_BADGE_FILL}
-      />
+      <rect x={cx - w / 2} y={top} width={w} height={h} rx={3} ry={3} fill={WINNER_BADGE_FILL} />
       <text
         x={cx}
         y={top + h / 2 + 3.4}
@@ -965,7 +951,7 @@ function LegendToggle({
       aria-pressed={pressed}
       onClick={onToggle}
       className={cn(
-        "inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-0.5 transition-[opacity,color,background-color] duration-150 hover:bg-accent/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-0.5 transition-[opacity,color,background-color] duration-150 hover:bg-accent/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 lg:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]",
         !pressed && "opacity-40",
       )}
     >
@@ -976,12 +962,7 @@ function LegendToggle({
 }
 
 function LegendDivider() {
-  return (
-    <span
-      aria-hidden="true"
-      className="inline-block h-3 w-px bg-border/60"
-    />
-  );
+  return <span aria-hidden="true" className="inline-block h-3 w-px bg-border/60" />;
 }
 
 function MapControlButton({
@@ -1005,8 +986,8 @@ function MapControlButton({
           aria-pressed={pressed}
           className={
             pressed === true
-              ? "inline-flex size-9 items-center justify-center bg-[#1c1612] text-[#faf8f5] transition-[background-color,color] hover:bg-[#2a221c] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C8A882]/45"
-              : "inline-flex size-9 items-center justify-center text-foreground transition-[background-color,color] hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C8A882]/45"
+              ? "inline-flex size-[44px] items-center justify-center bg-[#1c1612] text-[#faf8f5] transition-[background-color,color] hover:bg-[#2a221c] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C8A882]/45 lg:size-9 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
+              : "inline-flex size-[44px] items-center justify-center text-foreground transition-[background-color,color] hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C8A882]/45 lg:size-9 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
           }
         >
           {children}
@@ -1028,4 +1009,3 @@ function ControlsDivider() {
     />
   );
 }
-

@@ -1,13 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  Warning,
-  CheckCircle,
-  CaretLeft,
-  CaretRight,
-  CircleNotch,
-} from "@/shared/ui/icons";
+import { Warning, CheckCircle, CaretLeft, CaretRight, CircleNotch } from "@/shared/ui/icons";
 
 import { Label } from "@/shared/ui/primitives/label";
 import { Input } from "@/shared/ui/primitives/input";
@@ -31,7 +25,7 @@ type ProbeStatus =
 const PROBE_DEBOUNCE_MS = 700;
 
 const NAV_BUTTON_CLASS =
-  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:border-[#C8A882] hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
+  "inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:border-[#C8A882] hover:text-foreground disabled:pointer-events-none disabled:opacity-40 lg:size-6";
 
 export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
   const { reactConfig, updateReactConfig } = w;
@@ -97,7 +91,7 @@ export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
               value={reactConfig.mcpUrl}
               dir="ltr"
               placeholder="http://localhost:8000/mcp/"
-              className="h-9 font-mono text-xs"
+              className="h-[44px] font-mono text-base lg:h-9 lg:text-xs"
               onChange={(e) => updateReactConfig({ mcpUrl: e.target.value })}
             />
           </div>
@@ -111,7 +105,7 @@ export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
               dir="ltr"
               autoComplete="off"
               placeholder="Bearer …"
-              className="h-9 font-mono text-xs"
+              className="h-[44px] font-mono text-base lg:h-9 lg:text-xs"
               onChange={(e) => updateReactConfig({ mcpAuthHeader: e.target.value })}
             />
           </div>
@@ -152,6 +146,7 @@ export function ReactConfigSection({ w }: { w: SubmitWizardContext }) {
                 <RetryIconButton
                   label={msg("submit.react.mcp_retry")}
                   onClick={() => runProbe(reactConfig.mcpUrl.trim(), reactConfig.mcpAuthHeader)}
+                  className="size-[44px] lg:size-8"
                 />
               )}
               {tools.length > 1 && (

@@ -157,7 +157,7 @@ export function DryRunDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !running && onOpenChange(o)}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-lg overflow-y-auto px-4 py-5 sm:max-h-[85vh] sm:p-6 [&_[data-slot=dialog-close]]:size-[44px] lg:[&_[data-slot=dialog-close]]:size-8">
         <DialogHeader>
           <DialogTitle>{msg("workflow.dryrun.title")}</DialogTitle>
           <DialogDescription>{msg("workflow.dryrun.description")}</DialogDescription>
@@ -177,7 +177,7 @@ export function DryRunDialog({
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+              className="h-[44px] shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground lg:h-6"
               disabled={running}
               onClick={onPickModel}
             >
@@ -197,7 +197,7 @@ export function DryRunDialog({
                 value={values[field] ?? ""}
                 disabled={running}
                 onChange={(e) => setValues((v) => ({ ...v, [field]: e.target.value }))}
-                className="flex w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex min-h-[44px] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 lg:text-sm"
               />
             </div>
           ))}
@@ -258,6 +258,7 @@ export function DryRunDialog({
           <Button
             variant="outline"
             size="sm"
+            className="min-h-[44px] lg:min-h-0"
             onClick={() => {
               if (running) {
                 abortRef.current?.abort();
@@ -269,7 +270,12 @@ export function DryRunDialog({
           >
             {msg(running ? "workflow.dryrun.cancel" : "workflow.dryrun.close")}
           </Button>
-          <Button size="sm" className="gap-1.5" disabled={running} onClick={handleRun}>
+          <Button
+            size="sm"
+            className="min-h-[44px] gap-1.5 lg:min-h-0"
+            disabled={running}
+            onClick={handleRun}
+          >
             {running ? (
               <CircleNotch className="size-3.5 animate-spin" />
             ) : (

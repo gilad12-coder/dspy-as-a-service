@@ -99,9 +99,10 @@ export function TaggerResultsTable({
   const sourceOptions = useMemo(() => {
     const seen = new Set<string>();
     for (const row of rows) if (row.provenance) seen.add(row.provenance);
-    return [...seen]
-      .sort()
-      .map((value) => ({ value, label: PROVENANCE_KEYS[value] ? msg(PROVENANCE_KEYS[value]) : value }));
+    return [...seen].sort().map((value) => ({
+      value,
+      label: PROVENANCE_KEYS[value] ? msg(PROVENANCE_KEYS[value]) : value,
+    }));
   }, [rows]);
 
   const toggleSort = useCallback((key: SortState) => {
@@ -177,7 +178,7 @@ export function TaggerResultsTable({
   return (
     <Card>
       <CardContent className="space-y-3 pt-6">
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex min-h-[44px] items-center justify-end gap-2 max-lg:[&_button]:size-[44px] lg:min-h-0">
           <ResetFiltersButton filters={colFilters} />
           {colResize.hasResized && <ResetColumnsButton resize={colResize} />}
           <ExportTableMenu

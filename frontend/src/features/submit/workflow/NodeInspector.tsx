@@ -12,7 +12,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { Plus, Trash, X } from "@/shared/ui/icons";
+import { Copy, Plus, Trash, X } from "@/shared/ui/icons";
 
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
@@ -40,12 +40,20 @@ interface NodeInspectorProps {
   issues: string[];
   onChange: (next: WorkflowNodeSpec) => void;
   onDelete?: () => void;
+  onDuplicate?: () => void;
   onClose?: () => void;
 }
 
-export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: NodeInspectorProps) {
+export function NodeInspector({
+  spec,
+  issues,
+  onChange,
+  onDelete,
+  onDuplicate,
+  onClose,
+}: NodeInspectorProps) {
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-card">
+    <div className="flex h-full flex-col overflow-y-auto bg-card [&_button]:min-h-[44px] [&_button]:min-w-[44px] lg:[&_button]:min-h-0 lg:[&_button]:min-w-0">
       <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold" dir="ltr">
@@ -56,12 +64,23 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
           </div>
         </div>
         <div className="flex shrink-0 items-center">
+          {onDuplicate && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onDuplicate}
+              className="inline-flex size-[44px] text-muted-foreground lg:hidden"
+              aria-label={msg("workflow.menu.duplicate")}
+            >
+              <Copy className="size-3.5" />
+            </Button>
+          )}
           {onDelete && (
             <Button
               variant="ghost"
               size="sm"
               onClick={onDelete}
-              className="text-muted-foreground hover:text-destructive"
+              className="size-[44px] text-muted-foreground hover:text-destructive lg:size-8"
               aria-label={msg("workflow.inspector.delete")}
             >
               <Trash className="size-3.5" />
@@ -72,7 +91,7 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="text-muted-foreground hover:text-foreground"
+              className="size-[44px] text-muted-foreground hover:text-foreground lg:size-8"
               aria-label={msg("workflow.inspector.close")}
             >
               <X className="size-3.5" />
@@ -99,6 +118,7 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
           <Input
             value={spec.name ?? ""}
             placeholder={spec.id}
+            className="min-h-[44px] text-base lg:min-h-0 lg:text-sm"
             onChange={(e) => onChange({ ...spec, name: e.target.value || null })}
           />
         </div>
@@ -135,7 +155,7 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
                       })
                     }
                     className={cn(
-                      "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors cursor-pointer",
+                      "min-h-[44px] flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors cursor-pointer lg:min-h-0",
                       spec.module_name === val
                         ? "bg-background text-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground",
@@ -153,7 +173,7 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
                 onChange={(tool_filter) => onChange({ ...spec, tool_filter })}
               />
             )}
-            <div className="space-y-1.5">
+            <div className="min-w-0 space-y-1.5 [&>div>div:first-child]:overflow-x-auto [&>div>div:first-child>button]:shrink-0 lg:[&>div>div:first-child]:overflow-visible">
               <Label className="text-[0.6875rem] uppercase tracking-wide text-muted-foreground">
                 {msg("workflow.inspector.signature_code")}
               </Label>
@@ -180,7 +200,7 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
               minFields={1}
               onChange={(output_fields) => onChange({ ...spec, output_fields })}
             />
-            <div className="space-y-1.5">
+            <div className="min-w-0 space-y-1.5 [&>div>div:first-child]:overflow-x-auto [&>div>div:first-child>button]:shrink-0 lg:[&>div>div:first-child]:overflow-visible">
               <Label className="text-[0.6875rem] uppercase tracking-wide text-muted-foreground">
                 {msg("workflow.inspector.transform_code")}
               </Label>
@@ -203,6 +223,7 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
                 dir="ltr"
                 value={spec.tool_name}
                 placeholder={msg("workflow.inspector.tool_name_placeholder")}
+                className="min-h-[44px] text-base lg:min-h-0 lg:text-sm"
                 onChange={(e) => onChange({ ...spec, tool_name: e.target.value })}
               />
             </div>
@@ -219,6 +240,7 @@ export function NodeInspector({ spec, issues, onChange, onDelete, onClose }: Nod
               <Input
                 dir="ltr"
                 value={spec.output_field.name}
+                className="min-h-[44px] text-base lg:min-h-0 lg:text-sm"
                 onChange={(e) =>
                   onChange({
                     ...spec,
@@ -253,7 +275,7 @@ function FlexToolsEditor({
       </Label>
       <Input
         dir="ltr"
-        className="font-mono text-xs"
+        className="min-h-[44px] font-mono text-base lg:min-h-0 lg:text-xs"
         value={draft}
         placeholder={msg("workflow.inspector.flex_tools_placeholder")}
         onChange={(e) => {
@@ -292,7 +314,7 @@ function FieldListEditor({
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 px-1.5 text-muted-foreground"
+          className="h-[44px] px-1.5 text-muted-foreground lg:h-6"
           onClick={() => onChange([...fields, { name: `field_${fields.length + 1}` }])}
           aria-label={msg("workflow.inspector.add_field")}
         >
@@ -304,7 +326,7 @@ function FieldListEditor({
           <div key={i} className="flex items-center gap-1.5">
             <Input
               dir="ltr"
-              className="h-8 font-mono text-xs"
+              className="h-[44px] font-mono text-base lg:h-8 lg:text-xs"
               value={field.name}
               onChange={(e) => {
                 const next = [...fields];
@@ -315,7 +337,7 @@ function FieldListEditor({
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 px-1.5 text-muted-foreground hover:text-destructive"
+              className="h-[44px] px-1.5 text-muted-foreground hover:text-destructive lg:h-8"
               disabled={fields.length <= minFields}
               onClick={() => onChange(fields.filter((_, j) => j !== i))}
               aria-label={msg("workflow.inspector.remove_field")}

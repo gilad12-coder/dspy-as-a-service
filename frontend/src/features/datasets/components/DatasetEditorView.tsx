@@ -184,11 +184,8 @@ export function DatasetEditorView() {
   const undoRef = React.useRef<() => void>(() => {});
   const redoRef = React.useRef<() => void>(() => {});
   const name =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("name")
-      : null;
-  const isMac =
-    typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("name") : null;
+  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
   const runSave = React.useCallback(async () => {
     const current = stateRef.current;
@@ -716,7 +713,11 @@ export function DatasetEditorView() {
   commitFillRef.current = endFill;
 
   /** Keys inside the actively edited cell input. */
-  const handleCellKey = (e: React.KeyboardEvent<HTMLInputElement>, rowIdx: number, column: string) => {
+  const handleCellKey = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    rowIdx: number,
+    column: string,
+  ) => {
     if (e.nativeEvent.isComposing) return;
     if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
@@ -819,7 +820,7 @@ export function DatasetEditorView() {
 
   return (
     <div className="flex flex-col gap-4 pb-8">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 max-lg:[&_button]:size-[44px] lg:gap-3">
         <Button asChild variant="ghost" size="icon-sm" aria-label={msg("datasets.editor.back")}>
           <Link href="/datasets">
             <ArrowLeft className="size-4 rtl:rotate-180" />
@@ -1046,7 +1047,7 @@ export function DatasetEditorView() {
                           size="icon-xs"
                           onClick={() => deleteRow(rowIdx)}
                           aria-label={msg("datasets.editor.delete_row")}
-                          className="absolute inset-y-0 start-1 my-auto text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:bg-accent focus-visible:opacity-100 hover:text-destructive"
+                          className="absolute inset-y-0 start-1 my-auto text-muted-foreground opacity-100 transition-opacity focus-visible:bg-accent focus-visible:opacity-100 hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100"
                         >
                           <Trash className="size-3.5" />
                         </Button>
@@ -1084,9 +1085,7 @@ export function DatasetEditorView() {
                             onMouseDown={(e) =>
                               handleCellMouseDown(e, { row: rowIdx, col: colIdx })
                             }
-                            onMouseEnter={() =>
-                              handleCellMouseEnter({ row: rowIdx, col: colIdx })
-                            }
+                            onMouseEnter={() => handleCellMouseEnter({ row: rowIdx, col: colIdx })}
                             onDoubleClick={() => startEdit({ row: rowIdx, col: colIdx })}
                           >
                             <input

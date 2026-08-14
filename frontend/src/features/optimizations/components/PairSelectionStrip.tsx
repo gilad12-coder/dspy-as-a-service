@@ -81,12 +81,15 @@ export function PairSelectionStrip({
   return (
     <>
       <FadeIn>
-        <div data-tutorial="pair-detail-summary" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#C8A882]/30 bg-gradient-to-l from-[#FAF8F5] to-[#F5F1EC] p-3">
-          <div className="flex items-center gap-3 min-w-0">
+        <div
+          data-tutorial="pair-detail-summary"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#C8A882]/30 bg-gradient-to-l from-[#FAF8F5] to-[#F5F1EC] p-3"
+        >
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={onBack}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-[#3D2E22] hover:text-[#3D2E22]/80 transition-colors cursor-pointer"
+              className="inline-flex min-h-[44px] items-center gap-1.5 text-sm font-medium text-[#3D2E22] hover:text-[#3D2E22]/80 transition-colors cursor-pointer sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
             >
               <BackIcon className="size-4" />
               <span>{msg("auto.features.optimizations.components.pairdetailview.1")}</span>
@@ -105,12 +108,12 @@ export function PairSelectionStrip({
               <ReasoningPill value={activePair.reflection_reasoning_effort} size="sm" />
             </div>
           </div>
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex w-full items-center justify-end gap-1 sm:w-auto sm:shrink-0">
             <TooltipButton tooltip={msg("auto.app.optimizations.id.page.4")}>
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-8"
+                className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                 onClick={onClone}
                 aria-label={msg("auto.app.optimizations.id.page.literal.4")}
               >
@@ -122,7 +125,7 @@ export function PairSelectionStrip({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-0 focus-visible:border-0"
+                  className="size-[44px] text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-0 focus-visible:border-0 sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                   onClick={onCancel}
                   aria-label={msg("auto.app.optimizations.id.page.literal.5")}
                 >
@@ -131,11 +134,13 @@ export function PairSelectionStrip({
               </TooltipButton>
             )}
             {jobTerminal && (
-              <TooltipButton tooltip={msg("auto.features.optimizations.components.gridoverview.18")}>
+              <TooltipButton
+                tooltip={msg("auto.features.optimizations.components.gridoverview.18")}
+              >
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 text-muted-foreground hover:text-red-600"
+                  className="size-[44px] text-muted-foreground hover:text-red-600 sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                   onClick={() => setDeleteOpen(true)}
                   aria-label={msg("auto.features.optimizations.components.gridoverview.literal.29")}
                 >
@@ -148,7 +153,8 @@ export function PairSelectionStrip({
               type="button"
               disabled={activePairIndex <= 0}
               onClick={onPrev}
-              className="p-1.5 rounded-lg hover:bg-[#3D2E22]/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="inline-flex size-[44px] items-center justify-center rounded-lg hover:bg-[#3D2E22]/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
+              aria-label={msg("auto.features.optimizations.components.pairdetailview.literal.1")}
               title={msg("auto.features.optimizations.components.pairdetailview.literal.1")}
             >
               <PrevArrow className="size-4 text-[#3D2E22]" />
@@ -160,7 +166,8 @@ export function PairSelectionStrip({
               type="button"
               disabled={activePairIndex >= pairCount - 1}
               onClick={onNext}
-              className="p-1.5 rounded-lg hover:bg-[#3D2E22]/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="inline-flex size-[44px] items-center justify-center rounded-lg hover:bg-[#3D2E22]/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
+              aria-label={msg("auto.features.optimizations.components.pairdetailview.literal.2")}
               title={msg("auto.features.optimizations.components.pairdetailview.literal.2")}
             >
               <NextArrow className="size-4 text-[#3D2E22]" />

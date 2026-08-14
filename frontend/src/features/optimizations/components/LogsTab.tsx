@@ -75,8 +75,10 @@ function VerbosityControl({
             onClick={() => {
               if (!isActive) onChange(o.value);
             }}
-            className={`relative rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 ${
-              isActive ? "text-foreground" : "cursor-pointer text-foreground/55 hover:text-foreground"
+            className={`relative min-h-[44px] rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px] ${
+              isActive
+                ? "text-foreground"
+                : "cursor-pointer text-foreground/55 hover:text-foreground"
             }`}
           >
             {isActive && (
@@ -207,14 +209,16 @@ export function LogsTab({
     <div className="mt-4">
       <FadeIn>
         <div
-          className="flex items-center justify-between gap-3 mb-4"
+          className="mb-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
           data-tutorial="live-logs"
         >
-          <div className="flex items-center gap-3">
-            <VerbosityControl active={activeVerbosity} onChange={setVerbosity} />
+          <div className="flex min-w-0 items-center gap-3 overflow-x-auto pb-0.5 no-scrollbar sm:overflow-visible sm:pb-0">
+            <div className="shrink-0">
+              <VerbosityControl active={activeVerbosity} onChange={setVerbosity} />
+            </div>
             <ResetColumnsButton resize={logResize} />
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-end">
             <span className="text-xs text-muted-foreground">
               {filtered.length}
               {msg("auto.features.optimizations.components.logstab.1")}
@@ -271,7 +275,7 @@ export function LogsTab({
         <Card>
           <CardContent className="p-0">
             <div className="max-h-[600px] overflow-auto">
-              <Table className={"table-fixed w-full"}>
+              <Table className="w-full min-w-[720px] table-fixed">
                 <colgroup>
                   {showPairCol && (
                     <col style={{ width: logResize.widths["pair_index"] ?? "12%" }} />

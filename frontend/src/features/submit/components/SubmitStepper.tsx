@@ -25,7 +25,7 @@ export function SubmitStepper({ w }: { w: SubmitWizardContext }) {
               {!isLast ? (
                 <div
                   aria-hidden="true"
-                  className="absolute top-[18px] sm:top-5 h-px overflow-hidden rounded-full bg-muted/40"
+                  className="absolute top-[22px] h-px overflow-hidden rounded-full bg-muted/40 sm:top-5"
                   style={{
                     insetInlineStart: "calc(50% + 22px)",
                     insetInlineEnd: "calc(-50% + 22px)",
@@ -46,7 +46,7 @@ export function SubmitStepper({ w }: { w: SubmitWizardContext }) {
                 disabled={!clickable}
                 className={cn(
                   "relative z-10 flex items-center justify-center rounded-full transition-all duration-300 cursor-pointer",
-                  "size-9 sm:size-10 text-sm font-semibold",
+                  "size-[44px] text-sm font-semibold",
                   active
                     ? "bg-primary text-primary-foreground shadow-[0_0_16px_rgba(124,99,80,0.4)] scale-110"
                     : completed
@@ -77,6 +77,12 @@ export function SubmitStepper({ w }: { w: SubmitWizardContext }) {
           );
         })}
       </div>
+      <p
+        className="mt-2 text-center text-xs font-medium text-foreground sm:hidden"
+        aria-live="polite"
+      >
+        {STEPS[step]?.label()}
+      </p>
     </div>
   );
 }

@@ -135,7 +135,7 @@ export function TaggingSessionCard({
         }}
         aria-label={displayName}
         className={cn(
-          "group flex cursor-pointer items-center gap-4 rounded-xl border border-[#DDD4C8]/60 bg-gradient-to-b from-white/95 to-[#F8F4EF] px-4 py-3.5 text-start shadow-[0_1px_3px_rgba(28,22,18,0.03)] transition-[border-color,box-shadow] duration-200 hover:border-[#C8B9A8]/70 hover:shadow-[0_2px_10px_rgba(28,22,18,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+          "group flex cursor-pointer flex-wrap items-center gap-3 rounded-xl border border-[#DDD4C8]/60 bg-gradient-to-b from-white/95 to-[#F8F4EF] px-3 py-3.5 text-start shadow-[0_1px_3px_rgba(28,22,18,0.03)] transition-[border-color,box-shadow] duration-200 hover:border-[#C8B9A8]/70 hover:shadow-[0_2px_10px_rgba(28,22,18,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:flex-nowrap sm:gap-4 sm:px-4",
           selected && "border-primary/50 hover:border-primary/50",
         )}
       >
@@ -187,13 +187,16 @@ export function TaggingSessionCard({
         </div>
 
         {isOwner && (
-          <div className="flex shrink-0 items-center gap-1" onClick={stop}>
+          <div
+            className="flex w-full shrink-0 items-center justify-end gap-1 border-t border-border/40 pt-2 sm:w-auto sm:border-t-0 sm:pt-0"
+            onClick={stop}
+          >
             <TaggingSessionShareDialog sessionId={session.id} />
             <TooltipButton tooltip={msg("datasets.action.rename")}>
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="size-11 text-muted-foreground hover:text-foreground sm:size-8"
+                className="size-[44px] text-muted-foreground hover:text-foreground lg:size-8"
                 onClick={() => {
                   setRenameValue(displayName);
                   setRenameOpen(true);
@@ -207,7 +210,7 @@ export function TaggingSessionCard({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="size-11 text-muted-foreground hover:text-destructive sm:size-8"
+                className="size-[44px] text-muted-foreground hover:text-destructive lg:size-8"
                 onClick={() => setDeleteOpen(true)}
                 aria-label={msg("datasets.action.delete")}
               >
@@ -249,7 +252,11 @@ export function TaggingSessionCard({
               disabled={renaming || renameValue.trim().length === 0}
               className="w-full justify-center shadow-xs"
             >
-              {renaming ? <CircleNotch className="size-4 animate-spin" /> : msg("datasets.rename.save")}
+              {renaming ? (
+                <CircleNotch className="size-4 animate-spin" />
+              ) : (
+                msg("datasets.rename.save")
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

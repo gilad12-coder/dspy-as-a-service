@@ -83,7 +83,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
           type="button"
           aria-label={msg("shared.language.switch_aria")}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-lg border border-border/70 px-2 py-1 text-xs font-semibold text-foreground transition-colors duration-200 cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45",
+            "inline-flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border/70 px-2 py-1 text-xs font-semibold text-foreground transition-colors duration-200 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:min-h-0 lg:min-w-0",
             className,
           )}
         >
@@ -156,7 +156,9 @@ export function LanguageSwitcher({ className }: { className?: string }) {
                       {entry.englishName}
                     </span>
                   </span>
-                  {selected && <Check className="size-4 shrink-0 text-[#C8A882]" aria-hidden="true" />}
+                  {selected && (
+                    <Check className="size-4 shrink-0 text-[#C8A882]" aria-hidden="true" />
+                  )}
                 </button>
               );
             })

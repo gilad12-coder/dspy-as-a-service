@@ -248,7 +248,7 @@ export function ByokJsonImport() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full cursor-pointer items-center justify-between text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="flex min-h-[44px] w-full cursor-pointer items-center justify-between text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         {msg("settings.keys.json_advanced")}
         <CaretDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
@@ -279,7 +279,7 @@ export function ByokJsonImport() {
               <span>{msg("settings.keys.json_required")}</span>
               <span>{msg("settings.keys.json_optional")}</span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
               <Button variant="ghost" size="sm" onClick={handleUseExample}>
                 {msg("settings.keys.json_use_example")}
               </Button>

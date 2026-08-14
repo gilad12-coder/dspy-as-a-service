@@ -41,7 +41,7 @@ export function CodeInterviewPanel({ interview, className }: Props) {
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
-      <div className="flex items-start justify-between gap-3 border-b border-border/40 px-4 py-3 shrink-0">
+      <div className="flex shrink-0 flex-col items-stretch gap-2 border-b border-border/40 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-foreground">
             {msg("submit.code.interview.title")}
@@ -57,7 +57,7 @@ export function CodeInterviewPanel({ interview, className }: Props) {
           size="sm"
           onClick={interview.reset}
           disabled={interview.busy || (interview.messages.length === 0 && !interview.done)}
-          className="shrink-0 gap-1.5 text-muted-foreground"
+          className="min-h-[44px] shrink-0 gap-1.5 self-end text-muted-foreground sm:self-auto lg:min-h-0"
         >
           <ArrowCounterClockwise className="size-3.5" />
           {msg("submit.code.interview.restart")}
@@ -123,11 +123,11 @@ export function CodeInterviewPanel({ interview, className }: Props) {
             placeholder={msg("submit.code.interview.placeholder")}
             modelMenu={
               <ComposerModelMenu
-              value={interview.model}
-              onChange={interview.setModel}
-              effort={interview.reasoningEffort}
-              onEffortChange={interview.setReasoningEffort}
-            />
+                value={interview.model}
+                onChange={interview.setModel}
+                effort={interview.reasoningEffort}
+                onEffortChange={interview.setReasoningEffort}
+              />
             }
           />
 
@@ -136,7 +136,7 @@ export function CodeInterviewPanel({ interview, className }: Props) {
               variant="ghost"
               size="sm"
               onClick={interview.skip}
-              className="text-muted-foreground"
+              className="min-h-[44px] text-muted-foreground lg:min-h-0"
             >
               {msg("submit.code.interview.skip")}
             </Button>
@@ -185,7 +185,7 @@ function BriefCard({ interview }: { interview: CodeInterviewState }) {
               onChange={(e) => update(idx, e.target.value)}
               rows={2}
               className={cn(
-                "flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
+                "min-h-[44px] flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-base lg:text-sm",
                 "leading-relaxed outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
               )}
               dir="auto"
@@ -195,7 +195,7 @@ function BriefCard({ interview }: { interview: CodeInterviewState }) {
               size="icon-xs"
               onClick={() => remove(idx)}
               aria-label={msg("submit.code.interview.brief.remove")}
-              className="mt-1.5"
+              className="mt-1.5 size-[44px] lg:size-7"
             >
               <Trash className="size-3.5 text-muted-foreground" />
             </Button>
@@ -205,14 +205,17 @@ function BriefCard({ interview }: { interview: CodeInterviewState }) {
           variant="outline"
           size="sm"
           onClick={() => setDirectives((prev) => [...prev, ""])}
-          className="mt-1 gap-1.5 self-start"
+          className="mt-1 min-h-[44px] gap-1.5 self-start lg:min-h-0"
         >
           <Plus className="size-3.5" />
           {msg("submit.code.interview.brief.add")}
         </Button>
       </div>
       <div className="border-t border-border/40 p-4 shrink-0">
-        <Button onClick={() => interview.confirm(cleaned)} className="w-full">
+        <Button
+          onClick={() => interview.confirm(cleaned)}
+          className="min-h-[44px] w-full lg:min-h-0"
+        >
           {msg("submit.code.interview.brief.confirm")}
         </Button>
       </div>

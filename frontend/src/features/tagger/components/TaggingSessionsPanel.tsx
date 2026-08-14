@@ -183,14 +183,18 @@ export function TaggingSessionsPanel({ onStartNew }: { onStartNew: () => void })
 
   return (
     <section className="w-full pb-16">
-      <div className="flex items-center gap-2.5">
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
         <SearchField
           value={search}
           onValueChange={setSearch}
           placeholder={msg("tagger.session.search_placeholder")}
-          className="flex-1"
+          className="flex-1 !h-[44px] [&_input]:h-full max-lg:[&_button]:!size-[44px] lg:!h-11"
         />
-        <Button variant="outline" onClick={onStartNew} className="h-11 shrink-0 rounded-2xl">
+        <Button
+          variant="outline"
+          onClick={onStartNew}
+          className="!h-[44px] w-full shrink-0 rounded-2xl sm:w-auto"
+        >
           <Plus className="size-4" aria-hidden="true" />
           {msg("tagger.session.start_new")}
         </Button>

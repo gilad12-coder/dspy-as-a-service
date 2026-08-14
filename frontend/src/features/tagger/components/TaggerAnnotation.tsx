@@ -299,7 +299,7 @@ export function TaggerAnnotation({
 
   return (
     <div className="flex h-[calc(100dvh-var(--header-height,53px)-3rem)] flex-col overflow-hidden md:h-[calc(100dvh-var(--header-height,53px)-4rem)]">
-      <div className="flex items-center gap-2 px-5 pt-3 pb-1.5">
+      <div className="flex items-center gap-2 px-3 pb-1.5 pt-3 sm:px-5">
         <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
           <div
             className="h-full rounded-full transition-all duration-300"
@@ -314,10 +314,10 @@ export function TaggerAnnotation({
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 p-5 overflow-hidden">
+      <div className="flex flex-1 flex-col gap-3 overflow-hidden p-3 sm:p-5 max-lg:landscape:grid max-lg:landscape:grid-cols-2">
         <Card className="flex flex-1 min-h-0 flex-col">
           <CardContent
-            className="flex-1 overflow-y-auto px-6 py-5 text-base leading-relaxed text-foreground"
+            className="flex-1 overflow-y-auto px-4 py-4 text-base leading-relaxed text-foreground sm:px-6 sm:py-5"
             dir="auto"
           >
             {item.fields && item.fields.length > 1 ? (
@@ -328,7 +328,7 @@ export function TaggerAnnotation({
           </CardContent>
         </Card>
 
-        <Card className="flex flex-1 min-h-0 flex-col p-5">
+        <Card className="flex min-h-0 flex-1 flex-col p-3 sm:p-5">
           <CardTitle className="mb-3 text-center text-sm font-medium text-muted-foreground">
             {config.mode === "binary" &&
               (config.question ??
@@ -459,24 +459,25 @@ export function TaggerAnnotation({
           )}
         </Card>
 
-        <div className="flex items-center justify-between">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-between max-lg:landscape:col-span-2 max-lg:landscape:flex max-lg:landscape:items-center max-lg:landscape:justify-between">
           <Button
             variant="outline"
             onClick={() => onNavigate(-1)}
             disabled={currentIndex === 0}
-            className="gap-2"
+            className="min-h-[44px] w-full gap-2 sm:w-auto max-lg:landscape:w-auto lg:min-h-0"
           >
             <PrevIcon className="size-4" />
             {msg("auto.features.tagger.components.taggerannotation.8")}
           </Button>
 
-          <div className="flex items-center gap-2">
+          <div className="col-span-2 row-start-2 flex items-center justify-center gap-1 sm:col-auto sm:row-auto sm:gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => onGoTo(0)}
+                  className="size-[44px] lg:size-8"
                   aria-label={msg("auto.features.tagger.components.taggerannotation.9")}
                 >
                   <SkipBack className="size-4" />
@@ -493,6 +494,7 @@ export function TaggerAnnotation({
                   size="icon-sm"
                   onClick={onJumpUntagged}
                   disabled={taggedCount === data.length}
+                  className="size-[44px] lg:size-8"
                   aria-label={msg("auto.features.tagger.components.taggerannotation.10")}
                 >
                   <MinusCircle className="size-4" />
@@ -509,6 +511,7 @@ export function TaggerAnnotation({
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => setShowShortcuts(true)}
+                  className="size-[44px] lg:size-8"
                   aria-label={msg("auto.features.tagger.components.taggerannotation.11")}
                 >
                   <Keyboard className="size-4" />
@@ -525,6 +528,7 @@ export function TaggerAnnotation({
                     <Button
                       variant="ghost"
                       size="icon-sm"
+                      className="size-[44px] lg:size-8"
                       aria-label={msg("auto.features.tagger.components.taggerannotation.12")}
                     >
                       <DownloadSimple className="size-4" />
@@ -585,7 +589,7 @@ export function TaggerAnnotation({
             variant="outline"
             onClick={() => onNavigate(1)}
             disabled={currentIndex === data.length - 1}
-            className="gap-2"
+            className="col-start-2 row-start-1 min-h-[44px] w-full gap-2 sm:col-auto sm:row-auto sm:w-auto max-lg:landscape:w-auto lg:min-h-0"
           >
             {msg("auto.features.tagger.components.taggerannotation.13")}
             <NextIcon className="size-4" />
@@ -851,10 +855,7 @@ function FieldValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
     return (
       <ol className="space-y-1.5">
         {value.map((item, i) => (
-          <li
-            key={i}
-            className="relative rounded-lg border border-border/40 bg-muted/30 px-3 py-2"
-          >
+          <li key={i} className="relative rounded-lg border border-border/40 bg-muted/30 px-3 py-2">
             <span
               dir="ltr"
               className="absolute -top-2 start-2 rounded bg-background px-1.5 text-[10px] font-mono tabular-nums text-muted-foreground/80"
@@ -902,9 +903,7 @@ function FieldValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
         dir="ltr"
         className={cn(
           "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-mono",
-          value
-            ? "bg-emerald-600/10 text-emerald-700"
-            : "bg-muted text-muted-foreground",
+          value ? "bg-emerald-600/10 text-emerald-700" : "bg-muted text-muted-foreground",
         )}
       >
         {value ? "true" : "false"}

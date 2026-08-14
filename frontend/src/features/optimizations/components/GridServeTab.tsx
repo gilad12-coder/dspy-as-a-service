@@ -326,7 +326,7 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8"
+                    className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                     onClick={handleClearHistory}
                     aria-label={msg(
                       "auto.features.optimizations.components.gridservetab.literal.1",
@@ -369,14 +369,17 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
                     {msg("auto.features.optimizations.components.gridservetab.8")}
                   </HelpTip>
                 </p>
-                <div className="rounded-lg bg-muted/40 p-2.5 pe-8 relative group" dir="ltr">
+                <div
+                  className="group relative rounded-lg bg-muted/40 p-2.5 pe-11 sm:pe-8"
+                  dir="ltr"
+                >
                   <code className="text-xs font-mono break-all">
                     {msg("auto.features.optimizations.components.gridservetab.9")}
                     {endpoint}
                   </code>
                   <CopyButton
                     text={endpoint}
-                    className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100"
+                    className="absolute end-1 top-1 opacity-100 sm:end-1.5 sm:top-1.5 sm:opacity-0 sm:group-hover:opacity-100"
                   />
                 </div>
               </div>

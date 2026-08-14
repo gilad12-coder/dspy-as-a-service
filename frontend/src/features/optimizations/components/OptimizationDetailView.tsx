@@ -228,7 +228,7 @@ function FailureCopyButton({ text }: { text: string }) {
         type="button"
         aria-label={label}
         onClick={() => void copy(text)}
-        className="-me-1 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-[#B04030]/70 transition-colors hover:bg-[#B04030]/10 hover:text-[#B04030] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B04030]/30"
+        className="-me-1 flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-md text-[#B04030]/70 transition-colors hover:bg-[#B04030]/10 hover:text-[#B04030] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B04030]/30 sm:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
       >
         <CopyGlyph copied={copied} className="size-3.5" checkClassName="text-[#B04030]" />
       </button>
@@ -992,7 +992,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
       {sharedTier && (
         <div
           role="status"
-          className="flex w-full items-center gap-3 rounded-xl border border-border/60 bg-gradient-to-br from-muted/60 to-muted/25 px-4 py-2.5 shadow-sm"
+          className="flex w-full flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-gradient-to-br from-muted/60 to-muted/25 px-4 py-2.5 shadow-sm"
         >
           <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/5 text-primary/80">
             {sharedTier === "editor" ? (
@@ -1001,7 +1001,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
               <Eye className="size-4" aria-hidden="true" />
             )}
           </span>
-          <span className="whitespace-nowrap text-sm font-medium text-foreground/90">
+          <span className="min-w-0 text-sm font-medium text-foreground/90">
             {msg(
               sharedTier === "editor"
                 ? "optimization.access_banner.editor"
@@ -1009,7 +1009,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
             )}
           </span>
           {sharedByOwner && (
-            <span className="ms-auto flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="flex min-w-0 flex-1 items-center justify-end gap-1.5 text-xs text-muted-foreground sm:ms-auto sm:flex-none">
               <span dir="auto" className="min-w-0 truncate">
                 {sharedByPrefix}
                 <span dir="auto" className="font-semibold text-foreground">
@@ -1029,7 +1029,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
       )}
       <FadeIn delay={0.1}>
         <div
-          className=" rounded-xl border border-border/40 bg-gradient-to-br from-card to-card/80 p-5"
+          className="rounded-xl border border-border/40 bg-gradient-to-br from-card to-card/80 p-4 sm:p-5"
           data-tutorial="detail-header"
         >
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1048,7 +1048,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                 </p>
               )}
               <code
-                className="text-xs font-mono text-muted-foreground/60 cursor-pointer hover:text-primary transition-colors break-all"
+                className="inline-flex min-h-[44px] items-center rounded-md text-xs font-mono text-muted-foreground/60 cursor-pointer hover:text-primary transition-colors break-all sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
                 title={msg("auto.app.optimizations.id.page.literal.1")}
                 aria-label={formatMsg("auto.app.optimizations.id.page.template.3", {
                   p1: TERMS.optimization,
@@ -1115,13 +1115,16 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
               </div>
             </div>
             {!isShare && (
-              <div className="flex items-center gap-2" data-tutorial="result-actions">
+              <div
+                className="flex w-full flex-wrap items-center justify-end gap-1 sm:w-auto sm:gap-2"
+                data-tutorial="result-actions"
+              >
                 {canManageShare && <ShareDialog optimizationId={job.optimization_id} />}
                 <TooltipButton tooltip={msg("auto.app.optimizations.id.page.4")}>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8"
+                    className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                     onClick={() => router.push(`/submit?clone=${job.optimization_id}`)}
                     aria-label={msg("auto.app.optimizations.id.page.literal.4")}
                   >
@@ -1137,7 +1140,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-8"
+                        className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                         onClick={handleResume}
                         disabled={resuming}
                         aria-label={msg("optimization.resume")}
@@ -1155,7 +1158,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-8"
+                        className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                         onClick={handleRetry}
                         disabled={retrying}
                         aria-label={msg("optimization.rerun")}
@@ -1171,7 +1174,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="size-8"
+                      className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                       onClick={handlePause}
                       disabled={pausing}
                       aria-label={msg("optimization.pause")}
@@ -1185,7 +1188,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="size-8 text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-0 focus-visible:border-0"
+                      className="size-[44px] text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-0 focus-visible:border-0 sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                       onClick={handleCancel}
                       aria-label={msg("auto.app.optimizations.id.page.literal.5")}
                     >
@@ -1202,12 +1205,12 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
               </div>
             )}
             {shareCanInteract && (
-              <div className="flex items-center gap-2">
+              <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
                 <TooltipButton tooltip={msg("share.clone_tooltip")}>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8"
+                    className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                     onClick={() =>
                       router.push(
                         shareToken
@@ -1357,7 +1360,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
 
       {(() => {
         const tabCls =
-          "relative shrink-0 flex-none px-2.5 sm:px-4 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-transparent data-[state=active]:border-b-primary data-[state=active]:text-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all duration-200 text-xs sm:text-sm";
+          "relative min-h-[44px] shrink-0 flex-none px-2.5 sm:px-4 py-2.5 rounded-none border-b-2 border-transparent data-[state=active]:border-transparent data-[state=active]:border-b-primary data-[state=active]:text-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-all duration-200 text-xs sm:text-sm";
         // Pair view pings the trajectory/logs tabs only while the pair itself
         // is still running, matching the standalone run's behaviour exactly.
         const pingActive = isPairContext
@@ -1369,7 +1372,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
           <Tabs value={detailTab} onValueChange={setDetailTab}>
             <TabsList
               variant="line"
-              className="border-b border-border/50 pb-0 gap-0 overflow-x-auto no-scrollbar"
+              className="w-full justify-start gap-0 overflow-x-auto border-b border-border/50 pb-0 no-scrollbar"
               data-tutorial="detail-tabs"
             >
               <TabsTrigger value="overview" className={tabCls}>

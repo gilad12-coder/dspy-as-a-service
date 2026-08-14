@@ -173,65 +173,65 @@ export function GridLiveChart({ job }: { job: OptimizationStatusResponse }) {
             />
           </div>
         ) : (
-        <div className="h-[220px] min-w-0" dir="ltr">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={pairs}
-              layout="vertical"
-              margin={{ left: 10, right: 20, top: 5, bottom: 5 }}
-            >
-              <CartesianGrid horizontal={false} strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis
-                type="number"
-                domain={[0, 105]}
-                tickLine={false}
-                axisLine={false}
-                tick={{ fontSize: 10 }}
-                className="fill-muted-foreground"
-                label={{
-                  value: msg("auto.features.optimizations.components.gridlivechart.literal.1"),
-                  position: "insideBottom",
-                  offset: -2,
-                  fontSize: 10,
-                }}
-              />
-              <YAxis
-                type="category"
-                dataKey="name"
-                tick={{ fontSize: 10 }}
-                width={100}
-                className="fill-muted-foreground"
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip content={<LiveTip />} />
-              {!hidden.has(
-                msg("auto.features.optimizations.components.gridlivechart.literal.2"),
-              ) && (
-                <Bar
-                  dataKey="baselineScore"
-                  name={msg("auto.features.optimizations.components.gridlivechart.literal.3")}
-                  fill="var(--color-chart-4)"
-                  radius={[0, 3, 3, 0]}
-                  barSize={12}
-                  isAnimationActive={false}
+          <div className="h-[220px] min-w-0" dir="ltr">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={pairs}
+                layout="vertical"
+                margin={{ left: 10, right: 20, top: 5, bottom: 5 }}
+              >
+                <CartesianGrid horizontal={false} strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis
+                  type="number"
+                  domain={[0, 105]}
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 10 }}
+                  className="fill-muted-foreground"
+                  label={{
+                    value: msg("auto.features.optimizations.components.gridlivechart.literal.1"),
+                    position: "insideBottom",
+                    offset: -2,
+                    fontSize: 10,
+                  }}
                 />
-              )}
-              {!hidden.has(
-                msg("auto.features.optimizations.components.gridlivechart.literal.4"),
-              ) && (
-                <Bar
-                  dataKey="optimizedScore"
-                  name={msg("auto.features.optimizations.components.gridlivechart.literal.5")}
-                  fill="var(--color-chart-2)"
-                  radius={[0, 3, 3, 0]}
-                  barSize={12}
-                  isAnimationActive={false}
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  tick={{ fontSize: 10 }}
+                  width={100}
+                  className="fill-muted-foreground"
+                  tickLine={false}
+                  axisLine={false}
                 />
-              )}
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+                <Tooltip content={<LiveTip />} />
+                {!hidden.has(
+                  msg("auto.features.optimizations.components.gridlivechart.literal.2"),
+                ) && (
+                  <Bar
+                    dataKey="baselineScore"
+                    name={msg("auto.features.optimizations.components.gridlivechart.literal.3")}
+                    fill="var(--color-chart-4)"
+                    radius={[0, 3, 3, 0]}
+                    barSize={12}
+                    isAnimationActive={false}
+                  />
+                )}
+                {!hidden.has(
+                  msg("auto.features.optimizations.components.gridlivechart.literal.4"),
+                ) && (
+                  <Bar
+                    dataKey="optimizedScore"
+                    name={msg("auto.features.optimizations.components.gridlivechart.literal.5")}
+                    fill="var(--color-chart-2)"
+                    radius={[0, 3, 3, 0]}
+                    barSize={12}
+                    isAnimationActive={false}
+                  />
+                )}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         )}
         <div className="flex justify-center gap-4 mt-1">
           {[
@@ -250,7 +250,7 @@ export function GridLiveChart({ job }: { job: OptimizationStatusResponse }) {
                 key={key}
                 type="button"
                 onClick={() => toggle(key)}
-                className={`flex items-center gap-1.5 text-[0.625rem] cursor-pointer transition-colors ${isHidden ? "text-muted-foreground/50" : "text-muted-foreground hover:text-foreground"}`}
+                className={`flex min-h-[44px] items-center gap-1.5 text-[0.625rem] cursor-pointer transition-colors sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px] ${isHidden ? "text-muted-foreground/50" : "text-muted-foreground hover:text-foreground"}`}
                 aria-pressed={!isHidden}
               >
                 <span

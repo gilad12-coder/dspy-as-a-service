@@ -102,7 +102,7 @@ export function CodeAuthoringCard({ agent }: CodeAuthoringCardProps) {
       <div dir="ltr" className="space-y-3 px-4 pb-4 pt-3">
         {agent.isWorkflow ? (
           agent.workflowSpec && (
-            <div className="h-[440px] overflow-hidden rounded-lg border border-border/40">
+            <div className="h-[min(440px,60dvh)] overflow-hidden rounded-lg border border-border/40 sm:h-[440px]">
               <WorkflowCanvas
                 spec={agent.workflowSpec}
                 specRevision={agent.workflowRevision}
@@ -130,9 +130,7 @@ export function CodeAuthoringCard({ agent }: CodeAuthoringCardProps) {
       </div>
 
       {agent.error && (
-        <div
-          className="flex items-start gap-1.5 border-t border-[#9B2C1F]/20 bg-[#FCEFEB]/60 px-4 py-2 text-xs text-[#7A1E13]"
-        >
+        <div className="flex items-start gap-1.5 border-t border-[#9B2C1F]/20 bg-[#FCEFEB]/60 px-4 py-2 text-xs text-[#7A1E13]">
           <XCircle className="mt-0.5 size-3 shrink-0 text-[#9B2C1F]" aria-hidden="true" />
           <span className="min-w-0 flex-1 break-words" dir="auto">
             {agent.error}

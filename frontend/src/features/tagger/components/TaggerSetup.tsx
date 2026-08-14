@@ -502,7 +502,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                       aria-pressed={selected}
                       onClick={() => toggleInputCol(col)}
                       className={cn(
-                        "flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all cursor-pointer",
+                        "flex min-h-[44px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all",
                         selected
                           ? "bg-primary/10 border border-primary/40 text-primary font-medium"
                           : "border border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
@@ -590,7 +590,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                 type="text"
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="min-h-[44px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 placeholder={msg("auto.features.tagger.components.taggersetup.literal.15")}
                 dir="auto"
               />
@@ -619,7 +619,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                     type="text"
                     value={cat.label}
                     onChange={(e) => updateCategory(cat.id, e.target.value)}
-                    className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    className="min-h-[44px] flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
                     placeholder={msg("auto.features.tagger.components.taggersetup.literal.16")}
                     dir="auto"
                   />
@@ -629,6 +629,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                     onClick={() => removeCategory(cat.id)}
                     disabled={categories.length <= 2}
                     aria-label={msg("auto.features.tagger.components.taggersetup.16")}
+                    className="size-[44px] lg:size-7"
                   >
                     <Trash className="size-3.5 text-muted-foreground" />
                   </Button>
@@ -746,7 +747,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                   disabled={!reachable && i > step}
                   className={cn(
                     "relative flex items-center justify-center rounded-full transition-all duration-300 cursor-pointer",
-                    "size-9 sm:size-10 text-sm font-semibold",
+                    "size-[44px] text-sm font-semibold lg:size-10",
                     active
                       ? "bg-primary text-primary-foreground shadow-[0_0_16px_rgba(124,99,80,0.4)] scale-110"
                       : completed
@@ -814,7 +815,12 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
           modes, straight to annotating for manual) — same footer, no separate
           "start" button. */}
       <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={goPrev} disabled={step === 0} className="gap-2">
+        <Button
+          variant="outline"
+          onClick={goPrev}
+          disabled={step === 0}
+          className="min-h-[44px] gap-2 lg:min-h-0"
+        >
           <BackIcon className="h-4 w-4" />
           {msg("auto.features.tagger.components.taggersetup.13")}
         </Button>
@@ -824,7 +830,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
         <Button
           onClick={isLastStep ? handleStart : handleNext}
           disabled={isLastStep ? !canStart() : !validateStep(step)}
-          className="gap-2"
+          className="min-h-[44px] gap-2 lg:min-h-0"
         >
           {msg("auto.features.tagger.components.taggersetup.14")}
           <NextIcon className="h-4 w-4" />

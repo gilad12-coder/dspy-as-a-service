@@ -46,11 +46,7 @@ import { MAX_WIDTH, MIN_WIDTH, NARROW_VIEWPORT_QUERY } from "../constants";
 
 import { ApprovalCard } from "./ApprovalCard";
 import { ConversationDrawer } from "./ConversationDrawer";
-import {
-  DATASET_FILE_ACCEPT,
-  DatasetUploadCard,
-  type ConfirmedDataset,
-} from "./DatasetUploadCard";
+import { DATASET_FILE_ACCEPT, DatasetUploadCard, type ConfirmedDataset } from "./DatasetUploadCard";
 import { LibraryDatasetCard, type ConfirmedLibraryDataset } from "./LibraryDatasetCard";
 import { InferenceFormCard } from "./InferenceFormCard";
 import { CodeAuthoringCard } from "./CodeAuthoringCard";
@@ -84,9 +80,7 @@ function extractOptimizationId(result: unknown): string | null {
   if (!result || typeof result !== "object") return null;
   const top = result as Record<string, unknown>;
   const inner =
-    top.result && typeof top.result === "object"
-      ? (top.result as Record<string, unknown>)
-      : top;
+    top.result && typeof top.result === "object" ? (top.result as Record<string, unknown>) : top;
   const candidate = inner.optimization_id ?? inner.id;
   return typeof candidate === "string" && candidate.length > 0 ? candidate : null;
 }
@@ -351,8 +345,9 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   // Latest dataset the user confirmed in-panel — supplies columns + roles +
   // sample rows to the hosted code agent. Kept as state (not a ref) so the
   // hosted agent re-renders into "armed" once a dataset is attached.
-  const [lastConfirmedDataset, setLastConfirmedDataset] =
-    React.useState<ConfirmedDataset | null>(null);
+  const [lastConfirmedDataset, setLastConfirmedDataset] = React.useState<ConfirmedDataset | null>(
+    null,
+  );
 
   // Host the canonical code agent at panel scope (mirroring how the wizard
   // hosts it at wizard scope) so authoring survives the aside collapse /
@@ -500,9 +495,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         // sessionStorage can throw under quota or private-mode policy; the
         // live event below still covers the same-page case.
       }
-      window.dispatchEvent(
-        new CustomEvent("wizard:dataset-staged", { detail: stagedDetail }),
-      );
+      window.dispatchEvent(new CustomEvent("wizard:dataset-staged", { detail: stagedDetail }));
       // Write the whole dataset descriptor into the shared context (not just
       // the id) so it is the single source of truth: a wizard mounted on
       // /submit hydrates the same rows from ``staged_dataset_id`` and reads
@@ -523,10 +516,11 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         })
         .filter(Boolean)
         .join("\n");
-      const note = formatMsg(
-        "auto.features.agent.panel.components.generalistpanel.dataset_note",
-        { p1: confirmed.fileName, p2: confirmed.rowCount, p3: mappingLine },
-      );
+      const note = formatMsg("auto.features.agent.panel.components.generalistpanel.dataset_note", {
+        p1: confirmed.fileName,
+        p2: confirmed.rowCount,
+        p3: mappingLine,
+      });
       const wizardOverride: WizardState | undefined = stagedDatasetId
         ? {
             staged_dataset_id: stagedDatasetId,
@@ -563,10 +557,11 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         })
         .filter(Boolean)
         .join("\n");
-      const note = formatMsg(
-        "auto.features.agent.panel.components.generalistpanel.dataset_note",
-        { p1: picked.name, p2: picked.rowCount, p3: mappingLine },
-      );
+      const note = formatMsg("auto.features.agent.panel.components.generalistpanel.dataset_note", {
+        p1: picked.name,
+        p2: picked.rowCount,
+        p3: mappingLine,
+      });
       const wizardOverride: WizardState = {
         source_dataset_id: picked.sourceDatasetId,
         dataset_ready: true,
@@ -708,7 +703,11 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
             )}
             aria-label={msg("auto.features.agent.panel.components.generalistpanel.literal.1")}
           >
-            <div dir={dir} className="relative flex min-w-0 flex-1 flex-col" data-tutorial="agent-panel">
+            <div
+              dir={dir}
+              className="relative flex min-w-0 flex-1 flex-col"
+              data-tutorial="agent-panel"
+            >
               <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2.5 shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <span
@@ -728,7 +727,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                             <PopoverTrigger asChild>
                               <button
                                 type="button"
-                                className="rounded-md p-1 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer"
+                                className="inline-flex size-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground cursor-pointer md:size-6 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                                 aria-label={msg(
                                   "auto.features.agent.panel.components.generalistpanel.literal.2",
                                 )}
@@ -759,7 +758,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                       <button
                         type="button"
                         onClick={() => setDrawerOpen(true)}
-                        className="relative rounded-md p-1.5 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer"
+                        className="relative inline-flex size-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground cursor-pointer md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                         aria-label={msg(
                           "auto.features.agent.panel.components.generalistpanel.history_button",
                         )}
@@ -793,7 +792,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                         <button
                           type="button"
                           onClick={handleNewConversation}
-                          className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer"
+                          className="inline-flex size-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground cursor-pointer md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                           aria-label={msg(
                             "auto.features.agent.panel.components.generalistpanel.new_conversation",
                           )}
@@ -802,7 +801,9 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom">
-                        {msg("auto.features.agent.panel.components.generalistpanel.new_conversation")}
+                        {msg(
+                          "auto.features.agent.panel.components.generalistpanel.new_conversation",
+                        )}
                       </TooltipContent>
                     </Tooltip>
                   )}
@@ -811,7 +812,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                       <button
                         type="button"
                         onClick={closePanel}
-                        className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer"
+                        className="inline-flex size-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground cursor-pointer md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                         aria-label={msg(
                           "auto.features.agent.panel.components.generalistpanel.literal.4",
                         )}
@@ -872,7 +873,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                               "auto.features.agent.panel.components.generalistpanel.error_retry",
                             )}
                             onClick={agent.retry}
-                            className="size-7 border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13]"
+                            className="size-[44px] border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13] md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                           />
                         </div>
                       )}
@@ -890,13 +891,13 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                 streaming={activeBusy}
                 disabled={codeAuthoringActive}
                 modelMenu={
-              <ComposerModelMenu
-                value={agent.model}
-                onChange={agent.setModel}
-                effort={agent.reasoningEffort}
-                onEffortChange={agent.setReasoningEffort}
-              />
-            }
+                  <ComposerModelMenu
+                    value={agent.model}
+                    onChange={agent.setModel}
+                    effort={agent.reasoningEffort}
+                    onEffortChange={agent.setReasoningEffort}
+                  />
+                }
                 leadingControls={
                   <>
                     <input
@@ -934,7 +935,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                                 attachInputRef.current?.click();
                               }}
                               className={cn(
-                                "inline-flex size-9 items-center justify-center rounded-full",
+                                "inline-flex size-[44px] items-center justify-center rounded-full sm:size-9 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]",
                                 "text-muted-foreground transition-colors cursor-pointer",
                                 "hover:bg-accent/60 hover:text-foreground",
                                 "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40",
@@ -958,7 +959,10 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                           onConfirm={(confirmed) => {
                             setAttachOpen(false);
                             setAttachFile(null);
-                            void handleDatasetConfirm(`user-attach-${confirmed.fileName}`, confirmed);
+                            void handleDatasetConfirm(
+                              `user-attach-${confirmed.fileName}`,
+                              confirmed,
+                            );
                           }}
                         />
                       </PopoverContent>

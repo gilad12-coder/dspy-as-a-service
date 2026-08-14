@@ -126,7 +126,7 @@ function PortRow({ port, side, nodeId }: { port: PortInfo; side: "in" | "out"; n
         position={side === "in" ? Position.Left : Position.Right}
         id={port.name}
         className={cn(
-          "!size-3 !border-2 !border-[#FDFCFA]",
+          "!size-5 !border-2 !border-[#FDFCFA] lg:!size-3",
           isStr ? "!bg-[#3D2E22]" : "!bg-[#C8A882]",
         )}
         aria-label={`${nodeId}.${port.name}`}
@@ -178,7 +178,7 @@ function NodeCard({ data, selected }: NodeProps<CanvasNode>) {
           {kindLabel(spec)}
         </span>
       </div>
-      <div className="grid grid-cols-2 py-1.5">
+      <div className="grid [grid-template-columns:repeat(2,minmax(0,1fr))] py-1.5">
         <div className="min-w-0">
           {ports.inputs.map((p) => (
             <PortRow key={p.name} port={p} side="in" nodeId={spec.id} />

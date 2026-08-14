@@ -104,7 +104,9 @@ export function ShareDialog({
   // isolated inside the Hebrew sentence — the same protection formatTemplate's
   // FSI/PDI wrapping would have provided. Resolved per-render (not at module
   // scope) so it can't capture a raw key before the message shim has loaded.
-  const [transferBodyBefore, transferBodyAfter] = msg("share.transfer.confirm_body").split("{name}");
+  const [transferBodyBefore, transferBodyAfter] = msg("share.transfer.confirm_body").split(
+    "{name}",
+  );
 
   // Only the current owner may hand ownership off (admins manage via other
   // tools); a member never sees the option. ``state.owner`` is the structural
@@ -231,7 +233,7 @@ export function ShareDialog({
           <Button
             variant="ghost"
             size="icon"
-            className="size-8"
+            className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
             onClick={() => handleOpenChange(true)}
             aria-label={msg("share.button")}
           >
@@ -242,13 +244,13 @@ export function ShareDialog({
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent
-          className="w-[min(32rem,92vw)] max-w-[min(32rem,92vw)] sm:max-w-lg p-0 overflow-hidden"
+          className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-lg overflow-hidden p-0"
           aria-describedby={undefined}
         >
           {/* Flex column so the people list is the only scroller — invite stays
               pinned at the top and access/link controls pinned at the bottom no
               matter how many members are granted. */}
-          <div className="flex max-h-[85vh] flex-col">
+          <div className="flex max-h-[calc(100dvh-1rem)] flex-col sm:max-h-[85dvh]">
             <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/40">
               <DialogTitle>{msg("share.dialog_title")}</DialogTitle>
             </DialogHeader>
@@ -347,7 +349,7 @@ export function ShareDialog({
                         >
                           <SelectTrigger
                             size="sm"
-                            className="min-w-[120px]"
+                            className="min-h-[44px] min-w-[120px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
                             aria-label={msg("share.role.change_aria")}
                           >
                             <SelectValue />
@@ -369,7 +371,7 @@ export function ShareDialog({
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            className="text-muted-foreground hover:text-destructive"
+                            className="size-[44px] text-muted-foreground hover:text-destructive sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                             onClick={() => handleRemove(member.username)}
                             aria-label={msg("share.remove_member_aria")}
                           >
@@ -399,7 +401,10 @@ export function ShareDialog({
                       onValueChange={(next) => handleVisibilityChange(next === "private")}
                       disabled={savingVisibility}
                     >
-                      <SelectTrigger size="sm" className="min-w-[120px]">
+                      <SelectTrigger
+                        size="sm"
+                        className="min-h-[44px] min-w-[120px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -424,7 +429,10 @@ export function ShareDialog({
                         onValueChange={(next) => handleAccessChange(next as GeneralAccess)}
                         disabled={savingAccess}
                       >
-                        <SelectTrigger size="sm" className="min-w-[140px]">
+                        <SelectTrigger
+                          size="sm"
+                          className="min-h-[44px] min-w-[140px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -445,7 +453,7 @@ export function ShareDialog({
                         >
                           <SelectTrigger
                             size="sm"
-                            className="min-w-[104px]"
+                            className="min-h-[44px] min-w-[104px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
                             aria-label={msg("share.role.change_aria")}
                           >
                             <SelectValue />
@@ -477,7 +485,7 @@ export function ShareDialog({
                           ariaLabel={msg("share.copy_link")}
                           onCopied={() => toast.success(msg("share.link_copied"))}
                           onCopyError={() => toast.error(msg("clipboard.copy_failed"))}
-                          className="size-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0"
+                          className="size-[44px] shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0 sm:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                         />
                       </TooltipButton>
                     </div>
@@ -511,14 +519,14 @@ export function ShareDialog({
               variant="outline"
               onClick={() => setTransferTarget(null)}
               disabled={transferring}
-              className="w-full justify-center"
+              className="min-h-[44px] w-full justify-center sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
             >
               {msg("share.transfer.cancel")}
             </Button>
             <Button
               onClick={handleTransfer}
               disabled={transferring}
-              className="w-full justify-center shadow-xs"
+              className="min-h-[44px] w-full justify-center shadow-xs sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
             >
               {transferring ? (
                 <CircleNotch className="size-4 animate-spin" />
@@ -638,7 +646,7 @@ function InvitePeople({
             aria-label={msg("share.invite_label")}
             disabled={inviting}
             dir="ltr"
-            className="h-8 flex-1 rounded-none border-0 bg-transparent px-0 text-xs shadow-none backdrop-blur-none focus-visible:border-transparent focus-visible:ring-0"
+            className="h-[44px] min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 text-xs shadow-none backdrop-blur-none focus-visible:border-transparent focus-visible:ring-0 sm:h-8 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
           />
           <div aria-hidden className="h-5 w-px shrink-0 bg-border/70" />
           <Select
@@ -647,7 +655,7 @@ function InvitePeople({
           >
             <SelectTrigger
               size="sm"
-              className="h-7 gap-1 rounded-md border-0 bg-transparent px-2 text-xs shadow-none hover:border-transparent hover:bg-accent/55 hover:shadow-none focus-visible:border-transparent focus-visible:bg-accent/55 focus-visible:ring-0 data-[state=open]:border-transparent data-[state=open]:bg-accent/60 data-[state=open]:shadow-none"
+              className="h-[44px] gap-1 rounded-md border-0 bg-transparent px-2 text-xs shadow-none hover:border-transparent hover:bg-accent/55 hover:shadow-none focus-visible:border-transparent focus-visible:bg-accent/55 focus-visible:ring-0 data-[state=open]:border-transparent data-[state=open]:bg-accent/60 data-[state=open]:shadow-none sm:h-7 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
               aria-label={msg("share.role.change_aria")}
             >
               <SelectValue />
@@ -670,7 +678,7 @@ function InvitePeople({
               onClick={() => void submit(query)}
               disabled={inviting || query.trim().length === 0}
               aria-label={msg("share.invite")}
-              className="size-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0"
+              className="size-[44px] shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0 sm:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
             >
               {inviting ? (
                 <CircleNotch className="size-4 animate-spin" />
@@ -702,7 +710,7 @@ function InvitePeople({
                         e.preventDefault();
                         void submit(name);
                       }}
-                      className="flex w-full items-center px-3 py-1.5 text-start font-mono text-xs hover:bg-accent/60"
+                      className="flex min-h-[44px] w-full items-center px-3 py-1.5 text-start font-mono text-xs hover:bg-accent/60"
                     >
                       {name}
                     </button>

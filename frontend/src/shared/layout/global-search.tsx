@@ -45,7 +45,13 @@ type SearchItem = {
   settingsTab?: string;
 };
 
-const SETTINGS_ITEMS: Array<{ id: string; label: string; kwKey: string; icon: Icon; settingsTab: string }> = [
+const SETTINGS_ITEMS: Array<{
+  id: string;
+  label: string;
+  kwKey: string;
+  icon: Icon;
+  settingsTab: string;
+}> = [
   {
     id: "settings-wizard",
     label: "settings.tab.wizard",
@@ -150,7 +156,9 @@ export function GlobalSearch() {
         group: "quick",
         label: TERMS.notificationNewOpt,
         description: msg("app.shell.search.new_optimization_description"),
-        keywords: msg("app.shell.search.kw.new_optimization").split(/[\s,]+/).filter(Boolean),
+        keywords: msg("app.shell.search.kw.new_optimization")
+          .split(/[\s,]+/)
+          .filter(Boolean),
         icon: Sparkle,
         href: "/submit",
       },
@@ -159,7 +167,9 @@ export function GlobalSearch() {
         group: "quick",
         label: msg("data.tabs.sessions"),
         description: msg("app.shell.search.tagging_description"),
-        keywords: msg("app.shell.search.kw.tagging").split(/[\s,]+/).filter(Boolean),
+        keywords: msg("app.shell.search.kw.tagging")
+          .split(/[\s,]+/)
+          .filter(Boolean),
         icon: Tag,
         href: "/tagger",
       },
@@ -168,7 +178,9 @@ export function GlobalSearch() {
         group: "quick",
         label: msg("app.shell.account.settings"),
         description: msg("settings.subtitle"),
-        keywords: msg("app.shell.search.kw.account").split(/[\s,]+/).filter(Boolean),
+        keywords: msg("app.shell.search.kw.account")
+          .split(/[\s,]+/)
+          .filter(Boolean),
         icon: GearSix,
         settingsTab: "account",
       },
@@ -178,7 +190,9 @@ export function GlobalSearch() {
         id: "dashboard",
         group: "navigate",
         label: msg("app.shell.search.dashboard"),
-        keywords: msg("app.shell.search.kw.dashboard").split(/[\s,]+/).filter(Boolean),
+        keywords: msg("app.shell.search.kw.dashboard")
+          .split(/[\s,]+/)
+          .filter(Boolean),
         icon: SquaresFour,
         href: "/",
       },
@@ -186,7 +200,9 @@ export function GlobalSearch() {
         id: "data",
         group: "navigate",
         label: msg("sidebar.nav.data"),
-        keywords: msg("app.shell.search.kw.data").split(/[\s,]+/).filter(Boolean),
+        keywords: msg("app.shell.search.kw.data")
+          .split(/[\s,]+/)
+          .filter(Boolean),
         icon: Database,
         href: "/datasets",
       },
@@ -194,7 +210,9 @@ export function GlobalSearch() {
         id: "explore",
         group: "navigate",
         label: msg("sidebar.nav.explore"),
-        keywords: msg("app.shell.search.kw.explore").split(/[\s,]+/).filter(Boolean),
+        keywords: msg("app.shell.search.kw.explore")
+          .split(/[\s,]+/)
+          .filter(Boolean),
         icon: Compass,
         href: "/explore",
       },
@@ -202,7 +220,9 @@ export function GlobalSearch() {
         id: "storage",
         group: "navigate",
         label: msg("app.shell.search.storage"),
-        keywords: msg("app.shell.search.kw.storage").split(/[\s,]+/).filter(Boolean),
+        keywords: msg("app.shell.search.kw.storage")
+          .split(/[\s,]+/)
+          .filter(Boolean),
         icon: HardDrive,
         href: "/storage",
       },
@@ -310,7 +330,7 @@ export function GlobalSearch() {
         type="button"
         onClick={() => setOpen(true)}
         dir={dir}
-        className="group inline-flex h-9 w-9 shrink-0 items-center justify-center gap-3 rounded-xl border border-border/70 bg-background/80 px-2.5 text-muted-foreground shadow-none transition-[background-color,border-color,color,box-shadow] duration-150 hover:border-border hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 lg:h-8 lg:w-64 lg:justify-between"
+        className="group inline-flex size-[44px] shrink-0 items-center justify-center gap-3 rounded-xl border border-border/70 bg-background/80 px-2.5 text-muted-foreground shadow-none transition-[background-color,border-color,color,box-shadow] duration-150 hover:border-border hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 lg:h-8 lg:w-64 lg:justify-between"
         aria-label={msg("app.shell.search.button_aria")}
         aria-keyshortcuts="Control+K Meta+K"
         aria-haspopup="dialog"
@@ -329,11 +349,7 @@ export function GlobalSearch() {
             {msg("app.shell.search.label")}
           </span>
         </span>
-        <span
-          dir="ltr"
-          className="hidden shrink-0 items-center gap-1 lg:flex"
-          aria-hidden="true"
-        >
+        <span dir="ltr" className="hidden shrink-0 items-center gap-1 lg:flex" aria-hidden="true">
           <kbd className="inline-flex h-[18px] min-w-5 items-center justify-center rounded-md border border-border/70 bg-muted/55 px-1 text-[0.6875rem] font-medium text-muted-foreground">
             {msg("app.shell.search.command_key")}
           </kbd>

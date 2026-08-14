@@ -60,7 +60,7 @@ function unmetPasswordRules(password: string, email: string): PasswordRuleKey[] 
 }
 
 const TWOFA_LINK_CLASS =
-  "block cursor-pointer text-xs font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline";
+  "inline-flex min-h-[44px] cursor-pointer items-center text-xs font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline lg:min-h-0";
 
 /**
  * Resolve where to send the user after login. next-auth's middleware appends a
@@ -244,8 +244,7 @@ export function LoginView() {
     // and run the same enrollment offer password sign-ins get. Arriving here
     // without a session (cancelled consent, provider error) falls through to
     // the normal form.
-    const returning =
-      new URLSearchParams(window.location.search).get("passkey_offer") === "1";
+    const returning = new URLSearchParams(window.location.search).get("passkey_offer") === "1";
     if (!returning) {
       void loadProviders();
       return;
@@ -797,7 +796,7 @@ export function LoginView() {
       : [];
 
   return (
-    <div className="relative flex min-h-dvh w-full items-center justify-center px-4 py-10">
+    <div className="relative flex min-h-dvh w-full items-center justify-center px-3 pb-8 pt-20 sm:px-4 sm:py-10">
       <LanguageSwitcher className="absolute end-4 top-4 z-20 bg-background/70 backdrop-blur-sm" />
       <LoginHalo />
       {/* Clear the full-height centre column so the wordmark and the (taller)
@@ -832,8 +831,8 @@ export function LoginView() {
         ) : (
           <div className="flex flex-col items-center">
             <LoginHeader />
-            <Card className="mt-9 w-full">
-              <CardContent className="px-6">
+            <Card className="mt-6 w-full sm:mt-9">
+              <CardContent className="px-4 sm:px-6">
                 {passkeyOffer ? (
                   <div className="flex flex-col items-center py-2 text-center">
                     <div className="flex size-12 items-center justify-center rounded-full bg-accent">
@@ -864,7 +863,7 @@ export function LoginView() {
                       size="lg"
                       disabled={passkeyOffer === "saving"}
                       onClick={() => void enrollPasskey()}
-                      className="mt-5 h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                      className="mt-5 h-[44px] w-full gap-2 text-[0.9375rem] font-medium"
                     >
                       {passkeyOffer === "saving" ? (
                         <CircleNotch className="size-4 animate-spin" />
@@ -879,7 +878,7 @@ export function LoginView() {
                       size="lg"
                       disabled={passkeyOffer === "saving"}
                       onClick={finishLogin}
-                      className="mt-2 h-11 w-full text-[0.9375rem] font-medium text-muted-foreground"
+                      className="mt-2 h-[44px] w-full text-[0.9375rem] font-medium text-muted-foreground"
                     >
                       {msg("auth.login.passkey_offer_skip")}
                     </Button>
@@ -889,7 +888,7 @@ export function LoginView() {
                     <button
                       type="button"
                       onClick={leaveTwoFactor}
-                      className="mb-4 flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      className="mb-4 flex min-h-[44px] cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground lg:min-h-0"
                     >
                       <ArrowLeft className="size-3.5 rtl:-scale-x-100" aria-hidden="true" />
                       {msg("auth.login.twofa_back")}
@@ -938,7 +937,7 @@ export function LoginView() {
                           autoComplete="one-time-code"
                           inputMode={twoFactor.mode === "recovery" ? "text" : "numeric"}
                           dir="ltr"
-                          className="h-11 text-left"
+                          className="h-[44px] text-left"
                         />
                       </div>
                       <AnimatePresence>
@@ -959,7 +958,7 @@ export function LoginView() {
                         type="submit"
                         size="lg"
                         disabled={loading || !twoFactorCode.trim()}
-                        className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                        className="h-[44px] w-full gap-2 text-[0.9375rem] font-medium"
                       >
                         {loading && <CircleNotch className="size-4 animate-spin" />}
                         {msg("auth.login.twofa_verify")}
@@ -1000,7 +999,7 @@ export function LoginView() {
                     <button
                       type="button"
                       onClick={leaveReset}
-                      className="mb-4 flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      className="mb-4 flex min-h-[44px] cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground lg:min-h-0"
                     >
                       <ArrowLeft className="size-3.5 rtl:-scale-x-100" aria-hidden="true" />
                       {msg("auth.login.twofa_back")}
@@ -1031,7 +1030,7 @@ export function LoginView() {
                             autoFocus
                             autoComplete="username"
                             dir="ltr"
-                            className="h-11 text-left"
+                            className="h-[44px] text-left"
                           />
                         </div>
                         <AnimatePresence>
@@ -1052,7 +1051,7 @@ export function LoginView() {
                           type="submit"
                           size="lg"
                           disabled={resetLoading || !resetEmail.trim()}
-                          className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                          className="h-[44px] w-full gap-2 text-[0.9375rem] font-medium"
                         >
                           {resetLoading && <CircleNotch className="size-4 animate-spin" />}
                           {msg("auth.login.reset_send")}
@@ -1076,7 +1075,7 @@ export function LoginView() {
                             autoComplete="one-time-code"
                             inputMode="numeric"
                             dir="ltr"
-                            className="h-11 text-left"
+                            className="h-[44px] text-left"
                           />
                         </div>
                         <div>
@@ -1094,7 +1093,7 @@ export function LoginView() {
                             placeholder={msg("auth.login.password_placeholder")}
                             autoComplete="new-password"
                             dir="ltr"
-                            className="h-11 text-left"
+                            className="h-[44px] text-left"
                           />
                           <AnimatePresence initial={false}>
                             {resetPasswordRules.map((rule) => (
@@ -1129,7 +1128,7 @@ export function LoginView() {
                           type="submit"
                           size="lg"
                           disabled={resetLoading || !resetCode.trim() || !resetNewPassword}
-                          className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                          className="h-[44px] w-full gap-2 text-[0.9375rem] font-medium"
                         >
                           {resetLoading && <CircleNotch className="size-4 animate-spin" />}
                           {msg("auth.login.reset_submit")}
@@ -1150,7 +1149,7 @@ export function LoginView() {
                     <button
                       type="button"
                       onClick={leaveVerify}
-                      className="mb-4 flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      className="mb-4 flex min-h-[44px] cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground lg:min-h-0"
                     >
                       <ArrowLeft className="size-3.5 rtl:-scale-x-100" aria-hidden="true" />
                       {msg("auth.login.twofa_back")}
@@ -1178,7 +1177,7 @@ export function LoginView() {
                           autoComplete="one-time-code"
                           inputMode="numeric"
                           dir="ltr"
-                          className="h-11 text-left"
+                          className="h-[44px] text-left"
                         />
                       </div>
                       <AnimatePresence>
@@ -1199,7 +1198,7 @@ export function LoginView() {
                         type="submit"
                         size="lg"
                         disabled={verifyLoading || !verifyCode.trim()}
-                        className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                        className="h-[44px] w-full gap-2 text-[0.9375rem] font-medium"
                       >
                         {verifyLoading && <CircleNotch className="size-4 animate-spin" />}
                         {msg("auth.login.verify_submit")}
@@ -1229,7 +1228,7 @@ export function LoginView() {
                           aria-selected={authMode === tab}
                           onClick={() => switchMode(tab)}
                           className={cn(
-                            "relative flex-1 cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-200",
+                            "relative min-h-[44px] flex-1 cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-200 lg:min-h-0",
                             authMode === tab
                               ? "text-foreground"
                               : "text-muted-foreground hover:text-foreground",
@@ -1267,7 +1266,7 @@ export function LoginView() {
                               variant="outline"
                               size="lg"
                               onClick={() => handleOAuth("google")}
-                              className="h-11 w-full gap-2.5 text-[0.9375rem] font-medium"
+                              className="h-[44px] w-full gap-2.5 text-[0.9375rem] font-medium"
                             >
                               <GoogleMark className="size-[18px]" />
                               {msg("auth.login.with_google")}
@@ -1279,7 +1278,7 @@ export function LoginView() {
                               variant="outline"
                               size="lg"
                               onClick={() => handleOAuth("github")}
-                              className="h-11 w-full gap-2.5 text-[0.9375rem] font-medium"
+                              className="h-[44px] w-full gap-2.5 text-[0.9375rem] font-medium"
                             >
                               <GithubLogo className="size-[18px]" />
                               {msg("auth.login.with_github")}
@@ -1292,7 +1291,7 @@ export function LoginView() {
                               size="lg"
                               disabled={passkeyLoading}
                               onClick={() => void handlePasskey()}
-                              className="h-11 w-full gap-2.5 text-[0.9375rem] font-medium"
+                              className="h-[44px] w-full gap-2.5 text-[0.9375rem] font-medium"
                             >
                               {passkeyLoading ? (
                                 <CircleNotch className="size-[18px] animate-spin" />
@@ -1330,7 +1329,7 @@ export function LoginView() {
                           autoFocus
                           autoComplete="username webauthn"
                           dir="ltr"
-                          className="h-11 text-left"
+                          className="h-[44px] text-left"
                         />
                       </div>
 
@@ -1349,7 +1348,7 @@ export function LoginView() {
                           placeholder={msg("auth.login.password_placeholder")}
                           autoComplete={authMode === "signup" ? "new-password" : "current-password"}
                           dir="ltr"
-                          className="h-11 text-left"
+                          className="h-[44px] text-left"
                         />
                         <AnimatePresence initial={false}>
                           {passwordRules.map((rule) => (
@@ -1396,7 +1395,7 @@ export function LoginView() {
                         type="submit"
                         size="lg"
                         disabled={!canSubmit}
-                        className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                        className="h-[44px] w-full gap-2 text-[0.9375rem] font-medium"
                       >
                         {loading && <CircleNotch className="size-4 animate-spin" />}
                         {msg(
@@ -1411,10 +1410,10 @@ export function LoginView() {
               </CardContent>
             </Card>
 
-            <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+            <p className="mt-4 flex min-h-[44px] flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-muted-foreground sm:mt-6 lg:min-h-0">
               <Link
                 href={LEGAL_LINKS.terms}
-                className="transition-colors hover:text-foreground hover:underline"
+                className="inline-flex min-h-[44px] items-center transition-colors hover:text-foreground hover:underline lg:min-h-0"
               >
                 {msg("legal.terms_link")}
               </Link>
@@ -1423,7 +1422,7 @@ export function LoginView() {
               </span>
               <Link
                 href={LEGAL_LINKS.privacy}
-                className="transition-colors hover:text-foreground hover:underline"
+                className="inline-flex min-h-[44px] items-center transition-colors hover:text-foreground hover:underline lg:min-h-0"
               >
                 {msg("legal.privacy_link")}
               </Link>

@@ -164,10 +164,10 @@ export function ModelConfigModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
-        <DialogTitleRow title={roleLabel} className="px-6 pt-6" />
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[85vh] sm:max-w-2xl [&_[data-slot=dialog-close]]:size-[44px] lg:[&_[data-slot=dialog-close]]:size-8">
+        <DialogTitleRow title={roleLabel} className="px-4 pt-4 sm:px-6 sm:pt-6" />
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
+        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6">
           {recentConfigs && recentConfigs.length > 0 && (
             <div className="space-y-1.5">
               <Label className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
@@ -191,7 +191,7 @@ export function ModelConfigModal({
                         onClick={() => {
                           setDraft(withoutInlineConnection(rc));
                         }}
-                        className="flex items-center gap-1.5 cursor-pointer outline-none"
+                        className="flex min-h-[44px] items-center gap-1.5 cursor-pointer outline-none lg:min-h-0"
                       >
                         <span className="truncate max-w-[120px]">{rc.name.split("/").pop()}</span>
                         <span className="text-[9px] opacity-60">{rc.temperature?.toFixed(1)}</span>
@@ -207,7 +207,7 @@ export function ModelConfigModal({
                             e.stopPropagation();
                             onRemoveRecent(rc.name);
                           }}
-                          className="ms-0.5 inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                          className="ms-0.5 inline-flex size-[44px] items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive lg:size-4"
                         >
                           <X className="h-3 w-3" />
                         </button>
@@ -228,7 +228,7 @@ export function ModelConfigModal({
               role="group"
               aria-label={msg("billing.mode.aria")}
               data-tutorial="model-billing-source"
-              className="flex w-fit rounded-lg bg-muted p-0.5"
+              className="flex w-full rounded-lg bg-muted p-0.5 sm:w-fit"
             >
               {TOKEN_SOURCE_SEGMENTS.map(({ mode: value, icon: Icon, labelKey }) => (
                 <button
@@ -246,7 +246,7 @@ export function ModelConfigModal({
                   }
                   aria-pressed={mode === value}
                   className={cn(
-                    "relative flex cursor-pointer items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    "relative flex min-h-[44px] flex-1 cursor-pointer items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none lg:min-h-0",
                     mode === value
                       ? "text-foreground"
                       : "text-muted-foreground hover:text-foreground",
@@ -286,7 +286,7 @@ export function ModelConfigModal({
                       openTo("providers");
                     }}
                     aria-label={msg("billing.mode.manage_keys")}
-                    className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/60"
+                    className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/60 lg:size-8"
                   >
                     <Key className="size-4" aria-hidden="true" />
                   </button>
@@ -354,7 +354,7 @@ export function ModelConfigModal({
               step="0.1"
               value={draft.temperature ?? 0.7}
               onChange={(e) => setDraft((p) => ({ ...p, temperature: parseFloat(e.target.value) }))}
-              className="w-full h-2 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
+              className="h-[44px] w-full cursor-pointer appearance-none rounded-full bg-transparent accent-primary [&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-muted [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-muted lg:h-2 lg:bg-muted"
               dir="auto"
             />
           </div>
@@ -377,7 +377,7 @@ export function ModelConfigModal({
               step="0.05"
               value={draft.top_p ?? 1}
               onChange={(e) => setDraft((p) => ({ ...p, top_p: parseFloat(e.target.value) }))}
-              className="w-full h-2 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
+              className="h-[44px] w-full cursor-pointer appearance-none rounded-full bg-transparent accent-primary [&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-muted [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-muted lg:h-2 lg:bg-muted"
               dir="auto"
             />
           </div>
@@ -393,6 +393,7 @@ export function ModelConfigModal({
               step={256}
               value={draft.max_tokens ?? ""}
               onChange={(v) => setDraft((p) => ({ ...p, max_tokens: v }))}
+              className="h-[44px] [&_button]:size-[44px] [&_input]:text-base lg:h-9 lg:[&_button]:size-9 lg:[&_input]:text-sm"
             />
           </div>
 
@@ -402,7 +403,11 @@ export function ModelConfigModal({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label>{msg("auto.features.submit.components.modelconfigmodal.8")}</Label>
-                  <Switch checked={thinkingEnabled} onCheckedChange={setThinking} />
+                  <Switch
+                    checked={thinkingEnabled}
+                    onCheckedChange={setThinking}
+                    className="relative before:absolute before:-inset-3 before:content-[''] lg:before:hidden"
+                  />
                 </div>
                 {thinkingEnabled && (
                   <div className="space-y-2 p-3 border rounded-lg bg-muted/30">
@@ -414,7 +419,7 @@ export function ModelConfigModal({
                           type="button"
                           onClick={() => setEffort(val)}
                           className={cn(
-                            "relative flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors text-center cursor-pointer",
+                            "relative min-h-[44px] flex-1 cursor-pointer rounded-md px-2 py-1.5 text-center text-xs font-medium transition-colors sm:px-3 lg:min-h-0",
                             reasoningEffort === val
                               ? "text-foreground"
                               : "text-muted-foreground hover:text-foreground",
@@ -447,11 +452,19 @@ export function ModelConfigModal({
           )}
         </div>
 
-        <DialogFooter className="border-t border-border/40 px-6 pb-6 pt-4">
-          <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
+        <DialogFooter className="border-t border-border/40 px-4 pb-4 pt-4 sm:px-6 sm:pb-6">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            className="min-h-[44px] flex-1 lg:min-h-0"
+          >
             {msg("auto.features.submit.components.modelconfigmodal.10")}
           </Button>
-          <Button onClick={handleSave} disabled={!draft.name.trim()} className="flex-1">
+          <Button
+            onClick={handleSave}
+            disabled={!draft.name.trim()}
+            className="min-h-[44px] flex-1 lg:min-h-0"
+          >
             {msg("auto.features.submit.components.modelconfigmodal.11")}
           </Button>
         </DialogFooter>

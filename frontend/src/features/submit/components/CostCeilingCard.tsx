@@ -39,7 +39,7 @@ export function CostCeilingCard({ w, mode }: { w: SubmitWizardContext; mode: Tok
   return (
     <div className="rounded-xl border border-[#C8B9A8]/50 bg-[#FAF8F5] shadow-[0_1px_2px_rgba(61,46,34,0.04)] overflow-hidden">
       <div className="px-3.5 pt-3 pb-2.5">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
           {/* Title + estimate form one column; the enable switch is the row's other
               child, so `items-center` drops it onto the block's vertical midline. */}
           <div className="min-w-0">
@@ -64,9 +64,13 @@ export function CostCeilingCard({ w, mode }: { w: SubmitWizardContext; mode: Tok
             </p>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-start">
             <span className="text-[11px] text-[#8C7A6B]">{msg("submit.cost_ceiling.enable")}</span>
-            <Switch checked={capped} onCheckedChange={toggleCap} />
+            <Switch
+              checked={capped}
+              onCheckedChange={toggleCap}
+              className="relative before:absolute before:-inset-3 before:content-[''] lg:before:hidden"
+            />
           </div>
         </div>
       </div>
@@ -74,21 +78,22 @@ export function CostCeilingCard({ w, mode }: { w: SubmitWizardContext; mode: Tok
       <div className={cnGrid(capped)}>
         <div className="overflow-hidden">
           <div className="border-t border-[#DDD6CC]/60 px-3.5 py-3 space-y-2">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
               <label
                 htmlFor="costCeilingInput"
                 className="text-[11px] font-medium uppercase tracking-wide text-[#8C7A6B]"
               >
                 {msg("submit.cost_ceiling.cap_label")}
               </label>
-              <div className="flex items-center gap-2">
-                <div className="w-28">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="min-w-0 flex-1 sm:w-28 sm:flex-none">
                   <NumberInput
                     id="costCeilingInput"
                     min={1}
                     step={10}
                     value={maxCostCredits ?? ""}
                     onChange={(v) => setMaxCostCredits(Math.max(1, v))}
+                    className="h-[44px] [&_button]:size-[44px] [&_input]:text-base lg:h-9 lg:[&_button]:size-9 lg:[&_input]:text-sm"
                   />
                 </div>
                 <span className="text-[11px] text-[#8C7A6B]">

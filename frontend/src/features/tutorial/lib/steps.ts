@@ -327,7 +327,7 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
       p1: TERMS.examplePlural,
       p2: TERMS.optimization,
     })} ${formatMsg("auto.features.tutorial.lib.steps.template.18", { p1: TERMS.model })}`,
-    target: "[data-tutorial='wizard-step-2']",
+    target: "[data-tutorial='dataset-upload']",
     placement: "left",
     beforeShow: async () => {
       await ensureSubmit();

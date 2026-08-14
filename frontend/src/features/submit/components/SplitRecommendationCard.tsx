@@ -38,9 +38,7 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
   if (!splitPlan) {
     if (profileLoading) {
       return (
-        <div
-          className="flex items-center gap-2 rounded-xl border border-[#DDD6CC]/60 bg-[#FAF8F5]/70 px-3.5 py-2.5 text-xs text-[#8C7A6B]"
-        >
+        <div className="flex items-center gap-2 rounded-xl border border-[#DDD6CC]/60 bg-[#FAF8F5]/70 px-3.5 py-2.5 text-xs text-[#8C7A6B]">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#C8A882] motion-safe:animate-pulse" />
           {msg("submit.split.recommended_title")}…
         </div>
@@ -59,11 +57,9 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
   const hasRationale = total > 0;
 
   return (
-    <div
-      className="rounded-xl border border-[#C8B9A8]/50 bg-[#FAF8F5] shadow-[0_1px_2px_rgba(61,46,34,0.04)] overflow-hidden"
-    >
+    <div className="rounded-xl border border-[#C8B9A8]/50 bg-[#FAF8F5] shadow-[0_1px_2px_rgba(61,46,34,0.04)] overflow-hidden">
       <div className="px-3.5 pt-3 pb-2.5">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-[#3D2E22]">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#C8A882]/15 text-[#A8895E]">
               <Sparkle className="h-3 w-3" />
@@ -77,7 +73,7 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
                   <button
                     type="button"
                     aria-label={msg("submit.split.rationale_aria")}
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#8C7A6B] hover:bg-[#EFE7DC] hover:text-[#3D2E22] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/60 transition-colors cursor-default"
+                    className="-my-3 inline-flex size-[44px] items-center justify-center rounded-full text-[#8C7A6B] transition-colors hover:bg-[#EFE7DC] hover:text-[#3D2E22] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/60 lg:my-0 lg:size-5"
                   >
                     <Info className="h-3.5 w-3.5" />
                   </button>
@@ -109,9 +105,7 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
       <div
         className={cn(
           "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
-          splitMode === "auto"
-            ? "grid-rows-[1fr] opacity-100"
-            : "grid-rows-[0fr] opacity-0",
+          splitMode === "auto" ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
         )}
       >
         <div className="overflow-hidden">
@@ -165,7 +159,7 @@ function ModeToggle({
   onChange: (mode: "auto" | "manual") => void;
 }) {
   return (
-    <div className="relative inline-grid grid-cols-2 rounded-lg bg-[#EFE7DC]/70 p-0.5 gap-0.5">
+    <div className="relative inline-grid w-full [grid-template-columns:repeat(2,minmax(0,1fr))] gap-0.5 rounded-lg bg-[#EFE7DC]/70 p-0.5 sm:w-auto">
       <div
         aria-hidden
         className="absolute top-0.5 bottom-0.5 w-[calc(50%-4px)] rounded-md bg-white shadow-[0_1px_2px_rgba(61,46,34,0.08)] transition-[inset-inline-start] duration-200 ease-out pointer-events-none"
@@ -183,7 +177,7 @@ function ModeToggle({
           onClick={() => onChange(mode)}
           aria-pressed={value === mode}
           className={cn(
-            "relative z-[1] rounded-md px-3 py-1 text-[11px] font-medium leading-none text-center transition-colors cursor-pointer",
+            "relative z-[1] min-h-[44px] cursor-pointer rounded-md px-3 py-1 text-center text-[11px] font-medium leading-none transition-colors lg:min-h-0",
             value === mode ? "text-[#3D2E22]" : "text-[#8C7A6B] hover:text-[#3D2E22]",
           )}
         >

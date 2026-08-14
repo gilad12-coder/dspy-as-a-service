@@ -91,7 +91,7 @@ export function TaggerAutotagLive({ config, data, annotations, status }: Props) 
 
   return (
     <div className="flex h-[calc(100dvh-var(--header-height,53px)-3rem)] flex-col overflow-hidden md:h-[calc(100dvh-var(--header-height,53px)-4rem)]">
-      <div className="flex items-center gap-3 px-5 pt-3 pb-1.5">
+      <div className="flex items-center gap-2 px-3 pb-1.5 pt-3 sm:gap-3 sm:px-5">
         <CircleNotch className="size-3.5 shrink-0 animate-spin text-primary" />
         <span className="shrink-0 text-xs font-medium text-foreground">
           {msg("tagger.assist.autotag.running_title")}
@@ -110,10 +110,10 @@ export function TaggerAutotagLive({ config, data, annotations, status }: Props) 
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 overflow-hidden p-5 pt-2">
+      <div className="flex flex-1 flex-col gap-3 overflow-hidden p-3 pt-2 sm:p-5 sm:pt-2 max-lg:landscape:grid max-lg:landscape:grid-cols-2">
         <Card className="flex min-h-0 flex-1 flex-col">
           <CardContent
-            className="flex-1 overflow-y-auto px-6 py-5 text-base leading-relaxed text-foreground"
+            className="flex-1 overflow-y-auto px-4 py-4 text-base leading-relaxed text-foreground sm:px-6 sm:py-5"
             dir="auto"
           >
             {item.fields && item.fields.length > 1 ? (
@@ -124,7 +124,7 @@ export function TaggerAutotagLive({ config, data, annotations, status }: Props) 
           </CardContent>
         </Card>
 
-        <Card className="flex min-h-0 flex-1 flex-col p-5">
+        <Card className="flex min-h-0 flex-1 flex-col p-3 sm:p-5">
           <CardTitle className="mb-3 text-center text-sm font-medium text-muted-foreground">
             {config.mode === "binary" &&
               (config.question ??
@@ -209,18 +209,18 @@ export function TaggerAutotagLive({ config, data, annotations, status }: Props) 
           )}
         </Card>
 
-        <div className="flex items-center justify-between">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-between max-lg:landscape:col-span-2 max-lg:landscape:flex max-lg:landscape:items-center max-lg:landscape:justify-between">
           <Button
             variant="outline"
             onClick={() => navigate(-1)}
             disabled={shown === 0}
-            className="gap-2"
+            className="min-h-[44px] w-full gap-2 sm:w-auto max-lg:landscape:w-auto lg:min-h-0"
           >
             <PrevIcon className="size-4" />
             {msg("auto.features.tagger.components.taggerannotation.8")}
           </Button>
 
-          <div className="flex items-center gap-3">
+          <div className="col-span-2 row-start-2 flex min-w-0 flex-wrap items-center justify-center gap-2 sm:col-auto sm:row-auto sm:gap-3">
             <span className="text-xs tabular-nums text-muted-foreground">
               {formatMsg("tagger.assist.autotag.live_position", {
                 row: shown + 1,
@@ -247,7 +247,7 @@ export function TaggerAutotagLive({ config, data, annotations, status }: Props) 
             variant="outline"
             onClick={() => navigate(1)}
             disabled={shown >= frontier}
-            className="gap-2"
+            className="col-start-2 row-start-1 min-h-[44px] w-full gap-2 sm:col-auto sm:row-auto sm:w-auto max-lg:landscape:w-auto lg:min-h-0"
           >
             {msg("auto.features.tagger.components.taggerannotation.13")}
             <NextIcon className="size-4" />

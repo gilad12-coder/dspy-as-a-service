@@ -32,7 +32,7 @@ const ACCENT_DOT: Record<NonNullable<StatCellProps["accent"]>, string> = {
 
 function StatCell({ label, value, accent = "default", pulse = false, icon }: StatCellProps) {
   return (
-    <div className="group/stat flex min-w-0 flex-1 flex-col gap-3.5 px-4 py-5 sm:px-5">
+    <div className="group/stat flex min-w-0 flex-1 flex-col gap-3 px-4 py-4 sm:gap-3.5 sm:px-5 sm:py-5">
       <div className="flex min-w-0 items-center gap-2">
         {icon ?? (
           <span
@@ -87,10 +87,12 @@ export function DashboardHeader({ stats }: DashboardHeaderProps) {
   }
 
   return (
-    <div className="flex items-stretch" data-tutorial="dashboard-kpis">
+    <div className="grid grid-cols-2 items-stretch sm:flex" data-tutorial="dashboard-kpis">
       {cells.map((cell, i) => (
         <Fragment key={cell.label}>
-          {i > 0 && <div aria-hidden className="my-4 w-px shrink-0 bg-[#DDD4C8]/50" />}
+          {i > 0 && (
+            <div aria-hidden className="my-4 hidden w-px shrink-0 bg-[#DDD4C8]/50 sm:block" />
+          )}
           <StatCell {...cell} />
         </Fragment>
       ))}

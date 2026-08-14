@@ -39,7 +39,7 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
       className="border-border/50 bg-card/80 backdrop-blur-xl shadow-lg"
       data-tutorial="wizard-step-1"
     >
-      <CardHeader>
+      <CardHeader className="px-4 sm:px-6">
         <CardTitle className="text-lg">
           {msg("auto.features.submit.components.steps.basicsstep.1")}
         </CardTitle>
@@ -48,7 +48,7 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
           {TERMS.optimization}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 px-4 sm:px-6">
         <div className="space-y-2">
           <Label>
             {msg("auto.features.submit.components.steps.basicsstep.3")}
@@ -58,6 +58,7 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
             placeholder={msg("auto.features.submit.components.steps.basicsstep.literal.1")}
             value={jobName}
             onChange={(e) => setJobName(e.target.value)}
+            className="min-h-[44px] text-base lg:min-h-0 lg:text-sm"
           />
         </div>
         <div className="space-y-2">
@@ -85,7 +86,7 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
               p1: TERMS.optimization,
             })}
             rows={4}
-            className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+            className="flex min-h-[44px] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 lg:text-sm"
           />
         </div>
         <div className="space-y-3">
@@ -114,7 +115,7 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
                 type="button"
                 onClick={() => setIsPrivate(val)}
                 className={cn(
-                  "relative z-10 flex-1 rounded-md px-4 py-2.5 cursor-pointer text-center transition-colors duration-200",
+                  "relative z-10 flex-1 cursor-pointer rounded-md px-2 py-2.5 text-center transition-colors duration-200 sm:px-4",
                   isPrivate === val
                     ? "text-foreground"
                     : "text-foreground/60 hover:text-foreground",
@@ -140,7 +141,7 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
               type="button"
               onClick={() => setOptimizationTypeOpen(!optimizationTypeOpen)}
               aria-expanded={optimizationTypeOpen}
-              className="flex w-full cursor-pointer items-center justify-between gap-2"
+              className="flex min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 lg:min-h-0"
             >
               <span className="flex items-baseline gap-2">
                 <span className="text-sm leading-none font-medium">
@@ -191,7 +192,7 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
                       type="button"
                       onClick={() => setOptimizationType(val)}
                       className={cn(
-                        "relative z-10 flex-1 rounded-md px-4 py-2.5 cursor-pointer text-center transition-colors duration-200",
+                        "relative z-10 flex-1 cursor-pointer rounded-md px-2 py-2.5 text-center transition-colors duration-200 sm:px-4",
                         jobType === val
                           ? "text-foreground"
                           : "text-foreground/60 hover:text-foreground",

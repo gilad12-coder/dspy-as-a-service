@@ -475,10 +475,7 @@ export function Sidebar() {
       </button>
       <div className="flex flex-col h-full">
         <nav
-          className={cn(
-            "flex flex-col gap-1 pb-3 pt-3",
-            isCollapsed ? "px-2" : "px-3",
-          )}
+          className={cn("flex flex-col gap-1 pb-3 pt-3", isCollapsed ? "px-2" : "px-3")}
           role="navigation"
           aria-label={msg("auto.features.sidebar.components.sidebar.literal.7")}
           data-tutorial="sidebar-nav"
@@ -520,7 +517,7 @@ export function Sidebar() {
           role="tablist"
           aria-label={msg("sidebar.tab.aria")}
           className={cn(
-            "relative mx-3 mt-2.5 mb-0.5 flex rounded-lg bg-muted p-1 gap-1",
+            "relative mx-3 mt-2.5 mb-0.5 flex rounded-lg bg-muted p-1 gap-1 [&_[role=tab]]:min-h-[44px] lg:[&_[role=tab]]:min-h-0",
             isCollapsed && "hidden",
           )}
         >
@@ -765,7 +762,7 @@ function NavItem({
       onClick={onClick}
       {...(tutorialId ? { "data-tutorial": tutorialId } : {})}
       className={cn(
-        "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+        "group relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 lg:min-h-0",
         active
           ? "text-primary"
           : "text-sidebar-foreground/60 hover:translate-x-[-2px] hover:bg-sidebar-accent/40 hover:text-sidebar-foreground",
@@ -957,7 +954,7 @@ function JobRow({
     <div className="relative">
       <div
         className={cn(
-          "flex items-center gap-1.5 rounded-lg px-2 py-2 text-[0.6875rem] transition-all duration-150",
+          "flex min-h-[44px] items-center gap-1.5 rounded-lg px-2 py-2 text-[0.6875rem] transition-all duration-150 lg:min-h-0",
           isActive
             ? "bg-primary/[0.07] text-foreground"
             : "text-muted-foreground hover:bg-sidebar-accent/30 hover:text-foreground",
@@ -965,7 +962,7 @@ function JobRow({
       >
         <Link
           href={`/optimizations/${job.optimization_id}`}
-          className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden"
+          className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 overflow-hidden lg:min-h-0"
         >
           <span
             className="truncate font-medium leading-tight min-w-0 block text-start flex-1"
@@ -995,7 +992,7 @@ function JobRow({
               e.stopPropagation();
               setExpanded((o) => !o);
             }}
-            className="p-0.5 rounded cursor-pointer text-muted-foreground/40 hover:text-foreground transition-colors shrink-0"
+            className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/40 transition-colors hover:text-foreground lg:size-5"
             aria-label={
               expanded
                 ? msg("auto.features.sidebar.components.sidebar.literal.11")
@@ -1014,7 +1011,7 @@ function JobRow({
               onClick={(e) => {
                 e.stopPropagation();
               }}
-              className="shrink-0 cursor-pointer rounded p-0.5 text-muted-foreground/40 transition-colors hover:text-foreground"
+              className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/40 transition-colors hover:text-foreground lg:size-5"
               aria-label={formatMsg("auto.features.sidebar.components.sidebar.template.3", {
                 p1: displayName,
               })}
@@ -1072,11 +1069,7 @@ function JobRow({
               )}
 
               <PopoverPrimitive.Close asChild>
-                <button
-                  type="button"
-                  onClick={handleClone}
-                  className={COMPACT_POPOVER_ITEM_CLASS}
-                >
+                <button type="button" onClick={handleClone} className={COMPACT_POPOVER_ITEM_CLASS}>
                   <Copy className={COMPACT_POPOVER_ICON_CLASS} aria-hidden="true" />
                   <span className="flex-1 text-start">
                     {msg("auto.features.sidebar.components.sidebar.9")}
@@ -1126,10 +1119,7 @@ function JobRow({
                       className={COMPACT_POPOVER_ITEM_CLASS}
                     >
                       <PushPin
-                        className={cn(
-                          COMPACT_POPOVER_ICON_CLASS,
-                          job.pinned && "text-foreground",
-                        )}
+                        className={cn(COMPACT_POPOVER_ICON_CLASS, job.pinned && "text-foreground")}
                         aria-hidden="true"
                       />
                       <span className="flex-1 text-start">

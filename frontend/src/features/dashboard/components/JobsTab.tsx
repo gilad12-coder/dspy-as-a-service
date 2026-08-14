@@ -163,9 +163,9 @@ export function JobsTab({
   const NextIcon = rtl ? CaretLeft : CaretRight;
 
   return (
-    <Card className="border-border/60">
-      <CardContent className="pt-5">
-        <div className="flex items-center gap-2 mb-3">
+    <Card className="overflow-hidden border-border/60">
+      <CardContent className="px-3 pt-4 sm:px-6 sm:pt-5">
+        <div className="mb-3 flex min-h-[44px] items-center gap-2 max-lg:[&_button]:size-[44px] lg:min-h-0">
           {filteredItems.length > 0 && (
             <span className="text-[0.6875rem] text-muted-foreground tabular-nums">
               {filteredItems.length}
@@ -232,19 +232,21 @@ export function JobsTab({
             >
               <TableHeader className="bg-muted/20 [&_tr]:border-b-border/40">
                 <TableRow>
-                  <TableHead className="w-10 px-3">
-                    <input
-                      type="checkbox"
-                      aria-label={msg("auto.features.dashboard.components.jobstab.literal.1")}
-                      className="size-4 cursor-pointer accent-primary"
-                      checked={pageAllSelected}
-                      ref={(el) => {
-                        if (el) el.indeterminate = pageSomeSelected;
-                      }}
-                      disabled={selectablePageIds.length === 0}
-                      onChange={togglePageSelection}
-                      onClick={(e) => e.stopPropagation()}
-                    />
+                  <TableHead className="w-12 px-0 text-center">
+                    <label className="inline-grid size-[44px] cursor-pointer place-items-center has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+                      <input
+                        type="checkbox"
+                        aria-label={msg("auto.features.dashboard.components.jobstab.literal.1")}
+                        className="size-4 cursor-pointer accent-primary"
+                        checked={pageAllSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = pageSomeSelected;
+                        }}
+                        disabled={selectablePageIds.length === 0}
+                        onChange={togglePageSelection}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </label>
                   </TableHead>
                   <ColumnHeader
                     label={msg("auto.features.dashboard.components.jobstab.template.1")}
@@ -258,7 +260,9 @@ export function JobsTab({
                     onFilter={setColumnFilter}
                     openFilter={openFilter}
                     setOpenFilter={setOpenFilter}
-                    width={colResize.widths["optimization_id"] ?? DEFAULT_COL_WIDTHS.optimization_id}
+                    width={
+                      colResize.widths["optimization_id"] ?? DEFAULT_COL_WIDTHS.optimization_id
+                    }
                     onResize={colResize.setColumnWidth}
                   />
                   <ColumnHeader
@@ -322,7 +326,9 @@ export function JobsTab({
                     onFilter={setColumnFilter}
                     openFilter={openFilter}
                     setOpenFilter={setOpenFilter}
-                    width={colResize.widths["optimization_type"] ?? DEFAULT_COL_WIDTHS.optimization_type}
+                    width={
+                      colResize.widths["optimization_type"] ?? DEFAULT_COL_WIDTHS.optimization_type
+                    }
                     onResize={colResize.setColumnWidth}
                   />
                   <ColumnHeader
@@ -379,7 +385,9 @@ export function JobsTab({
                     currentSort={sortKey}
                     sortDir={sortDir}
                     onSort={toggleSort}
-                    width={colResize.widths["elapsed_seconds"] ?? DEFAULT_COL_WIDTHS.elapsed_seconds}
+                    width={
+                      colResize.widths["elapsed_seconds"] ?? DEFAULT_COL_WIDTHS.elapsed_seconds
+                    }
                     onResize={colResize.setColumnWidth}
                   />
                   <ColumnHeader
@@ -388,7 +396,10 @@ export function JobsTab({
                     currentSort={sortKey}
                     sortDir={sortDir}
                     onSort={toggleSort}
-                    width={colResize.widths["optimized_test_metric"] ?? DEFAULT_COL_WIDTHS.optimized_test_metric}
+                    width={
+                      colResize.widths["optimized_test_metric"] ??
+                      DEFAULT_COL_WIDTHS.optimized_test_metric
+                    }
                     onResize={colResize.setColumnWidth}
                   />
                   {/* Spacer over the per-row open chevron. */}
@@ -417,18 +428,20 @@ export function JobsTab({
                         onOpenJob(job.optimization_id);
                       }}
                     >
-                      <TableCell className="w-10 px-3">
-                        <input
-                          type="checkbox"
-                          aria-label={formatMsg(
-                            "auto.features.dashboard.components.jobstab.template.2",
-                            { p1: TERMS.optimization, p2: job.optimization_id },
-                          )}
-                          className="size-4 cursor-pointer accent-primary"
-                          checked={isSelected}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={() => toggleRowSelected(job.optimization_id)}
-                        />
+                      <TableCell className="w-12 px-0 text-center">
+                        <label className="inline-grid size-[44px] cursor-pointer place-items-center">
+                          <input
+                            type="checkbox"
+                            aria-label={formatMsg(
+                              "auto.features.dashboard.components.jobstab.template.2",
+                              { p1: TERMS.optimization, p2: job.optimization_id },
+                            )}
+                            className="size-4 cursor-pointer accent-primary"
+                            checked={isSelected}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => toggleRowSelected(job.optimization_id)}
+                          />
+                        </label>
                       </TableCell>
                       <TableCell
                         className="px-2 max-w-[100px]"
@@ -570,7 +583,7 @@ export function JobsTab({
               size="sm"
               disabled={pageOffset === 0 || loading}
               onClick={() => setPageOffset(Math.max(0, pageOffset - FETCH_PAGE_SIZE))}
-              className="gap-1"
+              className="min-h-[44px] gap-1 lg:min-h-0"
             >
               <PrevIcon className="size-3.5" />
               {msg("auto.features.dashboard.components.jobstab.11")}
@@ -584,7 +597,7 @@ export function JobsTab({
               size="sm"
               disabled={pageOffset + FETCH_PAGE_SIZE >= data.total || loading}
               onClick={() => setPageOffset(pageOffset + FETCH_PAGE_SIZE)}
-              className="gap-1"
+              className="min-h-[44px] gap-1 lg:min-h-0"
             >
               {msg("auto.features.dashboard.components.jobstab.12")}
               <NextIcon className="size-3.5" />

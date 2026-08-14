@@ -310,7 +310,10 @@ export function PrivacyTab() {
       </div>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent data-settings-text-buttons className="sm:max-w-md">
+        <DialogContent
+          data-settings-text-buttons
+          className="sm:max-w-md [&_[data-slot=button]]:min-h-[44px] [&_[data-slot=button]]:min-w-[44px] sm:[&_[data-slot=button]]:min-h-0 sm:[&_[data-slot=button]]:min-w-0 [@media(hover:none)_and_(pointer:coarse)]:[&_[data-slot=button]]:min-h-[44px] [@media(hover:none)_and_(pointer:coarse)]:[&_[data-slot=button]]:min-w-[44px]"
+        >
           <DialogHeader>
             <DialogTitle>{msg("settings.privacy.delete.dialog.title")}</DialogTitle>
             <DialogDescription>{msg("settings.privacy.delete.dialog.hint")}</DialogDescription>
@@ -331,6 +334,7 @@ export function PrivacyTab() {
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
                   dir="ltr"
+                  className="h-[44px] sm:h-9 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
                 />
               </div>
             )}
@@ -348,6 +352,7 @@ export function PrivacyTab() {
                 autoComplete="off"
                 autoFocus
                 dir="ltr"
+                className="h-[44px] sm:h-9 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
               />
             </div>
             <Button

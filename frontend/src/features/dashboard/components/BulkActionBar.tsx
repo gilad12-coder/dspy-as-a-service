@@ -62,7 +62,7 @@ export function BulkActionBar({
                 className="close-button"
                 style={
                   {
-                    "--close-btn-size": "32px",
+                    "--close-btn-size": "44px",
                     "--close-btn-radius": "9999px",
                     "--close-btn-icon": "16px",
                   } as React.CSSProperties
@@ -81,7 +81,7 @@ export function BulkActionBar({
                 <button
                   type="button"
                   onClick={onRequestBulkDelete}
-                  className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive active:scale-95 transition-all cursor-pointer"
+                  className="flex size-[44px] cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-all hover:bg-destructive/10 hover:text-destructive active:scale-95 lg:size-8"
                   aria-label={msg("auto.features.dashboard.components.bulkactionbar.literal.5")}
                 >
                   <Trash className="size-4" />

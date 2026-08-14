@@ -191,7 +191,7 @@ export function TaggerInterview({
               size="sm"
               onClick={onRestart}
               disabled={busy || assist.interview.turns.length === 0}
-              className="shrink-0 gap-1.5 text-muted-foreground"
+              className="min-h-[44px] shrink-0 gap-1.5 text-muted-foreground lg:min-h-0"
             >
               <ArrowCounterClockwise className="size-3.5" />
               {msg("tagger.assist.interview.restart")}
@@ -619,6 +619,7 @@ function RubricCard({
                           size="icon-xs"
                           onClick={() => removeCategory(cat.id)}
                           disabled={categories.length <= 2}
+                          className="size-[44px] lg:size-7"
                           aria-label={msg("auto.features.tagger.components.taggersetup.16")}
                         >
                           <Trash className="size-3.5 text-muted-foreground" />
@@ -711,7 +712,7 @@ function RubricCard({
                       size="icon-xs"
                       onClick={() => removeRule(idx)}
                       aria-label={msg("tagger.assist.rubric.rule_remove")}
-                      className="mt-1.5"
+                      className="mt-1.5 size-[44px] lg:size-7"
                     >
                       <Trash className="size-3.5 text-muted-foreground" />
                     </Button>
@@ -748,8 +749,8 @@ function RubricCard({
               // overflow-hidden: on the narrow rail a long unbreakable word
               // (some locales) clips inside the button instead of spilling
               // over the cards.
-              "group relative flex w-[100px] cursor-pointer flex-col items-center justify-center gap-4 overflow-hidden",
-              "rounded-2xl bg-primary py-8 text-base font-semibold text-primary-foreground",
+              "group relative flex w-full cursor-pointer flex-row items-center justify-center gap-3 overflow-hidden lg:w-[100px] lg:flex-col lg:gap-4",
+              "rounded-2xl bg-primary py-4 text-base font-semibold text-primary-foreground lg:py-8",
               "transition-all duration-300 hover:scale-[1.01] hover:shadow-[0_0_30px_rgba(61,46,34,0.35)]",
               "active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60",
             )}
@@ -786,9 +787,9 @@ function RubricCard({
               dir="ltr"
               className="flex items-center -space-x-7 opacity-70 transition-opacity duration-200 group-hover:opacity-100 rtl:-scale-x-100 [&>svg]:animate-[cascadeDown_1s_ease-in-out_infinite] group-hover:[&>svg]:animate-[cascadeRightHyper_0.5s_ease-out_infinite]"
             >
-              <CaretRight className="size-10 [animation-delay:0s] group-hover:[animation-delay:0s]" />
-              <CaretRight className="size-10 [animation-delay:0.15s] group-hover:[animation-delay:0.08s]" />
-              <CaretRight className="size-10 [animation-delay:0.3s] group-hover:[animation-delay:0.16s]" />
+              <CaretRight className="size-7 [animation-delay:0s] group-hover:[animation-delay:0s] lg:size-10" />
+              <CaretRight className="size-7 [animation-delay:0.15s] group-hover:[animation-delay:0.08s] lg:size-10" />
+              <CaretRight className="size-7 [animation-delay:0.3s] group-hover:[animation-delay:0.16s] lg:size-10" />
             </div>
           </motion.button>
         </Rise>

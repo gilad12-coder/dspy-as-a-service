@@ -29,7 +29,7 @@ export function RunCreditsChip({ details }: { details?: Record<string, unknown> 
       title={msg("billing.action.view_wallet")}
       aria-label={msg("billing.action.view_wallet")}
       dir="ltr"
-      className="flex items-center gap-1.5 tabular-nums transition-colors hover:text-foreground"
+      className="flex min-h-[44px] items-center gap-1.5 tabular-nums transition-colors hover:text-foreground sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
     >
       <Coins className="size-3.5" aria-hidden="true" />
       {formatCredits(billing.credits, locale)}

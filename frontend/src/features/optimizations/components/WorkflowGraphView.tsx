@@ -132,12 +132,18 @@ function GraphView({ spec }: { spec: WorkflowSpec }) {
     <div
       className={cn(
         fullscreen
-          ? "fixed inset-0 z-50 flex h-screen w-screen flex-col bg-background"
+          ? "fixed inset-0 z-50 flex h-dvh w-screen flex-col bg-background"
           : "relative flex flex-col overflow-hidden rounded-lg border border-border/60",
       )}
     >
       <div className="relative flex min-h-0 flex-1">
-        <div dir="ltr" className={cn("min-w-0 flex-1", fullscreen ? "min-h-0" : "h-[480px]")}>
+        <div
+          dir="ltr"
+          className={cn(
+            "min-w-0 flex-1",
+            fullscreen ? "min-h-0" : "h-[min(480px,65dvh)] sm:h-[480px]",
+          )}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -163,9 +169,7 @@ function GraphView({ spec }: { spec: WorkflowSpec }) {
                 <ControlButton
                   icon={fullscreen ? ArrowsIn : ArrowsOut}
                   label={msg(
-                    fullscreen
-                      ? "workflow.toolbar.exit_fullscreen"
-                      : "workflow.toolbar.fullscreen",
+                    fullscreen ? "workflow.toolbar.exit_fullscreen" : "workflow.toolbar.fullscreen",
                   )}
                   onClick={() => setFullscreen((f) => !f)}
                 />
@@ -174,7 +178,7 @@ function GraphView({ spec }: { spec: WorkflowSpec }) {
             <Panel position="bottom-center" className="pointer-events-none !m-3">
               <span
                 dir="auto"
-                className="whitespace-nowrap rounded-full border border-border/50 bg-background/80 px-3 py-1 text-[0.6875rem] text-muted-foreground/80 shadow-xs backdrop-blur"
+                className="max-w-[calc(100vw-5rem)] truncate whitespace-nowrap rounded-full border border-border/50 bg-background/80 px-3 py-1 text-[0.6875rem] text-muted-foreground/80 shadow-xs backdrop-blur"
               >
                 {msg("optimization.workflow.hint")}
               </span>
@@ -207,7 +211,10 @@ function GraphView({ spec }: { spec: WorkflowSpec }) {
     <>
       {/* Placeholder keeps the tab's height while the canvas lives in the
           portal, so the page doesn't collapse behind the overlay. */}
-      <div className="h-[480px] rounded-lg border border-border/60 bg-muted/20" aria-hidden />
+      <div
+        className="h-[min(480px,65dvh)] rounded-lg border border-border/60 bg-muted/20 sm:h-[480px]"
+        aria-hidden
+      />
       {createPortal(body, document.body)}
     </>
   );
@@ -228,7 +235,7 @@ function ViewControls() {
           type="button"
           onClick={() => zoomTo(1, { duration: 200 })}
           title={msg("workflow.controls.zoom_reset")}
-          className="h-7 min-w-12 cursor-pointer px-1 text-center text-[0.6875rem] font-medium tabular-nums text-muted-foreground transition-colors hover:text-foreground"
+          className="h-[44px] min-w-12 cursor-pointer px-1 text-center text-[0.6875rem] font-medium tabular-nums text-muted-foreground transition-colors hover:text-foreground sm:h-7 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
         >
           {Math.round(zoom * 100)}%
         </button>
@@ -263,7 +270,7 @@ function ControlButton({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="flex h-7 w-7 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="flex size-[44px] cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
     >
       <Icon className="size-3.5" />
     </button>
@@ -290,7 +297,7 @@ function NodeDetails({ spec, onClose }: { spec: WorkflowNodeSpec; onClose: () =>
           variant="ghost"
           size="sm"
           onClick={onClose}
-          className="shrink-0 text-muted-foreground hover:text-foreground"
+          className="min-h-[44px] shrink-0 text-muted-foreground hover:text-foreground sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
           aria-label={msg("workflow.inspector.close")}
         >
           <X className="size-3.5" />

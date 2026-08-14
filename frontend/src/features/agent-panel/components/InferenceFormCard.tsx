@@ -8,12 +8,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import { autoResizeTextarea } from "@/shared/ui/agent";
 import { formatOutput } from "@/shared/lib";
 import { formatMsg } from "@/shared/lib/messages";
-import {
-  getPairServeInfo,
-  getServeInfo,
-  servePairProgram,
-  serveProgram,
-} from "@/shared/lib/api";
+import { getPairServeInfo, getServeInfo, servePairProgram, serveProgram } from "@/shared/lib/api";
 import type { AgentToolCall } from "@/shared/ui/agent/types";
 import type { ServeInfoResponse, ServeResponse } from "@/shared/types/api";
 
@@ -197,7 +192,7 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
             <div className="space-y-3 mb-4">
               <div className="flex justify-start">
                 <div
-                  className="max-w-[80%] rounded-2xl rounded-br-sm bg-[#3D2E22] text-[#FAF8F5] px-4 py-3 text-sm shadow-sm"
+                  className="max-w-[92%] rounded-2xl rounded-br-sm bg-[#3D2E22] px-4 py-3 text-sm text-[#FAF8F5] shadow-sm sm:max-w-[80%]"
                   dir="ltr"
                 >
                   {fields.map((k, i, arr) => (
@@ -240,15 +235,15 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
 
           {fields.length > 0 && (
             <form onSubmit={handleSubmit}>
-              <div
-                className={`flex gap-2 ${fields.length > 1 ? "items-center" : "items-start"}`}
-              >
+              <div className={`flex gap-2 ${fields.length > 1 ? "items-center" : "items-start"}`}>
                 <Button
                   type="submit"
                   size="icon"
-                  className="shrink-0 rounded-full !size-[42px]"
+                  className="shrink-0 rounded-full !size-[44px]"
                   disabled={running || disabled || !optimizationId}
-                  aria-label={msg("auto.features.agent.panel.components.inferenceformcard.literal.2")}
+                  aria-label={msg(
+                    "auto.features.agent.panel.components.inferenceformcard.literal.2",
+                  )}
                 >
                   {running ? (
                     <CircleNotch className="size-4 animate-spin" />
@@ -306,7 +301,7 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
                         }}
                         rows={1}
                         disabled={running || disabled}
-                        className="block w-full bg-muted/20 rounded-2xl border border-[#DDD4C8] px-4 py-[11px] text-sm font-mono leading-[20px] outline-none ring-0 shadow-none resize-none overflow-hidden h-[42px] max-h-[120px] focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus:border-[#C8A882] transition-colors placeholder:text-muted-foreground/40 disabled:opacity-60"
+                        className="block h-[44px] max-h-[120px] w-full resize-none overflow-hidden rounded-2xl border border-[#DDD4C8] bg-muted/20 px-4 py-[11px] text-sm font-mono leading-[20px] shadow-none outline-none ring-0 transition-colors placeholder:text-muted-foreground/40 focus:border-[#C8A882] focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:opacity-60"
                       />
                     </div>
                   ))}

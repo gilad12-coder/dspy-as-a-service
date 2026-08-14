@@ -11,18 +11,9 @@ import {
   Trash,
 } from "@/shared/ui/icons";
 
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/shared/ui/primitives/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/shared/ui/primitives/sheet";
 import { Input } from "@/shared/ui/primitives/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/shared/ui/primitives/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { cn } from "@/shared/lib/utils";
 import { msg } from "@/shared/lib/messages";
@@ -121,7 +112,7 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side={drawerSide}
-        className="w-[min(420px,90vw)] sm:max-w-none p-0 flex flex-col"
+        className="flex w-full flex-col p-0 sm:w-[min(420px,90vw)] sm:max-w-none"
       >
         <SheetHeader className="border-b border-border/40 p-3">
           <SheetTitle className="text-[0.875rem] flex items-center gap-2">
@@ -139,7 +130,7 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
               placeholder={msg(
                 "auto.features.agent.panel.components.conversationdrawer.search_placeholder",
               )}
-              className="h-8 text-[0.8125rem] pe-7"
+              className="h-[44px] text-[0.8125rem] pe-7 md:h-8 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
             />
           </div>
         </SheetHeader>
@@ -236,7 +227,16 @@ interface RowProps {
   onDelete: (id: string) => void;
 }
 
-function ConversationRow({ row, active, unread, busy, onPick, onRename, onTogglePin, onDelete }: RowProps) {
+function ConversationRow({
+  row,
+  active,
+  unread,
+  busy,
+  onPick,
+  onRename,
+  onTogglePin,
+  onDelete,
+}: RowProps) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(row.title);
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -281,7 +281,7 @@ function ConversationRow({ row, active, unread, busy, onPick, onRename, onToggle
     <li>
       <div
         className={cn(
-          "group flex items-center gap-1.5 rounded-md px-2 py-1.5 cursor-pointer",
+          "group flex min-h-[44px] items-center gap-1.5 rounded-md px-2 py-1.5 cursor-pointer",
           active ? "bg-accent" : "hover:bg-accent/60",
         )}
         onClick={() => onPick(row.id)}
@@ -305,14 +305,8 @@ function ConversationRow({ row, active, unread, busy, onPick, onRename, onToggle
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1 truncate text-[0.8125rem]">
             {row.pinned && <PushPin className="size-3 text-muted-foreground shrink-0" />}
-            <span
-              className={cn(
-                "truncate",
-                unread && !active && "font-semibold text-foreground",
-              )}
-            >
-              {row.title ||
-                msg("auto.features.agent.panel.components.conversationdrawer.untitled")}
+            <span className={cn("truncate", unread && !active && "font-semibold text-foreground")}>
+              {row.title || msg("auto.features.agent.panel.components.conversationdrawer.untitled")}
             </span>
           </div>
           {row.preview && (
@@ -329,8 +323,8 @@ function ConversationRow({ row, active, unread, busy, onPick, onRename, onToggle
                     e.stopPropagation();
                   }}
                   className={cn(
-                    "rounded-md p-1 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer",
-                    "opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100",
+                    "inline-flex size-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]",
+                    "opacity-100 md:opacity-0 md:group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)_and_(pointer:coarse)]:opacity-100",
                   )}
                   aria-label={msg(
                     "auto.features.agent.panel.components.conversationdrawer.row_menu",
@@ -363,7 +357,7 @@ function ConversationRow({ row, active, unread, busy, onPick, onRename, onToggle
                 setEditing(true);
                 setMenuOpen(false);
               }}
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] hover:bg-accent cursor-pointer"
+              className="flex min-h-[44px] w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] hover:bg-accent cursor-pointer"
             >
               <PencilSimple className="size-3.5" />
               {msg("auto.features.agent.panel.components.conversationdrawer.rename")}
@@ -374,9 +368,13 @@ function ConversationRow({ row, active, unread, busy, onPick, onRename, onToggle
                 onTogglePin(row.id, !row.pinned);
                 setMenuOpen(false);
               }}
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] hover:bg-accent cursor-pointer"
+              className="flex min-h-[44px] w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] hover:bg-accent cursor-pointer"
             >
-              {row.pinned ? <PushPinSlash className="size-3.5" /> : <PushPin className="size-3.5" />}
+              {row.pinned ? (
+                <PushPinSlash className="size-3.5" />
+              ) : (
+                <PushPin className="size-3.5" />
+              )}
               {row.pinned
                 ? msg("auto.features.agent.panel.components.conversationdrawer.unpin")
                 : msg("auto.features.agent.panel.components.conversationdrawer.pin")}
@@ -387,7 +385,7 @@ function ConversationRow({ row, active, unread, busy, onPick, onRename, onToggle
                 onDelete(row.id);
                 setMenuOpen(false);
               }}
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] text-destructive hover:bg-destructive/10 cursor-pointer"
+              className="flex min-h-[44px] w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] text-destructive hover:bg-destructive/10 cursor-pointer"
             >
               <Trash className="size-3.5" />
               {msg("auto.features.agent.panel.components.conversationdrawer.delete")}

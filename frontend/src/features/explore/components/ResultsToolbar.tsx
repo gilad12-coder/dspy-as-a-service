@@ -83,7 +83,7 @@ function SortControl({
               onClick={() => {
                 if (!active) onChange(o.value);
               }}
-              className={`relative rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 ${
+              className={`relative min-h-[44px] rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:min-h-0 ${
                 active
                   ? "text-foreground"
                   : "cursor-pointer text-foreground/55 hover:text-foreground"

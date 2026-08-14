@@ -233,7 +233,7 @@ export function DatasetDetailDialog({
   return (
     <Dialog open={dataset !== null} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
-        className="max-w-[min(72rem,94vw)] overflow-hidden p-0 sm:max-w-[min(72rem,94vw)]"
+        className="max-w-[min(72rem,94vw)] overflow-hidden p-0 max-lg:[&_[data-slot=dialog-close]]:!size-[44px] sm:max-w-[min(72rem,94vw)]"
         aria-describedby={undefined}
         onEscapeKeyDown={(e) => {
           // Escape peels one layer: reader -> grid first, dialog second.
@@ -244,7 +244,7 @@ export function DatasetDetailDialog({
         }}
       >
         <div className="flex max-h-[85vh] flex-col">
-          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 text-start">
+          <DialogHeader className="shrink-0 px-4 pb-4 pt-6 text-start sm:px-6">
             <DialogTitle className="truncate">{dataset?.name}</DialogTitle>
             {dataset && (
               <DialogDescription>
@@ -256,7 +256,7 @@ export function DatasetDetailDialog({
           </DialogHeader>
 
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex shrink-0 justify-center border-b border-border/40 px-6 pb-4">
+            <div className="flex shrink-0 justify-center border-b border-border/40 px-4 pb-4 sm:px-6">
               <div
                 role="radiogroup"
                 aria-label={msg("datasets.detail.view_aria")}
@@ -272,7 +272,7 @@ export function DatasetDetailDialog({
                       role="radio"
                       aria-checked={active}
                       onClick={() => !active && setTab(seg.value)}
-                      className={`relative inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 ${
+                      className={`relative inline-flex min-h-[44px] items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:min-h-0 ${
                         active
                           ? "text-foreground"
                           : "cursor-pointer text-foreground/60 hover:text-foreground"
@@ -310,7 +310,7 @@ export function DatasetDetailDialog({
                   index: readerIndex + 1,
                   total: filtered.length,
                 })}
-                className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-4 focus-visible:outline-none"
+                className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4 focus-visible:outline-none sm:px-6"
                 onKeyDown={(e) => {
                   if (e.key === "ArrowUp") {
                     e.preventDefault();
@@ -326,7 +326,7 @@ export function DatasetDetailDialog({
                     variant="ghost"
                     size="sm"
                     onClick={() => setReaderIndex(null)}
-                    className="gap-1.5 text-muted-foreground hover:text-foreground"
+                    className="min-h-[44px] gap-1.5 text-muted-foreground hover:text-foreground lg:min-h-0"
                   >
                     <ArrowLeft className="size-4 rtl:rotate-180" />
                     {msg("datasets.detail.row_reader.back")}
@@ -337,6 +337,7 @@ export function DatasetDetailDialog({
                       size="icon-sm"
                       onClick={() => stepReader(-1)}
                       disabled={readerIndex === 0}
+                      className="size-[44px] lg:size-8"
                       aria-label={msg("datasets.detail.row_reader.prev")}
                     >
                       <CaretLeft className="size-4 rtl:rotate-180" />
@@ -352,6 +353,7 @@ export function DatasetDetailDialog({
                       size="icon-sm"
                       onClick={() => stepReader(1)}
                       disabled={readerIndex >= filtered.length - 1}
+                      className="size-[44px] lg:size-8"
                       aria-label={msg("datasets.detail.row_reader.next")}
                     >
                       <CaretRight className="size-4 rtl:rotate-180" />
@@ -362,7 +364,8 @@ export function DatasetDetailDialog({
                   <dl className="flex flex-col gap-4 pb-2">
                     {columns.map((col) => {
                       const value = readerText(readerRow[col]);
-                      const structured = readerRow[col] != null && typeof readerRow[col] !== "string";
+                      const structured =
+                        readerRow[col] != null && typeof readerRow[col] !== "string";
                       return (
                         <div key={col} className="group/field">
                           <div className="mb-1.5 flex items-center gap-2">
@@ -376,7 +379,7 @@ export function DatasetDetailDialog({
                               })}
                               onCopied={() => toast.success(msg("clipboard.copied"))}
                               onCopyError={() => toast.error(msg("clipboard.copy_failed"))}
-                              className="size-6 opacity-0 transition-opacity group-hover/field:opacity-100 focus-visible:opacity-100"
+                              className="size-[44px] opacity-100 transition-opacity lg:size-6 lg:opacity-0 lg:group-hover/field:opacity-100 lg:focus-visible:opacity-100"
                               iconClassName="size-3"
                             />
                           </div>
@@ -397,7 +400,7 @@ export function DatasetDetailDialog({
                 </FadeIn>
               </div>
             ) : tab === "rows" ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-4">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4 sm:px-6">
                 {rows === null ? (
                   <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
                     <CircleNotch className="size-4 animate-spin" />
@@ -413,7 +416,7 @@ export function DatasetDetailDialog({
                   </div>
                 ) : (
                   <FadeIn className="flex min-h-0 flex-1 flex-col">
-                    <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="mb-2 flex min-h-[44px] items-center justify-between gap-3 max-lg:[&_button]:size-[44px] lg:min-h-0">
                       <span className="min-w-0 truncate text-xs text-muted-foreground">
                         {msg("datasets.detail.row_reader.hint")}
                       </span>
@@ -448,7 +451,7 @@ export function DatasetDetailDialog({
                             container is overflow-x-auto) instead of crushing
                             every column to an unreadable sliver. */}
                         <Table
-                          className="table-fixed"
+                          className="table-fixed max-lg:[&_thead_th]:py-0 max-lg:[&_thead_th_div]:min-h-[44px] max-lg:[&_thead_button]:min-h-[44px] max-lg:[&_thead_button]:min-w-[44px]"
                           style={{ minWidth: `${columns.length * 6}rem` }}
                         >
                           <TableHeader>
@@ -478,6 +481,11 @@ export function DatasetDetailDialog({
                               <TableRow
                                 key={i}
                                 className="cursor-pointer transition-colors hover:bg-muted/40"
+                                onClick={() => {
+                                  if (!window.matchMedia("(any-pointer: coarse)").matches) return;
+                                  cancelPendingCopy();
+                                  setReaderIndex(i);
+                                }}
                                 onDoubleClick={() => {
                                   cancelPendingCopy();
                                   setReaderIndex(i);
@@ -527,7 +535,7 @@ export function DatasetDetailDialog({
                 )}
               </div>
             ) : (
-              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
                 {optimizations === null ? (
                   <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
                     <CircleNotch className="size-4 animate-spin" />
@@ -548,7 +556,7 @@ export function DatasetDetailDialog({
                         <li key={opt.optimization_id}>
                           <Link
                             href={`/optimizations/${opt.optimization_id}`}
-                            className="group/link flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-accent/40"
+                            className="group/link flex min-h-[44px] items-center gap-3 px-3 py-2.5 transition-colors hover:bg-accent/40"
                           >
                             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
                               {opt.name || opt.optimization_id}

@@ -195,18 +195,18 @@ export function DatasetsView() {
       />
 
       {datasets.length > 0 && (
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
           <SearchField
             value={search}
             onValueChange={setSearch}
             placeholder={msg("datasets.search.placeholder")}
-            className="flex-1"
+            className="flex-1 !h-[44px] [&_input]:h-full max-lg:[&_button]:!size-[44px] lg:!h-11"
           />
           <Button
             variant="outline"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="h-11 shrink-0 rounded-2xl"
+            className="!h-[44px] w-full shrink-0 rounded-2xl sm:w-auto"
           >
             <UploadSimple className="size-4" />
             {msg("datasets.upload")}
@@ -291,7 +291,7 @@ export function DatasetsView() {
               variant="outline"
               onClick={() => setBulkOpen(false)}
               disabled={bulkDeleting}
-              className="w-full justify-center"
+              className="!min-h-[44px] w-full justify-center lg:!min-h-0"
             >
               {msg("datasets.delete.cancel")}
             </Button>
@@ -299,7 +299,7 @@ export function DatasetsView() {
               variant="destructive"
               onClick={confirmBulkDelete}
               disabled={bulkDeleting}
-              className="w-full justify-center shadow-xs"
+              className="!min-h-[44px] w-full justify-center shadow-xs lg:!min-h-0"
             >
               {bulkDeleting ? (
                 <CircleNotch className="size-4 animate-spin" />

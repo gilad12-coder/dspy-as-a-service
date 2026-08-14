@@ -113,7 +113,7 @@ export function Composer({
         className={cn(
           "rounded-2xl border border-[#DDD4C8] bg-muted/20 transition-colors",
           "focus-within:border-[#C8A882]",
-          inline && "flex min-h-11 items-end gap-1 p-1",
+          inline && "flex min-h-[44px] items-end gap-1 p-1",
         )}
       >
         {!dictating ? (
@@ -134,14 +134,18 @@ export function Composer({
               "focus:outline-none focus-visible:outline-none focus-visible:ring-0",
               "placeholder:text-muted-foreground/40",
               "disabled:opacity-50 disabled:cursor-not-allowed",
-              inline ? "min-w-0 flex-1 h-9 px-3 py-2" : "block w-full h-[42px] px-4 py-[11px]",
+              inline
+                ? "h-[44px] min-w-0 flex-1 px-3 py-2 sm:h-9 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
+                : "block h-[44px] w-full px-4 py-[11px] sm:h-[42px] [@media(hover:none)_and_(pointer:coarse)]:h-[44px]",
             )}
           />
         ) : (
           <div
             className={cn(
               "flex items-center gap-2 text-sm",
-              inline ? "min-w-0 flex-1 h-9 px-3" : "h-[42px] px-4",
+              inline
+                ? "h-[44px] min-w-0 flex-1 px-3 sm:h-9 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
+                : "h-[44px] px-4 sm:h-[42px] [@media(hover:none)_and_(pointer:coarse)]:h-[44px]",
             )}
             role="status"
             aria-live="polite"
@@ -160,7 +164,7 @@ export function Composer({
                   onClick={dictation.cancel}
                   aria-label={msg("agent.composer.record_cancel")}
                   className={cn(
-                    "ms-auto inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full",
+                    "ms-auto inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-full sm:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]",
                     "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
                     "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40",
                   )}
@@ -194,7 +198,7 @@ export function Composer({
                     type="button"
                     size="icon"
                     onClick={dictation.finish}
-                    className="shrink-0 rounded-full !size-9"
+                    className="shrink-0 rounded-full !size-[44px] sm:!size-9 [@media(hover:none)_and_(pointer:coarse)]:!size-[44px]"
                     aria-label={msg("agent.composer.record_finish")}
                   >
                     <Check className="size-4" />
@@ -208,7 +212,7 @@ export function Composer({
                     variant="ghost"
                     onClick={() => void dictation.start()}
                     disabled={disabled || streaming || dictation.state.kind === "busy"}
-                    className="shrink-0 rounded-full !size-9 text-muted-foreground hover:text-foreground"
+                    className="shrink-0 rounded-full !size-[44px] text-muted-foreground hover:text-foreground sm:!size-9 [@media(hover:none)_and_(pointer:coarse)]:!size-[44px]"
                     aria-label={msg("agent.composer.record")}
                   >
                     <Microphone className="size-4" />
@@ -221,7 +225,7 @@ export function Composer({
                   type="button"
                   size="icon"
                   onClick={onStop}
-                  className="shrink-0 rounded-full !size-9"
+                  className="shrink-0 rounded-full !size-[44px] sm:!size-9 [@media(hover:none)_and_(pointer:coarse)]:!size-[44px]"
                   aria-label={stopAriaLabel}
                 >
                   <Square className="size-3 fill-current" />
@@ -231,7 +235,7 @@ export function Composer({
               <Button
                 type="submit"
                 size="icon"
-                className="shrink-0 rounded-full !size-9"
+                className="shrink-0 rounded-full !size-[44px] sm:!size-9 [@media(hover:none)_and_(pointer:coarse)]:!size-[44px]"
                 disabled={disabled || dictating || !value.trim()}
                 aria-label={sendAriaLabel}
               >

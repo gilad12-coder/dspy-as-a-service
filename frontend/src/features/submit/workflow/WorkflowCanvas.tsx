@@ -691,6 +691,20 @@ function CanvasInner({
     setInspectorId(node.id);
   }, []);
 
+  const onNodeClick = React.useCallback((_event: React.MouseEvent, node: CanvasNode) => {
+    if (!window.matchMedia("(any-pointer: coarse)").matches) return;
+    setInspectorId(node.id);
+  }, []);
+
+  const onEdgeClick = React.useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      if (!window.matchMedia("(any-pointer: coarse)").matches) return;
+      event.preventDefault();
+      openMenuAt(event.clientX, event.clientY, { type: "edge", id: edge.id });
+    },
+    [openMenuAt],
+  );
+
   const onPaneClick = React.useCallback(() => {
     setMenu(null);
     setInspectorId(null);
@@ -810,18 +824,14 @@ function CanvasInner({
               ref={addNodeBtnRef}
               size="sm"
               variant="outline"
-              className="h-7 gap-1.5 px-2.5 text-xs"
+              className="h-[44px] gap-1.5 px-2.5 text-xs lg:h-7"
               onClick={openAddMenuFromToolbar}
             >
               <Plus className="size-3.5" />
               {msg("workflow.toolbar.add_node")}
               <CaretDown className="size-3 text-muted-foreground" />
             </Button>
-            <ToolbarButton
-              icon={GridFour}
-              label={msg("workflow.toolbar.tidy")}
-              onClick={tidyUp}
-            />
+            <ToolbarButton icon={GridFour} label={msg("workflow.toolbar.tidy")} onClick={tidyUp} />
           </>
         )}
         <span className="ms-auto" />
@@ -835,7 +845,7 @@ function CanvasInner({
           <Button
             size="sm"
             variant="outline"
-            className="h-7 gap-1.5 text-xs"
+            className="h-[44px] gap-1.5 text-xs lg:h-7"
             title={dryRun.disabledReason ?? undefined}
             onClick={() => {
               // Always clickable: a blocked run explains itself instead of
@@ -906,6 +916,8 @@ function CanvasInner({
             onConnectEnd={onConnectEnd}
             onNodeDragStop={onNodeDragStop}
             onNodeDoubleClick={onNodeDoubleClick}
+            onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
             isValidConnection={isValidConnection}
             onPaneContextMenu={onPaneContextMenu}
             onNodeContextMenu={onNodeContextMenu}
@@ -932,7 +944,7 @@ function CanvasInner({
             <Panel position="bottom-center" className="pointer-events-none !m-3">
               <span
                 dir="auto"
-                className="whitespace-nowrap rounded-full border border-border/50 bg-background/80 px-3 py-1 text-[0.6875rem] text-muted-foreground/80 shadow-xs backdrop-blur"
+                className="hidden whitespace-nowrap rounded-full border border-border/50 bg-background/80 px-3 py-1 text-[0.6875rem] text-muted-foreground/80 shadow-xs backdrop-blur sm:inline-flex"
               >
                 {msg("workflow.canvas.gestures")}
               </span>
@@ -949,7 +961,7 @@ function CanvasInner({
               maskColor="rgba(61, 46, 34, 0.06)"
               bgColor="#FAF8F5"
               className={cn(
-                "!m-3 overflow-hidden rounded-lg border border-border/60 shadow-sm transition-opacity duration-300",
+                "!m-3 hidden overflow-hidden rounded-lg border border-border/60 shadow-sm transition-opacity duration-300 sm:block",
                 navActive ? "opacity-100" : "pointer-events-none opacity-0",
               )}
             />
@@ -965,7 +977,7 @@ function CanvasInner({
               transition={{ duration: 0.18, ease: "easeOut" }}
               className={cn(
                 "absolute inset-y-0 end-0 z-20 overflow-hidden border-s border-border/40 bg-card shadow-xl",
-                fullscreen ? "w-[min(360px,88vw)]" : "w-[min(320px,88vw)]",
+                fullscreen ? "w-full sm:w-[min(360px,88vw)]" : "w-full sm:w-[min(320px,88vw)]",
               )}
             >
               <NodeInspector
@@ -976,6 +988,11 @@ function CanvasInner({
                 onDelete={
                   inspectorNode.kind !== "input" && inspectorNode.kind !== "output"
                     ? () => deleteNode(inspectorNode.id)
+                    : undefined
+                }
+                onDuplicate={
+                  inspectorNode.kind !== "input" && inspectorNode.kind !== "output"
+                    ? () => duplicateNode(inspectorNode.id)
                     : undefined
                 }
               />
@@ -1015,8 +1032,7 @@ function CanvasInner({
             style={{
               insetInlineStart: menu.x,
               top: menu.y,
-              transformOrigin:
-                document.documentElement.dir === "rtl" ? "top right" : "top left",
+              transformOrigin: document.documentElement.dir === "rtl" ? "top right" : "top left",
             }}
           >
             {menu.target.type === "pane" && (
@@ -1113,7 +1129,7 @@ function MenuItem({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors",
+        "flex min-h-[44px] w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors lg:min-h-0",
         danger ? "text-destructive hover:bg-destructive/10" : "text-foreground hover:bg-muted",
       )}
     >
@@ -1138,7 +1154,7 @@ function ZoomControls() {
           type="button"
           onClick={() => zoomTo(1, { duration: 200 })}
           title={msg("workflow.controls.zoom_reset")}
-          className="h-7 min-w-12 cursor-pointer px-1 text-center text-[0.6875rem] font-medium tabular-nums text-muted-foreground transition-colors hover:text-foreground"
+          className="h-[44px] min-w-[44px] cursor-pointer px-1 text-center text-[0.6875rem] font-medium tabular-nums text-muted-foreground transition-colors hover:text-foreground lg:h-7 lg:min-w-12"
         >
           {Math.round(zoom * 100)}%
         </button>
@@ -1175,7 +1191,7 @@ function ControlButton({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="flex h-7 w-7 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="flex size-[44px] cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:size-7"
     >
       <Icon className="size-3.5" />
     </button>
@@ -1200,7 +1216,7 @@ function ToolbarButton({
       size="sm"
       variant="ghost"
       className={cn(
-        "h-7 gap-1.5 px-2 text-xs",
+        "h-[44px] gap-1.5 px-2 text-xs lg:h-7",
         active ? "bg-[#3D2E22]/8 text-foreground" : "text-muted-foreground hover:text-foreground",
       )}
       onClick={onClick}

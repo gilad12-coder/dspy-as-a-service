@@ -204,17 +204,24 @@ export function Carousel<T>({
               aria-current={isActive ? "true" : undefined}
               // Tone paints status; width (1.5 → 2.5 → 4) carries the active and
               // flagged cues so the strip never leans on colour alone.
-              style={tone ? { backgroundColor: tone } : undefined}
               className={cn(
-                "h-1.5 rounded-full transition-all duration-200 cursor-pointer",
+                "group/dot relative inline-flex size-[44px] items-center justify-center rounded-full cursor-pointer md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D2E22]/40 focus-visible:ring-offset-1",
-                isActive
-                  ? cn("w-4", !tone && "bg-[#3D2E22]/70")
-                  : tone
-                    ? "w-2.5 opacity-70 hover:opacity-100"
-                    : "w-1.5 bg-[#3D2E22]/20 hover:bg-[#3D2E22]/40",
               )}
-            />
+            >
+              <span
+                aria-hidden="true"
+                style={tone ? { backgroundColor: tone } : undefined}
+                className={cn(
+                  "h-1.5 rounded-full transition-all duration-200",
+                  isActive
+                    ? cn("w-4", !tone && "bg-[#3D2E22]/70")
+                    : tone
+                      ? "w-2.5 opacity-70 group-hover/dot:opacity-100"
+                      : "w-1.5 bg-[#3D2E22]/20 group-hover/dot:bg-[#3D2E22]/40",
+                )}
+              />
+            </button>
           );
         })}
       </div>
@@ -263,7 +270,7 @@ function CarouselNav({
       disabled={disabled}
       aria-label={label}
       className={cn(
-        "inline-flex size-7 items-center justify-center rounded-full",
+        "inline-flex size-[44px] items-center justify-center rounded-full md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]",
         "border border-border/50 bg-background/85",
         "transition-all duration-150 cursor-pointer",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D2E22]/40 focus-visible:ring-offset-1",

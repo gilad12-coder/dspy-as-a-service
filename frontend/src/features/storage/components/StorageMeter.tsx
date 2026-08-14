@@ -3,7 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { HardDrive } from "@/shared/ui/icons";
-import { getStorageUsage, STORAGE_CHANGED_EVENT, type StorageUsageResponse } from "@/shared/lib/api";
+import {
+  getStorageUsage,
+  STORAGE_CHANGED_EVENT,
+  type StorageUsageResponse,
+} from "@/shared/lib/api";
 import { formatStorageSize } from "@/shared/lib/formatters";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
@@ -64,7 +68,7 @@ export function StorageMeter({ collapsed = false }: { collapsed?: boolean }) {
           <Link
             href="/storage"
             aria-label={usageLabel}
-            className="flex items-center justify-center px-2 py-2.5 transition-colors duration-150 hover:bg-sidebar-accent/40"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center px-2 py-2.5 transition-colors duration-150 hover:bg-sidebar-accent/40 lg:min-h-0 lg:min-w-0"
           >
             <HardDrive className="size-4 text-muted-foreground" />
           </Link>
@@ -78,7 +82,7 @@ export function StorageMeter({ collapsed = false }: { collapsed?: boolean }) {
     <Link
       href="/storage"
       aria-label={msg("storage.page.title")}
-      className="block px-3 pt-3 pb-1 transition-colors duration-150 hover:bg-sidebar-accent/40"
+      className="block min-h-[44px] px-3 pt-3 pb-1 transition-colors duration-150 hover:bg-sidebar-accent/40 lg:min-h-0"
     >
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#E5DDD4]">
         <div

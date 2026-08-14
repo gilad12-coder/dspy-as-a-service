@@ -21,6 +21,9 @@ import { aggregateTokenSource } from "../../lib/cost-bracket";
 import { emptyModelConfig } from "../../constants";
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 
+const MOBILE_MODEL_CHIP_CLASS =
+  "min-h-[44px] max-lg:[&_button]:min-h-[44px] max-lg:[&_button]:min-w-[44px] max-lg:[&_button]:opacity-100";
+
 export function ModelStep({ w }: { w: SubmitWizardContext }) {
   const { prefs } = useUserPrefs();
   const advanced = prefs.advancedMode;
@@ -51,7 +54,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
       className="border-border/50 bg-card/80 backdrop-blur-xl shadow-lg"
       data-tutorial="wizard-step-3"
     >
-      <CardHeader>
+      <CardHeader className="px-4 sm:px-6">
         <CardTitle className="text-lg">
           {msg("auto.features.submit.components.steps.modelstep.6")}
         </CardTitle>
@@ -60,7 +63,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
           {TERMS.optimization}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-5 px-4 sm:px-6">
         {jobType === "run" || !advanced ? (
           <div className="space-y-3" data-tutorial="model-catalog">
             <Label className="text-sm font-semibold">
@@ -69,6 +72,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
             <div className="space-y-2">
               <ModelChip
                 config={modelConfig}
+                className={MOBILE_MODEL_CHIP_CLASS}
                 roleLabel={msg("model.generation.label")}
                 tooltip={msg("model.generation.explainer")}
                 required
@@ -84,6 +88,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
               />
               <ModelChip
                 config={secondModelConfig ?? emptyModelConfig()}
+                className={MOBILE_MODEL_CHIP_CLASS}
                 roleLabel={TERMS.reflectionModel}
                 tooltip={msg("model.reflection.explainer")}
                 required
@@ -116,6 +121,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
                   <ModelChip
                     key={i}
                     config={m}
+                    className={MOBILE_MODEL_CHIP_CLASS}
                     tooltip={msg("model.generation.explainer")}
                     catalogModels={catalog?.models}
                     onClick={() =>
@@ -138,6 +144,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
                 {generationModels.every((m) => m.name.trim()) && (
                   <AddModelButton
                     label={msg("auto.features.submit.components.steps.modelstep.literal.7")}
+                    className="min-h-[44px]"
                     onClick={() =>
                       setEditingModel({
                         config: generationModels.length
@@ -165,6 +172,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
                   <ModelChip
                     key={i}
                     config={m}
+                    className={MOBILE_MODEL_CHIP_CLASS}
                     tooltip={msg("model.reflection.explainer")}
                     catalogModels={catalog?.models}
                     onClick={() =>
@@ -187,6 +195,7 @@ export function ModelStep({ w }: { w: SubmitWizardContext }) {
                 {reflectionModels.every((m) => m.name.trim()) && (
                   <AddModelButton
                     label={msg("auto.features.submit.components.steps.modelstep.literal.8")}
+                    className="min-h-[44px]"
                     onClick={() =>
                       setEditingModel({
                         config: reflectionModels.length

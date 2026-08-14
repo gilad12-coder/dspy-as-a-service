@@ -126,7 +126,7 @@ export function ServeChat({
             <div key={run.ts} className="space-y-3">
               {isEditing ? (
                 <div className="flex justify-start">
-                  <div className="max-w-[85%] w-full space-y-2">
+                  <div className="w-full max-w-[95%] space-y-2 sm:max-w-[85%]">
                     {serveInfo.input_fields.map((field) => (
                       <div key={field}>
                         {serveInfo.input_fields.length > 1 && (
@@ -147,22 +147,22 @@ export function ServeChat({
                           onChange={(e) => {
                             autoResizeTextarea(e.target);
                           }}
-                          className="w-full bg-white border border-[#DDD4C8] rounded-xl px-3 py-2 text-sm font-mono resize-none outline-none focus:border-[#C8A882] transition-colors min-h-[40px] max-h-[120px]"
+                          className="min-h-[44px] w-full resize-none rounded-xl border border-[#DDD4C8] bg-white px-3 py-2 text-sm font-mono outline-none transition-colors focus:border-[#C8A882] sm:min-h-[40px] max-h-[120px] [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
                           rows={1}
                           autoFocus={serveInfo.input_fields[0] === field}
                         />
                       </div>
                     ))}
-                    <div className="flex justify-start gap-1.5">
+                    <div className="flex flex-wrap justify-start gap-1.5">
                       <button
                         onClick={() => setEditingRunTs(null)}
-                        className="text-[0.6875rem] text-muted-foreground hover:text-foreground px-3 py-1 rounded-lg hover:bg-muted transition-colors"
+                        className="min-h-[44px] rounded-lg px-3 py-1 text-[0.6875rem] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
                       >
                         {msg("auto.features.optimizations.components.servechat.4")}
                       </button>
                       <button
                         onClick={() => handleEditAndResend(run.ts)}
-                        className="text-[0.6875rem] text-white bg-[#3D2E22] hover:bg-[#3D2E22]/90 disabled:opacity-40 px-3 py-1 rounded-lg transition-colors"
+                        className="min-h-[44px] rounded-lg bg-[#3D2E22] px-3 py-1 text-[0.6875rem] text-white transition-colors hover:bg-[#3D2E22]/90 disabled:opacity-40 sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
                       >
                         {msg("auto.features.optimizations.components.servechat.5")}
                       </button>
@@ -172,7 +172,7 @@ export function ServeChat({
               ) : (
                 <div className="flex justify-start group/user">
                   <div
-                    className="max-w-[80%] rounded-2xl rounded-br-sm bg-[#3D2E22] text-[#FAF8F5] px-4 py-3 text-sm shadow-sm"
+                    className="max-w-[92%] rounded-2xl rounded-br-sm bg-[#3D2E22] px-4 py-3 text-sm text-[#FAF8F5] shadow-sm sm:max-w-[80%]"
                     dir="ltr"
                   >
                     {serveInfo.input_fields.map((k, i, arr) => (
@@ -193,7 +193,8 @@ export function ServeChat({
                   {!serveLoading && (
                     <button
                       onClick={() => setEditingRunTs(run.ts)}
-                      className="self-center ms-1.5 opacity-0 group-hover/user:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-muted/60"
+                      className="ms-1.5 inline-flex size-[44px] shrink-0 self-center items-center justify-center rounded-lg opacity-100 transition-opacity hover:bg-muted/60 sm:size-auto sm:p-1.5 sm:opacity-0 sm:group-hover/user:opacity-100 [@media(hover:none)_and_(pointer:coarse)]:size-[44px] [@media(hover:none)_and_(pointer:coarse)]:p-0 [@media(hover:none)_and_(pointer:coarse)]:opacity-100"
+                      aria-label={msg("auto.features.optimizations.components.servechat.literal.1")}
                       title={msg("auto.features.optimizations.components.servechat.literal.1")}
                     >
                       <PencilSimple className="size-3 text-muted-foreground" />
@@ -223,7 +224,10 @@ export function ServeChat({
                   <div className="mt-1">
                     <MessageActions
                       text={serveInfo.output_fields
-                        .map((k) => `${k}${msg("optimizations.serve.field_separator")}${formatOutput(run.outputs[k])}`)
+                        .map(
+                          (k) =>
+                            `${k}${msg("optimizations.serve.field_separator")}${formatOutput(run.outputs[k])}`,
+                        )
                         .join("\n")}
                       model={run.model}
                       onRegenerate={
@@ -248,7 +252,7 @@ export function ServeChat({
           <div className="space-y-3">
             <div className="flex justify-start">
               <div
-                className="max-w-[80%] rounded-2xl rounded-br-sm bg-[#3D2E22] text-[#FAF8F5] px-4 py-3 text-sm shadow-sm"
+                className="max-w-[92%] rounded-2xl rounded-br-sm bg-[#3D2E22] px-4 py-3 text-sm text-[#FAF8F5] shadow-sm sm:max-w-[80%]"
                 dir="ltr"
               >
                 {serveInfo.input_fields.map((k, i, arr) => (
@@ -351,7 +355,7 @@ export function ServeChat({
                 type={serveLoading ? "button" : "submit"}
                 onClick={serveLoading ? handleStopServe : undefined}
                 size="icon"
-                className="shrink-0 rounded-full !size-[42px]"
+                className="shrink-0 rounded-full !size-[44px]"
                 aria-label={
                   serveLoading
                     ? msg("auto.shared.ui.agent.composer.literal.2")
@@ -405,7 +409,7 @@ export function ServeChat({
                         }
                       }}
                       rows={1}
-                      className="block w-full bg-muted/20 rounded-2xl border border-[#DDD4C8] px-4 py-[11px] text-sm font-mono leading-[20px] outline-none ring-0 shadow-none resize-none overflow-hidden h-[42px] max-h-[120px] focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus:border-[#C8A882] transition-colors placeholder:text-muted-foreground/40"
+                      className="block h-[44px] max-h-[120px] w-full resize-none overflow-hidden rounded-2xl border border-[#DDD4C8] bg-muted/20 px-4 py-[11px] text-sm font-mono leading-[20px] shadow-none outline-none ring-0 transition-colors placeholder:text-muted-foreground/40 focus:border-[#C8A882] focus:outline-none focus-visible:outline-none focus-visible:ring-0 sm:h-[42px] [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
                     />
                   </div>
                 ))}

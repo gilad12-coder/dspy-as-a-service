@@ -108,13 +108,13 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
 
   return (
     <div className="rounded-lg border border-border/50 px-3 py-2.5">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <ProviderLogo slug={provider.slug} size={28} />
           <div className="flex min-w-0 flex-col gap-0.5">
             <span className="text-sm font-medium text-foreground">{provider.label}</span>
             {saved && (
-              <span className="flex items-center gap-2">
+              <span className="flex flex-wrap items-center gap-2">
                 <code dir="ltr" className="font-mono text-xs text-muted-foreground">
                   ••••&nbsp;{saved.last4}
                 </code>
@@ -122,22 +122,36 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
               </span>
             )}
             {saved?.apiBase && (
-              <code dir="ltr" className="truncate font-mono text-[0.6875rem] text-muted-foreground/70">
+              <code
+                dir="ltr"
+                className="truncate font-mono text-[0.6875rem] text-muted-foreground/70"
+              >
                 {saved.apiBase}
               </code>
             )}
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
           {!saved && !editing && (
-            <Button variant="outline" size="sm" onClick={startEditing}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={startEditing}
+              className="min-h-[44px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
+            >
               <Key className="size-3.5" />
               {msg("settings.keys.add")}
             </Button>
           )}
           {saved && saved.status !== "verified" && !editing && (
-            <Button variant="outline" size="sm" disabled={verifying} onClick={handleVerify}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={verifying}
+              onClick={handleVerify}
+              className="min-h-[44px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
+            >
               {verifying ? (
                 <CircleNotch className="size-3.5 animate-spin" />
               ) : (
@@ -154,6 +168,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
                     variant="outline"
                     size="icon-sm"
                     onClick={startEditing}
+                    className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                     aria-label={msg("settings.keys.replace")}
                   >
                     <PencilSimple className="size-3.5" />
@@ -167,7 +182,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
                     variant="outline"
                     size="icon-sm"
                     onClick={handleRemove}
-                    className="text-destructive hover:text-destructive"
+                    className="size-[44px] text-destructive hover:text-destructive sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                     aria-label={msg("settings.keys.remove")}
                   >
                     <Trash className="size-3.5" />
@@ -188,7 +203,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
 
       {editing && (
         <div className="mt-2.5 flex flex-col gap-2 animate-in fade-in-0 slide-in-from-top-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
             <Input
               dir="ltr"
               type="password"
@@ -201,15 +216,25 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
                 if (e.key === "Enter") void handleSave();
                 if (e.key === "Escape") setEditing(false);
               }}
-              className="h-8 flex-1"
+              className="h-[44px] flex-1 sm:h-8 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
             />
-            <Button size="sm" onClick={handleSave} disabled={!secret.trim() || saving}>
-              {saving ? <CircleNotch className="size-3.5 animate-spin" /> : msg("settings.keys.save")}
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={!secret.trim() || saving}
+              className="min-h-[44px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
+            >
+              {saving ? (
+                <CircleNotch className="size-3.5 animate-spin" />
+              ) : (
+                msg("settings.keys.save")
+              )}
             </Button>
             <Button
               variant="ghost"
               size="icon-sm"
               onClick={() => setEditing(false)}
+              className="size-[44px] self-end sm:size-8 sm:self-auto [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
               aria-label={msg("settings.keys.cancel")}
             >
               <X className="size-3.5" />
@@ -226,7 +251,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
               if (e.key === "Enter") void handleSave();
               if (e.key === "Escape") setEditing(false);
             }}
-            className="h-7 text-xs"
+            className="h-[44px] text-xs sm:h-7 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
           />
           <p className="text-[0.6875rem] text-muted-foreground/70">
             {msg("settings.keys.base_url_hint")}

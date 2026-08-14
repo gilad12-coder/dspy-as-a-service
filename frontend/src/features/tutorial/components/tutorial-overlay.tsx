@@ -72,12 +72,23 @@ export function TutorialOverlay() {
     ) => {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const pw = Math.min(360, vw * 0.9 - 16);
-      const ph = opts?.popoverHeight ?? 260;
-      const gap = FIXED_GAP;
+      const pw = Math.min(360, vw - 24);
+      const mobile = vw < 768;
+      const mobileHeightCap = vh * 0.5;
+      // Mobile cards scroll internally up to 50dvh. Position against that
+      // maximum—not a step's desktop height hint—so a long card never drifts
+      // back over its spotlight after the CSS cap takes effect.
+      const ph = mobile
+        ? Math.min(vh - 24, mobileHeightCap)
+        : Math.min(opts?.popoverHeight ?? 260, vh - 24);
+      const gap = mobile ? 12 : FIXED_GAP;
       const offsetY = opts?.offsetY ?? 0;
 
-      let p = placement;
+      let p = mobile
+        ? vh - rect.bottom >= ph + gap || vh - rect.bottom >= rect.top
+          ? ("bottom" as const)
+          : ("top" as const)
+        : placement;
       if (p === "auto") {
         const spaces = [
           { p: "bottom" as const, s: vh - rect.bottom },
@@ -109,8 +120,8 @@ export function TutorialOverlay() {
           break;
       }
 
-      top = Math.max(12, Math.min(top, vh - ph - 12));
-      left = Math.max(12, Math.min(left, vw - pw - 12));
+      top = Math.max(12, Math.min(top, Math.max(12, vh - ph - 12)));
+      left = Math.max(12, Math.min(left, Math.max(12, vw - pw - 12)));
 
       return { top, left, placement: p };
     },
@@ -233,16 +244,22 @@ export function TutorialOverlay() {
         return;
       }
 
-      // Always center the target in the viewport when it fits — otherwise
-      // the spotlight reads as "off-center" whenever a step's anchor sits
-      // near the top of a tall page (most wizard and detail steps).
-      // Skip centering for elements that span (or exceed) the viewport;
-      // those have no useful "centered" position. Use "instant" so the rect
-      // we measure right after is the final position — "smooth" left the
-      // spotlight chasing a moving target during the 500ms+ animation.
+      // Desktop centers compact targets. Mobile aligns them below the app
+      // header so the 50dvh tutorial card has room on one side instead of
+      // covering the spotlight. scroll-margin works for both the viewport and
+      // nested page scrollers without guessing which ancestor owns scrolling.
       const rect = el.getBoundingClientRect();
       const fitsViewport = rect.height <= window.innerHeight - 32;
-      if (fitsViewport) {
+      const mobile = window.innerWidth < 768;
+      if (mobile) {
+        const target = el as HTMLElement;
+        const previousScrollMarginTop = target.style.scrollMarginTop;
+        target.style.scrollMarginTop = "65px";
+        target.scrollIntoView({ behavior: "instant" as ScrollBehavior, block: "start" });
+        await new Promise((r) => setTimeout(r, 60));
+        target.style.scrollMarginTop = previousScrollMarginTop;
+        if (cancelled) return;
+      } else if (fitsViewport) {
         el.scrollIntoView({ behavior: "instant" as ScrollBehavior, block: "center" });
         await new Promise((r) => setTimeout(r, 60));
         if (cancelled) return;

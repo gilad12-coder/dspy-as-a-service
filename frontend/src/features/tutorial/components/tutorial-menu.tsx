@@ -12,7 +12,7 @@ import { formatMsg, msg } from "@/shared/lib/messages";
 type TrackSize = { steps: number; minutes: number };
 
 const ITEM_CLS =
-  "flex w-full items-start gap-2.5 px-4 py-2.5 text-xs text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
+  "flex min-h-14 w-full items-start gap-2.5 px-4 py-2.5 text-xs text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
 const ICON_CLS = "mt-0.5 size-4 shrink-0 text-muted-foreground/60";
 const META_CLS =
   "ms-auto shrink-0 whitespace-nowrap font-mono text-[0.625rem] text-muted-foreground/60";
@@ -87,7 +87,7 @@ export function TutorialMenu() {
         align="end"
         side="bottom"
         sideOffset={6}
-        className="z-50 min-w-[310px] max-w-[min(360px,92vw)] rounded-2xl border border-border/40 bg-card py-1.5 shadow-[0_4px_24px_rgba(28,22,18,0.1)] animate-in fade-in-0 zoom-in-95"
+        className="z-50 w-[min(calc(100vw-24px),360px)] max-w-none rounded-2xl border border-border/40 bg-card py-1.5 shadow-[0_4px_24px_rgba(28,22,18,0.1)] animate-in fade-in-0 zoom-in-95"
       >
         <p className="px-4 pb-1.5 pt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
           {msg("tutorial.menu.subtitle")}

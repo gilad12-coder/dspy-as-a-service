@@ -226,7 +226,7 @@ export function ComposerModelMenu({
           disabled={disabled}
           aria-label={msg("agent.model_menu.label")}
           className={cn(
-            "flex h-9 items-center gap-1.5 rounded-full px-3 text-xs text-foreground",
+            "flex h-[44px] max-w-[110px] min-w-0 items-center gap-1.5 rounded-full px-3 text-xs text-foreground sm:h-9 sm:max-w-none [@media(hover:none)_and_(pointer:coarse)]:h-[44px]",
             "cursor-pointer transition-colors hover:bg-accent/60",
             "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40",
             "disabled:pointer-events-none disabled:opacity-50",
@@ -234,7 +234,7 @@ export function ComposerModelMenu({
           )}
         >
           {choiceIcon(value, 16)}
-          <span className="max-w-40 truncate font-medium" dir="ltr">
+          <span className="min-w-0 max-w-20 truncate font-medium sm:max-w-40" dir="ltr">
             {displayName(value)}
           </span>
           {/* Codex-style chip: the effort reads as a lighter suffix after the

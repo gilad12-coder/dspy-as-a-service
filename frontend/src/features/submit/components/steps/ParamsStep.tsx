@@ -23,6 +23,9 @@ import { useUserPrefs } from "@/features/settings";
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 import { SplitRecommendationCard } from "../SplitRecommendationCard";
 
+const MOBILE_NUMBER_INPUT_CLASS =
+  "h-[44px] [&_button]:size-[44px] [&_input]:text-base lg:h-9 lg:[&_button]:size-9 lg:[&_input]:text-sm";
+
 export function ParamsStep({ w }: { w: SubmitWizardContext }) {
   const { prefs } = useUserPrefs();
   const advanced = prefs.advancedMode;
@@ -63,7 +66,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
       className=" border-border/50 bg-card/80 backdrop-blur-xl shadow-lg"
       data-tutorial="wizard-step-5"
     >
-      <CardHeader>
+      <CardHeader className="px-4 sm:px-6">
         <CardTitle className="text-lg">
           {msg("auto.features.submit.components.steps.paramsstep.1")}
         </CardTitle>
@@ -73,7 +76,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
           </CardDescription>
         )}
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-5 px-4 sm:px-6">
         {/* Simple mode leaves the split to the server recommendation (splitMode
             defaults to auto) and hides the whole train/val/test surface. */}
         {advanced && (
@@ -124,6 +127,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                       max={1}
                       value={split.train}
                       onChange={(v) => updateSplit("train", String(v))}
+                      className={MOBILE_NUMBER_INPUT_CLASS}
                     />
                   </div>
                   <div className="space-y-1">
@@ -140,6 +144,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                       max={1}
                       value={split.val}
                       onChange={(v) => updateSplit("val", String(v))}
+                      className={MOBILE_NUMBER_INPUT_CLASS}
                     />
                   </div>
                   <div className="space-y-1">
@@ -156,6 +161,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                       max={1}
                       value={split.test}
                       onChange={(v) => updateSplit("test", String(v))}
+                      className={MOBILE_NUMBER_INPUT_CLASS}
                     />
                   </div>
                 </div>
@@ -179,7 +185,12 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                   {msg("auto.features.submit.components.steps.paramsstep.10")}
                 </HelpTip>
               </Label>
-              <Switch id="shuffle" checked={shuffle} onCheckedChange={setShuffle} />
+              <Switch
+                id="shuffle"
+                checked={shuffle}
+                onCheckedChange={setShuffle}
+                className="relative before:absolute before:-inset-3 before:content-[''] lg:before:hidden"
+              />
             </div>
           )}
           <div className="space-y-2" data-tutorial="auto-level">
@@ -210,7 +221,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                   type="button"
                   onClick={() => setAutoLevel(autoLevel === val ? "" : val)}
                   className={cn(
-                    "relative z-[1] flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors text-center cursor-pointer",
+                    "relative z-[1] min-h-[44px] flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors text-center cursor-pointer lg:min-h-0",
                     autoLevel === val
                       ? "text-foreground"
                       : "text-muted-foreground hover:text-foreground",
@@ -230,7 +241,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                   type="button"
                   onClick={() => setOptimizerSettingsOpen(!optimizerSettingsOpen)}
                   aria-expanded={optimizerSettingsOpen}
-                  className="flex w-full cursor-pointer items-center justify-between gap-2"
+                  className="flex min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 lg:min-h-0"
                 >
                   <span className="text-sm leading-none font-medium">
                     {msg("auto.features.submit.components.steps.paramsstep.11")}
@@ -260,6 +271,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                         step={1}
                         value={reflectionMinibatchSize ? parseInt(reflectionMinibatchSize, 10) : ""}
                         onChange={(v) => setReflectionMinibatchSize(String(v))}
+                        className={MOBILE_NUMBER_INPUT_CLASS}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -280,19 +292,24 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                         value={maxFullEvals ? parseInt(maxFullEvals, 10) : ""}
                         onChange={(v) => setMaxFullEvals(String(v))}
                         disabled={!!autoLevel || !!maxMetricCalls}
+                        className={MOBILE_NUMBER_INPUT_CLASS}
                       />
                     </div>
-                    <div className="col-span-2 flex items-center justify-between">
+                    <div className="col-span-1 flex items-center justify-between sm:col-span-2">
                       <Label className="text-sm cursor-pointer">
                         <HelpTip text={tip("submit.merge")}>
                           {msg("auto.features.submit.components.steps.paramsstep.15")}
                         </HelpTip>
                       </Label>
-                      <Switch checked={useMerge} onCheckedChange={setUseMerge} />
+                      <Switch
+                        checked={useMerge}
+                        onCheckedChange={setUseMerge}
+                        className="relative before:absolute before:-inset-3 before:content-[''] lg:before:hidden"
+                      />
                     </div>
                     {optimizerName.toLowerCase() === "gepa" && (
                       <>
-                        <div className="col-span-2 space-y-1.5">
+                        <div className="col-span-1 space-y-1.5 sm:col-span-2">
                           <div className="flex items-center justify-between">
                             <Label
                               htmlFor="max-metric-calls"
@@ -308,7 +325,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                               <button
                                 type="button"
                                 onClick={() => setMaxMetricCalls("")}
-                                className="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
+                                className="min-h-[44px] cursor-pointer px-2 text-xs text-muted-foreground hover:text-foreground lg:min-h-0 lg:px-0"
                               >
                                 {msg("submit.metric_calls.clear")}
                               </button>
@@ -322,7 +339,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                             value={maxMetricCalls ? parseInt(maxMetricCalls, 10) : ""}
                             onChange={(v) => setMaxMetricCalls(String(v))}
                             disabled={!!autoLevel}
-                            className="max-w-48"
+                            className={cn(MOBILE_NUMBER_INPUT_CLASS, "max-w-48")}
                           />
                           {maxMetricCalls && !autoLevel && (
                             <p className="text-xs text-muted-foreground">
@@ -343,6 +360,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                             step={1}
                             value={pxnParents ? parseInt(pxnParents, 10) : ""}
                             onChange={(v) => setPxnParents(String(v))}
+                            className={MOBILE_NUMBER_INPUT_CLASS}
                           />
                         </div>
                         <div className="space-y-1.5">
@@ -358,17 +376,18 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                             step={1}
                             value={pxnProposals ? parseInt(pxnProposals, 10) : ""}
                             onChange={(v) => setPxnProposals(String(v))}
+                            className={MOBILE_NUMBER_INPUT_CLASS}
                           />
                         </div>
                         {pxnBatch > 1 && (
-                          <p className="col-span-2 -mt-1 text-xs text-muted-foreground">
+                          <p className="col-span-1 -mt-1 text-xs text-muted-foreground sm:col-span-2">
                             {formatMsg("submit.pxn.batch_hint", { total: pxnBatch })}
                           </p>
                         )}
                       </>
                     )}
                     {optimizerName.toLowerCase() === "gepa" && (
-                      <div className="col-span-2 space-y-2">
+                      <div className="col-span-1 space-y-2 sm:col-span-2">
                         <Label htmlFor="target-score" className="cursor-pointer text-sm">
                           <HelpTip text={tip("submit.target_score")}>
                             {msg("auto.features.submit.components.steps.paramsstep.16")}
@@ -383,7 +402,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                               step={0.1}
                               value={Number.isFinite(targetScoreValue) ? targetScoreValue : ""}
                               onChange={(value) => setTargetScore(String(value))}
-                              className="pe-8"
+                              className={cn(MOBILE_NUMBER_INPUT_CLASS, "pe-8")}
                             />
                             <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-xs text-muted-foreground">
                               %

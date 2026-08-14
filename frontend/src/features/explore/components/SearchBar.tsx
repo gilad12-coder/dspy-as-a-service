@@ -2,15 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import {
-  CircleNotch,
-  FadersHorizontal,
-  FunnelX,
-  Globe,
-  User,
-  Users,
-  X,
-} from "@/shared/ui/icons";
+import { CircleNotch, FadersHorizontal, FunnelX, Globe, User, Users, X } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
@@ -96,8 +88,7 @@ export function SearchBar({
   // The suggestions dropdown only competes for attention on a blank field;
   // once the user starts arrowing through results (activeResultIndex >= 0) it
   // yields so the two affordances never overlap.
-  const activeResultId =
-    activeResultIndex >= 0 ? `explore-result-${activeResultIndex}` : undefined;
+  const activeResultId = activeResultIndex >= 0 ? `explore-result-${activeResultIndex}` : undefined;
   const suggestOpen =
     focused &&
     draft.trim().length === 0 &&
@@ -153,14 +144,10 @@ export function SearchBar({
   return (
     <div data-tutorial="explore-search" className="mx-auto flex w-full max-w-3xl flex-col gap-2.5">
       <div className="flex items-center justify-center">
-        <CorpusToggle
-          value={corpus}
-          onChange={onCorpusChange}
-          signedIn={signedIn}
-        />
+        <CorpusToggle value={corpus} onChange={onCorpusChange} signedIn={signedIn} />
       </div>
       <div
-        className={`group relative flex items-center gap-1 rounded-2xl border border-border bg-background ps-4 pe-1 py-1.5 transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-foreground/40 focus-within:shadow-[0_2px_24px_-12px_oklch(0.25_0.04_45/.18)] ${
+        className={`group relative flex min-h-[44px] items-center gap-1 rounded-2xl border border-border bg-background ps-4 pe-1 py-0 transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-foreground/40 focus-within:shadow-[0_2px_24px_-12px_oklch(0.25_0.04_45/.18)] lg:py-1.5 ${
           isActive ? "border-foreground/25" : ""
         }`}
       >
@@ -191,7 +178,7 @@ export function SearchBar({
           aria-controls="explore-results"
           aria-activedescendant={activeResultId}
           style={{ textAlign: inputDir === "rtl" ? "right" : "left" }}
-          className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[15px] tracking-tight text-foreground placeholder:text-foreground/40 focus:outline-none"
+          className="h-[44px] min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[15px] tracking-tight text-foreground placeholder:text-foreground/40 focus:outline-none lg:h-auto"
         />
         {loading && (
           <span
@@ -206,7 +193,7 @@ export function SearchBar({
             type="button"
             onClick={clearAll}
             aria-label={msg("explore.search.clear")}
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] cursor-pointer hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+            className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:size-8"
           >
             <X className="size-4" aria-hidden="true" />
           </button>
@@ -217,7 +204,7 @@ export function SearchBar({
               type="button"
               onClick={onClearFilters}
               aria-label={msg("explore.filters.reset")}
-              className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] cursor-pointer hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+              className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:size-9"
             >
               <FunnelX className="size-[1.05rem]" aria-hidden="true" />
             </button>
@@ -227,7 +214,7 @@ export function SearchBar({
           type="button"
           onClick={onOpenFilters}
           aria-label={msg("explore.filters.button")}
-          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-foreground/70 transition-[background-color,color] cursor-pointer hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+          className="inline-flex h-[44px] min-w-[44px] shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2.5 text-[13px] text-foreground/70 transition-[background-color,color] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:h-9 lg:min-w-0"
         >
           <FadersHorizontal className="size-[1.125rem]" aria-hidden="true" />
           {filtersCount > 0 && (
@@ -327,7 +314,7 @@ function CorpusToggle({
     <div
       role="radiogroup"
       aria-label={msg("explore.corpus.aria")}
-      className="relative inline-flex items-center rounded-full border border-border/80 bg-muted/40 p-0.5"
+      className="relative flex w-full items-center rounded-full border border-border/80 bg-muted/40 p-0.5 sm:w-auto"
     >
       {segments.map((seg) => {
         const active = seg.value === value;
@@ -345,12 +332,12 @@ function CorpusToggle({
                 if (disabled) return;
                 if (!active) onChange(seg.value);
               }}
-              className={`relative inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 ${
+              className={`relative inline-flex min-h-[44px] min-w-0 flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11.5px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:flex-none sm:gap-1.5 sm:px-3.5 sm:text-[12.5px] lg:min-h-0 ${
                 active
                   ? "text-foreground"
                   : disabled
-                  ? "cursor-not-allowed text-foreground/30"
-                  : "cursor-pointer text-foreground/60 hover:text-foreground"
+                    ? "cursor-not-allowed text-foreground/30"
+                    : "cursor-pointer text-foreground/60 hover:text-foreground"
               }`}
             >
               {active && (
@@ -363,7 +350,7 @@ function CorpusToggle({
               )}
               <span className="relative z-10 inline-flex items-center gap-1.5">
                 <Icon className="size-3.5" aria-hidden="true" />
-                <span>{seg.label}</span>
+                <span className="truncate">{seg.label}</span>
               </span>
             </button>
           </TooltipButton>

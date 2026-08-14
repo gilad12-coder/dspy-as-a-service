@@ -52,7 +52,7 @@ function Avatar({ image, label, size }: { image?: string | null; label: string; 
 }
 
 const MENU_ITEM =
-  "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-foreground transition-colors duration-150 cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:bg-accent";
+  "flex min-h-[44px] w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-foreground transition-colors duration-150 cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:bg-accent lg:min-h-0";
 
 /**
  * Account menu — the profile button anchored at the foot of the sidebar.
@@ -89,7 +89,7 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
     <button
       type="button"
       aria-label={msg("app.shell.account.aria")}
-      className="rounded-full transition-transform duration-150 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+      className="flex size-[44px] items-center justify-center rounded-full transition-transform duration-150 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:size-auto"
     >
       <Avatar image={session.user.image} label={name} size={28} />
     </button>
@@ -97,7 +97,7 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
     <button
       type="button"
       aria-label={msg("app.shell.account.aria")}
-      className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-start transition-colors duration-200 hover:bg-sidebar-accent/40 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+      className="group flex min-h-[44px] w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-start transition-colors duration-200 hover:bg-sidebar-accent/40 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:min-h-0"
     >
       <Avatar image={session.user.image} label={name} size={28} />
       {/* Physical edge from the UI dir, not logical `text-start`: the name keeps
