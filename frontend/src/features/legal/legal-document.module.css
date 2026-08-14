@@ -1,0 +1,14 @@
+.title {
+  color: #faf8f5 !important;
+  background: none !important;
+  background-clip: border-box !important;
+  -webkit-background-clip: border-box !important;
+  -webkit-text-fill-color: #faf8f5 !important;
+}
+
+@media print {
+  .title {
+    color: #1c1612 !important;
+    -webkit-text-fill-color: #1c1612 !important;
+  }
+}

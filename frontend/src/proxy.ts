@@ -11,7 +11,8 @@ export const config = {
     // ``api/webauthn`` (passkey sign-in options), and ``api/2fa`` (emailed
     // sign-in codes) are excluded: all are hit by logged-out visitors, so
     // guarding them would bounce the POSTs to /login and the flow would never
-    // complete.
-    "/((?!login|api/auth|api/register|api/webauthn|api/2fa|_next/static|_next/image|favicon\\.svg|robots\\.txt|sitemap\\.xml).*)",
+    // complete. Terms and Privacy are public legal disclosures and must remain
+    // readable before someone creates an account.
+    "/((?!login|terms|privacy|api/auth|api/register|api/webauthn|api/2fa|_next/static|_next/image|favicon\\.svg|robots\\.txt|sitemap\\.xml).*)",
   ],
 };

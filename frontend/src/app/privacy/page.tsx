@@ -14,6 +14,7 @@ export default function PrivacyPage() {
   return (
     <LegalDocument
       document={PRIVACY_POLICY}
+      kind="privacy"
       related={{ label: "Terms of Service", href: LEGAL_LINKS.terms }}
     />
   );
