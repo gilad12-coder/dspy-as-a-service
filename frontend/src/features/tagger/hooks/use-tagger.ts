@@ -51,6 +51,7 @@ import {
   labelsAgree,
   sampleRowIds,
 } from "../lib/assist";
+import { prefillFreetextPredictions } from "../lib/freetext-prefill";
 import { markTaggerInterviewForLocaleReset } from "../lib/interview-locale-reset";
 
 /** Window event the sidebar listens for to refresh its saved-session list. */
@@ -104,6 +105,13 @@ export interface AutotagEstimate {
  */
 export function useTagger(initialSession?: TaggerSessionDetail | null) {
   const router = useRouter();
+  const restoredAssist = (initialSession?.assist as AssistState | null | undefined) ?? null;
+  const restoredConfig = (initialSession?.config as TaggerConfig | undefined) ?? null;
+  const restoredAnnotations =
+    (initialSession?.annotations as Record<string, Annotation> | undefined) ?? {};
+  const restoredRounds = restoredAssist?.rounds ?? [];
+  const restoredRound = restoredRounds[restoredRounds.length - 1];
+  const restoredMode = restoredAssist?.taskOverride?.mode ?? restoredConfig?.mode;
   const [phase, setPhase] = useState<TaggerPhase>(() => {
     const saved = initialSession?.phase;
     // Sessions saved before AI-first calibration persist the retired
@@ -112,19 +120,21 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     if (saved === "calibration") return "review";
     return (saved as TaggerPhase | undefined) ?? "setup";
   });
-  const [config, setConfig] = useState<TaggerConfig | null>(
-    (initialSession?.config as TaggerConfig | undefined) ?? null,
-  );
+  const [config, setConfig] = useState<TaggerConfig | null>(restoredConfig);
   const [data, setData] = useState<DataRow[]>(
     (initialSession?.data as DataRow[] | undefined) ?? [],
   );
   const [columns, setColumns] = useState<string[]>(initialSession?.columns ?? []);
-  const [annotations, setAnnotations] = useState<Record<string, Annotation>>(
-    (initialSession?.annotations as Record<string, Annotation> | undefined) ?? {},
+  const [annotations, setAnnotations] = useState<Record<string, Annotation>>(() =>
+    initialSession?.phase === "review" && restoredMode === "freetext" && restoredRound
+      ? prefillFreetextPredictions(
+          restoredAnnotations,
+          restoredAssist?.predictions ?? {},
+          restoredRound.rowIds,
+        )
+      : restoredAnnotations,
   );
-  const [assist, setAssist] = useState<AssistState | null>(
-    (initialSession?.assist as AssistState | null | undefined) ?? null,
-  );
+  const [assist, setAssist] = useState<AssistState | null>(restoredAssist);
   const [currentIndex, setCurrentIndex] = useState(initialSession?.current_index ?? 0);
   const [sessionId, setSessionId] = useState<string | null>(initialSession?.id ?? null);
   // A shared-in viewer's session is read-only server-side: progress is never
@@ -323,12 +333,18 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   const flushNow = useCallback(async () => {
     if (!sessionId) return;
     pendingRef.current = null;
-    await updateTaggerSession(sessionId, {
+    const payload = {
       annotations: annotationsRef.current as unknown as Record<string, unknown>,
       assist: (assistRef.current as unknown as Record<string, unknown>) ?? undefined,
       current_index: currentIndexRef.current,
       phase: phaseRef.current,
-    });
+    };
+    try {
+      await updateTaggerSession(sessionId, payload);
+    } catch (error) {
+      pendingRef.current = pendingRef.current ?? payload;
+      throw error;
+    }
   }, [sessionId]);
 
   // Autosave progress every 60 seconds — and immediately whenever the user
@@ -839,20 +855,28 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
           controller.abort();
           return;
         }
-        setAssist((prev) =>
-          prev ? { ...prev, predictions: { ...prev.predictions, [id]: pred } } : prev,
-        );
+        const currentAssist = assistRef.current;
+        if (!currentAssist) return;
+        const nextAssist = {
+          ...currentAssist,
+          predictions: { ...currentAssist.predictions, [id]: pred },
+        };
+        assistRef.current = nextAssist;
+        setAssist(nextAssist);
         // Freetext audits by fixing the AI's extraction in place — each row
         // is prefilled as its prediction arrives, never over a human edit;
         // binary/multiclass confirm or override per keystroke.
         if (effectiveConfig.mode === "freetext") {
-          setAnnotations((prev) => {
-            const value = pred.value as Annotation;
-            if (value === undefined || isTagged(prev[id], effectiveConfig.mode)) return prev;
-            return { ...prev, [id]: value };
-          });
+          const nextAnnotations = prefillFreetextPredictions(
+            annotationsRef.current,
+            { [id]: pred },
+            [id],
+          );
+          annotationsRef.current = nextAnnotations;
+          setAnnotations(nextAnnotations);
         }
       };
+      let completed = false;
       try {
         await streamPredictions(sessionId, ids, {
           onPrediction: applyPrediction,
@@ -860,10 +884,12 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
             // The terminal map is authoritative — re-applying is a no-op for
             // rows already streamed and fills in any missed events.
             for (const [id, pred] of Object.entries(predictions)) applyPrediction(id, pred);
+            completed = true;
           },
           onError: () => setAssistError("predict"),
           signal: controller.signal,
         });
+        if (completed) await flushNow().catch(() => {});
       } finally {
         setRoundPredicting(false);
       }

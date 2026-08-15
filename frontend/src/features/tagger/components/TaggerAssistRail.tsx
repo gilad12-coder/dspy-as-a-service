@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check, CircleNotch, Sparkle } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { Badge } from "@/shared/ui/primitives/badge";
@@ -229,6 +230,8 @@ function ReviewPanel({
   onFinishRound: () => void;
   onNextUnreviewed: () => void;
 }) {
+  const reduceMotion = useReducedMotion();
+
   return (
     <div className="flex flex-col gap-2.5">
       {prediction ? (
@@ -239,19 +242,55 @@ function ReviewPanel({
           {msg("tagger.assist.rail.predicting")}
         </p>
       )}
-      {decided === undefined && prediction && (
-        <Button variant="secondary" size="sm" onClick={onConfirm} className="w-full">
-          {msg("tagger.assist.rail.confirm")}
-        </Button>
-      )}
-      {decided !== undefined && (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Check className="size-3.5" />
-          {decided === "confirmed"
-            ? msg("tagger.assist.rail.decided_confirmed")
-            : msg("tagger.assist.rail.decided_corrected")}
-        </p>
-      )}
+      <div className="min-h-8 w-full">
+        <AnimatePresence mode="wait" initial={false}>
+          {decided === undefined && prediction ? (
+            <motion.div
+              key="confirm"
+              exit={reduceMotion ? undefined : { opacity: 0, scale: 0.97 }}
+              transition={{ duration: reduceMotion ? 0 : 0.09 }}
+              className="w-full"
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onConfirm}
+                className="w-full justify-center text-center"
+              >
+                {msg("tagger.assist.rail.confirm")}
+              </Button>
+            </motion.div>
+          ) : decided !== undefined ? (
+            <motion.div
+              key={decided}
+              role="status"
+              initial={reduceMotion ? false : { opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={
+                reduceMotion ? { duration: 0 } : { duration: 0.22, ease: [0.16, 1, 0.3, 1] }
+              }
+              className="flex min-h-8 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--success-dim)] px-3 text-center text-xs font-medium text-[var(--success)]"
+            >
+              <motion.span
+                initial={reduceMotion ? false : { opacity: 0, scale: 0.55, rotate: -12 }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                transition={
+                  reduceMotion ? { duration: 0 } : { duration: 0.24, ease: [0.16, 1, 0.3, 1] }
+                }
+                className="inline-flex"
+                aria-hidden="true"
+              >
+                <Check className="size-3.5" />
+              </motion.span>
+              <span>
+                {decided === "confirmed"
+                  ? msg("tagger.assist.rail.decided_confirmed")
+                  : msg("tagger.assist.rail.decided_corrected")}
+              </span>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
       {/* The round only closes after a full pass: until every row carries an
           explicit decision, this slot navigates to what's left instead. */}
       {(isFreetext || isFlaggedPass) &&
