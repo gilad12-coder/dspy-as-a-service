@@ -342,7 +342,7 @@ def lm_call_count(language_model: object) -> int | None:
 def build_language_model(config: ModelConfig, *, disable_cache: bool = False) -> dspy.LM:
     """Construct a DSPy language model from a ModelConfig.
 
-    Only non-None optional fields (temperature, base_url, max_tokens, top_p) are
+    Only non-None optional fields (temperature, base_url, max_tokens) are
     forwarded to ``dspy.LM`` to avoid LiteLLM rejecting unexpected None values.
     Extra kwargs from ``config.extra`` are merged in last.
 
@@ -385,8 +385,6 @@ def build_language_model(config: ModelConfig, *, disable_cache: bool = False) ->
         lm_kwargs["base_url"] = config.base_url
     if config.max_tokens is not None:
         lm_kwargs["max_tokens"] = config.max_tokens
-    if config.top_p is not None:
-        lm_kwargs["top_p"] = config.top_p
     lm_kwargs.update(config.extra)
     _apply_managed_gateway(lm_kwargs)
     _translate_gateway_reasoning(lm_kwargs)

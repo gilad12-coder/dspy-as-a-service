@@ -8,7 +8,7 @@ import { InlineErrorRow } from "@/shared/ui/inline-error-row";
 import type { ServeInfoResponse, WorkflowNodeTrace } from "@/shared/types/api";
 import { autoResizeTextarea, Composer, MessageActions } from "@/shared/ui/agent";
 import { formatOutput } from "@/shared/lib";
-import { formatMsg, msg } from "@/shared/lib/messages";
+import { msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 export interface ServeChatProps {
@@ -30,7 +30,6 @@ export interface ServeChatProps {
   chatScrollRef: React.RefObject<HTMLDivElement | null>;
   handleServe: (overrideInputs?: Record<string, string>) => void;
   handleStopServe: () => void;
-  demos: Array<{ inputs: Record<string, unknown> }>;
 }
 
 export function ServeChat({
@@ -45,7 +44,6 @@ export function ServeChat({
   chatScrollRef,
   handleServe,
   handleStopServe,
-  demos,
 }: ServeChatProps) {
   const [editingRunTs, setEditingRunTs] = useState<number | null>(null);
   const [singleDraft, setSingleDraft] = useState("");
@@ -75,50 +73,7 @@ export function ServeChat({
             variant="compact"
             title={msg("auto.features.optimizations.components.servechat.1")}
             description={msg("auto.features.optimizations.components.servechat.2")}
-          >
-            {demos.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-md w-full mt-2">
-                {demos.slice(0, 4).map((demo, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      if (singleInputField) {
-                        setSingleDraft(String(demo.inputs[singleInputField] ?? ""));
-                        return;
-                      }
-                      for (const f of serveInfo.input_fields) {
-                        const el = textareaRefs.current[f];
-                        if (el) {
-                          el.value = String(demo.inputs[f] ?? "");
-                          autoResizeTextarea(el);
-                        }
-                      }
-                    }}
-                    className="text-end p-3 rounded-xl border border-[#DDD4C8]/60 hover:border-[#C8A882]/60 bg-muted/10 hover:bg-muted/20 transition-all group"
-                    dir="auto"
-                  >
-                    <div className="text-[0.625rem] font-medium text-[#3D2E22]/50 mb-1">
-                      {formatMsg("optimizations.servechat.demo_label", {
-                        label: msg("auto.features.optimizations.components.servechat.3"),
-                        index: String(i + 1),
-                      })}
-                    </div>
-                    <div className="text-xs text-foreground/70 line-clamp-2 font-mono" dir="ltr">
-                      {Object.entries(demo.inputs)
-                        .map(([k, v]) => `${k}: ${String(v)}`)
-                        .join(", ")
-                        .slice(0, 80)}
-                      {Object.entries(demo.inputs)
-                        .map(([k, v]) => `${k}: ${String(v)}`)
-                        .join(", ").length > 80
-                        ? "..."
-                        : ""}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </EmptyState>
+          />
         )}
         {[...runHistory].reverse().map((run) => {
           const isEditing = editingRunTs === run.ts;

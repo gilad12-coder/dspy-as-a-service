@@ -189,24 +189,6 @@ def test_build_language_model_passes_max_tokens_when_set() -> None:
     assert call_kwargs["max_tokens"] == 512
 
 
-def test_build_language_model_omits_top_p_when_none() -> None:
-    """``top_p`` is omitted when not configured."""
-    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
-        build_language_model(_cfg(top_p=None))
-
-    call_kwargs = mock_cls.call_args[1]
-    assert "top_p" not in call_kwargs
-
-
-def test_build_language_model_passes_top_p_when_set() -> None:
-    """A configured ``top_p`` is forwarded to ``dspy.LM``."""
-    with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
-        build_language_model(_cfg(top_p=0.9))
-
-    call_kwargs = mock_cls.call_args[1]
-    assert call_kwargs["top_p"] == 0.9
-
-
 def test_build_language_model_applies_default_request_timeout() -> None:
     """A default ``timeout`` from settings guards against hung provider reads."""
     with patch("core.service_gateway.language_models.MeteredLM") as mock_cls:
@@ -257,7 +239,6 @@ def test_build_language_model_all_optional_fields_combined() -> None:
                 base_url="http://proxy",
                 temperature=0.5,
                 max_tokens=256,
-                top_p=0.95,
                 extra={"logit_bias": {}},
             )
         )
@@ -267,7 +248,6 @@ def test_build_language_model_all_optional_fields_combined() -> None:
     assert call_kwargs["base_url"] == "http://proxy"
     assert call_kwargs["temperature"] == 0.5
     assert call_kwargs["max_tokens"] == 256
-    assert call_kwargs["top_p"] == 0.95
     assert "logit_bias" in call_kwargs
 
 

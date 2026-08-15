@@ -21,6 +21,7 @@ interface TutorialPopoverProps {
   isLast: boolean;
   isAutoPlaying: boolean;
   onToggleAutoPlay: () => void;
+  direction: "forward" | "backward";
 }
 
 export function TutorialPopover({
@@ -35,6 +36,7 @@ export function TutorialPopover({
   isLast,
   isAutoPlaying,
   onToggleAutoPlay,
+  direction,
 }: TutorialPopoverProps) {
   const prefersReduced = useReducedMotion();
   // Back points toward the start, Next toward the end — the physical arrow
@@ -42,13 +44,23 @@ export function TutorialPopover({
   const rtl = getActiveDir() === "rtl";
   const BackArrow = rtl ? ArrowRight : ArrowLeft;
   const NextArrow = rtl ? ArrowLeft : ArrowRight;
+  const logicalDirection = direction === "forward" ? 1 : -1;
+  const horizontalDirection = rtl ? -logicalDirection : logicalDirection;
+  const previousProgress = Math.max(0, (stepNumber - 1) / totalSteps);
+  const currentProgress = stepNumber / totalSteps;
 
   return (
     <motion.div
-      initial={prefersReduced ? false : { opacity: 0, scale: 0.97, y: 6 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={prefersReduced ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 6 }}
-      transition={{ duration: prefersReduced ? 0 : 0.18, ease: [0.2, 0.8, 0.2, 1] }}
+      initial={
+        prefersReduced ? false : { opacity: 0, scale: 0.985, x: horizontalDirection * 12 }
+      }
+      animate={{ opacity: 1, scale: 1, x: 0 }}
+      exit={
+        prefersReduced
+          ? { opacity: 0 }
+          : { opacity: 0, scale: 0.985, x: horizontalDirection * -8 }
+      }
+      transition={{ duration: prefersReduced ? 0 : 0.2, ease: [0.22, 1, 0.36, 1] }}
       className="fixed z-[9999] pointer-events-auto"
       style={{ top: position.top, left: position.left }}
     >
@@ -96,9 +108,10 @@ export function TutorialPopover({
           <div className="h-1 bg-[#E5DDD4]/50 rounded-full overflow-hidden">
             <motion.div
               className="h-full bg-[#3D2E22] rounded-full"
-              initial={{ width: 0 }}
-              animate={{ width: `${(stepNumber / totalSteps) * 100}%` }}
-              transition={{ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }}
+              style={{ originX: rtl ? 1 : 0 }}
+              initial={prefersReduced ? false : { scaleX: previousProgress }}
+              animate={{ scaleX: currentProgress }}
+              transition={{ duration: prefersReduced ? 0 : 0.32, ease: [0.22, 1, 0.36, 1] }}
             />
           </div>
         </div>

@@ -877,13 +877,6 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
     : (job?.result?.program_artifact ?? job?.grid_result?.best_pair?.program_artifact ?? null);
   const showArtifactTab = !!(optimizedPrompt || reactOverlay || artifactFiles);
 
-  // Demos passed to the serve playground — pair-scoped in pair view.
-  const playgroundDemos = isPairContext
-    ? (activePair.program_artifact?.optimized_prompt?.demos ?? [])
-    : (job?.result?.program_artifact?.optimized_prompt?.demos ??
-      job?.grid_result?.best_pair?.program_artifact?.optimized_prompt?.demos ??
-      []);
-
   // LM activity is pair-scoped in pair view, otherwise the run's.
   const viewLmActivity: LMActivity | null = isPairContext
     ? ((activePair.lm_activity as LMActivity | undefined) ?? null)
@@ -1466,7 +1459,6 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                     chatScrollRef={chatScrollRef}
                     handleServe={handleServe}
                     handleStopServe={handleStopServe}
-                    demos={playgroundDemos}
                     optimizationId={job.optimization_id}
                     pairIndex={isPairContext ? activePair.pair_index : undefined}
                     onClearHistory={handleClearHistory}

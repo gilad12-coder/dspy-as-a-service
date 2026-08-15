@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useReducedMotion } from "framer-motion";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import { Compass, Database, Lightning, TrendUp } from "@/shared/ui/icons";
 import { useTutorialContext } from "./tutorial-provider";
@@ -55,7 +56,19 @@ const TRACKS = [
  */
 export function TutorialMenu() {
   const { startTrack } = useTutorialContext();
+  const prefersReducedMotion = useReducedMotion();
   const [sizes, setSizes] = React.useState<Partial<Record<TutorialTrack, TrackSize>>>({});
+
+  const startAfterMenuCloses = React.useCallback(
+    (track: TutorialTrack) => {
+      if (prefersReducedMotion) {
+        startTrack(track);
+        return;
+      }
+      window.setTimeout(() => startTrack(track), 140);
+    },
+    [prefersReducedMotion, startTrack],
+  );
 
   // Content mounts only while the popover is open, so this runs on open. The
   // step definitions are lazily imported; until they land the items render
@@ -87,7 +100,7 @@ export function TutorialMenu() {
         align="end"
         side="bottom"
         sideOffset={6}
-        className="z-50 w-[min(calc(100vw-24px),360px)] max-w-none rounded-2xl border border-border/40 bg-card py-1.5 shadow-[0_4px_24px_rgba(28,22,18,0.1)] animate-in fade-in-0 zoom-in-95"
+        className="z-50 w-[min(calc(100vw-24px),360px)] max-w-none origin-[var(--radix-popover-content-transform-origin)] rounded-2xl border border-border/40 bg-card py-1.5 shadow-[0_4px_24px_rgba(28,22,18,0.1)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 motion-reduce:animate-none"
       >
         <p className="px-4 pb-1.5 pt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
           {msg("tutorial.menu.subtitle")}
@@ -101,7 +114,7 @@ export function TutorialMenu() {
             label={msg(nameKey)}
             description={msg(descKey)}
             size={sizes[id]}
-            onStart={startTrack}
+            onStart={startAfterMenuCloses}
           />
         ))}
       </PopoverPrimitive.Content>

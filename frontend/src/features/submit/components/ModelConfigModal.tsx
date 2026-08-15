@@ -360,29 +360,6 @@ export function ModelConfigModal({
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>
-                <HelpTip text={tip("model_config.top_p")}>
-                  {msg("auto.features.submit.components.modelconfigmodal.6")}
-                </HelpTip>
-              </Label>
-              <span className="text-xs font-mono text-muted-foreground">
-                {draft.top_p?.toFixed(2) ?? "—"}
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={draft.top_p ?? 1}
-              onChange={(e) => setDraft((p) => ({ ...p, top_p: parseFloat(e.target.value) }))}
-              className="h-[44px] w-full cursor-pointer appearance-none rounded-full bg-transparent accent-primary [&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-muted [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-muted lg:h-2 lg:bg-muted"
-              dir="auto"
-            />
-          </div>
-
-          <div className="space-y-2">
             <Label>
               <HelpTip text={tip("model_config.max_tokens")}>
                 {msg("auto.features.submit.components.modelconfigmodal.7")}

@@ -11,6 +11,7 @@ import { TutorialPopover } from "./tutorial-popover";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { isTutorialNavigating, registerTutorialHook } from "../lib/bridge";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
+import type { TutorialStep } from "../lib/steps";
 
 export function TutorialOverlay() {
   const { state, currentStep, nextStep, prevStep, exitTutorial, completeTrack, toggleAutoPlay } =
@@ -27,6 +28,9 @@ export function TutorialOverlay() {
   const [highlightRadius, setHighlightRadius] = React.useState(12);
   const [showSplash, setShowSplash] = React.useState(false);
   const [stepReady, setStepReady] = React.useState(false);
+  const [isTransitioning, setIsTransitioning] = React.useState(false);
+  const [displayedStep, setDisplayedStep] = React.useState<TutorialStep | null>(null);
+  const [displayedStepIndex, setDisplayedStepIndex] = React.useState(0);
   const stepPathRef = React.useRef<string | null>(null);
   const splashTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
@@ -58,6 +62,15 @@ export function TutorialOverlay() {
   const targetRef = React.useRef<Element | null>(null);
   const lastRectRef = React.useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const autoPlayTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    if (state.isVisible) return;
+    setStepReady(false);
+    setIsTransitioning(false);
+    setDisplayedStep(null);
+    setTargetRect(null);
+    setPopoverPosition(null);
+  }, [state.isVisible]);
 
   // Fixed symmetric gap so the popover sits the same distance from the
   // highlighted card regardless of direction — top/bottom use vertical gap,
@@ -173,14 +186,8 @@ export function TutorialOverlay() {
 
   React.useEffect(() => {
     if (!state.isVisible || !currentStep) return;
+    setIsTransitioning(true);
     setStepReady(false);
-    // Drop the previous step's rect so the spotlight goes dark for the
-    // brief transition rather than animating from the OLD anchor across
-    // the screen — moving backward in particular looked broken because
-    // the spring kept chasing a stale target while the new step's
-    // beforeShow ran.
-    setTargetRect(null);
-    setPopoverPosition(null);
     lastRectRef.current = null;
     stepPathRef.current = null;
     targetRef.current = null;
@@ -205,10 +212,19 @@ export function TutorialOverlay() {
       const isVisible = (e: Element | null) => {
         if (!e) return false;
         const r = (e as HTMLElement).getBoundingClientRect();
-        return r.width > 0 && r.height > 0;
+        const style = window.getComputedStyle(e);
+        return (
+          r.width > 0 &&
+          r.height > 0 &&
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          Number(style.opacity || 1) > 0.05
+        );
       };
+      const findVisibleTarget = () =>
+        Array.from(document.querySelectorAll(currentStep.target)).reverse().find(isVisible) ?? null;
       const el = await new Promise<Element | null>((resolve) => {
-        const found = document.querySelector(currentStep.target);
+        const found = findVisibleTarget();
         if (found && isVisible(found)) {
           resolve(found);
           return;
@@ -219,7 +235,7 @@ export function TutorialOverlay() {
             resolve(null);
             return;
           }
-          const next = document.querySelector(currentStep.target);
+          const next = findVisibleTarget();
           if ((next && isVisible(next)) || Date.now() - start > 5000) {
             resolve(next && isVisible(next) ? next : null);
             return;
@@ -269,20 +285,47 @@ export function TutorialOverlay() {
         if (cancelled) return;
       }
 
-      targetRef.current = el;
-      // Two rAFs + a 100ms settle handles route + wizard + AnimatePresence
-      // enter transitions where the element exists but is still at 0×0 or
-      // mid-slide. Without this the spotlight measured a 0×0 rect at -8,-8
-      // when coming backward from the agent to the module picker.
-      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-      await new Promise<void>((r) => setTimeout(r, 120));
-      if (cancelled) return;
-      // Re-query after settle — tab/wizard remount may have replaced the node
-      const fresh = document.querySelector(currentStep.target) as Element | null;
-      if (fresh) {
-        const fr = (fresh as HTMLElement).getBoundingClientRect();
-        if (fr.width > 0 && fr.height > 0) targetRef.current = fresh;
-      }
+      // Route, tab, and wizard transitions can leave a visible target moving
+      // for several frames. Wait for its geometry to settle instead of using a
+      // fixed delay, then reveal the spotlight at the final coordinates.
+      const settledTarget = await new Promise<Element | null>((resolve) => {
+        let previousRect: DOMRect | null = null;
+        let stableFrames = 0;
+        const startedAt = performance.now();
+        const tick = (now: number) => {
+          if (cancelled) {
+            resolve(null);
+            return;
+          }
+          const candidate = findVisibleTarget();
+          if (candidate && isVisible(candidate)) {
+            const nextRect = candidate.getBoundingClientRect();
+            if (
+              previousRect &&
+              Math.abs(previousRect.x - nextRect.x) < 0.5 &&
+              Math.abs(previousRect.y - nextRect.y) < 0.5 &&
+              Math.abs(previousRect.width - nextRect.width) < 0.5 &&
+              Math.abs(previousRect.height - nextRect.height) < 0.5
+            ) {
+              stableFrames += 1;
+            } else {
+              stableFrames = 0;
+            }
+            previousRect = nextRect;
+            if (stableFrames >= 3 || now - startedAt >= 800) {
+              resolve(candidate);
+              return;
+            }
+          } else if (now - startedAt >= 800) {
+            resolve(null);
+            return;
+          }
+          waitRaf = requestAnimationFrame(tick);
+        };
+        waitRaf = requestAnimationFrame(tick);
+      });
+      if (cancelled || !settledTarget) return;
+      targetRef.current = settledTarget;
       updatePositions();
       // Observe size changes on the target; scroll/resize cover
       // viewport-driven shifts. The 100ms rAF poll is the safety net for
@@ -291,7 +334,7 @@ export function TutorialOverlay() {
       // down. updatePositions is a no-op when the rect didn't move
       // ≥0.5px, so the poll is cheap.
       resizeObserver = new ResizeObserver(() => updatePositions());
-      resizeObserver.observe(targetRef.current ?? el);
+      resizeObserver.observe(settledTarget);
       window.addEventListener("scroll", onWindowChange, { passive: true, capture: true });
       window.addEventListener("resize", onWindowChange);
       let lastTrack = 0;
@@ -305,6 +348,9 @@ export function TutorialOverlay() {
       };
       trackRaf = requestAnimationFrame(trackTick);
       stepPathRef.current = window.location.pathname;
+      setDisplayedStep(currentStep);
+      setDisplayedStepIndex(state.currentStepIndex);
+      setIsTransitioning(false);
       setStepReady(true);
     };
 
@@ -326,7 +372,15 @@ export function TutorialOverlay() {
         void currentStep.afterHide();
       }
     };
-  }, [state.isVisible, state.lastDirection, currentStep, updatePositions, nextStep, prevStep]);
+  }, [
+    state.isVisible,
+    state.lastDirection,
+    state.currentStepIndex,
+    currentStep,
+    updatePositions,
+    nextStep,
+    prevStep,
+  ]);
 
   // Detect manual navigation away from the active step's expected route
   // and exit the tour — the spotlight would otherwise point at a missing
@@ -396,7 +450,7 @@ export function TutorialOverlay() {
   }, [exitTutorial, router]);
 
   React.useEffect(() => {
-    if (!state.isVisible) return;
+    if (!state.isVisible || !stepReady) return;
 
     const onKey = (e: KeyboardEvent) => {
       // Skip when the user is typing into an editable surface — otherwise
@@ -429,7 +483,7 @@ export function TutorialOverlay() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state.isVisible, nextStep, prevStep, handleExit]);
+  }, [state.isVisible, stepReady, nextStep, prevStep, handleExit]);
 
   // Splash must render independently of tutorial visibility
   const splashPortal = showSplash
@@ -461,10 +515,10 @@ export function TutorialOverlay() {
   const track = state.activeTrack ? (getLoadedTrack(state.activeTrack) ?? null) : null;
   if (!track) return splashPortal;
 
-  const stepNumber = state.currentStepIndex + 1;
+  const stepNumber = displayedStepIndex + 1;
   const totalSteps = Math.max(track.steps.length, stepNumber);
-  const isFirst = state.currentStepIndex === 0;
-  const isLast = state.currentStepIndex === track.steps.length - 1;
+  const isFirst = displayedStepIndex === 0;
+  const isLast = displayedStepIndex === track.steps.length - 1;
 
   const handleNext = () => {
     if (isLast) completeTrack();
@@ -480,13 +534,14 @@ export function TutorialOverlay() {
             targetRect={targetRect}
             padding={highlightPadding}
             borderRadius={highlightRadius}
+            isTransitioning={isTransitioning}
           />
 
           <AnimatePresence mode="wait">
-            {stepReady && popoverPosition && (
+            {stepReady && displayedStep && popoverPosition && (
               <TutorialPopover
-                key={currentStep.id}
-                step={currentStep}
+                key={displayedStep.id}
+                step={displayedStep}
                 stepNumber={stepNumber}
                 totalSteps={totalSteps}
                 position={popoverPosition}
@@ -497,6 +552,7 @@ export function TutorialOverlay() {
                 isLast={isLast}
                 isAutoPlaying={state.isAutoPlaying}
                 onToggleAutoPlay={toggleAutoPlay}
+                direction={state.lastDirection}
               />
             )}
           </AnimatePresence>

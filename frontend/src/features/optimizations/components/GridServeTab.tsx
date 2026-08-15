@@ -351,7 +351,6 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
             chatScrollRef={chatScrollRef}
             handleServe={handleServe}
             handleStopServe={handleStopServe}
-            demos={selected?.program_artifact?.optimized_prompt?.demos ?? []}
           />
 
           <Card>

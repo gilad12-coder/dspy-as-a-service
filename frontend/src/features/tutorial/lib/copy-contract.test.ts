@@ -92,7 +92,6 @@ test("the concepts guide matches the current optimization surface", () => {
     "max_cost_credits",
     "token_source",
     "temperature",
-    "top_p",
     "max_tokens",
     "paused",
   ]) {

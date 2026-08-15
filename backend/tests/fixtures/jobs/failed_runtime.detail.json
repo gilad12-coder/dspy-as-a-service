@@ -166,8 +166,7 @@
     "extra": {},
     "max_tokens": null,
     "name": "gpt-5.4-nano",
-    "temperature": null,
-    "top_p": null
+    "temperature": null
   },
   "module_kwargs": {},
   "module_name": "predict",

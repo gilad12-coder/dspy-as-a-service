@@ -68,7 +68,7 @@ def _sanitize_model_params(params: Any) -> dict[str, Any]:
     """Reduce stored model params to the safe model settings tagging honors.
 
     ``assist`` is a free-form JSON column any API caller can write, so only
-    temperature, max_tokens, top_p, the reasoning-effort extra, and the
+    temperature, max_tokens, the reasoning-effort extra, and the
     non-secret billing/provider selectors pass through. Connection fields
     (endpoints, keys, arbitrary LiteLLM kwargs) never reach the tagging LM;
     the API or worker resolves a verified vault connection separately.
@@ -82,10 +82,9 @@ def _sanitize_model_params(params: Any) -> dict[str, Any]:
     if not isinstance(params, dict):
         return {}
     out: dict[str, Any] = {}
-    for key, low, high in (("temperature", 0.0, 2.0), ("top_p", 0.0, 1.0)):
-        value = params.get(key)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            out[key] = min(high, max(low, float(value)))
+    temperature = params.get("temperature")
+    if isinstance(temperature, (int, float)) and not isinstance(temperature, bool):
+        out["temperature"] = min(2.0, max(0.0, float(temperature)))
     tokens = params.get("max_tokens")
     if isinstance(tokens, (int, float)) and not isinstance(tokens, bool) and int(tokens) >= 1:
         out["max_tokens"] = int(tokens)

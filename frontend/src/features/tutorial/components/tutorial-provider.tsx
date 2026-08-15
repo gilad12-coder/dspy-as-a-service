@@ -59,10 +59,10 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
       return { ...state, currentStepIndex: nextIndex, lastDirection: "forward" };
     }
     case "PREV_STEP":
-      return state.activeTrack
+      return state.activeTrack && state.currentStepIndex > 0
         ? {
             ...state,
-            currentStepIndex: Math.max(0, state.currentStepIndex - 1),
+            currentStepIndex: state.currentStepIndex - 1,
             lastDirection: "backward",
           }
         : state;

@@ -34,7 +34,6 @@ export function RunPlayground({
   chatScrollRef,
   handleServe,
   handleStopServe,
-  demos,
   optimizationId,
   pairIndex,
   onClearHistory,
@@ -90,7 +89,6 @@ export function RunPlayground({
           chatScrollRef={chatScrollRef}
           handleServe={handleServe}
           handleStopServe={handleStopServe}
-          demos={demos}
         />
       </div>
 

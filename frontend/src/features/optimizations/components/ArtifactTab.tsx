@@ -166,9 +166,8 @@ export function ArtifactTab({
   );
 }
 
-// The optimized prompt as the model sees it — the formatted string with a hover
-// copy, then any few-shot demonstrations. Shared by the scalar prompt card and
-// each workflow node's card.
+// The optimized prompt as the model sees it, with a hover copy action. Shared by
+// the scalar prompt card and each workflow node's card.
 function PromptBody({ predictor }: { predictor: OptimizedPredictor }) {
   return (
     <>
@@ -184,32 +183,6 @@ function PromptBody({ predictor }: { predictor: OptimizedPredictor }) {
           className="absolute end-1.5 top-1.5 opacity-100 sm:end-2 sm:top-2 sm:opacity-0 sm:group-hover:opacity-100"
         />
       </div>
-      {predictor.demos && predictor.demos.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-border">
-          <p className="text-xs text-muted-foreground mb-2">
-            {predictor.demos.length}{" "}
-            <HelpTip text={tip("prompt.demonstrations")}>
-              {msg("auto.features.optimizations.components.codetab.6")}
-            </HelpTip>
-          </p>
-          <div className="space-y-2">
-            {predictor.demos.map((demo, i) => (
-              <div key={i} className="text-xs font-mono bg-muted/50 rounded-lg p-3" dir="ltr">
-                {Object.entries(demo.inputs).map(([k, v]) => (
-                  <div key={k}>
-                    <span className="text-muted-foreground">{k}:</span> {String(v)}
-                  </div>
-                ))}
-                {Object.entries(demo.outputs).map(([k, v]) => (
-                  <div key={k}>
-                    <span className="text-stone-600">{k}:</span> {String(v)}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </>
   );
 }

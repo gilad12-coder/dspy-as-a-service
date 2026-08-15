@@ -104,7 +104,7 @@
   "auto.features.tagger.components.taggersetup.literal.1": "Arquivo de dados",
   "auto.features.tutorial.components.concepts.guide.literal.116": "Controles de parada e gastos",
   "auto.features.tutorial.components.concepts.guide.literal.118": "target_score interrompe GEPA quando a pontuação de validação atinge a porcentagem selecionada. O padrão Skynet é 100%.",
-  "auto.features.tutorial.components.concepts.guide.literal.121": "temperature, top_p e max_tokens são armazenados para cada modelo. O padrão Skynet é temperature 0,7 e max_tokens 1024, a menos que você os altere.",
+  "auto.features.tutorial.components.concepts.guide.literal.121": "temperature e max_tokens são armazenados para cada modelo. O padrão Skynet é temperature 0,7 e max_tokens 1024, a menos que você os altere.",
   "auto.features.tutorial.components.concepts.guide.literal.192": "(opcional) se baralhar os exemplos antes da divisão. Ative quando o arquivo de origem estiver ordenado por tempo, cliente ou categoria.",
   "auto.features.tutorial.components.concepts.guide.literal.202": "Os registros da execução, incluindo filtragem por nível e origem.",
   "auto.features.tutorial.components.concepts.guide.literal.203": "Transmita o progresso ao vivo e registre eventos em server-sent events.",

@@ -320,14 +320,5 @@ export const TERMS_OF_SERVICE: LegalDocument = {
         },
       ],
     },
-    {
-      heading: "Contact",
-      blocks: [
-        {
-          kind: "paragraph",
-          text: `Questions about these Terms can be sent to ${C.legalEmail} (or ${C.contactEmail}).`,
-        },
-      ],
-    },
   ],
 };

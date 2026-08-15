@@ -350,7 +350,6 @@ def test_sanitize_model_params_bounds_and_filters() -> None:
     out = tagging._sanitize_model_params(
         {
             "temperature": 5,
-            "top_p": -1,
             "max_tokens": 512.0,
             "base_url": "http://evil",
             "token_source": "byok",
@@ -360,7 +359,6 @@ def test_sanitize_model_params_bounds_and_filters() -> None:
     )
     assert out == {
         "temperature": 2.0,
-        "top_p": 0.0,
         "max_tokens": 512,
         "token_source": "byok",
         "byok_provider": "openrouter",

@@ -248,16 +248,5 @@ export const PRIVACY_POLICY: LegalDocument = {
         },
       ],
     },
-    {
-      heading: "Contact us",
-      blocks: [
-        {
-          kind: "paragraph",
-          text:
-            `If you have questions about this Policy or how we handle your information, contact us at ` +
-            `${C.privacyEmail}.`,
-        },
-      ],
-    },
   ],
 };

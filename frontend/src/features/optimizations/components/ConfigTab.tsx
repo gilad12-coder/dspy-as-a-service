@@ -159,11 +159,10 @@ const MODEL_CARD_TIPS: Record<string, string> = perLocale(() => ({
   [TERMS.reflectionModel]: tip("model.reflection"),
 }));
 
-type ModelParameterKey = "temperature" | "top_p" | "max_tokens";
+type ModelParameterKey = "temperature" | "max_tokens";
 
 const MODEL_PARAMETER_DEFAULTS: Record<ModelParameterKey, number> = {
   temperature: 0.7,
-  top_p: 1,
   max_tokens: 1024,
 };
 
@@ -197,12 +196,10 @@ function ModelCard({ label, cfg }: { label: string; cfg: Record<string, unknown>
   const name = String(cfg.name || "—");
   const shortName = name.includes("/") ? name.split("/").pop()! : name;
   const temp = resolveModelParameter(cfg, "temperature");
-  const topP = resolveModelParameter(cfg, "top_p");
   const maxTok = resolveModelParameter(cfg, "max_tokens");
   const extra = (cfg.extra ?? {}) as Record<string, unknown>;
   const reasoning = extra.reasoning_effort as string | undefined;
   const temperatureLabel = msg("auto.features.submit.components.modelconfigmodal.5");
-  const topPLabel = msg("auto.features.submit.components.modelconfigmodal.6");
   const maxTokensLabel = msg("auto.features.submit.components.modelconfigmodal.7");
   return (
     <article className="flex min-h-36 min-w-0 flex-col justify-between gap-5 rounded-2xl border border-border/60 bg-[#F8F4EE] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
@@ -234,14 +231,6 @@ function ModelCard({ label, cfg }: { label: string; cfg: Record<string, unknown>
         >
           <Thermometer className="size-3" aria-hidden="true" />
           {temp.toFixed(1)}
-        </span>
-        <span
-          className="inline-flex items-center gap-1.5 rounded-full border border-border/45 bg-background/75 px-2.5 py-1"
-          aria-label={`${topPLabel}: ${topP.toFixed(2)}`}
-          title={topPLabel}
-        >
-          <Target className="size-3" aria-hidden="true" />
-          {topP.toFixed(2)}
         </span>
         <span
           className="inline-flex items-center gap-1.5 rounded-full border border-border/45 bg-background/75 px-2.5 py-1"

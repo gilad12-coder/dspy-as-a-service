@@ -5223,8 +5223,7 @@
     },
     "max_tokens": 20000,
     "name": "openai/gpt-5.4-nano",
-    "temperature": 1.0,
-    "top_p": null
+    "temperature": 1.0
   },
   "module_kwargs": {},
   "module_name": "cot",

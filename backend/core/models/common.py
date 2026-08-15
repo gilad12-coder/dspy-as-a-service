@@ -64,7 +64,6 @@ class ModelConfig(BaseModel):
     base_url: str | None = None
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1)
-    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
     extra: dict[str, Any] = Field(default_factory=dict)
 
     def normalized_identifier(self) -> str:

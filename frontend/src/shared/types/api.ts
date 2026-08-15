@@ -26,7 +26,6 @@ export interface ModelConfig {
   base_url?: string | null;
   temperature?: number | null;
   max_tokens?: number | null;
-  top_p?: number | null;
   // `api_key` is the only well-known extra; the wizard reads/writes it
   // (`features/submit/hooks/use-submit-wizard.ts`). Other keys flow through
   // unchanged.

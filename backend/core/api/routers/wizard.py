@@ -182,17 +182,16 @@ def validate_model_config_dict(v: Any, field_name: str) -> dict[str, Any]:
         if not isinstance(base_url, str):
             raise DomainError("wizard.model_base_url_not_string", status=422, field=field_name)
         out["base_url"] = base_url
-    for key in ("temperature", "top_p"):
-        val = v.get(key)
-        if val is not None:
-            if not isinstance(val, (int, float)):
-                raise DomainError(
-                    "wizard.model_number_required",
-                    status=422,
-                    field=field_name,
-                    key=key,
-                )
-            out[key] = float(val)
+    temperature = v.get("temperature")
+    if temperature is not None:
+        if not isinstance(temperature, (int, float)):
+            raise DomainError(
+                "wizard.model_number_required",
+                status=422,
+                field=field_name,
+                key="temperature",
+            )
+        out["temperature"] = float(temperature)
     max_tokens = v.get("max_tokens")
     if max_tokens is not None:
         if not isinstance(max_tokens, int):
