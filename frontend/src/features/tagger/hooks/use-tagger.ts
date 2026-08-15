@@ -423,9 +423,12 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
 
   const frameIds: string[] | null = useMemo(() => {
     if (readOnly) return null;
-    if (phase === "review") return openRound?.rowIds ?? null;
+    if (phase === "review") {
+      const latestRound = assist?.rounds[assist.rounds.length - 1];
+      return latestRound?.rowIds ?? null;
+    }
     return null;
-  }, [readOnly, phase, openRound]);
+  }, [readOnly, phase, assist]);
 
   const frameData: DataRow[] = useMemo(() => {
     if (!frameIds) return data;
