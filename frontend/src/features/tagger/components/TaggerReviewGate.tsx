@@ -101,8 +101,13 @@ export function TaggerReviewGate({
               >
                 <Sparkle className="size-4" />
               </Button>
-              <Button variant="outline" onClick={onStartRound} className="w-full gap-2">
-                {msg("tagger.assist.gate.another_round")}
+              <Button
+                variant="outline"
+                size="icon-lg"
+                onClick={onStartRound}
+                aria-label={msg("tagger.assist.gate.another_round")}
+                className="h-[44px] w-full"
+              >
                 <ArrowRight className="size-4 rtl:rotate-180" />
               </Button>
             </div>
