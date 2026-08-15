@@ -43,6 +43,13 @@ export function TaggerReviewGate({
   const closedRounds = assist.rounds.filter((r) => !r.flaggedPass && r.agreement !== undefined);
   const lastRound = closedRounds[closedRounds.length - 1];
   const unlocked = assist.mode === "autopilot" || gateUnlocked(config, assist);
+  const autotagLabel = estimate
+    ? formatMsg("tagger.assist.gate.tag_rest_estimate", {
+        rows: remainingCount,
+        low: estimate.credits_low,
+        high: estimate.credits_high,
+      })
+    : formatMsg("tagger.assist.gate.tag_rest", { rows: remainingCount });
 
   useEffect(() => {
     if (unlocked) onFetchEstimate();
@@ -85,22 +92,20 @@ export function TaggerReviewGate({
           )}
 
           {unlocked ? (
-            <>
-              <Button onClick={onStartAutotag} size="lg" className="w-full gap-2">
-                <Sparkle className="size-4" />
-                {estimate
-                  ? formatMsg("tagger.assist.gate.tag_rest_estimate", {
-                      rows: remainingCount,
-                      low: estimate.credits_low,
-                      high: estimate.credits_high,
-                    })
-                  : formatMsg("tagger.assist.gate.tag_rest", { rows: remainingCount })}
-              </Button>
-              <Button variant="outline" onClick={onStartRound} className="w-full gap-2">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={onStartRound} className="min-w-0 flex-1 gap-2">
                 {msg("tagger.assist.gate.another_round")}
                 <ArrowRight className="size-4 rtl:rotate-180" />
               </Button>
-            </>
+              <Button
+                onClick={onStartAutotag}
+                size="icon-lg"
+                aria-label={autotagLabel}
+                className="size-[44px]"
+              >
+                <Sparkle className="size-4" />
+              </Button>
+            </div>
           ) : (
             <Button onClick={onStartRound} size="lg" className="w-full gap-2">
               {closedRounds.length === 0
