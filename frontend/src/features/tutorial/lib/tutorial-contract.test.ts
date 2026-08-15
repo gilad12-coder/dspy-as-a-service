@@ -5,6 +5,11 @@ import { readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  TUTORIAL_DEMO_RUN_MS,
+  TUTORIAL_OPTIMIZATION_TOTAL_MS,
+  TUTORIAL_SUBMIT_SPLASH_MS,
+} from "./tutorial-timing.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const STEPS_PATH = join(HERE, "steps.ts");
@@ -93,6 +98,11 @@ test("the quick-start guide keeps demo code deterministic and cost-free", () => 
   assert.match(steps, /callTutorialHook\("setCodeAssistMode", "manual"\)/);
   assert.match(wizard, /setSignatureManuallyEdited\(true\)/);
   assert.match(wizard, /setMetricManuallyEdited\(true\)/);
+});
+
+test("the quick-start optimization reaches its results within two seconds", () => {
+  assert.equal(TUTORIAL_OPTIMIZATION_TOTAL_MS, 2_000);
+  assert.equal(TUTORIAL_SUBMIT_SPLASH_MS + TUTORIAL_DEMO_RUN_MS, 2_000);
 });
 
 test("tutorial-owned message keys exist in both base catalogs", () => {

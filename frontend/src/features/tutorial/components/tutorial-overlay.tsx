@@ -3,7 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useTutorialContext } from "./tutorial-provider";
 import { getLoadedTrack } from "../lib/steps-loader";
 import { SpotlightMask } from "./spotlight-mask";
@@ -12,11 +12,13 @@ import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { isTutorialNavigating, registerTutorialHook } from "../lib/bridge";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import type { TutorialStep } from "../lib/steps";
+import { TUTORIAL_SUBMIT_SPLASH_MS } from "../lib/tutorial-timing";
 
 export function TutorialOverlay() {
   const { state, currentStep, nextStep, prevStep, exitTutorial, completeTrack, toggleAutoPlay } =
     useTutorialContext();
   const pathname = usePathname();
+  const prefersReducedMotion = useReducedMotion();
 
   const [targetRect, setTargetRect] = React.useState<DOMRect | null>(null);
   const [popoverPosition, setPopoverPosition] = React.useState<{
@@ -40,13 +42,12 @@ export function TutorialOverlay() {
   React.useEffect(() => {
     const unregisterSplash = registerTutorialHook("showTutorialSplash", () => {
       setShowSplash(true);
-      // Auto-dismiss: match real submit splash (1.5s) + buffer for navigation.
       // Track via ref so unmount or a second splash cancels the previous timer.
       if (splashTimerRef.current) clearTimeout(splashTimerRef.current);
       splashTimerRef.current = setTimeout(() => {
         splashTimerRef.current = null;
         setShowSplash(false);
-      }, 1500);
+      }, TUTORIAL_SUBMIT_SPLASH_MS);
     });
     const unregisterPush = registerTutorialHook("routerPush", (path: string) => router.push(path));
     return () => {
@@ -492,14 +493,21 @@ export function TutorialOverlay() {
           <motion.div
             className="fixed inset-0 z-[99999] flex items-center justify-center"
             style={{ backgroundColor: "#F0EBE4" }}
-            initial={{ y: "-100%" }}
+            initial={prefersReducedMotion ? false : { y: "-100%" }}
             animate={{ y: 0 }}
-            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            transition={{
+              duration: prefersReducedMotion ? 0 : 0.18,
+              ease: [0.16, 1, 0.3, 1],
+            }}
           >
             <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
+              initial={prefersReducedMotion ? false : { scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.3, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              transition={{
+                delay: prefersReducedMotion ? 0 : 0.08,
+                duration: prefersReducedMotion ? 0 : 0.18,
+                ease: [0.16, 1, 0.3, 1],
+              }}
             >
               <AnimatedWordmark size={64} autoMorph morphSpeed={120} />
             </motion.div>

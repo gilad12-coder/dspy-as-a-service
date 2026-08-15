@@ -135,6 +135,7 @@ export function TutorialPopover({
           )}
 
           <Button
+            variant="outline"
             size="sm"
             onClick={onNext}
             className="min-h-[44px] text-xs md:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"

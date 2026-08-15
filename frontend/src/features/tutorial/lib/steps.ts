@@ -18,6 +18,7 @@ import {
 import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { perLocale } from "@/shared/lib/per-locale";
+import { TUTORIAL_SUBMIT_SPLASH_MS } from "./tutorial-timing";
 
 /**
  * The short end-to-end path plus three focused workflow guides.
@@ -129,7 +130,7 @@ function waitForElement(selector: string, timeoutMs = 5000): Promise<boolean> {
 /** Show a splash screen identical to the real submit animation */
 function showSubmitSplash(): Promise<void> {
   callTutorialHook("showTutorialSplash");
-  return new Promise((resolve) => setTimeout(resolve, 1500));
+  return new Promise((resolve) => setTimeout(resolve, TUTORIAL_SUBMIT_SPLASH_MS));
 }
 
 export function resetTutorialOneShotState(): void {

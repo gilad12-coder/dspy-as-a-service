@@ -2,7 +2,7 @@
  * Tutorial Demo Simulation
  *
  * Provides a fake optimization that progresses through all pipeline stages
- * over ~11 seconds, producing realistic GEPA logs and scores.
+ * inside the tutorial's short run budget, producing realistic GEPA logs and scores.
  * Used when the tutorial navigates to /optimizations/tutorial-demo.
  */
 
@@ -25,6 +25,7 @@ import { layoutTrajectory, type CandidateMetrics } from "@/features/trajectory";
 import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { perLocale } from "@/shared/lib/per-locale";
+import { TUTORIAL_DEMO_RUN_MS } from "./tutorial-timing";
 
 export const DEMO_OPTIMIZATION_ID = "a7e3b291-4d2f-4f8c-b142-9d5e6f8a1c3b";
 export const DEMO_GRID_OPTIMIZATION_ID = "c3f9d215-8a47-4e6b-a1d3-7b2f9c58e4a1";
@@ -55,7 +56,12 @@ export function buildDemoOptimizationPayload(): OptimizationPayloadResponse {
 }
 
 function ts(start: Date, offsetMs: number): string {
-  return new Date(start.getTime() + offsetMs).toISOString();
+  const narrativeDurationMs = 10_500;
+  const compressedOffsetMs = Math.min(
+    TUTORIAL_DEMO_RUN_MS,
+    Math.round((offsetMs / narrativeDurationMs) * TUTORIAL_DEMO_RUN_MS),
+  );
+  return new Date(start.getTime() + compressedOffsetMs).toISOString();
 }
 
 function fmtElapsed(seconds: number): string {
@@ -643,13 +649,18 @@ export interface DemoCallbacks {
  * Returns a cleanup function that cancels all pending timers.
  *
  * Timeline:
- *   0.2s  — validating
- *   1.0s  — splitting
- *   1.75s — baseline evaluation
- *   2.5s+ — optimizing (trials appear every ~275ms)
- *   5.25s — done (success)
+ *   0.1s  — validating
+ *   0.3s  — splitting
+ *   0.55s — baseline evaluation
+ *   0.72s — optimizing (trials appear every 70ms)
+ *   1.5s  — done (success)
  */
-const DEMO_SIMULATION_DURATION_MS = 5250;
+const DEMO_SIMULATION_DURATION_MS = TUTORIAL_DEMO_RUN_MS;
+const DEMO_VALIDATING_AT_MS = 100;
+const DEMO_SPLITTING_AT_MS = 300;
+const DEMO_BASELINE_AT_MS = 550;
+const DEMO_OPTIMIZING_AT_MS = 720;
+const DEMO_TRIAL_STAGGER_MS = 70;
 
 /** Once the simulation finishes, revisits skip straight to done. */
 let _simulationCompleted = false;
@@ -722,15 +733,20 @@ export function startDemoSimulation(
     setTimeout(() => {
       setLoading(false);
       set(buildValidating(start));
-    }, 200),
+    }, DEMO_VALIDATING_AT_MS),
   );
 
-  timers.push(setTimeout(() => set(buildSplitting(start)), 1000));
+  timers.push(setTimeout(() => set(buildSplitting(start)), DEMO_SPLITTING_AT_MS));
 
-  timers.push(setTimeout(() => set(buildBaseline(start)), 1750));
+  timers.push(setTimeout(() => set(buildBaseline(start)), DEMO_BASELINE_AT_MS));
 
   for (let i = 0; i < NUM_TRIALS; i++) {
-    timers.push(setTimeout(() => set(buildOptimizing(start, i + 1)), 2500 + i * 275));
+    timers.push(
+      setTimeout(
+        () => set(buildOptimizing(start, i + 1)),
+        DEMO_OPTIMIZING_AT_MS + i * DEMO_TRIAL_STAGGER_MS,
+      ),
+    );
   }
 
   timers.push(
