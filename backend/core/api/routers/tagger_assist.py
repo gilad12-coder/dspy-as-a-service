@@ -299,8 +299,8 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
     Args:
         job_store: Job-store instance whose ORM engine backs the routes.
         get_worker_ref: Zero-arg callable returning the background worker (or
-            ``None`` before startup completes) — bulk auto-tag jobs are
-            submitted through it.
+            ``None`` when API and worker processes are split) — used as a
+            local queue hint and for cooperative cancellation.
 
     Returns:
         A FastAPI ``APIRouter`` exposing the interview / predict / estimate /
@@ -610,12 +610,9 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
 
         Raises:
             DomainError: 409 when a job is already active for this session,
-                422 when every row is already labeled, 503 when the worker is
-                not available yet.
+                or 422 when every row is already labeled.
         """
         worker = get_worker_ref()
-        if worker is None:
-            raise DomainError("tagger.assist.worker_unavailable", status=503)
         enforce_llm_credits(job_store, user.username)
         job_id = str(uuid4())
         with Session(job_store.engine) as db:
@@ -658,7 +655,11 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                 PAYLOAD_OVERVIEW_NAME: f"Auto-tagging · {session_name}"[:200],
             },
         )
-        worker.submit_job(job_id, TaggingAutotagPayload(session_id=session_id, username=user.username))
+        payload = TaggingAutotagPayload(session_id=session_id, username=user.username)
+        if worker is None:
+            job_store.update_job(job_id, payload=payload.model_dump(mode="json", by_alias=True))
+        else:
+            worker.submit_job(job_id, payload)
         return AutotagStartResponse(total=len(pending))
 
     @router.get(

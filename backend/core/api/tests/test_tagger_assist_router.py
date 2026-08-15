@@ -117,6 +117,8 @@ def _client(
     user: AuthenticatedUser,
     store: _MemStore | None = None,
     worker: _FakeWorker | None = None,
+    *,
+    worker_available: bool = True,
 ) -> tuple[TestClient, _MemStore]:
     """Mount the session + assist routers on a shared store, authed as ``user``.
 
@@ -124,12 +126,13 @@ def _client(
         user: Identity the auth dependency resolves to for every request.
         store: Existing store to reuse (so two users can share one DB).
         worker: Fake worker the assist router submits bulk jobs to.
+        worker_available: Whether the API process has an in-process worker.
 
     Returns:
         A ``(client, store)`` pair sharing one in-memory store.
     """
     store = store or _MemStore()
-    worker = worker or _FakeWorker()
+    worker = (worker or _FakeWorker()) if worker_available else None
     # No free allowance exists, so the authed user is funded explicitly to pass
     # the 402 credit gate on the LLM-invoking assist routes.
     with Session(store.engine) as session:
@@ -629,6 +632,21 @@ def test_autotag_start_submits_worker_job(monkeypatch) -> None:
     resp = client.post(f"/tagging-sessions/{session_id}/assist/autotag")
     assert resp.status_code == 422
     assert resp.json()["code"] == "tagger.assist.nothing_to_tag"
+
+
+def test_autotag_start_persists_payload_without_local_worker() -> None:
+    """Queue a durable bulk job when the API and worker processes are split."""
+    client, store = _client(_ALICE, worker_available=False)
+    session_id = _create(client)
+
+    resp = client.post(f"/tagging-sessions/{session_id}/assist/autotag")
+
+    assert resp.status_code == 202, resp.text
+    detail = client.get(f"/tagging-sessions/{session_id}").json()
+    job_id = detail["assist"]["autotag"]["job_id"]
+    job = store.get_job(job_id)
+    assert job["status"] == "pending"
+    assert job["payload"] == {"session_id": session_id, "username": "alice"}
 
 
 def test_autotag_cancel_flips_job_row_and_reconciles_status() -> None:

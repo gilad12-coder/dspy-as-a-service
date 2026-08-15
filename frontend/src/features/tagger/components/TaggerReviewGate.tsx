@@ -80,27 +80,6 @@ export function TaggerReviewGate({
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {closedRounds.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {closedRounds.map((round, idx) => {
-                const pct = Math.round((round.agreement ?? 0) * 100);
-                const passed = (round.agreement ?? 0) >= gate;
-                return (
-                  <span
-                    key={idx}
-                    className={
-                      passed
-                        ? "rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium tabular-nums text-primary"
-                        : "rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium tabular-nums text-muted-foreground"
-                    }
-                  >
-                    {formatMsg("tagger.assist.gate.round_chip", { n: idx + 1, pct })}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-
           {assistError && (
             <p className="text-sm text-destructive">{msg("tagger.assist.gate.error")}</p>
           )}
