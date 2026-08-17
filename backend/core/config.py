@@ -584,6 +584,25 @@ class Settings(BaseSettings):
         ),
     )
 
+    log_ship_url: str = Field(
+        default="",
+        alias="LOG_SHIP_URL",
+        description=(
+            "HTTP ingest endpoint that receives a JSON copy of every log record "
+            "the root logger admits (e.g. Better Stack's https://in.logs.betterstack.com "
+            "or a Vector http_server source), so logs outlive the platform's own "
+            "retention. Unset (the default) disables shipping; logs still go to stdout."
+        ),
+    )
+    log_ship_token: SecretStr | None = Field(
+        default=None,
+        alias="LOG_SHIP_TOKEN",
+        description=(
+            "Bearer token sent with each LOG_SHIP_URL batch (Better Stack source "
+            "token). Unset sends no Authorization header."
+        ),
+    )
+
     @field_validator("alert_min_level")
     @classmethod
     def _validate_alert_min_level(cls, v: str) -> str:
