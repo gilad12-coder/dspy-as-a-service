@@ -1918,6 +1918,12 @@ export type MessageKey =
   | "export.table.failed"
   | "legal.privacy_link"
   | "legal.terms_link"
+  | "mobile.desktop_only.body"
+  | "mobile.desktop_only.home_cta"
+  | "mobile.desktop_only.title"
+  | "mobile.nav.account"
+  | "mobile.nav.aria"
+  | "mobile.nav.home"
   | "model.generation.explainer"
   | "model.generation.label"
   | "model.generation.label_plural"
@@ -4947,6 +4953,12 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "export.table.failed": "הייצוא נכשל",
   "legal.privacy_link": "מדיניות פרטיות",
   "legal.terms_link": "תנאי שימוש",
+  "mobile.desktop_only.body": "יצירת אופטימיזציות, העלאת דאטאסטים ותיוג הן עבודת שולחן — פתחו את Skynet במחשב נייד או שולחני כדי להמשיך. הריצות והתוצאות שלכם זמינות כאן בטלפון.",
+  "mobile.desktop_only.home_cta": "חזרה לדף הבית",
+  "mobile.desktop_only.title": "זה עובד הכי טוב במחשב",
+  "mobile.nav.account": "חשבון",
+  "mobile.nav.aria": "ניווט ראשי",
+  "mobile.nav.home": "בית",
   "model.generation.explainer": "ה{term.model} שמריץ את הפרומפט ומייצר את התשובות בפועל. הוא זה שעושה את המשימה, והפרומפט שלו הוא מה שה{term.optimization} משפרת.",
   "model.generation.label": "{term.generationModel}",
   "model.generation.label_plural": "{term.generationModelPlural}",
@@ -13431,6 +13443,12 @@ const ui_en: Partial<Record<MessageKey, string>> = {
   "export.table.failed": "Export failed",
   "legal.privacy_link": "Privacy Policy",
   "legal.terms_link": "Terms of Service",
+  "mobile.desktop_only.body": "Creating optimizations, uploading datasets and tagging are desk work — open Skynet on a laptop or desktop to continue. Your runs and results are right here on your phone.",
+  "mobile.desktop_only.home_cta": "Back to home",
+  "mobile.desktop_only.title": "This works best on a computer",
+  "mobile.nav.account": "Account",
+  "mobile.nav.aria": "Main navigation",
+  "mobile.nav.home": "Home",
   "model.generation.explainer": "The model that runs your prompt and produces the actual answers. It's the one doing the task, and its prompt is what the optimization improves.",
   "model.generation.label": "Generation model",
   "model.generation.label_plural": "Generation models",

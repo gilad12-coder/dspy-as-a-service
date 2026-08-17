@@ -19,6 +19,8 @@ import {
 import type { Icon } from "@/shared/ui/icons";
 
 import { useSettingsModal } from "@/features/settings";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
+import { isDesktopOnlyPath } from "@/shared/lib/device-class";
 import { useLocale } from "@/shared/providers";
 import { dirForLocale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
@@ -144,6 +146,7 @@ export function GlobalSearch() {
   const dir = dirForLocale(locale);
   const { data: session } = useSession();
   const { open: settingsOpen, openTo } = useSettingsModal();
+  const isPhone = useIsPhone();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [activeIndex, setActiveIndex] = React.useState(0);
@@ -253,8 +256,10 @@ export function GlobalSearch() {
           : ((item as unknown as SearchItem).keywords ?? []),
       description: msg("app.shell.search.settings_description"),
     }));
-    return [...quickActions, ...navigation, ...settings];
-  }, [session?.user?.role]);
+    const all: SearchItem[] = [...quickActions, ...navigation, ...settings];
+    // The phone shell replaces authoring routes with a notice; don't offer them.
+    return isPhone ? all.filter((item) => !item.href || !isDesktopOnlyPath(item.href)) : all;
+  }, [session?.user?.role, isPhone]);
 
   const filteredItems = React.useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();

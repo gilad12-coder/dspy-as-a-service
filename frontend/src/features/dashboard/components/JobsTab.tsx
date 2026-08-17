@@ -38,6 +38,7 @@ import type { OptimizationSummaryResponse, PaginatedJobsResponse } from "@/share
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TERMS } from "@/shared/lib/terms";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
 import { FETCH_PAGE_SIZE } from "../constants";
 import { formatScore, typeBadge } from "../lib/status-badges";
 import { StatusBadge } from "@/shared/ui/status-badge";
@@ -159,6 +160,7 @@ export function JobsTab({
   onOpenJob,
 }: JobsTabProps) {
   const rtl = getActiveDir() === "rtl";
+  const isPhone = useIsPhone();
   const PrevIcon = rtl ? CaretRight : CaretLeft;
   const NextIcon = rtl ? CaretLeft : CaretRight;
 
@@ -217,7 +219,9 @@ export function JobsTab({
             iconWrap="tile"
             title={`${msg("auto.features.dashboard.components.jobstab.4")}${TERMS.optimizationPlural}`}
             description={msg("auto.features.dashboard.components.jobstab.5")}
-            action={{ label: TERMS.notificationNewOpt, href: "/submit", icon: Plus }}
+            action={
+              isPhone ? undefined : { label: TERMS.notificationNewOpt, href: "/submit", icon: Plus }
+            }
           />
         )}
 

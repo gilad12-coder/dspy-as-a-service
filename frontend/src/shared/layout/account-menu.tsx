@@ -65,8 +65,19 @@ const MENU_ITEM =
  * collapsed the trigger shrinks to the avatar alone, with a tooltip naming it.
  * All targets are real Skynet surfaces; logical alignment and a flipped chevron
  * keep it correct in RTL.
+ *
+ * `trigger` swaps the built-in avatar button for a caller-owned control (the
+ * phone shell's Account tab), which then opens the same menu.
  */
-export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
+export function AccountMenu({
+  collapsed = false,
+  trigger: customTrigger,
+  align = "start",
+}: {
+  collapsed?: boolean;
+  trigger?: React.ReactNode;
+  align?: "start" | "center" | "end";
+}) {
   const { data: session } = useSession();
   const { locale } = useLocale();
   const dir = dirForLocale(locale);
@@ -85,7 +96,9 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
 
   const close = () => setOpen(false);
 
-  const trigger = collapsed ? (
+  const trigger = customTrigger ? (
+    customTrigger
+  ) : collapsed ? (
     <button
       type="button"
       aria-label={msg("app.shell.account.aria")}
@@ -126,7 +139,7 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      {collapsed ? (
+      {collapsed && !customTrigger ? (
         <Tooltip>
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>{trigger}</PopoverTrigger>
@@ -139,7 +152,7 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
 
       <PopoverContent
         side="top"
-        align="start"
+        align={align}
         dir={dir}
         className="w-64 p-1.5"
         collisionPadding={12}

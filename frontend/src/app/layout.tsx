@@ -3,6 +3,8 @@ import { preload } from "react-dom";
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { AppShell } from "@/shared/layout/app-shell";
+import { DeviceClassProvider } from "@/shared/hooks/use-device-class";
+import { deviceClassFromRequest } from "@/shared/lib/device-class";
 import { TooltipProvider } from "@/shared/ui/primitives/tooltip";
 import {
   LocaleProvider,
@@ -173,6 +175,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   preload("/fonts/heebo-latin-wght-normal.woff2", fontPreload);
   preload("/fonts/geist-latin-wght-normal.woff2", fontPreload);
   const runtimeEnv = getServerRuntimeEnv();
+  // First-paint guess for the phone shell; the client re-derives it from the
+  // viewport after mount (see DeviceClassProvider).
+  const requestHeaders = await headers();
+  const deviceClass = deviceClassFromRequest(
+    requestHeaders.get("user-agent"),
+    requestHeaders.get("sec-ch-ua-mobile"),
+  );
   // dns-prefetch only helps when the API is on a different origin than the
   // document; on same-origin deploys the browser already resolved the host.
   let apiOrigin: string | null = null;
@@ -219,38 +228,40 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdSafe }} />
       </head>
       <body suppressHydrationWarning>
-        <LocaleProvider initialLocale={locale}>
-          <SessionProvider session={session}>
-            <CreditProvider>
-              <ByokKeysProvider>
-                <UserPrefsProvider>
-                  <LiteModeProvider>
-                    <ThemeProvider>
-                      <TooltipProvider>
-                        <AppSkeletonTheme>
-                          <SplashScreen />
-                          <TutorialProvider>
-                            <SettingsModalProvider>
-                              <AppShell>{children}</AppShell>
-                              <SettingsModal />
-                              {/* Inside SettingsModalProvider: its CTA opens the
+        <DeviceClassProvider initial={deviceClass}>
+          <LocaleProvider initialLocale={locale}>
+            <SessionProvider session={session}>
+              <CreditProvider>
+                <ByokKeysProvider>
+                  <UserPrefsProvider>
+                    <LiteModeProvider>
+                      <ThemeProvider>
+                        <TooltipProvider>
+                          <AppSkeletonTheme>
+                            <SplashScreen />
+                            <TutorialProvider>
+                              <SettingsModalProvider>
+                                <AppShell>{children}</AppShell>
+                                <SettingsModal />
+                                {/* Inside SettingsModalProvider: its CTA opens the
                                     wallet settings tab now that /upgrade is gone. */}
-                              <InsufficientCreditsModalHost />
-                            </SettingsModalProvider>
-                            <TutorialOverlay />
-                          </TutorialProvider>
-                        </AppSkeletonTheme>
-                      </TooltipProvider>
-                    </ThemeProvider>
-                  </LiteModeProvider>
-                </UserPrefsProvider>
-              </ByokKeysProvider>
-            </CreditProvider>
-          </SessionProvider>
-          <TelemetryProvider />
-          <StorageQuotaModalHost />
-          <ToastContainer />
-        </LocaleProvider>
+                                <InsufficientCreditsModalHost />
+                              </SettingsModalProvider>
+                              <TutorialOverlay />
+                            </TutorialProvider>
+                          </AppSkeletonTheme>
+                        </TooltipProvider>
+                      </ThemeProvider>
+                    </LiteModeProvider>
+                  </UserPrefsProvider>
+                </ByokKeysProvider>
+              </CreditProvider>
+            </SessionProvider>
+            <TelemetryProvider />
+            <StorageQuotaModalHost />
+            <ToastContainer />
+          </LocaleProvider>
+        </DeviceClassProvider>
       </body>
     </html>
   );

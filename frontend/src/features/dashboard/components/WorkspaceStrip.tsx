@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CaretRight, Coins, Database, Tag } from "@/shared/ui/icons";
 import { creditsToUsd, formatCredits, formatUsd, useCredits } from "@/features/billing";
 import { useSettingsModal } from "@/features/settings";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
 import { formatBytes } from "@/shared/lib/formatters";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
@@ -149,9 +150,17 @@ export function WorkspaceStrip() {
   const { tagging, datasets, loading } = useWorkspaceSummary();
   const { wallet, loading: walletLoading } = useCredits();
   const { openTo } = useSettingsModal();
+  const isPhone = useIsPhone();
   const locale = getActiveIntlLocale();
 
   if (loading) {
+    if (isPhone) {
+      return (
+        <div className="flex flex-col border-t border-[#DDD4C8]/50 first:border-t-0">
+          <CreditsSectionSkeleton />
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col border-t border-[#DDD4C8]/50 first:border-t-0 lg:flex-row lg:items-stretch">
         <SectionSkeleton>
@@ -183,7 +192,9 @@ export function WorkspaceStrip() {
   const walletTotal = wallet.paidBalanceCredits + wallet.freeGrant.creditsRemaining;
 
   const sections: ReactElement[] = [];
-  if (tagging) {
+  // Tagging and datasets are desktop-only surfaces; the phone shell keeps only
+  // the credits section (its billing tab stays available on a phone).
+  if (tagging && !isPhone) {
     sections.push(
       <WorkspaceSection
         key="tagging"
@@ -207,7 +218,7 @@ export function WorkspaceStrip() {
       </WorkspaceSection>,
     );
   }
-  if (datasets) {
+  if (datasets && !isPhone) {
     sections.push(
       <WorkspaceSection
         key="datasets"

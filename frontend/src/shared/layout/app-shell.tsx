@@ -15,6 +15,8 @@ import { dirForLocale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
 import { JobsStreamProvider } from "@/shared/hooks/use-jobs-stream";
 import { PageContainer } from "@/shared/layout/page-container";
+import { MobileShell } from "@/shared/layout/mobile-shell";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
 import { useUserPrefs, LiteModeHint } from "@/features/settings";
 import {
   GeneralistPanel,
@@ -33,6 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { locale } = useLocale();
   const dir = dirForLocale(locale);
+  const isPhone = useIsPhone();
 
   // Shared-optimization pages render bare — no sidebar, agent panel, or other
   // app chrome — to keep the focus on the shared item. The recipient is still
@@ -63,6 +66,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
     );
   }
+
+  // Phones get the view-first shell (bottom tabs, no sidebar); see mobile-shell.tsx.
+  if (isPhone) return <MobileShell>{children}</MobileShell>;
 
   return <ShellChrome>{children}</ShellChrome>;
 }
