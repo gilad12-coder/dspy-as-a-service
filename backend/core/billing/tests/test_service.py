@@ -1,6 +1,6 @@
 """Tests for ``StripeBillingService``: the credit ledger and the submit gate.
 
-Covers the credit-ledger backbone — the at-cost pricing policy (no free
+Covers the credit-ledger backbone — the no-subsidy pricing policy (no free
 allowance, packs at par), run debiting (legacy grant before paid balance), the
 ``spendable_credits`` figure the submit gate reads, the usage rollup, and
 webhook idempotency. Each test stands up an
@@ -98,8 +98,8 @@ def _grant_remaining(engine: object, username: str) -> int | None:
         return None if customer is None else customer.grant_remaining
 
 
-def test_pricing_policy_no_subsidy_no_profit() -> None:
-    """The at-cost policy: no free allowance, and packs grant exactly their price in cents."""
+def test_pricing_policy_no_subsidy_packs_at_par() -> None:
+    """The no-subsidy policy: no free allowance, and packs grant exactly their price in cents."""
     assert FREE_GRANT_CREDITS == 0
     # One credit is one cent, so at-par packs must grant exactly the Stripe
     # unit_amount provisioned in scripts/provision_stripe.py ($5 / $20 / $50).

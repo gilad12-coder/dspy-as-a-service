@@ -2,7 +2,7 @@
   <img src="docs/assets/skynet-wordmark.gif" width="480" alt="SKYNET" />
 </p>
 
-**A self-hostable platform for building, optimizing, and serving LLM programs — with prompt optimization (GEPA) at its core, priced at break-even.**
+**A self-hostable platform for building, optimizing, and serving LLM programs — with prompt optimization (GEPA) at its core, priced per token with a flat markup.**
 
 Skynet turns "I have a dataset and a task" into an optimized, deployable LLM program. Upload data, describe the task, and the platform compiles a [DSPy](https://github.com/stanfordnlp/dspy) program, evolves its prompts with GEPA against your own metric, shows you the held-out lift it earned, and serves the result for inference — all through a web UI a non-engineer can drive, or a REST API.
 
@@ -16,7 +16,7 @@ Skynet turns "I have a dataset and a task" into an optimized, deployable LLM pro
 - **Agents** — a generalist assistant (Cmd/Ctrl+J) that operates the whole wizard through tools with configurable trust modes, and a code agent that authors signatures, metrics, and multi-step workflow graphs on a visual canvas.
 - **Serving** — every successful run yields a program artifact: inspect the evolved instructions and demos, run inference against it, or export a runnable program.
 - **24 locales, RTL-first** — Hebrew is the base language; Arabic and Persian are first-class; the rest overlay with graceful fallback.
-- **Break-even pricing** — credits map to raw provider cost plus payment-processing fees only (markup 1.09, zero profit). Bring your own API key and runs are **free**. A "no lift, no charge" guarantee refunds runs that don't beat their baseline. Without Stripe keys, billing is simply off.
+- **Simple pricing** — credits map to raw provider cost times a 1.50 markup (payment-processing fees, a small infra share, and margin). Bring your own API key and runs are charged only the small platform fee. A "no lift, no charge" guarantee refunds runs that don't beat their baseline. Without Stripe keys, billing is simply off.
 
 ## Quick Start (local)
 

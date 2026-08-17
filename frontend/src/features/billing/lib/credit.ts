@@ -5,9 +5,9 @@
  * credit packs (at par, one credit per cent) and every run spends against
  * them; there is no free allowance. Credits are spendable on any model.
  * Credits are the unit of account; the dollar value is always shown alongside
- * (`CREDIT_USD_VALUE`). Pricing is strictly at-cost (MARKUP 1.20: payment
- * fees plus the CPU/storage share; BYOK runs pay just that infra share): the
- * platform neither subsidizes a run nor takes profit.
+ * (`CREDIT_USD_VALUE`). Pricing is provider cost times MARKUP (1.50: payment
+ * fees, the CPU/storage share, and a profit margin; BYOK runs pay only the
+ * infra + margin share): the platform never subsidizes a run.
  *
  * Everything here is framework-agnostic (no React / `next/*`) so it imports from
  * server components, client components, and the provider alike. Wallet values

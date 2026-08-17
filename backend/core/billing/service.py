@@ -56,8 +56,8 @@ PACK_CREDITS: dict[str, int] = {"starter": 500, "plus": 2000, "pro": 5000}
 CUSTOM_CREDITS_MIN = 50
 CUSTOM_CREDITS_MAX = 100_000
 
-# One-time allowance a new account gets. 0 = strictly at-cost pricing: every
-# credit spent was paid for, so the platform never subsidizes tokens or compute.
+# One-time allowance a new account gets. 0 = no free credits: every credit
+# spent was paid for, so the platform never subsidizes tokens or compute.
 # Accounts whose grant was seeded while this was non-zero keep their remaining
 # credits (the seed logic only fills a NULL column, never tops up).
 FREE_GRANT_CREDITS = 0
@@ -70,11 +70,12 @@ LOCAL_CUSTOMER_PREFIX = "local:"
 # Share of a run's full credit cost charged to a BYOK run — the provider tokens
 # are paid on the user's own key, but the run still consumes Skynet's CPU and
 # storage. Derived from the managed MARKUP's decomposition (~1.09 money-movement
-# × ~1.10 infra ≈ 1.20): the infra slice is 0.10×raw = 0.10/1.20 ≈ 0.0833 of the
-# full cost, grossed up for Stripe's ~2.9% cut of the money behind the fee
-# credits (÷0.971) ≈ 0.086. No OpenRouter deposit fee applies (no managed
-# tokens), and no profit on top — the fee covers exactly compute + storage.
-PLATFORM_FEE_FRACTION = 0.086
+# × ~1.10 infra × 1.25 profit ≈ 1.50): everything but the money-movement slice
+# is (1.50 − 1.09)×raw = 0.41/1.50 ≈ 0.273 of the full cost, grossed up for
+# Stripe's ~2.9% cut of the money behind the fee credits (÷0.971) ≈ 0.28. No
+# OpenRouter deposit fee applies (no managed tokens) — the fee covers compute +
+# storage plus the same margin managed runs carry.
+PLATFORM_FEE_FRACTION = 0.28
 
 # Ceiling handed to fee-less BYOK runs: far above any real run's full cost,
 # small enough to stay a safe int everywhere credits are summed.
