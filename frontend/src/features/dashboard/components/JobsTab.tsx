@@ -34,6 +34,7 @@ import {
 import { formatDate, formatId, formatRelativeTime, moduleLabel } from "@/shared/lib";
 import { ACTIVE_STATUSES } from "@/shared/constants/job-status";
 import { LiveElapsed } from "./LiveElapsed";
+import { PhoneJobList } from "./PhoneJobList";
 import type { OptimizationSummaryResponse, PaginatedJobsResponse } from "@/shared/types/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
@@ -182,33 +183,35 @@ export function JobsTab({
           )}
           <ResetFiltersButton filters={{ activeCount, clearAll: clearAllFilters }} />
           <ResetColumnsButton resize={colResize} />
-          <ExportTableMenu
-            iconOnly
-            className="ms-auto"
-            disabled={filteredItems.length === 0}
-            getData={() => {
-              const cols = [
-                "optimization_id",
-                "name",
-                ...(showSharedColumns ? ["username", "role"] : []),
-                "optimization_type",
-                "status",
-                "module_name",
-                "dataset_rows",
-                "created_at",
-                "elapsed_seconds",
-                "optimized_test_metric",
-              ];
-              return {
-                columns: cols,
-                rows: filteredItems.map((job) => {
-                  const rec = job as unknown as Record<string, unknown>;
-                  return Object.fromEntries(cols.map((c) => [c, rec[c]]));
-                }),
-                filename: "optimizations",
-              };
-            }}
-          />
+          {!isPhone && (
+            <ExportTableMenu
+              iconOnly
+              className="ms-auto"
+              disabled={filteredItems.length === 0}
+              getData={() => {
+                const cols = [
+                  "optimization_id",
+                  "name",
+                  ...(showSharedColumns ? ["username", "role"] : []),
+                  "optimization_type",
+                  "status",
+                  "module_name",
+                  "dataset_rows",
+                  "created_at",
+                  "elapsed_seconds",
+                  "optimized_test_metric",
+                ];
+                return {
+                  columns: cols,
+                  rows: filteredItems.map((job) => {
+                    const rec = job as unknown as Record<string, unknown>;
+                    return Object.fromEntries(cols.map((c) => [c, rec[c]]));
+                  }),
+                  filename: "optimizations",
+                };
+              }}
+            />
+          )}
         </div>
 
         {error && <InlineErrorRow message={error} className="mb-4" />}
@@ -225,7 +228,16 @@ export function JobsTab({
           />
         )}
 
-        {filteredItems.length > 0 && (
+        {filteredItems.length > 0 && isPhone && (
+          <PhoneJobList
+            items={filteredItems}
+            showOwner={showSharedColumns}
+            sessionUser={sessionUser}
+            onOpenJob={onOpenJob}
+          />
+        )}
+
+        {filteredItems.length > 0 && !isPhone && (
           <div
             className="overflow-x-auto rounded-2xl border border-border/40 bg-card/60"
             data-tutorial="dashboard-table"

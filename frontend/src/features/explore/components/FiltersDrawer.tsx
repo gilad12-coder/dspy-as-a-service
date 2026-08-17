@@ -14,6 +14,7 @@ import {
 import { modelDisplayName } from "@/shared/lib/formatters";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
 import {
   Sheet,
   SheetContent,
@@ -95,15 +96,22 @@ export function FiltersDrawer({
     (dateFrom ? 1 : 0) +
     (dateTo ? 1 : 0);
   const isRtl = getActiveDir() === "rtl";
+  // Phones get a bottom sheet capped below the top edge; desktop keeps the
+  // side drawer on the reading-end edge.
+  const isPhone = useIsPhone();
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        side={isRtl ? "left" : "right"}
+        side={isPhone ? "bottom" : isRtl ? "left" : "right"}
         showCloseButton={false}
-        className="w-full !max-w-md gap-0 border-border bg-background p-0"
+        className={
+          isPhone
+            ? "max-h-[85dvh] w-full gap-0 rounded-t-2xl border-border bg-background p-0 pb-[env(safe-area-inset-bottom)]"
+            : "w-full !max-w-md gap-0 border-border bg-background p-0"
+        }
       >
-        <div className="flex h-full flex-col">
+        <div className="flex h-full min-h-0 flex-col">
           <SheetHeader className="flex-row items-start justify-between gap-3 border-b border-border/60 px-6 py-5">
             <div className="flex flex-col gap-1.5">
               <SheetTitle className="text-[17px] font-medium tracking-tight text-foreground">

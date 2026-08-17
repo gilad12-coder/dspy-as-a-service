@@ -23,6 +23,7 @@ import { pairLabel } from "./grid-overview-helpers";
 import { deleteGridPair } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
 import type { OptimizationStatusResponse, PairResult } from "@/shared/types/api";
 
 export interface PairSelectionStripProps {
@@ -58,6 +59,9 @@ export function PairSelectionStrip({
 }: PairSelectionStripProps) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Clone opens the (desktop-only) submit wizard and delete is desk work;
+  // phones keep only cancel + pair navigation.
+  const isPhone = useIsPhone();
 
   const rtl = getActiveDir() === "rtl";
   const BackIcon = rtl ? CaretRight : CaretLeft;
@@ -109,17 +113,19 @@ export function PairSelectionStrip({
             </div>
           </div>
           <div className="flex w-full items-center justify-end gap-1 sm:w-auto sm:shrink-0">
-            <TooltipButton tooltip={msg("auto.app.optimizations.id.page.4")}>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
-                onClick={onClone}
-                aria-label={msg("auto.app.optimizations.id.page.literal.4")}
-              >
-                <Copy className="size-4" />
-              </Button>
-            </TooltipButton>
+            {!isPhone && (
+              <TooltipButton tooltip={msg("auto.app.optimizations.id.page.4")}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
+                  onClick={onClone}
+                  aria-label={msg("auto.app.optimizations.id.page.literal.4")}
+                >
+                  <Copy className="size-4" />
+                </Button>
+              </TooltipButton>
+            )}
             {jobActive && (
               <TooltipButton tooltip={msg("auto.app.optimizations.id.page.5")}>
                 <Button
@@ -133,7 +139,7 @@ export function PairSelectionStrip({
                 </Button>
               </TooltipButton>
             )}
-            {jobTerminal && (
+            {jobTerminal && !isPhone && (
               <TooltipButton
                 tooltip={msg("auto.features.optimizations.components.gridoverview.18")}
               >

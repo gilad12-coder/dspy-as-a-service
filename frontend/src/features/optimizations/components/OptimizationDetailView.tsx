@@ -101,6 +101,9 @@ import { ReactServeApi } from "./ReactServeApi";
 import { RunPlayground } from "./RunPlayground";
 import { linkifyMessage } from "@/shared/lib/linkify";
 import { useStreamWithPollFallback } from "@/shared/hooks/use-stream-with-poll-fallback";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
+
+const PHONE_DETAIL_TABS = new Set(["overview", "playground", "artifact", "logs"]);
 
 // Treat naive ISO timestamps (no trailing tz marker) as UTC — that matches the
 // backend, which stores UTC datetimes that Pydantic emits without a suffix.
@@ -252,6 +255,11 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") ?? "overview";
   const [detailTab, setDetailTab] = useState(initialTab);
+  // Phones get the view-first subset: Overview, Usage (chat), Artifact, Logs.
+  // Data/Code/LM activity/Config are desk work; a deep link to one of those
+  // tabs lands on Overview instead of an empty pane.
+  const isPhone = useIsPhone();
+  const activeDetailTab = isPhone && !PHONE_DETAIL_TABS.has(detailTab) ? "overview" : detailTab;
   // Expose for tutorial via the typed bridge (features/tutorial/lib/bridge.ts).
   useEffect(() => registerTutorialHook("setDetailTab", setDetailTab), []);
 
@@ -1093,7 +1101,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                     {job.estimated_remaining}
                   </span>
                 )}
-                {!isPairContext && (job.stored_bytes ?? 0) > 0 && (
+                {!isPairContext && !isPhone && (job.stored_bytes ?? 0) > 0 && (
                   <Link
                     href="/storage"
                     title={msg("optimization.storage_label")}
@@ -1113,18 +1121,21 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                 data-tutorial="result-actions"
               >
                 {canManageShare && <ShareDialog optimizationId={job.optimization_id} />}
-                <TooltipButton tooltip={msg("auto.app.optimizations.id.page.4")}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
-                    onClick={() => router.push(`/submit?clone=${job.optimization_id}`)}
-                    aria-label={msg("auto.app.optimizations.id.page.literal.4")}
-                  >
-                    <Copy className="size-4" />
-                  </Button>
-                </TooltipButton>
-                {canEditRun &&
+                {!isPhone && (
+                  <TooltipButton tooltip={msg("auto.app.optimizations.id.page.4")}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
+                      onClick={() => router.push(`/submit?clone=${job.optimization_id}`)}
+                      aria-label={msg("auto.app.optimizations.id.page.literal.4")}
+                    >
+                      <Copy className="size-4" />
+                    </Button>
+                  </TooltipButton>
+                )}
+                {!isPhone &&
+                  canEditRun &&
                   (job.status === "failed" ||
                     job.status === "cancelled" ||
                     job.status === "paused") &&
@@ -1162,7 +1173,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                       </Button>
                     </TooltipButton>
                   ))}
-                {canEditRun && isActive && job.pausable && (
+                {!isPhone && canEditRun && isActive && job.pausable && (
                   <TooltipButton tooltip={msg("optimization.pause_tooltip")}>
                     <Button
                       variant="ghost"
@@ -1189,7 +1200,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                     </Button>
                   </TooltipButton>
                 )}
-                {canDeleteRun && isTerminal && (
+                {!isPhone && canDeleteRun && isTerminal && (
                   <DeleteJobDialog
                     optimizationId={job.optimization_id}
                     onDeleted={() => router.push("/")}
@@ -1197,7 +1208,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                 )}
               </div>
             )}
-            {shareCanInteract && (
+            {shareCanInteract && !isPhone && (
               <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
                 <TooltipButton tooltip={msg("share.clone_tooltip")}>
                   <Button
@@ -1362,7 +1373,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
             !(activePair.program_artifact || activePair.optimized_test_metric != null)
           : isActive;
         return (
-          <Tabs value={detailTab} onValueChange={setDetailTab}>
+          <Tabs value={activeDetailTab} onValueChange={setDetailTab}>
             <TabsList
               variant="line"
               className="w-full justify-start gap-0 overflow-x-auto border-b border-border/50 pb-0 no-scrollbar"
@@ -1379,16 +1390,18 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                   {msg("auto.app.optimizations.id.page.15")}
                 </TabsTrigger>
               )}
-              {showDataTab && (
+              {showDataTab && !isPhone && (
                 <TabsTrigger value="data" className={tabCls}>
                   <Database className="size-3.5" />
                   {msg("auto.app.optimizations.id.page.16")}
                 </TabsTrigger>
               )}
-              <TabsTrigger value="code" className={tabCls}>
-                <Code className="size-3.5" />
-                {msg("auto.app.optimizations.id.page.17")}
-              </TabsTrigger>
+              {!isPhone && (
+                <TabsTrigger value="code" className={tabCls}>
+                  <Code className="size-3.5" />
+                  {msg("auto.app.optimizations.id.page.17")}
+                </TabsTrigger>
+              )}
               {showArtifactTab && (
                 <TabsTrigger value="artifact" className={tabCls}>
                   <Package className="size-3.5" />
@@ -1402,16 +1415,18 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                   {pingActive && <PingDot className="ms-1" />}
                 </TabsTrigger>
               )}
-              {showLmActivityTab && (
+              {showLmActivityTab && !isPhone && (
                 <TabsTrigger value="lm-activity" className={tabCls}>
                   <Pulse className="size-3.5" />
                   {msg("auto.app.optimizations.id.page.lm_activity")}
                 </TabsTrigger>
               )}
-              <TabsTrigger value="config" className={tabCls}>
-                <Gear className="size-3.5" />
-                {msg("auto.app.optimizations.id.page.19")}
-              </TabsTrigger>
+              {!isPhone && (
+                <TabsTrigger value="config" className={tabCls}>
+                  <Gear className="size-3.5" />
+                  {msg("auto.app.optimizations.id.page.19")}
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent
@@ -1468,7 +1483,7 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
               </TabsContent>
             )}
 
-            {showDataTab && (
+            {showDataTab && !isPhone && (
               <TabsContent value="data">
                 <DataTab
                   job={job}
@@ -1479,13 +1494,15 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
               </TabsContent>
             )}
 
-            <TabsContent value="code" className="space-y-6 mt-4">
-              <CodeTab
-                signatureCode={signatureCode ?? ""}
-                metricCode={metricCode ?? ""}
-                workflowSpec={workflowSpec}
-              />
-            </TabsContent>
+            {!isPhone && (
+              <TabsContent value="code" className="space-y-6 mt-4">
+                <CodeTab
+                  signatureCode={signatureCode ?? ""}
+                  metricCode={metricCode ?? ""}
+                  workflowSpec={workflowSpec}
+                />
+              </TabsContent>
+            )}
 
             {showArtifactTab && (
               <TabsContent value="artifact" className="space-y-6 mt-4">
@@ -1509,15 +1526,17 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
               </TabsContent>
             )}
 
-            {showLmActivityTab && viewLmActivity && (
+            {showLmActivityTab && viewLmActivity && !isPhone && (
               <TabsContent value="lm-activity" className="mt-4">
                 <LMActivityTab lmActivity={viewLmActivity} />
               </TabsContent>
             )}
 
-            <TabsContent value="config" className="mt-4" data-tutorial="config-section">
-              <ConfigTab job={job} payload={payload} activePair={activePair ?? undefined} />
-            </TabsContent>
+            {!isPhone && (
+              <TabsContent value="config" className="mt-4" data-tutorial="config-section">
+                <ConfigTab job={job} payload={payload} activePair={activePair ?? undefined} />
+              </TabsContent>
+            )}
           </Tabs>
         );
       })()}
