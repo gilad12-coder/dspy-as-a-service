@@ -18,6 +18,17 @@ export function isDesktopOnlyPath(pathname: string): boolean {
   return DESKTOP_ONLY_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+const PHONE_SETTINGS_TABS = new Set(["account", "billing", "usage", "about"]);
+
+/**
+ * Whether a settings tab is offered on phones. Wizard/tagging/agent/provider/
+ * API/security/privacy/admin tabs configure desk work and stay desktop-only;
+ * phones keep profile + language, wallet, usage and about.
+ */
+export function isPhoneSettingsTab(tab: string): boolean {
+  return PHONE_SETTINGS_TABS.has(tab);
+}
+
 /**
  * First-paint device class from request headers.
  *

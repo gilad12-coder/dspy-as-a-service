@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deviceClassFromRequest, isDesktopOnlyPath } from "./device-class.ts";
+import { deviceClassFromRequest, isDesktopOnlyPath, isPhoneSettingsTab } from "./device-class.ts";
 
 test("isDesktopOnlyPath blocks authoring routes and their descendants", () => {
   for (const p of [
@@ -58,4 +58,22 @@ test("deviceClassFromRequest falls back to the UA mobile token", () => {
   assert.equal(deviceClassFromRequest(ipad, null), "desktop");
   assert.equal(deviceClassFromRequest(mac, null), "desktop");
   assert.equal(deviceClassFromRequest(null, null), "desktop");
+});
+
+test("isPhoneSettingsTab keeps only the view-first settings tabs", () => {
+  for (const t of ["account", "billing", "usage", "about"]) {
+    assert.equal(isPhoneSettingsTab(t), true, t);
+  }
+  for (const t of [
+    "wizard",
+    "tagging",
+    "agent",
+    "security",
+    "privacy",
+    "providers",
+    "api",
+    "admin",
+  ]) {
+    assert.equal(isPhoneSettingsTab(t), false, t);
+  }
 });
