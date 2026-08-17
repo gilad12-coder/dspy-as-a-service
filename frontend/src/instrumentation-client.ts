@@ -13,6 +13,11 @@ Sentry.init({
   release: process.env.NEXT_PUBLIC_APP_VERSION,
   sendDefaultPii: false,
   tracesSampleRate: sentryTraceSampleRate(process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE),
+  // Replay only around errors, fully masked: it shows *what* the user did
+  // before a crash without recording what they typed or looked at.
+  replaysSessionSampleRate: 0,
+  replaysOnErrorSampleRate: 1.0,
+  integrations: [Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true })],
   beforeSend: scrubSentryEvent,
 });
 

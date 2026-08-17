@@ -45,6 +45,7 @@ import { BINARY_NO, BINARY_YES, isBinaryNo, isBinaryYes } from "../lib/types";
 import { isStorageQuotaError, saveDataset } from "@/shared/lib/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 
 interface Props {
   config: TaggerConfig;
@@ -206,6 +207,7 @@ export function TaggerAnnotation({
         dataset: rows,
         column_schema: { column_order: columnOrder, column_roles: columnRoles },
       });
+      track(TelemetryEvent.DatasetCreated, { source: "tagger", rows: rows.length });
       toast.success(
         res.deduplicated
           ? msg("datasets.toast.deduplicated")

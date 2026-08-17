@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useReducer, useEffect, useCallback, useRef, createContext, useContext } from "react";
+import { track as trackEvent, TelemetryEvent } from "@/shared/lib/telemetry";
 import type { TutorialTrack, TutorialStep } from "../lib/steps";
 import {
   getLoadedTrack,
@@ -211,6 +212,27 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(STORAGE_KEY);
   }, []);
   const toggleAutoPlay = useCallback(() => dispatch({ type: "TOGGLE_AUTO_PLAY" }), []);
+
+  // Funnel milestones: a track becoming active is a start; a track newly
+  // entering completedTracks (NEXT_STEP past the end, or COMPLETE_TRACK) is
+  // a completion. Both are keyed off state so every entry path is covered.
+  const prevActiveTrack = useRef<TutorialTrack | null>(null);
+  useEffect(() => {
+    if (state.activeTrack && state.isVisible && state.activeTrack !== prevActiveTrack.current) {
+      trackEvent(TelemetryEvent.TutorialStarted, { track: state.activeTrack });
+    }
+    prevActiveTrack.current = state.isVisible ? state.activeTrack : null;
+  }, [state.activeTrack, state.isVisible]);
+  // Only the active track can be *newly* completed by the user; the mount-time
+  // LOAD_STATE restore also grows the set but with activeTrack still null.
+  const prevCompleted = useRef(state.completedTracks);
+  useEffect(() => {
+    const active = state.activeTrack;
+    if (active && state.completedTracks.has(active) && !prevCompleted.current.has(active)) {
+      trackEvent(TelemetryEvent.TutorialCompleted, { track: active });
+    }
+    prevCompleted.current = state.completedTracks;
+  }, [state.completedTracks, state.activeTrack]);
 
   // Notify listeners (e.g. dashboard demo overlay) when tutorial closes
   const prevVisible = useRef(state.isVisible);

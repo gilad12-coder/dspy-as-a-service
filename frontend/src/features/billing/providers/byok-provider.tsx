@@ -11,6 +11,7 @@ import {
 } from "@/shared/lib/api";
 import { type KeyStatus, type ProviderKey } from "../lib/byok";
 import { invalidateByokModelCatalog } from "@/shared/lib/model-catalog";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 
 interface ByokContextValue {
   /** Saved keys, keyed by provider slug via `keyFor`. */
@@ -111,6 +112,7 @@ export function ByokKeysProvider({
     async (provider: string, secret: string, opts?: SaveProviderKeyOptions): Promise<KeyStatus> => {
       const saved = await saveProviderKey(provider, secret, opts);
       upsert(toProviderKey(saved));
+      track(TelemetryEvent.ByokKeyAdded, { provider, status: saved.status });
       return saved.status;
     },
     [upsert],

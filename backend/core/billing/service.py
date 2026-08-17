@@ -37,6 +37,7 @@ from ..storage.models import (
     BillingWebhookEventModel,
     CreditLedgerModel,
 )
+from ..telemetry import record_server_event
 from .openrouter_float import check_float
 from .pricing import ModelUsage, credits_for_usage
 
@@ -1112,14 +1113,45 @@ class StripeBillingService:
             if session.get(BillingWebhookEventModel, event_id) is not None:
                 return
             session.add(BillingWebhookEventModel(event_id=event_id, event_type=str(event["type"])))
-            self._apply_event(session, event)
+            purchase = self._apply_event(session, event)
             session.commit()
         # After the top-up commits — so a fresh read sees the new liability — check
         # that the shared OpenRouter float still covers what users are owed. Runs
         # only on the freshly-applied path (a redelivery returns above), and never
         # on the money path itself: the purchase is already committed.
+        if purchase is not None:
+            self._after_purchase(event_id, *purchase)
         if str(event["type"]) == "checkout.session.completed":
             self._monitor_float()
+
+    def _after_purchase(self, event_id: str, username: str, credits: int, pack_id: str) -> None:
+        """Log and record the funnel milestone for a credited top-up.
+
+        Runs after the credit has committed and never on the money path: a
+        logging or telemetry failure cannot undo or block the purchase.
+
+        Args:
+            event_id: Stripe event id, for correlating the log line with Stripe.
+            username: Buyer account.
+            credits: Credits granted.
+            pack_id: Pack purchased (empty for a custom amount).
+        """
+        logger.info(
+            "Top-up credited: user=%s credits=%d pack=%s event=%s",
+            username,
+            credits,
+            pack_id or "custom",
+            event_id,
+        )
+        try:
+            record_server_event(
+                self._engine,
+                username=username,
+                name="purchase_completed",
+                properties={"pack_id": pack_id or "custom", "credits": credits},
+            )
+        except Exception:  # isolation boundary: telemetry must never surface into the webhook response
+            logger.debug("purchase telemetry failed for event %s", event_id, exc_info=True)
 
     def _monitor_float(self) -> None:
         """Check the OpenRouter float after a purchase, swallowing every failure.
@@ -1134,41 +1166,50 @@ class StripeBillingService:
         except Exception:
             logger.exception("OpenRouter float monitor failed")
 
-    def _apply_event(self, session: Session, event: Any) -> None:
+    def _apply_event(self, session: Session, event: Any) -> tuple[str, int, str] | None:
         """Dispatch a verified event to its handler; unknown types are no-ops.
 
         Args:
             session: Open session; the caller commits (event row + effect land
                 atomically).
             event: The verified Stripe event object.
+
+        Returns:
+            ``(username, credits, pack_id)`` when the event credited a top-up,
+            otherwise ``None``.
         """
         event_type = str(event["type"])
         obj = event["data"]["object"]
         event_id = str(event["id"])
         if event_type == "checkout.session.completed":
-            self._on_checkout_completed(session, event_id, obj)
-        elif event_type == "charge.refunded":
+            return self._on_checkout_completed(session, event_id, obj)
+        if event_type == "charge.refunded":
             self._on_charge_refunded(session, event_id, obj)
         elif event_type == "charge.dispute.created":
             self._on_dispute_created(session, event_id, obj)
+        return None
 
-    def _on_checkout_completed(self, session: Session, event_id: str, obj: Any) -> None:
+    def _on_checkout_completed(self, session: Session, event_id: str, obj: Any) -> tuple[str, int, str] | None:
         """Credit a completed one-time pack purchase to the buyer's balance.
 
         Args:
             session: Open session (caller commits).
             event_id: Stripe event id, recorded on the ledger row for traceability.
             obj: The Checkout Session object from the event.
+
+        Returns:
+            ``(username, credits, pack_id)`` for a credited purchase, or ``None``
+            when the session was not a paid one-time payment worth crediting.
         """
         if obj.get("mode") != "payment" or obj.get("payment_status") != "paid":
-            return
+            return None
         metadata = obj.get("metadata") or {}
         username = str(metadata.get("username") or obj.get("client_reference_id") or "").lower()
         credits = int(metadata.get("credits") or 0)
         pack_id = str(metadata.get("pack_id") or "")
         payment_intent = str(obj.get("payment_intent") or "") or None
         if not username or credits <= 0:
-            return
+            return None
         customer = session.get(BillingCustomerModel, username)
         if customer is None:
             customer = BillingCustomerModel(
@@ -1189,6 +1230,7 @@ class StripeBillingService:
                 stripe_payment_intent_id=payment_intent,
             )
         )
+        return username, credits, pack_id
 
     def _pi_clawback_context(self, session: Session, payment_intent: str) -> tuple[str | None, int, int]:
         """Sum a PaymentIntent's ledger into (account, credits granted, credits already reversed).

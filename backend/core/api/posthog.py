@@ -13,6 +13,9 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
+# Browser-emitted names plus the server-emitted milestones recorded through
+# :func:`core.telemetry.server_events.record_server_event` (purchase and run
+# outcomes), so both halves of a funnel reach the same PostHog project.
 _EVENT_NAMES = {
     "page_view",
     "element_click",
@@ -24,25 +27,65 @@ _EVENT_NAMES = {
     "grid_search_submitted",
     "settings_opened",
     "settings_tab_changed",
+    "checkout_started",
+    "purchase_completed",
+    "run_completed",
+    "run_failed",
+    "run_cancelled",
+    "results_viewed",
+    "artifact_downloaded",
+    "dataset_created",
+    "byok_key_added",
+    "tutorial_started",
+    "tutorial_completed",
+    "share_created",
 }
 _PROPERTY_KEYS = {
+    "credits",
     "generation_models",
     "has_reflection",
     "href",
     "id",
+    "kind",
     "label",
     "method",
+    "mode",
+    "model",
     "name",
+    "optimization_type",
+    "optimizer",
+    "pack_id",
     "path",
+    "provider",
     "react",
     "reflection_models",
     "role",
+    "rows",
+    "shared",
+    "source",
+    "status",
     "tab",
     "tag",
     "testid",
+    "token_source",
+    "track",
     "type",
 }
 _STRUCTURAL_STRING = re.compile(r"^[A-Za-z0-9_./:-]{1,128}$")
+
+
+def _user_hash(username: str | None) -> str | None:
+    """Return the one-way account hash used in place of the real identity.
+
+    Args:
+        username: Server-trusted account identity, when authenticated.
+
+    Returns:
+        ``user-<sha256>`` or ``None`` when the caller is anonymous.
+    """
+    if not username:
+        return None
+    return f"user-{hashlib.sha256(username.encode('utf-8')).hexdigest()}"
 
 
 def _distinct_id(
@@ -52,19 +95,25 @@ def _distinct_id(
 ) -> str | None:
     """Build a stable non-PII identity for PostHog event grouping.
 
+    The browser's opaque id wins over the account hash so one browser journey
+    (landing → signup → first run → purchase) stays a single PostHog distinct id
+    across the login boundary; without that, funnels break exactly at signup.
+    Cross-device analysis uses the ``user_hash`` property instead.
+
     Args:
         username: Server-trusted account identity, when authenticated.
         anonymous_id: Opaque browser id, when supplied by the client.
         session_id: Opaque visit id used only as a final fallback.
 
     Returns:
-        Hashed user id or opaque client id, never the account email itself.
+        Opaque browser id, hashed user id, or session id — never the account
+        email itself.
     """
-    if username:
-        digest = hashlib.sha256(username.encode("utf-8")).hexdigest()
-        return f"user-{digest}"
     if anonymous_id:
         return f"anon-{anonymous_id}"
+    user_hash = _user_hash(username)
+    if user_hash:
+        return user_hash
     if session_id:
         return f"session-{session_id}"
     return None
@@ -114,6 +163,7 @@ def export_telemetry_events(
     distinct_id = _distinct_id(username, anonymous_id, session_id)
     if key is None or distinct_id is None or not events:
         return
+    user_hash = _user_hash(username)
     batch = []
     for event in events:
         if event.get("name") not in _EVENT_NAMES:
@@ -121,6 +171,7 @@ def export_telemetry_events(
         properties = {
             **_safe_properties(event.get("properties")),
             "distinct_id": distinct_id,
+            "user_hash": user_hash,
             "$process_person_profile": False,
             "$geoip_disable": True,
             "$lib": "skynet-first-party",

@@ -25,6 +25,7 @@ import {
 } from "@/shared/lib/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import { cn } from "@/shared/lib/utils";
 import { ListPageSkeleton } from "@/shared/ui/list-page-skeleton";
 import { useDatasets } from "../hooks/use-datasets";
@@ -156,6 +157,7 @@ export function DatasetsView() {
           dataset: parsed.rows,
           column_schema: { column_order: parsed.columns },
         });
+        track(TelemetryEvent.DatasetCreated, { source: "upload", rows: parsed.rows.length });
         toast.success(msg("datasets.toast.uploaded"));
         refetch();
       } catch (err) {
@@ -206,6 +208,7 @@ export function DatasetsView() {
             variant="outline"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
+            data-telemetry="datasets-upload"
             className="!h-[44px] w-full shrink-0 rounded-2xl sm:w-auto"
           >
             <UploadSimple className="size-4" />

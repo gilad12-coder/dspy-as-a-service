@@ -43,6 +43,7 @@ from core.storage.models import (
     BillingCustomerModel,
     BillingWebhookEventModel,
     CreditLedgerModel,
+    TelemetryEventModel,
 )
 
 
@@ -655,6 +656,26 @@ def test_webhook_credits_pack_topup(engine: object, webhook_ready: None) -> None
         assert rows[0].delta_credits == 500
         assert rows[0].stripe_event_id == "evt_1"
         assert session.get(BillingWebhookEventModel, "evt_1") is not None
+
+
+def test_webhook_records_purchase_milestone(
+    engine: object, webhook_ready: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A credited top-up leaves one ``purchase_completed`` telemetry row, and only one."""
+    monkeypatch.setattr(settings, "telemetry_enabled", True)
+    monkeypatch.setattr(settings, "posthog_project_api_key", None)
+    _seed_customer(engine, "u@x.com")
+    service = StripeBillingService(engine=engine)
+    event = _checkout_event("evt_tel", "u@x.com", 500, pack_id="pack_small")
+    with patch("stripe.Webhook.construct_event", return_value=event):
+        service.handle_webhook(b"{}", "sig")
+        service.handle_webhook(b"{}", "sig")
+    with Session(engine) as session:
+        rows = session.query(TelemetryEventModel).filter_by(event_name="purchase_completed").all()
+    assert len(rows) == 1
+    assert rows[0].username == "u@x.com"
+    assert rows[0].properties == {"pack_id": "pack_small", "credits": 500}
+    assert rows[0].context == {"source": "server"}
 
 
 def test_webhook_is_idempotent_on_redelivery(engine: object, webhook_ready: None) -> None:

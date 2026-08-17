@@ -62,7 +62,8 @@ def test_export_hashes_identity_and_filters_untrusted_properties(
     assert isinstance(batch, list)
     properties = batch[0]["properties"]
     expected_hash = hashlib.sha256(b"alice@example.com").hexdigest()
-    assert properties["distinct_id"] == f"user-{expected_hash}"
+    assert properties["distinct_id"] == "anon-anon-1"
+    assert properties["user_hash"] == f"user-{expected_hash}"
     assert properties["$process_person_profile"] is False
     assert properties["react"] is True
     assert properties["label"] == "submit-run"
@@ -110,3 +111,40 @@ def test_export_swallows_provider_failure(monkeypatch: pytest.MonkeyPatch) -> No
         session_id=None,
         events=_events(),
     )
+
+
+def test_export_falls_back_to_user_hash_without_browser_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A server-emitted event with no browser id groups under the account hash."""
+    monkeypatch.setattr(settings, "posthog_project_api_key", SecretStr("phc_test"))
+    captured: dict[str, object] = {}
+
+    def fake_post(url: str, *, json: dict[str, object], timeout: int) -> SimpleNamespace:
+        """Capture the outbound request and mimic a successful response."""
+        captured.update(json=json)
+        return SimpleNamespace(raise_for_status=lambda: None)
+
+    monkeypatch.setattr(posthog.requests, "post", fake_post)
+
+    posthog.export_telemetry_events(
+        username="alice@example.com",
+        anonymous_id=None,
+        session_id=None,
+        events=[
+            {
+                "name": "purchase_completed",
+                "timestamp": "2026-08-13T12:00:00+00:00",
+                "properties": {"pack_id": "starter", "credits": 500, "card": "4242"},
+                "context": {"source": "server"},
+            }
+        ],
+    )
+
+    payload = captured["json"]
+    assert isinstance(payload, dict)
+    properties = payload["batch"][0]["properties"]
+    expected_hash = hashlib.sha256(b"alice@example.com").hexdigest()
+    assert properties["distinct_id"] == f"user-{expected_hash}"
+    assert properties["user_hash"] == f"user-{expected_hash}"
+    assert properties["pack_id"] == "starter"
+    assert properties["credits"] == 500
+    assert "card" not in properties

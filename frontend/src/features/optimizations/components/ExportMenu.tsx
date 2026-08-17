@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
 import { downloadProgramExport } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import type {
   OptimizationLogEntry,
   OptimizationStatusResponse,
@@ -142,6 +143,7 @@ export function ExportMenu({
       <Button
         size="sm"
         onClick={() => setOpen((o) => !o)}
+        data-telemetry="results-export-menu"
         className="min-h-[44px] gap-1.5 sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
       >
         <DownloadSimple className="size-4" />
@@ -168,6 +170,7 @@ export function ExportMenu({
                   setOpen(false);
                   try {
                     await downloadProgramExport(job.optimization_id, programPairIndex);
+                    track(TelemetryEvent.ArtifactDownloaded, { kind: "program_zip" });
                   } catch (err) {
                     toast.error(
                       err instanceof Error ? err.message : msg("optimization.file.parse_error"),
@@ -196,6 +199,7 @@ export function ExportMenu({
                     if (!pklB64) return;
                     try {
                       downloadProgramPickle(pklB64, job.optimization_id);
+                      track(TelemetryEvent.ArtifactDownloaded, { kind: "program_pickle" });
                     } catch {
                       toast.error(msg("optimization.file.parse_error"));
                     }
@@ -221,6 +225,7 @@ export function ExportMenu({
                   onClick={() => {
                     setOpen(false);
                     exportPromptAsJson(optimizedPrompt, job.optimization_id);
+                    track(TelemetryEvent.ArtifactDownloaded, { kind: "prompt_json" });
                   }}
                   className={itemCls}
                 >
@@ -245,6 +250,7 @@ export function ExportMenu({
                     onClick={() => {
                       setOpen(false);
                       exportModuleAsPython(source, job.optimization_id, path || undefined);
+                      track(TelemetryEvent.ArtifactDownloaded, { kind: "module_python" });
                     }}
                     className={itemCls}
                   >
@@ -269,6 +275,7 @@ export function ExportMenu({
                   onClick={() => {
                     setOpen(false);
                     exportLogsAsCsv(job.logs, job.optimization_id);
+                    track(TelemetryEvent.ArtifactDownloaded, { kind: "logs_csv" });
                   }}
                   className={itemCls}
                 >

@@ -61,6 +61,7 @@ export function SubmitNav({ w }: { w: SubmitWizardContext }) {
       onClick={handleSubmit}
       disabled={submitting}
       data-tutorial="submit-button"
+      data-telemetry="submit-run"
       animate={{ scale: [1, 1.01, 1] }}
       transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
       className="group relative w-full rounded-2xl bg-primary text-primary-foreground font-semibold text-base pt-5 pb-7 cursor-pointer transition-all duration-300 hover:shadow-[0_0_30px_rgba(61,46,34,0.35)] hover:scale-[1.01] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"

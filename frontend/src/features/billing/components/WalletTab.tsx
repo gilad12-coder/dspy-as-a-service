@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { ArrowSquareOut, CircleNotch, Coins, CreditCard, Plus, Sparkle } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import { cn } from "@/shared/lib/utils";
 import { useLocale } from "@/shared/providers";
 import { SettingsRow } from "@/shared/ui/settings-row";
@@ -76,6 +77,10 @@ function AddCreditsControls() {
 
   const onBuy = async () => {
     setBuying(true);
+    track(TelemetryEvent.CheckoutStarted, {
+      pack_id: pack ? pack.id : "custom",
+      credits: pack ? pack.credits : customCredits,
+    });
     try {
       const { url } = await createCheckoutSession(
         pack ? { packId: pack.id } : { credits: customCredits },
@@ -161,6 +166,7 @@ function AddCreditsControls() {
         variant="outline"
         size="sm"
         onClick={onBuy}
+        data-telemetry="wallet-buy-credits"
         disabled={buying || (!pack && !customValid)}
         className="h-[44px] rounded-full px-2.5 text-[0.6875rem] font-semibold border-[#C8A882]/70 text-[#8a6d44] hover:bg-[#C8A882]/10 hover:text-[#8a6d44] sm:h-6 [@media(hover:none)_and_(pointer:coarse)]:h-[44px] [&_svg:not([class*='size-'])]:size-3"
       >

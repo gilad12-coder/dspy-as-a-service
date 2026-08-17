@@ -39,6 +39,7 @@ import {
   type ShareRole,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import { sessionIdentity } from "@/shared/lib/session-identity";
 
 const ROLE_OPTIONS: MemberRole[] = ["viewer", "editor"];
@@ -106,6 +107,7 @@ export function TaggingSessionShareDialog({ sessionId }: { sessionId: string }) 
     setSavingAccess(true);
     try {
       setState(await putTaggerSessionSharing(sessionId, { general_access: value }));
+      if (value !== "restricted") track(TelemetryEvent.ShareCreated, { kind: "tagging_session", mode: "link" });
       toast.success(msg("share.access_updated"));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
@@ -176,6 +178,7 @@ export function TaggingSessionShareDialog({ sessionId }: { sessionId: string }) 
 
   const handleInvite = async (username: string, role: MemberRole) => {
     setState(await addTaggerSessionShareMember(sessionId, { username, role }));
+    track(TelemetryEvent.ShareCreated, { kind: "tagging_session", mode: "member", role });
     toast.success(msg("share.member_added"));
   };
 

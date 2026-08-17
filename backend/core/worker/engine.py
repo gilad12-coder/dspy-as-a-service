@@ -45,6 +45,7 @@ from ..constants import (
     PAYLOAD_OVERVIEW_MODEL_NAME,
     PAYLOAD_OVERVIEW_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
+    PAYLOAD_OVERVIEW_OPTIMIZER_NAME,
     PAYLOAD_OVERVIEW_TOKEN_SOURCE,
     PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL,
     PAYLOAD_OVERVIEW_USERNAME,
@@ -62,6 +63,7 @@ from ..service_gateway.embedding_pipeline import embed_finished_job
 from ..service_gateway.optimization.core import _merge_usage_rows
 from ..service_gateway.optimization.trajectory import GEPA_STATE_FILENAME, GRID_PAIR_RESULT_FILENAME
 from ..storage import JobStore
+from ..telemetry import record_server_event
 from .constants import EVENT_ERROR, EVENT_LOG, EVENT_PROGRESS, EVENT_RESULT
 from .memory_guard import memory_usage_fraction
 from .subprocess_runner import run_service_in_subprocess, set_fork_service
@@ -864,6 +866,7 @@ class BackgroundWorker:
                             baseline_score=_baseline,
                             optimized_score=_optimized,
                         )
+                        self._record_run_outcome(optimization_id, _username, final_status, overview)
                         # The credit debit shares the once-only completion claim so
                         # a redelivered/re-run job is never double-billed. Success
                         # only — a failed (e.g. all-pairs-failed) run is not billed.
@@ -947,6 +950,9 @@ class BackgroundWorker:
                     and self._job_store.claim_completion_notification(optimization_id)
                 ):
                     notify_job_completed(optimization_id=optimization_id, username=_username, status="cancelled")
+                    self._record_run_outcome(
+                        optimization_id, _username, "cancelled", overview if isinstance(overview, dict) else {}
+                    )
             else:
                 # Failed jobs are retained so users can inspect the error
                 now = datetime.now(UTC).isoformat()
@@ -962,6 +968,9 @@ class BackgroundWorker:
                         username=_username,
                         status=final_status,
                         message=error_message,
+                    )
+                    self._record_run_outcome(
+                        optimization_id, _username, final_status, overview if isinstance(overview, dict) else {}
                     )
             # A pair child's terminal state may have been the grid's last:
             # run the finalize check on every exit path (it no-ops unless all
@@ -1196,6 +1205,44 @@ class BackgroundWorker:
             embed_finished_job(optimization_id, job_store=self._job_store)
         except Exception as exc:  # isolation boundary: best-effort indexing must never impact job status
             logger.debug("Embedding indexing for %s failed: %s", optimization_id, exc)
+
+    def _record_run_outcome(
+        self,
+        optimization_id: str,
+        username: str,
+        status: str,
+        overview: dict[str, Any],
+    ) -> None:
+        """Emit the ``run_completed`` / ``run_failed`` / ``run_cancelled`` milestone.
+
+        Called next to :func:`notify_job_completed` (inside the same exactly-once
+        completion claim) so each run yields one outcome event, mirroring the
+        browser's ``run_submitted``. Only structural descriptors are recorded —
+        no error text, no run name — and a telemetry failure never touches the
+        run's status.
+
+        Args:
+            optimization_id: Finished job id (logged only, never exported).
+            username: Owner of the run.
+            status: Terminal status (``success``, ``failed`` or ``cancelled``).
+            overview: The job's ``payload_overview`` mapping.
+        """
+        name = {"success": "run_completed", "cancelled": "run_cancelled"}.get(status, "run_failed")
+        try:
+            record_server_event(
+                getattr(self._job_store, "engine", None),
+                username=username or None,
+                name=name,
+                properties={
+                    "status": status,
+                    "optimization_type": overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE),
+                    "optimizer": overview.get(PAYLOAD_OVERVIEW_OPTIMIZER_NAME),
+                    "model": overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
+                    "token_source": overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE),
+                },
+            )
+        except Exception:  # isolation boundary: telemetry must never affect a run outcome
+            logger.debug("Optimization %s: run outcome telemetry failed", optimization_id, exc_info=True)
 
     def _debit_run_credits(
         self,
@@ -1829,6 +1876,7 @@ class BackgroundWorker:
                 status=final_status,
                 message=final_message,
             )
+            self._record_run_outcome(parent_optimization_id, _username, final_status, overview)
             if final_status == "success" and isinstance(result_dict, dict):
                 billed = self._debit_run_credits(
                     _username,

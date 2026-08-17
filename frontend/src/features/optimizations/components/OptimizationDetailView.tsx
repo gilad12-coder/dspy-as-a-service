@@ -74,6 +74,7 @@ import { formatBytes } from "@/shared/lib/formatters";
 import { TERMS } from "@/shared/lib/terms";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import { ACTIVE_STATUSES, TERMINAL_STATUSES } from "@/shared/constants/job-status";
 import { registerTutorialHook } from "@/features/tutorial";
 import type { OptimizationStatusResponse, OptimizationPayloadResponse } from "@/shared/types/api";
@@ -289,6 +290,18 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
     markRecentSession("optimization", id);
     return () => markRecentSession("optimization", id);
   }, [id, skipNetwork, job?.status]);
+  // Funnel milestone: the user has seen a finished run's results. Once per
+  // run per mount — the poll re-renders, and a run that finishes while open
+  // counts the moment it flips to success. Demo runs are excluded.
+  const resultsViewedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!id || isAnyDemoMode || job?.status !== "success" || resultsViewedFor.current === id) return;
+    resultsViewedFor.current = id;
+    track(TelemetryEvent.ResultsViewed, {
+      optimization_type: job.optimization_type,
+      shared: isShare,
+    });
+  }, [id, isAnyDemoMode, isShare, job?.status, job?.optimization_type]);
   // Re-run mints a brand-new run per call, so guard against a double-click
   // firing two retries (and creating two duplicate runs).
   const [retrying, setRetrying] = useState(false);

@@ -24,6 +24,7 @@ import type {
 } from "@/shared/types/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { I18N_KEY, tI18n } from "@/shared/lib/i18n";
+import { reportHandledError } from "@/shared/lib/report-error";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { readNdjsonStream, readServerSentEvents, type ServerSentEvent } from "@/shared/lib/sse";
 
@@ -225,6 +226,17 @@ export function isInsufficientCreditsError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.code === INSUFFICIENT_CREDITS_CODE;
 }
 
+/**
+ * Collapse ids out of a request path so Sentry groups by endpoint, not by
+ * record: `/optimizations/3f9c…/logs` → `/optimizations/:id/logs`.
+ */
+function endpointTag(path: string): string {
+  return (path.split("?", 1)[0] ?? path)
+    .split("/")
+    .map((seg) => (/^[0-9a-f-]{8,}$|^\d+$/i.test(seg) ? ":id" : seg))
+    .join("/");
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const send = (token: string | undefined) =>
     fetch(`${apiBase()}${path}`, {
@@ -246,11 +258,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       if (fresh) res = await send(fresh);
     }
   } catch (err) {
+    // A network drop is caught and toasted upstream, so without this Sentry
+    // would only ever hear about it if it escaped as an uncaught exception.
+    reportHandledError(err, {
+      tags: { source: "api", kind: "network", endpoint: endpointTag(path), method: init?.method ?? "GET" },
+    });
     throw new Error(msg("auto.shared.lib.api.literal.1"), { cause: err });
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     const parsed = parseError(text);
+    // 4xx are the user's (or the gate's) business — a bad token, a paywall, a
+    // storage quota, a validation slip. 5xx means the backend broke; report it
+    // even though every caller catches and toasts it.
+    if (res.status >= 500) {
+      reportHandledError(new Error(`API ${res.status} on ${endpointTag(path)}`), {
+        tags: {
+          source: "api",
+          kind: "http",
+          status: res.status,
+          endpoint: endpointTag(path),
+          method: init?.method ?? "GET",
+          code: parsed.code,
+        },
+      });
+    }
     // The storage budget is account-wide, so any blocked write opens one shared
     // modal regardless of which producer flow tripped it. The 409 still throws
     // so the caller's success path halts; producers suppress their own toast via

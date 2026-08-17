@@ -40,6 +40,7 @@ import {
   type SharingState,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import { sessionIdentity } from "@/shared/lib/session-identity";
 
 const ROLE_OPTIONS: MemberRole[] = ["viewer", "editor"];
@@ -138,6 +139,7 @@ export function ShareDialog({
     setSavingAccess(true);
     try {
       setState(await putSharing(optimizationId, { general_access: value }));
+      if (value !== "restricted") track(TelemetryEvent.ShareCreated, { kind: "optimization", mode: "link" });
       toast.success(msg("share.access_updated"));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
@@ -223,6 +225,7 @@ export function ShareDialog({
 
   const handleInvite = async (username: string, role: MemberRole) => {
     setState(await addShareMember(optimizationId, { username, role }));
+    track(TelemetryEvent.ShareCreated, { kind: "optimization", mode: "member", role });
     toast.success(msg("share.member_added"));
   };
 
