@@ -150,6 +150,23 @@ class Settings(BaseSettings):
         alias="OPENROUTER_BALANCE_FLOOR_CREDITS",
         description="Low-water mark for the OpenRouter master-account balance, in credits (1 credit = 1 cent; default 1000 = $10). When the balance falls below this floor the float monitor logs a WARNING — native Auto Top-Up may have failed or demand is outrunning refills. 0 disables the monitor. Only consulted when OPENROUTER_API_KEY is set.",
     )
+    openrouter_float_check_interval_seconds: float = Field(
+        default=900.0,
+        ge=0.0,
+        alias="OPENROUTER_FLOAT_CHECK_INTERVAL_SECONDS",
+        description="Seconds between periodic OpenRouter float checks on the API pods (advisory-lock-gated so one replica per tick reads the balance). Complements the post-purchase check, which only fires when a customer buys credits — a failed Auto Top-Up on a quiet day would otherwise go unnoticed until the next 402. 0 disables the periodic check; values below 60 are raised to 60.",
+    )
+    openrouter_float_alert_email: str = Field(
+        default="",
+        alias="OPENROUTER_FLOAT_ALERT_EMAIL",
+        description="Operator address that receives an email when the OpenRouter float falls below OPENROUTER_BALANCE_FLOOR_CREDITS (requires SMTP_HOST). Empty disables the email; the WARNING log and ALERT_WEBHOOK_URL forward still fire.",
+    )
+    openrouter_float_alert_cooldown_seconds: float = Field(
+        default=21600.0,
+        ge=0.0,
+        alias="OPENROUTER_FLOAT_ALERT_COOLDOWN_SECONDS",
+        description="Minimum seconds between two low-float notifications (email + webhook). Shared across replicas through Redis when REDIS_URL is set, per-process otherwise, so a 15-minute check loop can't page every tick. 0 sends on every breach.",
+    )
     worker_enabled: bool = Field(
         default=True,
         alias="WORKER_ENABLED",

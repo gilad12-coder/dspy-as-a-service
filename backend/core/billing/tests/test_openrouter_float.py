@@ -2,16 +2,19 @@
 
 Covers the balance read (dollars → credits, fail-open on every HTTP or shape
 error), the floor check (disabled when the floor is non-positive or the key is
-unset, warns only below the floor), the outstanding-liability aggregate, and the
-post-commit webhook hook (fires only on a freshly-applied checkout, never
-double-runs on redelivery, and can never break the money path). Each test uses
-an in-memory SQLite engine and patches ``httpx``/``stripe`` so no network call is
-made.
+unset, warns only below the floor), the low-float notification fan-out (webhook
++ email behind a cooldown that prefers Redis), the periodic sweeper (disabled
+unless fully configured, swallows failures), the outstanding-liability
+aggregate, and the post-commit webhook hook (fires only on a freshly-applied
+checkout, never double-runs on redelivery, and can never break the money path).
+Each test uses an in-memory SQLite engine and patches ``httpx``/``stripe``/SMTP
+so no network call is made.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Iterator
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -22,10 +25,14 @@ from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from core.billing import openrouter_float
 from core.billing.openrouter_float import (
     FloatStatus,
+    OpenRouterFloatSweeper,
     check_float,
+    notify_low_float,
     read_account_balance_credits,
+    start_openrouter_float_sweeper,
 )
 from core.billing.service import StripeBillingService
 from core.config import settings
@@ -48,6 +55,22 @@ def monitor_on(monkeypatch: pytest.MonkeyPatch) -> None:
     """Enable the monitor: a master key plus a $10 (1000-credit) floor."""
     monkeypatch.setattr(settings, "openrouter_api_key", SecretStr("sk-or-master"))
     monkeypatch.setattr(settings, "openrouter_balance_floor_credits", 1000)
+
+
+@pytest.fixture
+def notify_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset the process-local cooldown and configure both notification channels.
+
+    Redis is forced off so the cooldown exercises the per-process fallback;
+    individual tests override ``shared_redis_client`` when they need the shared
+    path.
+    """
+    monkeypatch.setattr(openrouter_float, "_local_cooldown_until", 0.0)
+    monkeypatch.setattr(openrouter_float, "shared_redis_client", lambda: None)
+    monkeypatch.setattr(settings, "openrouter_float_alert_cooldown_seconds", 3600.0)
+    monkeypatch.setattr(settings, "openrouter_float_alert_email", "ops@example.com")
+    monkeypatch.setattr(settings, "alert_webhook_url", "https://hooks.example.com/x")
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
 
 
 @pytest.fixture
@@ -187,6 +210,148 @@ def test_check_float_quiet_when_covered(monitor_on: None, caplog: pytest.LogCapt
     assert status.covered
     assert status.balance_credits == 1500
     assert "OpenRouter float low" not in caplog.text
+
+
+def test_check_float_notifies_below_floor(monitor_on: None) -> None:
+    """A breach hands the uncovered status to the notifier; a covered read does not."""
+    with (
+        patch.object(openrouter_float, "notify_low_float") as notify,
+        patch("httpx.get", return_value=_credits_response(5.0, 0.0)),
+    ):
+        status = check_float(outstanding_credits=3000)
+    notify.assert_called_once_with(status)
+    with (
+        patch.object(openrouter_float, "notify_low_float") as notify,
+        patch("httpx.get", return_value=_credits_response(15.0, 0.0)),
+    ):
+        check_float(outstanding_credits=3000)
+    notify.assert_not_called()
+
+
+def _wait_for(mock: Mock, timeout: float = 2.0) -> None:
+    """Block until a mock dispatched on a daemon thread has been called.
+
+    Args:
+        mock: The patched callable the background thread invokes.
+        timeout: Seconds to wait before giving up.
+    """
+    deadline = time.monotonic() + timeout
+    while not mock.called and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+
+def test_notify_low_float_fans_out_to_webhook_and_email(notify_ready: None) -> None:
+    """A breach posts to the alert webhook and emails the operator with the figures."""
+    status = FloatStatus(balance_credits=500, floor_credits=1500, liability_credits=3000)
+    with (
+        patch.object(openrouter_float, "send_alert") as alert,
+        patch.object(openrouter_float, "send_email") as email,
+    ):
+        assert notify_low_float(status) is True
+        _wait_for(email)
+    alert.assert_called_once()
+    assert alert.call_args.kwargs["level"] == "WARNING"
+    assert "$5.00" in alert.call_args.args[0]
+    assert "$15.00" in alert.call_args.args[0]
+    email.assert_called_once()
+    to, subject, body = email.call_args.args
+    assert to == "ops@example.com"
+    assert "OpenRouter float low" in subject
+    assert "$30.00" in body
+    assert "openrouter.ai/settings/credits" in body
+
+
+def test_notify_low_float_skips_email_when_unconfigured(notify_ready: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No recipient (or no SMTP host) means no email thread; the webhook still fires."""
+    status = FloatStatus(balance_credits=500, floor_credits=1500, liability_credits=0)
+    monkeypatch.setattr(settings, "openrouter_float_alert_email", "")
+    with (
+        patch.object(openrouter_float, "send_alert") as alert,
+        patch.object(openrouter_float, "send_email") as email,
+    ):
+        assert notify_low_float(status) is True
+        time.sleep(0.05)
+    alert.assert_called_once()
+    email.assert_not_called()
+
+
+def test_notify_low_float_honours_process_cooldown(notify_ready: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without Redis a second breach inside the cooldown is dropped; 0 disables the gate."""
+    status = FloatStatus(balance_credits=500, floor_credits=1500, liability_credits=0)
+    with patch.object(openrouter_float, "send_alert") as alert:
+        assert notify_low_float(status, now=100.0) is True
+        assert notify_low_float(status, now=200.0) is False
+        assert notify_low_float(status, now=100.0 + 3600.0) is True
+    assert alert.call_count == 2
+    monkeypatch.setattr(settings, "openrouter_float_alert_cooldown_seconds", 0.0)
+    with patch.object(openrouter_float, "send_alert") as alert:
+        assert notify_low_float(status, now=1.0) is True
+        assert notify_low_float(status, now=1.0) is True
+    assert alert.call_count == 2
+
+
+def test_notify_low_float_prefers_redis_cooldown(notify_ready: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With Redis available the shared ``SET NX EX`` decides; a held key suppresses the send."""
+    status = FloatStatus(balance_credits=500, floor_credits=1500, liability_credits=0)
+    client = Mock()
+    client.set.return_value = False
+    monkeypatch.setattr(openrouter_float, "shared_redis_client", lambda: client)
+    with patch.object(openrouter_float, "send_alert") as alert:
+        assert notify_low_float(status) is False
+    alert.assert_not_called()
+    client.set.assert_called_once_with(openrouter_float._ALERT_COOLDOWN_REDIS_KEY, "1", nx=True, ex=3600)
+    client.set.return_value = True
+    with patch.object(openrouter_float, "send_alert") as alert:
+        assert notify_low_float(status) is True
+    alert.assert_called_once()
+
+
+def test_notify_low_float_never_raises(notify_ready: None) -> None:
+    """A failing webhook send is swallowed and reported as not-notified."""
+    status = FloatStatus(balance_credits=500, floor_credits=1500, liability_credits=0)
+    with patch.object(openrouter_float, "send_alert", side_effect=RuntimeError("boom")):
+        assert notify_low_float(status) is False
+
+
+def test_start_sweeper_requires_full_configuration(monitor_on: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The periodic sweeper only starts with a key, a positive floor and a positive interval."""
+    monkeypatch.setattr(settings, "openrouter_float_check_interval_seconds", 0.0)
+    assert start_openrouter_float_sweeper(None, lambda: 0) is None
+    monkeypatch.setattr(settings, "openrouter_float_check_interval_seconds", 900.0)
+    monkeypatch.setattr(settings, "openrouter_balance_floor_credits", 0)
+    assert start_openrouter_float_sweeper(None, lambda: 0) is None
+    monkeypatch.setattr(settings, "openrouter_balance_floor_credits", 1000)
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
+    assert start_openrouter_float_sweeper(None, lambda: 0) is None
+    monkeypatch.setattr(settings, "openrouter_api_key", SecretStr("sk-or-master"))
+    with patch.object(OpenRouterFloatSweeper, "start") as start:
+        sweeper = start_openrouter_float_sweeper(None, lambda: 0)
+    assert isinstance(sweeper, OpenRouterFloatSweeper)
+    start.assert_called_once()
+
+
+def test_sweeper_sweep_once_runs_check(monitor_on: None, engine: object) -> None:
+    """On a non-Postgres engine one sweep reads the balance against the injected liability."""
+    sweeper = OpenRouterFloatSweeper(engine, lambda: 3000, interval_seconds=1.0)
+    with (
+        patch.object(openrouter_float, "notify_low_float"),
+        patch("httpx.get", return_value=_credits_response(5.0, 0.0)),
+    ):
+        status = sweeper.sweep_once()
+    assert status is not None
+    assert status.balance_credits == 500
+    assert status.liability_credits == 3000
+    assert sweeper._interval_seconds == 60.0
+
+
+def test_sweeper_sweep_once_swallows_failures(monitor_on: None, engine: object) -> None:
+    """A liability read that raises yields None instead of killing the loop."""
+
+    def _boom() -> int:
+        raise RuntimeError("db down")
+
+    sweeper = OpenRouterFloatSweeper(engine, _boom)
+    assert sweeper.sweep_once() is None
 
 
 def test_total_outstanding_credits_zero_without_customers(engine: object) -> None:

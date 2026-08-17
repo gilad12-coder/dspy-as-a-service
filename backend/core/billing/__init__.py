@@ -19,7 +19,14 @@ from .byok_vault import (
     VaultSnapshot,
     byok_provider_for_litellm,
 )
-from .openrouter_float import FloatStatus, check_float, read_account_balance_credits
+from .openrouter_float import (
+    FloatStatus,
+    OpenRouterFloatSweeper,
+    check_float,
+    notify_low_float,
+    read_account_balance_credits,
+    start_openrouter_float_sweeper,
+)
 from .openrouter_keys import OpenRouterKeyProvisioner, inject_provisioned_openrouter_key
 from .service import (
     FREE_GRANT_CREDITS,
@@ -36,6 +43,7 @@ __all__ = [
     "PACK_CREDITS",
     "FloatStatus",
     "LedgerRow",
+    "OpenRouterFloatSweeper",
     "OpenRouterKeyProvisioner",
     "ProviderKeyVault",
     "ProviderKeyView",
@@ -48,8 +56,10 @@ __all__ = [
     "cost_ceiling_budget",
     "inject_byok_connections",
     "inject_provisioned_openrouter_key",
+    "notify_low_float",
     "payload_uses_token_source",
     "provider_slug_for_model",
     "read_account_balance_credits",
     "resolve_byok_model_config",
+    "start_openrouter_float_sweeper",
 ]

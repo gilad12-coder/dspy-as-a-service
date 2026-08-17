@@ -46,6 +46,7 @@ except ImportError:  # Optional dep: tests/CI can run without the Scalar docs UI
     DocumentDownloadType = None  # type: ignore[assignment, misc]
     get_scalar_api_reference = None  # type: ignore[assignment]
 
+from ..billing import StripeBillingService, start_openrouter_float_sweeper
 from ..config import settings
 from ..error_reporting import capture_exception
 from ..exceptions import AppError
@@ -697,6 +698,7 @@ def create_app(
     orphan_sweeper = None
     stale_conversation_sweeper = None
     staged_dataset_sweeper = None
+    openrouter_float_sweeper = None
     embedding_sweeper = None
     loop_lag_monitor = None
 
@@ -716,6 +718,7 @@ def create_app(
             queue_metrics_refresher, \
             staged_dataset_sweeper, \
             stale_conversation_sweeper, \
+            openrouter_float_sweeper, \
             embedding_sweeper, \
             worker
         # Reclaim jobs whose worker lease has expired. Under multi-pod scaling
@@ -745,6 +748,11 @@ def create_app(
         orphan_sweeper = start_orphan_recovery_sweeper(job_store)
         stale_conversation_sweeper = start_stale_conversation_sweeper(getattr(job_store, "engine", None))
         staged_dataset_sweeper = start_staged_dataset_sweeper(getattr(job_store, "engine", None))
+        # The Stripe webhook only checks the OpenRouter float when someone buys
+        # credits; this loop catches a declined Auto Top-Up card on a quiet day.
+        openrouter_float_sweeper = start_openrouter_float_sweeper(
+            job_store.engine, StripeBillingService(engine=job_store.engine).total_outstanding_credits
+        )
         if settings.event_loop_lag_monitor_enabled:
             loop_lag_monitor = start_event_loop_lag_monitor()
             logger.info("Event-loop lag monitor enabled (threshold %.0fms)", settings.event_loop_lag_threshold_ms)
@@ -830,6 +838,8 @@ def create_app(
                 stale_conversation_sweeper.stop()
             if staged_dataset_sweeper:
                 staged_dataset_sweeper.stop()
+            if openrouter_float_sweeper:
+                openrouter_float_sweeper.stop()
             if embedding_sweeper:
                 embedding_sweeper.stop()
             if loop_lag_monitor:
