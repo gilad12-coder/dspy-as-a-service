@@ -1,3 +1,7 @@
+# check=skip=SecretsUsedInArgOrEnv
+# ^ SENTRY_AUTH_TOKEN is deliberately a build ARG: Railway exposes variables to
+#   Dockerfile builds only through ARG (no BuildKit secret mounts). It lives in
+#   the discarded build stage only, so the lint rule does not apply here.
 # On-prem mirrors / artifactory: see AIRGAP.html.
 #
 # Build args:
