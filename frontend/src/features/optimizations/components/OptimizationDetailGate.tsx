@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { XCircle } from "@/shared/ui/icons";
 
@@ -40,6 +40,7 @@ type GateState =
  */
 export function OptimizationDetailGate() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const { data: session, status } = useSession();
   const [state, setState] = useState<GateState>({ mode: "loading" });
   // The id whose probe already resolved to a stable view. The session token
@@ -66,22 +67,27 @@ export function OptimizationDetailGate() {
     let cancelled = false;
     setState({ mode: "loading" });
     const probe = async () => {
-      // Only a definitive 404 means "no access — try the public corpus".
-      // Transient failures (network blip, timeout while the backend is busy
-      // right after a submit) get brief retries; without them a private run
-      // gets misrendered as "wasn't found" while it is happily training.
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await getJob(id);
-          if (cancelled) return;
-          resolvedIdRef.current = id;
-          setState({ mode: "owned" });
-          return;
-        } catch (err) {
-          const notFound = err instanceof ApiError && err.status === 404;
-          if (notFound || attempt >= 2) break;
-          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
-          if (cancelled) return;
+      // Signed out there is no bearer to attach, so the owner probe can only
+      // 401 — skip straight to the public corpus. (The route is exempt from
+      // the login middleware exactly so this anonymous path can run.)
+      if (status !== "unauthenticated") {
+        // Only a definitive 404 means "no access — try the public corpus".
+        // Transient failures (network blip, timeout while the backend is busy
+        // right after a submit) get brief retries; without them a private run
+        // gets misrendered as "wasn't found" while it is happily training.
+        for (let attempt = 0; ; attempt++) {
+          try {
+            await getJob(id);
+            if (cancelled) return;
+            resolvedIdRef.current = id;
+            setState({ mode: "owned" });
+            return;
+          } catch (err) {
+            const notFound = err instanceof ApiError && err.status === 404;
+            if (notFound || attempt >= 2) break;
+            await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+            if (cancelled) return;
+          }
         }
       }
       try {
@@ -90,14 +96,22 @@ export function OptimizationDetailGate() {
         resolvedIdRef.current = id;
         setState({ mode: "public", data });
       } catch {
-        if (!cancelled) setState({ mode: "notfound" });
+        if (cancelled) return;
+        // A signed-out visitor on a non-public run gets the login bounce the
+        // middleware used to give, so a private link still works after
+        // sign-in; only signed-in callers see the not-found state.
+        if (status === "unauthenticated") {
+          router.replace(`/login?callbackUrl=${encodeURIComponent(window.location.href)}`);
+          return;
+        }
+        setState({ mode: "notfound" });
       }
     };
     void probe();
     return () => {
       cancelled = true;
     };
-  }, [id, isDemo, status, session?.backendAccessToken]);
+  }, [id, isDemo, status, session?.backendAccessToken, router]);
 
   if (state.mode === "loading") return <OptimizationDetailSkeleton />;
   if (state.mode === "public") return <OptimizationDetailView shareData={state.data} />;

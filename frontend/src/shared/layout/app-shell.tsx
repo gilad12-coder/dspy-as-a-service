@@ -3,6 +3,7 @@
 import * as React from "react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import { List, GraduationCap, Lightbulb, Feather } from "@/shared/ui/icons";
@@ -36,11 +37,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { locale } = useLocale();
   const dir = dirForLocale(locale);
   const isPhone = useIsPhone();
+  const { status } = useSession();
 
   // Shared-optimization pages render bare — no sidebar, agent panel, or other
   // app chrome — to keep the focus on the shared item. The recipient is still
   // authenticated (the route is login-gated like the rest of the app).
   if (pathname.startsWith("/share/")) {
+    return (
+      <main className="min-h-screen" dir={dir}>
+        {children}
+      </main>
+    );
+  }
+
+  // A signed-out visitor on a public (Explore-corpus) run gets the same bare
+  // treatment as /share: the chrome's data surfaces (sidebar, agent panel)
+  // all assume a bearer and would just 401. The session is server-resolved
+  // (layout passes it into SessionProvider), so status never flashes through
+  // "loading" and the branch is stable from first render.
+  if (pathname.startsWith("/optimizations/") && status === "unauthenticated") {
     return (
       <main className="min-h-screen" dir={dir}>
         {children}

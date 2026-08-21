@@ -12,7 +12,10 @@ export const config = {
     // sign-in codes) are excluded: all are hit by logged-out visitors, so
     // guarding them would bounce the POSTs to /login and the flow would never
     // complete. Terms and Privacy are public legal disclosures and must remain
-    // readable before someone creates an account.
-    "/((?!login|terms|privacy|api/auth|api/register|api/webauthn|api/2fa|_next/static|_next/image|favicon\\.svg|robots\\.txt|sitemap\\.xml).*)",
+    // readable before someone creates an account. ``optimizations`` is excluded
+    // because a public (Explore-corpus) run must be openable signed-out — the
+    // detail gate probes the anonymous public composite itself and bounces to
+    // /login only when the run turns out not to be public.
+    "/((?!login|terms|privacy|optimizations|api/auth|api/register|api/webauthn|api/2fa|_next/static|_next/image|favicon\\.svg|robots\\.txt|sitemap\\.xml).*)",
   ],
 };
