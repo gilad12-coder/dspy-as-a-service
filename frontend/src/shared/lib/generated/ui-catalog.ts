@@ -1925,6 +1925,9 @@ export type MessageKey =
   | "settings.admin.accounts.description"
   | "settings.admin.accounts.empty"
   | "settings.admin.accounts.role_saved"
+  | "settings.admin.accounts.source_adfs"
+  | "settings.admin.accounts.source_adfs_local"
+  | "settings.admin.accounts.source_local"
   | "settings.admin.accounts.title"
   | "settings.admin.accounts.username_placeholder"
   | "settings.admin.storage.add_row"
@@ -4764,6 +4767,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.admin.accounts.description": "ניהול שמות משתמש מקומיים ללא סיסמה והרשאות מנהל. משתמשי ADFS נוצרים אוטומטית בכניסה הראשונה.",
   "settings.admin.accounts.empty": "עדיין אין חשבונות.",
   "settings.admin.accounts.role_saved": "הרשאת המנהל נשמרה",
+  "settings.admin.accounts.source_adfs": "ADFS",
+  "settings.admin.accounts.source_adfs_local": "ADFS + כניסה מקומית",
+  "settings.admin.accounts.source_local": "כניסה מקומית",
   "settings.admin.accounts.title": "חשבונות משתמשים",
   "settings.admin.accounts.username_placeholder": "שם משתמש",
   "settings.admin.storage.add_row": "הוסף/הוסיפי משתמש",
