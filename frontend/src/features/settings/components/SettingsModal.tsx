@@ -218,7 +218,6 @@ function TaggingTab() {
           setPref("taggerAssistModel", cfg);
         }}
         roleLabel={msg("settings.tagger.default_model.label")}
-        catalogModels={catalogModels ?? undefined}
         recentConfigs={recentConfigs}
         onRemoveRecent={removeRecentConfig}
       />

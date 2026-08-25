@@ -4,5 +4,4 @@ export {
   litellmProviderForByok,
   type KeyStatus,
   type ProviderKey,
-  type TokenSourceMode,
 } from "./lib/byok";

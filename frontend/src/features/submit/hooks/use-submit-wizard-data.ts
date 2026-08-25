@@ -34,7 +34,10 @@ export function useRecentModelConfigs() {
   useEffect(() => {
     try {
       const stored = localStorage.getItem(RECENT_KEY);
-      if (stored) setRecentConfigs(JSON.parse(stored));
+      if (stored) {
+        const parsed = JSON.parse(stored) as ModelConfig[];
+        setRecentConfigs(parsed.map((config) => ({ ...config, token_source: "byok" })));
+      }
     } catch {
       // Private-mode Safari / disabled storage / corrupt JSON — keep [].
     }
@@ -53,6 +56,7 @@ export function useRecentModelConfigs() {
     const { base_url: _baseUrl, ...safeFields } = config;
     const safeConfig: ModelConfig = {
       ...safeFields,
+      token_source: "byok",
       extra: Object.keys(safeExtra).length > 0 ? safeExtra : undefined,
     };
     setRecentConfigs((prev) => {

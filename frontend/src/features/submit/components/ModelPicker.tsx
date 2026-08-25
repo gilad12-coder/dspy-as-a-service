@@ -65,7 +65,7 @@ function formatCtx(tokens?: number): string {
   return `${Math.round(tokens / 1000)}K`;
 }
 
-/** Searchable combobox for managed or account-scoped BYOK model IDs. */
+/** Searchable combobox for account-scoped BYOK model IDs. */
 export function ModelPicker({
   value,
   onChange,

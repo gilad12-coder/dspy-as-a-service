@@ -1810,13 +1810,9 @@ export type MessageKey =
   | "model.generation.label_short"
   | "model.generation.new"
   | "model.reflection.explainer"
-  | "model_source.aria"
   | "model_source.byok"
   | "model_source.byok_hint"
-  | "model_source.label"
   | "model_source.manage_keys"
-  | "model_source.managed"
-  | "model_source.managed_hint"
   | "not_found.back_dashboard"
   | "not_found.description"
   | "not_found.title"
@@ -3971,7 +3967,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "auto.features.tutorial.components.concepts.guide.literal.121": "temperature ו-max_tokens מאוחסנים עבור כל דגם. ברירת המחדל של Skynet היא temperature 0.7 ו-max_tokens 1024 אלא אם תשנה אותם.",
   "auto.features.tutorial.components.concepts.guide.literal.122": "דגמים וחיבורים",
   "auto.features.tutorial.components.concepts.guide.literal.123": "חשוב לדעת",
-  "auto.features.tutorial.components.concepts.guide.literal.124": "token_source נבחר לפי דגם. מודלים ארגוניים משתמשים בחיבור שהגדיר המנהל; דגמי BYOK משתמשים במפתח הספק השמור של המשתמש.",
+  "auto.features.tutorial.components.concepts.guide.literal.124": "token_source מוגדר תמיד כ-BYOK, וההרצה משתמשת במפתח הספק השמור של המשתמש.",
   "auto.features.tutorial.components.concepts.guide.literal.126": ".",
   "auto.features.tutorial.components.concepts.guide.literal.127": "reflection_model_config נדרש עבור GEPA. מודל המשוב קורא מסלולי הרצה ומשוב ומציע הנחיות מתוקנות.",
   "auto.features.tutorial.components.concepts.guide.literal.128": "מודול, נתונים והערכה",
@@ -4654,13 +4650,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "model.generation.label_short": "{term.generationModelShort}",
   "model.generation.new": "{term.generationModel} חדש",
   "model.reflection.explainer": "ה{term.model} שקורא את התשובות שהתקבלו, מזהה איפה הן שגו, ומנסח פרומפט טוב יותר לסבב הבא. הוא לא עונה על המשימה בעצמו — כל תפקידו הוא לשפר את הפרומפט (ב-DSPy זהו מודל הרפלקציה).",
-  "model_source.aria": "בחירת מקור החיבור למודל",
   "model_source.byok": "המפתח שלך",
   "model_source.byok_hint": "ההרצות משתמשות במפתח הספק ששמרת, בלי מגבלת שימוש נוספת מצד Skynet.",
-  "model_source.label": "מקור החיבור למודל",
   "model_source.manage_keys": "ניהול מפתחות",
-  "model_source.managed": "מודל ארגוני",
-  "model_source.managed_hint": "ההרצות משתמשות בחיבור למודל שהוגדר על ידי מנהל המערכת.",
   "not_found.back_dashboard": "חזור/חזרי ללוח הבקרה",
   "not_found.description": "הכתובת שחיפשת לא קיימת או שהועברה למיקום אחר",
   "not_found.title": "הדף לא נמצא",
@@ -4915,7 +4907,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.tab.admin": "ניהול",
   "settings.tab.agent": "פאנל הסוכן",
   "settings.tab.api": "API",
-  "settings.tab.providers": "ספקים",
+  "settings.tab.providers": "המפתחות שלי",
   "settings.tab.tagging": "תיוג",
   "settings.tab.wizard": "{term.optimization}",
   "settings.tagger.assist.description": "ראיון, תיוג משותף ותיוג אוטומטי במתייג. כבוי = המתייג הידני המלא.",

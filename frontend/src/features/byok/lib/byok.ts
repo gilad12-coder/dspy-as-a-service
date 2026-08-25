@@ -14,9 +14,6 @@
 /** Whether a saved key has been checked against its provider. */
 export type KeyStatus = "verified" | "unverified" | "invalid";
 
-/** Whether model credentials come from the deployment or the user's vault. */
-export type TokenSourceMode = "managed" | "byok";
-
 /** A provider a user can bring their own key for. `placeholder` hints the key shape. */
 export interface ByokProviderInfo {
   slug: string;

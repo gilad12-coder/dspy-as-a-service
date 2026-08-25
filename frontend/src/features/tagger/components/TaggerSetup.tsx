@@ -712,7 +712,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
                   setAssistModel(cfg);
                 }}
                 roleLabel={msg("tagger.assist.model.title")}
-                catalogModels={catalogModels ?? undefined}
                 recentConfigs={recentConfigs}
                 onRemoveRecent={removeRecentConfig}
               />

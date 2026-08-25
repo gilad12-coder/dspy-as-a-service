@@ -37,6 +37,7 @@ import type {
 import { parseDatasetFile, type ParsedDataset } from "@/shared/lib/parse-dataset";
 import type { ValidationResult as EditorValidationResult } from "@/shared/ui/code-editor";
 import { registerTutorialHook } from "@/features/tutorial";
+import { useByokKeys } from "@/features/byok";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { useWizardStateOptional } from "@/features/agent-panel";
 import { readPref, useUserPrefs } from "@/features/settings";
@@ -89,11 +90,10 @@ function prepareModelConfig(config: ModelConfig): ModelConfig {
     base_url: _ExtraBaseUrl,
     ...safeExtra
   } = fields.extra ?? {};
-  const tokenSource = fields.token_source ?? "managed";
   return {
     ...fields,
-    token_source: tokenSource,
-    byok_provider: tokenSource === "byok" ? fields.byok_provider : undefined,
+    token_source: "byok",
+    byok_provider: fields.byok_provider,
     extra: Object.keys(safeExtra).length > 0 ? safeExtra : undefined,
   };
 }
@@ -114,6 +114,7 @@ export function useSubmitWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
+  const { keys: byokKeys } = useByokKeys();
   const { prefs } = useUserPrefs();
   const advancedMode = prefs.advancedMode || readPref("advancedMode");
   const [step, setStep] = useState(0);
@@ -267,8 +268,6 @@ export function useSubmitWizard() {
     useRecentModelConfigs();
 
   const catalog = useModelCatalog();
-
-  const anyProviderHasEnvKey = catalog?.providers.some((p) => p.has_env_key) ?? false;
 
   const [generationModels, setGenerationModels] = useState<ModelConfig[]>([emptyModelConfig()]);
   const [reflectionModels, setReflectionModels] = useState<ModelConfig[]>([emptyModelConfig()]);
@@ -1545,13 +1544,13 @@ export function useSubmitWizard() {
         return true;
       }
       case 4: {
+        if (byokKeys.length === 0) {
+          if (showToast) toast.error(msg("submit.validation.api_key_required"));
+          return false;
+        }
         if (effectiveJobType === "run") {
           if (!modelConfig.name.trim()) {
             if (showToast) toast.error(msg("submit.validation.model_required"));
-            return false;
-          }
-          if (modelConfig.token_source !== "byok" && !anyProviderHasEnvKey) {
-            if (showToast) toast.error(msg("submit.validation.api_key_required"));
             return false;
           }
           const secondModel = secondModelConfig;
@@ -2260,7 +2259,6 @@ export function useSubmitWizard() {
     setColumnRoles,
     columnKinds,
     setColumnKinds,
-    anyProviderHasEnvKey,
     modelConfig,
     setModelConfig,
     secondModelConfig,

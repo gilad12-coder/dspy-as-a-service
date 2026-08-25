@@ -125,7 +125,7 @@ export interface AssistState {
   model?: string;
   /**
    * Safe settings saved with the chosen model from the shared model config
-   * dialog: sampling parameters plus its managed/BYOK source and vault
+   * dialog: sampling parameters plus its BYOK vault
    * provider slug. Secrets and custom endpoints never live here. Only ever
    * present alongside ``model``; the server resolves the connection and
    * merges the settings into the tagging LM the same way optimizations do.

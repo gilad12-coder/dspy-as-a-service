@@ -11,7 +11,6 @@ import {
   Eye,
   Brain,
   Info,
-  Coins,
   Key,
 } from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
@@ -69,17 +68,15 @@ function ReasoningPill({ value }: { value: string | null | undefined }) {
 
 function TokenSourcePill({ source }: { source: ModelConfig["token_source"] }) {
   // Keep this to a compact echo; the dialog owns the explanation and provider management.
-  if (!source) return null;
-  const byok = source === "byok";
-  const Icon = byok ? Key : Coins;
-  const label = msg(byok ? "model_source.byok" : "model_source.managed");
+  if (source !== "byok") return null;
+  const label = msg("model_source.byok");
   return (
     <span
       className="inline-flex shrink-0 items-center gap-0.5 rounded bg-muted/50 px-1 py-0.5 text-[9px] font-semibold text-muted-foreground/80"
       title={label}
       dir="auto"
     >
-      <Icon className="size-2.5" aria-hidden="true" />
+      <Key className="size-2.5" aria-hidden="true" />
       {label}
     </span>
   );

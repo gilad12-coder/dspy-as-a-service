@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Coins, Key, X } from "@/shared/ui/icons";
-import { useByokKeys, litellmProviderForByok, type TokenSourceMode } from "@/features/byok";
+import { Key, X } from "@/shared/ui/icons";
+import { useByokKeys, litellmProviderForByok } from "@/features/byok";
 import { useSettingsModal } from "@/features/settings";
 import { getByokModelCatalog, cachedByokCatalog } from "@/shared/lib/model-catalog";
 import { Dialog, DialogContent, DialogFooter } from "@/shared/ui/primitives/dialog";
@@ -30,28 +30,11 @@ interface ModelConfigModalProps {
   onSave: (config: ModelConfig) => void;
   /** Label shown in the dialog header, e.g. the primary-model or reflection-model term. */
   roleLabel?: string;
-  /** Catalog models for thinking detection */
-  catalogModels?: CatalogModel[];
   /** Recently used configs — shown as quick-select at top */
   recentConfigs?: ModelConfig[];
   /** Remove a single recent config by its model name (rendered as a per-row X). */
   onRemoveRecent?: (name: string) => void;
 }
-
-const TOKEN_SOURCE_SEGMENTS: Array<{
-  mode: TokenSourceMode;
-  icon: typeof Coins;
-  labelKey: "model_source.managed" | "model_source.byok";
-}> = [
-  { mode: "managed", icon: Coins, labelKey: "model_source.managed" },
-  { mode: "byok", icon: Key, labelKey: "model_source.byok" },
-];
-
-const TOKEN_SOURCE_TRANSITION = {
-  type: "tween",
-  duration: 0.16,
-  ease: [0.22, 1, 0.36, 1],
-} as const;
 
 function withoutInlineConnection(config: ModelConfig): ModelConfig {
   const { base_url: _baseUrl, ...rest } = config;
@@ -61,11 +44,10 @@ function withoutInlineConnection(config: ModelConfig): ModelConfig {
     base_url: _ExtraBaseUrl,
     ...safeExtra
   } = rest.extra ?? {};
-  const tokenSource = rest.token_source ?? "managed";
   return {
     ...rest,
-    token_source: tokenSource,
-    byok_provider: tokenSource === "byok" ? rest.byok_provider : undefined,
+    token_source: "byok",
+    byok_provider: rest.byok_provider,
     extra: Object.keys(safeExtra).length > 0 ? safeExtra : undefined,
   };
 }
@@ -76,7 +58,6 @@ export function ModelConfigModal({
   config,
   onSave,
   roleLabel = msg("auto.features.submit.components.modelconfigmodal.literal.1"),
-  catalogModels,
   recentConfigs,
   onRemoveRecent,
 }: ModelConfigModalProps) {
@@ -86,11 +67,9 @@ export function ModelConfigModal({
   // Two of these modals coexist (generation + reflection); the sliding-pill
   // layoutId must be unique per instance or Framer pairs them up.
   const effortPillId = React.useId();
-  const tokenSourcePillId = React.useId();
   const [draft, setDraft] = React.useState<ModelConfig>(() => withoutInlineConnection(config));
-  const mode = draft.token_source ?? "managed";
 
-  // In BYOK mode the picker lists models for every saved connection. On-prem
+  // The picker lists models for every saved connection. On-prem
   // endpoints may be unreachable from the web process during configuration,
   // so verification status is informative rather than an admission gate.
   const byokProviders = React.useMemo(
@@ -98,13 +77,11 @@ export function ModelConfigModal({
     [keys],
   );
   const byokProviderKey = [...byokProviders].sort().join("\u0000");
-  // BYOK catalog models also feed reasoning-toggle detection, since a BYOK model
-  // won't appear in the managed `catalogModels`.
+  // The account-scoped catalog also feeds reasoning-toggle detection.
   const [byokModels, setByokModels] = React.useState<CatalogModel[] | null>(
     cachedByokCatalog()?.models ?? null,
   );
   React.useEffect(() => {
-    if (mode !== "byok") return;
     let cancelled = false;
     getByokModelCatalog()
       .then((c) => {
@@ -114,8 +91,8 @@ export function ModelConfigModal({
     return () => {
       cancelled = true;
     };
-  }, [mode, byokProviderKey]);
-  const detectionModels = mode === "byok" ? (byokModels ?? undefined) : catalogModels;
+  }, [byokProviderKey]);
+  const detectionModels = byokModels ?? undefined;
 
   // Sync draft when config changes externally (e.g. opening with different model)
   React.useEffect(() => {
@@ -218,81 +195,28 @@ export function ModelConfigModal({
             </div>
           )}
 
-          <div className="space-y-2">
-            <Label className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
-              {msg("model_source.label")}
-            </Label>
-            <div
-              role="group"
-              aria-label={msg("model_source.aria")}
-              data-tutorial="model-source"
-              className="flex w-full rounded-lg bg-muted p-0.5 sm:w-fit"
-            >
-              {TOKEN_SOURCE_SEGMENTS.map(({ mode: value, icon: Icon, labelKey }) => (
+          <div
+            data-tutorial="model-source"
+            className="flex items-center gap-2 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground"
+          >
+            <span className="min-w-0 flex-1">{msg("model_source.byok_hint")}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <button
-                  key={value}
                   type="button"
-                  onClick={() =>
-                    setDraft((current) =>
-                      withoutInlineConnection({
-                        ...current,
-                        name: "",
-                        token_source: value,
-                        byok_provider: undefined,
-                      }),
-                    )
-                  }
-                  aria-pressed={mode === value}
-                  className={cn(
-                    "relative flex min-h-[44px] flex-1 cursor-pointer items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none lg:min-h-0",
-                    mode === value
-                      ? "text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
+                  onClick={() => {
+                    onOpenChange(false);
+                    openTo("providers");
+                  }}
+                  aria-label={msg("model_source.manage_keys")}
+                  className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/60 lg:size-8"
                 >
-                  {mode === value && (
-                    <motion.span
-                      layoutId={`token-source-pill-${tokenSourcePillId}`}
-                      className="absolute inset-0 rounded-md bg-background shadow-[0_1px_2px_oklch(0.25_0.04_45/.12)]"
-                      transition={prefersReducedMotion ? { duration: 0 } : TOKEN_SOURCE_TRANSITION}
-                      aria-hidden="true"
-                    />
-                  )}
-                  <span className="relative z-10 flex items-center gap-1.5">
-                    <Icon className="size-3.5" aria-hidden="true" />
-                    {msg(labelKey)}
-                  </span>
+                  <Key className="size-4" aria-hidden="true" />
                 </button>
-              ))}
-            </div>
-            {mode === "managed" && (
-              <div className="flex items-center gap-2 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
-                <span className="min-w-0 flex-1">{msg("model_source.managed_hint")}</span>
-              </div>
-            )}
+              </TooltipTrigger>
+              <TooltipContent>{msg("model_source.manage_keys")}</TooltipContent>
+            </Tooltip>
           </div>
-
-          {mode === "byok" && (
-            <div className="flex items-center gap-2 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
-              <span className="min-w-0 flex-1">{msg("model_source.byok_hint")}</span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onOpenChange(false);
-                      openTo("providers");
-                    }}
-                    aria-label={msg("model_source.manage_keys")}
-                    className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/60 lg:size-8"
-                  >
-                    <Key className="size-4" aria-hidden="true" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{msg("model_source.manage_keys")}</TooltipContent>
-              </Tooltip>
-            </div>
-          )}
 
           <div className="space-y-2">
             <Label>
@@ -319,10 +243,10 @@ export function ModelConfigModal({
               onSelect={(model) =>
                 setDraft((current) => ({
                   ...current,
-                  byok_provider: mode === "byok" ? (model.byok_provider ?? undefined) : undefined,
+                  byok_provider: model.byok_provider ?? undefined,
                 }))
               }
-              byokMode={mode === "byok"}
+              byokMode
               byokProviders={byokProviders}
               placeholder={msg("auto.features.submit.components.modelconfigmodal.literal.3")}
             />

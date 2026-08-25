@@ -73,7 +73,6 @@ export function SubmitWizard() {
           w.setEditingModel(null);
         }}
         roleLabel={w.editingModel?.label ?? msg("model.generation.label")}
-        catalogModels={w.catalog?.models}
         recentConfigs={w.recentConfigs}
         onRemoveRecent={w.removeRecentConfig}
       />
