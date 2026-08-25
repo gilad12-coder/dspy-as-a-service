@@ -10,7 +10,9 @@ import type { AgentMessage, AgentToolCall } from "@/shared/ui/agent/types";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { fetchWithAuthRetry } from "@/shared/lib/api";
 
-const API = getRuntimeEnv().apiUrl;
+// Resolve lazily — a module-load const races the injected window.__SKYNET_ENV__
+// and freezes the build-time localhost fallback. See shared/lib/api.ts.
+const apiBase = () => getRuntimeEnv().apiUrl;
 
 export interface ConversationSummary {
   id: string;
@@ -41,6 +43,7 @@ interface RawMessage {
   content: string;
   tool_calls?: Array<Record<string, unknown>> | null;
   model?: string | null;
+  served_model?: string | null;
   created_at: string;
 }
 
@@ -70,6 +73,7 @@ function toMessage(raw: RawMessage): AgentMessage {
     content: raw.content,
     toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
     model: raw.model ?? undefined,
+    servedModel: raw.served_model ?? undefined,
   };
 }
 
@@ -114,10 +118,10 @@ export async function listConversations(
   if (params?.offset) q.set("offset", String(params.offset));
   const qs = q.toString();
   try {
-    const res = await fetchWithAuthRetry(
-      `${API}/agent/conversations${qs ? `?${qs}` : ""}`,
-      { method: "GET", signal },
-    );
+    const res = await fetchWithAuthRetry(`${apiBase()}/agent/conversations${qs ? `?${qs}` : ""}`, {
+      method: "GET",
+      signal,
+    });
     if (!res.ok) return null;
     const rows = (await res.json()) as RawSummary[];
     return rows.map(toSummary);
@@ -132,7 +136,7 @@ export async function getConversation(
 ): Promise<ConversationDetail | null> {
   try {
     const res = await fetchWithAuthRetry(
-      `${API}/agent/conversations/${encodeURIComponent(conversationId)}`,
+      `${apiBase()}/agent/conversations/${encodeURIComponent(conversationId)}`,
       { method: "GET", signal },
     );
     if (!res.ok) return null;
@@ -157,7 +161,7 @@ export async function patchConversation(
 ): Promise<ConversationSummary | null> {
   try {
     const res = await fetchWithAuthRetry(
-      `${API}/agent/conversations/${encodeURIComponent(conversationId)}`,
+      `${apiBase()}/agent/conversations/${encodeURIComponent(conversationId)}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -175,7 +179,7 @@ export async function patchConversation(
 export async function deleteConversation(conversationId: string): Promise<boolean> {
   try {
     const res = await fetchWithAuthRetry(
-      `${API}/agent/conversations/${encodeURIComponent(conversationId)}`,
+      `${apiBase()}/agent/conversations/${encodeURIComponent(conversationId)}`,
       { method: "DELETE" },
     );
     return res.ok;

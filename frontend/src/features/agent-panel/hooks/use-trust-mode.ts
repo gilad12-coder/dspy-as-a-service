@@ -30,20 +30,25 @@ export function useTrustMode(): {
   return { mode, setMode, next };
 }
 
+// The hue map is locale-independent and stays concrete.
 export const TRUST_MODE_HUE: Record<TrustMode, string> = {
   ask: "#3D2E22",
   auto_safe: "#5E7A5E",
   yolo: "#A85A1A",
 };
 
-export const TRUST_MODE_LABEL: Record<TrustMode, string> = {
-  ask: msg("auto.features.agent.panel.hooks.use.trust.mode.literal.1"),
-  auto_safe: msg("auto.features.agent.panel.hooks.use.trust.mode.literal.2"),
-  yolo: msg("auto.features.agent.panel.hooks.use.trust.mode.literal.3"),
+// Labels/descriptions are thunks, not resolved strings: `msg()` reads the active
+// locale's out-of-band catalog, which is empty at module-eval on the server
+// (frozen to the raw key, process-wide) but populated in the browser — resolving
+// eagerly here would hydrate-mismatch. Callers invoke them per render.
+export const TRUST_MODE_LABEL: Record<TrustMode, () => string> = {
+  ask: () => msg("auto.features.agent.panel.hooks.use.trust.mode.literal.1"),
+  auto_safe: () => msg("auto.features.agent.panel.hooks.use.trust.mode.literal.2"),
+  yolo: () => msg("auto.features.agent.panel.hooks.use.trust.mode.literal.3"),
 };
 
-export const TRUST_MODE_DESCRIPTION: Record<TrustMode, string> = {
-  ask: msg("auto.features.agent.panel.hooks.use.trust.mode.literal.4"),
-  auto_safe: msg("auto.features.agent.panel.hooks.use.trust.mode.literal.5"),
-  yolo: msg("auto.features.agent.panel.hooks.use.trust.mode.literal.6"),
+export const TRUST_MODE_DESCRIPTION: Record<TrustMode, () => string> = {
+  ask: () => msg("auto.features.agent.panel.hooks.use.trust.mode.literal.4"),
+  auto_safe: () => msg("auto.features.agent.panel.hooks.use.trust.mode.literal.5"),
+  yolo: () => msg("auto.features.agent.panel.hooks.use.trust.mode.literal.6"),
 };

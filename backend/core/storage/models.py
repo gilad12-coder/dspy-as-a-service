@@ -5,14 +5,17 @@ Defines the shared database models used by the PostgreSQL storage backend.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
+from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -54,6 +57,388 @@ class ApiTokenModel(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class AgentApprovalModel(Base):
+    """Cross-replica handoff for a generalist-agent tool approval decision.
+
+    The SSE stream awaiting an approval and the confirm POST resolving it can
+    land on different backend replicas; the in-process future only works when
+    they share a process. A confirm that finds no local future writes its
+    decision here, and the awaiting replica's poll loop picks it up (and
+    deletes the row). Rows are short-lived — consumed within seconds, purged
+    opportunistically after the approval timeout.
+    """
+
+    __tablename__ = "agent_approvals"
+
+    call_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    approved: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class UserModel(Base):
+    """A Skynet-native account for email/password sign-in.
+
+    Backs only the "create an account in Skynet" path — OAuth (Google/GitHub)
+    users authenticate against their provider and never get a row here. The
+    lowercased ``email`` is the primary key because it is also the cross-app
+    identity (the ``username`` every other table — jobs, datasets, shares —
+    keys ownership on), so a local account and the work it owns line up on a
+    single value. Only the scrypt ``password_hash`` is persisted; the plaintext
+    password is never stored.
+    """
+
+    __tablename__ = "users"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Whether the sign-up email address has been confirmed via an emailed code.
+    # Defaults True so rows created before this column existed, and accounts
+    # created on a deployment with no SMTP relay, are treated as verified; the
+    # register route flips it to False only when it actually sends a code, and
+    # login refuses an unverified account while email delivery is configured.
+    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Optional profile captured on the rich sign-up form. Nullable because OAuth
+    # accounts (no ``users`` row) and rows created before these columns existed
+    # never set them, and ``job_role`` is optional even on the sign-up form.
+    use_case: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    experience_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    job_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Two-factor state for password sign-ins. A non-null ``totp_secret`` means
+    # TOTP is enabled; ``totp_pending_secret`` holds the secret between setup
+    # and the first verified code, so an abandoned setup never locks the
+    # account. ``recovery_codes`` is a JSON array of scrypt hashes, each
+    # consumed on use.
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_pending_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    email_2fa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    recovery_codes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MonthlyActiveUserModel(Base):
+    """One identity admitted to use the application during a UTC month."""
+
+    __tablename__ = "monthly_active_users"
+
+    month_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class NotificationPreferenceModel(Base):
+    """Per-identity preferences for optional product notification emails.
+
+    The row is separate from :class:`UserModel` because OAuth identities own
+    jobs and shares without a local password-account row. Missing rows preserve
+    the historical default: both notification categories are enabled.
+    """
+
+    __tablename__ = "notification_preferences"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    job_updates_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sharing_updates_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class WebAuthnCredentialModel(Base):
+    """A registered passkey (WebAuthn credential) owned by one identity.
+
+    ``user_email`` is a plain indexed column rather than a foreign key to
+    ``users``: OAuth identities (Google/GitHub) have no ``users`` row yet can
+    still register passkeys, since the email is the cross-provider identity.
+    ``credential_id`` and ``public_key`` are stored base64url-encoded exactly
+    as the WebAuthn ceremony emits them; ``sign_count`` tracks the
+    authenticator's signature counter for clone detection.
+    """
+
+    __tablename__ = "webauthn_credentials"
+
+    credential_id: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    user_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    public_key: Mapped[str] = mapped_column(Text, nullable=False)
+    sign_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    transports: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    nickname: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WebAuthnChallengeModel(Base):
+    """Single-use server-issued challenge for an in-flight WebAuthn ceremony.
+
+    Stored server-side (not in a cookie) so registration and sign-in stay
+    stateless across backend replicas. Keyed by the base64url challenge
+    itself — the verify step extracts the challenge echoed in the client's
+    ``clientDataJSON``, consumes the row, and rejects anything unknown or past
+    ``expires_at``. Expired rows are purged opportunistically on each insert.
+    """
+
+    __tablename__ = "webauthn_challenges"
+
+    challenge: Mapped[str] = mapped_column(String(255), primary_key=True)
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False)
+    user_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TwoFactorEmailCodeModel(Base):
+    """The active emailed one-time sign-in code for a local account.
+
+    One row per email (re-sending replaces it), holding only the scrypt hash
+    of the 6-digit code. ``attempts`` counts failed verifies so a code dies
+    after a handful of guesses well before ``expires_at``.
+    """
+
+    __tablename__ = "two_factor_email_codes"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class PasswordResetCodeModel(Base):
+    """The active password-reset code for a local account.
+
+    One row per email (requesting again replaces it), holding only the scrypt
+    hash of the emailed 6-digit code. ``attempts`` counts failed verifies so a
+    code dies after a handful of guesses well before ``expires_at``. ``sent_at``
+    backs a per-account resend cooldown: the request route is unauthenticated,
+    so the cooldown is what keeps it from being a mail-bomb oracle.
+    """
+
+    __tablename__ = "password_reset_codes"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class EmailVerificationCodeModel(Base):
+    """The active email-confirmation code for a freshly registered account.
+
+    One row per email (re-sending replaces it), holding only the scrypt hash of
+    the emailed 6-digit code. ``attempts`` counts failed verifies so a code dies
+    after a handful of guesses well before ``expires_at``. ``sent_at`` backs a
+    per-account resend cooldown, since the resend route is unauthenticated and
+    would otherwise be a mail-bomb oracle. Kept separate from the sign-in and
+    reset code tables so a pending confirmation never collides with either.
+    """
+
+    __tablename__ = "email_verification_codes"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class BillingCustomerModel(Base):
+    """Per-user billing state synced from Stripe (one row per paying identity).
+
+    Keyed on ``username`` (the lowercased email every other table owns rows by)
+    rather than a foreign key to ``users`` so SSO accounts — which never get a
+    ``users`` row — are billed too. ``stripe_customer_id`` is the durable link to
+    Stripe. ``credit_balance`` is the denormalized spendable purchased-credit
+    total, kept in step with ``credit_ledger`` on every mutation so a balance
+    read is a single fast integer.
+    """
+
+    __tablename__ = "billing_customers"
+    # Credits are prepaid: a balance below zero would mean the platform lent
+    # tokens, so the DB refuses it outright — the clamped debit in
+    # ``StripeBillingService.debit_run`` keeps writes inside these bounds.
+    __table_args__ = (
+        CheckConstraint(
+            "credit_balance >= 0",
+            name="ck_billing_customers_credit_balance_non_negative",
+        ),
+        CheckConstraint(
+            "grant_remaining IS NULL OR grant_remaining >= 0",
+            name="ck_billing_customers_grant_remaining_non_negative",
+        ),
+    )
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    stripe_customer_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )
+    credit_balance: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    # ``grant_remaining`` is what is left of the account's one-time free credit
+    # grant (500 credits, seeded once and never renewed). NULL until the first
+    # wallet read or run seeds it; seeding is lazy-evaluated on read, never
+    # cron'd.
+    grant_remaining: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class CreditLedgerModel(Base):
+    """Immutable, append-only record of every credit movement for an account.
+
+    Each row is a signed ``delta_credits`` against ``username``: positive for a
+    top-up (pack purchase) or monthly grant, negative for a run charge. The
+    running sum is denormalized onto ``billing_customers.credit_balance`` for
+    fast gating; this table is the audit trail that explains that balance and
+    backs the wallet's usage ledger. ``stripe_event_id`` ties a top-up row to the
+    webhook event that created it so a redelivered event can't double-credit.
+    """
+
+    __tablename__ = "credit_ledger"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    delta_credits: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Measured usage behind a run row's charge; None on top-ups/grants and on
+    # rows written before token metering landed.
+    input_tokens: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=True
+    )
+    output_tokens: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"), nullable=True
+    )
+    stripe_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # The PaymentIntent behind a top-up (``pi_…``), the join key a refund or
+    # dispute webhook uses to find the account and the credits to claw back —
+    # it is the one id present on the checkout, charge, and dispute objects
+    # alike. None on grants/runs/adjustments and on top-ups predating this column.
+    stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+
+
+class BillingWebhookEventModel(Base):
+    """Idempotency ledger of Stripe webhook events already applied.
+
+    The webhook endpoint records each ``evt_…`` id here inside the same
+    transaction that applies the event's effect, and skips any event whose id is
+    already present. Stripe guarantees at-least-once delivery, so without this a
+    retried ``checkout.session.completed`` would credit the same purchase twice.
+    """
+
+    __tablename__ = "billing_webhook_events"
+
+    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class BillingProviderKeyModel(Base):
+    """One stored BYOK provider connection for an account, encrypted at rest.
+
+    Backs BYOK mode: when an account runs in ``byok`` token source, jobs bill the
+    user's own provider key instead of Skynet credits. The secret is never stored
+    in plaintext — only ``secret_ciphertext`` (the Fernet-encrypted bytes) is
+    persisted, so a database dump never leaks a usable key. ``last4`` is the
+    recognizable tail kept for masked display, and ``status`` records whether the
+    connection was checked against its provider (``unverified`` / ``verified`` /
+    ``invalid``) so the UI can tell a typo'd key from a working one before a job
+    ever runs. ``api_base`` and ``params`` carry an optional custom endpoint and
+    extra LiteLLM kwargs so a connection can target any OpenAI-compatible host,
+    and ``label`` is an optional user-facing name. The surrogate ``id`` is the
+    primary key, so an account may hold several connections for one provider
+    (e.g. two OpenAI-compatible endpoints); ``(username, provider)`` is indexed
+    for the run-path and settings lookups.
+    """
+
+    __tablename__ = "billing_provider_keys"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    api_base: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, nullable=False, default=dict)
+    secret_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    last4: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unverified", server_default="unverified"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("ix_billing_provider_keys_username_provider", "username", "provider"),
+    )
+
+
+class BillingOpenRouterKeyModel(Base):
+    """One platform-provisioned OpenRouter runtime key per account.
+
+    Backs provider-side spend capping for managed runs: when
+    ``OPENROUTER_PROVISIONING_KEY`` is configured, the worker mints one
+    OpenRouter runtime key per account and syncs its spend limit to the
+    account's credit balance before each managed dispatch, so upstream spend is
+    capped at OpenRouter itself even if every backend-side gate fails (see
+    ``core.billing.openrouter_keys``). Only the Fernet-encrypted secret is
+    persisted — the same at-rest contract as the BYOK vault — and ``key_hash``
+    addresses the key in OpenRouter's key-management API. Deleting a row forces
+    a fresh key to be minted on the account's next managed dispatch.
+    """
+
+    __tablename__ = "billing_openrouter_keys"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    secret_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
 class SearchQueryLogModel(Base):
     """Anonymous log of public-corpus search queries, powering trending searches.
 
@@ -80,6 +465,66 @@ class SearchQueryLogModel(Base):
         nullable=False,
         default=lambda: datetime.now(UTC),
         index=True,
+    )
+
+
+class TelemetryEventModel(Base):
+    """Append-only product-telemetry event — how the app is actually used.
+
+    One row per captured interaction (a page view, a labelled click, a named
+    flow event). The browser SDK batches events to ``POST /telemetry/events``
+    and they land here, queryable beside the rest of the product data. An
+    operator may additionally export accepted events to PostHog with a one-way
+    account hash and without creating a person profile.
+
+    Identity is split deliberately. ``username`` is the *server-trusted* caller
+    derived from the request's auth token (never from the request body), so it
+    is set only when the batch was sent authenticated; the client can't forge
+    another user's identity onto an event. ``anonymous_id`` is an opaque,
+    per-browser id the SDK generates (no email, no name), letting pre-login and
+    logged-out activity be funnel-counted without profiling a person.
+    ``session_id`` scopes a single browsing session. No IP address is stored,
+    and ``properties`` is contractually PII-free (the SDK only emits structural
+    descriptors), so aggregates can be computed without holding personal data.
+
+    ``occurred_at`` is the client-reported event time (best-effort, clock-skewed);
+    ``received_at`` is the authoritative server insert time the read endpoints
+    order and bucket on.
+    """
+
+    __tablename__ = "telemetry_events"
+
+    # BigInteger on Postgres (BIGSERIAL); INTEGER on SQLite so its rowid
+    # autoincrement kicks in for the create_all-based test stores.
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    event_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        index=True,
+    )
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    anonymous_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    locale: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    app_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    properties: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, default=dict)
+    context: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, default=dict)
+
+    # Top-events-over-time and per-user activity are the two read shapes; each
+    # filters on its leading column and orders by recency, so a composite beats
+    # two standalone indexes. The bare received_at index above still serves the
+    # global time-series (all events, no name/user filter).
+    __table_args__ = (
+        Index("ix_telemetry_events_name_received", "event_name", "received_at"),
+        Index("ix_telemetry_events_user_received", "username", "received_at"),
     )
 
 
@@ -171,6 +616,10 @@ class JobModel(Base):
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON_STORE, nullable=True)
     username: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     optimization_type: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # "single" vs "workflow" — orthogonal to optimization_type. Hoisted from the
+    # payload overview at submit so a run's shape is a first-class indexed column
+    # rather than a JSON probe against module_name. NULL on legacy/child rows.
+    composition: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     code_version: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     claimed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -193,9 +642,21 @@ class JobModel(Base):
     accumulated_runtime_seconds: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.0, server_default="0"
     )
+    # Distributed grid search: a (generation, reflection) pair fanned out as
+    # its own claimable row points at its grid parent here and carries its
+    # global pair index. NULL for every user-visible job — child rows are
+    # scheduling internals, hidden from listings and deleted with the parent
+    # via the cascading self-FK.
+    parent_optimization_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("jobs.optimization_id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    pair_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         Index("ix_jobs_status_created_at", "status", "created_at"),
+        # "my optimizations, newest first" — the dominant list/sidebar query —
+        # becomes a single backward index range scan instead of filter + sort.
+        Index("ix_jobs_username_created_at", "username", "created_at"),
         Index("ix_jobs_lease_expires_at", "lease_expires_at"),
         # Lookup index for idempotency dedup; the corresponding PG-only
         # uniqueness guard (partial on idempotency_key IS NOT NULL) lives in
@@ -360,7 +821,9 @@ class JobEmbeddingModel(Base):
 
     Metadata (``optimization_type``, ``winning_model``, ``winning_rank``)
     is denormalized from ``jobs`` so the search can filter and rerank
-    without an extra join per-candidate.
+    without an extra join per-candidate. ``updated_at`` advances on every
+    refresh so dashboard caches can detect resumed jobs without replacing the
+    row.
     """
 
     __tablename__ = "job_embeddings"
@@ -372,6 +835,9 @@ class JobEmbeddingModel(Base):
     winning_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
     )
     embedding_summary: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     embedding_code: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
@@ -505,6 +971,114 @@ class AgentStagedDatasetModel(Base):
     __table_args__ = (Index("ix_agent_staged_datasets_user_created", "username", "created_at"),)
 
 
+class AgentMemoryModel(Base):
+    """One memory in a user's permanent agent memory log (OptMem port).
+
+    The log is append-only: ``seq`` is a dense 0-based counter per user, and
+    position IS identity — summary blocks in
+    :class:`AgentMemorySummaryModel` address ranges of these rows by ``seq``
+    alone, so rows are never updated or deleted.
+    """
+
+    __tablename__ = "agent_memories"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    content: Mapped[str] = mapped_column(String(280), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class AgentMemorySummaryModel(Base):
+    """Agent-authored summary of one aligned power-of-two block of memories.
+
+    Block ``(block_size, block_index)`` covers memories
+    ``[block_index * block_size, (block_index + 1) * block_size)`` and is the
+    compression of its two halves. Each level is a dense prefix — blocks are
+    built strictly in order — so a per-level row count says exactly how far
+    that level got. Rows are a rebuildable cache over the log, never a source
+    of truth.
+    """
+
+    __tablename__ = "agent_memory_summaries"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    block_size: Mapped[int] = mapped_column(Integer, primary_key=True)
+    block_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    content: Mapped[str] = mapped_column(String(280), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class AgentMemorySettingsModel(Base):
+    """Per-user overrides for the agent-memory size knobs (OptMem config).
+
+    One row per user who changed anything; a NULL column (or no row at all)
+    means that knob follows the tool default in
+    :mod:`core.api.agent_memory` — mirroring OptMem's config file, where a
+    commented-out line means "follow the tool". Values are validated against
+    the knob bounds at write time, so reads trust the row.
+    """
+
+    __tablename__ = "agent_memory_settings"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    wake_lines: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entry_chars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recall_chars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class TaggingSessionModel(Base):
+    """Persisted text-labeling (tagger) session — one row per saved session.
+
+    Mirrors the in-memory ``useTagger`` hook so a user can resume annotating
+    across refreshes and devices, the way optimizations persist. ``config``,
+    ``columns`` and ``data`` are captured once when annotating begins and are
+    immutable thereafter; ``annotations``, ``current_index`` and ``phase`` (with
+    the denormalized ``tagged_count``) advance as rows are labeled and are the
+    only columns the autosave PUT rewrites, so the large ``data`` TOAST is not
+    re-written on every keystroke. ``row_count``/``tagged_count`` are
+    denormalized so the sidebar list never loads the heavy JSON columns.
+    Ownership is by ``username`` (compared in application code, not a DB FK).
+    """
+
+    __tablename__ = "tagging_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    phase: Mapped[str] = mapped_column(String(20), nullable=False, default="annotating")
+    config: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, nullable=False, default=dict)
+    columns: Mapped[list[str]] = mapped_column(JSON_STORE, nullable=False, default=list)
+    data: Mapped[list[dict[str, Any]]] = mapped_column(JSON_STORE, nullable=False, default=list)
+    annotations: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, nullable=False, default=dict)
+    # AI co-tagging state (assist mode, interview, rubric, predictions with
+    # provenance/confidence, review rounds, auto-tag job bookkeeping). NULL for
+    # plain manual sessions; ``annotations`` stays the single source of truth
+    # for final labels regardless of who produced them.
+    assist: Mapped[dict[str, Any] | None] = mapped_column(JSON_STORE, nullable=True, default=None)
+    current_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tagged_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("ix_tagging_sessions_user_updated", "username", "updated_at"),
+        Index("ix_tagging_sessions_user_pinned", "username", "pinned"),
+    )
+
+
 class DatasetModel(Base):
     """One saved dataset in a user's personal library — a single file reference.
 
@@ -632,3 +1206,68 @@ class DatasetShareGrantModel(Base):
     # The composite PK leads with dataset_id, so "list everything shared with
     # this user" (filtering on grantee_username alone) could not use it.
     __table_args__ = (Index("ix_dataset_share_grants_grantee", "grantee_username"),)
+
+
+class TaggingSessionShareLinkModel(Base):
+    """Per-session sharing config keyed by a public link token.
+
+    Mirrors :class:`DatasetShareLinkModel` for saved tagger sessions: the
+    ``token`` is the unguessable capability embedded in the public
+    ``/tagger/share/<token>`` URL, stored in plaintext because it IS the public
+    identifier, not a credential hash. The active (``revoked_at IS NULL``) row
+    per session holds the config; ``general_access`` and ``general_role`` carry
+    the same semantics as the dataset variant. The ``session_id`` foreign key
+    cascades, so deleting a session removes its link rows automatically.
+    """
+
+    __tablename__ = "tagging_session_share_links"
+
+    token: Mapped[str] = mapped_column(String(48), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tagging_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    general_access: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="restricted", server_default="restricted"
+    )
+    general_role: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="viewer", server_default="viewer"
+    )
+
+
+class TaggingSessionShareGrantModel(Base):
+    """A single per-user access grant on a shared tagger session.
+
+    Mirrors :class:`DatasetShareGrantModel`: each row invites one
+    ``grantee_username`` to a session with a tier ``role`` (``'viewer'`` /
+    ``'editor'`` / ``'owner'``). The pair ``(session_id, grantee_username)`` is
+    the primary key, so re-inviting a user replaces their grant. The
+    ``session_id`` foreign key cascades, removing grants when the session is
+    deleted.
+    """
+
+    __tablename__ = "tagging_session_share_grants"
+
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tagging_sessions.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    grantee_username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    # The composite PK leads with session_id, so "list everything shared with
+    # this user" (filtering on grantee_username alone) could not use it.
+    __table_args__ = (Index("ix_tagging_session_share_grants_grantee", "grantee_username"),)

@@ -1,12 +1,13 @@
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
 /**
- * Format ISO date string to Hebrew locale
- * @example "2026-04-11T12:30:00" → "11/04/2026, 12:30:00"
+ * Format ISO date string in the active locale
+ * @example "2026-04-11T12:30:00" → "11/04/2026, 12:30:00" (he) or "4/11/2026, 12:30:00 PM" (en)
  */
 export function formatDate(iso: string): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString("he-IL");
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString(getActiveIntlLocale());
 }
 
 /**
@@ -152,9 +153,35 @@ export function formatId(id: string): string {
 export function moduleLabel(raw: string | null | undefined): string {
   if (!raw) return "—";
   const v = raw.toLowerCase();
+  if (v === "workflow") return "Workflow";
   if (v.includes("react")) return "ReAct";
   if (v.includes("chain") || v === "cot") return "CoT";
   if (v.includes("predict")) return "Predict";
+  if (v.includes("flex")) return "Flex";
   return raw;
 }
 
+/**
+ * Bare model name of a provider-routed model id, for display. Ids arrive as
+ * gateway paths ("openrouter/openai/gpt-5.4-mini"); everything before the last
+ * slash is routing, not identity, so UI text shows only the final segment.
+ * Keep the full id in a tooltip/title when two providers could collide, and
+ * never trim ids used as filter values, API payloads, or exports.
+ * @example "openrouter/openai/gpt-5.4-mini" → "gpt-5.4-mini", "auto:intelligent" → "auto:intelligent"
+ */
+export function modelDisplayName(id: string | null | undefined): string {
+  if (!id) return "";
+  const tail = id.split("/").pop();
+  return tail || id;
+}
+
+
+/**
+ * Sentence-case a lowercase glossary term for standalone UI positions (nav
+ * items, wizard step labels) where surrounding labels are capitalized.
+ * Caseless scripts (Hebrew) pass through unchanged.
+ * @example "new optimization" → "New optimization"
+ */
+export function sentenceCase(term: string): string {
+  return term.charAt(0).toLocaleUpperCase(getActiveIntlLocale()) + term.slice(1);
+}

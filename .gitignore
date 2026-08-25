@@ -74,3 +74,6 @@ logs/
 # Operator artefacts produced by scripts/airgap_migrate.sh
 /migration.sql
 /deploy/helm/skynet/values-airgap.generated.yaml
+
+# Machine-local AI-assistant rules
+CLAUDE.local.md

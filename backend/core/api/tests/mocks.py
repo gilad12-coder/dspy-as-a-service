@@ -579,6 +579,7 @@ def fake_background_worker() -> MagicMock:
     w.active_jobs.return_value = 0
     w.thread_count.return_value = 2
     w.submit_job = MagicMock()
+    w.enqueue_job = MagicMock()
     w.cancel = MagicMock()
     w.pending_ids = []
     w.status.return_value = "idle"

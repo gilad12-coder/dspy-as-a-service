@@ -2,8 +2,9 @@
 
 Encapsulates two concerns: turning a compiled :class:`dspy.Program` into a
 JSON-friendly :class:`ProgramArtifact` (state JSON alongside its metadata)
-and extracting a human-readable :class:`OptimizedPredictor` view from the
-program's first named predictor for the UI.
+and extracting human-readable :class:`OptimizedPredictor` views for the UI —
+the program's first named predictor for scalar runs, and one per ``n_<node_id>``
+node for workflow runs.
 """
 
 import json
@@ -15,9 +16,15 @@ from typing import Any
 from uuid import uuid4
 
 from ...exceptions import ServiceError
-from ...models import OptimizedDemo, OptimizedPredictor, ProgramArtifact
+from ...models import NodeArtifact, OptimizedDemo, OptimizedPredictor, ProgramArtifact
 
 logger = logging.getLogger(__name__)
+
+# Workflow nodes register as ``n_<node_id>`` attributes (see workflow.py's
+# WORKFLOW_NODE_ATTR_PREFIX), so their predictors' saved paths carry that prefix.
+# Hardcoded rather than imported to keep this persistence module free of an
+# optimization-layer dependency.
+_WORKFLOW_NODE_PREFIX = "n_"
 
 
 def _format_prompt_string(
@@ -93,27 +100,17 @@ def _format_prompt_string(
     return "\n".join(parts).strip()
 
 
-def extract_optimized_prompt(program: Any) -> OptimizedPredictor | None:
-    """Extract instructions, fields, and demos from the first named predictor.
+def _extract_predictor(name: str, predictor: Any) -> OptimizedPredictor | None:
+    """Build an :class:`OptimizedPredictor` view of one named predictor.
 
     Args:
-        program: A compiled DSPy program.
+        name: The predictor's path within the program (``named_predictors`` key).
+        predictor: The DSPy predictor object to introspect.
 
     Returns:
-        An :class:`OptimizedPredictor` describing the predictor's prompt
-        surface, or ``None`` when introspection fails.
+        The predictor's prompt surface, or ``None`` when it has no signature or
+        introspection fails.
     """
-    try:
-        named_predictors = list(program.named_predictors())
-    except Exception as exc:
-        logger.warning("Could not enumerate predictors: %s", exc)
-        return None
-
-    if not named_predictors:
-        return None
-
-    name, predictor = named_predictors[0]
-
     try:
         signature = getattr(predictor, "signature", None)
         if signature is None:
@@ -154,6 +151,64 @@ def extract_optimized_prompt(program: Any) -> OptimizedPredictor | None:
     except Exception as exc:
         logger.warning("Failed to extract predictor '%s': %s", name, exc)
         return None
+
+
+def extract_optimized_prompt(program: Any) -> OptimizedPredictor | None:
+    """Extract instructions, fields, and demos from the first named predictor.
+
+    Args:
+        program: A compiled DSPy program.
+
+    Returns:
+        An :class:`OptimizedPredictor` describing the predictor's prompt
+        surface, or ``None`` when introspection fails.
+    """
+    try:
+        named_predictors = list(program.named_predictors())
+    except Exception as exc:
+        logger.warning("Could not enumerate predictors: %s", exc)
+        return None
+
+    if not named_predictors:
+        return None
+
+    name, predictor = named_predictors[0]
+    return _extract_predictor(name, predictor)
+
+
+def extract_optimized_nodes(program: Any) -> dict[str, NodeArtifact]:
+    """Extract a per-node prompt view for a workflow program.
+
+    Groups the program's predictors by their ``n_<node_id>`` prefix and builds a
+    :class:`NodeArtifact` per node from that node's first predictor (mirroring how
+    the scalar path treats a module's first predictor as its prompt). Flex nodes
+    contribute no predictor — their rewritten code is folded in later from state,
+    so they are absent here — and react overlays are not captured on this path.
+
+    Args:
+        program: A compiled DSPy program.
+
+    Returns:
+        A mapping of node component path to its :class:`NodeArtifact`. Empty for
+        scalar (single-module) programs, whose predictors carry no node prefix.
+    """
+    try:
+        named_predictors = list(program.named_predictors())
+    except Exception as exc:
+        logger.warning("Could not enumerate predictors for per-node extraction: %s", exc)
+        return {}
+
+    nodes: dict[str, NodeArtifact] = {}
+    for name, predictor in named_predictors:
+        if not name.startswith(_WORKFLOW_NODE_PREFIX):
+            continue
+        node_path = name.split(".", 1)[0]
+        if node_path in nodes:
+            continue
+        prompt = _extract_predictor(name, predictor)
+        if prompt is not None:
+            nodes[node_path] = NodeArtifact(optimized_prompt=prompt)
+    return nodes
 
 
 def persist_program(
@@ -208,11 +263,14 @@ def persist_program(
         if optimized_prompt:
             logger.debug("Extracted optimized prompt from program")
 
+        optimized_nodes = extract_optimized_nodes(program)
+
         return ProgramArtifact(
             path=None,
             metadata=metadata,
             program_state_json=state,
             optimized_prompt=optimized_prompt,
+            optimized_nodes=optimized_nodes,
         )
 
     finally:

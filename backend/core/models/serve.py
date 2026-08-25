@@ -33,6 +33,18 @@ class ServeRequest(BaseModel):
         return self
 
 
+class WorkflowNodeTrace(BaseModel):
+    """One node's execution record from a workflow inference or dry run."""
+
+    node_id: str
+    kind: str
+    name: str
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    outputs: dict[str, Any] | None = None
+    elapsed_ms: float = 0.0
+    error: str | None = None
+
+
 class ServeResponse(BaseModel):
     """Response payload from program inference.
 
@@ -48,6 +60,10 @@ class ServeResponse(BaseModel):
     input_fields: list[str]
     output_fields: list[str]
     model_used: str
+    node_traces: list[WorkflowNodeTrace] | None = Field(
+        default=None,
+        description="Per-node execution trace, present only for workflow runs.",
+    )
 
 
 class ServeInfoResponse(BaseModel):

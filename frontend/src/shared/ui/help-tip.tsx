@@ -2,6 +2,7 @@
 
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { cn } from "@/shared/lib/utils";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 /**
  * Zero-visual-impact jargon tooltip.
@@ -31,7 +32,7 @@ export function HelpTip({
           {children}
         </span>
       </TooltipTrigger>
-      <TooltipContent side={side} className="max-w-64 text-center leading-relaxed" dir="rtl">
+      <TooltipContent side={side} className="max-w-64 text-center leading-relaxed" dir={getActiveDir()}>
         {text}
       </TooltipContent>
     </Tooltip>

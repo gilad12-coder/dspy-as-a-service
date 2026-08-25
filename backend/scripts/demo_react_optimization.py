@@ -132,7 +132,7 @@ def main() -> int:
     _banner("Skynet /run react demo — CLI-equivalent optimization through the product path")
 
     engine = create_engine(
-        os.environ.get("DATABASE_URL", "postgresql://giladmorad@localhost:5432/skynet")
+        os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/skynet")
     )
 
     rows = exporter.export_agent_messages_to_rows(engine, window="3650d")

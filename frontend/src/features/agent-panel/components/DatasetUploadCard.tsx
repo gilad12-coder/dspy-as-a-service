@@ -3,16 +3,16 @@
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  ArrowClockwise,
   ArrowRight,
   Check,
-  CheckCircle2,
-  FileSpreadsheet,
+  CheckCircle,
+  CircleNotch,
+  FileXls,
   Image as ImageIcon,
-  Loader2,
-  RotateCw,
-  Type as TypeIcon,
-  Upload,
-} from "lucide-react";
+  TextT as TypeIcon,
+  UploadSimple,
+} from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
@@ -39,13 +39,18 @@ interface ParsedFile {
 }
 
 interface DatasetUploadCardProps {
-  call: AgentToolCall;
+  /** The agent tool call that requested the upload; absent when the user
+   *  attaches proactively from the composer's + button. */
+  call?: AgentToolCall;
   disabled?: boolean;
   alreadyConfirmed?: boolean;
+  /** File already chosen via the OS picker; when set, the card skips the
+   *  dropzone entirely and parses it straight away. */
+  initialFile?: File | null;
   onConfirm: (confirmed: ConfirmedDataset) => void;
 }
 
-const FILE_ACCEPT = ".csv,.json,.jsonl,.xlsx,.xls";
+export const DATASET_FILE_ACCEPT = ".csv,.json,.jsonl,.xlsx,.xls";
 
 function defaultRoleFor(idx: number, total: number): ColumnRole {
   if (total === 1) return "input";
@@ -56,6 +61,7 @@ export function DatasetUploadCard({
   call,
   disabled,
   alreadyConfirmed,
+  initialFile,
   onConfirm,
 }: DatasetUploadCardProps) {
   const reduceMotion = useReducedMotion();
@@ -105,6 +111,10 @@ export function DatasetUploadCard({
       setParsing(false);
     }
   }, []);
+
+  React.useEffect(() => {
+    if (initialFile) void handleFile(initialFile);
+  }, [initialFile, handleFile]);
 
   const onPickClick = React.useCallback(() => {
     inputRef.current?.click();
@@ -189,15 +199,6 @@ export function DatasetUploadCard({
     });
   }, [counts.input, counts.output, kinds, onConfirm, parsed, roles]);
 
-  const handleReset = React.useCallback(() => {
-    if (confirmed) return;
-    setParsed(null);
-    setRoles({});
-    setKinds({});
-    setParseError(null);
-    setValidationError(null);
-  }, [confirmed]);
-
   const fade = reduceMotion
     ? { initial: false, animate: { opacity: 1 }, exit: { opacity: 0 } }
     : {
@@ -208,7 +209,7 @@ export function DatasetUploadCard({
       };
 
   return (
-    <div className="w-full" dir="rtl">
+    <div className="w-full">
       <motion.div
         layout={!reduceMotion}
         className={cn(
@@ -223,12 +224,10 @@ export function DatasetUploadCard({
             <div
               className={cn(
                 "shrink-0 size-7 rounded-full inline-flex items-center justify-center",
-                confirmed
-                  ? "bg-[#3D2E22] text-[#FAF8F5]"
-                  : "bg-[#C8A882]/25 text-[#3D2E22]",
+                confirmed ? "bg-[#3D2E22] text-[#FAF8F5]" : "bg-[#C8A882]/25 text-[#3D2E22]",
               )}
             >
-              {confirmed ? <Check className="size-3.5" /> : <Upload className="size-3.5" />}
+              {confirmed ? <Check className="size-3.5" /> : <UploadSimple className="size-3.5" />}
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[0.8125rem] font-semibold text-[#3D2E22] leading-tight">
@@ -243,14 +242,38 @@ export function DatasetUploadCard({
         <input
           ref={inputRef}
           type="file"
-          accept={FILE_ACCEPT}
+          accept={DATASET_FILE_ACCEPT}
           className="hidden"
           onChange={onInputChange}
           disabled={disabled || parsing || confirmed}
         />
 
         <AnimatePresence mode="wait" initial={false}>
-          {!parsed && !parsing && (
+          {!parsed && !parsing && initialFile && parseError && (
+            <motion.div key="pick-error" {...fade} className="px-4 py-3.5 space-y-2">
+              <div className="text-[0.6875rem] text-red-600/90 bg-red-50/80 border border-red-100 rounded-md px-2.5 py-1.5">
+                {parseError}
+              </div>
+              <button
+                type="button"
+                onClick={onPickClick}
+                disabled={disabled}
+                className={cn(
+                  "w-full inline-flex items-center justify-center gap-1.5",
+                  "min-h-[44px] rounded-xl px-3 py-2 text-[0.8125rem] font-medium cursor-pointer",
+                  "border border-[#C8A882]/50 bg-white/50 text-[#3D2E22]",
+                  "hover:border-[#3D2E22]/60 hover:bg-white/80 transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D2E22]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAF8F5]",
+                  "disabled:opacity-50 disabled:cursor-not-allowed",
+                )}
+              >
+                <UploadSimple className="size-3.5" />
+                {msg("auto.features.agent.panel.components.datasetuploadcard.replace")}
+              </button>
+            </motion.div>
+          )}
+
+          {!parsed && !parsing && !initialFile && (
             <motion.div key="empty" {...fade} className="px-4 py-3.5">
               <button
                 type="button"
@@ -279,7 +302,7 @@ export function DatasetUploadCard({
                       : "bg-[#C8A882]/20 text-[#3D2E22] group-hover:bg-[#C8A882]/35",
                   )}
                 >
-                  <Upload className="size-4" />
+                  <UploadSimple className="size-4" />
                 </div>
                 <div className="text-center">
                   <div className="text-[0.8125rem] font-medium text-[#3D2E22]">
@@ -301,7 +324,7 @@ export function DatasetUploadCard({
               {...fade}
               className="px-4 py-6 flex items-center justify-center gap-2 text-[0.75rem] text-[#6B5B4A]"
             >
-              <Loader2 className="size-3.5 animate-spin" />
+              <CircleNotch className="size-3.5 animate-spin" />
               {msg("auto.features.agent.panel.components.datasetuploadcard.parsing")}
             </motion.div>
           )}
@@ -310,7 +333,7 @@ export function DatasetUploadCard({
             <motion.div key="parsed" {...fade} className="px-4 py-3 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <FileSpreadsheet className="size-3.5 text-[#3D2E22] shrink-0" />
+                  <FileXls className="size-3.5 text-[#3D2E22] shrink-0" />
                   <div className="min-w-0">
                     <div className="text-[0.75rem] font-medium text-[#3D2E22] truncate">
                       {parsed.fileName}
@@ -326,17 +349,17 @@ export function DatasetUploadCard({
                 {!confirmed && (
                   <button
                     type="button"
-                    onClick={handleReset}
+                    onClick={onPickClick}
                     aria-label={msg(
                       "auto.features.agent.panel.components.datasetuploadcard.replace",
                     )}
                     className={cn(
-                      "shrink-0 inline-flex items-center gap-1 text-[0.6875rem]",
+                      "shrink-0 inline-flex min-h-[44px] items-center gap-1 text-[0.6875rem] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]",
                       "rounded-md px-1.5 py-1 text-[#6B5B4A] hover:text-[#3D2E22]",
                       "hover:bg-white/70 transition-colors cursor-pointer",
                     )}
                   >
-                    <RotateCw className="size-3" />
+                    <ArrowClockwise className="size-3" />
                     {msg("auto.features.agent.panel.components.datasetuploadcard.replace")}
                   </button>
                 )}
@@ -379,7 +402,7 @@ export function DatasetUploadCard({
                   disabled={!canConfirm || disabled}
                   className={cn(
                     "w-full inline-flex items-center justify-center gap-1.5",
-                    "rounded-xl px-3 py-2 text-[0.8125rem] font-medium cursor-pointer",
+                    "min-h-[44px] rounded-xl px-3 py-2 text-[0.8125rem] font-medium cursor-pointer",
                     "bg-[#3D2E22] text-[#FAF8F5] hover:bg-[#2A1F16] transition-colors",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D2E22]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAF8F5]",
                     "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#3D2E22]",
@@ -392,8 +415,11 @@ export function DatasetUploadCard({
 
               {confirmed && (
                 <div className="flex items-center gap-1.5 text-[0.6875rem] text-[#3D2E22]/80 bg-white/50 rounded-md px-2.5 py-1.5">
-                  <CheckCircle2 className="size-3 text-[#3D2E22]" />
-                  {formatMsg("auto.features.agent.panel.components.datasetuploadcard.confirmed", {})}
+                  <CheckCircle className="size-3 text-[#3D2E22]" />
+                  {formatMsg(
+                    "auto.features.agent.panel.components.datasetuploadcard.confirmed",
+                    {},
+                  )}
                 </div>
               )}
             </motion.div>
@@ -433,7 +459,7 @@ function ColumnRoleRow({
   const pillLeft = activeIdx >= 0 ? `calc(${activeIdx} * 100% / 3 + 2px)` : "2px";
   const isInput = role === "input";
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="text-[0.75rem] font-mono truncate" dir="ltr">
           {column}
@@ -444,7 +470,7 @@ function ColumnRoleRow({
             onClick={onToggleKind}
             disabled={disabled}
             className={cn(
-              "shrink-0 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[0.625rem] font-medium transition-colors cursor-pointer",
+              "shrink-0 inline-flex min-h-[44px] items-center gap-1 rounded-md border px-1.5 py-0.5 text-[0.625rem] font-medium transition-colors cursor-pointer sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]",
               kind === "image"
                 ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
                 : "border-border/60 bg-muted/40 text-muted-foreground hover:border-primary/30 hover:text-foreground",
@@ -456,11 +482,7 @@ function ColumnRoleRow({
                 : msg("submit.dataset.column_kind.text_manual_hint")
             }
           >
-            {kind === "image" ? (
-              <ImageIcon className="size-3" />
-            ) : (
-              <TypeIcon className="size-3" />
-            )}
+            {kind === "image" ? <ImageIcon className="size-3" /> : <TypeIcon className="size-3" />}
             <span>
               {kind === "image"
                 ? msg("submit.dataset.column_kind.image")
@@ -469,10 +491,7 @@ function ColumnRoleRow({
           </button>
         )}
       </div>
-      <div
-        className="relative inline-grid grid-cols-3 shrink-0 rounded-lg bg-muted p-0.5 gap-0.5"
-        dir="rtl"
-      >
+      <div className="relative inline-grid w-full shrink-0 grid-cols-3 gap-0.5 rounded-lg bg-muted p-0.5 sm:w-auto">
         <div
           className="absolute top-0.5 bottom-0.5 rounded-md bg-stone-500/15 shadow-sm transition-[inset-inline-start] duration-100 ease-out"
           style={{
@@ -487,7 +506,7 @@ function ColumnRoleRow({
             onClick={() => onChangeRole(val)}
             disabled={disabled}
             className={cn(
-              "relative z-10 rounded-md px-2.5 py-1 text-[0.6875rem] font-medium text-center transition-colors duration-100 cursor-pointer",
+              "relative z-10 min-h-[44px] rounded-md px-2.5 py-1 text-[0.6875rem] font-medium text-center transition-colors duration-100 cursor-pointer sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D2E22]/40",
               role === val ? "text-stone-600" : "text-muted-foreground hover:text-foreground",
               disabled && "cursor-not-allowed opacity-60",
@@ -500,4 +519,3 @@ function ColumnRoleRow({
     </div>
   );
 }
-

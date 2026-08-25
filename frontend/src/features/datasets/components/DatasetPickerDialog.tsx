@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Database, Loader2, Search } from "lucide-react";
+import { CircleNotch, Database, MagnifyingGlass } from "@/shared/ui/icons";
 import {
   Dialog,
   DialogContent,
@@ -61,16 +61,15 @@ export function DatasetPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(34rem,94vw)] max-w-[min(34rem,94vw)] sm:max-w-lg" dir="rtl">
+      <DialogContent className="w-[min(34rem,94vw)] max-w-[min(34rem,94vw)] sm:max-w-lg">
         <DialogHeader className="text-start">
           <DialogTitle>{msg("submit.dataset.library_picker_title")}</DialogTitle>
           <DialogDescription>{msg("submit.dataset.library_picker_subtitle")}</DialogDescription>
         </DialogHeader>
 
         <div className="relative">
-          <Search className="pointer-events-none absolute end-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <MagnifyingGlass className="pointer-events-none absolute end-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            dir="rtl"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={msg("submit.dataset.library_search")}
@@ -87,7 +86,7 @@ export function DatasetPickerDialog({
           >
             {loading ? (
               <div className="flex items-center justify-center py-10">
-                <Loader2 className="size-6 animate-spin text-primary" />
+                <CircleNotch className="size-6 animate-spin text-primary" />
               </div>
             ) : error ? (
               <p className="py-10 text-center text-sm text-muted-foreground">

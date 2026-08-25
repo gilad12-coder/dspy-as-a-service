@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Brain, Check, ChevronDown, Clipboard } from "lucide-react";
-import { msg } from "@/shared/lib/messages";
+import { Brain, CaretDown, Check, Clipboard } from "@/shared/ui/icons";
+import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 
 export function InfoCard({
   label,
@@ -72,12 +73,12 @@ export function LangPicker<T extends string>({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 px-1.5 py-0.5 -mx-1.5 -my-0.5 rounded-md font-semibold text-[#7C6350] tracking-wide hover:bg-black/5 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/50"
+        className="-mx-1.5 -my-0.5 flex min-h-[44px] items-center gap-1 rounded-md px-1.5 py-0.5 font-semibold tracking-wide text-[#7C6350] transition-colors hover:bg-black/5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/50 sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
         aria-haspopup="listbox"
         aria-expanded={open}
       >
         <span>{labels[value]}</span>
-        <ChevronDown
+        <CaretDown
           className={`size-3 text-[#8C7A6B] transition-transform duration-150 ${open ? "rotate-180" : ""}`}
         />
       </button>
@@ -99,7 +100,7 @@ export function LangPicker<T extends string>({
                     onChange(k);
                     setOpen(false);
                   }}
-                  className={`w-full text-start px-3 py-1.5 text-[0.6875rem] font-semibold tracking-wide transition-colors cursor-pointer flex items-center justify-between ${k === value ? "bg-[#3D2E22]/8 text-[#3D2E22]" : "text-[#7C6350] hover:bg-black/5"}`}
+                  className={`flex min-h-[44px] w-full items-center justify-between px-3 py-1.5 text-start text-[0.6875rem] font-semibold tracking-wide transition-colors cursor-pointer ${k === value ? "bg-[#3D2E22]/8 text-[#3D2E22]" : "text-[#7C6350] hover:bg-black/5"}`}
                   role="option"
                   aria-selected={k === value}
                 >
@@ -115,14 +116,16 @@ export function LangPicker<T extends string>({
   );
 }
 
-const REASONING_EFFORT_LABELS: Record<string, string> = {
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-};
+const REASONING_EFFORT_LABELS = perLocale(
+  (): Record<string, string> => ({
+    minimal: msg("optimizations.reasoning_effort.minimal"),
+    low: msg("optimizations.reasoning_effort.low"),
+    medium: msg("optimizations.reasoning_effort.medium"),
+    high: msg("optimizations.reasoning_effort.high"),
+  }),
+);
 
-export function reasoningEffortLabel(value: string | null | undefined): string | null {
+function reasoningEffortLabel(value: string | null | undefined): string | null {
   if (!value) return null;
   return REASONING_EFFORT_LABELS[value.toLowerCase()] ?? value;
 }
@@ -142,7 +145,7 @@ export function ReasoningPill({
   return (
     <span
       className={`shrink-0 inline-flex items-center rounded bg-muted/50 font-semibold text-muted-foreground/80 ${sizing}`}
-      title={`Reasoning effort: ${label}`}
+      title={formatMsg("optimizations.reasoning_effort.tooltip", { label })}
     >
       <Brain className={iconSize} />
       {label}
@@ -160,7 +163,7 @@ export function CopyButton({ text, className = "" }: { text: string; className?:
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
-      className={`p-1.5 cursor-pointer transition-opacity duration-200 outline-none border-none shadow-none ring-0 bg-transparent hover:opacity-100 ${className}`}
+      className={`inline-flex size-[44px] items-center justify-center cursor-pointer transition-opacity duration-200 outline-none border-none shadow-none ring-0 bg-transparent hover:opacity-100 sm:size-auto sm:p-1.5 [@media(hover:none)_and_(pointer:coarse)]:size-[44px] [@media(hover:none)_and_(pointer:coarse)]:p-0 ${className}`}
       title={msg("auto.features.optimizations.components.ui.primitives.literal.1")}
       aria-label={msg("auto.features.optimizations.components.ui.primitives.literal.2")}
     >

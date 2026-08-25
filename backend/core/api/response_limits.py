@@ -17,7 +17,7 @@ payload with ``view=full`` where it genuinely needs every byte.
 
 from __future__ import annotations
 
-from typing import Any, TypeVar
+from typing import TypeVar
 
 T = TypeVar("T")
 
@@ -34,7 +34,6 @@ AGENT_MAX_TEXT = 2000
 AGENT_MAX_LOG_MESSAGE = 500
 AGENT_MAX_ERROR = 500
 AGENT_MAX_INSTRUCTIONS = 1500
-AGENT_MAX_CODE_PREVIEW = 800
 
 
 def _size_hint(dropped_chars: int) -> str:
@@ -117,20 +116,3 @@ def clamp_limit(
     if requested is None or requested <= 0:
         return default
     return min(requested, ceiling)
-
-
-def strip_large_fields(payload: dict[str, Any], drop_keys: tuple[str, ...]) -> dict[str, Any]:
-    """Return a shallow copy of ``payload`` with oversized fields removed.
-
-    Used to drop pickle blobs, base64 artefacts, or expanded log arrays
-    from a response that the agent rarely needs. The corresponding full
-    field is still reachable via a dedicated artifact endpoint.
-
-    Args:
-        payload: The original response dict.
-        drop_keys: Keys to remove from the shallow copy.
-
-    Returns:
-        A new dict identical to ``payload`` minus any keys listed in ``drop_keys``.
-    """
-    return {k: v for k, v in payload.items() if k not in drop_keys}

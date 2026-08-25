@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from ..lib import db as db_inspector
 from ..lib.auth import auth_headers
 from ..lib.metrics import ScenarioResult
 from ..lib.payloads import run_payload
@@ -178,7 +179,7 @@ async def _sample_sse(
             async for raw_line in response.aiter_lines():
                 if ttfb == 0.0:
                     ttfb = time.monotonic() - t0
-                if raw_line.startswith("data:") or raw_line.startswith("event:"):
+                if raw_line.startswith(("data:", "event:")):
                     events += 1
                 if time.monotonic() >= deadline:
                     break
@@ -198,6 +199,7 @@ async def run(config: DashboardReadConfig, *, mock_lm_url: str) -> ScenarioResul
         A :class:`ScenarioResult` summarising the read tier with SSE
         sample stats attached as extras.
     """
+    db_inspector.fund_test_users(config.usernames)
     async with httpx.AsyncClient(http2=False) as client:
         seeded_jobs = await _seed_jobs(
             client,

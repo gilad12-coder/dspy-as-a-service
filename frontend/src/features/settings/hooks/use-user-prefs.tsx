@@ -3,18 +3,21 @@
 import * as React from "react";
 import { toast } from "react-toastify";
 import { msg } from "@/shared/lib/messages";
-import { registerTutorialHook } from "@/features/tutorial";
 import {
   DEFAULT_PREFS,
   PREF_KEYS,
+  migrateLegacyPrefs,
   readPref,
   writePref,
+  type AgentPreferencePatch,
   type UserPrefs,
 } from "../lib/prefs";
+import { registerTutorialHook } from "@/features/tutorial";
 
 interface UserPrefsContextValue {
   prefs: UserPrefs;
   setPref: <K extends keyof UserPrefs>(key: K, value: UserPrefs[K]) => void;
+  updatePrefs: (patch: AgentPreferencePatch) => void;
   resetAll: () => void;
 }
 
@@ -24,6 +27,7 @@ export function UserPrefsProvider({ children }: { children: React.ReactNode }) {
   const [prefs, setPrefs] = React.useState<UserPrefs>(DEFAULT_PREFS);
 
   React.useEffect(() => {
+    migrateLegacyPrefs();
     const next: UserPrefs = { ...DEFAULT_PREFS };
     (Object.keys(DEFAULT_PREFS) as Array<keyof UserPrefs>).forEach((k) => {
       (next[k] as UserPrefs[typeof k]) = readPref(k);
@@ -45,26 +49,29 @@ export function UserPrefsProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("storage", handler);
   }, []);
 
-  const setPref = React.useCallback(
-    <K extends keyof UserPrefs>(key: K, value: UserPrefs[K]) => {
-      setPrefs((prev) => ({ ...prev, [key]: value }));
-      writePref(key, value);
-      toast.success(msg("settings.saved"), { autoClose: 1500, toastId: "settings-saved" });
-    },
-    [],
-  );
+  const setPref = React.useCallback(<K extends keyof UserPrefs>(key: K, value: UserPrefs[K]) => {
+    setPrefs((prev) => ({ ...prev, [key]: value }));
+    writePref(key, value);
+    toast.success(msg("settings.saved"), { autoClose: 1500, toastId: "settings-saved" });
+  }, []);
 
-  // Tutorial bridge — flips advancedMode silently (no settings-saved toast)
-  // so the deep-dive tour can reveal /explore without leaking a "settings
-  // saved" affordance the user never asked for.
-  React.useEffect(
-    () =>
-      registerTutorialHook("setAdvancedMode", (enabled) => {
-        setPrefs((prev) => ({ ...prev, advancedMode: enabled }));
-        writePref("advancedMode", enabled);
-      }),
-    [],
-  );
+  React.useEffect(() => {
+    const unregister = registerTutorialHook("setAdvancedMode", (enabled: boolean) => {
+      setPrefs((prev) => ({ ...prev, advancedMode: enabled }));
+      writePref("advancedMode", enabled);
+    });
+    return unregister;
+  }, []);
+
+  const updatePrefs = React.useCallback((patch: AgentPreferencePatch) => {
+    const entries = Object.entries(patch) as Array<[keyof AgentPreferencePatch, unknown]>;
+    if (entries.length === 0) return;
+    setPrefs((prev) => ({ ...prev, ...patch }));
+    for (const [key, value] of entries) {
+      writePref(key, value as UserPrefs[typeof key]);
+    }
+    toast.success(msg("settings.saved"), { autoClose: 1500, toastId: "settings-saved" });
+  }, []);
 
   const resetAll = React.useCallback(() => {
     setPrefs(DEFAULT_PREFS);
@@ -79,8 +86,8 @@ export function UserPrefsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = React.useMemo<UserPrefsContextValue>(
-    () => ({ prefs, setPref, resetAll }),
-    [prefs, setPref, resetAll],
+    () => ({ prefs, setPref, updatePrefs, resetAll }),
+    [prefs, setPref, updatePrefs, resetAll],
   );
 
   return <UserPrefsContext.Provider value={value}>{children}</UserPrefsContext.Provider>;

@@ -8,20 +8,30 @@ from __future__ import annotations
 import logging
 import threading
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from sqlalchemy import Engine, case, create_engine, func, or_, text
+from sqlalchemy import Engine, and_, case, create_engine, func, or_, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, defer, sessionmaker
+from sqlalchemy.orm import Session, aliased, defer, sessionmaker
 
 from ..config import settings
-from ..constants import STRUCTURAL_PROGRESS_EVENTS, TQDM_KEY_PREFIX
+from ..constants import (
+    OPTIMIZATION_TYPE_TAGGING,
+    PAYLOAD_OVERVIEW_DATASET_ROWS,
+    PAYLOAD_OVERVIEW_MODEL_NAME,
+    PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
+    PAYLOAD_OVERVIEW_OPTIMIZER_NAME,
+    PAYLOAD_OVERVIEW_TOTAL_PAIRS,
+    STRUCTURAL_PROGRESS_EVENTS,
+    TQDM_KEY_PREFIX,
+)
 from .base import JobRecord, LogEntryRecord, ProgressEventRecord
 from .checkpoint_store import GepaCheckpoint, PostgresCheckpointBlobStore, PostgresGridPairResultStore
+from .migrate import sync_migration_head
 from .models import (
     EMBEDDING_DIM,
     AgentStagedDatasetModel,
@@ -32,8 +42,10 @@ from .models import (
     JobEmbeddingModel,
     JobModel,
     LogEntryModel,
+    MonthlyActiveUserModel,
     OptimizationShareGrantModel,
     ProgressEventModel,
+    UserModel,
     UserQuotaAuditModel,
     UserQuotaOverrideModel,
     UserStorageQuotaOverrideModel,
@@ -53,6 +65,10 @@ logger = logging.getLogger(__name__)
 MAX_PROGRESS_EVENTS = 5000
 MAX_LOG_ENTRIES = 5000
 PROGRESS_TRIM_SAMPLE_RATE = 100
+# Same sampled-retention idea as progress events: counting rows on every log
+# line doubles the round trips of the worker's hottest write path, and the cap
+# is a soft limit — drifting a batch above it between trims is harmless.
+LOG_TRIM_SAMPLE_RATE = 100
 _IMMUTABLE_JOB_COLUMNS = frozenset({"optimization_id", "notified_at", "idempotency_key"})
 # The JSON columns whose serialized size dominates a job's storage footprint and
 # therefore make up ``jobs.stored_bytes``. ``latest_metrics`` / ``message`` are
@@ -110,6 +126,131 @@ def _build_engine_kwargs(db_url: str) -> dict[str, Any]:
         "pool_timeout": settings.db_pool_timeout_seconds,
         "connect_args": _build_connect_args(db_url),
     }
+
+
+def _json_int(value: Any) -> int | None:
+    """Coerce one extracted JSON scalar to ``int``, or ``None`` when it isn't one.
+
+    Extraction returns text on PostgreSQL (``->>``) and native affinity values
+    on SQLite, so both forms must coerce; junk degrades to ``None``, mirroring
+    the ``isinstance`` guards the analytics aggregations always applied.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _json_float(value: Any) -> float | None:
+    """Coerce one extracted JSON scalar to ``float``, or ``None`` when it isn't one."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _assemble_analytics_row(row: Any) -> JobRecord:
+    """Rebuild one skinny analytics job dict from its extracted JSON scalars.
+
+    Keeps the shapes the aggregations rely on: absent overview keys stay
+    absent (``.get`` → ``None``), a NULL ``result`` stays ``None`` (the
+    ``if not result_data`` guard), and ``best_pair`` appears only when at
+    least one of its metrics parsed — matching how a grid row looks.
+
+    Args:
+        row: The SELECT tuple from :meth:`RemoteDBJobStore.scan_jobs_for_analytics`.
+
+    Returns:
+        A ``JobRecord``-shaped dict with pruned ``payload_overview``/``result``.
+    """
+    (
+        optimization_id,
+        job_status,
+        result_null,
+        ov_optimizer,
+        ov_model,
+        ov_type,
+        ov_rows,
+        ov_pairs,
+        r_baseline,
+        r_optimized,
+        r_runtime,
+        r_completed,
+        r_failed,
+        bp_baseline,
+        bp_optimized,
+        bp_runtime,
+    ) = row
+    overview_pairs = (
+        (PAYLOAD_OVERVIEW_OPTIMIZER_NAME, ov_optimizer),
+        (PAYLOAD_OVERVIEW_MODEL_NAME, ov_model),
+        (PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE, ov_type),
+        (PAYLOAD_OVERVIEW_DATASET_ROWS, _json_int(ov_rows)),
+        (PAYLOAD_OVERVIEW_TOTAL_PAIRS, _json_int(ov_pairs)),
+    )
+    job: JobRecord = {
+        "optimization_id": optimization_id,
+        "status": job_status,
+        "payload_overview": {key: value for key, value in overview_pairs if value is not None},
+        "result": None,
+    }
+    if not result_null:
+        result_pairs = (
+            ("baseline_test_metric", _json_float(r_baseline)),
+            ("optimized_test_metric", _json_float(r_optimized)),
+            ("runtime_seconds", _json_float(r_runtime)),
+            ("completed_pairs", _json_int(r_completed)),
+            ("failed_pairs", _json_int(r_failed)),
+        )
+        result: dict[str, Any] = {key: value for key, value in result_pairs if value is not None}
+        best_pair_pairs = (
+            ("baseline_test_metric", _json_float(bp_baseline)),
+            ("optimized_test_metric", _json_float(bp_optimized)),
+            ("runtime_seconds", _json_float(bp_runtime)),
+        )
+        best_pair = {key: value for key, value in best_pair_pairs if value is not None}
+        if best_pair:
+            result["best_pair"] = best_pair
+        job["result"] = result
+    return job
+
+
+def _user_facing_jobs():
+    """SQL filter keeping only user-facing job rows.
+
+    Tagger bulk auto-tag jobs share the jobs table so the worker fleet can
+    claim them, but they are not optimization runs: every listing and count
+    surface skips them unless a caller filters for the type explicitly. The
+    NULL branch is kept because ``optimization_type`` is nullable (legacy
+    rows) and a bare ``!=`` would silently drop those rows too. Distributed
+    grid-pair child rows are scheduling internals of their parent grid and
+    are excluded the same way (see also :func:`_top_level_jobs`, applied
+    even when a caller filters by type).
+
+    Returns:
+        A SQLAlchemy boolean clause for ``query.filter``.
+    """
+    return and_(
+        or_(
+            JobModel.optimization_type.is_(None),
+            JobModel.optimization_type != OPTIMIZATION_TYPE_TAGGING,
+        ),
+        _top_level_jobs(),
+    )
+
+
+def _top_level_jobs():
+    """SQL filter excluding distributed grid-pair child rows.
+
+    Child rows share the jobs table (so the claim/lease/orphan machinery
+    applies to them verbatim) but belong to their parent grid in every
+    user-facing sense: listings, counts, and dashboards must never show
+    them, even when the caller filters for ``grid_search`` explicitly.
+
+    Returns:
+        A SQLAlchemy boolean clause for ``query.filter``.
+    """
+    return JobModel.parent_optimization_id.is_(None)
 
 
 class RemoteDBJobStore:
@@ -181,6 +322,11 @@ class RemoteDBJobStore:
                     conn if conn is not None else self._engine,
                     tables=non_embedding_tables,
                 )
+        # Now that the tables exist, bring Alembic in step: adopt an unstamped
+        # database at head, or apply migrations pending on an adopted one. This
+        # is how column-adding migrations land — create_all never ALTERs a table
+        # an earlier boot already created.
+        sync_migration_head(self._engine)
         # Lexical search ranking. Independent of pgvector/embeddings: BM25
         # serves the default (embeddings-off) explore search when pg_search is
         # installed, otherwise the ILIKE fallback handles it.
@@ -356,6 +502,8 @@ class RemoteDBJobStore:
                 "code_version": job.code_version,
                 "stored_bytes": job.stored_bytes or 0,
                 "accumulated_runtime_seconds": job.accumulated_runtime_seconds or 0.0,
+                "parent_optimization_id": job.parent_optimization_id,
+                "pair_index": job.pair_index,
             },
         )
 
@@ -592,11 +740,15 @@ class RemoteDBJobStore:
         finally:
             session.close()
 
-    def get_job(self, optimization_id: str) -> JobRecord:
+    def get_job(self, optimization_id: str, *, include_payload: bool = True) -> JobRecord:
         """Retrieve a job by its ID.
 
         Args:
             optimization_id: ID of the job to fetch.
+            include_payload: When ``False``, the (potentially multi-MB)
+                ``payload`` JSONB is deferred on the query and reported as
+                ``None`` — hot polling paths that never read the training
+                dataset pass ``False`` to skip transferring it.
 
         Returns:
             The matching ``JobRecord``.
@@ -606,10 +758,13 @@ class RemoteDBJobStore:
         """
         session = self._get_session()
         try:
-            job = session.query(JobModel).filter(JobModel.optimization_id == optimization_id).first()
+            q = session.query(JobModel)
+            if not include_payload:
+                q = q.options(defer(JobModel.payload))
+            job = q.filter(JobModel.optimization_id == optimization_id).first()
             if not job:
                 raise KeyError(f"Job '{optimization_id}' not found")
-            return self._job_to_dict(job)
+            return self._job_to_dict(job, include_payload=include_payload)
         finally:
             session.close()
 
@@ -677,10 +832,64 @@ class RemoteDBJobStore:
                 session.query(JobEmbeddingModel).filter(JobEmbeddingModel.optimization_id == optimization_id).delete()
             session.query(GepaCheckpointModel).filter(GepaCheckpointModel.optimization_id == optimization_id).delete()
             session.query(GridPairResultModel).filter(GridPairResultModel.optimization_id == optimization_id).delete()
+            self._delete_grid_pair_children(session, optimization_id)
             session.query(JobModel).filter(JobModel.optimization_id == optimization_id).delete()
             session.commit()
         finally:
             session.close()
+        self._evict_job_counters([optimization_id])
+
+    @staticmethod
+    def _delete_grid_pair_children(session: Session, parent_optimization_id: str) -> None:
+        """Delete a grid parent's pair-child rows and their per-child stores.
+
+        Explicit (rather than relying on the ``ON DELETE CASCADE`` self-FK)
+        so SQLite test runs without foreign-key enforcement clean up exactly
+        like Postgres. Child logs/progress need no handling — a pair child
+        writes those onto its PARENT's id.
+
+        Args:
+            session: The open session the caller commits.
+            parent_optimization_id: The grid parent whose children go away.
+        """
+        child_ids = [
+            row[0]
+            for row in session.query(JobModel.optimization_id)
+            .filter(JobModel.parent_optimization_id == parent_optimization_id)
+            .all()
+        ]
+        if not child_ids:
+            return
+        session.query(GepaCheckpointModel).filter(GepaCheckpointModel.optimization_id.in_(child_ids)).delete(
+            synchronize_session=False
+        )
+        session.query(GridPairResultModel).filter(GridPairResultModel.optimization_id.in_(child_ids)).delete(
+            synchronize_session=False
+        )
+        session.query(JobModel).filter(JobModel.optimization_id.in_(child_ids)).delete(synchronize_session=False)
+
+    def _evict_job_counters(self, optimization_ids: list[str]) -> None:
+        """Drop the per-job in-memory bookkeeping for deleted jobs.
+
+        The sticky-tqdm map and the sampled trim counters are keyed by
+        optimization id and otherwise live for the process lifetime — without
+        eviction a long-lived store grows one entry per job ever processed.
+
+        Args:
+            optimization_ids: IDs whose in-memory entries should be dropped.
+        """
+        if hasattr(self, "_tqdm_sticky"):
+            with self._tqdm_sticky_lock:
+                for oid in optimization_ids:
+                    self._tqdm_sticky.pop(oid, None)
+        if hasattr(self, "_progress_event_counters"):
+            with self._progress_counter_lock:
+                for oid in optimization_ids:
+                    self._progress_event_counters.pop(oid, None)
+        if hasattr(self, "_log_append_counters"):
+            with self._log_counter_lock:
+                for oid in optimization_ids:
+                    self._log_append_counters.pop(oid, None)
 
     def get_jobs_status_by_ids(self, optimization_ids: list[str]) -> dict[str, str]:
         """Return a ``{id: status}`` map for the requested IDs.
@@ -742,15 +951,18 @@ class RemoteDBJobStore:
             session.query(GridPairResultModel).filter(GridPairResultModel.optimization_id.in_(optimization_ids)).delete(
                 synchronize_session=False
             )
+            for parent_id in optimization_ids:
+                self._delete_grid_pair_children(session, parent_id)
             deleted = (
                 session.query(JobModel)
                 .filter(JobModel.optimization_id.in_(optimization_ids))
                 .delete(synchronize_session=False)
             )
             session.commit()
-            return int(deleted or 0)
         finally:
             session.close()
+        self._evict_job_counters(optimization_ids)
+        return int(deleted or 0)
 
     def save_gepa_checkpoint(self, optimization_id: str, data: bytes, iteration: int, pair_index: int = -1) -> None:
         """Persist (or replace) the latest GEPA state blob for one run or grid pair.
@@ -846,6 +1058,168 @@ class RemoteDBJobStore:
         """
         self._grid_pair_results.delete_all(optimization_id)
 
+    def delete_grid_pair_result(self, optimization_id: str, pair_index: int) -> None:
+        """Drop one pair's stored result (targeted per-pair re-run).
+
+        Args:
+            optimization_id: Grid job owning the pair.
+            pair_index: The pair whose stored result is dropped.
+        """
+        self._grid_pair_results.delete_one(optimization_id, pair_index)
+
+    def list_finalizable_grid_parents(self, limit: int = 10) -> list[str]:
+        """Return running grid parents whose pair children are ALL terminal.
+
+        The normal finalizer is the last pair child to finish; this query
+        backstops the crash window where that child wrote its terminal status
+        and died before assembling the parent result — without it the grid
+        would sit at ``running`` forever with nothing left to run.
+
+        Args:
+            limit: Maximum parents to return per sweep.
+
+        Returns:
+            Parent optimization ids ready for result assembly.
+        """
+        session = self._get_session()
+        try:
+            any_child = aliased(JobModel)
+            live_child = aliased(JobModel)
+            has_children = (
+                session.query(any_child.optimization_id)
+                .filter(any_child.parent_optimization_id == JobModel.optimization_id)
+                .exists()
+            )
+            has_live_children = (
+                session.query(live_child.optimization_id)
+                .filter(
+                    live_child.parent_optimization_id == JobModel.optimization_id,
+                    live_child.status.notin_(["success", "failed", "cancelled"]),
+                )
+                .exists()
+            )
+            rows = (
+                session.query(JobModel.optimization_id)
+                .filter(JobModel.status == "running")
+                .filter(has_children)
+                .filter(~has_live_children)
+                .limit(limit)
+                .all()
+            )
+            return [row[0] for row in rows]
+        finally:
+            session.close()
+
+    def create_grid_pair_jobs(
+        self,
+        parent_optimization_id: str,
+        pair_count: int,
+        *,
+        username: str | None,
+        payload_overview: dict[str, Any],
+    ) -> list[str]:
+        """Fan a distributed grid search out into one claimable row per pair.
+
+        Each child row carries only a tiny reference payload — the dataset
+        stays on the parent row and is re-read at claim time — plus the
+        overview keys the worker pipeline dispatches on. Children inherit the
+        parent's username (fairness/quota accounting) and the current code
+        version, and are removed with the parent via the cascading self-FK.
+
+        The children and the parent's flip to ``running`` commit in ONE
+        transaction: a crash before the commit leaves the parent ``pending``
+        (claimable through the legacy in-child grid path — the run still
+        happens), while after it the parent is unclaimable and only the pair
+        rows carry the work. There is no window where both paths could run
+        the same grid. Calling again for a parent that already has children
+        inserts nothing but still re-parks the parent — the resume path
+        re-pends the children and relies on this call to flip the parent
+        back to ``running``.
+
+        Args:
+            parent_optimization_id: The grid parent whose pairs are fanned out.
+            pair_count: Total number of (generation, reflection) pairs.
+            username: The submitting user, copied onto every child row.
+            payload_overview: Minimal overview stamped on each child (at least
+                the optimization-type and token-source keys the worker reads).
+
+        Returns:
+            The child optimization ids, ordered by pair index.
+        """
+        now = datetime.now(UTC)
+        session = self._get_session()
+        try:
+            existing = (
+                session.query(JobModel.optimization_id)
+                .filter(JobModel.parent_optimization_id == parent_optimization_id)
+                .order_by(JobModel.pair_index.asc())
+                .all()
+            )
+            if existing:
+                child_ids = [row[0] for row in existing]
+            else:
+                child_ids = [str(uuid4()) for _ in range(pair_count)]
+                for index, child_id in enumerate(child_ids):
+                    session.add(
+                        JobModel(
+                            optimization_id=child_id,
+                            status="pending",
+                            created_at=now,
+                            latest_metrics={},
+                            payload={
+                                "parent_optimization_id": parent_optimization_id,
+                                "pair_index": index,
+                            },
+                            payload_overview=dict(payload_overview),
+                            optimization_type="grid_search",
+                            attempts=0,
+                            code_version=self._current_code_version,
+                            username=username,
+                            parent_optimization_id=parent_optimization_id,
+                            pair_index=index,
+                        )
+                    )
+            # The parent was claimed to reach this fan-out: clear its lease so
+            # it can't be orphan-swept back to pending, and park it at
+            # ``running`` — unclaimable, updated only by pair completions.
+            session.query(JobModel).filter(JobModel.optimization_id == parent_optimization_id).update(
+                {
+                    "status": "running",
+                    "message": f"Distributed across {pair_count} pair jobs",
+                    "started_at": now,
+                    "completed_at": None,
+                    "claimed_by": None,
+                    "claimed_at": None,
+                    "lease_expires_at": None,
+                }
+            )
+            session.commit()
+            return child_ids
+        finally:
+            session.close()
+
+    def get_grid_pair_children(self, parent_optimization_id: str) -> list[JobRecord]:
+        """Return the child pair rows of a distributed grid, ordered by pair index.
+
+        Args:
+            parent_optimization_id: The grid parent whose children are read.
+
+        Returns:
+            Child ``JobRecord``s (payload omitted — it is only a tiny
+            reference dict, but list callers never need it).
+        """
+        session = self._get_session()
+        try:
+            rows = (
+                session.query(JobModel)
+                .filter(JobModel.parent_optimization_id == parent_optimization_id)
+                .order_by(JobModel.pair_index.asc())
+                .all()
+            )
+            return [self._job_to_dict(row, include_payload=False) for row in rows]
+        finally:
+            session.close()
+
     def has_grid_pair_results(self, optimization_id: str) -> bool:
         """Return whether the grid has any completed-pair result stored.
 
@@ -856,6 +1230,28 @@ class RemoteDBJobStore:
             ``True`` when at least one pair result exists.
         """
         return self._grid_pair_results.has_any(optimization_id)
+
+    def resumable_state_ids(self, optimization_ids: list[str]) -> set[str]:
+        """Return the subset of ids holding any resumable state.
+
+        The batch counterpart of :meth:`has_gepa_checkpoint` /
+        :meth:`has_grid_pair_results`: two ``IN (...)`` round trips replace a
+        per-row existence probe when a list page annotates its ``resumable``
+        flags.
+
+        Args:
+            optimization_ids: Job ids to test.
+
+        Returns:
+            The ids with a saved checkpoint or at least one finished grid pair.
+        """
+        if not optimization_ids:
+            return set()
+        found = self._checkpoints.has_any_batch(optimization_ids)
+        remaining = [oid for oid in optimization_ids if oid not in found]
+        if remaining:
+            found |= self._grid_pair_results.has_any_batch(remaining)
+        return found
 
     def requeue_for_resume(self, optimization_id: str, *, bump_attempts: bool = True) -> int | None:
         """Re-queue a terminal job in place so a worker resumes it from its checkpoint.
@@ -939,6 +1335,12 @@ class RemoteDBJobStore:
                 session.query(JobEmbeddingModel).filter(JobEmbeddingModel.optimization_id == optimization_id).delete()
             session.query(GepaCheckpointModel).filter(GepaCheckpointModel.optimization_id == optimization_id).delete()
             session.query(GridPairResultModel).filter(GridPairResultModel.optimization_id == optimization_id).delete()
+            # A distributed grid's pair children belong to the discarded
+            # attempt: drop them so the re-claimed parent fans out fresh rows
+            # instead of "resuming" stale terminal children. Deleted
+            # explicitly (not via the FK cascade) so SQLite test runs without
+            # foreign-key enforcement behave like Postgres.
+            self._delete_grid_pair_children(session, optimization_id)
             job.status = "pending"  # type: ignore[assignment]
             job.started_at = None  # type: ignore[assignment]
             job.completed_at = None  # type: ignore[assignment]
@@ -1352,10 +1754,22 @@ class RemoteDBJobStore:
         session = self._get_session()
         try:
             now = datetime.now(UTC)
+            # A distributed grid parent sits at ``running`` with NO lease by
+            # design — its pair children carry the leases. Sweeping it would
+            # re-pend a job no worker should ever claim, so any row that has
+            # children is excluded; the children themselves are ordinary
+            # leased rows and recover through this same sweep.
+            child = aliased(JobModel)
+            has_children = (
+                session.query(child.optimization_id)
+                .filter(child.parent_optimization_id == JobModel.optimization_id)
+                .exists()
+            )
             orphaned = (
                 session.query(JobModel)
                 .filter(JobModel.status.in_(["running", "validating"]))
                 .filter((JobModel.lease_expires_at.is_(None)) | (JobModel.lease_expires_at < now))
+                .filter(~has_children)
                 .all()
             )
             for job in orphaned:
@@ -1391,13 +1805,29 @@ class RemoteDBJobStore:
         worker_id: str,
         lease_seconds: float,
     ) -> JobRecord | None:
-        """Atomically claim the oldest pending job using FOR UPDATE SKIP LOCKED.
+        """Atomically claim the next pending job using FOR UPDATE SKIP LOCKED.
 
         Two pods running this method concurrently are guaranteed to see
         disjoint result sets — Postgres' ``SKIP LOCKED`` causes each session
         to silently jump over rows the other has already row-locked. The
         outer ``UPDATE`` then writes the lease metadata, completing the claim
         in one round trip.
+
+        Ordering is fair across users, not plain FIFO: pending jobs are
+        ranked by how many jobs their owner already has in flight
+        (``validating``/``running``), then by age. One user submitting a
+        burst can no longer monopolize every worker slot while a second
+        user's single job waits behind the whole burst. The scheme is
+        work-conserving — with only one user queued, their jobs still fill
+        every slot in FIFO order — and starvation-free, because a job's
+        rank only ever improves as its owner's running jobs finish.
+
+        Only rows whose ``payload`` has been written are eligible. A submission
+        inserts the row as ``pending`` (``create_job``) *before* the worker
+        writes the payload (``submit_job``); without the ``payload IS NOT NULL``
+        guard a poll tick landing in that window would claim a payload-less row
+        and fail it with "has no payload". A NULL-payload row simply waits to be
+        claimed until the payload lands a few milliseconds later.
 
         On non-PostgreSQL dialects (eg. SQLite in tests) the query falls back
         to a non-locking SELECT-then-UPDATE; that is racy but tests run
@@ -1431,8 +1861,13 @@ class RemoteDBJobStore:
             WHERE optimization_id = (
                 SELECT optimization_id FROM jobs
                 WHERE status = 'pending'
+                  AND payload IS NOT NULL
                   AND (code_version IS NULL OR code_version = :code_version)
-                ORDER BY created_at ASC
+                ORDER BY (
+                    SELECT COUNT(*) FROM jobs r
+                    WHERE r.status IN ('validating', 'running')
+                      AND r.username IS NOT DISTINCT FROM jobs.username
+                ) ASC, created_at ASC
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
@@ -1471,15 +1906,25 @@ class RemoteDBJobStore:
         try:
             now = datetime.now(UTC)
             lease_until = now + timedelta(seconds=lease_seconds)
-            job = (
+            candidates = (
                 session.query(JobModel)
                 .filter(JobModel.status == "pending")
+                .filter(JobModel.payload.isnot(None))
                 .filter(or_(JobModel.code_version.is_(None), JobModel.code_version == self._current_code_version))
                 .order_by(JobModel.created_at.asc())
-                .first()
+                .all()
             )
-            if job is None:
+            if not candidates:
                 return None
+            # Same least-in-flight-per-user ordering as the Postgres path;
+            # min() is stable, so ties keep FIFO order within a user.
+            in_flight: dict[str | None, int] = dict(
+                session.query(JobModel.username, func.count())
+                .filter(JobModel.status.in_(["validating", "running"]))
+                .group_by(JobModel.username)
+                .all()
+            )
+            job = min(candidates, key=lambda row: in_flight.get(row.username, 0))
             job.status = "validating"  # type: ignore[assignment]
             job.claimed_by = worker_id  # type: ignore[assignment]
             job.claimed_at = now  # type: ignore[assignment]
@@ -1589,6 +2034,8 @@ class RemoteDBJobStore:
                     job.username = (overview or {}).get("username")  # type: ignore[assignment]
                 if "optimization_type" in (overview or {}):
                     job.optimization_type = (overview or {}).get("optimization_type")  # type: ignore[assignment]
+                if "composition" in (overview or {}):
+                    job.composition = (overview or {}).get("composition")  # type: ignore[assignment]
                 job.stored_bytes = (  # type: ignore[assignment]
                     json_byte_size(job.payload) + json_byte_size(job.result) + json_byte_size(overview or {})
                 )
@@ -1833,9 +2280,11 @@ class RemoteDBJobStore:
         """Append a log entry for a job.
 
         Silently discards the entry if the job no longer exists (a
-        late log from a cleaned-up run is not an error). When the
-        per-job log count reaches the configured retention cap, the oldest
-        entry is evicted before the new one is inserted.
+        late log from a cleaned-up run is not an error). Retention is
+        enforced by a sampled trim (mirroring progress events): every
+        ``LOG_TRIM_SAMPLE_RATE`` appends the oldest excess rows are deleted
+        in one batch, instead of paying a ``COUNT(*)`` on every line of the
+        worker's hottest write path.
 
         Args:
             optimization_id: ID of the job emitting the log.
@@ -1850,23 +2299,12 @@ class RemoteDBJobStore:
         try:
             # An existence probe, not a critical section: appends are independent
             # inserts, so the per-job row lock only serialized writers and starved
-            # the connection pool under concurrent log bursts. The cap eviction
+            # the connection pool under concurrent log bursts. The sampled trim
             # below tolerates a transient over-count without correctness loss.
             exists = session.query(JobModel.optimization_id).filter(JobModel.optimization_id == optimization_id).first()
             if exists is None:
                 logger.warning("Discarding log entry for missing job %s", optimization_id)
                 return
-
-            log_count = session.query(LogEntryModel).filter(LogEntryModel.optimization_id == optimization_id).count()
-            if log_count >= self._log_entries_cap:
-                oldest = (
-                    session.query(LogEntryModel)
-                    .filter(LogEntryModel.optimization_id == optimization_id)
-                    .order_by(LogEntryModel.timestamp.asc())
-                    .first()
-                )
-                if oldest:
-                    session.delete(oldest)
 
             entry = LogEntryModel(
                 optimization_id=optimization_id,
@@ -1878,6 +2316,52 @@ class RemoteDBJobStore:
             )
             session.add(entry)
 
+            session.commit()
+        finally:
+            session.close()
+        if self._should_trim_logs(optimization_id):
+            self._trim_logs(optimization_id)
+
+    def _should_trim_logs(self, optimization_id: str) -> bool:
+        """Return whether this append should trigger a sampled retention trim.
+
+        Args:
+            optimization_id: ID of the job whose in-memory append counter is advanced.
+
+        Returns:
+            ``True`` every ``LOG_TRIM_SAMPLE_RATE`` appends for a job.
+        """
+        if not hasattr(self, "_log_append_counters"):
+            self._log_append_counters = defaultdict(int)
+            self._log_counter_lock = threading.Lock()
+        with self._log_counter_lock:
+            self._log_append_counters[optimization_id] += 1
+            return self._log_append_counters[optimization_id] % LOG_TRIM_SAMPLE_RATE == 0
+
+    def _trim_logs(self, optimization_id: str) -> None:
+        """Delete the oldest excess log entries for a job in one batch.
+
+        Args:
+            optimization_id: ID of the job whose retained log rows should be
+                brought back down to the configured cap.
+        """
+        session = self._get_session()
+        try:
+            log_count = (
+                session.query(LogEntryModel).filter(LogEntryModel.optimization_id == optimization_id).count()
+            )
+            excess = log_count - self._log_entries_cap
+            if excess <= 0:
+                return
+            old_ids = (
+                session.query(LogEntryModel.id)
+                .filter(LogEntryModel.optimization_id == optimization_id)
+                .order_by(LogEntryModel.timestamp.asc(), LogEntryModel.id.asc())
+                .limit(excess)
+            )
+            session.query(LogEntryModel).filter(LogEntryModel.id.in_(old_ids.scalar_subquery())).delete(
+                synchronize_session=False
+            )
             session.commit()
         finally:
             session.close()
@@ -1947,6 +2431,65 @@ class RemoteDBJobStore:
         finally:
             session.close()
 
+    def scan_jobs_for_analytics(
+        self,
+        *,
+        status: str | None = None,
+        username: str | None = None,
+        limit: int = 10000,
+    ) -> list[JobRecord]:
+        """Skinny newest-first job scan for the analytics KPI rollups.
+
+        Rows are shaped like :meth:`list_jobs` output but carry only the
+        fields the aggregations read: ``status`` plus pruned
+        ``payload_overview`` and ``result`` dicts. The pruning happens in the
+        SELECT itself — the full ``result`` blob (per-example outputs,
+        multi-MB for grid runs) never leaves the database, which is what
+        keeps a 10k-row scan from spiking the API process. JSON paths are
+        extracted with SQLAlchemy's dialect-portable operators, so the same
+        query runs on PostgreSQL and the SQLite test harness.
+
+        Args:
+            status: Restrict to jobs with this status when set.
+            username: Restrict to jobs owned by this user when set.
+            limit: Maximum number of rows to scan, newest first.
+
+        Returns:
+            Skinny job rows in newest-first order.
+        """
+        overview = JobModel.payload_overview
+        result = JobModel.result
+        best_pair = result["best_pair"]
+        session = self._get_session()
+        try:
+            q = session.query(
+                JobModel.optimization_id,
+                JobModel.status,
+                result.is_(None).label("result_null"),
+                overview[PAYLOAD_OVERVIEW_OPTIMIZER_NAME].as_string(),
+                overview[PAYLOAD_OVERVIEW_MODEL_NAME].as_string(),
+                overview[PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE].as_string(),
+                overview[PAYLOAD_OVERVIEW_DATASET_ROWS].as_string(),
+                overview[PAYLOAD_OVERVIEW_TOTAL_PAIRS].as_string(),
+                result["baseline_test_metric"].as_string(),
+                result["optimized_test_metric"].as_string(),
+                result["runtime_seconds"].as_string(),
+                result["completed_pairs"].as_string(),
+                result["failed_pairs"].as_string(),
+                best_pair["baseline_test_metric"].as_string(),
+                best_pair["optimized_test_metric"].as_string(),
+                best_pair["runtime_seconds"].as_string(),
+            ).order_by(JobModel.created_at.desc())
+            q = q.filter(_user_facing_jobs())
+            if status:
+                q = q.filter(JobModel.status == status)
+            if username:
+                q = q.filter(JobModel.username == username)
+            rows = q.limit(limit).all()
+        finally:
+            session.close()
+        return [_assemble_analytics_row(row) for row in rows]
+
     def list_jobs(
         self,
         *,
@@ -1955,12 +2498,14 @@ class RemoteDBJobStore:
         optimization_type: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        with_counts: bool = True,
     ) -> list[JobRecord]:
         """List jobs with optional filtering and pagination, newest first.
 
         Progress and log counts are folded in via two aggregate
         queries so each returned row includes ``progress_count`` and
-        ``log_count`` without N extra round trips.
+        ``log_count`` without N extra round trips. Internal tagger bulk-job
+        rows are excluded unless ``optimization_type`` requests them.
 
         Args:
             status: Restrict to jobs with this status when set.
@@ -1968,10 +2513,14 @@ class RemoteDBJobStore:
             optimization_type: Restrict to a particular run type when set.
             limit: Maximum number of rows to return.
             offset: Number of rows to skip from the start.
+            with_counts: When ``False``, skip the progress/log/summary
+                aggregate folding entirely — analytics rollups scan up to 10k
+                rows and never read those fields, so the aggregates would run
+                a 10k-element ``IN (...)`` scan for nothing.
 
         Returns:
-            Matching ``JobRecord`` rows in newest-first order with
-            ``progress_count`` and ``log_count`` populated.
+            Matching ``JobRecord`` rows in newest-first order, with
+            ``progress_count`` / ``log_count`` populated when ``with_counts``.
         """
         session = self._get_session()
         try:
@@ -1981,8 +2530,12 @@ class RemoteDBJobStore:
             if username:
                 q = q.filter(JobModel.username == username)
             if optimization_type:
-                q = q.filter(JobModel.optimization_type == optimization_type)
+                q = q.filter(JobModel.optimization_type == optimization_type, _top_level_jobs())
+            else:
+                q = q.filter(_user_facing_jobs())
             jobs = q.offset(offset).limit(limit).all()
+            if not with_counts:
+                return [self._job_to_dict(j, include_payload=False) for j in jobs]
             return self._rows_with_counts(session, jobs)
         finally:
             session.close()
@@ -2079,6 +2632,7 @@ class RemoteDBJobStore:
                     OptimizationShareGrantModel.optimization_id == JobModel.optimization_id,
                 )
                 .filter(OptimizationShareGrantModel.grantee_username == normalized)
+                .filter(_user_facing_jobs())
                 .order_by(JobModel.created_at.desc())
                 .offset(offset)
                 .limit(limit)
@@ -2107,6 +2661,7 @@ class RemoteDBJobStore:
                     OptimizationShareGrantModel.optimization_id == JobModel.optimization_id,
                 )
                 .filter(OptimizationShareGrantModel.grantee_username == normalized)
+                .filter(_user_facing_jobs())
                 .scalar()
                 or 0
             )
@@ -2156,7 +2711,9 @@ class RemoteDBJobStore:
             if status:
                 q = q.filter(JobModel.status == status)
             if optimization_type:
-                q = q.filter(JobModel.optimization_type == optimization_type)
+                q = q.filter(JobModel.optimization_type == optimization_type, _top_level_jobs())
+            else:
+                q = q.filter(_user_facing_jobs())
             jobs = q.order_by(JobModel.created_at.desc()).offset(offset).limit(limit).all()
             return self._rows_with_counts(session, jobs)
         finally:
@@ -2190,8 +2747,137 @@ class RemoteDBJobStore:
             if status:
                 q = q.filter(JobModel.status == status)
             if optimization_type:
-                q = q.filter(JobModel.optimization_type == optimization_type)
+                q = q.filter(JobModel.optimization_type == optimization_type, _top_level_jobs())
+            else:
+                q = q.filter(_user_facing_jobs())
             return q.scalar() or 0
+        finally:
+            session.close()
+
+    def count_users(self) -> int:
+        """Count total registered accounts.
+
+        Backs the sign-up cap (:data:`core.config.settings.max_total_users`): the
+        registration path refuses new accounts once this reaches the cap. The
+        count is advisory — it runs outside the insert's transaction, so a small
+        overshoot at the boundary under concurrent sign-ups is acceptable.
+
+        Returns:
+            The number of rows in the ``users`` table.
+        """
+        session = self._get_session()
+        try:
+            return session.query(func.count(UserModel.email)).scalar() or 0
+        finally:
+            session.close()
+
+    def count_monthly_active_users(self, month_start: date) -> int:
+        """Count identities admitted during one UTC calendar month.
+
+        Args:
+            month_start: First UTC date of the month to count.
+
+        Returns:
+            Number of distinct admitted identities for the month.
+        """
+        session = self._get_session()
+        try:
+            return (
+                session.query(func.count(MonthlyActiveUserModel.username))
+                .filter(MonthlyActiveUserModel.month_start == month_start)
+                .scalar()
+                or 0
+            )
+        finally:
+            session.close()
+
+    def admit_monthly_active_user(self, username: str, month_start: date, limit: int) -> bool:
+        """Atomically admit one identity if monthly capacity remains.
+
+        A transaction-scoped advisory lock serializes only first-seen monthly
+        identities across API replicas. Returning users hit the composite key
+        fast path, while PgBouncer transaction mode safely releases the lock at
+        commit.
+
+        Args:
+            username: Normalized authenticated identity.
+            month_start: First UTC date of the month being admitted.
+            limit: Maximum distinct identities allowed for the month.
+
+        Returns:
+            ``True`` for an existing or newly admitted identity; ``False`` when
+            the month is already at capacity.
+        """
+        session = self._get_session()
+        try:
+            if session.bind is not None and session.bind.dialect.name == "postgresql":
+                session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 742137000004})
+            key = (month_start, username)
+            if session.get(MonthlyActiveUserModel, key) is not None:
+                session.commit()
+                return True
+            count = (
+                session.query(func.count(MonthlyActiveUserModel.username))
+                .filter(MonthlyActiveUserModel.month_start == month_start)
+                .scalar()
+                or 0
+            )
+            if count >= limit:
+                session.rollback()
+                return False
+            session.add(MonthlyActiveUserModel(month_start=month_start, username=username))
+            session.commit()
+            return True
+        finally:
+            session.close()
+
+    def count_jobs_by_status(self, *, username: str | None = None) -> dict[str, int]:
+        """Count jobs per status in a single ``GROUP BY`` query.
+
+        One round trip replaces the per-status ``count_jobs`` fan-out on the
+        dashboard stat-card path; bucket values are identical.
+
+        Args:
+            username: Restrict counts to this owner when set.
+
+        Returns:
+            Mapping of status name to row count (statuses with no rows are
+            simply absent).
+        """
+        session = self._get_session()
+        try:
+            q = session.query(JobModel.status, func.count(JobModel.optimization_id)).filter(
+                _user_facing_jobs()
+            )
+            if username:
+                q = q.filter(JobModel.username == username)
+            return dict(q.group_by(JobModel.status).all())
+        finally:
+            session.close()
+
+    def count_jobs_by_status_visible_to(self, username: str) -> dict[str, int]:
+        """Count jobs per status among rows the caller owns or holds a grant on.
+
+        The single-round-trip union counterpart of :meth:`count_jobs_by_status`;
+        matching rules mirror :meth:`count_jobs_visible_to`.
+
+        Args:
+            username: The caller (owned exact, grants case-insensitive).
+
+        Returns:
+            Mapping of status name to visible-row count.
+        """
+        normalized = username.strip().lower()
+        session = self._get_session()
+        try:
+            grant_ids = session.query(OptimizationShareGrantModel.optimization_id).filter(
+                OptimizationShareGrantModel.grantee_username == normalized
+            )
+            q = session.query(JobModel.status, func.count(JobModel.optimization_id)).filter(
+                or_(JobModel.username == username, JobModel.optimization_id.in_(grant_ids)),
+                _user_facing_jobs(),
+            )
+            return dict(q.group_by(JobModel.status).all())
         finally:
             session.close()
 
@@ -2216,7 +2902,9 @@ class RemoteDBJobStore:
             if username:
                 q = q.filter(JobModel.username == username)
             if optimization_type:
-                q = q.filter(JobModel.optimization_type == optimization_type)
+                q = q.filter(JobModel.optimization_type == optimization_type, _top_level_jobs())
+            else:
+                q = q.filter(_user_facing_jobs())
             return q.scalar() or 0
         finally:
             session.close()

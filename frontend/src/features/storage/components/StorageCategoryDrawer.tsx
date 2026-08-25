@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, HardDrive, Minus, X } from "lucide-react";
+import { Check, HardDrive, Minus, X } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import {
   bulkDeleteStorageItems,
@@ -23,15 +23,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/primitives/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/shared/ui/primitives/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/shared/ui/primitives/sheet";
 import { cn } from "@/shared/lib/utils";
 import { formatStorageSize } from "@/shared/lib/formatters";
 import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { StorageItemRow } from "./StorageItemRow";
 
 /** Per-category label keys, mirroring the backend ``STORAGE_CATEGORIES``. */
@@ -86,7 +82,12 @@ interface StorageCategoryDrawerProps {
  * dialog drive bulk deletion. A per-row trash still offers a quick single delete.
  * Loads the full set — not a top-N — so the user can clear a whole category here.
  */
-export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageCategoryDrawerProps) {
+export function StorageCategoryDrawer({
+  category,
+  onClose,
+  onChanged,
+}: StorageCategoryDrawerProps) {
+  const isRtl = getActiveDir() === "rtl";
   const [items, setItems] = React.useState<StorageItem[] | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [pending, setPending] = React.useState<StorageItem | null>(null);
@@ -127,7 +128,9 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
     setDeleting(true);
     try {
       await deleteItem(pending);
-      setItems((prev) => prev?.filter((it) => !(it.id === pending.id && it.type === pending.type)) ?? null);
+      setItems(
+        (prev) => prev?.filter((it) => !(it.id === pending.id && it.type === pending.type)) ?? null,
+      );
       setSelected((prev) => {
         if (!prev.has(pending.id)) return prev;
         const next = new Set(prev);
@@ -226,7 +229,8 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
   const busy = deleting || running;
 
   const labelKey = category ? CATEGORY_LABELS[category] : undefined;
-  const descKey = (category ? CATEGORY_DESCRIPTIONS[category] : undefined) ?? "storage.category.subtitle";
+  const descKey =
+    (category ? CATEGORY_DESCRIPTIONS[category] : undefined) ?? "storage.category.subtitle";
 
   // Bold the item name in the delete prompt, like the dashboard delete dialogs.
   // ``msg`` returns a plain string, so split the template on its placeholders and
@@ -242,7 +246,11 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
   return (
     <>
       <Sheet open={category !== null} onOpenChange={(open) => !open && !busy && onClose()}>
-        <SheetContent side="left" aria-describedby={undefined} className="w-full gap-0 p-0 sm:max-w-lg" dir="rtl">
+        <SheetContent
+          side={isRtl ? "left" : "right"}
+          aria-describedby={undefined}
+          className="w-full gap-0 p-0 sm:max-w-lg"
+        >
           <SheetHeader className="shrink-0 border-b border-border/40 px-6 py-4">
             <div className="flex items-center gap-2">
               <HardDrive className="size-4 text-muted-foreground" aria-hidden="true" />
@@ -270,19 +278,21 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
                     aria-label={msg("storage.select.all")}
                     onClick={toggleAll}
                     className={cn(
-                      "grid size-5 shrink-0 cursor-pointer place-items-center rounded-md border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45",
+                      "grid size-[44px] shrink-0 cursor-pointer place-items-center rounded-md border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:size-5",
                       allSelected || someSelected
                         ? "border-transparent bg-foreground text-background"
                         : "border-border/70 bg-background hover:border-foreground/40",
                     )}
                   >
                     {allSelected ? (
-                      <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
+                      <Check className="size-3.5" aria-hidden="true" />
                     ) : someSelected ? (
-                      <Minus className="size-3.5" strokeWidth={3} aria-hidden="true" />
+                      <Minus className="size-3.5" aria-hidden="true" />
                     ) : null}
                   </button>
-                  <span className="text-xs font-medium text-muted-foreground">{msg("storage.select.all")}</span>
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {msg("storage.select.all")}
+                  </span>
                 </div>
                 <ul className="flex flex-col">
                   {list.map((item) => (
@@ -306,6 +316,7 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
                 <Button
                   variant="ghost"
                   size="icon-sm"
+                  className="size-[44px] lg:size-8"
                   onClick={clearSelection}
                   disabled={busy}
                   aria-label={msg("storage.select.clear")}
@@ -327,8 +338,11 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
         </SheetContent>
       </Sheet>
 
-      <Dialog open={pending !== null} onOpenChange={(next) => !next && !deleting && setPending(null)}>
-        <DialogContent dir="rtl">
+      <Dialog
+        open={pending !== null}
+        onOpenChange={(next) => !next && !deleting && setPending(null)}
+      >
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{msg("storage.delete.title")}</DialogTitle>
             <DialogDescription>
@@ -337,7 +351,9 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
                   {deleteBefore}
                   <bdi className="font-semibold text-foreground">{pending.name}</bdi>
                   {deleteMid}
-                  <bdi className="font-semibold text-foreground">{formatStorageSize(pending.bytes)}</bdi>
+                  <bdi className="font-semibold text-foreground">
+                    {formatStorageSize(pending.bytes)}
+                  </bdi>
                   {deleteTail}
                 </>
               ) : (
@@ -356,15 +372,22 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
         </DialogContent>
       </Dialog>
 
-      <Dialog open={bulkConfirm} onOpenChange={(next) => !next && !running && setBulkConfirm(false)}>
-        <DialogContent dir="rtl">
+      <Dialog
+        open={bulkConfirm}
+        onOpenChange={(next) => !next && !running && setBulkConfirm(false)}
+      >
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>{formatMsg("storage.bulk.confirm.title", { n: selected.size })}</DialogTitle>
+            <DialogTitle>
+              {formatMsg("storage.bulk.confirm.title", { n: selected.size })}
+            </DialogTitle>
             <DialogDescription>
               {bulkBefore}
               <bdi className="font-semibold text-foreground">{selected.size}</bdi>
               {bulkMid}
-              <bdi className="font-semibold text-foreground">{formatStorageSize(selectedBytes)}</bdi>
+              <bdi className="font-semibold text-foreground">
+                {formatStorageSize(selectedBytes)}
+              </bdi>
               {bulkTail}
             </DialogDescription>
           </DialogHeader>
@@ -381,7 +404,6 @@ export function StorageCategoryDrawer({ category, onClose, onChanged }: StorageC
 
       <Dialog open={running && (progress?.total ?? 0) > CHUNK}>
         <DialogContent
-          dir="rtl"
           aria-describedby={undefined}
           showCloseButton={false}
           className="sm:max-w-sm"

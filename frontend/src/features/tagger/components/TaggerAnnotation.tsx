@@ -2,16 +2,18 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  ChevronRight,
-  ChevronLeft,
+  CaretRight,
+  CaretLeft,
   SkipBack,
-  CircleMinus,
+  MinusCircle,
   Database,
-  Download,
+  DownloadSimple,
   Keyboard,
-  Loader2,
-} from "lucide-react";
+  CircleNotch,
+  Sparkle,
+} from "@/shared/ui/icons";
 import { toast } from "react-toastify";
+import { AgentPillDock } from "@/features/agent-panel";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent, CardTitle } from "@/shared/ui/primitives/card";
 import { Badge } from "@/shared/ui/primitives/badge";
@@ -29,22 +31,55 @@ import {
 } from "@/shared/ui/primitives/dialog";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import { cn } from "@/shared/lib/utils";
-import { exportAnnotations, buildLibraryRows } from "../lib/export-csv";
-import type { DataField, DataRow, Annotation, TaggerConfig } from "../lib/types";
+import { exportAnnotations, buildLibraryRows, type ExportFormat } from "../lib/export-csv";
+import type {
+  AnnotationProvenance,
+  AssistPrediction,
+  BinaryLabel,
+  DataField,
+  DataRow,
+  Annotation,
+  TaggerConfig,
+} from "../lib/types";
+import { BINARY_NO, BINARY_YES, isBinaryNo, isBinaryYes } from "../lib/types";
 import { isStorageQuotaError, saveDataset } from "@/shared/lib/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 
 interface Props {
   config: TaggerConfig;
   data: DataRow[];
   columns: string[];
   annotations: Record<string, Annotation>;
+  // Who produced each final label (assist sessions only); exported alongside
+  // the labels so downstream consumers can filter by trust level.
+  provenance?: Record<string, AnnotationProvenance>;
+  // The AI's per-row predictions. Review rounds pass them so the suggested
+  // answer is highlighted on the answer surface itself until the row is
+  // decided; blind phases simply omit the prop.
+  suggestions?: Record<string, AssistPrediction>;
+  // The open round's predictions are still streaming in — rows whose
+  // suggestion hasn't landed yet show a "tagging…" hint instead of nothing.
+  suggestionsPending?: boolean;
   currentIndex: number;
   taggedCount: number;
+  // Review rounds pre-label every row, so tagged/total reads full before the
+  // human starts; when set, the header bar counts decided rows instead — the
+  // same number the co-pilot rail reports.
+  reviewProgress?: { done: number; total: number };
+  // Confetti when the last row is tagged. Only the plain manual flow earns
+  // it — assist sessions (review rounds, autotag) reach all-tagged through
+  // the AI, and browsing an already-full session isn't an achievement.
+  celebrateCompletion?: boolean;
+  // Shared-in viewers page through rows but cannot label: the answer controls
+  // render disabled and the label keyboard shortcuts are inert, while
+  // navigation and export stay live.
+  readOnly?: boolean;
   onNavigate: (dir: 1 | -1) => void;
   onGoTo: (idx: number) => void;
   onJumpUntagged: () => void;
-  onToggleBinary: (id: string, value: "yes" | "no") => void;
+  onToggleBinary: (id: string, value: BinaryLabel) => void;
   onToggleCategory: (id: string, catId: string) => void;
   onSetFreetext: (id: string, text: string) => void;
   onBack: () => void;
@@ -55,8 +90,14 @@ export function TaggerAnnotation({
   data,
   columns,
   annotations,
+  provenance,
+  suggestions,
+  suggestionsPending = false,
   currentIndex,
   taggedCount,
+  reviewProgress,
+  celebrateCompletion = false,
+  readOnly = false,
   onNavigate,
   onGoTo,
   onJumpUntagged,
@@ -65,9 +106,12 @@ export function TaggerAnnotation({
   onSetFreetext,
   onBack,
 }: Props) {
+  const rtl = getActiveDir() === "rtl";
+  const PrevIcon = rtl ? CaretRight : CaretLeft;
+  const NextIcon = rtl ? CaretLeft : CaretRight;
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [exportConfirm, setExportConfirm] = useState<"csv" | "json" | "xlsx" | "xls" | null>(null);
+  const [exportConfirm, setExportConfirm] = useState<ExportFormat | null>(null);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [datasetName, setDatasetName] = useState("");
   const [savingToLibrary, setSavingToLibrary] = useState(false);
@@ -76,8 +120,22 @@ export function TaggerAnnotation({
 
   const item = data[currentIndex];
   const id = item ? String(item.id) : "";
-  const pct = data.length > 0 ? (taggedCount / data.length) * 100 : 0;
+  const headerDone = reviewProgress ? reviewProgress.done : taggedCount;
+  const headerTotal = reviewProgress ? reviewProgress.total : data.length;
+  const pct = headerTotal > 0 ? (headerDone / headerTotal) * 100 : 0;
   const currentAnn = annotations[id];
+  // The AI's pick shows only while the row is undecided — once the human
+  // commits (keep or correct), the real selection styling takes over.
+  const rowCommitted =
+    config.mode === "multiclass"
+      ? Array.isArray(currentAnn) && currentAnn.length > 0
+      : typeof currentAnn === "string" && currentAnn !== "";
+  const aiPick = rowCommitted ? undefined : suggestions?.[id]?.value;
+  const aiPickedCats = new Set(Array.isArray(aiPick) ? aiPick : []);
+  // This row's suggestion is still on its way (predictions stream in one
+  // chunk at a time); hidden the moment the human commits either way.
+  const aiPending =
+    suggestionsPending && !rowCommitted && suggestions !== undefined && !suggestions[id];
 
   const showConfettiBriefly = useCallback(() => {
     setShowConfetti(true);
@@ -93,24 +151,25 @@ export function TaggerAnnotation({
   );
 
   useEffect(() => {
+    if (!celebrateCompletion) return;
     if (taggedCount === data.length && data.length > 0 && !confettiFired.current) {
       confettiFired.current = true;
       showConfettiBriefly();
     }
     if (taggedCount < data.length) confettiFired.current = false;
-  }, [taggedCount, data.length, showConfettiBriefly]);
+  }, [celebrateCompletion, taggedCount, data.length, showConfettiBriefly]);
 
   const doExport = useCallback(
-    (format: "csv" | "json" | "xlsx" | "xls") => {
-      void exportAnnotations(data, columns, annotations, config, format).then(
+    (format: ExportFormat) => {
+      void exportAnnotations(data, columns, annotations, config, format, provenance).then(
         showConfettiBriefly,
       );
     },
-    [data, columns, annotations, config, showConfettiBriefly],
+    [data, columns, annotations, config, provenance, showConfettiBriefly],
   );
 
   const handleExport = useCallback(
-    (format: "csv" | "json" | "xlsx" | "xls") => {
+    (format: ExportFormat) => {
       if (taggedCount < data.length) {
         setExportConfirm(format);
       } else {
@@ -140,6 +199,7 @@ export function TaggerAnnotation({
         columns,
         annotations,
         config,
+        provenance,
       );
       const res = await saveDataset({
         name,
@@ -147,6 +207,7 @@ export function TaggerAnnotation({
         dataset: rows,
         column_schema: { column_order: columnOrder, column_roles: columnRoles },
       });
+      track(TelemetryEvent.DatasetCreated, { source: "tagger", rows: rows.length });
       toast.success(
         res.deduplicated
           ? msg("datasets.toast.deduplicated")
@@ -200,13 +261,15 @@ export function TaggerAnnotation({
       } else if (e.key === "e" || e.key === "E") {
         e.preventDefault();
         handleExport("csv");
+      } else if (readOnly) {
+        return;
       } else if (config.mode === "binary") {
         if (e.key === "y" || e.key === "Y") {
           e.preventDefault();
-          onToggleBinary(id, "yes");
+          onToggleBinary(id, BINARY_YES);
         } else if (e.key === "n" || e.key === "N") {
           e.preventDefault();
-          onToggleBinary(id, "no");
+          onToggleBinary(id, BINARY_NO);
         }
       } else if (config.mode === "multiclass") {
         const num = parseInt(e.key);
@@ -225,6 +288,7 @@ export function TaggerAnnotation({
     config,
     id,
     showShortcuts,
+    readOnly,
     onNavigate,
     onGoTo,
     onJumpUntagged,
@@ -237,7 +301,7 @@ export function TaggerAnnotation({
 
   return (
     <div className="flex h-[calc(100dvh-var(--header-height,53px)-3rem)] flex-col overflow-hidden md:h-[calc(100dvh-var(--header-height,53px)-4rem)]">
-      <div className="flex items-center gap-2 px-5 pt-3 pb-1.5">
+      <div className="flex items-center gap-2 px-3 pb-1.5 pt-3 sm:px-5">
         <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
           <div
             className="h-full rounded-full transition-all duration-300"
@@ -248,14 +312,14 @@ export function TaggerAnnotation({
           />
         </div>
         <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-          <span className="font-semibold text-primary">{taggedCount}</span>/{data.length}
+          <span className="font-semibold text-primary">{headerDone}</span>/{headerTotal}
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 p-5 overflow-hidden">
+      <div className="flex flex-1 flex-col gap-3 overflow-hidden p-3 sm:p-5 max-lg:landscape:grid max-lg:landscape:grid-cols-2">
         <Card className="flex flex-1 min-h-0 flex-col">
           <CardContent
-            className="flex-1 overflow-y-auto px-6 py-5 text-base leading-relaxed text-foreground"
+            className="flex-1 overflow-y-auto px-4 py-4 text-base leading-relaxed text-foreground sm:px-6 sm:py-5"
             dir="auto"
           >
             {item.fields && item.fields.length > 1 ? (
@@ -266,7 +330,7 @@ export function TaggerAnnotation({
           </CardContent>
         </Card>
 
-        <Card className="flex flex-1 min-h-0 flex-col p-5">
+        <Card className="flex min-h-0 flex-1 flex-col p-3 sm:p-5">
           <CardTitle className="mb-3 text-center text-sm font-medium text-muted-foreground">
             {config.mode === "binary" &&
               (config.question ??
@@ -277,35 +341,66 @@ export function TaggerAnnotation({
               (config.prompt ?? msg("auto.features.tagger.components.taggerannotation.literal.3"))}
           </CardTitle>
 
+          {aiPending && (
+            <div
+              role="status"
+              className="mb-2 flex items-center justify-center motion-safe:animate-in motion-safe:fade-in-0"
+            >
+              <span className="flex items-center gap-1.5 rounded-full border border-primary/15 bg-primary/5 px-2.5 py-1 text-xs text-muted-foreground">
+                <Sparkle
+                  className="size-3 text-primary/60 motion-safe:animate-pulse"
+                  aria-hidden="true"
+                />
+                {msg("tagger.assist.review.predicting")}
+              </span>
+            </div>
+          )}
+
           {config.mode === "binary" && (
             <div className="flex flex-1 min-h-0 flex-col gap-2">
               <Button
-                variant={currentAnn === "yes" ? "default" : "outline"}
-                onClick={() => onToggleBinary(id, "yes")}
+                variant={isBinaryYes(currentAnn) ? "default" : "outline"}
+                onClick={() => onToggleBinary(id, BINARY_YES)}
+                disabled={readOnly}
                 className={cn(
                   "flex-1 text-base font-medium rounded-xl gap-2 focus-visible:ring-0 focus-visible:border-transparent",
-                  currentAnn === "yes" &&
+                  isBinaryYes(currentAnn) &&
                     "bg-emerald-600/15 hover:bg-emerald-600/20 border-emerald-600/40 text-emerald-700",
+                  isBinaryYes(aiPick) && "border-primary/45 bg-primary/5",
                 )}
               >
                 <Badge variant="ghost" size="sm" className="opacity-40 font-mono">
                   {msg("auto.features.tagger.components.taggerannotation.4")}
                 </Badge>
                 {msg("auto.features.tagger.components.taggerannotation.5")}
+                {isBinaryYes(aiPick) && (
+                  <Sparkle
+                    className="size-3.5 text-primary/70 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-50"
+                    aria-hidden="true"
+                  />
+                )}
               </Button>
               <Button
-                variant={currentAnn === "no" ? "default" : "outline"}
-                onClick={() => onToggleBinary(id, "no")}
+                variant={isBinaryNo(currentAnn) ? "default" : "outline"}
+                onClick={() => onToggleBinary(id, BINARY_NO)}
+                disabled={readOnly}
                 className={cn(
                   "flex-1 text-base font-medium rounded-xl gap-2 focus-visible:ring-0 focus-visible:border-transparent",
-                  currentAnn === "no" &&
+                  isBinaryNo(currentAnn) &&
                     "bg-red-500/15 hover:bg-red-500/20 border-red-500/40 text-red-600",
+                  isBinaryNo(aiPick) && "border-primary/45 bg-primary/5",
                 )}
               >
                 <Badge variant="ghost" size="sm" className="opacity-40 font-mono">
                   {msg("auto.features.tagger.components.taggerannotation.6")}
                 </Badge>
                 {msg("auto.features.tagger.components.taggerannotation.7")}
+                {isBinaryNo(aiPick) && (
+                  <Sparkle
+                    className="size-3.5 text-primary/70 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-50"
+                    aria-hidden="true"
+                  />
+                )}
               </Button>
             </div>
           )}
@@ -324,11 +419,13 @@ export function TaggerAnnotation({
                     key={cat.id}
                     variant="outline"
                     onClick={() => onToggleCategory(id, cat.id)}
+                    disabled={readOnly}
                     className={cn(
                       "flex-1 min-h-0 min-w-0 rounded-xl gap-2 whitespace-normal focus-visible:ring-0 focus-visible:border-transparent",
                       (config.categories?.length ?? 0) >= 7 ? "text-sm" : "text-base",
                       "font-medium",
                       selected && "bg-primary/10 border-primary/40 text-primary",
+                      aiPickedCats.has(cat.id) && "border-primary/45 bg-primary/5",
                     )}
                   >
                     {i < 9 && (
@@ -341,6 +438,12 @@ export function TaggerAnnotation({
                       </Badge>
                     )}
                     <span className="min-w-0 break-words">{cat.label}</span>
+                    {aiPickedCats.has(cat.id) && (
+                      <Sparkle
+                        className="size-3.5 shrink-0 text-primary/70 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-50"
+                        aria-hidden="true"
+                      />
+                    )}
                   </Button>
                 );
               })}
@@ -351,30 +454,32 @@ export function TaggerAnnotation({
             <textarea
               value={typeof currentAnn === "string" ? currentAnn : ""}
               onChange={(e) => onSetFreetext(id, e.target.value)}
+              readOnly={readOnly}
               className="flex-1 min-h-0 resize-none rounded-xl border border-input/90 bg-background/75 px-4 py-3 text-sm leading-relaxed shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-sm transition-[color,box-shadow,border-color] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
               dir="auto"
             />
           )}
         </Card>
 
-        <div className="flex items-center justify-between">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-between max-lg:landscape:col-span-2 max-lg:landscape:flex max-lg:landscape:items-center max-lg:landscape:justify-between">
           <Button
             variant="outline"
             onClick={() => onNavigate(-1)}
             disabled={currentIndex === 0}
-            className="gap-2"
+            className="min-h-[44px] w-full gap-2 sm:w-auto max-lg:landscape:w-auto lg:min-h-0"
           >
-            <ChevronRight className="size-4" />
+            <PrevIcon className="size-4" />
             {msg("auto.features.tagger.components.taggerannotation.8")}
           </Button>
 
-          <div className="flex items-center gap-2">
+          <div className="col-span-2 row-start-2 flex items-center justify-center gap-1 sm:col-auto sm:row-auto sm:gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => onGoTo(0)}
+                  className="size-[44px] lg:size-8"
                   aria-label={msg("auto.features.tagger.components.taggerannotation.9")}
                 >
                   <SkipBack className="size-4" />
@@ -391,9 +496,10 @@ export function TaggerAnnotation({
                   size="icon-sm"
                   onClick={onJumpUntagged}
                   disabled={taggedCount === data.length}
+                  className="size-[44px] lg:size-8"
                   aria-label={msg("auto.features.tagger.components.taggerannotation.10")}
                 >
-                  <CircleMinus className="size-4" />
+                  <MinusCircle className="size-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -407,6 +513,7 @@ export function TaggerAnnotation({
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => setShowShortcuts(true)}
+                  className="size-[44px] lg:size-8"
                   aria-label={msg("auto.features.tagger.components.taggerannotation.11")}
                 >
                   <Keyboard className="size-4" />
@@ -423,9 +530,10 @@ export function TaggerAnnotation({
                     <Button
                       variant="ghost"
                       size="icon-sm"
+                      className="size-[44px] lg:size-8"
                       aria-label={msg("auto.features.tagger.components.taggerannotation.12")}
                     >
-                      <Download className="size-4" />
+                      <DownloadSimple className="size-4" />
                     </Button>
                   </PopoverPrimitive.Trigger>
                 </TooltipTrigger>
@@ -450,41 +558,54 @@ export function TaggerAnnotation({
                     </button>
                   </PopoverPrimitive.Close>
                   <div className="my-1 h-px bg-border" />
-                  {(["csv", "json", "xlsx", "xls"] as const).map((fmt) => (
-                    <PopoverPrimitive.Close key={fmt} asChild>
-                      <button
-                        type="button"
-                        onClick={() => handleExport(fmt)}
-                        className="flex w-full items-center rounded-md px-3 py-1.5 text-xs font-medium text-foreground cursor-pointer transition-colors hover:bg-accent"
-                      >
-                        {fmt.toUpperCase()}
-                      </button>
-                    </PopoverPrimitive.Close>
+                  {(["csv", "json", "xlsx", "parquet", "feather"] as const).map((fmt) => (
+                    <div key={fmt}>
+                      {/* Set the columnar analytics formats apart with a small
+                          labelled divider, matching the shared table menu. */}
+                      {fmt === "parquet" && (
+                        <div className="mx-3 mt-1 mb-0.5 border-t border-border pt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+                          {msg("export.table.columnar")}
+                        </div>
+                      )}
+                      <PopoverPrimitive.Close asChild>
+                        <button
+                          type="button"
+                          onClick={() => handleExport(fmt)}
+                          className="flex w-full items-center rounded-md px-3 py-1.5 text-xs font-medium text-foreground cursor-pointer transition-colors hover:bg-accent"
+                        >
+                          {fmt.toUpperCase()}
+                        </button>
+                      </PopoverPrimitive.Close>
+                    </div>
                   ))}
                 </PopoverPrimitive.Content>
               </PopoverPrimitive.Portal>
             </PopoverPrimitive.Root>
+            {/* The floating agent pill would cover the Next button on this
+                viewport-locked surface; docking it here keeps it out of the
+                way and reachable. */}
+            <AgentPillDock />
           </div>
 
           <Button
             variant="outline"
             onClick={() => onNavigate(1)}
             disabled={currentIndex === data.length - 1}
-            className="gap-2"
+            className="col-start-2 row-start-1 min-h-[44px] w-full gap-2 sm:col-auto sm:row-auto sm:w-auto max-lg:landscape:w-auto lg:min-h-0"
           >
             {msg("auto.features.tagger.components.taggerannotation.13")}
-            <ChevronLeft className="size-4" />
+            <NextIcon className="size-4" />
           </Button>
         </div>
       </div>
 
       <Dialog open={showShortcuts} onOpenChange={setShowShortcuts}>
-        <DialogContent className="sm:max-w-md" dir="rtl">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{msg("auto.features.tagger.components.taggerannotation.14")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-1.5">
-            {config.mode === "binary" && (
+            {!readOnly && config.mode === "binary" && (
               <>
                 <ShortcutRow
                   keys="Y"
@@ -496,13 +617,14 @@ export function TaggerAnnotation({
                 />
               </>
             )}
-            {config.mode === "multiclass" &&
+            {!readOnly &&
+              config.mode === "multiclass" &&
               (config.categories ?? [])
                 .slice(0, 9)
                 .map((cat, i) => (
                   <ShortcutRow key={cat.id} keys={String(i + 1)} label={cat.label} />
                 ))}
-            <Separator className="my-2" />
+            {!readOnly && <Separator className="my-2" />}
             <ShortcutRow
               keys="← / →"
               label={msg("auto.features.tagger.components.taggerannotation.literal.6")}
@@ -571,7 +693,7 @@ export function TaggerAnnotation({
           if (!savingToLibrary) setNameDialogOpen(open);
         }}
       >
-        <DialogContent className="max-w-md sm:max-w-md" dir="rtl">
+        <DialogContent className="max-w-md sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{msg("tagger.library.name_title")}</DialogTitle>
           </DialogHeader>
@@ -606,7 +728,7 @@ export function TaggerAnnotation({
               className="w-full justify-center"
             >
               {savingToLibrary ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 msg("tagger.library.name_save")
               )}
@@ -685,7 +807,8 @@ function Confetti() {
   );
 }
 
-function FieldsView({ fields }: { fields: DataField[] }) {
+/** Multi-column row renderer, shared with the live auto-tag walkthrough. */
+export function FieldsView({ fields }: { fields: DataField[] }) {
   return (
     <dl className="flex flex-col">
       {fields.map((field, i) => (
@@ -734,10 +857,7 @@ function FieldValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
     return (
       <ol className="space-y-1.5">
         {value.map((item, i) => (
-          <li
-            key={i}
-            className="relative rounded-lg border border-border/40 bg-muted/30 px-3 py-2"
-          >
+          <li key={i} className="relative rounded-lg border border-border/40 bg-muted/30 px-3 py-2">
             <span
               dir="ltr"
               className="absolute -top-2 start-2 rounded bg-background px-1.5 text-[10px] font-mono tabular-nums text-muted-foreground/80"
@@ -785,9 +905,7 @@ function FieldValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
         dir="ltr"
         className={cn(
           "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-mono",
-          value
-            ? "bg-emerald-600/10 text-emerald-700"
-            : "bg-muted text-muted-foreground",
+          value ? "bg-emerald-600/10 text-emerald-700" : "bg-muted text-muted-foreground",
         )}
       >
         {value ? "true" : "false"}

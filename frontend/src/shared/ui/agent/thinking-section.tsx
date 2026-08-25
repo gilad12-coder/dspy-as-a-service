@@ -2,18 +2,27 @@
 
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, CaretDown } from "@/shared/ui/icons";
 
 import { cn } from "@/shared/lib/utils";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import type { AgentThinking } from "./types";
+import { EmberGlyph } from "./ttft-indicator";
+
+// Within this many px of the bottom still counts as "at the bottom", so
+// momentum scrolling and fractional positions don't break follow mode.
+const STICKY_BOTTOM_SLACK_PX = 48;
 
 export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
   const { reasoning, startedAt, endedAt, streaming } = thinking;
   const isThinking = streaming && !endedAt && Boolean(startedAt);
   const hasFinished = Boolean(endedAt && startedAt);
   const [open, setOpen] = React.useState(true);
+  // While the body animates closed, the header must not show the tail yet —
+  // truncated preview over a still-visible body reads as overlapping ghost
+  // text. The exit animation's completion clears this.
+  const [collapsing, setCollapsing] = React.useState(false);
   const [nowTs, setNowTs] = React.useState(() => Date.now());
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const autoCollapsedRef = React.useRef(false);
@@ -25,22 +34,54 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
     return () => clearInterval(id);
   }, [isThinking]);
 
+  // Under reduced motion the exit is instant and may skip onExitComplete, so
+  // the collapsing flag is only armed when the animation actually runs.
+  const beginCollapse = React.useCallback(() => {
+    if (reasoning && !shouldReduceMotion) setCollapsing(true);
+    setOpen(false);
+  }, [reasoning, shouldReduceMotion]);
+
   React.useEffect(() => {
     if (hasFinished && !autoCollapsedRef.current) {
       autoCollapsedRef.current = true;
-      setOpen(false);
+      beginCollapse();
     }
-  }, [hasFinished]);
+  }, [hasFinished, beginCollapse]);
+
+  // Follow the stream only while the user is at the bottom. Once they scroll
+  // up to read earlier reasoning their position persists — new tokens must
+  // not yank them back down. Scrolling back to the bottom (or collapsing and
+  // reopening) re-engages following. The programmatic pin lands at distance
+  // 0, so it keeps the flag true rather than fighting the user.
+  const stickToBottomRef = React.useRef(true);
+
+  const handleScroll = React.useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < STICKY_BOTTOM_SLACK_PX;
+  }, []);
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      stickToBottomRef.current = true;
+      return;
+    }
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [reasoning, open]);
 
   const tail = React.useMemo(() => {
     if (!reasoning) return "";
-    const cleaned = reasoning.replace(/\s+/g, " ").trim();
+    // The tail is a prose preview. Structured turns usually end their
+    // reasoning by drafting the payload, so fenced blocks and JSON-shaped
+    // lines are dropped — the preview shows thought, never raw config.
+    const prose = reasoning
+      .replace(/```[\s\S]*?(?:```|$)/g, " ")
+      .split("\n")
+      .filter((line) => !/^\s*[{}[\]"'`]|"\s*:|:\s*[{["']/.test(line))
+      .join(" ");
+    const cleaned = prose.replace(/\s+/g, " ").trim();
     return cleaned.length > 90 ? `…${cleaned.slice(-89)}` : cleaned;
   }, [reasoning]);
 
@@ -56,11 +97,11 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
     <div>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? beginCollapse() : setOpen(true))}
         className="flex w-full items-center gap-2.5 px-4 py-2.5 text-start hover:bg-[#3D2E22]/[0.035] transition-colors cursor-pointer"
         aria-expanded={open}
       >
-        <ThinkingIndicator active={isThinking} />
+        <ThinkingIndicator active={isThinking} reduce={Boolean(shouldReduceMotion)} />
         <div className="flex items-baseline gap-2 shrink-0">
           <span
             className={cn(
@@ -79,7 +120,7 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
             </span>
           )}
         </div>
-        {!open && tail && (
+        {!open && !collapsing && tail && (
           <span
             className="flex-1 min-w-0 text-[0.6875rem] text-muted-foreground/45 font-mono truncate"
             dir="ltr"
@@ -87,14 +128,14 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
             {tail}
           </span>
         )}
-        <ChevronDown
+        <CaretDown
           className={cn(
             "ms-auto size-3.5 text-muted-foreground/50 transition-transform shrink-0",
             open ? "rotate-0" : "rotate-90",
           )}
         />
       </button>
-      <AnimatePresence initial={false}>
+      <AnimatePresence initial={false} onExitComplete={() => setCollapsing(false)}>
         {open && reasoning && (
           <motion.div
             initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
@@ -107,6 +148,7 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
           >
             <div
               ref={scrollRef}
+              onScroll={handleScroll}
               dir="ltr"
               className="max-h-44 overflow-y-auto border-t border-[#3D2E22]/[0.08] px-4 py-3 text-[0.6875rem] leading-[1.65] text-[#5C4D40]/80 font-mono whitespace-pre-wrap break-words"
             >
@@ -119,18 +161,13 @@ export function ThinkingSection({ thinking }: { thinking: AgentThinking }) {
   );
 }
 
-function ThinkingIndicator({ active }: { active: boolean }) {
+function ThinkingIndicator({ active, reduce }: { active: boolean; reduce: boolean }) {
   if (active) {
-    return (
-      <span className="relative inline-flex size-4 items-center justify-center shrink-0">
-        <span className="absolute inset-0 rounded-full bg-[#3D2E22]/15 animate-ping motion-reduce:animate-none" />
-        <span className="relative size-2 rounded-full bg-[#3D2E22]" />
-      </span>
-    );
+    return <EmberGlyph reduce={reduce} />;
   }
   return (
     <span className="inline-flex size-4 items-center justify-center rounded-full bg-[#3D2E22]/15 shrink-0">
-      <Check className="size-2.5 text-[#3D2E22]" strokeWidth={3} />
+      <Check className="size-2.5 text-[#3D2E22]" />
     </span>
   );
 }

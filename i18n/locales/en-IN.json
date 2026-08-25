@@ -1,0 +1,10 @@
+{
+  "$schema": "../schema.json",
+  "locale": "en-IN",
+  "terms": {
+    "modelCatalog": "model catalogue"
+  },
+  "messages": {
+    "submit.no_models_available": "No models available in the catalogue — configure a provider API key first."
+  }
+}

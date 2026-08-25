@@ -15,6 +15,7 @@ type WizardKey =
   | "job_type"
   | "optimizer_name"
   | "module_name"
+  | "workflow"
   | "react_config"
   | "dataset_columns"
   | "column_roles"
@@ -22,15 +23,15 @@ type WizardKey =
   | "reflection_model_config"
   | "generation_models"
   | "reflection_models"
-  | "use_all_generation_models"
-  | "use_all_reflection_models"
   | "split_fractions"
   | "split_mode"
   | "seed"
   | "shuffle"
   | "is_private"
   | "optimizer_kwargs"
-  | "staged_dataset_id";
+  | "target_score"
+  | "staged_dataset_id"
+  | "source_dataset_id";
 type WriteSource = "user" | "agent";
 
 interface WizardStateContextValue {
@@ -200,6 +201,9 @@ export function extractWizardPatch(result: unknown): Partial<WizardState> {
   if (typeof wrap.staged_dataset_id === "string" && wrap.staged_dataset_id) {
     patch.staged_dataset_id = wrap.staged_dataset_id;
   }
+  if (typeof wrap.source_dataset_id === "string" && wrap.source_dataset_id) {
+    patch.source_dataset_id = wrap.source_dataset_id;
+  }
 
   if (typeof wrap.signature_code === "string") patch.signature_code = wrap.signature_code;
   if (typeof wrap.metric_code === "string") patch.metric_code = wrap.metric_code;
@@ -210,6 +214,15 @@ export function extractWizardPatch(result: unknown): Partial<WizardState> {
 
   if (typeof wrap.optimizer_name === "string") patch.optimizer_name = wrap.optimizer_name;
   if (typeof wrap.module_name === "string") patch.module_name = wrap.module_name;
+
+  if (
+    wrap.workflow &&
+    typeof wrap.workflow === "object" &&
+    !Array.isArray(wrap.workflow) &&
+    Array.isArray((wrap.workflow as Record<string, unknown>).nodes)
+  ) {
+    patch.workflow = wrap.workflow as WizardState["workflow"];
+  }
 
   if (
     wrap.react_config &&
@@ -260,13 +273,6 @@ export function extractWizardPatch(result: unknown): Partial<WizardState> {
   ) {
     patch.reflection_models = wrap.reflection_models as Array<Record<string, unknown>>;
   }
-  if (typeof wrap.use_all_generation_models === "boolean") {
-    patch.use_all_generation_models = wrap.use_all_generation_models;
-  }
-  if (typeof wrap.use_all_reflection_models === "boolean") {
-    patch.use_all_reflection_models = wrap.use_all_reflection_models;
-  }
-
   if (
     wrap.split_fractions &&
     typeof wrap.split_fractions === "object" &&

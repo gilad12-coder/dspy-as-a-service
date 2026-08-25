@@ -33,8 +33,7 @@ frontend:
     limits:
       cpu: 250m
       memory: 256Mi
-  env:
-    DEV_AUTH: "false"
+  env: {}
   autoscaling:
     enabled: false
   podDisruptionBudget:

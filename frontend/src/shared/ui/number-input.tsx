@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Minus, Plus } from "lucide-react";
+import { Minus, Plus } from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
+import { msg } from "@/shared/lib/messages";
 
 interface NumberInputProps {
   id?: string;
@@ -33,17 +34,43 @@ export function NumberInput({
     if (max != null && n > max) return max;
     return n;
   };
+  const format = (n: number) => (decimals ? n.toFixed(decimals) : String(n));
+
+  // The field owns its text while focused so a mid-edit value — an empty box, a
+  // trailing "0.", "0.6" before its final digit — survives keystrokes instead of
+  // being reparsed and reformatted out from under the caret on every change (the
+  // old behaviour made a typed digit read as a tiny nudge rather than the number
+  // you meant). External value changes are mirrored in only when not editing;
+  // blur normalizes back to the canonical format.
+  const [text, setText] = React.useState(typeof value === "number" ? format(value) : "");
+  const editing = React.useRef(false);
+
+  React.useEffect(() => {
+    if (editing.current) return;
+    setText(typeof value === "number" ? (decimals ? value.toFixed(decimals) : String(value)) : "");
+  }, [value, decimals]);
+
+  const commitText = (raw: string) => {
+    if (raw === "" || raw === ".") return;
+    const n = parseFloat(raw);
+    if (!isNaN(n)) onChange(round(clamp(n)));
+  };
+
+  const setValue = (next: number) => {
+    onChange(next);
+    setText(format(next));
+  };
 
   const decrement = () => {
     const next = round(numValue - step);
     if (min != null && next < min) return;
-    onChange(next);
+    setValue(next);
   };
 
   const increment = () => {
     const next = round(numValue + step);
     if (max != null && next > max) return;
-    onChange(next);
+    setValue(next);
   };
 
   return (
@@ -59,24 +86,26 @@ export function NumberInput({
         onClick={decrement}
         disabled={disabled || (min != null && numValue <= min)}
         className="flex items-center justify-center size-9 shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-        aria-label="Decrease"
+        aria-label={msg("shared.number_input.decrease")}
       >
         <Minus className="size-3" />
       </button>
       <input
         id={id}
         type="text"
-        inputMode="numeric"
-        value={typeof value === "number" && decimals ? value.toFixed(decimals) : value}
+        inputMode={decimals ? "decimal" : "numeric"}
+        value={text}
+        onFocus={() => {
+          editing.current = true;
+        }}
         onChange={(e) => {
           const raw = e.target.value.replace(/[^0-9.]/g, "");
-          if (raw === "" || raw === ".") {
-            onChange(min ?? 0);
-            return;
-          }
-          const n = parseFloat(raw);
-          if (isNaN(n)) return;
-          onChange(round(clamp(n)));
+          setText(raw);
+          commitText(raw);
+        }}
+        onBlur={() => {
+          editing.current = false;
+          setText(typeof value === "number" ? format(value) : "");
         }}
         onKeyDown={(e) => {
           if (e.key === "ArrowUp") {
@@ -96,7 +125,7 @@ export function NumberInput({
         onClick={increment}
         disabled={disabled || (max != null && numValue >= max)}
         className="flex items-center justify-center size-9 shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-        aria-label="Increase"
+        aria-label={msg("shared.number_input.increase")}
       >
         <Plus className="size-3" />
       </button>

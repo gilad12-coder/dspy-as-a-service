@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import { motion } from "framer-motion";
-import { Gauge, ScrollText } from "lucide-react";
+import { Gauge, Scroll } from "@/shared/ui/icons";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { Badge } from "@/shared/ui/primitives/badge";
@@ -15,6 +15,7 @@ import {
   ResetColumnsButton,
   type SortDir,
 } from "@/shared/ui/excel-filter";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { FadeIn } from "@/shared/ui/motion";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import type { OptimizationLogEntry } from "@/shared/types/api";
@@ -74,8 +75,10 @@ function VerbosityControl({
             onClick={() => {
               if (!isActive) onChange(o.value);
             }}
-            className={`relative rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 ${
-              isActive ? "text-foreground" : "cursor-pointer text-foreground/55 hover:text-foreground"
+            className={`relative min-h-[44px] rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px] ${
+              isActive
+                ? "text-foreground"
+                : "cursor-pointer text-foreground/55 hover:text-foreground"
             }`}
           >
             {isActive && (
@@ -206,23 +209,58 @@ export function LogsTab({
     <div className="mt-4">
       <FadeIn>
         <div
-          className="flex items-center justify-between gap-3 mb-4"
+          className="mb-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
           data-tutorial="live-logs"
         >
-          <div className="flex items-center gap-3">
-            <VerbosityControl active={activeVerbosity} onChange={setVerbosity} />
+          <div className="flex min-w-0 items-center gap-3 overflow-x-auto pb-0.5 no-scrollbar sm:overflow-visible sm:pb-0">
+            <div className="shrink-0">
+              <VerbosityControl active={activeVerbosity} onChange={setVerbosity} />
+            </div>
             <ResetColumnsButton resize={logResize} />
           </div>
-          <span className="text-xs text-muted-foreground shrink-0">
-            {filtered.length}
-            {msg("auto.features.optimizations.components.logstab.1")}
-          </span>
+          <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-end">
+            <span className="text-xs text-muted-foreground">
+              {filtered.length}
+              {msg("auto.features.optimizations.components.logstab.1")}
+            </span>
+            <ExportTableMenu
+              iconOnly
+              disabled={filtered.length === 0}
+              getData={() => {
+                const columns = [
+                  ...(showPairCol ? ["pair_index"] : []),
+                  "timestamp",
+                  "level",
+                  "logger",
+                  "message",
+                ];
+                const rows = filtered.map((log) => {
+                  const rec: Record<string, unknown> = {};
+                  if (showPairCol) {
+                    rec.pair_index =
+                      log.pair_index != null
+                        ? (pairNames?.[log.pair_index] ??
+                          formatMsg("auto.features.optimizations.components.logstab.template.3", {
+                            p1: log.pair_index + 1,
+                          }))
+                        : "—";
+                  }
+                  rec.timestamp = formatLogTimestamp(log.timestamp);
+                  rec.level = log.level;
+                  rec.logger = log.logger;
+                  rec.message = log.message;
+                  return rec;
+                });
+                return { columns, rows, filename: "logs" };
+              }}
+            />
+          </div>
         </div>
       </FadeIn>
       {filtered.length === 0 ? (
         <EmptyState
           variant="list"
-          icon={ScrollText}
+          icon={Scroll}
           title={
             logs.length === 0
               ? msg("auto.features.optimizations.components.logstab.2")
@@ -237,7 +275,7 @@ export function LogsTab({
         <Card>
           <CardContent className="p-0">
             <div className="max-h-[600px] overflow-auto">
-              <Table className={"table-fixed w-full"}>
+              <Table className="w-full min-w-[720px] table-fixed">
                 <colgroup>
                   {showPairCol && (
                     <col style={{ width: logResize.widths["pair_index"] ?? "12%" }} />

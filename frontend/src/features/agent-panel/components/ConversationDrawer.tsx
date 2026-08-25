@@ -2,31 +2,22 @@
 
 import * as React from "react";
 import {
-  Check,
-  History,
-  MoreHorizontal,
-  Pencil,
-  Pin,
-  PinOff,
-  Search,
-  Trash2,
-} from "lucide-react";
+  ClockCounterClockwise,
+  DotsThree,
+  PencilSimple,
+  PushPin,
+  PushPinSlash,
+  MagnifyingGlass,
+  Trash,
+} from "@/shared/ui/icons";
 
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/shared/ui/primitives/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/shared/ui/primitives/sheet";
 import { Input } from "@/shared/ui/primitives/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/shared/ui/primitives/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { cn } from "@/shared/lib/utils";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { ConversationDrawerSkeleton } from "./ConversationDrawerSkeleton";
 
 import type { ConversationSummary } from "../lib/conversation-api";
@@ -38,6 +29,8 @@ interface ConversationDrawerProps {
   loading: boolean;
   activeId: string | null;
   unreadIds: ReadonlySet<string>;
+  /** Conversations with a turn still streaming or waiting in the queue. */
+  busyIds: ReadonlySet<string>;
   query: string;
   onQueryChange: (q: string) => void;
   onPick: (id: string) => void;
@@ -48,18 +41,12 @@ interface ConversationDrawerProps {
 
 // Bucket conversations into pinned → concrete calendar dates, mirroring the
 // optimizations sidebar grouping (features/sidebar/lib/group-jobs.ts) so the
-// two histories use the same visual rhythm. Date labels are formatted in
-// he-IL DD/MM/YYYY.
+// two histories use the same visual rhythm. Date labels follow the active
+// locale's short numeric date format.
 interface ConversationGroup {
   label: string;
   rows: ConversationSummary[];
 }
-
-const DATE_FORMATTER = new Intl.DateTimeFormat("he-IL", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-});
 
 function groupConversationsByRecency(rows: ConversationSummary[]): ConversationGroup[] {
   const pinned: ConversationSummary[] = [];
@@ -78,7 +65,11 @@ function groupConversationsByRecency(rows: ConversationSummary[]): ConversationG
         ).padStart(2, "0")}`
       : "unknown";
     const label = validDate
-      ? DATE_FORMATTER.format(updated)
+      ? updated.toLocaleDateString(getActiveIntlLocale(), {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
       : msg("auto.features.agent.panel.components.conversationdrawer.section_unknown_date");
     const group = dated.get(key) ?? { label, rows: [] };
     group.rows.push(row);
@@ -104,6 +95,7 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
     loading,
     activeId,
     unreadIds,
+    busyIds,
     query,
     onQueryChange,
     onPick,
@@ -112,21 +104,23 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
     onDelete,
   } = props;
   const groups = groupConversationsByRecency(conversations);
+  // Dock on the same edge as the agent panel (logical `end`): right in LTR,
+  // left in RTL. The Sheet's `side` is physical, so map direction → side.
+  const drawerSide = getActiveDir() === "rtl" ? "left" : "right";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        side="left"
-        dir="rtl"
-        className="w-[min(420px,90vw)] sm:max-w-none p-0 flex flex-col"
+        side={drawerSide}
+        className="flex w-full flex-col p-0 sm:w-[min(420px,90vw)] sm:max-w-none"
       >
         <SheetHeader className="border-b border-border/40 p-3">
           <SheetTitle className="text-[0.875rem] flex items-center gap-2">
-            <History className="size-4" aria-hidden="true" />
+            <ClockCounterClockwise className="size-4" aria-hidden="true" />
             {msg("auto.features.agent.panel.components.conversationdrawer.title")}
           </SheetTitle>
           <div className="relative mt-2">
-            <Search
+            <MagnifyingGlass
               className="absolute top-1/2 -translate-y-1/2 end-2 size-3.5 text-muted-foreground"
               aria-hidden="true"
             />
@@ -136,7 +130,7 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
               placeholder={msg(
                 "auto.features.agent.panel.components.conversationdrawer.search_placeholder",
               )}
-              className="h-8 text-[0.8125rem] pe-7"
+              className="h-[44px] text-[0.8125rem] pe-7 md:h-8 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
             />
           </div>
         </SheetHeader>
@@ -159,6 +153,7 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
                   rows={group.rows}
                   activeId={activeId}
                   unreadIds={unreadIds}
+                  busyIds={busyIds}
                   onPick={onPick}
                   onRename={onRename}
                   onTogglePin={onTogglePin}
@@ -178,6 +173,7 @@ interface SectionProps {
   rows: ConversationSummary[];
   activeId: string | null;
   unreadIds: ReadonlySet<string>;
+  busyIds: ReadonlySet<string>;
   onPick: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onTogglePin: (id: string, pinned: boolean) => void;
@@ -189,6 +185,7 @@ function Section({
   rows,
   activeId,
   unreadIds,
+  busyIds,
   onPick,
   onRename,
   onTogglePin,
@@ -207,6 +204,7 @@ function Section({
             row={row}
             active={row.id === activeId}
             unread={unreadIds.has(row.id)}
+            busy={busyIds.has(row.id)}
             onPick={onPick}
             onRename={onRename}
             onTogglePin={onTogglePin}
@@ -222,13 +220,23 @@ interface RowProps {
   row: ConversationSummary;
   active: boolean;
   unread: boolean;
+  busy: boolean;
   onPick: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onTogglePin: (id: string, pinned: boolean) => void;
   onDelete: (id: string) => void;
 }
 
-function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, onDelete }: RowProps) {
+function ConversationRow({
+  row,
+  active,
+  unread,
+  busy,
+  onPick,
+  onRename,
+  onTogglePin,
+  onDelete,
+}: RowProps) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(row.title);
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -273,30 +281,32 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
     <li>
       <div
         className={cn(
-          "group flex items-center gap-1.5 rounded-md px-2 py-1.5 cursor-pointer",
+          "group flex min-h-[44px] items-center gap-1.5 rounded-md px-2 py-1.5 cursor-pointer",
           active ? "bg-accent" : "hover:bg-accent/60",
         )}
         onClick={() => onPick(row.id)}
       >
-        {unread && !active && (
+        {busy ? (
           <span
-            aria-label={msg(
-              "auto.features.agent.panel.components.conversationdrawer.unread_indicator",
-            )}
-            className="size-1.5 rounded-full bg-primary shrink-0"
+            aria-label={msg("agent.parallel.busy_indicator")}
+            className="size-1.5 rounded-full bg-primary shrink-0 animate-pulse"
           />
+        ) : (
+          unread &&
+          !active && (
+            <span
+              aria-label={msg(
+                "auto.features.agent.panel.components.conversationdrawer.unread_indicator",
+              )}
+              className="size-1.5 rounded-full bg-primary shrink-0"
+            />
+          )
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1 truncate text-[0.8125rem]">
-            {row.pinned && <Pin className="size-3 text-muted-foreground shrink-0" />}
-            <span
-              className={cn(
-                "truncate",
-                unread && !active && "font-semibold text-foreground",
-              )}
-            >
-              {row.title ||
-                msg("auto.features.agent.panel.components.conversationdrawer.untitled")}
+            {row.pinned && <PushPin className="size-3 text-muted-foreground shrink-0" />}
+            <span className={cn("truncate", unread && !active && "font-semibold text-foreground")}>
+              {row.title || msg("auto.features.agent.panel.components.conversationdrawer.untitled")}
             </span>
           </div>
           {row.preview && (
@@ -313,18 +323,24 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
                     e.stopPropagation();
                   }}
                   className={cn(
-                    "rounded-md p-1 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer",
-                    "opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100",
+                    "inline-flex size-[44px] items-center justify-center rounded-md text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]",
+                    "opacity-100 md:opacity-0 md:group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)_and_(pointer:coarse)]:opacity-100",
                   )}
                   aria-label={msg(
                     "auto.features.agent.panel.components.conversationdrawer.row_menu",
                   )}
                 >
-                  <MoreHorizontal className="size-3.5" />
+                  <DotsThree
+                    className={cn(
+                      "size-3.5 transition-[transform,color] duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none motion-reduce:transform-none",
+                      menuOpen && "rotate-90 scale-110 text-foreground",
+                    )}
+                    aria-hidden="true"
+                  />
                 </button>
               </PopoverTrigger>
             </TooltipTrigger>
-            <TooltipContent side="bottom" dir="rtl">
+            <TooltipContent side="bottom">
               {msg("auto.features.agent.panel.components.conversationdrawer.row_menu")}
             </TooltipContent>
           </Tooltip>
@@ -341,9 +357,9 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
                 setEditing(true);
                 setMenuOpen(false);
               }}
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] hover:bg-accent cursor-pointer"
+              className="flex min-h-[44px] w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] hover:bg-accent cursor-pointer"
             >
-              <Pencil className="size-3.5" />
+              <PencilSimple className="size-3.5" />
               {msg("auto.features.agent.panel.components.conversationdrawer.rename")}
             </button>
             <button
@@ -352,9 +368,13 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
                 onTogglePin(row.id, !row.pinned);
                 setMenuOpen(false);
               }}
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] hover:bg-accent cursor-pointer"
+              className="flex min-h-[44px] w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] hover:bg-accent cursor-pointer"
             >
-              {row.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+              {row.pinned ? (
+                <PushPinSlash className="size-3.5" />
+              ) : (
+                <PushPin className="size-3.5" />
+              )}
               {row.pinned
                 ? msg("auto.features.agent.panel.components.conversationdrawer.unpin")
                 : msg("auto.features.agent.panel.components.conversationdrawer.pin")}
@@ -365,21 +385,14 @@ function ConversationRow({ row, active, unread, onPick, onRename, onTogglePin, o
                 onDelete(row.id);
                 setMenuOpen(false);
               }}
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] text-destructive hover:bg-destructive/10 cursor-pointer"
+              className="flex min-h-[44px] w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[0.8125rem] text-destructive hover:bg-destructive/10 cursor-pointer"
             >
-              <Trash2 className="size-3.5" />
+              <Trash className="size-3.5" />
               {msg("auto.features.agent.panel.components.conversationdrawer.delete")}
             </button>
-            {active && (
-              <div className="border-t border-border/60 mt-1 pt-1 px-2 py-1 text-[0.6875rem] text-muted-foreground flex items-center gap-1">
-                <Check className="size-3" />
-                {msg("auto.features.agent.panel.components.conversationdrawer.active_hint")}
-              </div>
-            )}
           </PopoverContent>
         </Popover>
       </div>
     </li>
   );
 }
-

@@ -31,6 +31,9 @@ class ScenarioResult:
     latency_max_ms: float
     status_codes: dict[int, int]
     extras: dict[str, Any] = field(default_factory=dict)
+    slo_passed: bool | None = None
+    slo_violations: list[str] = field(default_factory=list)
+    slo_thresholds: dict[str, float] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable view used by the reporter.
@@ -51,6 +54,9 @@ class ScenarioResult:
             "latency_max_ms": round(self.latency_max_ms, 1),
             "status_codes": dict(sorted(self.status_codes.items())),
             "extras": self.extras,
+            "slo_passed": self.slo_passed,
+            "slo_violations": list(self.slo_violations),
+            "slo_thresholds": dict(self.slo_thresholds),
         }
 
 

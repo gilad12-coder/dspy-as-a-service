@@ -2,14 +2,18 @@
 
 import * as React from "react";
 import { useReducer, useEffect, useCallback, useRef, createContext, useContext } from "react";
+import { track as trackEvent, TelemetryEvent } from "@/shared/lib/telemetry";
 import type { TutorialTrack, TutorialStep } from "../lib/steps";
-import { getTrack, resetTutorialOneShotState } from "../lib/steps";
+import {
+  getLoadedTrack,
+  loadStepsModule,
+  resetLoadedTutorialOneShotState,
+} from "../lib/steps-loader";
 
-export interface TutorialState {
+interface TutorialState {
   activeTrack: TutorialTrack | null;
   currentStepIndex: number;
   isVisible: boolean;
-  isMenuOpen: boolean;
   isAutoPlaying: boolean;
   completedTracks: Set<TutorialTrack>;
   /** Direction of the last navigation. Used by the auto-skip path so a
@@ -25,8 +29,6 @@ type TutorialAction =
   | { type: "GO_TO_STEP"; index: number }
   | { type: "EXIT_TUTORIAL" }
   | { type: "COMPLETE_TRACK" }
-  | { type: "OPEN_MENU" }
-  | { type: "CLOSE_MENU" }
   | { type: "RESET_ALL" }
   | { type: "TOGGLE_AUTO_PLAY" }
   | { type: "SET_AUTO_PLAY"; value: boolean }
@@ -40,12 +42,11 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
         activeTrack: action.track,
         currentStepIndex: 0,
         isVisible: true,
-        isMenuOpen: false,
         lastDirection: "forward",
       };
     case "NEXT_STEP": {
       if (!state.activeTrack) return state;
-      const track = getTrack(state.activeTrack);
+      const track = getLoadedTrack(state.activeTrack);
       if (!track) return state;
       const nextIndex = state.currentStepIndex + 1;
       if (nextIndex >= track.steps.length) {
@@ -59,16 +60,16 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
       return { ...state, currentStepIndex: nextIndex, lastDirection: "forward" };
     }
     case "PREV_STEP":
-      return state.activeTrack
+      return state.activeTrack && state.currentStepIndex > 0
         ? {
             ...state,
-            currentStepIndex: Math.max(0, state.currentStepIndex - 1),
+            currentStepIndex: state.currentStepIndex - 1,
             lastDirection: "backward",
           }
         : state;
     case "GO_TO_STEP": {
       if (!state.activeTrack) return state;
-      const t = getTrack(state.activeTrack);
+      const t = getLoadedTrack(state.activeTrack);
       if (!t) return state;
       return {
         ...state,
@@ -76,7 +77,7 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
       };
     }
     case "EXIT_TUTORIAL":
-      return { ...state, isVisible: false, isMenuOpen: false };
+      return { ...state, isVisible: false };
     case "COMPLETE_TRACK":
       return state.activeTrack
         ? {
@@ -85,10 +86,6 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
             completedTracks: new Set([...state.completedTracks, state.activeTrack]),
           }
         : state;
-    case "OPEN_MENU":
-      return { ...state, isMenuOpen: true, isVisible: false };
-    case "CLOSE_MENU":
-      return { ...state, isMenuOpen: false };
     case "TOGGLE_AUTO_PLAY":
       return { ...state, isAutoPlaying: !state.isAutoPlaying };
     case "SET_AUTO_PLAY":
@@ -98,7 +95,6 @@ function tutorialReducer(state: TutorialState, action: TutorialAction): Tutorial
         activeTrack: null,
         currentStepIndex: 0,
         isVisible: false,
-        isMenuOpen: false,
         isAutoPlaying: false,
         completedTracks: new Set(),
         lastDirection: "forward",
@@ -118,7 +114,6 @@ const initialState: TutorialState = {
   activeTrack: null,
   currentStepIndex: 0,
   isVisible: false,
-  isMenuOpen: false,
   isAutoPlaying: false,
   completedTracks: new Set(),
   lastDirection: "forward",
@@ -135,8 +130,6 @@ interface TutorialContextValue {
   goToStep: (index: number) => void;
   exitTutorial: () => void;
   completeTrack: () => void;
-  startDeepDive: () => void;
-  closeMenu: () => void;
   resetAll: () => void;
   toggleAutoPlay: () => void;
 }
@@ -171,8 +164,10 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     const params = new URLSearchParams(window.location.search);
     if (params.get("tutorial") === "autoplay") {
       setTimeout(() => {
-        dispatch({ type: "SET_AUTO_PLAY", value: true });
-        dispatch({ type: "START_TRACK", track: "deep-dive" as TutorialTrack });
+        void loadStepsModule().then(() => {
+          dispatch({ type: "SET_AUTO_PLAY", value: true });
+          dispatch({ type: "START_TRACK", track: "quick" });
+        });
       }, 1000);
     }
   }, []);
@@ -194,31 +189,50 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   }, [state.completedTracks]);
 
   const startTrack = useCallback((track: TutorialTrack) => {
-    // Clear per-tour ephemeral flags (e.g. dd-detail-header splash one-shot)
-    // so a fresh tour run gets a fresh splash, not the leftover state from
-    // the previous run.
-    resetTutorialOneShotState();
-    dispatch({ type: "START_TRACK", track });
+    // The steps module loads on demand (it is deliberately absent from the
+    // shared first-load chunk); START_TRACK only dispatches once the load
+    // resolves, so every synchronous getLoadedTrack() read that follows
+    // hits a loaded module.
+    void loadStepsModule().then((steps) => {
+      // Clear per-tour ephemeral flags (e.g. dd-detail-header splash
+      // one-shot) so a fresh tour run gets a fresh splash, not the leftover
+      // state from the previous run.
+      steps.resetTutorialOneShotState();
+      dispatch({ type: "START_TRACK", track });
+    });
   }, []);
   const nextStep = useCallback(() => dispatch({ type: "NEXT_STEP" }), []);
   const prevStep = useCallback(() => dispatch({ type: "PREV_STEP" }), []);
   const goToStep = useCallback((index: number) => dispatch({ type: "GO_TO_STEP", index }), []);
   const exitTutorial = useCallback(() => dispatch({ type: "EXIT_TUTORIAL" }), []);
   const completeTrack = useCallback(() => dispatch({ type: "COMPLETE_TRACK" }), []);
-  // We have a single track, so the help button starts it directly rather
-  // than opening a one-option chooser. The first step's beforeShow
-  // (ensureDashboard) handles client-side navigation to "/" via the
-  // routerPush bridge hook.
-  const startDeepDive = useCallback(() => {
-    startTrack("deep-dive" as TutorialTrack);
-  }, [startTrack]);
-  const closeMenu = useCallback(() => dispatch({ type: "CLOSE_MENU" }), []);
   const resetAll = useCallback(() => {
-    resetTutorialOneShotState();
+    resetLoadedTutorialOneShotState();
     dispatch({ type: "RESET_ALL" });
     localStorage.removeItem(STORAGE_KEY);
   }, []);
   const toggleAutoPlay = useCallback(() => dispatch({ type: "TOGGLE_AUTO_PLAY" }), []);
+
+  // Funnel milestones: a track becoming active is a start; a track newly
+  // entering completedTracks (NEXT_STEP past the end, or COMPLETE_TRACK) is
+  // a completion. Both are keyed off state so every entry path is covered.
+  const prevActiveTrack = useRef<TutorialTrack | null>(null);
+  useEffect(() => {
+    if (state.activeTrack && state.isVisible && state.activeTrack !== prevActiveTrack.current) {
+      trackEvent(TelemetryEvent.TutorialStarted, { track: state.activeTrack });
+    }
+    prevActiveTrack.current = state.isVisible ? state.activeTrack : null;
+  }, [state.activeTrack, state.isVisible]);
+  // Only the active track can be *newly* completed by the user; the mount-time
+  // LOAD_STATE restore also grows the set but with activeTrack still null.
+  const prevCompleted = useRef(state.completedTracks);
+  useEffect(() => {
+    const active = state.activeTrack;
+    if (active && state.completedTracks.has(active) && !prevCompleted.current.has(active)) {
+      trackEvent(TelemetryEvent.TutorialCompleted, { track: active });
+    }
+    prevCompleted.current = state.completedTracks;
+  }, [state.completedTracks, state.activeTrack]);
 
   // Notify listeners (e.g. dashboard demo overlay) when tutorial closes
   const prevVisible = useRef(state.isVisible);
@@ -230,7 +244,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   }, [state.isVisible]);
 
   const currentStep = state.activeTrack
-    ? getTrack(state.activeTrack)?.steps[state.currentStepIndex]
+    ? getLoadedTrack(state.activeTrack)?.steps[state.currentStepIndex]
     : undefined;
 
   return (
@@ -244,8 +258,6 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
         goToStep,
         exitTutorial,
         completeTrack,
-        startDeepDive,
-        closeMenu,
         resetAll,
         toggleAutoPlay,
       }}

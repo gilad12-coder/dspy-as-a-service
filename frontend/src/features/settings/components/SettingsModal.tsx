@@ -2,32 +2,45 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
+import { motion, useReducedMotion } from "framer-motion";
 import {
+  ChartBar,
+  ChatText,
   BookOpen,
-  Columns2,
-  Check,
-  Copy,
-  KeyRound,
-  ExternalLink,
+  Robot,
+  Brain,
+  Columns,
+  Cpu,
+  CreditCard,
+  Key,
+  ArrowSquareOut,
   Feather,
   HardDrive,
   Keyboard,
-  LogOut,
-  Pencil,
+  Lock,
+  type Icon,
+  Translate,
+  Microphone,
+  PencilSimple,
+  PencilSimpleLine,
+  Plug,
   Plus,
-  RotateCcw,
-  Server,
+  ArrowCounterClockwise,
+  HardDrives,
   Shield,
+  FadersHorizontal,
   ShieldCheck,
-  Sparkles,
+  Sparkle,
   Table as TableIcon,
-  Trash2,
+  Tag,
+  MagnifyingGlass,
+  Trash,
   User,
   Info,
   X,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +49,7 @@ import {
   DialogTitle,
 } from "@/shared/ui/primitives/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import {
   Select,
   SelectContent,
@@ -45,6 +59,8 @@ import {
 } from "@/shared/ui/primitives/select";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { Button } from "@/shared/ui/primitives/button";
+import { CopyButton } from "@/shared/ui/copy-button";
+import { WalletTab, UsageTab, ByokKeysSection } from "@/features/billing";
 import { Input } from "@/shared/ui/primitives/input";
 import { NumberInput } from "@/shared/ui/number-input";
 import {
@@ -65,30 +81,50 @@ import {
 import {
   ColumnHeader,
   ResetColumnsButton,
+  ResetFiltersButton,
   type SortDir,
   useColumnFilters,
   useColumnResize,
 } from "@/shared/ui/excel-filter";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { msg } from "@/shared/lib/messages";
 import { formatStorageSize } from "@/shared/lib/formatters";
+import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
+import type { CatalogModel } from "@/shared/types/api";
+import { ComposerModelMenu } from "@/shared/ui/agent";
+import { ModelChip } from "@/shared/ui/model-chip";
+import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
+import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
+import { LEGAL_CONFIG } from "@/features/legal";
+import { LanguageSwitcher } from "@/shared/ui/language-switcher";
+import { useTutorialContext } from "@/features/tutorial";
 import {
   deleteStorageQuotaOverride,
   generateApiToken,
   getApiToken,
+  getMemorySettings,
   getStorageQuotaOverrides,
   revokeApiToken,
   searchAdminUsers,
   setStorageQuotaOverride,
+  updateMemorySettings,
   type ApiTokenInfo,
   type DirectoryUserMatch,
+  type MemoryKnob,
+  type MemoryKnobName,
+  type MemorySettings,
   type StorageQuotaOverride,
 } from "@/shared/lib/api";
 
 import { useUserPrefs } from "../hooks/use-user-prefs";
 import { useSettingsModal } from "../hooks/use-settings-modal";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
+import { isPhoneSettingsTab } from "@/shared/lib/device-class";
 import { ShortcutRecorder } from "./ShortcutRecorder";
+import { PrivacyTab } from "./PrivacyTab";
+import { SecurityTab } from "./SecurityTab";
 import { SettingsRow } from "@/shared/ui/settings-row";
 
 function WizardTab() {
@@ -96,12 +132,12 @@ function WizardTab() {
 
   return (
     <div className="space-y-1">
-      <SettingsRow icon={Sparkles} label={msg("settings.wizard.code_assist.label")}>
+      <SettingsRow icon={Sparkle} label={msg("settings.wizard.code_assist.label")}>
         <Select
           value={prefs.wizardCodeAssist}
           onValueChange={(v) => setPref("wizardCodeAssist", v as typeof prefs.wizardCodeAssist)}
         >
-          <SelectTrigger className="min-w-[160px]">
+          <SelectTrigger className="h-[44px] w-full min-w-0 sm:h-8 sm:w-auto sm:min-w-[160px] [@media(hover:none)_and_(pointer:coarse)]:h-[44px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -111,12 +147,12 @@ function WizardTab() {
         </Select>
       </SettingsRow>
 
-      <SettingsRow icon={Columns2} label={msg("settings.wizard.split_mode.label")}>
+      <SettingsRow icon={Columns} label={msg("settings.wizard.split_mode.label")}>
         <Select
           value={prefs.wizardSplitMode}
           onValueChange={(v) => setPref("wizardSplitMode", v as typeof prefs.wizardSplitMode)}
         >
-          <SelectTrigger className="min-w-[160px]">
+          <SelectTrigger className="h-[44px] w-full min-w-0 sm:h-8 sm:w-auto sm:min-w-[160px] [@media(hover:none)_and_(pointer:coarse)]:h-[44px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -129,11 +165,192 @@ function WizardTab() {
   );
 }
 
-function AgentTab() {
+function TaggingTab() {
   const { prefs, setPref } = useUserPrefs();
+  const [modelDialogOpen, setModelDialogOpen] = React.useState(false);
+  // The same recents the submit wizard's model dialog keeps — one shared
+  // localStorage list across every model-config surface.
+  const { recentConfigs, saveToRecent, removeRecentConfig } = useRecentModelConfigs();
+  // Same managed-catalog source the tagger setup feeds the dialog: thinking
+  // detection and the chip's vision badge need the model metadata.
+  const [catalogModels, setCatalogModels] = React.useState<CatalogModel[] | null>(
+    cachedCatalog()?.models ?? null,
+  );
+  React.useEffect(() => {
+    if (catalogModels) return;
+    let cancelled = false;
+    getModelCatalog()
+      .then((c) => {
+        if (!cancelled) setCatalogModels(c.models);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogModels]);
 
   return (
     <div className="space-y-1">
+      <SettingsRow
+        icon={Tag}
+        label={msg("settings.tagger.assist.label")}
+        description={msg("settings.tagger.assist.description")}
+      >
+        <Switch checked={prefs.taggerAssist} onCheckedChange={(v) => setPref("taggerAssist", v)} />
+      </SettingsRow>
+
+      <SettingsRow
+        icon={Cpu}
+        label={msg("settings.tagger.default_model.label")}
+        description={msg("settings.tagger.default_model.description")}
+      >
+        <ModelChip
+          config={prefs.taggerAssistModel}
+          emptyLabel={msg("tagger.assist.model.placeholder")}
+          catalogModels={catalogModels ?? undefined}
+          onClick={() => setModelDialogOpen(true)}
+          onRemove={
+            prefs.taggerAssistModel.name
+              ? () => setPref("taggerAssistModel", { name: "" })
+              : undefined
+          }
+        />
+      </SettingsRow>
+      <ModelConfigModal
+        open={modelDialogOpen}
+        onOpenChange={setModelDialogOpen}
+        config={prefs.taggerAssistModel}
+        onSave={(cfg) => {
+          saveToRecent(cfg);
+          setPref("taggerAssistModel", cfg);
+        }}
+        roleLabel={msg("settings.tagger.default_model.label")}
+        catalogModels={catalogModels ?? undefined}
+        recentConfigs={recentConfigs}
+        onRemoveRecent={removeRecentConfig}
+      />
+    </div>
+  );
+}
+
+// One agent-memory knob: the stepper plus a reset affordance that appears only
+// while the value overrides the tool default (OptMem's "commented line means:
+// follow the tool" semantics, inverted into UI).
+function MemoryKnobControl({
+  knob,
+  step,
+  onCommit,
+}: {
+  knob: MemoryKnob;
+  step: number;
+  onCommit: (value: number | null) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {knob.override != null && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => onCommit(null)}
+              className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
+              aria-label={msg("settings.agent.memory.reset")}
+            >
+              <ArrowCounterClockwise className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{msg("settings.agent.memory.reset")}</TooltipContent>
+        </Tooltip>
+      )}
+      <NumberInput
+        value={knob.value}
+        onChange={onCommit}
+        min={knob.min}
+        max={knob.max}
+        step={step}
+        className="w-[132px]"
+      />
+    </div>
+  );
+}
+
+function AgentTab() {
+  const { prefs, setPref } = useUserPrefs();
+  const [memory, setMemory] = React.useState<MemorySettings | null>(null);
+  const saveTimers = React.useRef<Partial<Record<MemoryKnobName, ReturnType<typeof setTimeout>>>>(
+    {},
+  );
+
+  React.useEffect(() => {
+    let cancelled = false;
+    getMemorySettings()
+      .then((s) => {
+        if (!cancelled) setMemory(s);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Optimistic local update, then a debounced PUT: NumberInput commits every
+  // keystroke and stepper tap, and each would otherwise be a round-trip.
+  const commitKnob = React.useCallback((name: MemoryKnobName, value: number | null) => {
+    setMemory((prev) =>
+      prev
+        ? {
+            ...prev,
+            [name]: { ...prev[name], value: value ?? prev[name].default, override: value },
+          }
+        : prev,
+    );
+    const timers = saveTimers.current;
+    const pending = timers[name];
+    if (pending) clearTimeout(pending);
+    timers[name] = setTimeout(() => {
+      updateMemorySettings({ [name]: value })
+        .then((s) => {
+          setMemory(s);
+          toast.success(msg("settings.saved"), { autoClose: 1500, toastId: "settings-saved" });
+        })
+        .catch(() => {
+          toast.error(msg("settings.agent.memory.save_failed"), {
+            toastId: "memory-save-failed",
+          });
+          getMemorySettings()
+            .then(setMemory)
+            .catch(() => {});
+        });
+    }, 600);
+  }, []);
+
+  return (
+    <div className="space-y-1">
+      <SettingsRow
+        icon={Cpu}
+        label={msg("settings.agent.default_model.label")}
+        description={msg("settings.agent.default_model.description")}
+      >
+        <ComposerModelMenu
+          value={prefs.composerModel}
+          onChange={(v) => setPref("composerModel", v)}
+          effort={prefs.composerEffort}
+          onEffortChange={(v) => setPref("composerEffort", v)}
+        />
+      </SettingsRow>
+
+      <SettingsRow
+        icon={Microphone}
+        label={msg("settings.agent.dictation.label")}
+        description={msg("settings.agent.dictation.description")}
+      >
+        <Switch
+          checked={prefs.dictationEnabled}
+          onCheckedChange={(v) => setPref("dictationEnabled", v)}
+        />
+      </SettingsRow>
+
       <SettingsRow
         icon={Shield}
         label={msg("settings.agent.trust.label")}
@@ -143,7 +360,7 @@ function AgentTab() {
           value={prefs.agentTrustMode}
           onValueChange={(v) => setPref("agentTrustMode", v as typeof prefs.agentTrustMode)}
         >
-          <SelectTrigger className="min-w-[160px]">
+          <SelectTrigger className="h-[44px] w-full min-w-0 sm:h-8 sm:w-auto sm:min-w-[160px] [@media(hover:none)_and_(pointer:coarse)]:h-[44px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -161,6 +378,46 @@ function AgentTab() {
       >
         <ShortcutRecorder />
       </SettingsRow>
+
+      {memory && (
+        <>
+          <SettingsRow
+            icon={Brain}
+            label={msg("settings.agent.memory.wake.label")}
+            description={msg("settings.agent.memory.wake.description")}
+          >
+            <MemoryKnobControl
+              knob={memory.wake_lines}
+              step={8}
+              onCommit={(v) => commitKnob("wake_lines", v)}
+            />
+          </SettingsRow>
+
+          <SettingsRow
+            icon={PencilSimpleLine}
+            label={msg("settings.agent.memory.entry.label")}
+            description={msg("settings.agent.memory.entry.description")}
+          >
+            <MemoryKnobControl
+              knob={memory.entry_chars}
+              step={20}
+              onCommit={(v) => commitKnob("entry_chars", v)}
+            />
+          </SettingsRow>
+
+          <SettingsRow
+            icon={MagnifyingGlass}
+            label={msg("settings.agent.memory.recall.label")}
+            description={msg("settings.agent.memory.recall.description")}
+          >
+            <MemoryKnobControl
+              knob={memory.recall_chars}
+              step={500}
+              onCommit={(v) => commitKnob("recall_chars", v)}
+            />
+          </SettingsRow>
+        </>
+      )}
     </div>
   );
 }
@@ -168,6 +425,9 @@ function AgentTab() {
 function AccountTab() {
   const { data: session } = useSession();
   const { prefs, setPref } = useUserPrefs();
+  // Advanced/expand/lite toggles shape the wizard and the desktop sidebar,
+  // neither of which exists in the phone shell.
+  const isPhone = useIsPhone();
   const username = session?.user?.name ?? "";
   const role = (session?.user as Record<string, unknown> | undefined)?.role;
   const isAdmin = role === "admin";
@@ -186,41 +446,43 @@ function AccountTab() {
         </span>
       </SettingsRow>
 
-      <SettingsRow
-        icon={Sparkles}
-        label={msg("settings.account.advanced.label")}
-        description={msg("settings.account.advanced.description")}
-      >
-        <Switch
-          checked={prefs.advancedMode}
-          onCheckedChange={(v) => setPref("advancedMode", v)}
-        />
+      <SettingsRow icon={Translate} label={msg("shared.language.switch_aria")}>
+        <LanguageSwitcher />
       </SettingsRow>
 
-      <SettingsRow
-        icon={Feather}
-        label={msg("settings.account.lite.label")}
-        description={msg("settings.account.lite.description")}
-      >
-        <Switch checked={prefs.liteMode} onCheckedChange={(v) => setPref("liteMode", v)} />
-      </SettingsRow>
+      {!isPhone && (
+        <>
+          <SettingsRow
+            icon={FadersHorizontal}
+            label={msg("settings.account.advanced_mode.label")}
+            description={msg("settings.account.advanced_mode.description")}
+          >
+            <Switch
+              checked={prefs.advancedMode}
+              onCheckedChange={(v) => setPref("advancedMode", v)}
+            />
+          </SettingsRow>
 
-      <SettingsRow icon={LogOut} label={msg("settings.account.logout.label")}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              disabled={!username}
-              aria-label={msg("settings.account.logout.action")}
-            >
-              <LogOut className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{msg("settings.account.logout.action")}</TooltipContent>
-        </Tooltip>
-      </SettingsRow>
+          <SettingsRow
+            icon={Sparkle}
+            label={msg("settings.account.expand_advanced.label")}
+            description={msg("settings.account.expand_advanced.description")}
+          >
+            <Switch
+              checked={prefs.expandAdvanced}
+              onCheckedChange={(v) => setPref("expandAdvanced", v)}
+            />
+          </SettingsRow>
+
+          <SettingsRow
+            icon={Feather}
+            label={msg("settings.account.lite.label")}
+            description={msg("settings.account.lite.description")}
+          >
+            <Switch checked={prefs.liteMode} onCheckedChange={(v) => setPref("liteMode", v)} />
+          </SettingsRow>
+        </>
+      )}
     </div>
   );
 }
@@ -241,9 +503,12 @@ function UsernameCombobox({
   const [results, setResults] = React.useState<DirectoryUserMatch[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [open, setOpen] = React.useState(false);
-  const [pos, setPos] = React.useState<{ top: number; left: number; width: number; maxH: number } | null>(
-    null,
-  );
+  const [pos, setPos] = React.useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxH: number;
+  } | null>(null);
   const anchorRef = React.useRef<HTMLDivElement | null>(null);
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -466,7 +731,10 @@ function EditableBudgetCell({
       className="group inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs tabular-nums text-muted-foreground hover:bg-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
     >
       <span dir="ltr">{formatStorageSize(bytes)}</span>
-      <Pencil className="size-3 opacity-0 transition group-hover:opacity-50" aria-hidden="true" />
+      <PencilSimple
+        className="size-3 opacity-0 transition group-hover:opacity-50"
+        aria-hidden="true"
+      />
     </button>
   );
 }
@@ -495,6 +763,7 @@ function UsageMeter({ used, budget }: { used: number; budget: number }) {
 
 function AdminTab() {
   const { data: session } = useSession();
+  const isRtl = getActiveDir() === "rtl";
   const [overrides, setOverrides] = React.useState<StorageQuotaOverride[]>([]);
   const [defaultBytes, setDefaultBytes] = React.useState<number | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -516,9 +785,7 @@ function AdminTab() {
 
   const filterOptions = React.useMemo(() => {
     const unique = (key: keyof StorageQuotaOverride) => {
-      const vals = [
-        ...new Set(overrides.map((o) => String(o[key] ?? "")).filter(Boolean)),
-      ].sort();
+      const vals = [...new Set(overrides.map((o) => String(o[key] ?? "")).filter(Boolean))].sort();
       return vals.map((v) => ({ value: v, label: v }));
     };
     return {
@@ -589,7 +856,10 @@ function AdminTab() {
     }
     setBusy(true);
     try {
-      const saved = await setStorageQuotaOverride(normalizedUsername, pendingBudgetMb * BYTES_PER_MB);
+      const saved = await setStorageQuotaOverride(
+        normalizedUsername,
+        pendingBudgetMb * BYTES_PER_MB,
+      );
       setOverrides((prev) => {
         const without = prev.filter((row) => row.username !== saved.username);
         return [saved, ...without];
@@ -662,7 +932,9 @@ function AdminTab() {
         label={msg("settings.admin.storage.title")}
         description={
           defaultBytes != null
-            ? msg("settings.admin.storage.default_budget", { value: formatStorageSize(defaultBytes) })
+            ? msg("settings.admin.storage.default_budget", {
+                value: formatStorageSize(defaultBytes),
+              })
             : undefined
         }
       >
@@ -681,7 +953,7 @@ function AdminTab() {
           </Button>
         </SheetTrigger>
         <SheetContent
-          side="left"
+          side={isRtl ? "left" : "right"}
           aria-describedby={undefined}
           className="w-full gap-0 p-0 sm:max-w-2xl"
         >
@@ -700,186 +972,196 @@ function AdminTab() {
             </span>
             {defaultBytes != null && (
               <span className="text-[0.6875rem] text-muted-foreground" dir="ltr">
-                {msg("settings.admin.storage.default_budget", { value: formatStorageSize(defaultBytes) })}
+                {msg("settings.admin.storage.default_budget", {
+                  value: formatStorageSize(defaultBytes),
+                })}
               </span>
             )}
             <ResetColumnsButton resize={colResize} />
-            {colFilters.activeCount > 0 && (
-              <button
-                type="button"
-                onClick={colFilters.clearAll}
-                className="text-[0.6875rem] text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                {msg("settings.admin.storage.clear_filters")}
-              </button>
-            )}
+            <ResetFiltersButton filters={colFilters} />
+            <ExportTableMenu
+              iconOnly
+              align="end"
+              className="ms-auto"
+              disabled={loading || filteredOverrides.length === 0}
+              getData={() => ({
+                columns: ["username", "budget_bytes", "used_bytes", "updated_by"],
+                rows: filteredOverrides.map((o) => ({
+                  username: o.username,
+                  budget_bytes: o.effective_bytes,
+                  used_bytes: o.used_bytes,
+                  updated_by: o.updated_by || msg("settings.admin.storage.default"),
+                })),
+                filename: "storage-quota-overrides",
+              })}
+            />
           </div>
 
           <div className="flex-1 overflow-auto">
             <div className="table-scroll">
               <Table style={{ minWidth: "560px" }}>
-              <TableHeader className="sticky top-0 z-10 bg-muted/40 backdrop-blur-sm">
-                <TableRow>
-                  <ColumnHeader
-                    label={msg("settings.admin.storage.username")}
-                    sortKey="username"
-                    currentSort={sortKey}
-                    sortDir={sortDir}
-                    onSort={toggleSort}
-                    filterCol="username"
-                    filterOptions={filterOptions.username}
-                    filters={colFilters.filters}
-                    onFilter={colFilters.setColumnFilter}
-                    openFilter={colFilters.openFilter}
-                    setOpenFilter={colFilters.setOpenFilter}
-                    width={colResize.widths["username"]}
-                    onResize={colResize.setColumnWidth}
-                  />
-                  <ColumnHeader
-                    label={msg("settings.admin.storage.budget")}
-                    sortKey="effective_bytes"
-                    currentSort={sortKey}
-                    sortDir={sortDir}
-                    onSort={toggleSort}
-                    width={colResize.widths["effective_bytes"]}
-                    onResize={colResize.setColumnWidth}
-                  />
-                  <ColumnHeader
-                    label={msg("settings.admin.storage.used")}
-                    sortKey="used_bytes"
-                    currentSort={sortKey}
-                    sortDir={sortDir}
-                    onSort={toggleSort}
-                    width={colResize.widths["used_bytes"]}
-                    onResize={colResize.setColumnWidth}
-                  />
-                  <ColumnHeader
-                    label={msg("settings.admin.storage.updated_by")}
-                    sortKey="updated_by"
-                    currentSort={sortKey}
-                    sortDir={sortDir}
-                    onSort={toggleSort}
-                    filterCol="updated_by"
-                    filterOptions={filterOptions.updated_by}
-                    filters={colFilters.filters}
-                    onFilter={colFilters.setColumnFilter}
-                    openFilter={colFilters.openFilter}
-                    setOpenFilter={colFilters.setOpenFilter}
-                    width={colResize.widths["updated_by"]}
-                    onResize={colResize.setColumnWidth}
-                  />
-                  <TableHead className="w-12" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow className="border-border/40 bg-muted/10">
-                  <TableCell className="text-center" dir="ltr">
-                    <UsernameCombobox
-                      value={pendingUsername}
-                      onChange={setPendingUsername}
-                      onSelect={(entry) => setPendingUsername(entry.username)}
-                      disabled={busy}
-                      placeholder={msg("settings.admin.storage.username_placeholder")}
-                    />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <span className="inline-flex items-center justify-center gap-1" dir="ltr">
-                      <NumberInput
-                        value={pendingBudgetMb}
-                        onChange={setPendingBudgetMb}
-                        min={1}
-                        disabled={busy}
-                        className="mx-auto h-8 w-36"
-                      />
-                      <span className="text-[0.6875rem] text-muted-foreground">MB</span>
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-center text-xs text-muted-foreground/70">—</TableCell>
-                  <TableCell className="text-center text-xs text-muted-foreground/70">—</TableCell>
-                  <TableCell className="w-12 text-center">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => void addPendingUser()}
-                          disabled={busy || !pendingUsername.trim() || pendingBudgetMb === ""}
-                          aria-label={msg("settings.admin.storage.add_row")}
-                        >
-                          <Plus className="size-3.5 text-primary" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{msg("settings.admin.storage.add_row")}</TooltipContent>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-
-                {filteredOverrides.length === 0 ? (
+                <TableHeader className="sticky top-0 z-10 bg-muted/40 backdrop-blur-sm">
                   <TableRow>
-                    <TableCell
-                      colSpan={5}
-                      className="px-6 py-10 text-center text-sm text-muted-foreground"
-                    >
-                      {overrides.length === 0
-                        ? msg("settings.admin.storage.empty")
-                        : msg("settings.admin.storage.no_results")}
+                    <ColumnHeader
+                      label={msg("settings.admin.storage.username")}
+                      sortKey="username"
+                      currentSort={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                      filterCol="username"
+                      filterOptions={filterOptions.username}
+                      filters={colFilters.filters}
+                      onFilter={colFilters.setColumnFilter}
+                      openFilter={colFilters.openFilter}
+                      setOpenFilter={colFilters.setOpenFilter}
+                      width={colResize.widths["username"]}
+                      onResize={colResize.setColumnWidth}
+                    />
+                    <ColumnHeader
+                      label={msg("settings.admin.storage.budget")}
+                      sortKey="effective_bytes"
+                      currentSort={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                      width={colResize.widths["effective_bytes"]}
+                      onResize={colResize.setColumnWidth}
+                    />
+                    <ColumnHeader
+                      label={msg("settings.admin.storage.used")}
+                      sortKey="used_bytes"
+                      currentSort={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                      width={colResize.widths["used_bytes"]}
+                      onResize={colResize.setColumnWidth}
+                    />
+                    <ColumnHeader
+                      label={msg("settings.admin.storage.updated_by")}
+                      sortKey="updated_by"
+                      currentSort={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                      filterCol="updated_by"
+                      filterOptions={filterOptions.updated_by}
+                      filters={colFilters.filters}
+                      onFilter={colFilters.setColumnFilter}
+                      openFilter={colFilters.openFilter}
+                      setOpenFilter={colFilters.setOpenFilter}
+                      width={colResize.widths["updated_by"]}
+                      onResize={colResize.setColumnWidth}
+                    />
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow className="border-border/40 bg-muted/10">
+                    <TableCell className="text-center" dir="ltr">
+                      <UsernameCombobox
+                        value={pendingUsername}
+                        onChange={setPendingUsername}
+                        onSelect={(entry) => setPendingUsername(entry.username)}
+                        disabled={busy}
+                        placeholder={msg("settings.admin.storage.username_placeholder")}
+                      />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <span className="inline-flex items-center justify-center gap-1" dir="ltr">
+                        <NumberInput
+                          value={pendingBudgetMb}
+                          onChange={setPendingBudgetMb}
+                          min={1}
+                          disabled={busy}
+                          className="mx-auto h-8 w-36"
+                        />
+                        <span className="text-[0.6875rem] text-muted-foreground">MB</span>
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center text-xs text-muted-foreground/70">
+                      —
+                    </TableCell>
+                    <TableCell className="text-center text-xs text-muted-foreground/70">
+                      —
+                    </TableCell>
+                    <TableCell className="w-12 text-center">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => void addPendingUser()}
+                            disabled={busy || !pendingUsername.trim() || pendingBudgetMb === ""}
+                            className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
+                            aria-label={msg("settings.admin.storage.add_row")}
+                          >
+                            <Plus className="size-3.5 text-primary" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{msg("settings.admin.storage.add_row")}</TooltipContent>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
-                ) : (
-                  filteredOverrides.map((item) => (
-                    <TableRow
-                      key={item.username}
-                      className="border-border/40 hover:bg-accent/30"
-                    >
+
+                  {filteredOverrides.length === 0 ? (
+                    <TableRow>
                       <TableCell
-                        className="max-w-[200px] truncate text-center font-semibold text-xs text-foreground"
-                        dir="ltr"
-                        title={item.username}
+                        colSpan={5}
+                        className="px-6 py-10 text-center text-sm text-muted-foreground"
                       >
-                        {item.username}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <EditableBudgetCell
-                          bytes={item.effective_bytes}
-                          onSave={(nextBytes) => updateRowBudget(item.username, nextBytes)}
-                          disabled={busy}
-                        />
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <UsageMeter used={item.used_bytes} budget={item.effective_bytes} />
-                      </TableCell>
-                      <TableCell
-                        className="max-w-[180px] truncate text-center text-xs text-muted-foreground"
-                        dir="ltr"
-                        title={item.updated_by || msg("settings.admin.storage.default")}
-                      >
-                        {item.updated_by || msg("settings.admin.storage.default")}
-                      </TableCell>
-                      <TableCell className="w-12 text-center">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={() => void handleDelete(item.username)}
-                              disabled={busy}
-                              className="close-button mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
-                              aria-label={msg("settings.admin.storage.delete")}
-                            >
-                              <X aria-hidden="true" />
-                              <span className="sr-only">
-                                {msg("settings.admin.storage.delete")}
-                              </span>
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {msg("settings.admin.storage.delete")}
-                          </TooltipContent>
-                        </Tooltip>
+                        {overrides.length === 0
+                          ? msg("settings.admin.storage.empty")
+                          : msg("settings.admin.storage.no_results")}
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
+                  ) : (
+                    filteredOverrides.map((item) => (
+                      <TableRow key={item.username} className="border-border/40 hover:bg-accent/30">
+                        <TableCell
+                          className="max-w-[200px] truncate text-center font-semibold text-xs text-foreground"
+                          dir="ltr"
+                          title={item.username}
+                        >
+                          {item.username}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <EditableBudgetCell
+                            bytes={item.effective_bytes}
+                            onSave={(nextBytes) => updateRowBudget(item.username, nextBytes)}
+                            disabled={busy}
+                          />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <UsageMeter used={item.used_bytes} budget={item.effective_bytes} />
+                        </TableCell>
+                        <TableCell
+                          className="max-w-[180px] truncate text-center text-xs text-muted-foreground"
+                          dir="ltr"
+                          title={item.updated_by || msg("settings.admin.storage.default")}
+                        >
+                          {item.updated_by || msg("settings.admin.storage.default")}
+                        </TableCell>
+                        <TableCell className="w-12 text-center">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => void handleDelete(item.username)}
+                                disabled={busy}
+                                className="close-button mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                                aria-label={msg("settings.admin.storage.delete")}
+                              >
+                                <X aria-hidden="true" />
+                                <span className="sr-only">
+                                  {msg("settings.admin.storage.delete")}
+                                </span>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>{msg("settings.admin.storage.delete")}</TooltipContent>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
               </Table>
             </div>
           </div>
@@ -897,6 +1179,9 @@ function AboutTab() {
     resetAll();
     toast.success(msg("settings.about.reset_all.success"));
   }, [resetAll]);
+  const feedbackHref = `mailto:${LEGAL_CONFIG.contactEmail}?subject=${encodeURIComponent(
+    msg("settings.about.feedback.subject"),
+  )}`;
 
   return (
     <div className="space-y-1">
@@ -906,14 +1191,24 @@ function AboutTab() {
         </span>
       </SettingsRow>
 
-      <SettingsRow icon={Server} label={msg("settings.about.api_url.label")}>
-        <span className="text-xs font-mono text-muted-foreground" dir="ltr">
+      <SettingsRow icon={HardDrives} label={msg("settings.about.api_url.label")}>
+        <span className="max-w-full break-all text-xs font-mono text-muted-foreground" dir="ltr">
           {apiUrl}
         </span>
       </SettingsRow>
 
       <SettingsRow
-        icon={RotateCcw}
+        icon={ChatText}
+        label={msg("settings.about.feedback.label")}
+        description={msg("settings.about.feedback.description")}
+      >
+        <Button variant="outline" size="sm" asChild>
+          <a href={feedbackHref}>{msg("settings.about.feedback.action")}</a>
+        </Button>
+      </SettingsRow>
+
+      <SettingsRow
+        icon={ArrowCounterClockwise}
         label={msg("settings.about.reset_all.label")}
         description={msg("settings.about.reset_all.description")}
       >
@@ -923,10 +1218,10 @@ function AboutTab() {
               variant="outline"
               size="icon-sm"
               onClick={handleResetAll}
-              className="text-destructive hover:text-destructive"
+              className="size-[44px] text-destructive hover:text-destructive sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
               aria-label={msg("settings.about.reset_all.action")}
             >
-              <RotateCcw className="size-3.5" />
+              <ArrowCounterClockwise className="size-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{msg("settings.about.reset_all.action")}</TooltipContent>
@@ -943,17 +1238,22 @@ function ApiTab() {
   const [loaded, setLoaded] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [revealed, setRevealed] = React.useState<string | null>(null);
-  const [copied, setCopied] = React.useState(false);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
 
+  // A failed passive load (most often the backend being unreachable) surfaces as
+  // a calm inline banner rather than an error toast — the token panel is not
+  // critical enough to interrupt, and a toast on tab-open reads as a bug. Toasts
+  // stay reserved for the user-initiated generate/revoke actions below.
   const load = React.useCallback(async () => {
     if (!hasAuth) {
       setLoaded(true);
       return;
     }
+    setLoadError(null);
     try {
       setInfo(await getApiToken());
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoaded(true);
     }
@@ -968,7 +1268,6 @@ function ApiTab() {
     try {
       const created = await generateApiToken();
       setRevealed(created.token);
-      setCopied(false);
       setInfo({ last4: created.last4, created_at: created.created_at, last_used_at: null });
       toast.success(msg("settings.api.generated_toast"));
     } catch (err) {
@@ -992,17 +1291,7 @@ function ApiTab() {
     }
   }, []);
 
-  const handleCopy = React.useCallback(async () => {
-    if (!revealed) return;
-    try {
-      await navigator.clipboard.writeText(revealed);
-      setCopied(true);
-    } catch {
-      // Clipboard access can be blocked; the token stays visible to copy by hand.
-    }
-  }, [revealed]);
-
-  const formatTimestamp = (iso: string) => new Date(iso).toLocaleString("he-IL");
+  const formatTimestamp = (iso: string) => new Date(iso).toLocaleString(getActiveIntlLocale());
   const docsUrl = `${getRuntimeEnv().apiUrl}/scalar`;
 
   if (!hasAuth) {
@@ -1015,7 +1304,13 @@ function ApiTab() {
 
   return (
     <div className="space-y-4">
-      <SettingsRow icon={KeyRound} label={msg("settings.api.title")}>
+      {loadError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          {loadError}
+        </div>
+      )}
+
+      <SettingsRow icon={Key} label={msg("settings.api.title")}>
         {loaded &&
           !revealed &&
           (info ? (
@@ -1026,10 +1321,10 @@ function ApiTab() {
                   variant="outline"
                   disabled={busy}
                   onClick={handleRevoke}
-                  className="text-destructive hover:text-destructive"
+                  className="size-[44px] text-destructive hover:text-destructive sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                   aria-label={msg("settings.api.revoke")}
                 >
-                  <Trash2 className="size-3.5" />
+                  <Trash className="size-3.5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{msg("settings.api.revoke")}</TooltipContent>
@@ -1042,9 +1337,10 @@ function ApiTab() {
                   size="icon-sm"
                   disabled={busy}
                   onClick={handleGenerate}
+                  className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                   aria-label={msg("settings.api.generate")}
                 >
-                  <KeyRound className="size-3.5" />
+                  <Key className="size-3.5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{msg("settings.api.generate")}</TooltipContent>
@@ -1067,30 +1363,20 @@ function ApiTab() {
             </code>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  size="icon-sm"
+                <CopyButton
+                  text={revealed ?? ""}
+                  ariaLabel={msg("settings.api.copy")}
+                  copiedAriaLabel={msg("settings.api.copied")}
                   variant="outline"
                   className="shrink-0"
-                  onClick={handleCopy}
-                  aria-label={copied ? msg("settings.api.copied") : msg("settings.api.copy")}
-                >
-                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                </Button>
+                />
               </TooltipTrigger>
-              <TooltipContent>
-                {copied ? msg("settings.api.copied") : msg("settings.api.copy")}
-              </TooltipContent>
+              <TooltipContent>{msg("settings.api.copy")}</TooltipContent>
             </Tooltip>
           </div>
-          <button
-            type="button"
-            onClick={() => setRevealed(null)}
-            className="group relative inline-flex w-full cursor-pointer rounded-lg bg-muted p-1 transform-gpu transition-transform duration-75 ease-out active:scale-[0.97] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >
-            <span className="flex-1 rounded-md bg-background px-4 py-2.5 text-center text-sm font-medium text-foreground shadow-sm transition-[box-shadow,transform] duration-150 ease-out group-hover:-translate-y-px group-hover:shadow-md">
-              {msg("settings.api.done")}
-            </span>
-          </button>
+          <Button variant="outline" size="sm" onClick={() => setRevealed(null)} className="w-full">
+            {msg("settings.api.done")}
+          </Button>
         </div>
       )}
 
@@ -1117,7 +1403,7 @@ function ApiTab() {
         </div>
       )}
 
-      {loaded && !revealed && !info && (
+      {loaded && !revealed && !info && !loadError && (
         <p className="text-xs text-muted-foreground">{msg("settings.api.none")}</p>
       )}
 
@@ -1132,10 +1418,11 @@ function ApiTab() {
               variant="outline"
               size="icon-sm"
               asChild
+              className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
               aria-label={msg("settings.api.docs_action")}
             >
               <a href={docsUrl} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="size-3.5" />
+                <ArrowSquareOut className="size-3.5" />
               </a>
             </Button>
           </TooltipTrigger>
@@ -1146,146 +1433,267 @@ function ApiTab() {
   );
 }
 
-
 const SETTINGS_TAB_ORDER = [
   "wizard",
+  "tagging",
   "agent",
-  "admin",
   "account",
+  "security",
+  "privacy",
+  "billing",
+  "usage",
+  "providers",
   "api",
+  "admin",
   "about",
 ] as const;
 type SettingsTab = (typeof SETTINGS_TAB_ORDER)[number];
+type SettingsMessageKey = Parameters<typeof msg>[0];
 
-const SETTINGS_TAB_TRIGGER_CLASS =
-  "relative z-10 w-full shrink-0 whitespace-nowrap text-center text-[clamp(0.75rem,2.2vw,0.875rem)] rounded-md px-1.5 py-2 font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5 leading-tight";
+const SETTINGS_TAB_META: Record<
+  SettingsTab,
+  {
+    icon: Icon;
+    labelKey: SettingsMessageKey;
+    group: "workflows" | "assistants" | "preferences" | "access" | "system";
+  }
+> = {
+  wizard: {
+    icon: Sparkle,
+    labelKey: "settings.tab.wizard",
+    group: "workflows",
+  },
+  tagging: {
+    icon: Tag,
+    labelKey: "settings.tab.tagging",
+    group: "workflows",
+  },
+  agent: {
+    icon: Robot,
+    labelKey: "settings.tab.agent",
+    group: "assistants",
+  },
+  account: {
+    icon: User,
+    labelKey: "settings.tab.account",
+    group: "preferences",
+  },
+  security: {
+    icon: ShieldCheck,
+    labelKey: "settings.tab.security",
+    group: "access",
+  },
+  privacy: {
+    icon: Lock,
+    labelKey: "settings.tab.privacy",
+    group: "access",
+  },
+  billing: {
+    icon: CreditCard,
+    labelKey: "settings.tab.billing",
+    group: "access",
+  },
+  usage: {
+    icon: ChartBar,
+    labelKey: "settings.tab.usage",
+    group: "access",
+  },
+  providers: {
+    icon: Plug,
+    labelKey: "settings.tab.providers",
+    group: "access",
+  },
+  api: {
+    icon: Key,
+    labelKey: "settings.tab.api",
+    group: "access",
+  },
+  admin: {
+    icon: HardDrive,
+    labelKey: "settings.tab.admin",
+    group: "system",
+  },
+  about: {
+    icon: Info,
+    labelKey: "settings.tab.about",
+    group: "system",
+  },
+};
+
+const SETTINGS_GROUPS = [
+  { key: "workflows", labelKey: "settings.group.workflows" },
+  { key: "assistants", labelKey: "settings.group.assistants" },
+  { key: "preferences", labelKey: "settings.group.preferences" },
+  { key: "access", labelKey: "settings.group.access" },
+  { key: "system", labelKey: "settings.group.system" },
+] as const;
+
+// Vertical-rail item, styled to match the main sidebar nav while staying easy
+// to scan when the list is filtered. On mobile the rail becomes a horizontal
+// strip, so each item drops back to its intrinsic width.
+const SETTINGS_RAIL_ITEM_CLASS =
+  "min-h-[44px] w-full flex-none justify-start gap-2.5 rounded-lg px-3 py-2 font-medium text-sidebar-foreground/60 data-[state=inactive]:hover:bg-sidebar-accent/40 data-[state=inactive]:hover:text-sidebar-foreground data-[state=active]:bg-transparent data-[state=active]:border-transparent data-[state=active]:font-medium data-[state=active]:text-primary data-[state=active]:hover:text-primary max-md:w-auto! md:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]";
+
+function SettingsPanelHeader({ tab }: { tab: SettingsTab }) {
+  const { icon: Icon, labelKey } = SETTINGS_TAB_META[tab];
+  return (
+    <div className="mb-4 flex items-center gap-3 border-b border-border/50 pb-3">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/[0.08] text-primary">
+        <Icon className="size-4" aria-hidden="true" />
+      </span>
+      <h2 className="text-base font-semibold tracking-tight text-foreground">{msg(labelKey)}</h2>
+    </div>
+  );
+}
 
 export function SettingsModal() {
-  const { open, setOpen } = useSettingsModal();
+  const { open, setOpen, targetTab, clearTarget } = useSettingsModal();
+  const { state: tutorialState } = useTutorialContext();
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
-  const [activeTab, setActiveTab] = React.useState<SettingsTab>("wizard");
+  const isPhone = useIsPhone();
+  const prefersReduced = useReducedMotion();
+  const [activeTab, setActiveTab] = React.useState<SettingsTab>(isPhone ? "account" : "wizard");
+  const selectTab = React.useCallback((tab: SettingsTab) => {
+    setActiveTab(tab);
+    track(TelemetryEvent.SettingsTabChanged, { tab });
+  }, []);
   const tabs = React.useMemo(
-    () => SETTINGS_TAB_ORDER.filter((tab) => isAdmin || tab !== "admin"),
-    [isAdmin],
+    () =>
+      SETTINGS_TAB_ORDER.filter(
+        (tab) => (isAdmin || tab !== "admin") && (!isPhone || isPhoneSettingsTab(tab)),
+      ),
+    [isAdmin, isPhone],
   );
   React.useEffect(() => {
-    if (!tabs.includes(activeTab)) setActiveTab("wizard");
-  }, [activeTab, tabs]);
-  const tabCount = tabs.length;
-  const listElRef = React.useRef<HTMLElement | null>(null);
-  const observerRef = React.useRef<ResizeObserver | null>(null);
-  const [indicator, setIndicator] = React.useState<{ left: number; width: number } | null>(null);
-
-  // Measure the active trigger from the DOM rather than computing from its
-  // index: the columns are `minmax(max-content, 1fr)`, so they are equal-width
-  // only when every label fits the equal share. On narrow widths — and when the
-  // admin tab drops the count to five — the columns diverge, and an index-based
-  // offset slides the pill off the active tab. offsetLeft/Width are physical, so
-  // this stays correct in RTL too. The >0 guard avoids painting a collapsed pill
-  // before the dialog grid has laid out.
-  const measure = React.useCallback(() => {
-    const active = listElRef.current?.querySelector<HTMLElement>('[data-state="active"]');
-    if (active && active.offsetWidth > 0) {
-      setIndicator({ left: active.offsetLeft, width: active.offsetWidth });
+    if (!tabs.includes(activeTab)) setActiveTab(isPhone ? "account" : "wizard");
+  }, [activeTab, tabs, isPhone]);
+  // Honor a deep-link (e.g. the credit chip → wallet): when something opens the
+  // modal targeting a tab, jump there once, then clear so a later manual open
+  // keeps whatever tab the user last left it on.
+  React.useEffect(() => {
+    if (!targetTab) return;
+    if ((tabs as readonly string[]).includes(targetTab)) {
+      setActiveTab(targetTab as SettingsTab);
     }
-  }, []);
-
-  // Callback ref on the pill: fires when the dialog content is actually
-  // attached. Radix portals the content a beat after `open` flips, so a parent
-  // open-keyed effect races the mount and can bind to a null ref; a callback ref
-  // can't. The ResizeObserver delivers the first valid measure (0→full as the
-  // dialog lays out) and keeps the pill aligned on responsive resize.
-  const bindIndicator = React.useCallback(
-    (node: HTMLDivElement | null) => {
-      observerRef.current?.disconnect();
-      observerRef.current = null;
-      const list = node?.parentElement ?? null;
-      listElRef.current = list;
-      if (!list) return;
-      measure();
-      const observer = new ResizeObserver(measure);
-      observer.observe(list);
-      observerRef.current = observer;
-    },
-    [measure],
-  );
-
-  // Switching tab resizes nothing, so the observer won't fire — re-measure here
-  // so the pill slides to the newly active tab.
-  React.useLayoutEffect(() => {
-    measure();
-  }, [activeTab, measure]);
-
+    clearTarget();
+  }, [targetTab, tabs, clearTarget]);
+  // Fire settings_opened on the closed→open transition only; the ref stops a
+  // re-render with open still true from re-emitting it.
+  const wasOpen = React.useRef(false);
+  React.useEffect(() => {
+    if (open && !wasOpen.current) track(TelemetryEvent.SettingsOpened);
+    wasOpen.current = open;
+  }, [open]);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-2xl sm:max-w-2xl p-0 overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border/40">
-          <DialogTitle>{msg("settings.title")}</DialogTitle>
-          <DialogDescription>{msg("settings.subtitle")}</DialogDescription>
+    <Dialog open={open} onOpenChange={setOpen} modal={!tutorialState.isVisible}>
+      <DialogContent
+        data-settings-text-buttons
+        className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] gap-0 overflow-hidden p-0 sm:max-w-4xl [&_[data-slot=button]]:min-h-[44px] [&_[data-slot=button]]:min-w-[44px] [&_[data-slot=select-trigger]]:min-h-[44px] sm:[&_[data-slot=button]]:min-h-0 sm:[&_[data-slot=button]]:min-w-0 sm:[&_[data-slot=select-trigger]]:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:[&_[data-slot=button]]:min-h-[44px] [@media(hover:none)_and_(pointer:coarse)]:[&_[data-slot=button]]:min-w-[44px] [@media(hover:none)_and_(pointer:coarse)]:[&_[data-slot=select-trigger]]:min-h-[44px]"
+      >
+        <DialogHeader className="border-b border-border/40 px-4 py-3 pe-12 text-start sm:px-5 sm:py-4">
+          <div className="min-w-0">
+            <DialogTitle>{msg("settings.title")}</DialogTitle>
+            <DialogDescription className="mt-1 text-xs">
+              {msg("settings.subtitle")}
+            </DialogDescription>
+          </div>
         </DialogHeader>
 
         <Tabs
+          orientation="vertical"
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as SettingsTab)}
-          dir="rtl"
-          className="px-6 pb-6 pt-2"
+          onValueChange={(v) => selectTab(v as SettingsTab)}
+          className="flex h-[calc(100dvh-5.75rem)] max-h-[680px] min-h-0 flex-col gap-0 sm:h-[min(72vh,680px)] md:flex-row"
         >
           <TabsList
-            className="relative grid w-full rounded-lg bg-muted p-1 gap-1 border-none shadow-none h-auto items-stretch overflow-x-auto no-scrollbar"
-            style={{ gridTemplateColumns: `repeat(${tabCount}, minmax(max-content, 1fr))` }}
+            aria-label={msg("settings.title")}
+            data-tutorial="settings-navigation"
+            className="relative flex h-auto w-full shrink-0 items-stretch justify-start gap-1 overflow-x-auto rounded-none border-0 border-b border-border/40 bg-transparent px-3 pb-3 pt-2 shadow-none no-scrollbar max-md:flex-row! md:w-[220px] md:overflow-x-visible md:overflow-y-auto md:border-b-0 md:border-e"
           >
-            <div
-              ref={bindIndicator}
-              aria-hidden="true"
-              className={`pointer-events-none absolute top-1 bottom-1 rounded-md bg-[#3D2E22] shadow-sm transition-[left,width] duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none ${
-                indicator ? "opacity-100" : "opacity-0"
-              }`}
-              style={indicator ? { left: indicator.left, width: indicator.width } : undefined}
-            />
-            <TabsTrigger value="wizard" className={SETTINGS_TAB_TRIGGER_CLASS}>
-              {msg("settings.tab.wizard")}
-            </TabsTrigger>
-            <TabsTrigger value="agent" className={SETTINGS_TAB_TRIGGER_CLASS}>
-              {msg("settings.tab.agent")}
-            </TabsTrigger>
-            {isAdmin && (
-              <TabsTrigger value="admin" className={SETTINGS_TAB_TRIGGER_CLASS}>
-                {msg("settings.tab.admin")}
-              </TabsTrigger>
-            )}
-            <TabsTrigger value="account" className={SETTINGS_TAB_TRIGGER_CLASS}>
-              {msg("settings.tab.account")}
-            </TabsTrigger>
-            <TabsTrigger value="api" className={SETTINGS_TAB_TRIGGER_CLASS}>
-              {msg("settings.tab.api")}
-            </TabsTrigger>
-            <TabsTrigger value="about" className={SETTINGS_TAB_TRIGGER_CLASS}>
-              {msg("settings.tab.about")}
-            </TabsTrigger>
+            {SETTINGS_GROUPS.map((group) => (
+              <div key={group.key} className="contents md:block">
+                <p className="hidden px-3 pb-1 pt-3 text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60 first:pt-1 md:block">
+                  {msg(group.labelKey)}
+                </p>
+                {tabs
+                  .filter((tab) => SETTINGS_TAB_META[tab].group === group.key)
+                  .map((tab) => {
+                    const { icon: Icon, labelKey } = SETTINGS_TAB_META[tab];
+                    return (
+                      <TabsTrigger key={tab} value={tab} className={SETTINGS_RAIL_ITEM_CLASS}>
+                        {tab === activeTab && (
+                          <motion.div
+                            layoutId="settings-rail-active"
+                            className="absolute inset-0 rounded-lg bg-primary/[0.08] ring-1 ring-primary/10"
+                            transition={
+                              prefersReduced
+                                ? { duration: 0 }
+                                : { type: "spring", stiffness: 350, damping: 28 }
+                            }
+                          />
+                        )}
+                        <span className="relative z-10 flex min-w-0 flex-1 items-center gap-2.5">
+                          <Icon
+                            aria-hidden="true"
+                            className="size-4 shrink-0 transition-colors duration-200"
+                          />
+                          <span className="flex-1 truncate">{msg(labelKey)}</span>
+                        </span>
+                      </TabsTrigger>
+                    );
+                  })}
+              </div>
+            ))}
           </TabsList>
 
-          <div className="mt-4 max-h-[60vh] overflow-y-auto pr-1">
-            <TabsContent value="wizard">
-              <WizardTab />
-            </TabsContent>
-            <TabsContent value="agent">
-              <AgentTab />
-            </TabsContent>
-            {isAdmin && (
-              <TabsContent value="admin">
-                <AdminTab />
+          <div className="min-w-0 flex-1 overscroll-contain overflow-y-auto px-4 py-4 md:px-6 md:py-5">
+            <motion.div
+              key={activeTab}
+              initial={prefersReduced ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: prefersReduced ? 0 : 0.18, ease: [0.2, 0.8, 0.2, 1] }}
+            >
+              <SettingsPanelHeader tab={activeTab} />
+              <TabsContent value="wizard">
+                <WizardTab />
               </TabsContent>
-            )}
-            <TabsContent value="account">
-              <AccountTab />
-            </TabsContent>
-            <TabsContent value="api">
-              <ApiTab />
-            </TabsContent>
-            <TabsContent value="about">
-              <AboutTab />
-            </TabsContent>
+              <TabsContent value="tagging">
+                <TaggingTab />
+              </TabsContent>
+              <TabsContent value="agent">
+                <AgentTab />
+              </TabsContent>
+              <TabsContent value="account" data-tutorial="settings-account">
+                <AccountTab />
+              </TabsContent>
+              <TabsContent value="security">
+                <SecurityTab />
+              </TabsContent>
+              <TabsContent value="privacy" data-tutorial="settings-privacy">
+                <PrivacyTab />
+              </TabsContent>
+              <TabsContent value="billing">
+                <WalletTab />
+              </TabsContent>
+              <TabsContent value="usage">
+                <UsageTab />
+              </TabsContent>
+              <TabsContent value="providers" data-tutorial="settings-providers">
+                <ByokKeysSection />
+              </TabsContent>
+              <TabsContent value="api">
+                <ApiTab />
+              </TabsContent>
+              {isAdmin && (
+                <TabsContent value="admin">
+                  <AdminTab />
+                </TabsContent>
+              )}
+              <TabsContent value="about">
+                <AboutTab />
+              </TabsContent>
+            </motion.div>
           </div>
         </Tabs>
       </DialogContent>

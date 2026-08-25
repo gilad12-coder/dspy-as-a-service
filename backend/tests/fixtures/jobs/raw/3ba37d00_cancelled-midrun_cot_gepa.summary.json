@@ -35,8 +35,7 @@
     "extra": {},
     "max_tokens": 16000,
     "name": "openai/gpt-4o-mini",
-    "temperature": 1.0,
-    "top_p": null
+    "temperature": 1.0
   },
   "module_kwargs": {},
   "module_name": "dspy.ChainOfThought",

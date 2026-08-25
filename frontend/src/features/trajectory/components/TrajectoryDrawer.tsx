@@ -1,14 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import {
-  AlignLeft,
-  ChevronRight,
-  GitCompare,
-  Hash,
-  XCircle,
-  type LucideIcon,
-} from "lucide-react";
+import dynamic from "next/dynamic";
+import { CaretRight, Code, GitDiff, Hash, TextAlignLeft, XCircle, type Icon } from "@/shared/ui/icons";
 import {
   createContext,
   useContext,
@@ -27,10 +21,18 @@ import {
   type TrajectoryNode,
   type ValsetRow,
 } from "../lib/types";
+import {
+  decomposeFlexSource,
+  matchSignature,
+  type FlexDecomposition,
+  type FlexSignature,
+} from "../lib/flex-source";
 import { cn } from "@/shared/lib/utils";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { TERMS } from "@/shared/lib/terms";
 import { HelpTip } from "@/shared/ui/help-tip";
+import { Skeleton } from "@/shared/ui/skeleton";
 import { RecordedChatTranscript, type ChatMessage } from "./RecordedChat";
 import { UserBubble } from "@/shared/ui/agent/user-bubble";
 import { AgentBubble } from "@/shared/ui/agent/agent-bubble";
@@ -67,6 +69,20 @@ const ToolDescriptionsContext = createContext<Record<string, string>>({});
 // ReactToolCard. Empty by default, so without a provider ToolHeader falls back
 // to its catalog severity unchanged and never fabricates one.
 const ToolSeveritiesContext = createContext<Record<string, string>>({});
+
+// Stable fallback for the provider value — an inline `?? {}` would hand the
+// context a fresh identity every render and re-render all consumers.
+const EMPTY_SEVERITIES: Record<string, string> = {};
+
+// A Flex submodule's optimizable candidate value is its full Python source — one
+// dspy.Module subclass whose predictors carry their instructions inline — not an
+// instruction string. GEPA rewrites that whole source, so a code candidate must
+// read as CODE. Rendered read-only through the same CodeMirror viewer the artifact
+// tab uses; lazy so CodeMirror stays out of the drawer's initial bundle.
+const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
+  ssr: false,
+  loading: () => <Skeleton height={140} borderRadius={6} />,
+});
 
 export type DrawerSelection =
   | { kind: "candidate"; node: TrajectoryNode; parent: TrajectoryNode | null }
@@ -148,11 +164,12 @@ export function TrajectoryDrawer({
   valsetOutputs,
   toolSeverities,
 }: TrajectoryDrawerProps) {
+  const isRtl = getActiveDir() === "rtl";
   if (selection === null) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
-          side="right"
+          side={isRtl ? "left" : "right"}
           className="w-full sm:max-w-md md:max-w-[min(520px,92vw)] overflow-hidden bg-[#fbf8f3]"
         >
           <SheetHeader>
@@ -168,7 +185,7 @@ export function TrajectoryDrawer({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        side="right"
+        side={isRtl ? "left" : "right"}
         className="w-full sm:max-w-md md:max-w-[min(520px,92vw)] overflow-hidden bg-[#fbf8f3] flex flex-col"
       >
         <NodeBody
@@ -204,6 +221,15 @@ function NodeBody({
   }, [view.rawId]);
 
   const promptEntries = useMemo(() => Object.entries(view.prompt), [view.prompt]);
+  // A Flex candidate's prompt map holds module source, not instruction prose. When
+  // every entry is module code, the whole section is a module — so its title, help
+  // text, and view toggle read "Module", not "Prompt".
+  const isModuleSection = useMemo(
+    () =>
+      promptEntries.length > 0 &&
+      promptEntries.every(([, p]) => parseReactOverlay(p) === null && looksLikeModuleCode(p)),
+    [promptEntries],
+  );
   const toolDescriptions = useMemo(() => deriveToolDescriptions(view.prompt), [view.prompt]);
   const valsetById = useMemo(() => {
     const m = new Map<string, ValsetRow>();
@@ -231,102 +257,119 @@ function NodeBody({
   });
 
   return (
-    <ToolSeveritiesContext.Provider value={toolSeverities ?? {}}>
-    <ToolDescriptionsContext.Provider value={toolDescriptions}>
-      <SheetHeader className="border-b border-border/30">
-        <SheetTitle className="flex items-center gap-2 text-base">
-          {view.kind === "rejected" ? (
-            <XCircle className="size-4 text-[#a85a3b]" aria-hidden="true" />
+    <ToolSeveritiesContext.Provider value={toolSeverities ?? EMPTY_SEVERITIES}>
+      <ToolDescriptionsContext.Provider value={toolDescriptions}>
+        <SheetHeader className="border-b border-border/30">
+          <SheetTitle className="flex items-center gap-2 text-base">
+            {view.kind === "rejected" ? (
+              <XCircle className="size-4 text-[#a85a3b]" aria-hidden="true" />
+            ) : null}
+            <span>{headerTitle}</span>
+          </SheetTitle>
+          <SheetDescription asChild>
+            <div className="mt-1.5 flex items-stretch rounded-md border border-border/40 bg-background/50 overflow-hidden">
+              {view.iteration !== null ? (
+                <StatTile
+                  label={msg("trajectory.node.header.label.iteration")}
+                  value={String(view.iteration)}
+                  icon={Hash}
+                />
+              ) : null}
+              <StatTile
+                label={scoreLabel}
+                value={view.score.toFixed(2)}
+                sub={examplesSub}
+                tone={view.kind === "rejected" ? "rejected" : "accepted"}
+                emphasis
+              />
+              {view.parentScoreOnMinibatch !== null ? (
+                <StatTile
+                  label={msg("trajectory.node.header.label.parent_score")}
+                  value={view.parentScoreOnMinibatch.toFixed(2)}
+                  tone="muted"
+                />
+              ) : null}
+            </div>
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-5">
+          {view.kind === "accepted" && view.perExample.length > 0 ? (
+            <Section
+              title={msg("trajectory.node.section.score_detail.valset")}
+              info={msg("trajectory.detail.pareto_title.explain")}
+            >
+              <ParetoGridSection
+                examples={view.perExample}
+                pinnedId={pinnedExampleId}
+                onPin={(id) => setPinnedExampleId((prev) => (prev === id ? null : id))}
+                valsetById={valsetById}
+                predictionsForCandidate={predictionsForView}
+              />
+            </Section>
           ) : null}
-          <span>{headerTitle}</span>
-        </SheetTitle>
-        <SheetDescription asChild>
-          <div className="mt-1.5 flex items-stretch rounded-md border border-border/40 bg-background/50 overflow-hidden">
-            {view.iteration !== null ? (
-              <StatTile
-                label={msg("trajectory.node.header.label.iteration")}
-                value={String(view.iteration)}
-                icon={Hash}
-              />
-            ) : null}
-            <StatTile
-              label={scoreLabel}
-              value={view.score.toFixed(2)}
-              sub={examplesSub}
-              tone={view.kind === "rejected" ? "rejected" : "accepted"}
-              emphasis
-            />
-            {view.parentScoreOnMinibatch !== null ? (
-              <StatTile
-                label={msg("trajectory.node.header.label.parent_score")}
-                value={view.parentScoreOnMinibatch.toFixed(2)}
-                tone="muted"
-              />
-            ) : null}
-          </div>
-        </SheetDescription>
-      </SheetHeader>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-5">
-        {view.kind === "accepted" && view.perExample.length > 0 ? (
-          <Section
-            title={msg("trajectory.node.section.score_detail.valset")}
-            info={msg("trajectory.detail.pareto_title.explain")}
-          >
-            <ParetoGridSection
-              examples={view.perExample}
-              pinnedId={pinnedExampleId}
-              onPin={(id) => setPinnedExampleId((prev) => (prev === id ? null : id))}
-              valsetById={valsetById}
-              predictionsForCandidate={predictionsForView}
-            />
-          </Section>
-        ) : null}
-
-        {view.kind === "rejected" || promptEntries.length > 0 ? (
-          <Section
-            title={
-              view.kind === "rejected"
-                ? msg("trajectory.drawer.rejected.prompt_title")
-                : msg("trajectory.node.section.prompt")
-            }
-            info={
-              view.kind === "rejected"
-                ? msg("trajectory.drawer.rejected.prompt_title.explain")
-                : msg("trajectory.node.section.prompt.explain")
-            }
-            action={
-              promptEntries.length > 0 && Object.keys(view.parentPrompt).length > 0 ? (
-                <PromptViewToggle view={promptViewMode} onChange={setPromptViewMode} />
-              ) : undefined
-            }
-          >
-            {promptEntries.length === 0 ? (
-              <EmptyHint text={msg("trajectory.drawer.rejected.prompt_unavailable")} />
-            ) : (
-              <div className="space-y-2">
-                {promptEntries.map(([predictor, prompt]) => (
-                  <PromptEntry
-                    key={predictor}
-                    prompt={prompt}
-                    parentPrompt={view.parentPrompt[predictor] ?? ""}
-                    mode={promptViewMode}
-                    hasParent={Object.keys(view.parentPrompt).length > 0}
+          {view.kind === "rejected" || promptEntries.length > 0 ? (
+            <Section
+              title={
+                view.kind === "rejected"
+                  ? isModuleSection
+                    ? msg("trajectory.drawer.rejected.module_title")
+                    : msg("trajectory.drawer.rejected.prompt_title")
+                  : isModuleSection
+                    ? msg("trajectory.node.section.module")
+                    : msg("trajectory.node.section.prompt")
+              }
+              info={
+                view.kind === "rejected"
+                  ? isModuleSection
+                    ? msg("trajectory.drawer.rejected.module_title.explain")
+                    : msg("trajectory.drawer.rejected.prompt_title.explain")
+                  : isModuleSection
+                    ? msg("trajectory.node.section.module.explain")
+                    : msg("trajectory.node.section.prompt.explain")
+              }
+              action={
+                promptEntries.length > 0 && Object.keys(view.parentPrompt).length > 0 ? (
+                  <PromptViewToggle
+                    view={promptViewMode}
+                    onChange={setPromptViewMode}
+                    isModule={isModuleSection}
                   />
-                ))}
-              </div>
-            )}
-          </Section>
-        ) : null}
+                ) : undefined
+              }
+            >
+              {promptEntries.length === 0 ? (
+                <EmptyHint text={msg("trajectory.drawer.rejected.prompt_unavailable")} />
+              ) : (
+                <div className="space-y-2">
+                  {promptEntries.map(([predictor, prompt]) => (
+                    <PromptEntry
+                      key={predictor}
+                      label={predictor}
+                      prompt={prompt}
+                      parentPrompt={view.parentPrompt[predictor] ?? ""}
+                      mode={promptViewMode}
+                      hasParent={Object.keys(view.parentPrompt).length > 0}
+                    />
+                  ))}
+                </div>
+              )}
+            </Section>
+          ) : null}
 
-        <Section
-          title={msg("trajectory.drawer.section.minibatch")}
-          info={msg("trajectory.drawer.section.minibatch.explain")}
-        >
-          <MinibatchPanel entries={minibatch} valsetRows={valsetRows} iteration={view.iteration} />
-        </Section>
-      </div>
-    </ToolDescriptionsContext.Provider>
+          <Section
+            title={msg("trajectory.drawer.section.minibatch")}
+            info={msg("trajectory.drawer.section.minibatch.explain")}
+          >
+            <MinibatchPanel
+              entries={minibatch}
+              valsetRows={valsetRows}
+              iteration={view.iteration}
+            />
+          </Section>
+        </div>
+      </ToolDescriptionsContext.Provider>
     </ToolSeveritiesContext.Provider>
   );
 }
@@ -393,7 +436,6 @@ function StatTile({
     </div>
   );
 }
-
 
 function MinibatchPanel({
   entries,
@@ -872,9 +914,10 @@ function parseHistoryTrace(value: string): HistoryTrace | null {
   for (const m of messages) {
     if (m === null || typeof m !== "object" || Array.isArray(m)) return null;
     turns.push(
-      Object.entries(m as Record<string, unknown>).map(
-        ([k, v]): [string, string] => [k, typeof v === "string" ? v : safeJsonString(v)],
-      ),
+      Object.entries(m as Record<string, unknown>).map(([k, v]): [string, string] => [
+        k,
+        typeof v === "string" ? v : safeJsonString(v),
+      ]),
     );
   }
   return { kind: "turns", turns };
@@ -1366,7 +1409,7 @@ function AgentTurnMeta({ entries }: { entries: Array<[string, string]> }) {
         className="flex w-full cursor-pointer select-none items-center gap-2 px-2.5 py-1.5 text-start text-[10px] font-medium text-muted-foreground/80 transition-colors hover:bg-[#F8F4EF]/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C8A882]/45"
       >
         {msg("trajectory.pareto.cell.details_label")}
-        <ChevronRight
+        <CaretRight
           className={cn(
             "ms-auto size-3 shrink-0 opacity-50 transition-transform duration-200 ease-out motion-reduce:transition-none",
             // Pinned to the inline-end edge (far left in RTL) via ms-auto. Open
@@ -1574,15 +1617,67 @@ function toolToText(tool: ReactToolView): string {
   return lines.join("\n");
 }
 
-// One prompt predictor: its instruction/diff card, with the tool-descriptions
-// section lifted out to sit *below* the card as its own block instead of nested
-// inside it. Parses the react overlay once and shares it with both halves.
+// Distinguish a candidate component that is CODE (a dspy.Flex submodule's full
+// source) from one that is a natural-language instruction. GEPA stores both as
+// plain strings in the candidate map, so we classify by structure: a module
+// source always defines `forward`, or a class with an `__init__`. High precision
+// — instruction prose never contains these — so a false positive is unrealistic.
+function looksLikeModuleCode(value: string): boolean {
+  const t = value.trimStart();
+  if (t.length === 0) return false;
+  if (/\bdef\s+forward\s*\(/.test(t)) return true;
+  return /\bclass\s+\w+/.test(t) && /\bdef\s+__init__\s*\(/.test(t);
+}
+
+// The label above each candidate entry: whether this change is CODE (a Flex
+// submodule's source) or an INSTRUCTION, plus the component's candidate key. A
+// Flex code candidate used to render as an anonymous monospace blob that read like
+// an instruction prompt; this makes the kind explicit and names the component.
+// When the module decomposes into instructions + code sub-blocks the header reads
+// "Module" and drops the key — for a whole module that key is just "self", which
+// the "Module" label and the code sub-block already convey.
+function PromptKindHeader({
+  isCode,
+  label,
+  decomposed = false,
+}: {
+  isCode: boolean;
+  label: string;
+  decomposed?: boolean;
+}) {
+  const KindIcon = isCode ? Code : TextAlignLeft;
+  const kindText = decomposed
+    ? msg("trajectory.prompt.kind.module")
+    : isCode
+      ? msg("trajectory.prompt.kind.code")
+      : msg("trajectory.prompt.kind.instructions");
+  return (
+    <div className="mb-2 flex items-center justify-between gap-2">
+      <span className="inline-flex items-center gap-1.5 text-[0.625rem] font-semibold uppercase tracking-wide text-muted-foreground">
+        <KindIcon className="size-3" />
+        {kindText}
+      </span>
+      {!decomposed && label.length > 0 ? (
+        <span className="truncate font-mono text-[0.625rem] text-muted-foreground/70" dir="ltr">
+          {label}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+// One prompt predictor: a kind header (code vs instruction) over its
+// instruction/diff card, with the tool-descriptions section lifted out to sit
+// *below* the card as its own block instead of nested inside it. Parses the react
+// overlay once and shares it with both halves.
 function PromptEntry({
+  label,
   prompt,
   parentPrompt,
   mode,
   hasParent,
 }: {
+  label: string;
   prompt: string;
   parentPrompt: string;
   mode: View;
@@ -1593,23 +1688,144 @@ function PromptEntry({
     () => (parentPrompt.length > 0 ? parseReactOverlay(parentPrompt) : null),
     [parentPrompt],
   );
+  // React overlays are structured agent instructions, never code.
+  const isCode = overlay === null && looksLikeModuleCode(prompt);
+  // A Flex module that parses into predictor signatures renders decomposed:
+  // its signatures (prose) apart from its code (structure). When parsing finds
+  // no signature (unusual source shape), fall through to the whole-module view.
+  const decomposition = useMemo(
+    () => (isCode ? decomposeFlexSource(prompt) : null),
+    [isCode, prompt],
+  );
+  const parentDecomposition = useMemo(
+    () => (isCode && parentPrompt.length > 0 ? decomposeFlexSource(parentPrompt) : null),
+    [isCode, parentPrompt],
+  );
 
   return (
     <>
       <div className="overflow-hidden rounded-md border border-border/40 bg-background/60 p-3">
-        <PromptBody
-          prompt={prompt}
-          parentPrompt={parentPrompt}
-          overlay={overlay}
-          parentOverlay={parentOverlay}
-          mode={mode}
-          hasParent={hasParent}
-        />
+        <PromptKindHeader isCode={isCode} label={label} decomposed={decomposition !== null} />
+        {decomposition !== null ? (
+          <FlexModuleView
+            decomposition={decomposition}
+            parentDecomposition={parentDecomposition}
+            mode={mode}
+            hasParent={hasParent}
+          />
+        ) : (
+          <PromptBody
+            prompt={prompt}
+            parentPrompt={parentPrompt}
+            overlay={overlay}
+            parentOverlay={parentOverlay}
+            mode={mode}
+            hasParent={hasParent}
+            isCode={isCode}
+          />
+        )}
       </div>
       {overlay !== null ? (
         <ReactToolsSection overlay={overlay} parentOverlay={parentOverlay} />
       ) : null}
     </>
+  );
+}
+
+// A decomposed Flex module: each predictor's natural-language instructions
+// rendered as a prompt (prose, or a line diff in compare mode) above the module's
+// surrounding code structure. GEPA rewrites the whole source each step, but a
+// change is often confined to a predictor's instructions — a prompt edit wearing a
+// code blob's clothes. Rendering the instructions as a prompt, apart from the Code
+// sub-block, lets a pure instructions change read as one, not a code rewrite.
+function FlexModuleView({
+  decomposition,
+  parentDecomposition,
+  mode,
+  hasParent,
+}: {
+  decomposition: FlexDecomposition;
+  parentDecomposition: FlexDecomposition | null;
+  mode: View;
+  hasParent: boolean;
+}) {
+  const showDiff = mode === "diff" && hasParent && parentDecomposition !== null;
+  const named = decomposition.signatures.length > 1;
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <SectionLabel
+          label={msg("trajectory.prompt.kind.instructions")}
+          info={msg("trajectory.prompt.kind.instructions.explain")}
+        />
+        <div className="space-y-2">
+          {decomposition.signatures.map((sig, idx) => (
+            <PredictorInstructions
+              key={`${sig.name}:${idx}`}
+              sig={sig}
+              parentSig={matchSignature(parentDecomposition, sig, idx)}
+              showDiff={showDiff}
+              named={named}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <SectionLabel
+          label={msg("trajectory.prompt.kind.code")}
+          info={msg("trajectory.prompt.kind.code.explain")}
+        />
+        {showDiff && parentDecomposition !== null ? (
+          <PromptDiff
+            before={parentDecomposition.codeSkeleton}
+            after={decomposition.codeSkeleton}
+          />
+        ) : (
+          <PromptCodeView value={decomposition.codeSkeleton} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// One predictor's instructions, rendered like any prompt: prose in plain mode, a
+// line diff in compare mode — the same rendering a scalar predictor's instruction
+// candidate gets. The `self.<name>` label only shows when the module has more than
+// one predictor, to tell them apart; a lone predictor renders as bare prose.
+function PredictorInstructions({
+  sig,
+  parentSig,
+  showDiff,
+  named,
+}: {
+  sig: FlexSignature;
+  parentSig: FlexSignature | null;
+  showDiff: boolean;
+  named: boolean;
+}) {
+  return (
+    <div className="space-y-1">
+      {named && sig.name.length > 0 ? (
+        <span className="font-mono text-[0.625rem] text-muted-foreground/70" dir="ltr">
+          {`self.${sig.name}`}
+        </span>
+      ) : null}
+      {showDiff && parentSig !== null ? (
+        <PromptDiff before={parentSig.instructions} after={sig.instructions} />
+      ) : sig.instructions.length > 0 ? (
+        <pre
+          className="text-xs whitespace-pre-wrap leading-relaxed font-mono text-foreground/90"
+          dir="auto"
+          style={{ wordBreak: "break-word" }}
+        >
+          {sig.instructions}
+        </pre>
+      ) : (
+        <div className="text-[11px] italic text-muted-foreground/60">
+          {msg("trajectory.prompt.signature.no_instructions")}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1620,6 +1836,7 @@ function PromptBody({
   parentOverlay,
   mode,
   hasParent,
+  isCode,
 }: {
   prompt: string;
   parentPrompt: string;
@@ -1627,10 +1844,12 @@ function PromptBody({
   parentOverlay: ReactOverlay | null;
   mode: View;
   hasParent: boolean;
+  isCode: boolean;
 }) {
   if (mode === "diff" && hasParent) {
     // React overlays keep their structured shape in compare mode; non-overlay
-    // prompts fall back to a flat line diff.
+    // prompts (including code) fall back to a flat line diff, which reads as a
+    // code diff just as well.
     if (overlay !== null && parentOverlay !== null) {
       return <ReactOverlayDiffView before={parentOverlay} after={overlay} />;
     }
@@ -1640,6 +1859,9 @@ function PromptBody({
   if (overlay !== null) {
     return <ReactOverlayView overlay={overlay} />;
   }
+  if (isCode) {
+    return <PromptCodeView value={prompt} />;
+  }
   return (
     <pre
       className="text-xs whitespace-pre-wrap leading-relaxed font-mono text-foreground/90"
@@ -1648,6 +1870,20 @@ function PromptBody({
     >
       {prompt}
     </pre>
+  );
+}
+
+// Plain-mode render of a code candidate: the same read-only CodeMirror viewer the
+// artifact tab uses, height-fit to the source (capped so a long module scrolls
+// inside the drawer rather than stretching it).
+function PromptCodeView({ value }: { value: string }) {
+  return (
+    <CodeEditor
+      value={value}
+      onChange={() => {}}
+      height={`${Math.min((value.split("\n").length + 1) * 19.6 + 8, 480)}px`}
+      readOnly
+    />
   );
 }
 
@@ -1733,7 +1969,7 @@ function ReactToolsSection({
 interface SegmentedOption<T extends string> {
   value: T;
   label: string;
-  icon?: LucideIcon;
+  icon?: Icon;
 }
 
 // Measuring the thumb must run before paint on the client, but useLayoutEffect
@@ -1825,18 +2061,24 @@ function SegmentedToggle<T extends string>({
   );
 }
 
-function ToolsViewToggle({ view, onChange }: { view: ToolsView; onChange: (v: ToolsView) => void }) {
+function ToolsViewToggle({
+  view,
+  onChange,
+}: {
+  view: ToolsView;
+  onChange: (v: ToolsView) => void;
+}) {
   return (
     <SegmentedToggle
       value={view}
       onChange={onChange}
       ariaLabel={msg("trajectory.prompt.react.tools.view_aria")}
       options={[
-        { value: "plain", label: msg("trajectory.prompt.react.tools.view_plain"), icon: AlignLeft },
+        { value: "plain", label: msg("trajectory.prompt.react.tools.view_plain"), icon: TextAlignLeft },
         {
           value: "compare",
           label: msg("trajectory.prompt.react.tools.view_compare"),
-          icon: GitCompare,
+          icon: GitDiff,
         },
       ]}
     />
@@ -2192,15 +2434,31 @@ function usePromptView(): readonly [View, (v: View) => void] {
   return [view, setView] as const;
 }
 
-function PromptViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }) {
+function PromptViewToggle({
+  view,
+  onChange,
+  isModule,
+}: {
+  view: View;
+  onChange: (v: View) => void;
+  isModule: boolean;
+}) {
   return (
     <SegmentedToggle
       value={view}
       onChange={onChange}
-      ariaLabel={msg("trajectory.drawer.toggle.aria")}
+      ariaLabel={
+        isModule ? msg("trajectory.drawer.toggle.module.aria") : msg("trajectory.drawer.toggle.aria")
+      }
       options={[
-        { value: "prompt", label: msg("trajectory.drawer.toggle.prompt"), icon: AlignLeft },
-        { value: "diff", label: msg("trajectory.drawer.toggle.diff"), icon: GitCompare },
+        {
+          value: "prompt",
+          label: isModule
+            ? msg("trajectory.drawer.toggle.module")
+            : msg("trajectory.drawer.toggle.prompt"),
+          icon: isModule ? Code : TextAlignLeft,
+        },
+        { value: "diff", label: msg("trajectory.drawer.toggle.diff"), icon: GitDiff },
       ]}
     />
   );
@@ -2262,6 +2520,172 @@ function diffLines(before: string, after: string): DiffLine[] {
   return out;
 }
 
+interface WordSeg {
+  text: string;
+  kind: "same" | "added" | "removed";
+}
+
+// Token-level LCS within a pair of lines, so a reworded sentence highlights the
+// words that actually changed instead of reading as a whole-line replace.
+// Whitespace runs are their own tokens, so re-spacing shows as a small edit.
+function diffWords(before: string, after: string): WordSeg[] {
+  const tokenize = (s: string): string[] => s.match(/\s+|\S+/g) ?? [];
+  const a = tokenize(before);
+  const b = tokenize(after);
+  const m = a.length;
+  const n = b.length;
+  const stride = n + 1;
+  const dp = new Int32Array((m + 1) * stride);
+  for (let i = m - 1; i >= 0; i -= 1) {
+    for (let j = n - 1; j >= 0; j -= 1) {
+      dp[i * stride + j] =
+        a[i] === b[j]
+          ? (dp[(i + 1) * stride + (j + 1)] ?? 0) + 1
+          : Math.max(dp[(i + 1) * stride + j] ?? 0, dp[i * stride + (j + 1)] ?? 0);
+    }
+  }
+  const out: WordSeg[] = [];
+  const push = (text: string, kind: WordSeg["kind"]): void => {
+    const last = out[out.length - 1];
+    if (last !== undefined && last.kind === kind) last.text += text;
+    else out.push({ text, kind });
+  };
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      push(a[i] ?? "", "same");
+      i += 1;
+      j += 1;
+    } else if ((dp[(i + 1) * stride + j] ?? 0) >= (dp[i * stride + (j + 1)] ?? 0)) {
+      push(a[i] ?? "", "removed");
+      i += 1;
+    } else {
+      push(b[j] ?? "", "added");
+      j += 1;
+    }
+  }
+  while (i < m) {
+    push(a[i] ?? "", "removed");
+    i += 1;
+  }
+  while (j < n) {
+    push(b[j] ?? "", "added");
+    j += 1;
+  }
+  return out;
+}
+
+function countWords(text: string): number {
+  return (text.match(/\S+/g) ?? []).length;
+}
+
+interface DiffRow {
+  kind: DiffLine["kind"];
+  text: string;
+  // Intra-line word segments when this line is paired with the line that replaced
+  // it; null for context lines and wholly added/removed lines.
+  segs: WordSeg[] | null;
+}
+
+// Turn the line diff into rows, and for each removed line paired (by position)
+// with the added line that replaces it, attach an intra-line word diff so only the
+// changed words highlight. Runs of removed lines are emitted before their added
+// replacements, GitHub-style; leftover unpaired lines render flat.
+function pairWordDiffs(lines: DiffLine[]): DiffRow[] {
+  const rows: DiffRow[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line === undefined) {
+      i += 1;
+      continue;
+    }
+    if (line.kind !== "removed") {
+      rows.push({ kind: line.kind, text: line.text, segs: null });
+      i += 1;
+      continue;
+    }
+    const removed: DiffLine[] = [];
+    for (; i < lines.length; i += 1) {
+      const cur = lines[i];
+      if (cur === undefined || cur.kind !== "removed") break;
+      removed.push(cur);
+    }
+    const added: DiffLine[] = [];
+    for (; i < lines.length; i += 1) {
+      const cur = lines[i];
+      if (cur === undefined || cur.kind !== "added") break;
+      added.push(cur);
+    }
+    removed.forEach((r, k) => {
+      const mate = added[k];
+      rows.push({
+        kind: "removed",
+        text: r.text,
+        segs: mate !== undefined ? diffWords(r.text, mate.text) : null,
+      });
+    });
+    added.forEach((add, k) => {
+      const mate = removed[k];
+      rows.push({
+        kind: "added",
+        text: add.text,
+        segs: mate !== undefined ? diffWords(mate.text, add.text) : null,
+      });
+    });
+  }
+  return rows;
+}
+
+// One diff line. A paired line tints its whole row (green added / red removed) and
+// gives the words that actually differ a stronger chip; the shared words sit in the
+// base tint. Context and unpaired lines render flat.
+function DiffRowView({ row }: { row: DiffRow }) {
+  const isAdded = row.kind === "added";
+  const isRemoved = row.kind === "removed";
+  const bg = isAdded ? PARETO_PASS_BG : isRemoved ? PARETO_FAIL_BG : "transparent";
+  const color = isAdded ? "#3f4d1f" : isRemoved ? "#6e2e16" : "rgba(28, 22, 18, 0.78)";
+  const prefix = isAdded ? "+" : isRemoved ? "−" : " ";
+  const emphasis = isAdded ? "rgba(138, 154, 91, 0.55)" : "rgba(168, 90, 59, 0.5)";
+  const shown =
+    row.segs === null
+      ? null
+      : row.segs.filter((s) => (isAdded ? s.kind !== "removed" : s.kind !== "added"));
+  return (
+    <div className="flex items-start gap-2 px-3 py-0.5" style={{ background: bg, color }}>
+      <span
+        aria-hidden="true"
+        className="select-none tabular-nums opacity-60"
+        style={{ width: "0.9rem", textAlign: "center", flexShrink: 0 }}
+      >
+        {prefix}
+      </span>
+      <span className="whitespace-pre-wrap" style={{ wordBreak: "break-word", flex: 1 }}>
+        {shown === null ? (
+          row.text.length === 0 ? (
+            "​"
+          ) : (
+            row.text
+          )
+        ) : shown.length === 0 ? (
+          "​"
+        ) : (
+          shown.map((s, idx) =>
+            (isAdded ? s.kind === "added" : s.kind === "removed") ? (
+              <span key={idx} style={{ background: emphasis, borderRadius: "2px" }}>
+                {s.text}
+              </span>
+            ) : (
+              <span key={idx}>{s.text}</span>
+            ),
+          )
+        )}
+      </span>
+    </div>
+  );
+}
+
 function PromptDiff({
   before,
   after,
@@ -2273,8 +2697,9 @@ function PromptDiff({
   label?: string;
   labelInfo?: string;
 }) {
-  const lines = useMemo(() => diffLines(before, after), [before, after]);
-  const changed = lines.some((s) => s.kind !== "same");
+  const rows = useMemo(() => pairWordDiffs(diffLines(before, after)), [before, after]);
+  const words = useMemo(() => diffWords(before, after), [before, after]);
+  const changed = words.some((s) => s.kind !== "same");
   if (!changed) {
     return (
       <div className="space-y-1">
@@ -2285,8 +2710,13 @@ function PromptDiff({
       </div>
     );
   }
-  const addedCount = lines.reduce((n, l) => n + (l.kind === "added" ? 1 : 0), 0);
-  const removedCount = lines.reduce((n, l) => n + (l.kind === "removed" ? 1 : 0), 0);
+  // Count changed *words*, not lines: a reworded paragraph is a single line but
+  // many word edits, so a line count would read a wholesale rewrite as "1 changed".
+  const addedCount = words.reduce((n, s) => n + (s.kind === "added" ? countWords(s.text) : 0), 0);
+  const removedCount = words.reduce(
+    (n, s) => n + (s.kind === "removed" ? countWords(s.text) : 0),
+    0,
+  );
   const stats = (
     <div dir="ltr" className="inline-flex items-center gap-3 text-[10px] tabular-nums opacity-80">
       <span style={{ color: "#3f4d1f" }}>+{addedCount}</span>
@@ -2304,33 +2734,11 @@ function PromptDiff({
         </div>
       ) : null}
       <div dir="ltr" className="font-mono text-xs leading-relaxed">
-        {label === undefined ? <div className="mb-1.5 flex justify-start">{stats}</div> : null}
-        <div className="-mx-3">
-          {lines.map((line, idx) => {
-            const isAdded = line.kind === "added";
-            const isRemoved = line.kind === "removed";
-            const bg = isAdded ? PARETO_PASS_BG : isRemoved ? PARETO_FAIL_BG : "transparent";
-            const color = isAdded ? "#3f4d1f" : isRemoved ? "#6e2e16" : "rgba(28, 22, 18, 0.78)";
-            const prefix = isAdded ? "+" : isRemoved ? "−" : " ";
-            return (
-              <div
-                key={idx}
-                className="flex items-start gap-2 px-3 py-0.5"
-                style={{ background: bg, color }}
-              >
-                <span
-                  aria-hidden="true"
-                  className="select-none tabular-nums opacity-60"
-                  style={{ width: "0.9rem", textAlign: "center", flexShrink: 0 }}
-                >
-                  {prefix}
-                </span>
-                <span className="whitespace-pre-wrap" style={{ wordBreak: "break-word", flex: 1 }}>
-                  {line.text.length === 0 ? "​" : line.text}
-                </span>
-              </div>
-            );
-          })}
+        {label === undefined ? <div className="mb-1.5 flex justify-end">{stats}</div> : null}
+        <div className="overflow-hidden rounded-md border border-border/40">
+          {rows.map((row, idx) => (
+            <DiffRowView key={idx} row={row} />
+          ))}
         </div>
       </div>
     </div>
@@ -2370,7 +2778,6 @@ function ParetoGridSection({
       </div>
       <div
         className="flex flex-wrap gap-1"
-        dir="rtl"
         role="grid"
         aria-label={msg("trajectory.detail.pareto_title")}
       >

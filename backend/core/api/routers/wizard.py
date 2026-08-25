@@ -23,6 +23,7 @@ from typing import Any, Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
+from ...models import WORKFLOW_MODULE_NAME
 from ...registry import ResolverError, resolve_module_factory, resolve_optimizer_factory
 from ..errors import DomainError
 
@@ -63,6 +64,10 @@ class WizardUpdateRequest(BaseModel):
     job_type: Literal["run", "grid_search"] | None = Field(
         default=None,
         description="'run' for a single-pair run, 'grid_search' for a model-pair sweep.",
+    )
+    is_private: bool | None = Field(
+        default=None,
+        description="When true (the default for new runs), the run is excluded from public Explore.",
     )
 
     column_roles: dict[str, str] | None = Field(
@@ -112,6 +117,12 @@ class WizardUpdateRequest(BaseModel):
     optimizer_kwargs: dict[str, Any] | None = Field(
         default=None,
         description=("Optimizer parameters. Known keys: auto, reflection_minibatch_size, max_full_evals, use_merge."),
+    )
+    target_score: float | None = Field(
+        default=None,
+        gt=0,
+        le=100,
+        description="Optional GEPA validation target as a percentage (1–100).",
     )
 
     signature_code: str | None = Field(
@@ -171,17 +182,16 @@ def validate_model_config_dict(v: Any, field_name: str) -> dict[str, Any]:
         if not isinstance(base_url, str):
             raise DomainError("wizard.model_base_url_not_string", status=422, field=field_name)
         out["base_url"] = base_url
-    for key in ("temperature", "top_p"):
-        val = v.get(key)
-        if val is not None:
-            if not isinstance(val, (int, float)):
-                raise DomainError(
-                    "wizard.model_number_required",
-                    status=422,
-                    field=field_name,
-                    key=key,
-                )
-            out[key] = float(val)
+    temperature = v.get("temperature")
+    if temperature is not None:
+        if not isinstance(temperature, (int, float)):
+            raise DomainError(
+                "wizard.model_number_required",
+                status=422,
+                field=field_name,
+                key="temperature",
+            )
+        out["temperature"] = float(temperature)
     max_tokens = v.get("max_tokens")
     if max_tokens is not None:
         if not isinstance(max_tokens, int):
@@ -295,12 +305,18 @@ def create_wizard_router() -> APIRouter:
             )
 
         if "module_name" in supplied and supplied["module_name"] is not None:
-            patch["module_name"] = _validate_resolvable_name(
-                supplied["module_name"],
-                field="module_name",
-                resolver=resolve_module_factory,
-                error_key="wizard.module_unknown",
-            )
+            raw_module = supplied["module_name"]
+            # "workflow" is a composite-run marker, not a resolvable DSPy
+            # dotted path — the graph itself is validated at submission.
+            if isinstance(raw_module, str) and raw_module.strip().lower() == WORKFLOW_MODULE_NAME:
+                patch["module_name"] = WORKFLOW_MODULE_NAME
+            else:
+                patch["module_name"] = _validate_resolvable_name(
+                    raw_module,
+                    field="module_name",
+                    resolver=resolve_module_factory,
+                    error_key="wizard.module_unknown",
+                )
 
         if "job_type" in supplied and supplied["job_type"] is not None:
             patch["job_type"] = supplied["job_type"]
@@ -344,6 +360,7 @@ def create_wizard_router() -> APIRouter:
             "use_all_generation_models",
             "use_all_reflection_models",
             "shuffle",
+            "is_private",
         ):
             if bool_key in supplied and supplied[bool_key] is not None:
                 patch[bool_key] = bool(supplied[bool_key])
@@ -376,6 +393,9 @@ def create_wizard_router() -> APIRouter:
             if not isinstance(ok, dict):
                 raise DomainError("wizard.optimizer_kwargs_not_object", status=422)
             patch["optimizer_kwargs"] = dict(ok)
+
+        if "target_score" in supplied and supplied["target_score"] is not None:
+            patch["target_score"] = float(supplied["target_score"])
 
         # Signature/Metric code is authored ONLY via ``request_code_authoring``
         # (the inline card runs the dedicated code agent, which validates and

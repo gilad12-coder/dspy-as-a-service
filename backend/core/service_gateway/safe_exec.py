@@ -27,7 +27,7 @@ import multiprocessing as mp
 import threading
 import traceback
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import dspy
@@ -38,7 +38,9 @@ from .optimization.data import (
     image_input_field_names,
     load_metric_from_code,
     load_signature_from_code,
+    load_transform_from_code,
 )
+from .optimization.logged_scores import drain_logged_metrics, reset_logged_metrics
 
 _DEFAULT_PARSE_TIMEOUT_SECONDS = 30.0
 _DEFAULT_PROBE_TIMEOUT_SECONDS = 45.0
@@ -54,8 +56,26 @@ _QUEUE_READ_SECONDS = 5.0
 # only the locks dict, not the heavy validation itself.
 _signature_cache: dict[str, SignatureIntrospection] = {}
 _metric_cache: dict[str, MetricIntrospection] = {}
+_transform_cache: dict[str, TransformIntrospection] = {}
 _dogpile_locks: dict[str, threading.Lock] = {}
 _locks_mutex = threading.Lock()
+
+_VALIDATION_CACHE_MAX_ENTRIES = 256
+
+
+def _bounded_cache_put(cache: dict[str, Any], key: str, value: Any) -> None:
+    """Insert ``key`` → ``value``, evicting the oldest entry once at the cap.
+
+    The memo dicts above are keyed by full user source strings, so without a
+    bound they grow with every distinct submission for the life of the
+    process — and the API process is long-lived and fork-parent to every job.
+    FIFO suffices: the caches absorb same-code bursts, not long-tail reuse.
+    Evicting a dogpile lock someone still holds merely lets two concurrent
+    submissions of the same code validate twice.
+    """
+    if key not in cache and len(cache) >= _VALIDATION_CACHE_MAX_ENTRIES:
+        cache.pop(next(iter(cache)))
+    cache[key] = value
 
 
 def _dogpile_lock(key: str) -> threading.Lock:
@@ -72,7 +92,7 @@ def _dogpile_lock(key: str) -> threading.Lock:
         lock = _dogpile_locks.get(key)
         if lock is None:
             lock = threading.Lock()
-            _dogpile_locks[key] = lock
+            _bounded_cache_put(_dogpile_locks, key, lock)
         return lock
 
 
@@ -95,6 +115,14 @@ class MetricIntrospection:
 
 
 @dataclass(frozen=True)
+class TransformIntrospection:
+    """Metadata extracted from a user-authored workflow transform callable."""
+
+    callable_name: str
+    param_names: list[str]
+
+
+@dataclass(frozen=True)
 class MetricProbeResult:
     """Shape of a metric invocation on a sample row, captured in a subprocess.
 
@@ -110,6 +138,10 @@ class MetricProbeResult:
 
     ``score`` is the metric's numeric output as a float (the ``.score`` of a
     prediction, or the numeric value itself), or ``None`` when unavailable.
+
+    ``logged_metrics`` holds whatever the metric recorded via ``log_metrics``
+    during the probe call — contract violations inside ``log_metrics`` raise
+    and therefore surface as ``result_kind == "error"`` instead.
     """
 
     result_kind: str
@@ -117,6 +149,7 @@ class MetricProbeResult:
     has_score_attr: bool
     error: str | None
     score: float | None
+    logged_metrics: dict[str, float] = field(default_factory=dict)
 
 
 def _run_in_subprocess(
@@ -267,7 +300,7 @@ def validate_signature_code(
             output_fields=list(result["output_fields"]),
             image_input_fields=list(result.get("image_input_fields") or []),
         )
-        _signature_cache[code] = introspection
+        _bounded_cache_put(_signature_cache, code, introspection)
         return introspection
 
 
@@ -331,7 +364,71 @@ def validate_metric_code(
             callable_name=result["callable_name"],
             param_names=list(result["param_names"]),
         )
-        _metric_cache[code] = introspection
+        _bounded_cache_put(_metric_cache, code, introspection)
+        return introspection
+
+
+def _transform_worker(code: str, queue: Any) -> None:
+    """Child-side entry point for ``validate_transform_code``.
+
+    Args:
+        code: User-authored transform callable source.
+        queue: Multiprocessing queue used to return a result dict.
+    """
+    try:
+        transform = load_transform_from_code(code)
+        sig = inspect.signature(transform)
+        param_names = [p.name for p in sig.parameters.values()]
+        queue.put(
+            {
+                "ok": True,
+                "callable_name": getattr(transform, "__name__", "transform"),
+                "param_names": param_names,
+            }
+        )
+    except BaseException as exc:  # user code is arbitrary — any failure is reported, not raised
+        queue.put(_error_payload(exc))
+
+
+def validate_transform_code(
+    code: str,
+    *,
+    timeout_seconds: float = _DEFAULT_PARSE_TIMEOUT_SECONDS,
+) -> TransformIntrospection:
+    """Parse user-authored transform code in a subprocess and return its shape.
+
+    Memoized per-process like the signature/metric validators: concurrent
+    submissions of the same transform share one subprocess spawn.
+
+    Args:
+        code: User-authored transform callable source.
+        timeout_seconds: Maximum time to wait for the child to finish.
+
+    Returns:
+        Callable name plus parameter names extracted via ``inspect``.
+
+    Raises:
+        ServiceError: When the user code fails to load or the child errors.
+    """
+    cached = _transform_cache.get(code)
+    if cached is not None:
+        return cached
+    with _dogpile_lock(f"tra:{code}"):
+        cached = _transform_cache.get(code)
+        if cached is not None:
+            return cached
+        result = _run_in_subprocess(
+            _transform_worker,
+            (code,),
+            timeout_seconds=timeout_seconds,
+        )
+        if not result.get("ok"):
+            _raise_child_error(result)
+        introspection = TransformIntrospection(
+            callable_name=result["callable_name"],
+            param_names=list(result["param_names"]),
+        )
+        _bounded_cache_put(_transform_cache, code, introspection)
         return introspection
 
 
@@ -365,6 +462,7 @@ def _probe_worker(
                 prepared_payload[field_name] = image_type(url=value)
         example = dspy.Example(**prepared_payload).with_inputs(*input_field_names)
         prediction = dspy.Prediction(**prediction_payload)
+        reset_logged_metrics()
         try:
             result = metric(example, prediction, trace=None)
         except BaseException as call_exc:
@@ -376,9 +474,11 @@ def _probe_worker(
                     "has_score_attr": False,
                     "error": str(call_exc),
                     "score": None,
+                    "logged_metrics": {},
                 }
             )
             return
+        logged_metrics = drain_logged_metrics()
 
         if result is None:
             kind = "none"
@@ -408,6 +508,7 @@ def _probe_worker(
                 "has_score_attr": hasattr(result, "score"),
                 "error": None,
                 "score": score,
+                "logged_metrics": logged_metrics,
             }
         )
     except BaseException as exc:  # code failed to parse or dspy setup failed — report, don't raise
@@ -463,4 +564,5 @@ def probe_metric_on_sample(
         has_score_attr=bool(result["has_score_attr"]),
         error=result.get("error"),
         score=float(raw_score) if raw_score is not None else None,
+        logged_metrics=dict(result.get("logged_metrics") or {}),
     )

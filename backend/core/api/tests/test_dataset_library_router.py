@@ -15,15 +15,23 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from ...storage.models import Base
+from ...storage.models import (
+    Base,
+    DatasetShareGrantModel,
+    DatasetShareLinkModel,
+    TaggingSessionModel,
+    TaggingSessionShareGrantModel,
+    TaggingSessionShareLinkModel,
+)
 from ...storage.remote import RemoteDBJobStore
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..routers import dataset_library as dataset_library_module
 from ..routers.dataset_library import create_dataset_library_router
+from ..sharing_access import LINK_GRANT_MARKER
 
 _ALICE = AuthenticatedUser(username="alice", role="user", groups=())
 _BOB = AuthenticatedUser(username="bob", role="user", groups=())
@@ -247,3 +255,181 @@ def test_bulk_delete_empty_is_noop() -> None:
     resp = client.post("/datasets/library/bulk-delete", json={"ids": []})
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"deleted": [], "skipped": []}
+
+
+def _insert_session(
+    store: _MemStore,
+    *,
+    session_id: str = "sess-1",
+    owner: str = "alice",
+    link: tuple[str, str] | None = None,
+    grants: tuple[tuple[str, str, str], ...] = (),
+) -> None:
+    """Seed a tagger session (and optional sharing) directly into the store.
+
+    Args:
+        store: Backing store to write into.
+        session_id: Id for the new session row.
+        owner: Username the session is owned by.
+        link: Optional ``(general_access, general_role)`` for an active share link.
+        grants: Optional ``(grantee, role, created_by)`` triples for member grants.
+    """
+    with Session(store._engine) as db:
+        db.add(
+            TaggingSessionModel(
+                id=session_id,
+                username=owner,
+                name="My tagging",
+                phase="annotating",
+                config={},
+                columns=["q", "a"],
+                data=_ROWS,
+                annotations={},
+                row_count=2,
+                tagged_count=2,
+            )
+        )
+        if link is not None:
+            db.add(
+                TaggingSessionShareLinkModel(
+                    token="sesslink-tok",
+                    session_id=session_id,
+                    created_by=owner,
+                    general_access=link[0],
+                    general_role=link[1],
+                )
+            )
+        for grantee, role, created_by in grants:
+            db.add(
+                TaggingSessionShareGrantModel(
+                    session_id=session_id,
+                    grantee_username=grantee,
+                    role=role,
+                    created_by=created_by,
+                )
+            )
+        db.commit()
+
+
+def _session_exists(store: _MemStore, session_id: str) -> bool:
+    """Report whether a tagger session row is still present in the store."""
+    with Session(store._engine) as db:
+        return db.get(TaggingSessionModel, session_id) is not None
+
+
+def _dataset_sharing(
+    store: _MemStore, dataset_id: str
+) -> tuple[tuple[str, str, str, str] | None, list[tuple[str, str, str]]]:
+    """Snapshot a dataset's active link and grants for assertions.
+
+    Returns:
+        A ``(link, grants)`` pair — ``link`` is
+        ``(token, general_access, general_role, created_by)`` or ``None``, and
+        ``grants`` is a sorted list of ``(grantee, role, created_by)`` triples.
+    """
+    with Session(store._engine) as db:
+        link_row = (
+            db.query(DatasetShareLinkModel)
+            .filter_by(dataset_id=dataset_id, revoked_at=None)
+            .one_or_none()
+        )
+        link = (
+            None
+            if link_row is None
+            else (link_row.token, link_row.general_access, link_row.general_role, link_row.created_by)
+        )
+        grants = sorted(
+            (g.grantee_username, g.role, g.created_by)
+            for g in db.query(DatasetShareGrantModel).filter_by(dataset_id=dataset_id).all()
+        )
+    return link, grants
+
+
+def _move(client: TestClient, session_id: str, *, name: str = "Moved", rows=_ROWS):
+    """POST the move-to-library request for a session and return the raw response."""
+    return client.post(
+        f"/datasets/library/from-tagging-session/{session_id}",
+        json={"name": name, "dataset": rows, "column_schema": _SCHEMA},
+    )
+
+
+def test_move_session_creates_dataset_and_deletes_session() -> None:
+    """Moving a session lands a tagger-sourced dataset and removes the session."""
+    client, store = _make_client(_ALICE)
+    _insert_session(store)
+
+    resp = _move(client, "sess-1")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["deduplicated"] is False
+    assert body["dataset"]["source"] == "tagger"
+    assert body["dataset"]["owner_username"] == "alice"
+    assert body["dataset"]["role"] == "owner"
+
+    assert _session_exists(store, "sess-1") is False
+    listing = client.get("/datasets/library").json()
+    assert [d["id"] for d in listing["datasets"]] == [body["dataset"]["id"]]
+    # The session is gone, so a repeat move of the same id 404s.
+    assert _move(client, "sess-1").status_code == 404
+
+
+def test_move_transfers_session_sharing_to_dataset() -> None:
+    """The moved dataset inherits the session's link policy and every grant."""
+    client, store = _make_client(_ALICE)
+    _insert_session(
+        store,
+        link=("anyone", "editor"),
+        grants=(
+            ("carol", "editor", "alice"),
+            ("dave", "viewer", LINK_GRANT_MARKER),
+        ),
+    )
+
+    body = _move(client, "sess-1").json()
+    link, grants = _dataset_sharing(store, body["dataset"]["id"])
+
+    assert link is not None
+    token, general_access, general_role, created_by = link
+    assert (general_access, general_role) == ("anyone", "editor")
+    assert created_by == "alice"
+    # A fresh token — the dataset link is a new resource, not the session's.
+    assert token != "sesslink-tok"
+    assert grants == [
+        ("carol", "editor", "alice"),
+        ("dave", "viewer", LINK_GRANT_MARKER),
+    ]
+
+
+def test_move_dedupe_leaves_existing_sharing_and_still_deletes_session() -> None:
+    """A byte-identical move dedupes without widening the existing entry's sharing."""
+    client, store = _make_client(_ALICE)
+    existing_id = _save(client)["dataset"]["id"]
+    _insert_session(store, link=("anyone", "editor"), grants=(("carol", "editor", "alice"),))
+
+    resp = _move(client, "sess-1")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["deduplicated"] is True
+    assert body["dataset"]["id"] == existing_id
+
+    # The pre-existing dataset had no sharing; the deduped move must not add any.
+    link, grants = _dataset_sharing(store, existing_id)
+    assert link is None
+    assert grants == []
+    # The session is still removed — the move never leaves a duplicate behind.
+    assert _session_exists(store, "sess-1") is False
+
+
+def test_move_requires_session_owner() -> None:
+    """A non-owner cannot move a session: it 404s, and nothing is created or deleted."""
+    _client_a, store = _make_client(_ALICE)
+    _insert_session(store)
+
+    client_b = TestClient(_app_for(store, _BOB))
+    resp = client_b.post(
+        "/datasets/library/from-tagging-session/sess-1",
+        json={"name": "Steal", "dataset": _ROWS, "column_schema": _SCHEMA},
+    )
+    assert resp.status_code == 404
+    assert _session_exists(store, "sess-1") is True
+    assert client_b.get("/datasets/library").json()["datasets"] == []

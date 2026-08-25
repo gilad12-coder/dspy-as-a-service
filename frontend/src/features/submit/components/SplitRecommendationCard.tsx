@@ -1,24 +1,44 @@
 "use client";
 
-import { Sparkles, AlertTriangle, Info } from "lucide-react";
+import { Sparkle, Info } from "@/shared/ui/icons";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
 import { cn } from "@/shared/lib/utils";
-import { msg } from "@/shared/lib/messages";
+import { msg, type MessageKey } from "@/shared/lib/messages";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
+import { useLocale } from "@/shared/providers";
+import { dirForLocale } from "@/shared/lib/locale";
 
 import type { SubmitWizardContext } from "../hooks/use-submit-wizard";
 
 const percent = (value: number): string => `${Math.round(value * 100)}%`;
 
+// Tier thresholds mirror backend planner.py (recommend_split / _recommend_fractions):
+// the split fractions are chosen there purely by total row count, so we recover the
+// matching rationale tier from the same total and localize it through the UI catalog.
+// The backend only ships Hebrew copy for these, so rendering them client-side is what
+// gives every locale its own translation (and correct direction).
+const TIER_TINY = 30;
+const TIER_SMALL = 80;
+const TIER_MEDIUM = 300;
+
+function rationaleKey(total: number): MessageKey {
+  if (total < TIER_TINY) return "submit.split.rationale.tiny";
+  if (total < TIER_SMALL) return "submit.split.rationale.small";
+  if (total < TIER_MEDIUM) return "submit.split.rationale.medium";
+  return "submit.split.rationale.large";
+}
+
 export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
-  const { splitPlan, datasetProfile, splitMode, setSplitMode, profileLoading } = w;
+  const { splitPlan, splitMode, setSplitMode, profileLoading } = w;
+  // The rationale/warning copy is portaled into a Radix tooltip, where the `rtl:`
+  // variant doesn't fire — drive direction off the locale explicitly instead.
+  const { locale } = useLocale();
+  const dir = dirForLocale(locale);
 
   if (!splitPlan) {
     if (profileLoading) {
       return (
-        <div
-          dir="rtl"
-          className="flex items-center gap-2 rounded-xl border border-[#DDD6CC]/60 bg-[#FAF8F5]/70 px-3.5 py-2.5 text-xs text-[#8C7A6B]"
-        >
+        <div className="flex items-center gap-2 rounded-xl border border-[#DDD6CC]/60 bg-[#FAF8F5]/70 px-3.5 py-2.5 text-xs text-[#8C7A6B]">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#C8A882] motion-safe:animate-pulse" />
           {msg("submit.split.recommended_title")}…
         </div>
@@ -27,33 +47,33 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
     return null;
   }
 
-  const { fractions, counts, rationale } = splitPlan;
-  const warnings = datasetProfile?.warnings ?? [];
-  const hasRationale = rationale.length > 0;
-  const hasWarnings = warnings.length > 0;
-  const hasInfo = hasRationale || hasWarnings;
+  const { fractions, counts } = splitPlan;
+  const total = counts.train + counts.val + counts.test;
+  const rationaleText = msg(rationaleKey(total), {
+    total,
+    val_count: counts.val,
+    test_count: counts.test,
+  });
+  const hasRationale = total > 0;
 
   return (
-    <div
-      dir="rtl"
-      className="rounded-xl border border-[#C8B9A8]/50 bg-[#FAF8F5] shadow-[0_1px_2px_rgba(61,46,34,0.04)] overflow-hidden"
-    >
+    <div className="rounded-xl border border-[#C8B9A8]/50 bg-[#FAF8F5] shadow-[0_1px_2px_rgba(61,46,34,0.04)] overflow-hidden">
       <div className="px-3.5 pt-3 pb-2.5">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-[#3D2E22]">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#C8A882]/15 text-[#A8895E]">
-              <Sparkles className="h-3 w-3" />
+              <Sparkle className="h-3 w-3" />
             </span>
             <span className="text-[13px] font-semibold tracking-tight">
               {msg("submit.split.recommended_title")}
             </span>
-            {hasInfo && (
+            {hasRationale && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
                     aria-label={msg("submit.split.rationale_aria")}
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#8C7A6B] hover:bg-[#EFE7DC] hover:text-[#3D2E22] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/60 transition-colors cursor-default"
+                    className="-my-3 inline-flex size-[44px] items-center justify-center rounded-full text-[#8C7A6B] transition-colors hover:bg-[#EFE7DC] hover:text-[#3D2E22] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/60 lg:my-0 lg:size-5"
                   >
                     <Info className="h-3.5 w-3.5" />
                   </button>
@@ -61,46 +81,19 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
                 <TooltipContent
                   side="bottom"
                   sideOffset={8}
-                  dir="rtl"
-                  className="max-w-[min(320px,92vw)] rounded-xl border border-[#C8B9A8]/60 bg-[#FAF8F5] px-4 py-3 text-end text-[#3D2E22] shadow-[0_8px_24px_-8px_rgba(61,46,34,0.2)] [&>span]:hidden"
+                  dir={dir}
+                  className="max-w-[min(320px,92vw)] rounded-xl border border-[#C8B9A8]/60 bg-[#FAF8F5] px-4 py-3 text-start text-[#3D2E22] shadow-[0_8px_24px_-8px_rgba(61,46,34,0.2)] [&>span]:hidden"
                 >
-                  {hasRationale && (
-                    <>
-                      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#8C7A6B]">
-                        <Sparkles className="h-3 w-3 text-[#C8A882]" />
-                        {msg("submit.split.rationale_title")}
-                      </div>
-                      <ul className="space-y-1.5 text-[12px] leading-relaxed text-[#3D2E22]">
-                        {rationale.map((line, idx) => (
-                          <li key={idx} className="flex gap-2">
-                            <span className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-[#C8A882]" />
-                            <span>{line}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                  {hasWarnings && (
-                    <>
-                      <div
-                        className={cn(
-                          "flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#8C7A6B]",
-                          hasRationale ? "mt-3 mb-2 border-t border-[#DDD6CC]/60 pt-2.5" : "mb-2",
-                        )}
-                      >
-                        <AlertTriangle className="h-3 w-3 text-[#C8924A]" />
-                        {msg("submit.split.warnings_title")}
-                      </div>
-                      <ul className="space-y-1.5 text-[12px] leading-relaxed text-[#7A5A38]">
-                        {warnings.map((warning) => (
-                          <li key={warning.code} className="flex gap-2">
-                            <span className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-[#C8924A]" />
-                            <span>{warning.message}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
+                  <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#8C7A6B]">
+                    <Sparkle className="h-3 w-3 text-[#C8A882]" />
+                    {msg("submit.split.rationale_title")}
+                  </div>
+                  <ul className="space-y-1.5 text-[12px] leading-relaxed text-[#3D2E22]">
+                    <li className="flex gap-2">
+                      <span className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-[#C8A882]" />
+                      <span>{rationaleText}</span>
+                    </li>
+                  </ul>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -112,9 +105,7 @@ export function SplitRecommendationCard({ w }: { w: SubmitWizardContext }) {
       <div
         className={cn(
           "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
-          splitMode === "auto"
-            ? "grid-rows-[1fr] opacity-100"
-            : "grid-rows-[0fr] opacity-0",
+          splitMode === "auto" ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
         )}
       >
         <div className="overflow-hidden">
@@ -168,7 +159,7 @@ function ModeToggle({
   onChange: (mode: "auto" | "manual") => void;
 }) {
   return (
-    <div className="relative inline-grid grid-cols-2 rounded-lg bg-[#EFE7DC]/70 p-0.5 gap-0.5">
+    <div className="relative inline-grid w-full [grid-template-columns:repeat(2,minmax(0,1fr))] gap-0.5 rounded-lg bg-[#EFE7DC]/70 p-0.5 sm:w-auto">
       <div
         aria-hidden
         className="absolute top-0.5 bottom-0.5 w-[calc(50%-4px)] rounded-md bg-white shadow-[0_1px_2px_rgba(61,46,34,0.08)] transition-[inset-inline-start] duration-200 ease-out pointer-events-none"
@@ -186,7 +177,7 @@ function ModeToggle({
           onClick={() => onChange(mode)}
           aria-pressed={value === mode}
           className={cn(
-            "relative z-[1] rounded-md px-3 py-1 text-[11px] font-medium leading-none text-center transition-colors cursor-pointer",
+            "relative z-[1] min-h-[44px] cursor-pointer rounded-md px-3 py-1 text-center text-[11px] font-medium leading-none transition-colors lg:min-h-0",
             value === mode ? "text-[#3D2E22]" : "text-[#8C7A6B] hover:text-[#3D2E22]",
           )}
         >
@@ -227,7 +218,7 @@ function PlanChip({
           {percent}
         </span>
         <span className="text-[10.5px] tabular-nums text-[#8C7A6B]" dir="ltr">
-          {count.toLocaleString("he-IL")}
+          {count.toLocaleString(getActiveIntlLocale())}
         </span>
       </div>
     </div>

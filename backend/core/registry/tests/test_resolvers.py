@@ -43,8 +43,19 @@ from core.service_gateway.react_compat import REACT_CLASS
         ("CoT", "cot"),
         ("react", "react"),
         ("ReAct", "react"),
+        ("flex", "flex"),
+        ("Flex", "flex"),
     ],
-    ids=["predict_lower", "predict_upper", "cot_lower", "cot_mixed", "react_lower", "react_mixed"],
+    ids=[
+        "predict_lower",
+        "predict_upper",
+        "cot_lower",
+        "cot_mixed",
+        "react_lower",
+        "react_mixed",
+        "flex_lower",
+        "flex_mixed",
+    ],
 )
 def test_match_module_alias_known_names(name: str, expected_key: str) -> None:
     """Match module alias known names."""

@@ -26,15 +26,21 @@ export function buildMetricTemplate(
     total = len(fields)
     correct = 0
     mismatches = []
+    field_scores = {}
     for f in fields:
         expected = getattr(gold, f, None)
         actual = getattr(pred, f, None)
         if expected is None:
             continue
-        if str(actual).strip().lower() == str(expected).strip().lower():
+        matched = str(actual).strip().lower() == str(expected).strip().lower()
+        field_scores[f] = 1.0 if matched else 0.0
+        if matched:
             correct += 1
         else:
             mismatches.append(f"{f}: expected {expected!r}, got {actual!r}")
+    if len(field_scores) > 1:
+        # Surface each field's match rate alongside the averaged score.
+        log_metrics(**field_scores)
     score = correct / total if total else 0.0
     feedback = "Matches all outputs." if not mismatches else "Mismatches: " + "; ".join(mismatches)
     return dspy.Prediction(score=score, feedback=feedback)

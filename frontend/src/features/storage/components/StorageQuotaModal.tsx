@@ -49,7 +49,7 @@ export function StorageQuotaModal({ open, usage, loading, onClose }: StorageQuot
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent dir="rtl">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{msg("storage.quota.title")}</DialogTitle>
           <DialogDescription>{msg("storage.quota.body")}</DialogDescription>

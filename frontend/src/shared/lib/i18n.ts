@@ -1,16 +1,11 @@
 import {
-  I18N_MESSAGES,
-  TERMS,
-  type I18nMessageKey,
-  type TermKey,
+  I18N_MESSAGES_BY_LOCALE,
+  TERMS_BY_LOCALE,
 } from "@/shared/lib/generated/i18n-catalog";
+import { dirForLocale, fallbackChain, type Locale } from "@/shared/lib/locale";
+import { getActiveLocale } from "@/shared/lib/runtime-locale";
 
-export {
-  I18N_MESSAGES,
-  I18N_KEY,
-  type ErrorCode,
-  type I18nMessageKey,
-} from "@/shared/lib/generated/i18n-catalog";
+export { I18N_KEY } from "@/shared/lib/generated/i18n-catalog";
 
 const TERM_PATTERN = /\{term\.([A-Za-z0-9_]+)\}/g;
 
@@ -24,19 +19,28 @@ function reportMissingKey(key: string): void {
   }
 }
 
-function isolate(value: unknown): string {
+function isolate(value: unknown, locale: Locale): string {
   const str = String(value);
-  // Wrap Latin-script / numeric values in FSI/PDI so the BiDi algorithm
-  // doesn't flip surrounding Hebrew punctuation. Pure-Hebrew payloads are
-  // left alone to keep snapshot diffs noise-free.
+  // BiDi isolation only matters in RTL: wrapping Latin-script / numeric runs in
+  // FSI/PDI stops them flipping surrounding Hebrew punctuation. In an LTR locale
+  // the base direction already matches, so the wrappers are pure noise.
+  if (dirForLocale(locale) === "ltr") return str;
   if (LATIN_LIKE.test(str)) return `${FSI}${str}${PDI}`;
   return str;
 }
 
-function resolveTerms(template: string): string {
+// Glossary catalogs keyed by locale (generated registry: Hebrew base + every
+// per-locale overlay). Walked via the registry fallback chain, so a locale
+// without its own term overlay inherits its fallback's terms.
+const TERM_CATALOGS: Record<string, Record<string, string>> = TERMS_BY_LOCALE;
+
+function resolveTerms(template: string, locale: Locale): string {
   return template.replace(TERM_PATTERN, (match, key: string) => {
-    const value = (TERMS as Record<string, string>)[key as TermKey];
-    return value ?? match;
+    for (const loc of fallbackChain(locale)) {
+      const value = TERM_CATALOGS[loc]?.[key];
+      if (value !== undefined) return value;
+    }
+    return match;
   });
 }
 
@@ -71,9 +75,9 @@ function parseBranches(body: string): Record<string, string> {
   return branches;
 }
 
-function pickPluralCategory(count: number): Intl.LDMLPluralRule {
+function pickPluralCategory(count: number, locale: Locale): Intl.LDMLPluralRule {
   try {
-    return new Intl.PluralRules("he").select(count);
+    return new Intl.PluralRules(locale).select(count);
   } catch {
     return count === 1 ? "one" : "other";
   }
@@ -82,6 +86,7 @@ function pickPluralCategory(count: number): Intl.LDMLPluralRule {
 function resolveSubstitutions(
   template: string,
   params: Record<string, unknown>,
+  locale: Locale,
 ): string {
   let out = "";
   let i = 0;
@@ -110,21 +115,22 @@ function resolveSubstitutions(
       } else {
         const branches = parseBranches(branchesStr);
         const exact = `=${count}`;
-        const category = pickPluralCategory(count);
+        const category = pickPluralCategory(count, locale);
         const body =
           branches[exact] ??
           branches[category] ??
           branches.other ??
           "";
         out += resolveSubstitutions(
-          body.replace(/#/g, isolate(count)),
+          body.replace(/#/g, isolate(count, locale)),
           params,
+          locale,
         );
       }
     } else if (/^[A-Za-z0-9_]+$/.test(inner)) {
       if (inner in params) {
         const value = params[inner];
-        out += value == null ? template.slice(i, close + 1) : isolate(value);
+        out += value == null ? template.slice(i, close + 1) : isolate(value, locale);
       } else {
         out += template.slice(i, close + 1);
       }
@@ -139,30 +145,50 @@ function resolveSubstitutions(
 /**
  * Render a template string with ICU plurals and BiDi-isolated interpolation.
  * Used by both ``tI18n`` and ``formatMsg`` so backend codes and frontend
- * UI strings share identical formatting semantics.
+ * UI strings share identical formatting semantics. Plural categories, term
+ * lookups, and BiDi isolation all follow ``locale`` (defaults to the active
+ * request/render locale).
  */
 export function formatTemplate(
   template: string,
   params: Record<string, unknown> | undefined,
+  locale: Locale = getActiveLocale(),
 ): string {
-  const resolved = resolveTerms(template);
+  const resolved = resolveTerms(template, locale);
   if (!params) return resolved;
-  return resolveSubstitutions(resolved, params);
+  return resolveSubstitutions(resolved, params, locale);
 }
 
+// Backend-code catalogs keyed by locale (generated registry: Hebrew base + every
+// per-locale overlay), walked via the registry fallback chain.
+const I18N_CATALOGS: Record<string, Record<string, string>> = I18N_MESSAGES_BY_LOCALE;
+
 /**
- * Resolve a backend i18n code into Hebrew, with `{term.x}` term lookups,
- * ICU plural support (`{count, plural, one {} two {} other {}}`), and
- * BiDi isolation around every interpolated value so embedded Latin/numeric
- * values don't flip surrounding Hebrew punctuation.
+ * Resolve a backend i18n code into the active locale, with `{term.x}` term
+ * lookups, ICU plural support (`{count, plural, one {} two {} other {}}`), and
+ * locale-aware BiDi isolation around every interpolated value.
  *
- * Returns the key unchanged so drift is dev-visible.
+ * Walks the locale's fallback chain over the per-locale code catalogs, so a
+ * code with no translation for the active locale degrades to its fallback.
+ * Returns the code unchanged when no template exists at all, so drift is
+ * dev-visible.
  */
-export function tI18n(code: string, params?: Record<string, unknown>): string {
-  const template = (I18N_MESSAGES as Record<string, string>)[code as I18nMessageKey];
-  if (!template) {
+export function tI18n(
+  code: string,
+  params?: Record<string, unknown>,
+  locale: Locale = getActiveLocale(),
+): string {
+  let template: string | undefined;
+  for (const loc of fallbackChain(locale)) {
+    const value = I18N_CATALOGS[loc]?.[code];
+    if (value !== undefined) {
+      template = value;
+      break;
+    }
+  }
+  if (template === undefined) {
     reportMissingKey(code);
     return code;
   }
-  return formatTemplate(template, params);
+  return formatTemplate(template, params, locale);
 }

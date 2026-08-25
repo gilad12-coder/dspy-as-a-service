@@ -207,7 +207,7 @@ async def _drive_react_chat(
         # Single-composer chat: the user's message drives the primary input
         # field; any further declared inputs start empty (the optimized
         # signature is rarely multi-input for a tool-using agent).
-        inputs: dict[str, Any] = {field: "" for field in input_fields}
+        inputs: dict[str, Any] = dict.fromkeys(input_fields, "")
         if input_fields:
             inputs[input_fields[0]] = user_message
 

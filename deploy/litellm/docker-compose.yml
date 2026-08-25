@@ -1,0 +1,58 @@
+# Self-hosted LiteLLM proxy for Skynet's managed-inference gateway.
+#
+#   cd deploy/litellm
+#   cp .env.example .env   # fill in the secrets below
+#   docker compose up -d
+#
+# Then enable it on the backend by setting LITELLM_PROXY_URL (e.g.
+# http://litellm-proxy:4000/v1) and LITELLM_PROXY_API_KEY (a virtual key minted
+# from the master key). Until those are set, the backend routes managed runs
+# directly to providers and this proxy is dormant.
+
+services:
+  litellm-proxy:
+    image: ghcr.io/berriai/litellm:main-stable
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./custom_callbacks.py:/app/custom_callbacks.py:ro
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set the OpenRouter master key}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set a strong admin/master key}
+      LITELLM_DATABASE_URL: ${LITELLM_DATABASE_URL:?Postgres URL for virtual keys + spend}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    # Backs the proxy's own virtual-key + spend tables — separate from the
+    # Skynet application database. Credentials must match LITELLM_DATABASE_URL
+    # in .env (defaults to litellm:litellm@db:5432/litellm in .env.example).
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: litellm
+      POSTGRES_DB: litellm
+    volumes:
+      - litellm-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  litellm-db:

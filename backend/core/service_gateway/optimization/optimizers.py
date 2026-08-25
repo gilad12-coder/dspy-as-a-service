@@ -12,7 +12,10 @@ from collections.abc import Callable
 from typing import Any, Literal, overload
 
 import dspy
+from gepa.strategies.proposal_sampling import PxNSampling
+from gepa.utils.stop_condition import ScoreThresholdStopper
 
+from ...config import settings
 from ...constants import (
     COMPILE_TRAINSET_KEY,
     COMPILE_VALSET_KEY,
@@ -25,11 +28,60 @@ from ...exceptions import ServiceError
 from ...models import ModelConfig
 from ..language_models import build_language_model
 from .data import DatasetSplits
+from .logged_scores import LoggedScoreRecorder, reset_logged_metrics
 
 logger = logging.getLogger(__name__)
 
 
 PREFLIGHT_SAMPLE_SIZE = 5
+
+# Upper bound for a submission's PxN dimensions, mirroring the `le=16` on the
+# gepa_pxn_* settings: p*n candidates are evaluated per reflective iteration, so
+# the ceiling keeps one job from saturating the shared LM concurrency gate.
+PXN_MAX = 16
+
+
+class TargetScoreStopper:
+    """Stop GEPA when the best validation score reaches a percentage target."""
+
+    def __init__(self, target_score_percent: float) -> None:
+        """Create a stateful wrapper around GEPA's native score stopper.
+
+        Args:
+            target_score_percent: Validation score target in the UI's 0–100
+                percentage scale.
+        """
+        self.target_score_percent = float(target_score_percent)
+        self.threshold = self.target_score_percent / 100.0
+        self._delegate = ScoreThresholdStopper(self.threshold)
+        self.reached = False
+
+    def __call__(self, gepa_state: Any) -> bool:
+        """Return whether GEPA's current best validation score meets the target.
+
+        Args:
+            gepa_state: Current GEPA optimization state.
+
+        Returns:
+            True once the target has been reached; false otherwise.
+        """
+        self.reached = self.reached or bool(self._delegate(gepa_state))
+        return self.reached
+
+
+def build_target_score_stopper(target_score: float | None) -> TargetScoreStopper | None:
+    """Build a GEPA stopper for an optional percentage target.
+
+    Args:
+        target_score: Validation target in the 0–100 percentage scale, or
+            ``None`` to keep budget-only stopping.
+
+    Returns:
+        A stateful target stopper, or ``None`` when no target was configured.
+    """
+    if target_score is None:
+        return None
+    return TargetScoreStopper(target_score)
 
 
 def _perfect_prediction_score(metric: Any, example: Any, output_fields: list[str]) -> float:
@@ -54,6 +106,10 @@ def _perfect_prediction_score(metric: Any, example: Any, output_fields: list[str
 
     perfect_outputs = {field: example.get(field) for field in output_fields}
     perfect_pred = dspy.Prediction(**perfect_outputs)
+    # Fresh log_metrics slot: residue from earlier same-thread metric calls
+    # could trip the per-example name cap inside the metric, and the except
+    # below would misread that crash as "scored 0 on a perfect prediction".
+    reset_logged_metrics()
     try:
         result = metric(example, perfect_pred, trace=None)
     except Exception:
@@ -210,7 +266,8 @@ def evaluate_on_test(
         The aggregate score as a float (or ``None`` when ``test_examples``
         is empty). When ``collect_per_example=True``, returns
         ``(score, list[dict])`` where each dict contains ``index``,
-        ``outputs``, ``score``, and ``pass``.
+        ``outputs``, ``score``, ``pass``, and — when the metric called
+        ``log_metrics`` — a ``logged_metrics`` name→value map.
 
     Raises:
         ServiceError: If the evaluator returns a non-numeric score.
@@ -219,9 +276,10 @@ def evaluate_on_test(
     if not test_examples:
         return (None, []) if collect_per_example else None
 
+    recorder = LoggedScoreRecorder(metric) if collect_per_example else None
     evaluator = dspy.Evaluate(
         devset=test_examples,
-        metric=metric,
+        metric=recorder if recorder is not None else metric,
         display_progress=True,
     )
     eval_result = evaluator(program)
@@ -264,9 +322,28 @@ def evaluate_on_test(
                 ex_score > 0,
             )
             outputs = {}
+            gold = {}
             for k in example.labels():
                 outputs[k] = getattr(prediction, k, None) if prediction else None
-            per_example.append({"index": i, "outputs": outputs, "score": ex_score, "pass": ex_score > 0})
+                # Gold rides along so corpus-level classification metrics
+                # (precision/recall) can be computed from the stored rows.
+                gold[k] = getattr(example, k, None)
+            row: dict[str, Any] = {
+                "index": i,
+                "outputs": outputs,
+                "gold": gold,
+                "score": ex_score,
+                "pass": ex_score > 0,
+            }
+            logged = recorder.scores_for(example) if recorder is not None else {}
+            if logged:
+                row["logged_metrics"] = logged
+            # A metric crash was scored 0 by dspy.Evaluate; carry the crash
+            # text so the row can say why instead of rendering a silent zero.
+            metric_error = recorder.error_for(example) if recorder is not None else None
+            if metric_error:
+                row["error"] = metric_error
+            per_example.append(row)
         except Exception:
             per_example.append({"index": i, "outputs": {}, "score": 0.0, "pass": False})
 
@@ -349,6 +426,63 @@ def validate_optimizer_kwargs(factory: Callable[..., Any], kwargs: dict[str, Any
             )
 
 
+def _gepa_kwargs_copy(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return a mutable copy of GEPA's ``gepa_kwargs`` passthrough mapping.
+
+    Server-managed GEPA options — the target-score stop callback and the PxN
+    sampling strategy — are layered onto whatever ``gepa_kwargs`` the submission
+    supplied. Copying that sub-mapping lets callers mutate a fresh dict instead
+    of the caller's object.
+
+    Args:
+        kwargs: The optimizer factory kwargs being assembled.
+
+    Returns:
+        A new dict copy of the current ``gepa_kwargs`` (empty when unset).
+
+    Raises:
+        ServiceError: When ``gepa_kwargs`` is present but is not a mapping.
+    """
+    existing = kwargs.get("gepa_kwargs")
+    if existing is None:
+        return {}
+    if not isinstance(existing, dict):
+        raise ServiceError("GEPA's gepa_kwargs must be an object.")
+    return dict(existing)
+
+
+def _pxn_override(kwargs: dict[str, Any], key: str, default: int) -> int:
+    """Pop a submission's PxN sampling dimension, falling back to the server default.
+
+    ``PxNSampling`` cannot cross the JSON boundary, so a submission expresses it
+    as ``pxn_parents``/``pxn_proposals`` integers. Neither is a GEPA factory
+    parameter, so the key is removed whatever its value — leaving it in ``kwargs``
+    would reach ``dspy.GEPA(**kwargs)`` as an unexpected argument.
+
+    Args:
+        kwargs: The optimizer factory kwargs being assembled; mutated in place.
+        key: The kwarg name to consume.
+        default: The server-wide setting used when the submission omits the key.
+
+    Returns:
+        The effective dimension, bounded to 1-16.
+
+    Raises:
+        ServiceError: When the supplied value is not an integer in 1-16.
+    """
+    if key not in kwargs:
+        return default
+    raw = kwargs.pop(key)
+    if raw is None:
+        return default
+    # bool is an int subclass; True would silently read as 1.
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise ServiceError(f"GEPA's {key} must be an integer between 1 and {PXN_MAX}.")
+    if not 1 <= raw <= PXN_MAX:
+        raise ServiceError(f"GEPA's {key} must be between 1 and {PXN_MAX}.")
+    return raw
+
+
 def instantiate_optimizer(
     factory: Callable[..., Any],
     optimizer_name: str,
@@ -358,6 +492,8 @@ def instantiate_optimizer(
     *,
     reflection_lm: Any | None = None,
     log_dir: str | None = None,
+    target_score: float | None = None,
+    stop_state: dict[str, Any] | None = None,
 ) -> Any:
     """Instantiate an optimizer, injecting language models and metrics as needed.
 
@@ -368,6 +504,16 @@ def instantiate_optimizer(
     - GEPA receives ``log_dir`` when supplied so it persists per-iteration
       state to ``<log_dir>/gepa_state.bin`` — required by the trajectory
       watcher that surfaces candidate genealogy to the UI.
+    - GEPA receives a native ``ScoreThresholdStopper`` through ``gepa_kwargs``
+      when ``target_score`` is supplied. The target is expressed as a 0–100
+      percentage at the API boundary and normalized to GEPA's 0–1 metric scale.
+    - GEPA receives a ``PxNSampling`` proposal strategy through ``gepa_kwargs``
+      when the effective parent/proposal counts exceed 1 (both default to 1,
+      reproducing GEPA's single-mutation default). A submission sets them with
+      the ``pxn_parents``/``pxn_proposals`` integer kwargs — consumed here, not
+      forwarded to the factory — which override ``settings.gepa_pxn_parents``
+      and ``settings.gepa_pxn_proposals``. A submission-supplied
+      ``sampling_strategy`` takes precedence over both.
 
     Args:
         factory: The optimizer factory callable to invoke.
@@ -384,12 +530,19 @@ def instantiate_optimizer(
         log_dir: Optional directory GEPA writes ``gepa_state.bin`` into. The
             trajectory watcher polls this file to emit per-candidate
             progress events. Ignored for non-GEPA optimizers.
+        target_score: Optional validation score target in the API's 0–100
+            percentage scale. Ignored for non-GEPA optimizers; payload
+            validation rejects that combination before execution.
+        stop_state: Optional mutable mapping that receives the stateful target
+            stopper under ``target_score_stopper`` so callers can report
+            whether the target actually triggered.
 
     Returns:
         An instantiated optimizer ready for ``compile``.
 
     Raises:
-        ServiceError: When GEPA is requested without a reflection model.
+        ServiceError: When GEPA is requested without a reflection model, or
+            when ``pxn_parents``/``pxn_proposals`` is not an integer in 1-16.
     """
 
     optimizer_key = optimizer_name.lower()
@@ -406,12 +559,53 @@ def instantiate_optimizer(
         k in kwargs for k in ("auto", "max_full_evals", "max_metric_calls")
     ):
         kwargs["auto"] = "light"
+    # GEPA's own num_threads default is None — fully sequential candidate
+    # evaluation — and runs are LM-latency-bound, so that default dominates
+    # wall-clock. Inject a parallel default; an explicit user value wins, and
+    # the per-job LM gate (activate_job_lm_budget) bounds the total across
+    # pair threads x eval threads either way.
+    if optimizer_key == OPTIMIZER_NAME_GEPA and "num_threads" not in kwargs:
+        kwargs["num_threads"] = settings.gepa_eval_num_threads
     if (
         optimizer_key == OPTIMIZER_NAME_GEPA
         and log_dir is not None
         and OPTIMIZER_LOG_DIR_KEY not in kwargs
     ):
         kwargs[OPTIMIZER_LOG_DIR_KEY] = log_dir
+    if optimizer_key == OPTIMIZER_NAME_GEPA and target_score is not None:
+        target_stopper = build_target_score_stopper(target_score)
+        if target_stopper is not None:
+            gepa_kwargs = _gepa_kwargs_copy(kwargs)
+            existing_callbacks = gepa_kwargs.get("stop_callbacks")
+            if existing_callbacks is None:
+                callbacks: list[Any] = []
+            elif isinstance(existing_callbacks, (list, tuple)):
+                callbacks = list(existing_callbacks)
+            else:
+                callbacks = [existing_callbacks]
+            if any(not callable(callback) for callback in callbacks):
+                raise ServiceError("GEPA stop_callbacks must contain callable stopping conditions.")
+            callbacks.append(target_stopper)
+            gepa_kwargs["stop_callbacks"] = callbacks
+            kwargs["gepa_kwargs"] = gepa_kwargs
+            if stop_state is not None:
+                stop_state["target_score_stopper"] = target_stopper
+    # GEPA proposal sampling: p distinct parents x n mutations per reflective
+    # iteration (PxNSampling), batched so proposals run in parallel and the
+    # optimizer generalizes better than the classic one-parent-one-mutation
+    # default. p=n=1 reproduces GEPA's built-in SingleMutationSampling, so only
+    # inject a strategy when either exceeds 1. A submission-supplied
+    # sampling_strategy in gepa_kwargs always wins.
+    # PxNSampling is a Python object, so submissions express the strategy as two
+    # plain integers instead; they are popped here because GEPA's factory has no
+    # such parameters, and fall back to the server-wide defaults when absent.
+    pxn_parents = _pxn_override(kwargs, "pxn_parents", settings.gepa_pxn_parents)
+    pxn_proposals = _pxn_override(kwargs, "pxn_proposals", settings.gepa_pxn_proposals)
+    if optimizer_key == OPTIMIZER_NAME_GEPA and (pxn_parents > 1 or pxn_proposals > 1):
+        gepa_kwargs = _gepa_kwargs_copy(kwargs)
+        if "sampling_strategy" not in gepa_kwargs:
+            gepa_kwargs["sampling_strategy"] = PxNSampling(pxn_parents, pxn_proposals)
+            kwargs["gepa_kwargs"] = gepa_kwargs
     needs_reflection = optimizer_key in reflection_required_optimizers
     if OPTIMIZER_REFLECTION_LM_KEY not in kwargs:
         if reflection_lm is not None and needs_reflection:
@@ -429,13 +623,18 @@ def instantiate_optimizer(
     # INFO (not DEBUG): the subprocess log forwarder floors at INFO, so this —
     # the single most useful instantiation breadcrumb — was previously invisible
     # in job_logs. Reports which injections were applied, not just key names.
+    gepa_kwargs_for_log = kwargs.get("gepa_kwargs")
+    strategy = gepa_kwargs_for_log.get("sampling_strategy") if isinstance(gepa_kwargs_for_log, dict) else None
+    sampling_strategy = type(strategy).__name__ if strategy is not None else None
     logger.info(
-        "Creating optimizer %s (metric=%s reflection_lm=%s auto=%s log_dir=%s)",
+        "Creating optimizer %s (metric=%s reflection_lm=%s auto=%s log_dir=%s num_threads=%s sampling=%s)",
         optimizer_name,
         OPTIMIZER_METRIC_KEY in kwargs,
         OPTIMIZER_REFLECTION_LM_KEY in kwargs,
         kwargs.get("auto"),
         OPTIMIZER_LOG_DIR_KEY in kwargs,
+        kwargs.get("num_threads"),
+        sampling_strategy,
     )
     return factory(**kwargs)
 

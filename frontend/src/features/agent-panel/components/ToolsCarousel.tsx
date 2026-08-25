@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 
 import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
@@ -27,12 +28,15 @@ const FEATURED_TOOLS: readonly string[] = [
   "get_analytics_summary_analytics_summary_get",
   "get_job_logs_optimizations",
   "get_test_results_optimizations",
-  "compare_jobs_optimizations_compare_post",
   "list_jobs_optimizations_get",
+  "get_wallet_for_agent",
+  "list_tagging_sessions_for_agent",
   "rename_job_optimizations",
   "toggle_pin_job_optimizations",
   "set_column_roles_datasets_column_roles_post",
   "profile_datasets_profile_post",
+  "list_datasets_for_agent",
+  "request_user_dataset_from_library",
   "edit_code_optimizations_edit_code_post",
   "validate_code_validate_code_post",
   "discover_models_models_discover_post",
@@ -47,7 +51,7 @@ const FEATURED_TOOLS: readonly string[] = [
 
 // Tour-oriented descriptions (capabilities, not approval warnings). Fallback
 // to TOOL_META.description when a key is missing.
-const TOUR_DESCRIPTIONS: Record<string, string> = {
+const TOUR_DESCRIPTIONS: Record<string, string> = perLocale(() => ({
   submit_job_run_post: formatMsg("auto.features.agent.panel.components.toolscarousel.template.1", {
     p1: TERMS.optimization,
   }),
@@ -68,9 +72,6 @@ const TOUR_DESCRIPTIONS: Record<string, string> = {
   toggle_pin_job_optimizations: formatMsg(
     "auto.features.agent.panel.components.toolscarousel.template.4",
     { p1: TERMS.optimization },
-  ),
-  compare_jobs_optimizations_compare_post: msg(
-    "auto.features.agent.panel.components.toolscarousel.literal.5",
   ),
   list_jobs_optimizations_get: formatMsg(
     "auto.features.agent.panel.components.toolscarousel.template.6",
@@ -94,7 +95,7 @@ const TOUR_DESCRIPTIONS: Record<string, string> = {
     "auto.features.agent.panel.components.toolscarousel.literal.10",
   ),
   request_user_inference: msg("auto.features.agent.panel.components.toolscarousel.literal.17"),
-};
+}));
 
 interface ToolsCarouselProps {
   /**
@@ -130,7 +131,7 @@ export function ToolsCarousel({
       toolKeys.map((key) => ({
         key,
         description:
-          descriptions?.[key] ?? TOUR_DESCRIPTIONS[key] ?? TOOL_META[key]?.description ?? "",
+          descriptions?.[key] ?? TOUR_DESCRIPTIONS[key] ?? TOOL_META[key]?.description?.() ?? "",
       })),
     [toolKeys, descriptions],
   );

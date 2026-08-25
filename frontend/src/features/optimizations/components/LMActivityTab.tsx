@@ -1,10 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Activity, MessageSquare, Timer } from "lucide-react";
+import { ChatText, Pulse, Timer } from "@/shared/ui/icons";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
-import { msg } from "@/shared/lib/messages";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
+import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { tip } from "@/shared/lib/tooltips";
 import type { LMActivity, LMStageStats } from "@/shared/types/api";
 
@@ -54,7 +56,7 @@ function aggregateColumn(
 }
 
 function formatCalls(n: number): string {
-  return n.toLocaleString("he-IL");
+  return n.toLocaleString(getActiveIntlLocale());
 }
 
 // Unified to seconds so the eye doesn't re-parse units row to row. Sub-100ms
@@ -62,10 +64,10 @@ function formatCalls(n: number): string {
 // the diagnostic question is "where did time go", so consistent scale wins
 // over per-cell precision at the millisecond floor.
 function formatSeconds(ms: number | null | undefined): string {
-  if (ms == null) return "—";
+  if (ms == null) return msg("common.empty");
   const seconds = ms / 1000;
-  if (seconds < 0.1) return "<0.1s";
-  return `${seconds.toFixed(1)}s`;
+  if (seconds < 0.1) return msg("optimizations.duration.lt_0_1s");
+  return formatMsg("optimizations.duration.seconds", { value: seconds.toFixed(1) });
 }
 
 function MetricCells({
@@ -231,8 +233,8 @@ export function LMActivityTab({ lmActivity }: { lmActivity: LMActivity | null | 
   const genLabel = msg("auto.features.optimizations.components.lmactivitytab.col_generation");
   const reflLabel = msg("auto.features.optimizations.components.lmactivitytab.col_reflection");
 
-  const callsIcon = <MessageSquare className="size-3" strokeWidth={1.75} />;
-  const avgIcon = <Timer className="size-3" strokeWidth={1.75} />;
+  const callsIcon = <ChatText className="size-3" />;
+  const avgIcon = <Timer className="size-3" />;
 
   // Plain ``<section>`` instead of ``<Card>`` to opt out of the global
   // ``[data-slot="card"]`` chrome (gradient bg, backdrop-blur, mouse-spotlight,
@@ -249,9 +251,8 @@ export function LMActivityTab({ lmActivity }: { lmActivity: LMActivity | null | 
         className="rounded-2xl border border-border bg-card text-card-foreground shadow-[var(--shadow-sm)]"
       >
         <header className="flex items-center gap-2 px-6 pt-5 pb-3">
-          <Activity
+          <Pulse
             className="size-4 text-muted-foreground"
-            strokeWidth={1.75}
             aria-hidden="true"
           />
           <HelpTip text={tip("lm_activity.section")}>
@@ -262,6 +263,51 @@ export function LMActivityTab({ lmActivity }: { lmActivity: LMActivity | null | 
               {msg("auto.features.optimizations.components.lmactivitytab.title")}
             </h3>
           </HelpTip>
+          <ExportTableMenu
+            iconOnly
+            className="ms-auto"
+            disabled={!hasAnyCalls}
+            getData={() => {
+              const stageCol = stageLabel;
+              const genCallsCol = `${genLabel} · ${callsLabel}`;
+              const genAvgCol = `${genLabel} · ${avgMsLabel}`;
+              const reflCallsCol = `${reflLabel} · ${callsLabel}`;
+              const reflAvgCol = `${reflLabel} · ${avgMsLabel}`;
+              const columns = hasReflection
+                ? [stageCol, genCallsCol, genAvgCol, reflCallsCol, reflAvgCol]
+                : [stageCol, genCallsCol, genAvgCol];
+              const toRow = (
+                name: string,
+                gen: { calls?: number; avg_response_time_ms?: number | null } | undefined,
+                refl: { calls?: number; avg_response_time_ms?: number | null } | undefined,
+              ): Record<string, unknown> => {
+                const out: Record<string, unknown> = {
+                  [stageCol]: name,
+                  [genCallsCol]: gen?.calls ?? 0,
+                  [genAvgCol]: gen?.avg_response_time_ms ?? null,
+                };
+                if (hasReflection) {
+                  out[reflCallsCol] = refl?.calls ?? 0;
+                  out[reflAvgCol] = refl?.avg_response_time_ms ?? null;
+                }
+                return out;
+              };
+              return {
+                columns,
+                rows: [
+                  ...STAGE_KEYS.map((stage) =>
+                    toRow(msg(STAGE_MESSAGE_KEYS[stage]), generation[stage], reflection[stage]),
+                  ),
+                  toRow(
+                    msg("auto.features.optimizations.components.lmactivitytab.row_total"),
+                    genTotal,
+                    reflTotal,
+                  ),
+                ],
+                filename: "lm_activity",
+              };
+            }}
+          />
         </header>
         <div className="px-6 pb-5">
           {!hasAnyCalls ? (
@@ -270,7 +316,7 @@ export function LMActivityTab({ lmActivity }: { lmActivity: LMActivity | null | 
             </p>
           ) : (
             <div className="overflow-x-auto -mx-2 px-2">
-              <table className="guide-table w-full text-sm" dir="rtl">
+              <table className="guide-table w-full text-sm">
                 <thead>
                   <tr className="bg-muted/20">
                     <th

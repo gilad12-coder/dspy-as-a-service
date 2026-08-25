@@ -9,7 +9,7 @@ const SECTIONS = [
 
 export function ConversationDrawerSkeleton() {
   return (
-    <div dir="rtl" aria-hidden="true">
+    <div aria-hidden="true">
       {SECTIONS.map((section, s) => (
         <div key={s} className="mt-3">
           <div className="px-2 pb-1">

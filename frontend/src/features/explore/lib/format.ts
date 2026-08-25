@@ -10,6 +10,7 @@
  */
 
 import { msg } from "@/shared/lib/messages";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
 export type GainBadge = {
   text: string;
@@ -34,17 +35,27 @@ export function formatGain(
 }
 
 // Constructing Intl.RelativeTimeFormat is expensive (locale data + ICU
-// pattern parse). Lift to module scope so every row reuses one instance.
-const RTF_HE = new Intl.RelativeTimeFormat("he", { numeric: "auto" });
+// pattern parse). Cache one instance per locale tag so every row reuses it.
+const RTF_CACHE = new Map<string, Intl.RelativeTimeFormat>();
+
+function relativeTimeFmt(tag: string): Intl.RelativeTimeFormat {
+  let fmt = RTF_CACHE.get(tag);
+  if (!fmt) {
+    fmt = new Intl.RelativeTimeFormat(tag, { numeric: "auto" });
+    RTF_CACHE.set(tag, fmt);
+  }
+  return fmt;
+}
 
 /**
- * Hebrew relative time (now / yesterday / N days ago / last week) that
+ * Locale-aware relative time (now / yesterday / N days ago / last week) that
  * falls back to a short absolute date for items older than a month so the
  * row metadata never balloons. Returns "—" for missing/unparseable input.
  *
- * Uses Intl.RelativeTimeFormat with `numeric: "auto"` which already knows
- * the Hebrew dual form (yesterday / two days / two weeks) so we don't
- * reinvent the pluralization table.
+ * Uses Intl.RelativeTimeFormat with `numeric: "auto"` which already knows each
+ * locale's special forms (English "yesterday", Hebrew dual "two days") so we
+ * don't reinvent the pluralization table. Both the relative formatter and the
+ * absolute fallback follow the active UI locale.
  *
  * Future timestamps (server clock ahead of client) are clamped to "now"
  * rather than rendering "in N minutes" — a job's `created_at` should never
@@ -57,17 +68,19 @@ export function formatRelativeDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
+  const tag = getActiveIntlLocale();
+  const rtf = relativeTimeFmt(tag);
   const diffMs = Math.max(0, Date.now() - d.getTime());
   const minutes = Math.floor(diffMs / 60_000);
   const hours = Math.floor(diffMs / 3_600_000);
   const days = Math.floor(diffMs / 86_400_000);
   if (minutes < 1) return msg("explore.relative.now");
-  if (minutes < 60) return RTF_HE.format(-minutes, "minute");
-  if (hours < 24) return RTF_HE.format(-hours, "hour");
-  if (days < 7) return RTF_HE.format(-days, "day");
-  if (days < 30) return RTF_HE.format(-Math.floor(days / 7), "week");
+  if (minutes < 60) return rtf.format(-minutes, "minute");
+  if (hours < 24) return rtf.format(-hours, "hour");
+  if (days < 7) return rtf.format(-days, "day");
+  if (days < 30) return rtf.format(-Math.floor(days / 7), "week");
   const sameYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleDateString("he-IL", {
+  return d.toLocaleDateString(tag, {
     day: "numeric",
     month: "long",
     ...(sameYear ? {} : { year: "numeric" }),

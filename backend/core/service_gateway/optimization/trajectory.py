@@ -53,6 +53,7 @@ from ...constants import (
     PROGRESS_VALSET,
     PROGRESS_VALSET_OUTPUTS,
 )
+from .logged_scores import reset_logged_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -412,6 +413,12 @@ class MinibatchRecorder:
         Returns:
             The wrapped metric's return value, unmodified.
         """
+        # Fresh log_metrics slot per call, mirroring evaluation's
+        # LoggedScoreRecorder: without it, a metric that logs example-derived
+        # names accumulates residue across training calls until the
+        # per-example name cap starts raising mid-run. Training-time logs are
+        # discarded — only the test evaluations aggregate them.
+        reset_logged_metrics()
         result = self._metric(example, prediction, *args, **kwargs)
         ex_id = self._index_by_id.get(id(example), "?")
         score = _extract_score(result)

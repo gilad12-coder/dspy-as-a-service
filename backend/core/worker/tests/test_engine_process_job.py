@@ -525,3 +525,71 @@ def test_process_job_watchdog_does_not_fire_while_events_flow(
 
     assert store._jobs["opt-live"]["status"] == "success"
     assert not proc.terminate.called
+
+
+def test_process_job_records_run_completed_milestone(
+    worker: BackgroundWorker,
+    store: FakeJobStore,
+) -> None:
+    """A successful run emits one ``run_completed`` telemetry milestone with structural props only."""
+    store.seed_job(
+        "opt-tel",
+        payload=REAL_RUN_PAYLOAD,
+        payload_overview={
+            "optimization_type": "run",
+            "username": "alice",
+            "optimizer_name": "gepa",
+            "model_name": "openai/gpt-4o-mini",
+            "token_source": "managed",
+            "name": "secret run name",
+        },
+    )
+    worker.enqueue_job("opt-tel")
+
+    ctx, _proc = make_mp_context(
+        exitcode=0,
+        result_events=[{"type": EVENT_RESULT, "result": {"baseline_test_metric": 0.5, "optimized_test_metric": 0.7}}],
+    )
+    worker._mp_ctx = ctx
+    worker._mp_start_method = "spawn"
+
+    with (
+        patch("core.worker.engine.notify_job_completed"),
+        patch("core.worker.engine.record_server_event") as record,
+        patch.object(worker, "_get_service") as mock_svc,
+    ):
+        mock_svc.return_value.validate_payload = MagicMock()
+        worker._process_job("opt-tel", 0)
+
+    assert store._jobs["opt-tel"]["status"] == "success"
+    record.assert_called_once()
+    kwargs = record.call_args.kwargs
+    assert kwargs["username"] == "alice"
+    assert kwargs["name"] == "run_completed"
+    assert kwargs["properties"] == {
+        "status": "success",
+        "optimization_type": "run",
+        "optimizer": "gepa",
+        "model": "openai/gpt-4o-mini",
+        "token_source": "managed",
+    }
+
+
+def test_process_job_records_run_failed_milestone(
+    worker: BackgroundWorker,
+    store: FakeJobStore,
+) -> None:
+    """A failed run emits ``run_failed`` and a telemetry error never changes the outcome."""
+    store.seed_job("opt-bad", payload=None, payload_overview={"username": "alice", "optimization_type": "run"})
+    worker.enqueue_job("opt-bad")
+
+    with (
+        patch("core.worker.engine.notify_job_completed"),
+        patch("core.worker.engine.record_server_event", side_effect=RuntimeError("telemetry down")) as record,
+    ):
+        worker._process_job("opt-bad", 0)
+
+    assert store._jobs["opt-bad"]["status"] == "failed"
+    record.assert_called_once()
+    assert record.call_args.kwargs["name"] == "run_failed"
+    assert record.call_args.kwargs["properties"]["status"] == "failed"

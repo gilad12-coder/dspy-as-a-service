@@ -3,11 +3,21 @@
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
-import { AlertTriangle, Clock, FilterX, LogIn, Plus, SearchX, Send } from "lucide-react";
+import {
+  Clock,
+  FunnelX,
+  MagnifyingGlassMinus,
+  PaperPlaneTilt,
+  Plus,
+  SignIn,
+  Warning,
+} from "@/shared/ui/icons";
 import { logSearchQuery, type PublicDashboardPoint } from "@/shared/lib/api";
 import { msg, formatMsg } from "@/shared/lib/messages";
+import { sessionIdentity } from "@/shared/lib/session-identity";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { registerTutorialHook } from "@/features/tutorial";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
 import { usePublicDashboard } from "../hooks/use-public-dashboard";
 import { useCorpusFacets } from "../hooks/use-corpus-facets";
 import { useSemanticSearch } from "../hooks/use-semantic-search";
@@ -28,10 +38,12 @@ import { Pagination } from "./Pagination";
  */
 export function ExploreView() {
   const { data: session, status } = useSession();
-  const sessionUser = session?.user?.name ?? "";
+  const sessionUser = sessionIdentity(session);
+  const isPhone = useIsPhone();
   const { points: realPoints, loading: corpusLoading, error: corpusError } = usePublicDashboard();
   const [demoPoints, setDemoPoints] = React.useState<PublicDashboardPoint[] | null>(null);
-  const points = demoPoints ?? realPoints;
+  const rawPoints = demoPoints ?? realPoints;
+  const points = Array.isArray(rawPoints) ? rawPoints : [];
 
   React.useEffect(() => registerTutorialHook("setDemoExplorePoints", setDemoPoints), []);
   React.useEffect(() => {
@@ -70,9 +82,8 @@ export function ExploreView() {
     [query.corpus, pushRecent],
   );
 
-  const { activeIndex, onInputKeyDown } = useResultKeyboardNav(
-    response.results,
-    () => commitQuery(query.text),
+  const { activeIndex, onInputKeyDown } = useResultKeyboardNav(response.results, () =>
+    commitQuery(query.text),
   );
 
   // Filter options come from a per-corpus facets fetch so each tab lists only
@@ -107,8 +118,7 @@ export function ExploreView() {
   // The dashed empty state only fires when the public corpus is genuinely
   // empty — we still want the corpus toggle visible so the user can pivot
   // to "Mine" without first creating a public job.
-  const isTrulyEmpty =
-    isPublicCorpus && !corpusLoading && !corpusError && corpusTotal === 0;
+  const isTrulyEmpty = isPublicCorpus && !corpusLoading && !corpusError && corpusTotal === 0;
 
   // Until the session resolves we don't yet know the default corpus (mine when
   // signed in, public when anonymous); show the skeleton rather than briefly
@@ -122,17 +132,14 @@ export function ExploreView() {
   }
 
   return (
-    <div dir="rtl" className="pb-16">
+    <div className="pb-16">
       <div className="flex flex-col gap-1.5">
         {isPublicCorpus && corpusError && (
           <div
             className="flex items-start gap-3 rounded-lg border border-border bg-accent-muted/50 px-4 py-3 text-xs text-foreground"
             role="status"
           >
-            <AlertTriangle
-              className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
+            <Warning className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span>{corpusError}</span>
           </div>
         )}
@@ -158,12 +165,14 @@ export function ExploreView() {
 
         {isTrulyEmpty ? (
           <EmptyState
-            variant="list"
-            icon={Send}
+            icon={PaperPlaneTilt}
+            iconWrap="tile"
             title={msg("explore.empty.title")}
             description={msg("explore.empty.hint")}
-            action={{ label: msg("explore.empty.cta"), href: "/submit", icon: Plus }}
-            className="min-h-[40vh] justify-center"
+            action={
+              isPhone ? undefined : { label: msg("explore.empty.cta"), href: "/submit", icon: Plus }
+            }
+            className="mt-3.5"
           />
         ) : (
           <ListPane
@@ -227,13 +236,14 @@ function ListPane({
   hasFilters: boolean;
   sessionUser: string;
 }) {
+  const isPhone = useIsPhone();
   if (response.error) {
     return (
       <div
         role="status"
         className="mx-auto flex max-w-2xl items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px] text-destructive"
       >
-        <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <Warning className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <span>{msg("explore.results.error")}</span>
       </div>
     );
@@ -261,7 +271,7 @@ function ListPane({
       return (
         <EmptyState
           variant="list"
-          icon={LogIn}
+          icon={SignIn}
           title={msg(
             isShared ? "explore.corpus.shared.signed_out" : "explore.corpus.mine.signed_out",
           )}
@@ -271,11 +281,14 @@ function ListPane({
     if (isMine && !response.isActive) {
       return (
         <EmptyState
-          variant="list"
-          icon={Send}
+          icon={PaperPlaneTilt}
+          iconWrap="tile"
           title={msg("explore.corpus.mine.empty")}
           description={msg("explore.corpus.mine.empty.hint")}
-          action={{ label: msg("explore.empty.cta"), href: "/submit", icon: Plus }}
+          action={
+            isPhone ? undefined : { label: msg("explore.empty.cta"), href: "/submit", icon: Plus }
+          }
+          className="mt-3.5"
         />
       );
     }
@@ -292,7 +305,7 @@ function ListPane({
     return (
       <EmptyState
         variant="list"
-        icon={SearchX}
+        icon={MagnifyingGlassMinus}
         title={formatMsg("explore.results.empty.title", { query: query.text || "—" })}
         description={msg("explore.results.empty.hint")}
       >
@@ -314,7 +327,7 @@ function ListPane({
                 onClick={onClearAll}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3.5 py-2 text-[12.5px] text-foreground/75 transition-colors cursor-pointer hover:border-foreground/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
               >
-                <FilterX className="size-3.5" aria-hidden="true" />
+                <FunnelX className="size-3.5" aria-hidden="true" />
                 {msg("explore.results.empty.clear_filters")}
               </button>
             )}
@@ -360,9 +373,10 @@ function collectDistinct(
   points: PublicDashboardPoint[],
   key: "winning_model" | "optimizer_name" | "module_name",
 ): string[] {
+  if (!Array.isArray(points)) return [];
   const set = new Set<string>();
   for (const p of points) {
-    const v = p[key];
+    const v = (p as PublicDashboardPoint)[key];
     if (typeof v === "string" && v.length > 0) set.add(v);
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b));

@@ -905,6 +905,40 @@ def test_public_view_of_private_optimization_404() -> None:
     assert stranger.get("/optimizations/opt-share-1/public").status_code == 404
 
 
+def test_public_view_of_internal_tagger_job_404() -> None:
+    """Internal auto-tag jobs are not part of the public optimization corpus."""
+    store = _MemStore()
+    _seed_job(store, username="alice")
+    job_data = store.get_job("opt-share-1")
+    overview = {**job_data["payload_overview"], "optimization_type": "tagging_autotag"}
+    store.update_job("opt-share-1", payload_overview=overview)
+
+    stranger = _client(store, user="bob")
+    assert stranger.get("/optimizations/opt-share-1/public").status_code == 404
+
+
+def test_public_view_of_unknown_internal_job_type_404() -> None:
+    """Explore accepts only run and grid-search optimization jobs."""
+    store = _MemStore()
+    _seed_job(store, username="alice")
+    job_data = store.get_job("opt-share-1")
+    overview = {**job_data["payload_overview"], "optimization_type": "future_internal_job"}
+    store.update_job("opt-share-1", payload_overview=overview)
+
+    stranger = _client(store, user="bob")
+    assert stranger.get("/optimizations/opt-share-1/public").status_code == 404
+
+
+def test_public_view_of_non_successful_optimization_404() -> None:
+    """Explore exposes only successful optimizations, not in-progress or failed jobs."""
+    store = _MemStore()
+    _seed_job(store, username="alice")
+    store.update_job("opt-share-1", status="failed")
+
+    stranger = _client(store, user="bob")
+    assert stranger.get("/optimizations/opt-share-1/public").status_code == 404
+
+
 def test_public_view_unknown_optimization_404() -> None:
     """Reading a public view of an unknown id 404s."""
     store = _MemStore()

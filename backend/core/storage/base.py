@@ -36,6 +36,8 @@ class JobRecord(TypedDict, total=False):
     log_count: int
     stored_bytes: int
     accumulated_runtime_seconds: float
+    parent_optimization_id: str | None
+    pair_index: int | None
 
 
 class ProgressEventRecord(TypedDict):
@@ -88,11 +90,14 @@ class JobStore(Protocol):
         """
         ...
 
-    def get_job(self, optimization_id: str) -> JobRecord:
+    def get_job(self, optimization_id: str, *, include_payload: bool = True) -> JobRecord:
         """Retrieve a job by its ID.
 
         Args:
             optimization_id: ID of the job to fetch.
+            include_payload: When ``False``, the record's ``payload`` is
+                reported as ``None`` so hot polling paths skip materializing
+                the (potentially multi-MB) training dataset.
 
         Returns:
             The matching ``JobRecord``.

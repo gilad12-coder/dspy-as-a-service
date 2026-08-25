@@ -21,6 +21,8 @@ _SETTINGS_ENV_VARS = (
     "WORKER_POLL_INTERVAL",
     "WORKER_STALE_THRESHOLD",
     "JOB_MAX_ATTEMPTS",
+    "EMBEDDING_INDEX_SWEEP_INTERVAL",
+    "EMBEDDING_INDEX_SWEEP_BATCH_SIZE",
     "PROGRESS_EVENTS_PER_JOB_CAP",
     "LOG_ENTRIES_PER_JOB_CAP",
     "CANCEL_POLL_INTERVAL",
@@ -39,6 +41,14 @@ _SETTINGS_ENV_VARS = (
     "ALLOWED_ORIGINS",
     "LOG_LEVEL",
     "MAX_JOBS_PER_USER",
+    "MAX_TOTAL_USERS",
+    "MAX_MONTHLY_ACTIVE_USERS",
+    "MAX_CONCURRENT_JOBS_PER_USER",
+    "GLOBAL_DAILY_SPEND_CEILING_CREDITS",
+    "SUBMISSIONS_PAUSED",
+    "REDIS_URL",
+    "RATE_LIMIT_SUBMISSIONS_PER_MINUTE",
+    "RATE_LIMIT_ACCOUNT_REQUESTS_PER_HOUR",
     "ADMIN_USERNAMES",
     "QUOTA_OVERRIDES",
 )
@@ -91,6 +101,14 @@ def test_settings_defaults_job_max_attempts() -> None:
     s = Settings(_env_file=None)
 
     assert s.job_max_attempts == 3
+
+
+def test_settings_defaults_embedding_index_repair() -> None:
+    """Embedding repair defaults to a one-minute interval and 25-row batch."""
+    s = Settings(_env_file=None)
+
+    assert s.embedding_index_sweep_interval_seconds == 60.0
+    assert s.embedding_index_sweep_batch_size == 25
 
 
 def test_settings_defaults_cancel_poll_interval() -> None:
@@ -595,4 +613,67 @@ def test_settings_default_agent_models_use_shared_constant() -> None:
     s = Settings(_env_file=None)
 
     assert s.code_agent_model == DEFAULT_AGENT_MODEL_ID
+
+
+def test_settings_defaults_cost_guardrails() -> None:
+    """Hosted population/spend caps are opt-in while per-user concurrency is safe by default."""
+    s = Settings(_env_file=None)
+
+    assert s.max_total_users == 0
+    assert s.max_monthly_active_users == 0
+    assert s.max_concurrent_jobs_per_user == 5
+    assert s.global_daily_spend_ceiling_credits == 0
+    assert s.submissions_paused is False
+
+
+def test_settings_defaults_rate_limits() -> None:
+    """Rate-limit defaults: no Redis URL, 30 submissions/min, 20 account acts/hr."""
+    s = Settings(_env_file=None)
+
+    assert s.redis_url is None
+    assert s.rate_limit_submissions_per_minute == 30
+    assert s.rate_limit_account_requests_per_hour == 20
+
+
+def test_settings_rate_limits_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rate-limit knobs and the Redis URL are overridable from the environment."""
+    monkeypatch.setenv("REDIS_URL", "redis://cache:6379/1")
+    monkeypatch.setenv("RATE_LIMIT_SUBMISSIONS_PER_MINUTE", "5")
+    monkeypatch.setenv("RATE_LIMIT_ACCOUNT_REQUESTS_PER_HOUR", "0")
+
+    s = Settings(_env_file=None)
+
+    assert s.redis_url == "redis://cache:6379/1"
+    assert s.rate_limit_submissions_per_minute == 5
+    assert s.rate_limit_account_requests_per_hour == 0
+
+
+def test_settings_cost_guardrails_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each cost guardrail is overridable from its environment variable."""
+    monkeypatch.setenv("MAX_TOTAL_USERS", "250")
+    monkeypatch.setenv("MAX_MONTHLY_ACTIVE_USERS", "200")
+    monkeypatch.setenv("MAX_CONCURRENT_JOBS_PER_USER", "3")
+    monkeypatch.setenv("GLOBAL_DAILY_SPEND_CEILING_CREDITS", "1000000")
+    monkeypatch.setenv("SUBMISSIONS_PAUSED", "true")
+
+    s = Settings(_env_file=None)
+
+    assert s.max_total_users == 250
+    assert s.max_monthly_active_users == 200
+    assert s.max_concurrent_jobs_per_user == 3
+    assert s.global_daily_spend_ceiling_credits == 1000000
+    assert s.submissions_paused is True
+
+
+def test_settings_cost_guardrails_disable_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero is accepted (``ge=0``) and is the documented disable value for the caps."""
+    monkeypatch.setenv("MAX_TOTAL_USERS", "0")
+    monkeypatch.setenv("MAX_MONTHLY_ACTIVE_USERS", "0")
+    monkeypatch.setenv("MAX_CONCURRENT_JOBS_PER_USER", "0")
+
+    s = Settings(_env_file=None)
+
+    assert s.max_total_users == 0
+    assert s.max_monthly_active_users == 0
+    assert s.max_concurrent_jobs_per_user == 0
     assert s.generalist_agent_model == DEFAULT_AGENT_MODEL_ID

@@ -15,7 +15,7 @@ interface ResultsSkeletonProps {
  */
 export function ResultsSkeleton({ rows = 4 }: ResultsSkeletonProps) {
   return (
-    <ul dir="rtl" aria-hidden="true" className="divide-y divide-border/55">
+    <ul aria-hidden="true" className="divide-y divide-border/55">
       {Array.from({ length: rows }).map((_, i) => (
         <li key={i} className="flex flex-col gap-2 rounded-lg px-3 py-4">
           <div className="flex items-baseline justify-between gap-4">

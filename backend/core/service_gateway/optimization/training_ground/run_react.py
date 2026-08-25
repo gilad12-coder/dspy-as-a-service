@@ -32,6 +32,7 @@ from typing import Any
 
 import dspy
 import gepa
+from dspy.adapters.types.tool import convert_input_schema_to_tool_args
 from gepa.adapters.dspy_adapter.dspy_adapter import DspyAdapter
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -44,6 +45,8 @@ from core.constants import (
     PROGRESS_OPTIMIZED,
 )
 
+from ..logged_scores import reset_logged_metrics
+from ..optimizers import build_target_score_stopper
 from ..retrying_react import RetryingReActV2
 from ..timing import (
     STAGE_BASELINE,
@@ -131,12 +134,14 @@ def tool_severity(tool: dspy.Tool) -> str | None:
     return getattr(tool, _TOOL_SEVERITY_ATTR, None)
 
 
-async def _list_live_tools(mcp_url: str, auth_header: str | None) -> list[dspy.Tool]:
-    """Open one MCP session and return the live ``dspy.Tool`` roster.
+def _list_live_tools(mcp_url: str, auth_header: str | None) -> list[dspy.Tool]:
+    """List the live MCP roster and wrap each tool for threaded sync rollouts.
 
-    Each tool is wrapped via ``dspy.Tool.from_mcp_tool`` so the react rollouts
-    can invoke it, and carries its derived approval severity read from
-    ``.annotations`` (see :func:`set_tool_severity`).
+    Each wrapper opens a fresh MCP session per invocation (see
+    :func:`_live_mcp_tool`) so react rollouts can call tools synchronously
+    from ``Evaluate``'s worker threads. A ``dspy.Tool.from_mcp_tool`` wrapper
+    would be async and bound to a session that closes right after listing —
+    every rollout-time call would fail.
 
     Args:
         mcp_url: MCP server URL.
@@ -147,20 +152,101 @@ async def _list_live_tools(mcp_url: str, auth_header: str | None) -> list[dspy.T
         derived approval severity.
     """
     headers = {"Authorization": auth_header} if auth_header else None
+    specs = asyncio.run(_list_live_tool_specs(mcp_url, headers))
+    tools: list[dspy.Tool] = []
+    for spec in specs:
+        wrapped = _live_mcp_tool(mcp_url, headers, spec)
+        set_tool_severity(
+            wrapped, _severity_from_annotations(getattr(spec, "annotations", None))
+        )
+        tools.append(wrapped)
+    return tools
+
+
+async def _list_live_tool_specs(
+    mcp_url: str, headers: dict[str, str] | None
+) -> list[Any]:
+    """Fetch the raw MCP tool listing over one short-lived session.
+
+    Args:
+        mcp_url: MCP server URL.
+        headers: Optional HTTP headers forwarded to the MCP transport.
+
+    Returns:
+        The server's ``mcp.types.Tool`` specs, in listing order.
+    """
     async with (
         streamablehttp_client(mcp_url, headers=headers) as (read, write, _),
         ClientSession(read, write) as session,
     ):
         await session.initialize()
         listing = await session.list_tools()
-        tools: list[dspy.Tool] = []
-        for tool in listing.tools:
-            wrapped = dspy.Tool.from_mcp_tool(session, tool)
-            set_tool_severity(
-                wrapped, _severity_from_annotations(getattr(tool, "annotations", None))
-            )
-            tools.append(wrapped)
-        return tools
+        return list(listing.tools)
+
+
+def _mcp_result_content(result: Any) -> Any:
+    """Flatten an MCP ``CallToolResult`` into tool-observation content.
+
+    Mirrors dspy's ``_convert_mcp_tool_result`` so the wrapped tools return
+    the same shapes ``dspy.Tool.from_mcp_tool`` wrappers would.
+
+    Args:
+        result: The ``mcp.types.CallToolResult`` from ``session.call_tool``.
+
+    Returns:
+        A single string for one text block, a list of strings for several, or
+        the raw non-text content blocks when no text was returned.
+
+    Raises:
+        RuntimeError: When the server flagged the call as an error.
+    """
+    texts = [c.text for c in result.content if getattr(c, "text", None) is not None]
+    content: Any = texts[0] if len(texts) == 1 else texts
+    if result.isError:
+        raise RuntimeError(f"Failed to call a MCP tool: {content}")
+    return content or [c for c in result.content if getattr(c, "text", None) is None]
+
+
+def _live_mcp_tool(
+    mcp_url: str, headers: dict[str, str] | None, spec: Any
+) -> dspy.Tool:
+    """Build a synchronously callable ``dspy.Tool`` for one live MCP tool.
+
+    Args:
+        mcp_url: MCP server URL.
+        headers: Optional HTTP headers forwarded to the MCP transport.
+        spec: The ``mcp.types.Tool`` spec to wrap.
+
+    Returns:
+        A ``dspy.Tool`` whose body opens a fresh MCP session per call, so it
+        stays valid for the whole run and is callable from any rollout thread.
+    """
+    args, arg_types, arg_desc = convert_input_schema_to_tool_args(spec.inputSchema)
+
+    async def _call_async(**kwargs: Any) -> Any:
+        """Run one tool call over its own session on the caller's loop."""
+        async with (
+            streamablehttp_client(mcp_url, headers=headers) as (read, write, _),
+            ClientSession(read, write) as session,
+        ):
+            await session.initialize()
+            result = await session.call_tool(spec.name, arguments=kwargs)
+            return _mcp_result_content(result)
+
+    def _call(**kwargs: Any) -> Any:
+        """Invoke the MCP tool over a fresh session on a private event loop."""
+        return asyncio.run(_call_async(**kwargs))
+
+    _call.__name__ = spec.name
+    _call.__doc__ = spec.description
+    return dspy.Tool(
+        _call,
+        name=spec.name,
+        desc=spec.description,
+        args=args,
+        arg_types=arg_types,
+        arg_desc=arg_desc,
+    )
 
 
 def extract_program_state(program: dspy.Module) -> dict[str, Any]:
@@ -376,9 +462,7 @@ def resolve_react_tools(
     kind = _ts(tool_source, "kind")
     if kind == "live_mcp":
         mcp_url = _ts(tool_source, "mcp_url") or settings.generalist_agent_mcp_url
-        tools = asyncio.run(
-            _list_live_tools(mcp_url, _ts(tool_source, "mcp_auth_header"))
-        )
+        tools = _list_live_tools(mcp_url, _ts(tool_source, "mcp_auth_header"))
         tools = _apply_tool_filter(tools, _ts(tool_source, "tool_filter"))
     elif kind == "dataset_snapshot":
         tools = _dataset_snapshot_tools(_snapshot_source(tool_source, dataset))
@@ -495,6 +579,9 @@ def _build_feedback_map(
         ) -> Any:
             """Score one predictor invocation and wrap it as score+feedback."""
             trace_for_pred = [(predictor, predictor_inputs, predictor_output)]
+            # Fresh log_metrics slot per call — same residue guard as
+            # MinibatchRecorder; react runs don't aggregate logged scores yet.
+            reset_logged_metrics()
             outcome = metric(
                 module_inputs,
                 module_outputs,
@@ -573,6 +660,7 @@ def run_react_optimization(
     student_lm: dspy.LM,
     reflection_lm: dspy.LM,
     max_metric_calls: int = _AUTO_BUDGETS["medium"],
+    target_score: float | None = None,
     max_iters: int = DEFAULT_MAX_ITERS,
     seed: int = 0,
     num_threads: int | None = None,
@@ -601,6 +689,9 @@ def run_react_optimization(
             ``dspy.context``).
         reflection_lm: Reflective-proposer model used by GEPA's adapter.
         max_metric_calls: GEPA metric-call budget (default medium = 2000).
+        target_score: Optional validation score target in the API's 0–100
+            percentage scale. GEPA stops when its best validation candidate
+            reaches the target, while ``max_metric_calls`` remains a ceiling.
         max_iters: ReActV2 loop budget for the seed program.
         seed: RNG seed shared by GEPA and the adapter.
         num_threads: Eval/rollout thread count for the adapter; ``None`` keeps
@@ -643,6 +734,8 @@ def run_react_optimization(
     if progress_callback:
         progress_callback(PROGRESS_BASELINE, {DETAIL_BASELINE: _mean(baseline_scalars)})
 
+    target_stopper = build_target_score_stopper(target_score)
+    stop_callbacks = [target_stopper] if target_stopper is not None else None
     with track_stage(STAGE_TRAINING, *timing_callbacks):
         result = gepa.optimize(
             seed_candidate=seed_candidate,
@@ -651,6 +744,7 @@ def run_react_optimization(
             adapter=adapter,
             reflection_lm=(lambda x: adapter.stripped_lm_call(x)[0]),
             max_metric_calls=max_metric_calls,
+            stop_callbacks=stop_callbacks,
             seed=seed,
             run_dir=run_dir,
             # GEPA defaults both off, which left react runs without a score chart
@@ -681,6 +775,9 @@ def run_react_optimization(
         "optimized_scalars_per_example": optimized_scalars,
         "baseline_outputs_per_example": baseline_outputs,
         "optimized_outputs_per_example": optimized_outputs,
+        "target_score_reached": (
+            bool(target_stopper.reached) if target_stopper is not None else None
+        ),
         "tool_overlay": {
             "tool_descriptions": _candidate_tool_descriptions(best_candidate),
             "tool_arg_descriptions": _candidate_tool_arg_descriptions(best_candidate),

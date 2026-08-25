@@ -1,5 +1,6 @@
 "use client";
 
+import { CaretDown } from "@/shared/ui/icons";
 import {
   Card,
   CardContent,
@@ -13,21 +14,22 @@ import { Separator } from "@/shared/ui/primitives/separator";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { NumberInput } from "@/shared/ui/number-input";
 import { HelpTip } from "@/shared/ui/help-tip";
-import { useUserPrefs } from "@/features/settings";
 import { cn } from "@/shared/lib/utils";
 import { tip } from "@/shared/lib/tooltips";
 import { TERMS } from "@/shared/lib/terms";
-import { msg } from "@/shared/lib/messages";
+import { formatMsg, msg } from "@/shared/lib/messages";
+import { useUserPrefs } from "@/features/settings";
 
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 import { SplitRecommendationCard } from "../SplitRecommendationCard";
-import { ReactConfigSection } from "./ReactConfigSection";
+
+const MOBILE_NUMBER_INPUT_CLASS =
+  "h-[44px] [&_button]:size-[44px] [&_input]:text-base lg:h-9 lg:[&_button]:size-9 lg:[&_input]:text-sm";
 
 export function ParamsStep({ w }: { w: SubmitWizardContext }) {
   const { prefs } = useUserPrefs();
-  const advancedMode = prefs.advancedMode;
+  const advanced = prefs.advancedMode;
   const {
-    isReact,
     split,
     updateSplit,
     splitSum,
@@ -40,141 +42,157 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
     setReflectionMinibatchSize,
     maxFullEvals,
     setMaxFullEvals,
+    maxMetricCalls,
+    setMaxMetricCalls,
     useMerge,
     setUseMerge,
+    optimizerName,
+    targetScore,
+    setTargetScore,
+    pxnParents,
+    setPxnParents,
+    pxnProposals,
+    setPxnProposals,
+    optimizerSettingsOpen,
+    setOptimizerSettingsOpen,
   } = w;
+  const targetScoreValue = Number.parseFloat(targetScore);
+  // p*n candidates per reflective round; only worth spelling out once batching
+  // is actually on (1x1 is GEPA's classic one-candidate default).
+  const pxnBatch = (parseInt(pxnParents, 10) || 1) * (parseInt(pxnProposals, 10) || 1);
 
   return (
     <Card
       className=" border-border/50 bg-card/80 backdrop-blur-xl shadow-lg"
       data-tutorial="wizard-step-5"
     >
-      <CardHeader>
+      <CardHeader className="px-4 sm:px-6">
         <CardTitle className="text-lg">
           {msg("auto.features.submit.components.steps.paramsstep.1")}
         </CardTitle>
-        <CardDescription>
-          {msg("auto.features.submit.components.steps.paramsstep.2")}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        {isReact && (
-          <>
-            <ReactConfigSection w={w} />
-            <Separator />
-          </>
+        {advanced && (
+          <CardDescription>
+            {msg("auto.features.submit.components.steps.paramsstep.2")}
+          </CardDescription>
         )}
-
-        <div className="space-y-3" data-tutorial="data-splits">
-          <div className="flex items-center justify-between">
-            <Label className="font-semibold">
-              <HelpTip text={tip("data.split_explanation")}>
-                {msg("auto.features.submit.components.steps.paramsstep.4")}
-                {TERMS.dataset}
-              </HelpTip>
-            </Label>
-            {splitSum !== 1 && (
-              <Badge variant="destructive" className="text-xs">
-                {msg("auto.features.submit.components.steps.paramsstep.5")}
-                {splitSum}
-              </Badge>
+      </CardHeader>
+      <CardContent className="space-y-5 px-4 sm:px-6">
+        {/* Simple mode leaves the split to the server recommendation (splitMode
+            defaults to auto) and hides the whole train/val/test surface. */}
+        {advanced && (
+          <div className="space-y-3" data-tutorial="data-splits">
+            <div className="flex items-center justify-between">
+              <Label className="font-semibold">
+                <HelpTip text={tip("data.split_explanation")}>
+                  {msg("auto.features.submit.components.steps.paramsstep.4")}
+                  {TERMS.dataset}
+                </HelpTip>
+              </Label>
+              {splitSum !== 1 && (
+                <Badge variant="destructive" className="text-xs">
+                  {msg("auto.features.submit.components.steps.paramsstep.5")}
+                  {splitSum}
+                </Badge>
+              )}
+            </div>
+            <SplitRecommendationCard w={w} />
+            {splitMode === "manual" && (
+              <div className="space-y-3">
+                <div className="flex h-3 rounded-full overflow-hidden">
+                  <div
+                    className="bg-[#3D2E22] transition-all"
+                    style={{ width: `${split.train * 100}%` }}
+                  />
+                  <div
+                    className="bg-[#C8A882] transition-all"
+                    style={{ width: `${split.val * 100}%` }}
+                  />
+                  <div
+                    className="bg-[#8C7A6B] transition-all"
+                    style={{ width: `${split.test * 100}%` }}
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="split-train" className="flex items-center gap-1.5 text-xs">
+                      <span className="inline-block w-2 h-2 rounded-full bg-[#3D2E22]" />
+                      <HelpTip text={tip("data.split.train")}>
+                        {msg("auto.features.submit.components.steps.paramsstep.6")}
+                      </HelpTip>
+                    </Label>
+                    <NumberInput
+                      id="split-train"
+                      step={0.05}
+                      min={0}
+                      max={1}
+                      value={split.train}
+                      onChange={(v) => updateSplit("train", String(v))}
+                      className={MOBILE_NUMBER_INPUT_CLASS}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="split-val" className="flex items-center gap-1.5 text-xs">
+                      <span className="inline-block w-2 h-2 rounded-full bg-[#C8A882]" />
+                      <HelpTip text={tip("data.split.val")}>
+                        {msg("auto.features.submit.components.steps.paramsstep.7")}
+                      </HelpTip>
+                    </Label>
+                    <NumberInput
+                      id="split-val"
+                      step={0.05}
+                      min={0}
+                      max={1}
+                      value={split.val}
+                      onChange={(v) => updateSplit("val", String(v))}
+                      className={MOBILE_NUMBER_INPUT_CLASS}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="split-test" className="flex items-center gap-1.5 text-xs">
+                      <span className="inline-block w-2 h-2 rounded-full bg-[#8C7A6B]" />
+                      <HelpTip text={tip("data.split.test")}>
+                        {msg("auto.features.submit.components.steps.paramsstep.8")}
+                      </HelpTip>
+                    </Label>
+                    <NumberInput
+                      id="split-test"
+                      step={0.05}
+                      min={0}
+                      max={1}
+                      value={split.test}
+                      onChange={(v) => updateSplit("test", String(v))}
+                      className={MOBILE_NUMBER_INPUT_CLASS}
+                    />
+                  </div>
+                </div>
+              </div>
             )}
           </div>
-          <SplitRecommendationCard w={w} />
-          {splitMode === "manual" && (
-            <div className="space-y-3">
-              <div className="flex h-3 rounded-full overflow-hidden">
-                <div
-                  className="bg-[#3D2E22] transition-all"
-                  style={{ width: `${split.train * 100}%` }}
-                />
-                <div
-                  className="bg-[#C8A882] transition-all"
-                  style={{ width: `${split.val * 100}%` }}
-                />
-                <div
-                  className="bg-[#8C7A6B] transition-all"
-                  style={{ width: `${split.test * 100}%` }}
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="split-train" className="flex items-center gap-1.5 text-xs">
-                    <span className="inline-block w-2 h-2 rounded-full bg-[#3D2E22]" />
-                    <HelpTip text={tip("data.split.train")}>
-                      {msg("auto.features.submit.components.steps.paramsstep.6")}
-                    </HelpTip>
-                  </Label>
-                  <NumberInput
-                    id="split-train"
-                    step={0.05}
-                    min={0}
-                    max={1}
-                    value={split.train}
-                    onChange={(v) => updateSplit("train", String(v))}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="split-val" className="flex items-center gap-1.5 text-xs">
-                    <span className="inline-block w-2 h-2 rounded-full bg-[#C8A882]" />
-                    <HelpTip text={tip("data.split.val")}>
-                      {msg("auto.features.submit.components.steps.paramsstep.7")}
-                    </HelpTip>
-                  </Label>
-                  <NumberInput
-                    id="split-val"
-                    step={0.05}
-                    min={0}
-                    max={1}
-                    value={split.val}
-                    onChange={(v) => updateSplit("val", String(v))}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="split-test" className="flex items-center gap-1.5 text-xs">
-                    <span className="inline-block w-2 h-2 rounded-full bg-[#8C7A6B]" />
-                    <HelpTip text={tip("data.split.test")}>
-                      {msg("auto.features.submit.components.steps.paramsstep.8")}
-                    </HelpTip>
-                  </Label>
-                  <NumberInput
-                    id="split-test"
-                    step={0.05}
-                    min={0}
-                    max={1}
-                    value={split.test}
-                    onChange={(v) => updateSplit("test", String(v))}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        )}
 
-        <Separator />
+        {advanced && <Separator />}
 
         <div className="space-y-4">
-          <Label className="font-semibold">
-            {msg("auto.features.submit.components.steps.paramsstep.9")}
-          </Label>
-          <div className="flex items-center justify-between">
-            <Label htmlFor="shuffle" className="cursor-pointer text-sm">
-              <HelpTip text={tip("data.shuffle_explanation")}>
-                {msg("auto.features.submit.components.steps.paramsstep.10")}
-              </HelpTip>
+          {advanced && (
+            <Label className="font-semibold">
+              {msg("auto.features.submit.components.steps.paramsstep.9")}
             </Label>
-            <Switch id="shuffle" checked={shuffle} onCheckedChange={setShuffle} />
-          </div>
-          {advancedMode && (
-            <>
-              <Separator />
-              <Label className="font-semibold text-xs text-muted-foreground">
-                {msg("auto.features.submit.components.steps.paramsstep.11")}
-                {TERMS.optimizer}
-              </Label>
-            </>
           )}
-
+          {advanced && (
+            <div className="flex items-center justify-between">
+              <Label htmlFor="shuffle" className="cursor-pointer text-sm">
+                <HelpTip text={tip("data.shuffle_explanation")}>
+                  {msg("auto.features.submit.components.steps.paramsstep.10")}
+                </HelpTip>
+              </Label>
+              <Switch
+                id="shuffle"
+                checked={shuffle}
+                onCheckedChange={setShuffle}
+                className="relative before:absolute before:-inset-3 before:content-[''] lg:before:hidden"
+              />
+            </div>
+          )}
           <div className="space-y-2" data-tutorial="auto-level">
             <Label className="text-sm">
               <HelpTip text={tip("submit.depth")}>
@@ -203,7 +221,7 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
                   type="button"
                   onClick={() => setAutoLevel(autoLevel === val ? "" : val)}
                   className={cn(
-                    "relative z-[1] flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors text-center cursor-pointer",
+                    "relative z-[1] min-h-[44px] flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors text-center cursor-pointer lg:min-h-0",
                     autoLevel === val
                       ? "text-foreground"
                       : "text-muted-foreground hover:text-foreground",
@@ -215,46 +233,188 @@ export function ParamsStep({ w }: { w: SubmitWizardContext }) {
             </div>
           </div>
 
-          {advancedMode && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-tutorial="gepa-params">
-              <div className="space-y-1.5">
-                <Label className="text-xs">
-                  <HelpTip text={tip("submit.reflection_minibatch")}>
-                    {msg("auto.features.submit.components.steps.paramsstep.13")}
-                  </HelpTip>
-                </Label>
-                <NumberInput
-                  min={1}
-                  max={20}
-                  step={1}
-                  value={reflectionMinibatchSize ? parseInt(reflectionMinibatchSize, 10) : ""}
-                  onChange={(v) => setReflectionMinibatchSize(String(v))}
-                />
+          {advanced && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setOptimizerSettingsOpen(!optimizerSettingsOpen)}
+                  aria-expanded={optimizerSettingsOpen}
+                  className="flex min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 lg:min-h-0"
+                >
+                  <span className="text-sm leading-none font-medium">
+                    {msg("auto.features.submit.components.steps.paramsstep.11")}
+                    {TERMS.optimizer}
+                  </span>
+                  <CaretDown
+                    className={cn(
+                      "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
+                      optimizerSettingsOpen && "rotate-180",
+                    )}
+                  />
+                </button>
+                {optimizerSettingsOpen && (
+                  <div
+                    className="grid grid-cols-1 gap-3 sm:grid-cols-2 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200"
+                    data-tutorial="gepa-params"
+                  >
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">
+                        <HelpTip text={tip("submit.reflection_minibatch")}>
+                          {msg("auto.features.submit.components.steps.paramsstep.13")}
+                        </HelpTip>
+                      </Label>
+                      <NumberInput
+                        min={1}
+                        max={20}
+                        step={1}
+                        value={reflectionMinibatchSize ? parseInt(reflectionMinibatchSize, 10) : ""}
+                        onChange={(v) => setReflectionMinibatchSize(String(v))}
+                        className={MOBILE_NUMBER_INPUT_CLASS}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label
+                        className={cn(
+                          "text-xs",
+                          (autoLevel || maxMetricCalls) && "text-muted-foreground/50",
+                        )}
+                      >
+                        <HelpTip text={tip("submit.eval_rounds")}>
+                          {msg("auto.features.submit.components.steps.paramsstep.14")}
+                        </HelpTip>
+                      </Label>
+                      <NumberInput
+                        min={1}
+                        max={50}
+                        step={1}
+                        value={maxFullEvals ? parseInt(maxFullEvals, 10) : ""}
+                        onChange={(v) => setMaxFullEvals(String(v))}
+                        disabled={!!autoLevel || !!maxMetricCalls}
+                        className={MOBILE_NUMBER_INPUT_CLASS}
+                      />
+                    </div>
+                    <div className="col-span-1 flex items-center justify-between sm:col-span-2">
+                      <Label className="text-sm cursor-pointer">
+                        <HelpTip text={tip("submit.merge")}>
+                          {msg("auto.features.submit.components.steps.paramsstep.15")}
+                        </HelpTip>
+                      </Label>
+                      <Switch
+                        checked={useMerge}
+                        onCheckedChange={setUseMerge}
+                        className="relative before:absolute before:-inset-3 before:content-[''] lg:before:hidden"
+                      />
+                    </div>
+                    {optimizerName.toLowerCase() === "gepa" && (
+                      <>
+                        <div className="col-span-1 space-y-1.5 sm:col-span-2">
+                          <div className="flex items-center justify-between">
+                            <Label
+                              htmlFor="max-metric-calls"
+                              className={cn("text-xs", autoLevel && "text-muted-foreground/50")}
+                            >
+                              <HelpTip text={tip("submit.metric_calls")}>
+                                {msg("submit.metric_calls")}
+                              </HelpTip>
+                            </Label>
+                            {/* NumberInput can't emit an empty value, so an explicit
+                                clear is the only way back to the eval-rounds path. */}
+                            {maxMetricCalls && (
+                              <button
+                                type="button"
+                                onClick={() => setMaxMetricCalls("")}
+                                className="min-h-[44px] cursor-pointer px-2 text-xs text-muted-foreground hover:text-foreground lg:min-h-0 lg:px-0"
+                              >
+                                {msg("submit.metric_calls.clear")}
+                              </button>
+                            )}
+                          </div>
+                          <NumberInput
+                            id="max-metric-calls"
+                            min={1}
+                            max={100000}
+                            step={1}
+                            value={maxMetricCalls ? parseInt(maxMetricCalls, 10) : ""}
+                            onChange={(v) => setMaxMetricCalls(String(v))}
+                            disabled={!!autoLevel}
+                            className={cn(MOBILE_NUMBER_INPUT_CLASS, "max-w-48")}
+                          />
+                          {maxMetricCalls && !autoLevel && (
+                            <p className="text-xs text-muted-foreground">
+                              {msg("submit.metric_calls.hint")}
+                            </p>
+                          )}
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pxn-parents" className="text-xs">
+                            <HelpTip text={tip("submit.pxn_parents")}>
+                              {msg("submit.pxn.parents")}
+                            </HelpTip>
+                          </Label>
+                          <NumberInput
+                            id="pxn-parents"
+                            min={1}
+                            max={16}
+                            step={1}
+                            value={pxnParents ? parseInt(pxnParents, 10) : ""}
+                            onChange={(v) => setPxnParents(String(v))}
+                            className={MOBILE_NUMBER_INPUT_CLASS}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pxn-proposals" className="text-xs">
+                            <HelpTip text={tip("submit.pxn_proposals")}>
+                              {msg("submit.pxn.proposals")}
+                            </HelpTip>
+                          </Label>
+                          <NumberInput
+                            id="pxn-proposals"
+                            min={1}
+                            max={16}
+                            step={1}
+                            value={pxnProposals ? parseInt(pxnProposals, 10) : ""}
+                            onChange={(v) => setPxnProposals(String(v))}
+                            className={MOBILE_NUMBER_INPUT_CLASS}
+                          />
+                        </div>
+                        {pxnBatch > 1 && (
+                          <p className="col-span-1 -mt-1 text-xs text-muted-foreground sm:col-span-2">
+                            {formatMsg("submit.pxn.batch_hint", { total: pxnBatch })}
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {optimizerName.toLowerCase() === "gepa" && (
+                      <div className="col-span-1 space-y-2 sm:col-span-2">
+                        <Label htmlFor="target-score" className="cursor-pointer text-sm">
+                          <HelpTip text={tip("submit.target_score")}>
+                            {msg("auto.features.submit.components.steps.paramsstep.16")}
+                          </HelpTip>
+                        </Label>
+                        <div className="flex items-center">
+                          <div className="relative w-full max-w-48">
+                            <NumberInput
+                              id="target-score"
+                              min={1}
+                              max={100}
+                              step={0.1}
+                              value={Number.isFinite(targetScoreValue) ? targetScoreValue : ""}
+                              onChange={(value) => setTargetScore(String(value))}
+                              className={cn(MOBILE_NUMBER_INPUT_CLASS, "pe-8")}
+                            />
+                            <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-xs text-muted-foreground">
+                              %
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="space-y-1.5">
-                <Label className={cn("text-xs", autoLevel && "text-muted-foreground/50")}>
-                  <HelpTip text={tip("submit.eval_rounds")}>
-                    {msg("auto.features.submit.components.steps.paramsstep.14")}
-                  </HelpTip>
-                </Label>
-                <NumberInput
-                  min={1}
-                  max={50}
-                  step={1}
-                  value={maxFullEvals ? parseInt(maxFullEvals, 10) : ""}
-                  onChange={(v) => setMaxFullEvals(String(v))}
-                  disabled={!!autoLevel}
-                />
-              </div>
-              <div className="col-span-2 flex items-center justify-between">
-                <Label className="text-sm cursor-pointer">
-                  <HelpTip text={tip("submit.merge")}>
-                    {msg("auto.features.submit.components.steps.paramsstep.15")}
-                  </HelpTip>
-                </Label>
-                <Switch checked={useMerge} onCheckedChange={setUseMerge} />
-              </div>
-            </div>
+            </>
           )}
         </div>
       </CardContent>

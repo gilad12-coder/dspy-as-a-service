@@ -5,26 +5,28 @@ import Link from "next/link";
 import {
   Check,
   Database,
-  FileClock,
-  MessageSquare,
-  Sparkles,
-  Trash2,
+  FileText,
+  ChatText,
+  Sparkle,
+  Trash,
   ArrowUpLeft,
-  type LucideIcon,
-} from "lucide-react";
+  ArrowUpRight,
+  type Icon,
+} from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { cn } from "@/shared/lib/utils";
 import { formatStorageSize } from "@/shared/lib/formatters";
 import { msg, type MessageKey } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import type { StorageItem } from "@/shared/lib/api";
 
 /** Per-type icon, in-app jump target, and label key for a ranked storage item. */
 const TYPE_META: Record<
   StorageItem["type"],
-  { icon: LucideIcon; label: MessageKey; href: (id: string) => string | null }
+  { icon: Icon; label: MessageKey; href: (id: string) => string | null }
 > = {
   optimization: {
-    icon: Sparkles,
+    icon: Sparkle,
     label: "storage.type.optimization",
     href: (id) => `/optimizations/${id}`,
   },
@@ -36,13 +38,13 @@ const TYPE_META: Record<
   // Chats live in the slide-over agent panel; ?chat=<id> opens the panel onto
   // that conversation from whichever route the link is clicked on.
   chat: {
-    icon: MessageSquare,
+    icon: ChatText,
     label: "storage.type.chat",
     href: (id) => `?chat=${encodeURIComponent(id)}`,
   },
   // Pending uploads are transient wizard rows with no page of their own.
   staged_upload: {
-    icon: FileClock,
+    icon: FileText,
     label: "storage.type.staged_upload",
     href: () => null,
   },
@@ -68,10 +70,19 @@ interface StorageItemRowProps {
  * Only the checkbox (and the open/delete controls) is interactive — the row body
  * is inert so selection is never triggered by a stray click.
  */
-export function StorageItemRow({ item, selected, onToggle, onDelete, onNavigate }: StorageItemRowProps) {
+export function StorageItemRow({
+  item,
+  selected,
+  onToggle,
+  onDelete,
+  onNavigate,
+}: StorageItemRowProps) {
   const meta = TYPE_META[item.type];
   const Icon = meta.icon;
   const href = meta.href(item.id);
+  // The jump-to glyph points toward the reading-forward direction: up-left in
+  // RTL (Hebrew), mirrored to up-right in LTR (English).
+  const OpenArrow = getActiveDir() === "rtl" ? ArrowUpLeft : ArrowUpRight;
 
   return (
     <li
@@ -87,31 +98,40 @@ export function StorageItemRow({ item, selected, onToggle, onDelete, onNavigate 
         aria-label={msg("storage.select.item")}
         onClick={(event) => onToggle(item, event.shiftKey)}
         className={cn(
-          "grid size-5 shrink-0 cursor-pointer place-items-center rounded-md border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45",
+          "grid size-[44px] shrink-0 cursor-pointer place-items-center rounded-md border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:size-5",
           selected
             ? "border-transparent bg-foreground text-background"
             : "border-border/70 bg-background hover:border-foreground/40",
         )}
       >
-        {selected && <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />}
+        {selected && <Check className="size-3.5" aria-hidden="true" />}
       </button>
       <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-        <Icon className="size-4" strokeWidth={1.75} />
+        <Icon className="size-4" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">
           <bdi>{item.name}</bdi>
         </p>
         <p className="text-xs text-muted-foreground">{msg(meta.label)}</p>
+        <p className="text-xs tabular-nums text-muted-foreground sm:hidden">
+          {formatStorageSize(item.bytes)}
+        </p>
       </div>
-      <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+      <span className="hidden shrink-0 text-sm tabular-nums text-muted-foreground sm:inline">
         {formatStorageSize(item.bytes)}
       </span>
       <div className="flex shrink-0 items-center gap-0.5">
         {href && (
-          <Button asChild variant="ghost" size="icon-sm" aria-label={msg("storage.item.open")}>
+          <Button
+            asChild
+            variant="ghost"
+            size="icon-sm"
+            aria-label={msg("storage.item.open")}
+            className="!size-[44px] lg:!size-8"
+          >
             <Link href={href} onClick={() => onNavigate?.()}>
-              <ArrowUpLeft className="size-4" />
+              <OpenArrow className="size-4" />
             </Link>
           </Button>
         )}
@@ -120,9 +140,9 @@ export function StorageItemRow({ item, selected, onToggle, onDelete, onNavigate 
           size="icon-sm"
           onClick={() => onDelete(item)}
           aria-label={msg("storage.item.delete")}
-          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          className="size-[44px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive lg:size-8"
         >
-          <Trash2 className="size-4" />
+          <Trash className="size-4" />
         </Button>
       </div>
     </li>

@@ -205,11 +205,11 @@ export function ReactServeApi({ optimizationId }: ReactServeApiProps) {
               {msg("auto.app.optimizations.id.page.23")}
             </HelpTip>
           </p>
-          <div className="rounded-lg bg-muted/40 p-2.5 pe-8 relative group" dir="ltr">
+          <div className="group relative rounded-lg bg-muted/40 p-2.5 pe-11 sm:pe-8" dir="ltr">
             <code className="text-xs font-mono break-all">{url}</code>
             <CopyButton
               text={url}
-              className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100"
+              className="absolute end-1 top-1 opacity-100 sm:end-1.5 sm:top-1.5 sm:opacity-0 sm:group-hover:opacity-100"
             />
           </div>
         </div>

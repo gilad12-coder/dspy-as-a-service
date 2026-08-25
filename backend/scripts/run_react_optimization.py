@@ -69,7 +69,7 @@ def main() -> int:
     args = parser.parse_args()
 
     _export_model_keys()
-    engine = create_engine(os.environ.get("DATABASE_URL", "postgresql://giladmorad@localhost:5432/skynet"))
+    engine = create_engine(os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/skynet"))
     rows = exporter.export_agent_messages_to_rows(engine, window=args.window)
     print(f"[1] exported {len(rows)} trajectory rows from agent_messages", flush=True)
     if not rows:

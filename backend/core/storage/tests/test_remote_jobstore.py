@@ -16,8 +16,9 @@ here with a clear reason:
 from __future__ import annotations
 
 import inspect
+import time
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
@@ -27,6 +28,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import core.storage.remote as remote_mod
+from core.constants import OPTIMIZATION_TYPE_TAGGING
 from core.storage.base import JobStore
 from core.storage.models import Base, JobModel
 from core.storage.remote import RemoteDBJobStore
@@ -111,6 +113,18 @@ def test_create_job_default_fields_are_empty(store: SQLiteJobStore) -> None:
     assert result["started_at"] is None
     assert result["completed_at"] is None
     assert result["attempts"] == 0
+
+
+def test_monthly_active_admission_allows_existing_identity_at_limit(
+    store: SQLiteJobStore,
+) -> None:
+    """A full month blocks a new identity but never ejects an admitted one."""
+    month_start = date(2026, 8, 1)
+
+    assert store.admit_monthly_active_user("alice@example.com", month_start, 1) is True
+    assert store.admit_monthly_active_user("alice@example.com", month_start, 1) is True
+    assert store.admit_monthly_active_user("bob@example.com", month_start, 1) is False
+    assert store.count_monthly_active_users(month_start) == 1
 
 
 def test_get_job_raises_key_error_for_unknown(store: SQLiteJobStore) -> None:
@@ -531,6 +545,18 @@ def test_set_payload_overview_without_username_preserves_column(store: SQLiteJob
     assert store.list_jobs(username="dana")[0]["optimization_id"] == "o4"
 
 
+def test_set_payload_overview_hoists_composition_column(store: SQLiteJobStore) -> None:
+    """The ``composition`` overview key is hoisted to the indexed job column."""
+    store.create_job("o5")
+    store.set_payload_overview("o5", {"composition": "workflow"})
+    session = store._get_session()
+    try:
+        composition = session.query(JobModel.composition).filter(JobModel.optimization_id == "o5").scalar()
+    finally:
+        session.close()
+    assert composition == "workflow"
+
+
 def test_list_jobs_no_filter_returns_all(store: SQLiteJobStore) -> None:
     """List jobs no filter returns all."""
     store.create_job("lj1")
@@ -567,6 +593,34 @@ def test_list_jobs_optimization_type_filter(store: SQLiteJobStore) -> None:
     result = store.list_jobs(optimization_type="opt_a")
     ids = {j["optimization_id"] for j in result}
     assert ids == {"lj-opt-a"}
+
+
+def test_internal_tagging_jobs_hidden_from_listing_surfaces(store: SQLiteJobStore) -> None:
+    """Tagger bulk jobs stay out of every listing/count unless filtered for by type."""
+    store.create_job("run-1")
+    store.set_payload_overview("run-1", {"username": "alice", "optimization_type": "run"})
+    store.create_job("tag-1")
+    store.set_payload_overview(
+        "tag-1", {"username": "alice", "optimization_type": OPTIMIZATION_TYPE_TAGGING}
+    )
+    assert {j["optimization_id"] for j in store.list_jobs()} == {"run-1"}
+    assert store.count_jobs() == 1
+    assert store.count_jobs_by_status() == {"pending": 1}
+    assert {j["optimization_id"] for j in store.list_jobs_visible_to("alice")} == {"run-1"}
+    assert store.count_jobs_visible_to("alice") == 1
+    assert store.count_jobs_by_status_visible_to("alice") == {"pending": 1}
+    assert {j["optimization_id"] for j in store.scan_jobs_for_analytics()} == {"run-1"}
+    # The explicit type filter stays the escape hatch for whoever needs the rows.
+    tagged = store.list_jobs(optimization_type=OPTIMIZATION_TYPE_TAGGING)
+    assert {j["optimization_id"] for j in tagged} == {"tag-1"}
+    assert store.count_jobs(optimization_type=OPTIMIZATION_TYPE_TAGGING) == 1
+
+
+def test_legacy_null_type_jobs_survive_internal_exclusion(store: SQLiteJobStore) -> None:
+    """Rows with a NULL optimization_type (legacy) are still listed and counted."""
+    store.create_job("legacy-1")
+    assert {j["optimization_id"] for j in store.list_jobs()} == {"legacy-1"}
+    assert store.count_jobs() == 1
 
 
 def test_list_jobs_limit(store: SQLiteJobStore) -> None:
@@ -770,7 +824,7 @@ def test_claim_next_job_skips_incompatible_code_version(store: SQLiteJobStore, m
     """A v2 worker cannot claim a job submitted by v1."""
     monkeypatch.setattr(remote_mod.settings, "code_version", "v2", raising=False)
     store.create_job("claim-v1")
-    store.update_job("claim-v1", code_version="v1")
+    store.update_job("claim-v1", code_version="v1", payload={"ok": True})
 
     assert store.claim_next_job("pod-v2", lease_seconds=60.0) is None
 
@@ -779,12 +833,173 @@ def test_claim_next_job_accepts_null_code_version(store: SQLiteJobStore, monkeyp
     """Jobs without a code version remain claimable by any worker."""
     monkeypatch.setattr(remote_mod.settings, "code_version", "v2", raising=False)
     store.create_job("claim-null")
-    store.update_job("claim-null", code_version=None)
+    store.update_job("claim-null", code_version=None, payload={"ok": True})
 
     row = store.claim_next_job("pod-v2", lease_seconds=60.0)
 
     assert row is not None
     assert row["optimization_id"] == "claim-null"
+
+
+def test_claim_next_job_skips_pending_row_without_payload(store: SQLiteJobStore) -> None:
+    """A pending row stays unclaimable until its payload is written.
+
+    Regression: a submission inserts the row as ``pending`` (``create_job``)
+    *before* the worker writes the payload (``submit_job``). A poll tick landing
+    in that window must not claim the payload-less row and fail it with "has no
+    payload" — it waits, then becomes claimable once the payload lands.
+    """
+    store.create_job("claim-nopayload")
+
+    assert store.claim_next_job("pod", lease_seconds=60.0) is None
+
+    store.update_job("claim-nopayload", payload={"ok": True})
+
+    row = store.claim_next_job("pod", lease_seconds=60.0)
+    assert row is not None
+    assert row["optimization_id"] == "claim-nopayload"
+
+
+def test_claim_next_job_prefers_user_with_fewer_jobs_in_flight(store: SQLiteJobStore) -> None:
+    """A one-user burst doesn't monopolize claims while another user waits.
+
+    Alice submits first and already has one job claimed; Bob's younger job
+    must be claimed next because Alice has more work in flight — plain FIFO
+    would hand Alice the slot and starve Bob behind her whole burst.
+    """
+    store.create_job("fair-alice-1", username="alice")
+    store.update_job("fair-alice-1", payload={"ok": True})
+    store.create_job("fair-alice-2", username="alice")
+    store.update_job("fair-alice-2", payload={"ok": True})
+    store.create_job("fair-bob-1", username="bob")
+    store.update_job("fair-bob-1", payload={"ok": True})
+
+    first = store.claim_next_job("pod", lease_seconds=60.0)
+    assert first is not None
+    assert first["optimization_id"] == "fair-alice-1"
+
+    second = store.claim_next_job("pod", lease_seconds=60.0)
+    assert second is not None
+    assert second["optimization_id"] == "fair-bob-1"
+
+    third = store.claim_next_job("pod", lease_seconds=60.0)
+    assert third is not None
+    assert third["optimization_id"] == "fair-alice-2"
+
+
+def test_claim_next_job_stays_fifo_within_one_user(store: SQLiteJobStore) -> None:
+    """With a single user queued, claims stay strictly oldest-first."""
+    for i in range(3):
+        store.create_job(f"fifo-{i}", username="alice")
+        store.update_job(f"fifo-{i}", payload={"ok": True})
+
+    claimed = [store.claim_next_job("pod", lease_seconds=60.0)["optimization_id"] for _ in range(3)]
+
+    assert claimed == ["fifo-0", "fifo-1", "fifo-2"]
+
+
+def _seed_grid_parent_with_children(store: SQLiteJobStore, parent_id: str = "grid-p") -> list[str]:
+    """Create a grid parent with payload/overview and fan out two pair children."""
+    store.create_job(parent_id, username="alice")
+    store.set_payload_overview(parent_id, {"optimization_type": "grid_search", "username": "alice"})
+    store.update_job(
+        parent_id,
+        payload={"generation_models": [{"name": "g"}], "reflection_models": [{"name": "r1"}, {"name": "r2"}]},
+    )
+    return store.create_grid_pair_jobs(
+        parent_id, 2, username="alice", payload_overview={"optimization_type": "grid_search"}
+    )
+
+
+def test_create_grid_pair_jobs_parks_parent_and_is_idempotent(store: SQLiteJobStore) -> None:
+    """Fan-out creates claimable children once and parks the parent unclaimed."""
+    child_ids = _seed_grid_parent_with_children(store)
+
+    parent = store.get_job("grid-p")
+    assert parent["status"] == "running"
+    children = store.get_grid_pair_children("grid-p")
+    assert [c["pair_index"] for c in children] == [0, 1]
+    assert all(c["status"] == "pending" for c in children)
+
+    again = store.create_grid_pair_jobs("grid-p", 2, username="alice", payload_overview={})
+    assert again == child_ids
+    assert len(store.get_grid_pair_children("grid-p")) == 2
+
+
+def test_grid_pair_children_hidden_from_listings_and_counts(store: SQLiteJobStore) -> None:
+    """Child rows never surface in user-facing lists or counts, typed or not."""
+    _seed_grid_parent_with_children(store)
+
+    listed = {j["optimization_id"] for j in store.list_jobs(username="alice")}
+    assert listed == {"grid-p"}
+    typed = {j["optimization_id"] for j in store.list_jobs(username="alice", optimization_type="grid_search")}
+    assert typed == {"grid-p"}
+    assert store.count_jobs(username="alice") == 1
+    assert store.count_jobs(username="alice", optimization_type="grid_search") == 1
+
+
+def test_recover_orphaned_jobs_skips_distributed_parent(store: SQLiteJobStore) -> None:
+    """The lease-less running parent is never swept; its children still are."""
+    child_ids = _seed_grid_parent_with_children(store)
+    claimed = store.claim_next_job("pod", lease_seconds=0.001)
+    assert claimed is not None
+    assert claimed["optimization_id"] in child_ids
+    time.sleep(0.01)
+
+    recovered = store.recover_orphaned_jobs()
+
+    assert recovered == 1
+    assert store.get_job("grid-p")["status"] == "running"
+    assert store.get_job(claimed["optimization_id"])["status"] == "pending"
+
+
+def test_requeue_for_rerun_drops_pair_children(store: SQLiteJobStore) -> None:
+    """A from-scratch re-run discards the previous attempt's pair rows."""
+    _seed_grid_parent_with_children(store)
+    store.update_job("grid-p", status="failed")
+
+    assert store.requeue_for_rerun("grid-p") is True
+
+    assert store.get_grid_pair_children("grid-p") == []
+    assert store.get_job("grid-p")["status"] == "pending"
+
+
+def test_delete_job_removes_pair_children(store: SQLiteJobStore) -> None:
+    """Deleting a grid parent removes its child rows and their stores."""
+    child_ids = _seed_grid_parent_with_children(store)
+    store.save_grid_pair_result(child_ids[0], 0, {"pair_index": 0})
+
+    store.delete_job("grid-p")
+
+    assert not store.job_exists("grid-p")
+    for child_id in child_ids:
+        assert not store.job_exists(child_id)
+    assert store.get_grid_pair_results(child_ids[0]) == {}
+
+
+def test_list_finalizable_grid_parents(store: SQLiteJobStore) -> None:
+    """Only running parents whose children are ALL terminal are listed."""
+    child_ids = _seed_grid_parent_with_children(store)
+    store.update_job(child_ids[0], status="success")
+
+    assert store.list_finalizable_grid_parents() == []
+
+    store.update_job(child_ids[1], status="failed")
+    assert store.list_finalizable_grid_parents() == ["grid-p"]
+
+    store.update_job("grid-p", status="success")
+    assert store.list_finalizable_grid_parents() == []
+
+
+def test_delete_grid_pair_result_drops_single_row(store: SQLiteJobStore) -> None:
+    """The targeted per-pair delete leaves sibling results in place."""
+    store.create_job("grid-single", username="alice")
+    store.save_grid_pair_result("grid-single", 0, {"pair_index": 0})
+    store.save_grid_pair_result("grid-single", 1, {"pair_index": 1})
+
+    store.delete_grid_pair_result("grid-single", 0)
+
+    assert set(store.get_grid_pair_results("grid-single")) == {1}
 
 
 def test_update_job_unknown_field_raises_value_error(store: SQLiteJobStore) -> None:
@@ -816,6 +1031,7 @@ def test_log_eviction_oldest_entry_removed_when_cap_reached(
 ) -> None:
     """Log eviction oldest entry removed when cap reached."""
     monkeypatch.setattr(remote_mod, "MAX_LOG_ENTRIES", 3)
+    monkeypatch.setattr(remote_mod, "LOG_TRIM_SAMPLE_RATE", 1)
 
     store.create_job("evict-log-1")
     for i in range(3):
@@ -833,12 +1049,25 @@ def test_log_eviction_oldest_entry_removed_when_cap_reached(
 def test_log_eviction_count_stays_at_cap(store: SQLiteJobStore, monkeypatch: pytest.MonkeyPatch) -> None:
     """Log eviction count stays at cap."""
     monkeypatch.setattr(remote_mod, "MAX_LOG_ENTRIES", 3)
+    monkeypatch.setattr(remote_mod, "LOG_TRIM_SAMPLE_RATE", 1)
 
     store.create_job("evict-log-2")
     for i in range(5):
         store.append_log("evict-log-2", level="INFO", logger_name="lg", message=f"msg-{i}")
 
     assert store.get_log_count("evict-log-2") == 3
+
+
+def test_log_trim_is_sampled_and_batched(store: SQLiteJobStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sampled log trimming allows a small overshoot but keeps rows near the cap."""
+    monkeypatch.setattr(remote_mod, "MAX_LOG_ENTRIES", 200)
+    monkeypatch.setattr(remote_mod, "LOG_TRIM_SAMPLE_RATE", 50)
+
+    store.create_job("sampled-log-trim")
+    for i in range(320):
+        store.append_log("sampled-log-trim", level="INFO", logger_name="lg", message=f"msg-{i}")
+
+    assert 200 <= store.get_log_count("sampled-log-trim") <= 250
 
 
 def test_progress_eviction_oldest_entry_removed_when_cap_reached(
@@ -1158,3 +1387,102 @@ def test_delete_job_removes_grid_pair_results_and_pair_checkpoints(store: SQLite
     store.delete_job("g3")
     assert store.has_gepa_checkpoint("g3") is False
     assert store.has_grid_pair_results("g3") is False
+
+
+def test_scan_jobs_for_analytics_trims_run_result(store: SQLiteJobStore) -> None:
+    """A run row keeps only the scalar metrics; per-example blobs never surface."""
+    store.create_job("an-run", username="alice")
+    store.set_payload_overview(
+        "an-run",
+        {
+            "optimizer_name": "gepa",
+            "model_name": "openai/gpt-4o",
+            "optimization_type": "run",
+            "dataset_rows": 600,
+            "signature_code": "class Sig: ...",
+        },
+    )
+    store.update_job(
+        "an-run",
+        status="success",
+        result={
+            "baseline_test_metric": 0.5,
+            "optimized_test_metric": 0.75,
+            "runtime_seconds": 12.5,
+            "baseline_test_results": [{"index": i, "outputs": {"answer": "x" * 200}} for i in range(50)],
+        },
+    )
+
+    [row] = store.scan_jobs_for_analytics()
+
+    assert row["optimization_id"] == "an-run"
+    assert row["status"] == "success"
+    assert row["payload_overview"] == {
+        "optimizer_name": "gepa",
+        "model_name": "openai/gpt-4o",
+        "optimization_type": "run",
+        "dataset_rows": 600,
+    }
+    assert row["result"] == {
+        "baseline_test_metric": 0.5,
+        "optimized_test_metric": 0.75,
+        "runtime_seconds": 12.5,
+    }
+
+
+def test_scan_jobs_for_analytics_grid_best_pair_subset(store: SQLiteJobStore) -> None:
+    """A grid row carries pair counters plus the trimmed best_pair metrics."""
+    store.create_job("an-grid", username="alice")
+    store.set_payload_overview(
+        "an-grid",
+        {"optimizer_name": "gepa", "optimization_type": "grid_search", "total_pairs": 4},
+    )
+    store.update_job(
+        "an-grid",
+        status="success",
+        result={
+            "completed_pairs": 3,
+            "failed_pairs": 1,
+            "best_pair": {
+                "baseline_test_metric": 0.4,
+                "optimized_test_metric": 0.9,
+                "runtime_seconds": 30.0,
+                "pair_index": 2,
+                "per_example_outputs": ["y" * 500] * 20,
+            },
+        },
+    )
+
+    [row] = store.scan_jobs_for_analytics()
+
+    assert row["payload_overview"]["total_pairs"] == 4
+    assert row["result"] == {
+        "completed_pairs": 3,
+        "failed_pairs": 1,
+        "best_pair": {
+            "baseline_test_metric": 0.4,
+            "optimized_test_metric": 0.9,
+            "runtime_seconds": 30.0,
+        },
+    }
+
+
+def test_scan_jobs_for_analytics_null_result_and_filters(store: SQLiteJobStore) -> None:
+    """Result-less rows read as None, and status/username/limit narrow the scan."""
+    store.create_job("an-pending", username="alice")
+    store.set_payload_overview("an-pending", {"optimizer_name": "gepa"})
+    store.create_job("an-other", username="bob")
+    store.update_job("an-other", status="running")
+
+    rows = store.scan_jobs_for_analytics()
+    by_id = {r["optimization_id"]: r for r in rows}
+    assert by_id["an-pending"]["result"] is None
+    assert by_id["an-pending"]["status"] == "pending"
+
+    alice_rows = store.scan_jobs_for_analytics(username="alice")
+    assert {r["optimization_id"] for r in alice_rows} == {"an-pending"}
+
+    running_rows = store.scan_jobs_for_analytics(status="running")
+    assert {r["optimization_id"] for r in running_rows} == {"an-other"}
+
+    assert len(store.scan_jobs_for_analytics(limit=1)) == 1

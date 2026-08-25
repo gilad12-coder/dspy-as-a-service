@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Download, FileCode, FileJson, FileSpreadsheet, Package } from "lucide-react";
+import { CaretDown, DownloadSimple, FileCode, FileText, FileXls, Package } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
 import { downloadProgramExport } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
 import type {
   OptimizationLogEntry,
   OptimizationStatusResponse,
@@ -38,7 +39,34 @@ export function exportPromptAsJson(prompt: OptimizedPredictor, optimizationId: s
   );
 }
 
-export function exportLogsAsCsv(logs: OptimizationLogEntry[], optimizationId: string) {
+/** Save the GEPA-rewritten Flex module source as a standalone .py download. */
+export function exportModuleAsPython(
+  moduleSrc: string,
+  optimizationId: string,
+  componentPath?: string,
+) {
+  const suffix = componentPath ? `_${componentPath}` : "";
+  downloadFile(
+    moduleSrc.endsWith("\n") ? moduleSrc : `${moduleSrc}\n`,
+    `optimized_module_${optimizationId.slice(0, 8)}${suffix}.py`,
+    "text/x-python",
+  );
+}
+
+/** Decode the artifact's base64 pickle and hand it to the browser as a .pkl download. */
+export function downloadProgramPickle(pickleBase64: string, optimizationId: string) {
+  const blob = new Blob([Uint8Array.from(atob(pickleBase64), (c) => c.charCodeAt(0))], {
+    type: "application/octet-stream",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `program_${optimizationId.slice(0, 8)}.pkl`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function exportLogsAsCsv(logs: OptimizationLogEntry[], optimizationId: string) {
   const header = "timestamp,level,logger,message\n";
   const rows = logs
     .map(
@@ -54,9 +82,24 @@ export function exportLogsAsCsv(logs: OptimizationLogEntry[], optimizationId: st
 export function ExportMenu({
   job,
   optimizedPrompt,
+  optimizedModuleSrc,
+  optimizedComponentSrcs,
+  pickleBase64,
+  programPairIndex,
+  isShare,
 }: {
   job: OptimizationStatusResponse;
   optimizedPrompt: OptimizedPredictor | null;
+  /** GEPA-rewritten Flex module source, offered as a standalone .py download. */
+  optimizedModuleSrc?: string | null;
+  /** Per-submodule Flex sources (a workflow's flex nodes), one .py download each. */
+  optimizedComponentSrcs?: Record<string, string>;
+  /** Pair-scoped pickle override; falls back to the run / grid-best artifact. */
+  pickleBase64?: string | null;
+  /** Pair selected for a runnable grid-search export; omitted for single runs. */
+  programPairIndex?: number;
+  /** The /program-export endpoint is authed, so the public share view hides the ZIP item. */
+  isShare?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -69,25 +112,43 @@ export function ExportMenu({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const hasPkl = !!(
-    job.result?.program_artifact?.program_pickle_base64 ||
-    job.grid_result?.best_pair?.program_artifact?.program_pickle_base64
-  );
-  // The runnable export reconstructs from state JSON + signature_code, which the
-  // /program-export endpoint serves for single-run (non-grid) jobs only.
-  const hasProgram = !!job.result?.program_artifact?.program_state_json;
+  const pklB64 =
+    pickleBase64 ??
+    job.result?.program_artifact?.program_pickle_base64 ??
+    job.grid_result?.best_pair?.program_artifact?.program_pickle_base64 ??
+    null;
+  const hasPkl = !!pklB64;
+  const selectedGridPair =
+    job.grid_result?.pair_results.find((pair) => pair.pair_index === programPairIndex) ??
+    job.grid_result?.best_pair;
+  const hasProgram =
+    !isShare &&
+    !!(
+      job.result?.program_artifact?.program_state_json ||
+      selectedGridPair?.program_artifact?.program_state_json
+    );
+  // A top-level Flex is one nameless download; a workflow's flex nodes are one each.
+  const moduleDownloads: Array<[string, string]> = optimizedModuleSrc
+    ? [["", optimizedModuleSrc]]
+    : Object.entries(optimizedComponentSrcs ?? {});
+  const hasModuleSrc = moduleDownloads.length > 0;
   const itemCls =
-    "w-full flex items-center gap-2.5 px-3.5 py-2 text-[0.75rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
+    "flex min-h-[44px] w-full items-center gap-2.5 px-3.5 py-2 text-[0.75rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
   const iconCls = "size-4 shrink-0 text-muted-foreground/60";
   const extCls = "text-muted-foreground/60 font-mono text-[0.625rem] ms-auto";
   const divider = <div className="h-px bg-border/40 mx-2 my-1" />;
 
   return (
     <div className="relative" ref={ref}>
-      <Button size="sm" onClick={() => setOpen((o) => !o)} className="gap-1.5">
-        <Download className="size-4" />
+      <Button
+        size="sm"
+        onClick={() => setOpen((o) => !o)}
+        data-telemetry="results-export-menu"
+        className="min-h-[44px] gap-1.5 sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
+      >
+        <DownloadSimple className="size-4" />
         {msg("auto.features.optimizations.components.exportmenu.1")}
-        <ChevronDown
+        <CaretDown
           className={`size-3.5 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
         />
       </Button>
@@ -108,7 +169,8 @@ export function ExportMenu({
                 onClick={async () => {
                   setOpen(false);
                   try {
-                    await downloadProgramExport(job.optimization_id);
+                    await downloadProgramExport(job.optimization_id, programPairIndex);
+                    track(TelemetryEvent.ArtifactDownloaded, { kind: "program_zip" });
                   } catch (err) {
                     toast.error(
                       err instanceof Error ? err.message : msg("optimization.file.parse_error"),
@@ -134,20 +196,10 @@ export function ExportMenu({
                   role="menuitem"
                   onClick={() => {
                     setOpen(false);
-                    const b64 =
-                      job.result?.program_artifact?.program_pickle_base64 ??
-                      job.grid_result?.best_pair?.program_artifact?.program_pickle_base64;
-                    if (!b64) return;
+                    if (!pklB64) return;
                     try {
-                      const blob = new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], {
-                        type: "application/octet-stream",
-                      });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `program_${job.optimization_id.slice(0, 8)}.pkl`;
-                      a.click();
-                      setTimeout(() => URL.revokeObjectURL(url), 0);
+                      downloadProgramPickle(pklB64, job.optimization_id);
+                      track(TelemetryEvent.ArtifactDownloaded, { kind: "program_pickle" });
                     } catch {
                       toast.error(msg("optimization.file.parse_error"));
                     }
@@ -173,10 +225,11 @@ export function ExportMenu({
                   onClick={() => {
                     setOpen(false);
                     exportPromptAsJson(optimizedPrompt, job.optimization_id);
+                    track(TelemetryEvent.ArtifactDownloaded, { kind: "prompt_json" });
                   }}
                   className={itemCls}
                 >
-                  <FileJson className={iconCls} />
+                  <FileText className={iconCls} />
                   <span className="flex-1">
                     {msg("auto.features.optimizations.components.exportmenu.4")}
                   </span>
@@ -186,19 +239,47 @@ export function ExportMenu({
                 </button>
               </>
             )}
-            {job.logs && job.logs.length > 0 && (
+            {hasModuleSrc && (
               <>
                 {(hasProgram || hasPkl || optimizedPrompt) && divider}
+                {moduleDownloads.map(([path, source]) => (
+                  <button
+                    key={path}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setOpen(false);
+                      exportModuleAsPython(source, job.optimization_id, path || undefined);
+                      track(TelemetryEvent.ArtifactDownloaded, { kind: "module_python" });
+                    }}
+                    className={itemCls}
+                  >
+                    <FileCode className={iconCls} />
+                    <span className="flex-1">{msg("optimizations.flex.optimized_code")}</span>
+                    {path && (
+                      <span className="font-mono text-[0.6875rem] text-muted-foreground" dir="ltr">
+                        {path}
+                      </span>
+                    )}
+                    <span className={extCls}>{msg("optimizations.flex.py_ext")}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            {job.logs && job.logs.length > 0 && (
+              <>
+                {(hasProgram || hasPkl || optimizedPrompt || hasModuleSrc) && divider}
                 <button
                   type="button"
                   role="menuitem"
                   onClick={() => {
                     setOpen(false);
                     exportLogsAsCsv(job.logs, job.optimization_id);
+                    track(TelemetryEvent.ArtifactDownloaded, { kind: "logs_csv" });
                   }}
                   className={itemCls}
                 >
-                  <FileSpreadsheet className={iconCls} />
+                  <FileXls className={iconCls} />
                   <span className="flex-1">
                     {msg("auto.features.optimizations.components.exportmenu.6")}
                   </span>

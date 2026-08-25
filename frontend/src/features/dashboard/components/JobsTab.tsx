@@ -1,15 +1,13 @@
-import { toast } from "react-toastify";
 import {
-  ChevronLeft,
-  ChevronRight,
+  CaretLeft,
+  CaretRight,
   Crown,
   Eye,
-  ExternalLink,
-  Pencil,
+  PaperPlaneTilt,
+  PencilSimple,
   Plus,
-  Send,
   ShieldCheck,
-} from "lucide-react";
+} from "@/shared/ui/icons";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
@@ -25,14 +23,23 @@ import { EmptyState } from "@/shared/ui/empty-state";
 import { InlineErrorRow } from "@/shared/ui/inline-error-row";
 import { PingDot } from "@/shared/ui/ping-dot";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import type { useColumnResize } from "@/shared/ui/excel-filter";
-import { ColumnHeader, ResetColumnsButton, type SortDir } from "@/shared/ui/excel-filter";
+import {
+  ColumnHeader,
+  ResetColumnsButton,
+  ResetFiltersButton,
+  type SortDir,
+} from "@/shared/ui/excel-filter";
 import { formatDate, formatId, formatRelativeTime, moduleLabel } from "@/shared/lib";
 import { ACTIVE_STATUSES } from "@/shared/constants/job-status";
 import { LiveElapsed } from "./LiveElapsed";
+import { PhoneJobList } from "./PhoneJobList";
 import type { OptimizationSummaryResponse, PaginatedJobsResponse } from "@/shared/types/api";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TERMS } from "@/shared/lib/terms";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
 import { FETCH_PAGE_SIZE } from "../constants";
 import { formatScore, typeBadge } from "../lib/status-badges";
 import { StatusBadge } from "@/shared/ui/status-badge";
@@ -71,7 +78,7 @@ function RoleBadge({ role }: { role?: ShareRole | null }) {
     tier === "viewer"
       ? Eye
       : tier === "editor"
-        ? Pencil
+        ? PencilSimple
         : tier === "owner"
           ? ShieldCheck
           : Crown;
@@ -84,7 +91,7 @@ function RoleBadge({ role }: { role?: ShareRole | null }) {
           ? msg("dashboard.role.owner")
           : msg("dashboard.role.owned");
   return (
-    <TooltipButton tooltip={tip} dir="rtl">
+    <TooltipButton tooltip={tip}>
       <span
         tabIndex={0}
         aria-label={tip}
@@ -153,31 +160,57 @@ export function JobsTab({
   setPageOffset,
   onOpenJob,
 }: JobsTabProps) {
+  const rtl = getActiveDir() === "rtl";
+  const isPhone = useIsPhone();
+  const PrevIcon = rtl ? CaretRight : CaretLeft;
+  const NextIcon = rtl ? CaretLeft : CaretRight;
+
   return (
-    <Card className="border-border/60">
-      <CardContent className="pt-5">
-        <div className="flex items-center gap-2 mb-3">
-          {activeCount > 0 && (
-            <>
-              <Badge variant="secondary" className="text-xs">
-                {activeCount}
-                {msg("auto.features.dashboard.components.jobstab.1")}
-              </Badge>
-              <button
-                type="button"
-                onClick={clearAllFilters}
-                className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                {msg("auto.features.dashboard.components.jobstab.2")}
-              </button>
-            </>
-          )}
-          <ResetColumnsButton resize={colResize} />
+    <Card className="overflow-hidden border-border/60">
+      <CardContent className="px-3 pt-4 sm:px-6 sm:pt-5">
+        <div className="mb-3 flex min-h-[44px] items-center gap-2 max-lg:[&_button]:size-[44px] lg:min-h-0">
           {filteredItems.length > 0 && (
-            <span className="text-[0.6875rem] text-muted-foreground tabular-nums ms-auto">
+            <span className="text-[0.6875rem] text-muted-foreground tabular-nums">
               {filteredItems.length}
               {msg("auto.features.dashboard.components.jobstab.3")}
             </span>
+          )}
+          {activeCount > 0 && (
+            <Badge variant="secondary" className="text-xs">
+              {activeCount}
+              {msg("auto.features.dashboard.components.jobstab.1")}
+            </Badge>
+          )}
+          <ResetFiltersButton filters={{ activeCount, clearAll: clearAllFilters }} />
+          <ResetColumnsButton resize={colResize} />
+          {!isPhone && (
+            <ExportTableMenu
+              iconOnly
+              className="ms-auto"
+              disabled={filteredItems.length === 0}
+              getData={() => {
+                const cols = [
+                  "optimization_id",
+                  "name",
+                  ...(showSharedColumns ? ["username", "role"] : []),
+                  "optimization_type",
+                  "status",
+                  "module_name",
+                  "dataset_rows",
+                  "created_at",
+                  "elapsed_seconds",
+                  "optimized_test_metric",
+                ];
+                return {
+                  columns: cols,
+                  rows: filteredItems.map((job) => {
+                    const rec = job as unknown as Record<string, unknown>;
+                    return Object.fromEntries(cols.map((c) => [c, rec[c]]));
+                  }),
+                  filename: "optimizations",
+                };
+              }}
+            />
           )}
         </div>
 
@@ -185,38 +218,51 @@ export function JobsTab({
 
         {!loading && data && filteredItems.length === 0 && data.total === 0 && (
           <EmptyState
-            variant="list"
-            icon={Send}
+            icon={PaperPlaneTilt}
+            iconWrap="tile"
             title={`${msg("auto.features.dashboard.components.jobstab.4")}${TERMS.optimizationPlural}`}
             description={msg("auto.features.dashboard.components.jobstab.5")}
-            action={{ label: TERMS.notificationNewOpt, href: "/submit", icon: Plus }}
+            action={
+              isPhone ? undefined : { label: TERMS.notificationNewOpt, href: "/submit", icon: Plus }
+            }
           />
         )}
 
-        {filteredItems.length > 0 && (
+        {filteredItems.length > 0 && isPhone && (
+          <PhoneJobList
+            items={filteredItems}
+            showOwner={showSharedColumns}
+            sessionUser={sessionUser}
+            onOpenJob={onOpenJob}
+          />
+        )}
+
+        {filteredItems.length > 0 && !isPhone && (
           <div
             className="overflow-x-auto rounded-2xl border border-border/40 bg-card/60"
             data-tutorial="dashboard-table"
           >
             <Table
               style={{ minWidth: "640px" }}
-              className="table-stack [&_thead_th]:ps-1 [&_thead_th]:pe-2 [&_thead_th]:py-2 [&_thead_th]:text-[0.6875rem] [&_thead_th_button]:px-1 [&_thead_svg]:size-2.5 [&_tbody_td]:px-1.5"
+              className="table-stack no-copy-underline [&_thead_th]:ps-1 [&_thead_th]:pe-2 [&_thead_th]:py-2 [&_thead_th]:text-[0.6875rem] [&_thead_th_button]:px-1 [&_thead_svg]:size-2.5 [&_tbody_td]:px-1.5"
             >
               <TableHeader className="bg-muted/20 [&_tr]:border-b-border/40">
                 <TableRow>
-                  <TableHead className="w-10 px-3">
-                    <input
-                      type="checkbox"
-                      aria-label={msg("auto.features.dashboard.components.jobstab.literal.1")}
-                      className="size-4 cursor-pointer accent-primary"
-                      checked={pageAllSelected}
-                      ref={(el) => {
-                        if (el) el.indeterminate = pageSomeSelected;
-                      }}
-                      disabled={selectablePageIds.length === 0}
-                      onChange={togglePageSelection}
-                      onClick={(e) => e.stopPropagation()}
-                    />
+                  <TableHead className="w-12 px-0 text-center">
+                    <label className="inline-grid size-[44px] cursor-pointer place-items-center has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+                      <input
+                        type="checkbox"
+                        aria-label={msg("auto.features.dashboard.components.jobstab.literal.1")}
+                        className="size-4 cursor-pointer accent-primary"
+                        checked={pageAllSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = pageSomeSelected;
+                        }}
+                        disabled={selectablePageIds.length === 0}
+                        onChange={togglePageSelection}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </label>
                   </TableHead>
                   <ColumnHeader
                     label={msg("auto.features.dashboard.components.jobstab.template.1")}
@@ -230,7 +276,9 @@ export function JobsTab({
                     onFilter={setColumnFilter}
                     openFilter={openFilter}
                     setOpenFilter={setOpenFilter}
-                    width={colResize.widths["optimization_id"] ?? DEFAULT_COL_WIDTHS.optimization_id}
+                    width={
+                      colResize.widths["optimization_id"] ?? DEFAULT_COL_WIDTHS.optimization_id
+                    }
                     onResize={colResize.setColumnWidth}
                   />
                   <ColumnHeader
@@ -294,7 +342,9 @@ export function JobsTab({
                     onFilter={setColumnFilter}
                     openFilter={openFilter}
                     setOpenFilter={setOpenFilter}
-                    width={colResize.widths["optimization_type"] ?? DEFAULT_COL_WIDTHS.optimization_type}
+                    width={
+                      colResize.widths["optimization_type"] ?? DEFAULT_COL_WIDTHS.optimization_type
+                    }
                     onResize={colResize.setColumnWidth}
                   />
                   <ColumnHeader
@@ -351,7 +401,9 @@ export function JobsTab({
                     currentSort={sortKey}
                     sortDir={sortDir}
                     onSort={toggleSort}
-                    width={colResize.widths["elapsed_seconds"] ?? DEFAULT_COL_WIDTHS.elapsed_seconds}
+                    width={
+                      colResize.widths["elapsed_seconds"] ?? DEFAULT_COL_WIDTHS.elapsed_seconds
+                    }
                     onResize={colResize.setColumnWidth}
                   />
                   <ColumnHeader
@@ -360,10 +412,14 @@ export function JobsTab({
                     currentSort={sortKey}
                     sortDir={sortDir}
                     onSort={toggleSort}
-                    width={colResize.widths["optimized_test_metric"] ?? DEFAULT_COL_WIDTHS.optimized_test_metric}
+                    width={
+                      colResize.widths["optimized_test_metric"] ??
+                      DEFAULT_COL_WIDTHS.optimized_test_metric
+                    }
                     onResize={colResize.setColumnWidth}
                   />
-                  <TableHead className="w-10" />
+                  {/* Spacer over the per-row open chevron. */}
+                  <TableHead aria-hidden="true" className="w-8" />
                 </TableRow>
               </TableHeader>
               <TableBody className="transition-opacity duration-200">
@@ -373,55 +429,61 @@ export function JobsTab({
                     <TableRow
                       key={job.optimization_id}
                       data-selected={isSelected}
-                      className="group border-border/30 transition-colors duration-150 data-[selected=true]:bg-primary/[0.08] hover:bg-foreground/[0.025] data-[selected=true]:hover:bg-primary/[0.12] cursor-pointer [&_td:first-child]:cursor-default [&_td:last-child]:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      className="group border-border/30 transition-colors duration-150 hover:bg-muted/50 data-[selected=true]:bg-primary/[0.08] data-[selected=true]:hover:bg-primary/[0.12] cursor-pointer [&_td:first-child]:cursor-default"
                       style={{
                         animation: `fadeSlideIn 0.25s ease-out ${idx * 0.03}s both`,
                       }}
                       onClick={(e) => {
+                        // Convenience target only — the ID button remains the
+                        // accessible/keyboard path. The checkbox cell is
+                        // excluded so a missed checkbox click can't navigate.
                         const target = e.target as HTMLElement;
                         if (target.closest("button, a, input")) return;
                         const td = target.closest("td");
-                        if (!td) return;
-                        const parent = td.parentElement;
-                        if (td === parent?.lastElementChild) return;
-                        if (td === parent?.firstElementChild) return;
-                        const text = td.textContent?.trim();
-                        if (!text) return;
-                        navigator.clipboard
-                          .writeText(text)
-                          .then(() => toast.success(msg("clipboard.copied")))
-                          .catch(() => {});
+                        if (!td || td === td.parentElement?.firstElementChild) return;
+                        onOpenJob(job.optimization_id);
                       }}
-                      data-tutorial="job-link"
                     >
-                      <TableCell className="w-10 px-3">
-                        <input
-                          type="checkbox"
-                          aria-label={formatMsg(
-                            "auto.features.dashboard.components.jobstab.template.2",
-                            { p1: TERMS.optimization, p2: job.optimization_id },
-                          )}
-                          className="size-4 cursor-pointer accent-primary"
-                          checked={isSelected}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={() => toggleRowSelected(job.optimization_id)}
-                        />
+                      <TableCell className="w-12 px-0 text-center">
+                        <label className="inline-grid size-[44px] cursor-pointer place-items-center">
+                          <input
+                            type="checkbox"
+                            aria-label={formatMsg(
+                              "auto.features.dashboard.components.jobstab.template.2",
+                              { p1: TERMS.optimization, p2: job.optimization_id },
+                            )}
+                            className="size-4 cursor-pointer accent-primary"
+                            checked={isSelected}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => toggleRowSelected(job.optimization_id)}
+                          />
+                        </label>
                       </TableCell>
                       <TableCell
                         className="px-2 max-w-[100px]"
-                        title={job.optimization_id}
                         data-label={msg("auto.features.dashboard.components.jobstab.template.1")}
                       >
                         {/* ``min-w-0`` lets the flex item shrink so the
                             cell's overflow-hidden + text-ellipsis can
-                            actually fire on the span below; without it
+                            actually fire on the button below; without it
                             the flex child claims its content's intrinsic
                             width and overflows past the cell boundary. */}
                         <div className="flex items-center gap-1.5 min-w-0">
                           {ACTIVE_STATUSES.has(job.status) && <PingDot className="shrink-0" />}
-                          <span className="font-mono text-xs text-primary truncate">
+                          {/* ``dir="ltr"`` keeps hex IDs that start with a
+                              digit from bidi-reordering in RTL locales. */}
+                          <button
+                            type="button"
+                            dir="ltr"
+                            onClick={() => onOpenJob(job.optimization_id)}
+                            className="font-mono text-xs text-primary truncate min-w-0 rounded-md cursor-pointer underline-offset-2 group-hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            aria-label={formatMsg(
+                              "auto.features.dashboard.components.jobstab.template.3",
+                              { p1: TERMS.optimization },
+                            )}
+                          >
                             {formatId(job.optimization_id)}
-                          </span>
+                          </button>
                         </div>
                       </TableCell>
                       <TableCell
@@ -445,7 +507,9 @@ export function JobsTab({
                           >
                             {job.username ? (
                               job.username.toLowerCase() === sessionUser.toLowerCase() ? (
-                                <span className="font-semibold text-foreground">{msg("dashboard.owner.me")}</span>
+                                <span className="font-semibold text-foreground">
+                                  {msg("dashboard.owner.me")}
+                                </span>
                               ) : (
                                 <span className="font-semibold text-foreground" dir="ltr">
                                   {job.username}
@@ -510,24 +574,15 @@ export function JobsTab({
                       >
                         {formatScore(job)}
                       </TableCell>
-                      <TableCell className="px-2">
-                        <div className="flex items-center gap-0.5">
-                          <TooltipButton
-                            tooltip={msg("auto.features.dashboard.components.jobstab.9")}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => onOpenJob(job.optimization_id)}
-                              className="p-1 rounded hover:bg-accent/60 text-muted-foreground hover:text-foreground transition-all cursor-pointer"
-                              aria-label={formatMsg(
-                                "auto.features.dashboard.components.jobstab.template.3",
-                                { p1: TERMS.optimization },
-                              )}
-                            >
-                              <ExternalLink className="size-3.5" />
-                            </button>
-                          </TooltipButton>
-                        </div>
+                      {/* Open-affordance chevron: always faintly visible so the
+                          row reads as navigable, brightening and nudging on
+                          hover. Hidden in the stacked mobile layout, where the
+                          !important beats table-stack's display:block on td. */}
+                      <TableCell className="w-8 pe-3 max-[900px]:!hidden">
+                        <CaretRight
+                          aria-hidden="true"
+                          className="size-3.5 text-muted-foreground/40 transition-[color,transform] duration-150 group-hover:translate-x-0.5 group-hover:text-primary rtl:rotate-180 rtl:group-hover:-translate-x-0.5"
+                        />
                       </TableCell>
                     </TableRow>
                   );
@@ -544,9 +599,9 @@ export function JobsTab({
               size="sm"
               disabled={pageOffset === 0 || loading}
               onClick={() => setPageOffset(Math.max(0, pageOffset - FETCH_PAGE_SIZE))}
-              className="gap-1"
+              className="min-h-[44px] gap-1 lg:min-h-0"
             >
-              <ChevronRight className="size-3.5" />
+              <PrevIcon className="size-3.5" />
               {msg("auto.features.dashboard.components.jobstab.11")}
             </Button>
             <span className="text-sm text-muted-foreground tabular-nums px-3 py-1 rounded-md bg-muted/50">
@@ -558,10 +613,10 @@ export function JobsTab({
               size="sm"
               disabled={pageOffset + FETCH_PAGE_SIZE >= data.total || loading}
               onClick={() => setPageOffset(pageOffset + FETCH_PAGE_SIZE)}
-              className="gap-1"
+              className="min-h-[44px] gap-1 lg:min-h-0"
             >
               {msg("auto.features.dashboard.components.jobstab.12")}
-              <ChevronLeft className="size-3.5" />
+              <NextIcon className="size-3.5" />
             </Button>
           </div>
         )}

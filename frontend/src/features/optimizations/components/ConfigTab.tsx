@@ -1,33 +1,35 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
 import {
   ArrowUpRight,
-  Boxes,
+  Books,
   Brain,
-  Coins,
-  Component,
+  CaretLeft,
+  CaretRight,
   Cpu,
+  Cube,
   Database,
-  Dices,
+  DiceFive,
   Gauge,
+  Gear,
+  GearSix,
   GitMerge,
-  Layers,
-  Library,
   Repeat,
   Ruler,
-  Settings,
-  Settings2,
   Shuffle,
-  Sparkles,
-  Tags,
+  Sparkle,
+  Stack,
+  Tag,
   Target,
+  TextT,
   Thermometer,
   Wrench,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
+} from "@/shared/ui/icons";
 import { FadeIn } from "@/shared/ui/motion";
+import { useUserPrefs } from "@/features/settings";
 import { HelpTip } from "@/shared/ui/help-tip";
 import type {
   ModelConfig,
@@ -37,11 +39,47 @@ import type {
 } from "@/shared/types/api";
 import { tip } from "@/shared/lib/tooltips";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 import { moduleLabel } from "@/shared/lib/formatters";
 import { TERMS } from "@/shared/lib/terms";
+import { cn } from "@/shared/lib/utils";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { ProviderLogo } from "@/shared/ui/provider-logo";
 import { InfoCard, ReasoningPill } from "./ui-primitives";
 
-const OPT_PARAM_LABELS: Record<string, string> = {
+const CONFIG_SLIDES = perLocale(() => [
+  {
+    id: "optimization",
+    label: `${msg("auto.features.optimizations.components.configtab.5")}${TERMS.optimization}`,
+    icon: <Gear className="size-5" />,
+    tip: tip("config.section.summary"),
+  },
+  {
+    id: "models",
+    label: msg("auto.features.optimizations.components.configtab.6"),
+    icon: <Cpu className="size-5" />,
+    tip: tip("config.section.models"),
+  },
+  {
+    id: "data",
+    label: msg("auto.features.optimizations.components.configtab.8"),
+    icon: <Database className="size-5" />,
+    tip: tip("config.section.data"),
+  },
+]);
+
+const CONFIG_SLIDE_VARIANTS: Variants = {
+  enter: (direction: 1 | -1) => ({ opacity: 0, x: direction * 36 }),
+  center: { opacity: 1, x: 0 },
+  exit: (direction: 1 | -1) => ({ opacity: 0, x: direction * -28 }),
+};
+
+const CONFIG_SLIDE_TRANSITION = {
+  duration: 0.24,
+  ease: [0.2, 0.8, 0.2, 1] as const,
+};
+
+const OPT_PARAM_LABELS: Record<string, string> = perLocale(() => ({
   auto: msg("auto.features.optimizations.components.configtab.literal.1"),
   max_bootstrapped_demos: msg("auto.features.optimizations.components.configtab.literal.2"),
   max_labeled_demos: msg("auto.features.optimizations.components.configtab.literal.3"),
@@ -49,10 +87,11 @@ const OPT_PARAM_LABELS: Record<string, string> = {
   minibatch_size: msg("auto.features.optimizations.components.configtab.literal.5"),
   reflection_minibatch_size: msg("auto.features.optimizations.components.configtab.literal.6"),
   max_full_evals: msg("auto.features.optimizations.components.configtab.literal.7"),
+  max_metric_calls: msg("submit.metric_calls"),
   use_merge: msg("auto.features.optimizations.components.configtab.literal.8"),
   metric: TERMS.metric,
-};
-const OPT_PARAM_TIPS: Record<string, string> = {
+}));
+const OPT_PARAM_TIPS: Record<string, string> = perLocale(() => ({
   auto: msg("auto.features.optimizations.components.configtab.literal.9"),
   max_bootstrapped_demos: msg("auto.features.optimizations.components.configtab.literal.10"),
   max_labeled_demos: formatMsg("auto.features.optimizations.components.configtab.template.1", {
@@ -68,8 +107,9 @@ const OPT_PARAM_TIPS: Record<string, string> = {
     { p1: TERMS.model },
   ),
   max_full_evals: msg("auto.features.optimizations.components.configtab.literal.12"),
+  max_metric_calls: msg("tooltip.submit.metric_calls"),
   use_merge: msg("auto.features.optimizations.components.configtab.literal.13"),
-};
+}));
 
 function labelWithTip(key: string): ReactNode {
   const label = OPT_PARAM_LABELS[key] || key;
@@ -79,27 +119,29 @@ function labelWithTip(key: string): ReactNode {
 
 const PARAM_ICONS: Record<string, ReactNode> = {
   auto: <Gauge className="size-3.5" />,
-  max_bootstrapped_demos: <Sparkles className="size-3.5" />,
-  max_labeled_demos: <Tags className="size-3.5" />,
-  minibatch: <Boxes className="size-3.5" />,
+  max_bootstrapped_demos: <Sparkle className="size-3.5" />,
+  max_labeled_demos: <Tag className="size-3.5" />,
+  minibatch: <Stack className="size-3.5" />,
   minibatch_size: <Ruler className="size-3.5" />,
   reflection_minibatch_size: <Brain className="size-3.5" />,
   max_full_evals: <Repeat className="size-3.5" />,
+  // Shares Gauge with `auto`: both are the run's (mutually exclusive) budget knob.
+  max_metric_calls: <Gauge className="size-3.5" />,
   use_merge: <GitMerge className="size-3.5" />,
 };
 
 function paramIcon(key: string): ReactNode {
-  return PARAM_ICONS[key] ?? <Settings2 className="size-3.5" />;
+  return PARAM_ICONS[key] ?? <GearSix className="size-3.5" />;
 }
 
 // The GEPA budget level arrives as the raw "light" / "medium" / "heavy"
 // string; translate it to the same Hebrew the submit summary shows so the
 // value reads consistently across surfaces.
-const AUTO_LEVEL_LABELS: Record<string, string> = {
+const AUTO_LEVEL_LABELS: Record<string, string> = perLocale(() => ({
   light: msg("auto.features.optimizations.components.configtab.literal.18"),
   medium: msg("auto.features.optimizations.components.configtab.literal.19"),
   heavy: msg("auto.features.optimizations.components.configtab.literal.20"),
-};
+}));
 
 function formatParamValue(k: string, v: unknown): string {
   if (typeof v === "boolean")
@@ -112,46 +154,95 @@ function formatParamValue(k: string, v: unknown): string {
 
 // Tooltip copy keyed by the two named model-role labels. Grid cards use
 // indexed short labels (no match here) since their columns are already tipped.
-const MODEL_CARD_TIPS: Record<string, string> = {
+const MODEL_CARD_TIPS: Record<string, string> = perLocale(() => ({
   [msg("model.generation.label")]: tip("model.generation"),
   [TERMS.reflectionModel]: tip("model.reflection"),
+}));
+
+type ModelParameterKey = "temperature" | "max_tokens";
+
+const MODEL_PARAMETER_DEFAULTS: Record<ModelParameterKey, number> = {
+  temperature: 0.7,
+  max_tokens: 1024,
 };
 
-/** Inline model-config card — matches the ModelChip style. */
+function resolveModelParameter(cfg: Record<string, unknown>, key: ModelParameterKey): number {
+  const rawExtra = cfg.extra;
+  const extra =
+    rawExtra && typeof rawExtra === "object" && !Array.isArray(rawExtra)
+      ? (rawExtra as Record<string, unknown>)
+      : undefined;
+  const rawValue = cfg[key] ?? extra?.[key];
+  const value =
+    typeof rawValue === "number"
+      ? rawValue
+      : typeof rawValue === "string" && rawValue.trim()
+        ? Number(rawValue)
+        : Number.NaN;
+
+  return Number.isFinite(value) ? value : MODEL_PARAMETER_DEFAULTS[key];
+}
+
+/** Resolve a routed model id to the provider mark used by the config card. */
+function modelProviderSlug(id: string): string {
+  const parts = id.split("/");
+  const slug = (parts[0] === "openrouter" && parts.length > 2 ? parts[1] : parts[0]) ?? id;
+  return slug === "x-ai" ? "xai" : slug;
+}
+
+/** Graphical model-config card for the Models carousel slide. */
 function ModelCard({ label, cfg }: { label: string; cfg: Record<string, unknown> }) {
   const labelTip = MODEL_CARD_TIPS[label];
   const name = String(cfg.name || "—");
   const shortName = name.includes("/") ? name.split("/").pop()! : name;
-  const temp = cfg.temperature as number | undefined;
-  const maxTok = cfg.max_tokens as number | undefined;
+  const temp = resolveModelParameter(cfg, "temperature");
+  const maxTok = resolveModelParameter(cfg, "max_tokens");
   const extra = (cfg.extra ?? {}) as Record<string, unknown>;
   const reasoning = extra.reasoning_effort as string | undefined;
+  const temperatureLabel = msg("auto.features.submit.components.modelconfigmodal.5");
+  const maxTokensLabel = msg("auto.features.submit.components.modelconfigmodal.7");
   return (
-    <div className="flex items-center gap-2.5 rounded-lg border border-border/50 bg-card/80 px-3 py-2">
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
-          {labelTip ? <HelpTip text={labelTip}>{label}</HelpTip> : label}
+    <article className="flex min-h-36 min-w-0 flex-col justify-between gap-5 rounded-2xl border border-border/60 bg-[#F8F4EE] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+      <div className="flex min-w-0 items-start gap-3.5">
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl border border-border/45 bg-background shadow-sm">
+          <ProviderLogo slug={modelProviderSlug(name)} size={30} />
         </span>
-        <span className="truncate text-sm text-foreground font-mono font-medium" dir="ltr">
-          {shortName}
-        </span>
-        <div className="flex items-center gap-2.5 text-[0.625rem] text-muted-foreground" dir="ltr">
-          {temp != null && (
-            <span className="inline-flex items-center gap-0.5">
-              <Thermometer className="size-2.5" />
-              {temp.toFixed(1)}
-            </span>
-          )}
-          {maxTok != null && (
-            <span className="inline-flex items-center gap-0.5">
-              <Coins className="size-2.5" />
-              {maxTok}
-            </span>
-          )}
-          {reasoning && <ReasoningPill value={reasoning} />}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <span className="text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+            {labelTip ? <HelpTip text={labelTip}>{label}</HelpTip> : label}
+          </span>
+          <span
+            className="truncate font-mono text-base font-semibold tracking-tight text-foreground sm:text-lg"
+            dir="ltr"
+            title={name}
+          >
+            {shortName}
+          </span>
         </div>
       </div>
-    </div>
+      <div
+        className="flex flex-wrap items-center gap-2 text-[0.6875rem] text-muted-foreground"
+        dir="ltr"
+      >
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full border border-border/45 bg-background/75 px-2.5 py-1"
+          aria-label={`${temperatureLabel}: ${temp.toFixed(1)}`}
+          title={temperatureLabel}
+        >
+          <Thermometer className="size-3" aria-hidden="true" />
+          {temp.toFixed(1)}
+        </span>
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full border border-border/45 bg-background/75 px-2.5 py-1"
+          aria-label={`${maxTokensLabel}: ${maxTok}`}
+          title={maxTokensLabel}
+        >
+          <TextT className="size-3" aria-hidden="true" />
+          {maxTok}
+        </span>
+        {reasoning && <ReasoningPill value={reasoning} />}
+      </div>
+    </article>
   );
 }
 
@@ -169,7 +260,8 @@ function pickPairModelConfig(
   const candidates = (configs ?? []).filter((c) => c.name === name);
   const matched =
     candidates.find(
-      (c) => ((c.extra?.reasoning_effort as string | undefined) ?? null) === (reasoningEffort ?? null),
+      (c) =>
+        ((c.extra?.reasoning_effort as string | undefined) ?? null) === (reasoningEffort ?? null),
     ) ?? candidates[0];
   if (matched) return matched as unknown as Record<string, unknown>;
   return reasoningEffort ? { name, extra: { reasoning_effort: reasoningEffort } } : { name };
@@ -184,6 +276,31 @@ export function ConfigTab({
   payload: OptimizationPayloadResponse | null;
   activePair?: PairResult;
 }) {
+  const { prefs } = useUserPrefs();
+  const advanced = prefs.advancedMode;
+  const prefersReducedMotion = useReducedMotion() || prefs.liteMode;
+  const isRtl = getActiveDir() === "rtl";
+  const [activeSlide, setActiveSlide] = useState(0);
+  const [slideDirection, setSlideDirection] = useState<1 | -1>(isRtl ? -1 : 1);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+
+  const goToSlide = useCallback(
+    (next: number) => {
+      const clamped = Math.max(0, Math.min(CONFIG_SLIDES.length - 1, next));
+      if (clamped === activeSlide) return;
+      const forward = clamped > activeSlide;
+      setSlideDirection(forward === isRtl ? -1 : 1);
+      setActiveSlide(clamped);
+    },
+    [activeSlide, isRtl],
+  );
+
+  const previousSlide = CONFIG_SLIDES[activeSlide - 1];
+  const currentSlide = CONFIG_SLIDES[activeSlide] ?? CONFIG_SLIDES[0]!;
+  const nextSlide = CONFIG_SLIDES[activeSlide + 1];
+  const PreviousIcon = isRtl ? CaretRight : CaretLeft;
+  const NextIcon = isRtl ? CaretLeft : CaretRight;
+
   // Merge job-level data with full payload for richer config display
   const p = (payload?.payload ?? {}) as Record<string, unknown>;
   const splitFractions = (p.split_fractions ??
@@ -228,7 +345,7 @@ export function ConfigTab({
         </HelpTip>
       ),
       value: moduleLabel(job.module_name),
-      icon: <Component className="size-3.5" />,
+      icon: <Cube className="size-3.5" />,
     },
     {
       label: <HelpTip text={tip("optimizer.choice")}>{TERMS.optimizer}</HelpTip>,
@@ -237,7 +354,7 @@ export function ConfigTab({
     },
     ...reactRows,
     ...Object.entries(optKw)
-      .filter(([k]) => k !== "metric")
+      .filter(([k]) => k !== "metric" && (advanced || k === "auto"))
       .map(([k, v]) => ({
         label: labelWithTip(k),
         value: formatParamValue(k, v),
@@ -246,14 +363,14 @@ export function ConfigTab({
     ...Object.entries(compKw).map(([k, v]) => ({
       label: labelWithTip(k),
       value: formatParamValue(k, v),
-      icon: <Layers className="size-3.5" />,
+      icon: <Stack className="size-3.5" />,
     })),
   ];
 
   return (
     <>
       <FadeIn>
-        <p className="text-sm text-muted-foreground mb-4">
+        <p className="mb-4 max-w-3xl text-sm text-muted-foreground">
           {msg("auto.features.optimizations.components.configtab.2")}
           {TERMS.optimization}
           {msg("auto.features.optimizations.components.configtab.3")}
@@ -261,255 +378,449 @@ export function ConfigTab({
           {msg("auto.features.optimizations.components.configtab.4")}
         </p>
       </FadeIn>
-      <div className="space-y-4">
-        <Card
-          data-tutorial="config-summary"
-          className="relative overflow-hidden shadow-[0_1px_3px_rgba(28,22,18,0.04),inset_0_1px_0_rgba(255,255,255,0.5)]"
-        >
-          <div
-            className="absolute inset-x-0 top-0 h-px bg-gradient-to-l from-transparent via-[#C8A882]/40 to-transparent"
-            aria-hidden="true"
-          />
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Settings className="size-4 text-[#7C6350]" aria-hidden="true" />
-              <HelpTip text={tip("config.section.summary")}>
-                <span className="font-bold tracking-tight">
-                  {msg("auto.features.optimizations.components.configtab.5")}
-                  {TERMS.optimization}
-                </span>
-              </HelpTip>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="divide-y divide-border/40">
-              {items.map((item, i) => (
-                <div key={i} className="flex items-center justify-between py-2.5 gap-3">
-                  <span className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-                    <span className="text-[#A89680]">{item.icon}</span>
-                    {item.label}
-                  </span>
-                  <span
-                    className="text-sm font-semibold text-foreground font-mono truncate"
-                    dir="ltr"
-                  >
-                    {item.value}
-                  </span>
-                </div>
-              ))}
+      <motion.section
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.3 }}
+        className="w-full overflow-hidden rounded-2xl border border-border bg-card/80 shadow-lg backdrop-blur-xl"
+        data-tutorial="config-summary"
+        role="region"
+        aria-label={currentSlide.label}
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          const forwardKey = isRtl ? "ArrowLeft" : "ArrowRight";
+          const backKey = isRtl ? "ArrowRight" : "ArrowLeft";
+          if (event.key === forwardKey) {
+            event.preventDefault();
+            goToSlide(activeSlide + 1);
+          } else if (event.key === backKey) {
+            event.preventDefault();
+            goToSlide(activeSlide - 1);
+          }
+        }}
+      >
+        <div className="flex items-center justify-between gap-5 border-b border-border/60 bg-secondary/35 px-5 py-4 sm:px-6 sm:py-5 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#EDE7DD] text-[#3D2E22] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
+              {currentSlide.icon}
+            </span>
+            <div className="min-w-0">
+              <span
+                className="font-mono text-[0.625rem] tabular-nums text-muted-foreground"
+                dir="ltr"
+              >
+                {activeSlide + 1} / {CONFIG_SLIDES.length}
+              </span>
+              <h3 className="truncate text-lg font-bold tracking-tight text-foreground sm:text-xl">
+                <HelpTip text={currentSlide.tip}>{currentSlide.label}</HelpTip>
+              </h3>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden shadow-[0_1px_3px_rgba(28,22,18,0.04),inset_0_1px_0_rgba(255,255,255,0.5)]">
+          </div>
           <div
-            className="absolute inset-x-0 top-0 h-px bg-gradient-to-l from-transparent via-[#C8A882]/40 to-transparent"
-            aria-hidden="true"
-          />
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Cpu className="size-4 text-[#7C6350]" aria-hidden="true" />
-              <HelpTip text={tip("config.section.models")}>
-                <span className="font-bold tracking-tight">
-                  {msg("auto.features.optimizations.components.configtab.6")}
+            className="hidden min-w-0 flex-1 items-center justify-end gap-2 sm:flex"
+            aria-label={currentSlide.label}
+          >
+            {CONFIG_SLIDES.map((slide, index) => (
+              <button
+                key={slide.id}
+                type="button"
+                onClick={() => goToSlide(index)}
+                aria-label={slide.label}
+                aria-current={activeSlide === index ? "step" : undefined}
+                className={cn(
+                  "flex min-w-0 cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 text-start transition-[background-color,border-color,color,transform] duration-150",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882] focus-visible:ring-offset-2 active:scale-[0.98]",
+                  activeSlide === index
+                    ? "border-[#C8A882]/70 bg-background text-foreground shadow-sm"
+                    : "border-transparent text-muted-foreground hover:border-border/60 hover:bg-background/55 hover:text-foreground",
+                )}
+              >
+                <span
+                  className={cn(
+                    "grid size-8 shrink-0 place-items-center rounded-lg transition-colors [&_svg]:size-4",
+                    activeSlide === index
+                      ? "bg-[#3D2E22] text-[#FAF8F5]"
+                      : "bg-[#EDE7DD] text-[#8C7A6B]",
+                  )}
+                >
+                  {slide.icon}
                 </span>
-              </HelpTip>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {job.optimization_type !== "grid_search" ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {modelCfg && <ModelCard label={msg("model.generation.label")} cfg={modelCfg} />}
-                {reflCfg && <ModelCard label={TERMS.reflectionModel} cfg={reflCfg} />}
-                {taskCfg && <ModelCard label={msg("model.generation.label")} cfg={taskCfg} />}
-                {!modelCfg && !reflCfg && !taskCfg && job.model_name && (
-                  <>
-                    <ModelCard
-                      label={msg("model.generation.label")}
-                      cfg={{ name: job.model_name, ...(job.model_settings || {}) }}
-                    />
-                    {job.reflection_model_name && (
+                <span className="hidden truncate text-xs font-semibold lg:block">
+                  {slide.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div
+          className="relative overflow-hidden p-4 sm:p-6 lg:p-8"
+          onTouchStart={(event) => {
+            const touch = event.touches[0];
+            touchStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+          }}
+          onTouchEnd={(event) => {
+            const start = touchStart.current;
+            const touch = event.changedTouches[0];
+            touchStart.current = null;
+            if (!start || !touch) return;
+            const deltaX = touch.clientX - start.x;
+            const deltaY = touch.clientY - start.y;
+            if (Math.abs(deltaX) < 52 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return;
+            const forward = isRtl ? deltaX > 0 : deltaX < 0;
+            goToSlide(activeSlide + (forward ? 1 : -1));
+          }}
+        >
+          <AnimatePresence mode="wait" custom={slideDirection} initial={false}>
+            <motion.div
+              key={activeSlide}
+              custom={slideDirection}
+              variants={CONFIG_SLIDE_VARIANTS}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={prefersReducedMotion ? { duration: 0 } : CONFIG_SLIDE_TRANSITION}
+              className="min-h-[24rem] w-full"
+            >
+              {activeSlide === 0 && (
+                <div className="flex min-h-[24rem] flex-col gap-5">
+                  <div className="grid items-stretch gap-3 md:grid-cols-2">
+                    {items.slice(0, 2).map((item, index) => (
+                      <article
+                        key={index}
+                        className="flex min-h-40 min-w-0 flex-col justify-between gap-6 rounded-2xl border border-border/60 bg-[#F8F4EE] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] sm:p-6"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#3D2E22] text-[#FAF8F5] [&_svg]:size-5">
+                            {item.icon}
+                          </span>
+                          <span
+                            className="font-mono text-[0.625rem] tabular-nums text-[#8C7A6B]/70"
+                            dir="ltr"
+                          >
+                            0{index + 1}
+                          </span>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+                            {item.label}
+                          </div>
+                          <div
+                            className="mt-1 truncate font-mono text-xl font-semibold tracking-tight text-foreground sm:text-2xl"
+                            dir="ltr"
+                            title={item.value}
+                          >
+                            {item.value}
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+
+                  {items.length > 2 && (
+                    <div
+                      className="grid flex-1 gap-3"
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fit, minmax(min(11rem, 100%), 1fr))",
+                      }}
+                    >
+                      {items.slice(2).map((item, index) => (
+                        <article
+                          key={index}
+                          className="flex min-h-28 min-w-0 flex-col justify-between gap-4 rounded-xl border border-border/45 bg-background/65 p-4"
+                        >
+                          <span className="grid size-9 place-items-center rounded-xl bg-[#EDE7DD] text-[#8C7A6B] [&_svg]:size-4">
+                            {item.icon}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="truncate text-[0.6875rem] font-medium text-muted-foreground">
+                              {item.label}
+                            </div>
+                            <div
+                              className="mt-0.5 truncate font-mono text-base font-semibold text-foreground"
+                              dir="ltr"
+                              title={item.value}
+                            >
+                              {item.value}
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeSlide === 1 && (
+                <div className="min-h-[24rem]">
+                  {job.optimization_type !== "grid_search" ? (
+                    <div
+                      className="grid gap-4"
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fit, minmax(min(17rem, 100%), 1fr))",
+                      }}
+                    >
+                      {modelCfg && (
+                        <ModelCard label={msg("model.generation.label")} cfg={modelCfg} />
+                      )}
+                      {reflCfg && <ModelCard label={TERMS.reflectionModel} cfg={reflCfg} />}
+                      {taskCfg && <ModelCard label={msg("model.generation.label")} cfg={taskCfg} />}
+                      {!modelCfg && !reflCfg && !taskCfg && job.model_name && (
+                        <>
+                          <ModelCard
+                            label={msg("model.generation.label")}
+                            cfg={{ name: job.model_name, ...(job.model_settings || {}) }}
+                          />
+                          {job.reflection_model_name && (
+                            <ModelCard
+                              label={TERMS.reflectionModel}
+                              cfg={{ name: job.reflection_model_name }}
+                            />
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ) : activePair ? (
+                    <div
+                      className="grid gap-4"
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fit, minmax(min(17rem, 100%), 1fr))",
+                      }}
+                    >
+                      <ModelCard
+                        label={msg("model.generation.label")}
+                        cfg={pickPairModelConfig(
+                          job.generation_models,
+                          activePair.generation_model,
+                          activePair.generation_reasoning_effort,
+                        )}
+                      />
                       <ModelCard
                         label={TERMS.reflectionModel}
-                        cfg={{ name: job.reflection_model_name }}
+                        cfg={pickPairModelConfig(
+                          job.reflection_models,
+                          activePair.reflection_model,
+                          activePair.reflection_reasoning_effort,
+                        )}
                       />
-                    )}
-                  </>
-                )}
-              </div>
-            ) : activePair ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <ModelCard
-                  label={msg("model.generation.label")}
-                  cfg={pickPairModelConfig(
-                    job.generation_models,
-                    activePair.generation_model,
-                    activePair.generation_reasoning_effort,
+                    </div>
+                  ) : job.generation_models && job.reflection_models ? (
+                    <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+                      <div className="space-y-3">
+                        <p className="flex items-center gap-2 text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+                          <span className="grid size-7 place-items-center rounded-lg bg-[#3D2E22] text-[#FAF8F5]">
+                            <Cpu className="size-3.5" aria-hidden="true" />
+                          </span>
+                          <HelpTip text={tip("grid.generation_models")}>
+                            {msg("model.generation.label_plural")}
+                          </HelpTip>
+                        </p>
+                        {job.generation_models.map((m, i) => (
+                          <ModelCard
+                            key={i}
+                            label={`${msg("model.generation.label_short")} ${i + 1}`}
+                            cfg={m as unknown as Record<string, unknown>}
+                          />
+                        ))}
+                      </div>
+                      <div className="space-y-3">
+                        <p className="flex items-center gap-2 text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+                          <span className="grid size-7 place-items-center rounded-lg bg-[#C8A882] text-[#3D2E22]">
+                            <Brain className="size-3.5" aria-hidden="true" />
+                          </span>
+                          <HelpTip text={tip("grid.reflection_models")}>
+                            {msg("auto.features.optimizations.components.configtab.7")}
+                          </HelpTip>
+                        </p>
+                        {job.reflection_models.map((m, i) => (
+                          <ModelCard
+                            key={i}
+                            label={formatMsg(
+                              "auto.features.optimizations.components.configtab.template.4",
+                              { p1: i + 1 },
+                            )}
+                            cfg={m as unknown as Record<string, unknown>}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="py-12 text-center text-sm text-muted-foreground">—</p>
                   )}
-                />
-                <ModelCard
-                  label={TERMS.reflectionModel}
-                  cfg={pickPairModelConfig(
-                    job.reflection_models,
-                    activePair.reflection_model,
-                    activePair.reflection_reasoning_effort,
-                  )}
-                />
-              </div>
-            ) : job.generation_models && job.reflection_models ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <p className="text-[0.625rem] font-semibold tracking-[0.08em] uppercase text-[#A89680] mb-1">
-                    <HelpTip text={tip("grid.generation_models")}>
-                      {msg("model.generation.label_plural")}
-                    </HelpTip>
-                  </p>
-                  {job.generation_models.map((m, i) => (
-                    <ModelCard
-                      key={i}
-                      label={`${msg("model.generation.label_short")} ${i + 1}`}
-                      cfg={m as unknown as Record<string, unknown>}
-                    />
-                  ))}
                 </div>
-                <div className="space-y-2">
-                  <p className="text-[0.625rem] font-semibold tracking-[0.08em] uppercase text-[#A89680] mb-1">
-                    <HelpTip text={tip("grid.reflection_models")}>
-                      {msg("auto.features.optimizations.components.configtab.7")}
-                    </HelpTip>
-                  </p>
-                  {job.reflection_models.map((m, i) => (
-                    <ModelCard
-                      key={i}
-                      label={formatMsg(
-                        "auto.features.optimizations.components.configtab.template.4",
-                        { p1: i + 1 },
-                      )}
-                      cfg={m as unknown as Record<string, unknown>}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden shadow-[0_1px_3px_rgba(28,22,18,0.04),inset_0_1px_0_rgba(255,255,255,0.5)]">
-          <div
-            className="absolute inset-x-0 top-0 h-px bg-gradient-to-l from-transparent via-[#C8A882]/40 to-transparent"
-            aria-hidden="true"
-          />
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Database className="size-4 text-[#7C6350]" aria-hidden="true" />
-              <HelpTip text={tip("config.section.data")}>
-                <span className="font-bold tracking-tight">
-                  {msg("auto.features.optimizations.components.configtab.8")}
-                </span>
-              </HelpTip>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {job.source_dataset_id && (
-              <Link
-                href={`/datasets?open=${job.source_dataset_id}`}
-                className="group/srclink flex items-center gap-2.5 rounded-lg border border-border/50 bg-card/80 px-3 py-2.5 transition-colors hover:border-[#C8A882]/60 hover:bg-accent/40"
-              >
-                <Library className="size-3.5 shrink-0 text-[#A89680]" />
-                <span className="min-w-0 flex-1 text-xs text-foreground">
-                  {msg("optimizations.source_dataset.label")}
-                </span>
-                <span className="shrink-0 text-xs font-medium text-[#7C6350]">
-                  {msg("optimizations.source_dataset.view")}
-                </span>
-                <ArrowUpRight className="size-4 shrink-0 text-muted-foreground/60 transition-colors group-hover/srclink:text-foreground" />
-              </Link>
-            )}
-            <div className="space-y-2">
-              <p className="text-[0.625rem] font-semibold tracking-[0.08em] uppercase text-[#A89680]">
-                <HelpTip text={tip("data.split_explanation")}>
-                  {msg("auto.features.optimizations.components.configtab.9")}
-                  {TERMS.dataset}
-                </HelpTip>
-              </p>
-              <div className="flex h-2.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-[#3D2E22] transition-all"
-                  style={{ width: `${splitFractions.train * 100}%` }}
-                />
-                <div
-                  className="bg-[#C8A882] transition-all"
-                  style={{ width: `${splitFractions.val * 100}%` }}
-                />
-                <div
-                  className="bg-[#8C7A6B] transition-all"
-                  style={{ width: `${splitFractions.test * 100}%` }}
-                />
-              </div>
-              <div
-                className="grid gap-1 text-xs"
-                style={{
-                  gridTemplateColumns: `${splitFractions.train}fr ${splitFractions.val}fr ${splitFractions.test}fr`,
-                }}
-              >
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="inline-block w-2 h-2 rounded-full bg-[#3D2E22] shrink-0" />
-                  <span className="truncate">
-                    {msg("auto.features.optimizations.components.configtab.10")}{" "}
-                    <span className="font-mono tabular-nums text-muted-foreground" dir="ltr">
-                      {splitFractions.train}
-                    </span>
-                  </span>
-                </span>
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="inline-block w-2 h-2 rounded-full bg-[#C8A882] shrink-0" />
-                  <span className="truncate">
-                    {msg("auto.features.optimizations.components.configtab.11")}{" "}
-                    <span className="font-mono tabular-nums text-muted-foreground" dir="ltr">
-                      {splitFractions.val}
-                    </span>
-                  </span>
-                </span>
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="inline-block w-2 h-2 rounded-full bg-[#8C7A6B] shrink-0" />
-                  <span className="truncate">
-                    {msg("auto.features.optimizations.components.configtab.12")}{" "}
-                    <span className="font-mono tabular-nums text-muted-foreground" dir="ltr">
-                      {splitFractions.test}
-                    </span>
-                  </span>
-                </span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2.5">
-              <InfoCard
-                label={
-                  <HelpTip text={tip("data.shuffle_explanation")}>
-                    {msg("auto.features.optimizations.components.configtab.13")}
-                  </HelpTip>
-                }
-                value={
-                  shuffleVal
-                    ? msg("auto.features.optimizations.components.configtab.literal.16")
-                    : msg("auto.features.optimizations.components.configtab.literal.17")
-                }
-                icon={<Shuffle className="size-3.5" />}
-              />
-              {seedVal != null && (
-                <InfoCard
-                  label={
-                    <HelpTip text={tip("data.seed")}>
-                      {msg("auto.features.optimizations.components.configtab.14")}
-                    </HelpTip>
-                  }
-                  value={seedVal}
-                  icon={<Dices className="size-3.5" />}
-                />
               )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+
+              {activeSlide === 2 && (
+                <div className="flex min-h-[24rem] flex-col gap-6">
+                  {job.source_dataset_id && (
+                    <Link
+                      href={`/datasets?open=${job.source_dataset_id}`}
+                      className={cn(
+                        "group/srclink flex min-h-28 items-center gap-4 rounded-2xl border border-border/60 bg-[#F8F4EE] p-5 transition-[background-color,border-color,transform] hover:border-[#C8A882]/70 hover:bg-[#F4EEE6] active:scale-[0.995] sm:p-6",
+                        !advanced && "flex-1",
+                      )}
+                    >
+                      <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[#3D2E22] text-[#FAF8F5] shadow-sm">
+                        <Books className="size-6" aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+                          {msg("optimizations.source_dataset.label")}
+                        </span>
+                        <span
+                          className="mt-1 block truncate font-mono text-base font-semibold text-foreground sm:text-lg"
+                          dir="ltr"
+                        >
+                          {job.source_dataset_id}
+                        </span>
+                      </span>
+                      <span className="hidden shrink-0 text-xs font-semibold text-[#7C6350] sm:block">
+                        {msg("optimizations.source_dataset.view")}
+                      </span>
+                      <ArrowUpRight className="size-4 shrink-0 text-muted-foreground/60 transition-colors group-hover/srclink:text-foreground" />
+                    </Link>
+                  )}
+                  {advanced && (
+                    <div className="flex flex-1 flex-col gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className="grid size-9 place-items-center rounded-xl bg-[#EDE7DD] text-[#8C7A6B]">
+                          <Database className="size-4" aria-hidden="true" />
+                        </span>
+                        <p className="text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-[#8C7A6B]">
+                          <HelpTip text={tip("data.split_explanation")}>
+                            {msg("auto.features.optimizations.components.configtab.9")}
+                            {TERMS.dataset}
+                          </HelpTip>
+                        </p>
+                      </div>
+                      <div className="flex min-h-28 flex-1 overflow-hidden rounded-2xl border border-border/50 bg-muted/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.42)]">
+                        <div
+                          className="flex min-w-0 flex-col items-center justify-center gap-3 bg-[#3D2E22] p-2 text-[#FAF8F5] transition-[width] sm:items-stretch sm:justify-between sm:p-5"
+                          style={{ width: `${splitFractions.train * 100}%` }}
+                        >
+                          <span className="hidden truncate text-[0.625rem] font-semibold uppercase tracking-[0.08em] opacity-70 sm:block">
+                            {msg("auto.features.optimizations.components.configtab.10")}
+                          </span>
+                          <span
+                            className="font-mono text-sm font-semibold tabular-nums sm:text-2xl"
+                            dir="ltr"
+                          >
+                            {Math.round(splitFractions.train * 100)}%
+                          </span>
+                        </div>
+                        <div
+                          className="flex min-w-0 flex-col items-center justify-center gap-3 bg-[#C8A882] p-2 text-[#3D2E22] transition-[width] sm:items-stretch sm:justify-between sm:p-5"
+                          style={{ width: `${splitFractions.val * 100}%` }}
+                        >
+                          <span className="hidden truncate text-[0.625rem] font-semibold uppercase tracking-[0.08em] opacity-70 sm:block">
+                            {msg("auto.features.optimizations.components.configtab.11")}
+                          </span>
+                          <span
+                            className="font-mono text-sm font-semibold tabular-nums sm:text-2xl"
+                            dir="ltr"
+                          >
+                            {Math.round(splitFractions.val * 100)}%
+                          </span>
+                        </div>
+                        <div
+                          className="flex min-w-0 flex-col items-center justify-center gap-3 bg-[#8C7A6B] p-2 text-[#FAF8F5] transition-[width] sm:items-stretch sm:justify-between sm:p-5"
+                          style={{ width: `${splitFractions.test * 100}%` }}
+                        >
+                          <span className="hidden truncate text-[0.625rem] font-semibold uppercase tracking-[0.08em] opacity-70 sm:block">
+                            {msg("auto.features.optimizations.components.configtab.12")}
+                          </span>
+                          <span
+                            className="font-mono text-sm font-semibold tabular-nums sm:text-2xl"
+                            dir="ltr"
+                          >
+                            {Math.round(splitFractions.test * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {advanced && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <InfoCard
+                        label={
+                          <HelpTip text={tip("data.shuffle_explanation")}>
+                            {msg("auto.features.optimizations.components.configtab.13")}
+                          </HelpTip>
+                        }
+                        value={
+                          shuffleVal
+                            ? msg("auto.features.optimizations.components.configtab.literal.16")
+                            : msg("auto.features.optimizations.components.configtab.literal.17")
+                        }
+                        icon={<Shuffle className="size-3.5" />}
+                      />
+                      {seedVal != null && (
+                        <InfoCard
+                          label={
+                            <HelpTip text={tip("data.seed")}>
+                              {msg("auto.features.optimizations.components.configtab.14")}
+                            </HelpTip>
+                          }
+                          value={seedVal}
+                          icon={<DiceFive className="size-3.5" />}
+                        />
+                      )}
+                    </div>
+                  )}
+                  {!job.source_dataset_id && !advanced && (
+                    <p className="py-12 text-center text-sm text-muted-foreground">—</p>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-border/60 bg-secondary/25 px-4 py-3 sm:px-6">
+          <button
+            type="button"
+            onClick={() => goToSlide(activeSlide - 1)}
+            disabled={!previousSlide}
+            aria-label={msg("auto.features.agent.panel.components.toolscarousel.literal.14")}
+            className="inline-flex min-h-[44px] min-w-[44px] cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882] disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <PreviousIcon className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">{previousSlide?.label}</span>
+          </button>
+
+          <div className="flex items-center justify-center gap-1 sm:hidden">
+            {CONFIG_SLIDES.map((slide, index) => (
+              <button
+                key={slide.id}
+                type="button"
+                onClick={() => goToSlide(index)}
+                aria-label={slide.label}
+                aria-current={activeSlide === index ? "step" : undefined}
+                className="flex size-[44px] cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]"
+              >
+                <span
+                  className={cn(
+                    "h-1.5 rounded-full transition-[width,background-color] duration-200",
+                    activeSlide === index ? "w-5 bg-[#3D2E22]" : "w-1.5 bg-[#3D2E22]/20",
+                  )}
+                />
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => goToSlide(activeSlide + 1)}
+            disabled={!nextSlide}
+            aria-label={msg("auto.features.agent.panel.components.toolscarousel.literal.15")}
+            className="inline-flex min-h-[44px] min-w-[44px] cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882] disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <span className="hidden sm:inline">{nextSlide?.label}</span>
+            <NextIcon className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+      </motion.section>
     </>
   );
 }

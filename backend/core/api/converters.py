@@ -10,6 +10,7 @@ from typing import Any
 from ..constants import (
     OPTIMIZATION_TYPE_RUN,
     PAYLOAD_OVERVIEW_COLUMN_MAPPING,
+    PAYLOAD_OVERVIEW_COMPOSITION,
     PAYLOAD_OVERVIEW_DATASET_ROWS,
     PAYLOAD_OVERVIEW_DESCRIPTION,
     PAYLOAD_OVERVIEW_GENERATION_MODELS,
@@ -220,6 +221,7 @@ def overview_to_base_fields(overview: dict) -> dict:
         "pinned": overview.get("pinned", False),
         "username": overview.get(PAYLOAD_OVERVIEW_USERNAME),
         "module_name": overview.get(PAYLOAD_OVERVIEW_MODULE_NAME),
+        "composition": overview.get(PAYLOAD_OVERVIEW_COMPOSITION),
         "module_kwargs": overview.get(PAYLOAD_OVERVIEW_MODULE_KWARGS, {}),
         "optimizer_name": overview.get(PAYLOAD_OVERVIEW_OPTIMIZER_NAME),
         "column_mapping": overview.get(PAYLOAD_OVERVIEW_COLUMN_MAPPING),

@@ -102,6 +102,13 @@ class RequestUserDatasetResponse(BaseModel):
     prompt: str
 
 
+class RequestLibraryDatasetResponse(BaseModel):
+    """Envelope for ``POST /datasets/request-library-pick`` — UI-trigger marker."""
+
+    awaiting_selection: bool
+    prompt: str
+
+
 class StageDatasetForAgentRequest(BaseModel):
     """Request body for ``POST /datasets/stage-for-agent``."""
 
@@ -397,6 +404,37 @@ def create_datasets_router(*, job_store) -> APIRouter:
         """
         return RequestUserDatasetResponse(
             awaiting_upload=True,
+            prompt=req.prompt.strip(),
+        )
+
+    @router.post(
+        "/datasets/request-library-pick",
+        response_model=RequestLibraryDatasetResponse,
+        summary="Ask the user to pick a saved dataset; the chat panel renders a library picker",
+        operation_id="request_user_dataset_from_library",
+        tags=["agent"],
+    )
+    def request_user_dataset_from_library(
+        req: RequestUserDatasetRequest,
+    ) -> RequestLibraryDatasetResponse:
+        """Signal the chat UI to render an inline saved-dataset picker.
+
+        Stateless twin of :func:`request_user_dataset` for the by-reference
+        path: the agent calls this named tool so the frontend renders a picker
+        over the caller's dataset library. The chosen dataset's rows, column
+        roles, and ``source_dataset_id`` are hydrated into the wizard
+        client-side; the run then submits against the library dataset by
+        reference (durable) rather than a staged upload (evicted after the run).
+
+        Args:
+            req: Optional prompt describing why the dataset is needed.
+
+        Returns:
+            A :class:`RequestLibraryDatasetResponse` echoing the prompt so it
+            can render inside the picker card.
+        """
+        return RequestLibraryDatasetResponse(
+            awaiting_selection=True,
             prompt=req.prompt.strip(),
         )
 

@@ -1,9 +1,17 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { History, PanelLeftClose, Plus, RotateCcw, Sparkles, WandSparkles, XCircle } from "lucide-react";
+import {
+  ClockCounterClockwise,
+  SidebarSimple,
+  Plus,
+  Sparkle,
+  MagicWand,
+  XCircle,
+} from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
@@ -12,16 +20,18 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/
 import { AgentThread } from "@/shared/ui/agent/agent-thread";
 import { ChatTranscript } from "@/shared/ui/agent/chat-transcript";
 import { Composer } from "@/shared/ui/agent/composer";
+import { ComposerModelMenu } from "@/shared/ui/agent/composer-model-menu";
 import type { AgentThinking, AgentToolCall } from "@/shared/ui/agent/types";
 import { EmptyState } from "@/shared/ui/empty-state";
+import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { SubmitSplashOverlay, SUBMIT_SPLASH_HOLD_MS } from "@/shared/ui/submit-splash-overlay";
 import { cn } from "@/shared/lib/utils";
 import { formatMsg } from "@/shared/lib/messages";
 
-import { formatShortcut, useUserPrefs } from "@/features/settings";
+import { formatShortcut, parseAgentPreferencePatch, useUserPrefs } from "@/features/settings";
 
 import { useConversationStore } from "../hooks/use-conversation-store";
-import { useGeneralistAgent } from "../hooks/use-generalist-agent";
+import { useGeneralistAgent, type SessionEventContext } from "../hooks/use-generalist-agent";
 import { useCodeAuthoringAgent } from "../hooks/use-code-authoring-agent";
 import { useGeneralistPanelState } from "../hooks/use-panel-state";
 import { getConversation } from "../lib/conversation-api";
@@ -29,13 +39,15 @@ import { TRUST_MODE_HUE, useTrustMode } from "../hooks/use-trust-mode";
 import { extractWizardPatch, useWizardStateOptional } from "../hooks/use-wizard-state";
 import type { ToolEndPayload, ToolStartPayload, WizardState } from "../lib/types";
 import { stageDatasetForAgent } from "@/shared/lib/api";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { registerTutorialHook } from "@/features/tutorial";
 
 import { MAX_WIDTH, MIN_WIDTH, NARROW_VIEWPORT_QUERY } from "../constants";
 
 import { ApprovalCard } from "./ApprovalCard";
 import { ConversationDrawer } from "./ConversationDrawer";
-import { DatasetUploadCard, type ConfirmedDataset } from "./DatasetUploadCard";
+import { DATASET_FILE_ACCEPT, DatasetUploadCard, type ConfirmedDataset } from "./DatasetUploadCard";
+import { LibraryDatasetCard, type ConfirmedLibraryDataset } from "./LibraryDatasetCard";
 import { InferenceFormCard } from "./InferenceFormCard";
 import { CodeAuthoringCard } from "./CodeAuthoringCard";
 import { MinimizedPill } from "./MinimizedPill";
@@ -46,7 +58,9 @@ import { TrustToggle } from "./TrustToggle";
 import { getToolRenderer } from "./tool-renderers";
 
 const REQUEST_DATASET_TOOL = "request_user_dataset_datasets_request_upload_post";
+const REQUEST_LIBRARY_TOOL = "request_user_dataset_from_library";
 const REQUEST_INFERENCE_TOOL = "request_user_inference";
+const REQUEST_PAIR_INFERENCE_TOOL = "request_user_pair_inference";
 const REQUEST_CODE_TOOL = "request_code_authoring";
 
 // Submit tools whose success should mirror the manual wizard submit button:
@@ -66,9 +80,7 @@ function extractOptimizationId(result: unknown): string | null {
   if (!result || typeof result !== "object") return null;
   const top = result as Record<string, unknown>;
   const inner =
-    top.result && typeof top.result === "object"
-      ? (top.result as Record<string, unknown>)
-      : top;
+    top.result && typeof top.result === "object" ? (top.result as Record<string, unknown>) : top;
   const candidate = inner.optimization_id ?? inner.id;
   return typeof candidate === "string" && candidate.length > 0 ? candidate : null;
 }
@@ -89,17 +101,20 @@ interface GeneralistPanelProps {
 }
 
 /**
- * Docked generalist agent panel. Renders as a left-anchored aside that
- * the user can resize, minimize to a pill, and toggle with Ctrl+J.
+ * Docked generalist agent panel. Renders as an aside anchored to the document's
+ * inline-end edge — left in Hebrew/RTL, right in English/LTR — that the user can
+ * resize, minimize to a pill, and toggle with Ctrl+J.
  * Mounted once in the app shell so the thread survives route changes.
  */
 export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
-  const { open, setOpen, width, setWidth } = useGeneralistPanelState();
+  const { open, setOpen, width, setWidth, pillDock } = useGeneralistPanelState();
   const { mode: trustMode, next: cycleTrust } = useTrustMode();
-  const { prefs } = useUserPrefs();
+  const { prefs, updatePrefs } = useUserPrefs();
   const shortcutLabel = formatShortcut(prefs.agentShortcut);
   const reduceMotion = useReducedMotion();
   const hue = TRUST_MODE_HUE[trustMode];
+  const dir = getActiveDir();
+  const isRtl = dir === "rtl";
 
   const openPanel = React.useCallback(() => {
     setOpen(true);
@@ -181,7 +196,16 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   );
 
   const handleToolEnd = React.useCallback(
-    (ev: ToolEndPayload) => {
+    (ev: ToolEndPayload, ctx: SessionEventContext) => {
+      // Background chats keep streaming, but only the chat on screen may drive
+      // panel-level side effects: preference patches, the submit splash (which
+      // navigates!), and shared-wizard writes. The dashboards still refresh on
+      // background mutations via the hook-level "optimizations-changed" event.
+      if (!ctx.isActive) return;
+      if (ev.status === "ok" && ev.tool === "update_user_preferences") {
+        const patch = parseAgentPreferencePatch(ev.result);
+        if (Object.keys(patch).length > 0) updatePrefs(patch);
+      }
       if (ev.status === "ok" && SUBMIT_TOOLS.has(ev.tool)) {
         const optimizationId = extractOptimizationId(ev.result);
         if (optimizationId) startSubmitSplash(optimizationId);
@@ -190,14 +214,15 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       const patch = extractWizardPatch(ev.result);
       if (Object.keys(patch).length > 0) wizardCtx.applyAgentPatch(patch);
     },
-    [wizardCtx, startSubmitSplash],
+    [updatePrefs, wizardCtx, startSubmitSplash],
   );
 
   const store = useConversationStore({ enabled: open });
 
   const handleConversationMeta = React.useCallback(
-    (id: string, title: string) => {
+    (id: string, title: string, ctx: SessionEventContext) => {
       store.upsertFromMeta(id, title);
+      if (!ctx.isActive) return;
       store.setActiveId(id);
       // The user is actively in this conversation — every new turn is "seen"
       // by definition. Without this, the row would render as unread the
@@ -212,7 +237,10 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   // its run + timer survive the aside collapse / auto-minimize.
   const [codeArmed, setCodeArmed] = React.useState(false);
   const handedOffRef = React.useRef(false);
-  const handleToolStart = React.useCallback((ev: ToolStartPayload) => {
+  const handleToolStart = React.useCallback((ev: ToolStartPayload, ctx: SessionEventContext) => {
+    // The code agent is a panel-scoped singleton tied to the visible chat; a
+    // background chat requesting authoring must not hijack it mid-use.
+    if (!ctx.isActive) return;
     if (ev.tool === REQUEST_CODE_TOOL) {
       handedOffRef.current = false;
       setCodeArmed(true);
@@ -227,6 +255,9 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
     onConversationMeta: handleConversationMeta,
   });
   const streaming = agent.status === "streaming";
+  // A queued turn locks the composer like a streaming one — its stop button
+  // cancels the queued run before it ever reaches the server.
+  const activeBusy = streaming || agent.status === "queued";
 
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -250,9 +281,14 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   const handlePickConversation = React.useCallback(
     async (id: string) => {
       setDrawerOpen(false);
-      const detail = await getConversation(id);
-      if (!detail) return;
-      agent.loadConversation(id, detail.messages);
+      // A conversation with a live session (streaming, queued, or just kept
+      // in memory) re-attaches instantly — its stream was never interrupted.
+      // Only session-less conversations need a server round-trip.
+      if (!agent.activateConversation(id)) {
+        const detail = await getConversation(id);
+        if (!detail) return;
+        agent.openConversation(id, detail.messages);
+      }
       store.setActiveId(id);
       store.markSeen(id);
     },
@@ -274,22 +310,20 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   }, [searchParams, setOpen, handlePickConversation, router]);
 
   const handleNewConversation = React.useCallback(() => {
-    agent.reset();
+    agent.newSession();
     store.setActiveId(null);
   }, [agent, store]);
 
   // Deleting the conversation you're currently viewing must drop you back to a
   // clean slate — otherwise the panel keeps showing the just-deleted thread and
   // the next message would try to append to a row that no longer exists (404).
-  // Deleting some *other* thread from the drawer leaves the active one alone.
+  // Deleting some *other* thread also aborts any stream it still has running.
   const handleDeleteConversation = React.useCallback(
     async (id: string) => {
       const wasActive = id === (agent.conversationId ?? store.activeId);
+      agent.discardConversation(id);
       await store.remove(id);
-      if (wasActive) {
-        agent.reset();
-        store.setActiveId(null);
-      }
+      if (wasActive) store.setActiveId(null);
     },
     [agent, store],
   );
@@ -302,12 +336,18 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
   };
 
   const [draft, setDraft] = React.useState("");
+  const [attachOpen, setAttachOpen] = React.useState(false);
+  // The + button opens the OS file picker directly; the popover only appears
+  // once a file was chosen, already parsed into the column-mapping card.
+  const attachInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [attachFile, setAttachFile] = React.useState<File | null>(null);
   const confirmedDatasetCallsRef = React.useRef<Set<string>>(new Set());
   // Latest dataset the user confirmed in-panel — supplies columns + roles +
   // sample rows to the hosted code agent. Kept as state (not a ref) so the
   // hosted agent re-renders into "armed" once a dataset is attached.
-  const [lastConfirmedDataset, setLastConfirmedDataset] =
-    React.useState<ConfirmedDataset | null>(null);
+  const [lastConfirmedDataset, setLastConfirmedDataset] = React.useState<ConfirmedDataset | null>(
+    null,
+  );
 
   // Host the canonical code agent at panel scope (mirroring how the wizard
   // hosts it at wizard scope) so authoring survives the aside collapse /
@@ -321,6 +361,11 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       typeof effectiveWizard.optimizer_name === "string"
         ? effectiveWizard.optimizer_name
         : undefined,
+    // Code authoring follows the conversation's chosen model, so picking a
+    // concrete model in the composer (instead of the auto-router default) also
+    // steers the seed — the escape hatch when the default is rate-limited.
+    model: agent.model,
+    reasoningEffort: agent.reasoningEffort,
   });
   // The agent's turn ends BEFORE its card finishes (the code agent streams
   // after the turn), so the composer locks on this signal — not ``streaming``
@@ -361,22 +406,35 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
     if (!codeArmed) return;
     if (agent.status === "streaming") return;
     if (codeAgent.status !== "done") return;
-    if (!codeAgent.signatureCode.trim() || !codeAgent.metricCode.trim()) return;
-    const sigVal = codeAgent.signatureValidation;
+    // The metric is required for every module; validate it first.
+    if (!codeAgent.metricCode.trim()) return;
     const metVal = codeAgent.metricValidation;
-    if (!sigVal || sigVal.errors.length > 0) return;
     if (!metVal || metVal.errors.length > 0) return;
+    // The authored program differs by module: a workflow run carries the graph
+    // (validated authoritatively by the backend on submit — the canvas already
+    // surfaces graph issues), a single-module run carries the Signature.
+    let authoredCode: Partial<WizardState>;
+    if (codeAgent.isWorkflow) {
+      const spec = codeAgent.workflowSpec;
+      // Require a real step between the input/output anchors before handing off.
+      if (!spec || spec.nodes.length < 3) return;
+      authoredCode = { workflow: spec, metric_code: codeAgent.metricCode };
+    } else {
+      if (!codeAgent.signatureCode.trim()) return;
+      const sigVal = codeAgent.signatureValidation;
+      if (!sigVal || sigVal.errors.length > 0) return;
+      authoredCode = {
+        signature_code: codeAgent.signatureCode,
+        metric_code: codeAgent.metricCode,
+      };
+    }
     handedOffRef.current = true;
-    // Ride the authored code on this SAME nudge turn as an explicit override,
-    // not just via applyAgentPatch. agentSend reads a render-lagged snapshot,
-    // so without the override the code_ready_note turn would ship a
-    // wizard_state with empty signature_code/metric_code — the agent would see
-    // "Code incomplete", reject the Model step as out-of-order, and loop back
-    // into request_code_authoring. Mirrors the dataset handoff above.
-    const authoredCode = {
-      signature_code: codeAgent.signatureCode,
-      metric_code: codeAgent.metricCode,
-    };
+    // Ride the authored program on this SAME nudge turn as an explicit override,
+    // not just via applyAgentPatch. agentSend reads a render-lagged snapshot, so
+    // without the override the code_ready_note turn would ship a wizard_state
+    // with empty program fields — the agent would see "Code incomplete", reject
+    // the Model step as out-of-order, and loop back into request_code_authoring.
+    // Mirrors the dataset handoff above.
     applyAgentPatch?.(authoredCode);
     agentSend(
       msg("auto.features.agent.panel.components.generalistpanel.code_ready_note"),
@@ -388,6 +446,8 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
     agentSend,
     applyAgentPatch,
     codeAgent.status,
+    codeAgent.isWorkflow,
+    codeAgent.workflowSpec,
     codeAgent.signatureCode,
     codeAgent.metricCode,
     codeAgent.signatureValidation,
@@ -435,9 +495,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         // sessionStorage can throw under quota or private-mode policy; the
         // live event below still covers the same-page case.
       }
-      window.dispatchEvent(
-        new CustomEvent("wizard:dataset-staged", { detail: stagedDetail }),
-      );
+      window.dispatchEvent(new CustomEvent("wizard:dataset-staged", { detail: stagedDetail }));
       // Write the whole dataset descriptor into the shared context (not just
       // the id) so it is the single source of truth: a wizard mounted on
       // /submit hydrates the same rows from ``staged_dataset_id`` and reads
@@ -458,10 +516,11 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         })
         .filter(Boolean)
         .join("\n");
-      const note = formatMsg(
-        "auto.features.agent.panel.components.generalistpanel.dataset_note",
-        { p1: confirmed.fileName, p2: confirmed.rowCount, p3: mappingLine },
-      );
+      const note = formatMsg("auto.features.agent.panel.components.generalistpanel.dataset_note", {
+        p1: confirmed.fileName,
+        p2: confirmed.rowCount,
+        p3: mappingLine,
+      });
       const wizardOverride: WizardState | undefined = stagedDatasetId
         ? {
             staged_dataset_id: stagedDatasetId,
@@ -471,6 +530,45 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
             column_roles: confirmed.columnRoles,
           }
         : undefined;
+      agent.send(note, wizardOverride);
+    },
+    [agent, wizardCtx],
+  );
+
+  const handleLibraryPick = React.useCallback(
+    (callId: string, picked: ConfirmedLibraryDataset) => {
+      confirmedDatasetCallsRef.current.add(callId);
+      // By-reference twin of handleDatasetConfirm: no staging call — the run
+      // materializes rows from ``source_dataset_id`` on submit. Set the same
+      // gate fields so the next turn's wizard_state unlocks submit, and carry
+      // the library id so the backend injects it into the submit request.
+      if (wizardCtx) {
+        wizardCtx.setField("source_dataset_id", picked.sourceDatasetId, "user");
+        wizardCtx.setField("dataset_columns", picked.columns, "user");
+        wizardCtx.setField("column_roles", picked.columnRoles, "user");
+        wizardCtx.setField("dataset_ready", true, "user");
+        wizardCtx.setField("columns_configured", true, "user");
+      }
+      const mappingLine = picked.columns
+        .map((c) => {
+          const role = picked.columnRoles[c];
+          if (role === "ignore") return null;
+          return `- ${c} → ${role}`;
+        })
+        .filter(Boolean)
+        .join("\n");
+      const note = formatMsg("auto.features.agent.panel.components.generalistpanel.dataset_note", {
+        p1: picked.name,
+        p2: picked.rowCount,
+        p3: mappingLine,
+      });
+      const wizardOverride: WizardState = {
+        source_dataset_id: picked.sourceDatasetId,
+        dataset_ready: true,
+        columns_configured: true,
+        dataset_columns: picked.columns,
+        column_roles: picked.columnRoles,
+      };
       agent.send(note, wizardOverride);
     },
     [agent, wizardCtx],
@@ -502,7 +600,9 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       resizingRef.current = true;
       const onMove = (ev: MouseEvent) => {
         if (!resizingRef.current) return;
-        setWidth(clampWidth(ev.clientX));
+        // Width is the gap from the panel's docked edge to the cursor: from the
+        // left when docked left (RTL), from the right when docked right (LTR).
+        setWidth(clampWidth(isRtl ? ev.clientX : window.innerWidth - ev.clientX));
       };
       const onUp = () => {
         resizingRef.current = false;
@@ -512,7 +612,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [setWidth],
+    [setWidth, isRtl],
   );
 
   const renderToolCall = React.useCallback(
@@ -534,7 +634,16 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
           />
         );
       }
-      if (call.tool === REQUEST_INFERENCE_TOOL) {
+      if (call.tool === REQUEST_LIBRARY_TOOL) {
+        return (
+          <LibraryDatasetCard
+            call={call}
+            alreadyConfirmed={confirmedDatasetCallsRef.current.has(call.id)}
+            onConfirm={(picked) => handleLibraryPick(call.id, picked)}
+          />
+        );
+      }
+      if (call.tool === REQUEST_INFERENCE_TOOL || call.tool === REQUEST_PAIR_INFERENCE_TOOL) {
         return <InferenceFormCard call={call} disabled={streaming} />;
       }
       if (call.tool === REQUEST_CODE_TOOL) {
@@ -547,12 +656,12 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       const summary = renderer?.summary?.(call) ?? null;
       return <ToolCallRow call={call} isRetry={ctx.isRetry} summary={summary} />;
     },
-    [handleDatasetConfirm, streaming, codeAgent],
+    [handleDatasetConfirm, handleLibraryPick, streaming, codeAgent],
   );
 
   const emptyState = (
     <EmptyState
-      icon={Sparkles}
+      icon={Sparkle}
       iconWrap="circle"
       variant="compact"
       title={msg("auto.features.agent.panel.components.generalistpanel.1")}
@@ -577,27 +686,35 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         {open && (
           <motion.aside
             key="generalist-panel"
-            dir="ltr"
-            initial={reduceMotion ? false : { x: -24, opacity: 0 }}
+            dir={dir}
+            initial={reduceMotion ? false : { x: isRtl ? -24 : 24, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
-            exit={reduceMotion ? { opacity: 0 } : { x: -24, opacity: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { x: isRtl ? -24 : 24, opacity: 0 }}
             transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
             style={{ width: isNarrow ? "100vw" : `min(${width}px, 92vw)` }}
             className={cn(
-              "fixed start-0 inset-y-0 z-40 flex h-dvh shrink-0",
-              "bg-background/95 backdrop-blur-xl border-e border-border/60",
-              "shadow-[8px_0_32px_rgba(61,46,34,0.06)]",
+              "fixed end-0 inset-y-0 z-40 flex h-dvh shrink-0",
+              "bg-background/95 backdrop-blur-xl border-s border-border/60",
+              // Shadow falls from the panel toward the page content — rightward
+              // when docked left (RTL), leftward when docked right (LTR).
+              isRtl
+                ? "shadow-[8px_0_32px_rgba(61,46,34,0.06)]"
+                : "shadow-[-8px_0_32px_rgba(61,46,34,0.06)]",
             )}
             aria-label={msg("auto.features.agent.panel.components.generalistpanel.literal.1")}
           >
-            <div dir="rtl" className="relative flex min-w-0 flex-1 flex-col" data-tutorial="agent-panel">
+            <div
+              dir={dir}
+              className="relative flex min-w-0 flex-1 flex-col"
+              data-tutorial="agent-panel"
+            >
               <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2.5 shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <span
                     className="inline-flex size-6 items-center justify-center rounded-full text-[#FAF8F5]"
                     style={{ backgroundColor: hue }}
                   >
-                    <Sparkles className="size-3" aria-hidden="true" />
+                    <Sparkle className="size-3" aria-hidden="true" />
                   </span>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 leading-tight">
@@ -610,16 +727,16 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                             <PopoverTrigger asChild>
                               <button
                                 type="button"
-                                className="rounded-md p-1 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer"
+                                className="inline-flex size-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground cursor-pointer md:size-6 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                                 aria-label={msg(
                                   "auto.features.agent.panel.components.generalistpanel.literal.2",
                                 )}
                               >
-                                <WandSparkles className="size-3.5" />
+                                <MagicWand className="size-3.5" />
                               </button>
                             </PopoverTrigger>
                           </TooltipTrigger>
-                          <TooltipContent side="bottom" dir="rtl">
+                          <TooltipContent side="bottom">
                             {msg("auto.features.agent.panel.components.generalistpanel.4")}
                           </TooltipContent>
                         </Tooltip>
@@ -636,22 +753,37 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <TrustToggle mode={trustMode} onCycle={cycleTrust} />
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
                         type="button"
                         onClick={() => setDrawerOpen(true)}
-                        className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer"
+                        className="relative inline-flex size-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground cursor-pointer md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                         aria-label={msg(
                           "auto.features.agent.panel.components.generalistpanel.history_button",
                         )}
                       >
-                        <History className="size-3.5" />
+                        <ClockCounterClockwise className="size-3.5" />
+                        {agent.backgroundBusyCount > 0 && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -top-0.5 -end-0.5 flex min-w-3.5 h-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[0.5625rem] font-semibold leading-none text-primary-foreground"
+                          >
+                            {agent.backgroundBusyCount}
+                          </span>
+                        )}
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom" dir="rtl">
+                    <TooltipContent side="bottom">
                       {msg("auto.features.agent.panel.components.generalistpanel.history_button")}
+                      {agent.backgroundBusyCount > 0 && (
+                        <>
+                          {" · "}
+                          {formatMsg("agent.parallel.background_count", {
+                            p1: agent.backgroundBusyCount,
+                          })}
+                        </>
+                      )}
                     </TooltipContent>
                   </Tooltip>
                   {agent.messages.length > 0 && (
@@ -660,7 +792,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                         <button
                           type="button"
                           onClick={handleNewConversation}
-                          className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer"
+                          className="inline-flex size-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground cursor-pointer md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                           aria-label={msg(
                             "auto.features.agent.panel.components.generalistpanel.new_conversation",
                           )}
@@ -668,8 +800,10 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                           <Plus className="size-3.5" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="bottom" dir="rtl">
-                        {msg("auto.features.agent.panel.components.generalistpanel.new_conversation")}
+                      <TooltipContent side="bottom">
+                        {msg(
+                          "auto.features.agent.panel.components.generalistpanel.new_conversation",
+                        )}
                       </TooltipContent>
                     </Tooltip>
                   )}
@@ -678,15 +812,21 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                       <button
                         type="button"
                         onClick={closePanel}
-                        className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/70 hover:text-foreground transition-colors cursor-pointer"
+                        className="inline-flex size-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground cursor-pointer md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                         aria-label={msg(
                           "auto.features.agent.panel.components.generalistpanel.literal.4",
                         )}
                       >
-                        <PanelLeftClose className="size-3.5" />
+                        {/* Icon points toward the edge the panel collapses to:
+                            right when docked right (LTR), left when docked left (RTL). */}
+                        {isRtl ? (
+                          <SidebarSimple className="size-3.5" />
+                        ) : (
+                          <SidebarSimple className="size-3.5" />
+                        )}
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom" dir="rtl">
+                    <TooltipContent side="bottom">
                       {msg("auto.features.agent.panel.components.generalistpanel.6")}{" "}
                       <span className="opacity-70 font-mono">({shortcutLabel})</span>
                     </TooltipContent>
@@ -723,23 +863,18 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                         />
                       )}
                       {agent.error && (
-                        <div className="rounded-lg bg-[#FCEFEB]/60 border border-[#9B2C1F]/20 px-2.5 py-2 text-xs text-[#7A1E13] space-y-1.5">
-                          <div className="flex items-start gap-1.5">
-                            <XCircle className="size-3 shrink-0 mt-0.5 text-[#9B2C1F]" />
-                            <span className="flex-1 break-words min-w-0" dir="auto">
-                              {agent.error}
-                            </span>
-                          </div>
-                          <div className="flex gap-1.5 ps-4">
-                            <button
-                              type="button"
-                              onClick={agent.retry}
-                              className="inline-flex items-center gap-1 text-[0.6875rem] text-[#7A1E13] bg-[#9B2C1F]/10 hover:bg-[#9B2C1F]/20 px-2 py-0.5 rounded cursor-pointer transition-colors"
-                            >
-                              <RotateCcw className="size-3" />
-                              {msg("auto.features.agent.panel.components.generalistpanel.error_retry")}
-                            </button>
-                          </div>
+                        <div className="flex items-start gap-1.5 rounded-lg border border-[#9B2C1F]/20 bg-[#FCEFEB]/60 px-2.5 py-2 text-xs text-[#7A1E13]">
+                          <XCircle className="mt-0.5 size-3 shrink-0 text-[#9B2C1F]" />
+                          <span className="min-w-0 flex-1 break-words" dir="auto">
+                            {agent.error}
+                          </span>
+                          <RetryIconButton
+                            label={msg(
+                              "auto.features.agent.panel.components.generalistpanel.error_retry",
+                            )}
+                            onClick={agent.retry}
+                            className="size-[44px] border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13] md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
+                          />
                         </div>
                       )}
                     </>
@@ -753,8 +888,88 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                 onSubmit={handleSubmit}
                 onStop={agent.stop}
                 placeholder={msg("auto.features.agent.panel.components.generalistpanel.literal.5")}
-                streaming={streaming}
+                streaming={activeBusy}
                 disabled={codeAuthoringActive}
+                modelMenu={
+                  <ComposerModelMenu
+                    value={agent.model}
+                    onChange={agent.setModel}
+                    effort={agent.reasoningEffort}
+                    onEffortChange={agent.setReasoningEffort}
+                  />
+                }
+                leadingControls={
+                  <>
+                    <input
+                      ref={attachInputRef}
+                      type="file"
+                      accept={DATASET_FILE_ACCEPT}
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) {
+                          setAttachFile(file);
+                          setAttachOpen(true);
+                        }
+                      }}
+                    />
+                    <Popover
+                      open={attachOpen}
+                      onOpenChange={(open) => {
+                        setAttachOpen(open);
+                        if (!open) setAttachFile(null);
+                      }}
+                    >
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              disabled={codeAuthoringActive}
+                              aria-label={msg("agent.composer.attach")}
+                              onClick={(e) => {
+                                // Skip the popover toggle — go straight to the
+                                // OS file picker; the popover opens on pick.
+                                e.preventDefault();
+                                attachInputRef.current?.click();
+                              }}
+                              className={cn(
+                                "inline-flex size-[44px] items-center justify-center rounded-full sm:size-9 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]",
+                                "text-muted-foreground transition-colors cursor-pointer",
+                                "hover:bg-accent/60 hover:text-foreground",
+                                "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40",
+                                "disabled:pointer-events-none disabled:opacity-50",
+                              )}
+                            >
+                              <Plus className="size-4" />
+                            </button>
+                          </PopoverTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">{msg("agent.composer.attach")}</TooltipContent>
+                      </Tooltip>
+                      <PopoverContent
+                        side="top"
+                        align="start"
+                        sideOffset={8}
+                        className="w-96 max-w-[calc(100vw-2rem)] p-3"
+                      >
+                        <DatasetUploadCard
+                          initialFile={attachFile}
+                          onConfirm={(confirmed) => {
+                            setAttachOpen(false);
+                            setAttachFile(null);
+                            void handleDatasetConfirm(
+                              `user-attach-${confirmed.fileName}`,
+                              confirmed,
+                            );
+                          }}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <TrustToggle mode={trustMode} onCycle={cycleTrust} plain />
+                  </>
+                }
                 sendAriaLabel={msg(
                   "auto.features.agent.panel.components.generalistpanel.literal.6",
                 )}
@@ -766,14 +981,15 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
               <PresenceStrip active={streaming} hue={hue} />
             </div>
 
-            {/* Resize handle — physical right edge (inline-end in LTR outer) */}
+            {/* Resize handle on the inline-start edge — the side that faces the
+                page content, so dragging it grows/shrinks the panel. */}
             <button
               type="button"
               onMouseDown={startResize}
               aria-label={msg("auto.features.agent.panel.components.generalistpanel.literal.8")}
               tabIndex={-1}
               className={cn(
-                "absolute top-0 end-0 h-full w-1 cursor-col-resize",
+                "absolute top-0 start-0 h-full w-1 cursor-col-resize",
                 "hover:bg-[#C8A882]/40 active:bg-[#C8A882]/60 transition-colors",
                 "max-lg:hidden",
               )}
@@ -782,16 +998,29 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         )}
       </AnimatePresence>
 
-      {!open && (
-        <>
+      {/* A registered dock re-homes the pill into a surface's own chrome
+          (the tagger footers), so the launcher never floats over that
+          surface's bottom controls. */}
+      {!open &&
+        (pillDock ? (
+          createPortal(
+            <MinimizedPill
+              onOpen={openPanel}
+              active={streaming || agent.backgroundBusyCount > 0}
+              statusLabel={agent.statusLabel}
+              hue={hue}
+              inline
+            />,
+            pillDock,
+          )
+        ) : (
           <MinimizedPill
             onOpen={openPanel}
-            active={streaming}
+            active={streaming || agent.backgroundBusyCount > 0}
             statusLabel={agent.statusLabel}
             hue={hue}
           />
-        </>
-      )}
+        ))}
 
       <ConversationDrawer
         open={drawerOpen}
@@ -800,6 +1029,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
         loading={store.loading}
         activeId={agent.conversationId ?? store.activeId}
         unreadIds={store.unreadIds}
+        busyIds={agent.busyConversationIds}
         query={searchQuery}
         onQueryChange={setSearchQuery}
         onPick={handlePickConversation}

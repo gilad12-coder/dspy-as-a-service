@@ -45,6 +45,8 @@ def test_catalog_model_defaults() -> None:
     assert m.available is False
     assert m.max_input_tokens is None
     assert m.data_center is None
+    assert m.input_cost_per_token is None
+    assert m.output_cost_per_token is None
 
 
 def test_catalog_model_stores_all_fields() -> None:
@@ -118,7 +120,7 @@ def test_get_catalog_returns_correct_types(monkeypatch: pytest.MonkeyPatch) -> N
     fake_cost: dict = dict(litellm.model_cost)
     fake_cost["fakeprovider-model-a"] = {
         "mode": "chat",
-        "litellm_provider": "openai",
+        "litellm_provider": "openrouter",
         "supports_reasoning": False,
         "max_input_tokens": 4096,
         "input_cost_per_token": 0,
@@ -139,12 +141,42 @@ def test_get_catalog_returns_correct_types(monkeypatch: pytest.MonkeyPatch) -> N
     assert any("fakeprovider-model-a" in v for v in values)
 
 
+def test_get_catalog_surfaces_per_token_costs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Positive LiteLLM per-token costs ride onto the catalog; zero/absent → None."""
+    fake_cost: dict = {
+        "priced-model": {
+            "mode": "chat",
+            "litellm_provider": "openrouter",
+            "max_input_tokens": 4096,
+            "input_cost_per_token": 1.5e-7,
+            "output_cost_per_token": 6e-7,
+        },
+        "freebie-model": {
+            "mode": "chat",
+            "litellm_provider": "openrouter",
+            "max_input_tokens": 4096,
+            "input_cost_per_token": 0,  # zero/absent must surface as None, not free
+        },
+    }
+    monkeypatch.setattr(litellm, "model_cost", fake_cost)
+    monkeypatch.setattr(litellm, "get_valid_models", lambda: ["priced-model", "freebie-model"])
+    monkeypatch.setattr(mc, "_probe_all_providers", dict)
+
+    by_value = {m.value: m for m in get_catalog().models}
+    priced = by_value["openrouter/priced-model"]
+    assert priced.input_cost_per_token == 1.5e-7
+    assert priced.output_cost_per_token == 6e-7
+    freebie = by_value["openrouter/freebie-model"]
+    assert freebie.input_cost_per_token is None
+    assert freebie.output_cost_per_token is None
+
+
 def test_get_catalog_only_returns_available_models(monkeypatch: pytest.MonkeyPatch) -> None:
     """Models that aren't reported by ``get_valid_models`` are filtered out."""
     fake_cost: dict = {
         "only-in-registry": {
             "mode": "chat",
-            "litellm_provider": "openai",
+            "litellm_provider": "openrouter",
             "supports_reasoning": False,
             "max_input_tokens": 4096,
             "input_cost_per_token": 0,
@@ -169,7 +201,7 @@ def test_get_catalog_deduplicates_dated_variants(monkeypatch: pytest.MonkeyPatch
     fake_cost: dict = {
         "gpt-4o": {
             "mode": "chat",
-            "litellm_provider": "openai",
+            "litellm_provider": "openrouter",
             "supports_reasoning": False,
             "max_input_tokens": 128000,
             "input_cost_per_token": 0,
@@ -177,7 +209,7 @@ def test_get_catalog_deduplicates_dated_variants(monkeypatch: pytest.MonkeyPatch
         },
         "gpt-4o-2024-08-06": {
             "mode": "chat",
-            "litellm_provider": "openai",
+            "litellm_provider": "openrouter",
             "supports_reasoning": False,
             "max_input_tokens": 128000,
             "input_cost_per_token": 0,
@@ -202,7 +234,7 @@ def test_get_catalog_filters_out_non_chat_modes(monkeypatch: pytest.MonkeyPatch)
     fake_cost: dict = {
         "text-embedding-ada-002": {
             "mode": "embedding",
-            "litellm_provider": "openai",
+            "litellm_provider": "openrouter",
             "max_input_tokens": 8192,
             "input_cost_per_token": 0,
             "output_cost_per_token": 0,
@@ -222,7 +254,7 @@ def test_get_catalog_propagates_supports_vision_flag(monkeypatch: pytest.MonkeyP
     fake_cost: dict = {
         "vision-model": {
             "mode": "chat",
-            "litellm_provider": "openai",
+            "litellm_provider": "openrouter",
             "supports_reasoning": False,
             "supports_vision": True,
             "max_input_tokens": 128000,
@@ -231,7 +263,7 @@ def test_get_catalog_propagates_supports_vision_flag(monkeypatch: pytest.MonkeyP
         },
         "text-only-model": {
             "mode": "chat",
-            "litellm_provider": "openai",
+            "litellm_provider": "openrouter",
             "supports_reasoning": False,
             "max_input_tokens": 8192,
             "input_cost_per_token": 0,
@@ -245,8 +277,8 @@ def test_get_catalog_propagates_supports_vision_flag(monkeypatch: pytest.MonkeyP
     result = get_catalog()
 
     by_value = {m.value: m for m in result.models}
-    assert by_value["openai/vision-model"].supports_vision is True
-    assert by_value["openai/text-only-model"].supports_vision is False
+    assert by_value["openrouter/vision-model"].supports_vision is True
+    assert by_value["openrouter/text-only-model"].supports_vision is False
 
 
 def test_get_catalog_handles_valid_models_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -258,7 +290,7 @@ def test_get_catalog_handles_valid_models_failure(monkeypatch: pytest.MonkeyPatc
     fake_cost: dict = {
         "gpt-4o": {
             "mode": "chat",
-            "litellm_provider": "openai",
+            "litellm_provider": "openrouter",
             "supports_reasoning": False,
             "max_input_tokens": 128000,
             "input_cost_per_token": 0,
@@ -282,16 +314,14 @@ def test_single_endpoint_provider_has_none_data_center(monkeypatch: pytest.Monke
     Preserves the historical single-DC wire shape so existing clients keep
     working when no on-prem gateway is configured.
     """
-    monkeypatch.setattr(settings, "code_agent_base_url", "")
-    monkeypatch.setattr(settings, "embeddings_base_url", "")
-    centers = _provider_data_centers("openai")
+    centers = _provider_data_centers("openrouter")
     assert len(centers) == 1
     assert centers[0].label is None
 
     fake_cost: dict = {
-        "gpt-4o": {
+        "openrouter/vendor/chat-model": {
             "mode": "chat",
-            "litellm_provider": "openai",
+            "litellm_provider": "openrouter",
             "supports_reasoning": False,
             "max_input_tokens": 128000,
             "input_cost_per_token": 0,
@@ -299,34 +329,28 @@ def test_single_endpoint_provider_has_none_data_center(monkeypatch: pytest.Monke
         }
     }
     monkeypatch.setattr(litellm, "model_cost", fake_cost)
-    monkeypatch.setattr(litellm, "get_valid_models", lambda: ["gpt-4o"])
+    monkeypatch.setattr(litellm, "get_valid_models", lambda: ["openrouter/vendor/chat-model"])
     monkeypatch.setattr(mc, "_probe_all_providers", dict)
 
     result = get_catalog()
 
-    openai_models = [m for m in result.models if m.provider == "openai"]
-    assert len(openai_models) == 1
-    assert openai_models[0].data_center is None
-    openai_providers = [p for p in result.providers if p.slug == "openai"]
-    assert len(openai_providers) == 1
-    assert openai_providers[0].data_center is None
+    entries = [m for m in result.models if m.provider == "openrouter"]
+    assert len(entries) == 1
+    assert entries[0].data_center is None
+    providers = [p for p in result.providers if p.slug == "openrouter"]
+    assert len(providers) == 1
+    assert providers[0].data_center is None
 
 
-def test_on_prem_gateway_surfaces_as_extra_data_center(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A configured on-prem gateway adds a second OpenAI data center.
+def test_platform_catalog_is_openrouter_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-OpenRouter providers never reach the hosted catalog.
 
-    The same model fans out to two catalog entries — the public OpenAI
-    endpoint (``data_center=None``) and the internal gateway
-    (``data_center="On-prem gateway"``) — each carrying its own base URL.
+    Other providers' keys may exist for non-LLM features (OpenAI powers
+    Whisper dictation) and an on-prem gateway may be configured — neither
+    may leak chat models into the platform-billed menu.
     """
     monkeypatch.setattr(settings, "code_agent_base_url", "https://llm.internal/v1")
     monkeypatch.setattr(settings, "embeddings_base_url", "")
-
-    centers = _provider_data_centers("openai")
-    assert len(centers) == 2
-    on_prem = next(c for c in centers if c.label == "On-prem gateway")
-    assert on_prem.base_url == "https://llm.internal/v1"
-    assert on_prem.models_url == "https://llm.internal/v1/models"
 
     fake_cost: dict = {
         "gpt-4o": {
@@ -336,26 +360,36 @@ def test_on_prem_gateway_surfaces_as_extra_data_center(monkeypatch: pytest.Monke
             "max_input_tokens": 128000,
             "input_cost_per_token": 0,
             "output_cost_per_token": 0,
-        }
+        },
+        "claude-3-5-haiku": {
+            "mode": "chat",
+            "litellm_provider": "anthropic",
+            "supports_reasoning": False,
+            "max_input_tokens": 200000,
+            "input_cost_per_token": 0,
+            "output_cost_per_token": 0,
+        },
+        "openrouter/vendor/chat-model": {
+            "mode": "chat",
+            "litellm_provider": "openrouter",
+            "supports_reasoning": False,
+            "max_input_tokens": 128000,
+            "input_cost_per_token": 0,
+            "output_cost_per_token": 0,
+        },
     }
     monkeypatch.setattr(litellm, "model_cost", fake_cost)
-    monkeypatch.setattr(litellm, "get_valid_models", lambda: ["gpt-4o"])
+    monkeypatch.setattr(
+        litellm,
+        "get_valid_models",
+        lambda: ["gpt-4o", "claude-3-5-haiku", "openrouter/vendor/chat-model"],
+    )
     monkeypatch.setattr(mc, "_probe_all_providers", dict)
 
     result = get_catalog()
 
-    openai_models = [m for m in result.models if m.value == "openai/gpt-4o"]
-    dcs = sorted((m.data_center or "") for m in openai_models)
-    assert dcs == ["", "On-prem gateway"]
-
-    on_prem_provider = next(
-        p for p in result.providers if p.slug == "openai" and p.data_center == "On-prem gateway"
-    )
-    assert on_prem_provider.default_base_url == "https://llm.internal/v1"
-    native_provider = next(
-        p for p in result.providers if p.slug == "openai" and p.data_center is None
-    )
-    assert native_provider.default_base_url == "https://api.openai.com/v1"
+    assert {m.provider for m in result.models} == {"openrouter"}
+    assert {p.slug for p in result.providers} == {"openrouter"}
 
 
 def test_on_prem_falls_back_to_embeddings_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -480,3 +514,36 @@ def test_get_catalog_does_not_duplicate_registry_models_from_probe(
 
     matches = [m for m in result.models if m.value == "openrouter/vendor/known"]
     assert len(matches) == 1
+
+
+def test_background_refresh_clears_flag_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed background refresh releases the in-flight guard so it can re-trigger.
+
+    Regression: the guard was only cleared on the success path, so one transient
+    failure wedged ``_refresh_in_flight`` True and disabled background refresh for
+    the rest of the process's life.
+    """
+
+    def boom() -> mc.ModelCatalogResponse:
+        raise RuntimeError("catalog source unreachable")
+
+    monkeypatch.setattr(mc, "get_catalog", boom)
+    monkeypatch.setattr(mc, "_refresh_in_flight", True, raising=False)
+    mc._refresh_catalog_in_background()
+    assert mc._refresh_in_flight is False
+
+
+def test_background_refresh_swaps_cache_and_clears_flag_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful refresh swaps the fresh snapshot in and releases the guard."""
+    fresh = mc.ModelCatalogResponse(providers=[], models=[])
+    prev = mc._cached_response
+    monkeypatch.setattr(mc, "get_catalog", lambda: fresh)
+    monkeypatch.setattr(mc, "_refresh_in_flight", True, raising=False)
+    try:
+        mc._refresh_catalog_in_background()
+        assert mc._cached_response is fresh
+        assert mc._refresh_in_flight is False
+    finally:
+        mc._cached_response = prev

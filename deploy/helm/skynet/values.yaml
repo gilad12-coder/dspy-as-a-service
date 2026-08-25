@@ -247,8 +247,6 @@ frontend:
     # Break-glass admin users only. Prefer AUTH_ADMIN_GROUPS for normal admin assignment.
     AUTH_ADMINS: ""
     NODE_EXTRA_CA_CERTS: ""
-    # DEV_AUTH=false to disable login in non-prod previews. Leave empty otherwise.
-    DEV_AUTH: ""
     # Set to the deployed version so the UI footer reflects it. Defaults to a
     # stale 0.1.0 when unset.
     APP_VERSION: ""

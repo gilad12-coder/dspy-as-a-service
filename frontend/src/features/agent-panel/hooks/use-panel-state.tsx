@@ -31,6 +31,10 @@ interface PanelState {
   toggle: () => void;
   width: number;
   setWidth: (v: number) => void;
+  /** Element the minimized pill portals into while a surface has docked it. */
+  pillDock: HTMLElement | null;
+  /** Dock the pill into ``el``; returns the undo for the caller's unmount. */
+  registerPillDock: (el: HTMLElement) => () => void;
 }
 
 const PanelContext = React.createContext<PanelState | null>(null);
@@ -94,6 +98,16 @@ export function GeneralistPanelProvider({ children }: { children: React.ReactNod
     }
   }, []);
 
+  // Full-bleed working surfaces whose bottom bar owns the viewport corner
+  // (the tagger walkthroughs' Prev/Next row) re-home the floating pill by
+  // registering a dock. Last registration wins; the undo only clears its own
+  // element, so an unmount racing a sibling's mount stays consistent.
+  const [pillDock, setPillDock] = React.useState<HTMLElement | null>(null);
+  const registerPillDock = React.useCallback((el: HTMLElement) => {
+    setPillDock(el);
+    return () => setPillDock((prev) => (prev === el ? null : prev));
+  }, []);
+
   const shortcut = prefs.agentShortcut;
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -107,8 +121,8 @@ export function GeneralistPanelProvider({ children }: { children: React.ReactNod
   }, [toggle, shortcut]);
 
   const value = React.useMemo<PanelState>(
-    () => ({ open, setOpen, toggle, width, setWidth }),
-    [open, setOpen, toggle, width, setWidth],
+    () => ({ open, setOpen, toggle, width, setWidth, pillDock, registerPillDock }),
+    [open, setOpen, toggle, width, setWidth, pillDock, registerPillDock],
   );
 
   return <PanelContext.Provider value={value}>{children}</PanelContext.Provider>;
@@ -120,4 +134,13 @@ export function useGeneralistPanelState(): PanelState {
     throw new Error("useGeneralistPanelState must be used within GeneralistPanelProvider");
   }
   return ctx;
+}
+
+/**
+ * Like {@link useGeneralistPanelState}, but null when the agent feature is
+ * disabled (the provider isn't mounted then). For chrome that merely adapts
+ * to the agent — e.g. the pill dock — rather than requiring it.
+ */
+export function useGeneralistPanelStateOptional(): PanelState | null {
+  return React.useContext(PanelContext);
 }

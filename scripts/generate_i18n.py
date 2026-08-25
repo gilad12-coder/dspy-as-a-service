@@ -3,6 +3,8 @@
 The source of truth is ``i18n/locales/he.json``. This script emits:
 
 * ``frontend/src/shared/lib/generated/i18n-catalog.ts`` for TypeScript callers.
+* ``frontend/src/shared/lib/generated/ui-catalog.ts`` — the consolidated UI
+  string catalogs (``i18n/locales/ui/<locale>.json``) as a per-locale registry.
 * ``backend/core/i18n_keys.py`` for Python callers.
 * ``backend/core/i18n_locales/he.json`` — in-package copy so wheel installs
   ship the catalog inside ``core`` without depending on the repo-root file.
@@ -32,12 +34,27 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "i18n" / "locales" / "he.json"
+EN_CATALOG_PATH = ROOT / "i18n" / "locales" / "en.json"
+# Hebrew is the complete backend base; every other i18n/locales/<locale>.json is
+# an additive overlay merged at runtime via the registry fallback chain.
+BACKEND_BASE_LOCALE = "he"
 SCHEMA_PATH = ROOT / "i18n" / "schema.json"
 TS_OUT = ROOT / "frontend" / "src" / "shared" / "lib" / "generated" / "i18n-catalog.ts"
 PY_OUT = ROOT / "backend" / "core" / "i18n_keys.py"
 PY_CATALOG_OUT = ROOT / "backend" / "core" / "i18n_locales" / "he.json"
 
+# Frontend UI strings live in a separate per-locale catalog tree so backend
+# wheels never ship UI copy. ``he.json`` is the complete base; every other
+# ``<locale>.json`` is an overlay merged at runtime via the registry fallback
+# chain.
+UI_CATALOG_DIR = ROOT / "i18n" / "locales" / "ui"
+UI_TS_OUT = ROOT / "frontend" / "src" / "shared" / "lib" / "generated" / "ui-catalog.ts"
+UI_BASE_LOCALE = "he"
+
 MESSAGE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
+# UI keys include auto-extracted, digit-leading segments (``...literal.16``),
+# so they use a looser dotted-identifier rule than the backend message keys.
+UI_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+$")
 
 
 def _load_catalog() -> dict[str, Any]:
@@ -75,6 +92,83 @@ def _load_catalog() -> dict[str, Any]:
             f"messages keys must match {MESSAGE_KEY_PATTERN.pattern!r}; offenders: {sorted(bad_keys)}"
         )
     return catalog
+
+
+def _load_backend_overlays() -> dict[str, dict[str, dict[str, str]]]:
+    """Load every per-locale backend overlay from ``i18n/locales/<locale>.json``.
+
+    Globs all ``*.json`` except the Hebrew base (``he.json``). Each overlay
+    mirrors the base catalog's ``terms`` and ``messages`` sections but may
+    translate only a subset — missing keys fall back through the registry chain
+    at runtime, so a partial file (e.g. a regional-variant delta) is valid. The
+    ``ui`` subdirectory is a separate tree and is not globbed here.
+
+    Returns:
+        Mapping of locale tag to ``{"terms": {...}, "messages": {...}}`` (each
+        section possibly empty).
+
+    Raises:
+        TypeError: When a present section is not a JSON object.
+    """
+    overlays: dict[str, dict[str, dict[str, str]]] = {}
+    for path in sorted((ROOT / "i18n" / "locales").glob("*.json")):
+        if path.stem == BACKEND_BASE_LOCALE:
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        sections: dict[str, dict[str, str]] = {}
+        for section in ("terms", "messages"):
+            value = data.get(section, {})
+            if not isinstance(value, dict):
+                raise TypeError(f"{path} section {section!r} must be an object")
+            sections[section] = {k: str(v) for k, v in value.items()}
+        overlays[path.stem] = sections
+    return overlays
+
+
+def _validate_backend_overlays(
+    catalog: dict[str, Any], overlays: dict[str, dict[str, dict[str, str]]]
+) -> None:
+    """Reject overlay keys absent from the Hebrew base, and require English to
+    translate every term.
+
+    Every overlay's ``terms`` / ``messages`` consts are typed against the
+    Hebrew-derived key unions (``TermKey`` / ``I18nMessageKey``), so an unknown
+    key would emit TypeScript that fails to compile. Fail fast here.
+
+    English additionally must translate every term: ``en`` falls back to ``he``,
+    so a term missing from ``en.json`` leaks Hebrew into the English UI. Other
+    locales fall back through English first (e.g. ``fr -> en -> he``), so a
+    partial overlay degrades to English, never Hebrew — partial is fine for them.
+
+    Raises:
+        ValueError: When an overlay references unknown keys, or when a Hebrew
+            term has no English translation.
+    """
+    he_sections = {"terms": set(catalog["terms"]), "messages": set(catalog["messages"])}
+    for locale, overlay in overlays.items():
+        for section in ("terms", "messages"):
+            unknown = sorted(set(overlay[section]) - he_sections[section])
+            if unknown:
+                raise ValueError(
+                    f"i18n/locales/{locale}.json {section} has keys not present in "
+                    f"{CATALOG_PATH.name}: {unknown}"
+                )
+
+    en_terms = set(overlays.get("en", {}).get("terms", {}))
+    untranslated_terms = sorted(he_sections["terms"] - en_terms)
+    if untranslated_terms:
+        raise ValueError(
+            f"{EN_CATALOG_PATH} is missing English translations for these terms: "
+            f"{untranslated_terms}. Every term must be translated — an untranslated "
+            f"term falls back to Hebrew and leaks into the English UI. Add the English "
+            f'value(s) under "terms" in {EN_CATALOG_PATH.name}.'
+        )
+
+
+def _be_ident(prefix: str, locale: str) -> str:
+    """Map a locale tag to a backend overlay const identifier (``pt-BR`` ->
+    ``terms_pt_BR``)."""
+    return f"{prefix}_" + re.sub(r"[^A-Za-z0-9]", "_", locale)
 
 
 def _enum_name(key: str) -> str:
@@ -139,14 +233,19 @@ def _ts_object(values: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def _render_ts(catalog: dict[str, Any]) -> str:
+def _render_ts(catalog: dict[str, Any], overlays: dict[str, dict[str, dict[str, str]]]) -> str:
     """Build the frontend TS catalog source string.
 
-    Sorts ``TERMS`` and ``I18N_MESSAGES`` deterministically by key so a
-    re-ordered source catalog produces an identical artefact.
+    Sorts every section deterministically by key so a re-ordered source catalog
+    produces an identical artefact. Emits the Hebrew base, each per-locale
+    overlay as a ``Partial`` const, and ``TERMS_BY_LOCALE`` /
+    ``I18N_MESSAGES_BY_LOCALE`` registries keyed by locale tag (which ``i18n.ts``
+    walks via the registry fallback chain). English keeps its historical
+    ``TERMS_EN`` / ``I18N_MESSAGES_EN`` exports for backward compatibility.
 
     Args:
-        catalog: Parsed catalog.
+        catalog: Parsed Hebrew catalog.
+        overlays: Per-locale overlays from ``_load_backend_overlays``.
 
     Returns:
         Full TS file contents (including trailing newline).
@@ -157,24 +256,57 @@ def _render_ts(catalog: dict[str, Any]) -> str:
     messages_ts = _ts_object(messages_sorted)
     message_key_ts = _ts_object(_enum_map(sorted(catalog["messages"]), "messages"))
     term_key_ts = _ts_object(_enum_map(sorted(catalog["terms"]), "terms"))
-    return "\n".join(
-        [
-            "// Generated by scripts/generate_i18n.py. Do not edit by hand.",
-            "",
-            f"export const TERMS = {terms_ts} as const;",
-            "",
-            f"export const I18N_MESSAGES = {messages_ts} as const;",
-            "",
-            "export type TermKey = keyof typeof TERMS;",
-            "export type I18nMessageKey = keyof typeof I18N_MESSAGES;",
-            "export type ErrorCode = I18nMessageKey;",
-            "",
-            f"export const I18N_KEY = {message_key_ts} as const;",
-            "",
-            f"export const TERM_KEY = {term_key_ts} as const;",
-            "",
-        ]
-    )
+    overlay_locales = sorted(overlays)
+
+    lines = [
+        "// Generated by scripts/generate_i18n.py. Do not edit by hand.",
+        "",
+        f"export const TERMS = {terms_ts} as const;",
+        "",
+        f"export const I18N_MESSAGES = {messages_ts} as const;",
+        "",
+        "export type TermKey = keyof typeof TERMS;",
+        "export type I18nMessageKey = keyof typeof I18N_MESSAGES;",
+        "export type ErrorCode = I18nMessageKey;",
+        "",
+        "// Per-locale overlays — partial; runtime walks the fallback chain over",
+        "// the registries below, so an absent key degrades to the next locale.",
+    ]
+    term_idents: dict[str, str] = {}
+    msg_idents: dict[str, str] = {}
+    for locale in overlay_locales:
+        overlay = overlays[locale]
+        terms_obj = _ts_object({k: overlay["terms"][k] for k in sorted(overlay["terms"])})
+        msgs_obj = _ts_object({k: overlay["messages"][k] for k in sorted(overlay["messages"])})
+        if locale == "en":
+            t_ident, m_ident, keyword = "TERMS_EN", "I18N_MESSAGES_EN", "export const"
+        else:
+            t_ident, m_ident, keyword = _be_ident("terms", locale), _be_ident("i18n", locale), "const"
+        term_idents[locale] = t_ident
+        msg_idents[locale] = m_ident
+        lines.append(f"{keyword} {t_ident}: Partial<Record<TermKey, string>> = {terms_obj};")
+        lines.append("")
+        lines.append(f"{keyword} {m_ident}: Partial<Record<I18nMessageKey, string>> = {msgs_obj};")
+        lines.append("")
+
+    def _registry(name: str, base_ident: str, idents: dict[str, str]) -> str:
+        rows = [f"export const {name}: Record<string, Record<string, string>> = {{"]
+        rows.append(f"  he: {base_ident} as Record<string, string>,")
+        for locale in overlay_locales:
+            prop = locale if re.fullmatch(r"[A-Za-z_$][0-9A-Za-z_$]*", locale) else json.dumps(locale)
+            rows.append(f"  {prop}: {idents[locale]} as Record<string, string>,")
+        rows.append("};")
+        return "\n".join(rows)
+
+    lines.append(_registry("TERMS_BY_LOCALE", "TERMS", term_idents))
+    lines.append("")
+    lines.append(_registry("I18N_MESSAGES_BY_LOCALE", "I18N_MESSAGES", msg_idents))
+    lines.append("")
+    lines.append(f"export const I18N_KEY = {message_key_ts} as const;")
+    lines.append("")
+    lines.append(f"export const TERM_KEY = {term_key_ts} as const;")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _render_py(catalog: dict[str, Any]) -> str:
@@ -216,6 +348,117 @@ def _render_py(catalog: dict[str, Any]) -> str:
             "",
         ]
     )
+
+
+def _load_ui_catalogs() -> dict[str, dict[str, str]]:
+    """Load the per-locale UI string catalogs from ``i18n/locales/ui``.
+
+    ``he.json`` is the complete base whose key set defines ``MessageKey``; every
+    other ``<locale>.json`` is an overlay that may translate any subset and
+    inherits the rest through the registry fallback chain at runtime. Overlay
+    keys absent from the base are rejected — they would type-error against the
+    generated key union.
+
+    Returns:
+        Mapping of locale tag to its flat ``{key: value}`` catalog, always
+        including the base locale.
+
+    Raises:
+        FileNotFoundError: When the base ``he.json`` is missing.
+        TypeError: When a catalog file is not a JSON object.
+        ValueError: When a key violates ``UI_KEY_PATTERN`` or an overlay
+            references a key absent from the base.
+    """
+    base_path = UI_CATALOG_DIR / f"{UI_BASE_LOCALE}.json"
+    if not base_path.exists():
+        raise FileNotFoundError(f"missing UI base catalog {base_path}")
+    catalogs: dict[str, dict[str, str]] = {}
+    for path in sorted(UI_CATALOG_DIR.glob("*.json")):
+        catalog = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(catalog, dict):
+            raise TypeError(f"{path} must be a JSON object of key -> string")
+        bad = [k for k in catalog if not UI_KEY_PATTERN.fullmatch(k)]
+        if bad:
+            raise ValueError(f"{path} has malformed keys: {sorted(bad)[:10]}")
+        catalogs[path.stem] = {k: str(v) for k, v in catalog.items()}
+    base_keys = set(catalogs[UI_BASE_LOCALE])
+    for locale, catalog in catalogs.items():
+        if locale == UI_BASE_LOCALE:
+            continue
+        unknown = sorted(set(catalog) - base_keys)
+        if unknown:
+            raise ValueError(
+                f"{UI_CATALOG_DIR / f'{locale}.json'} has keys absent from "
+                f"{UI_BASE_LOCALE}.json: {unknown[:10]}"
+            )
+    # English is the first fallback for every non-Hebrew locale, so a base key
+    # missing from en.json leaks Hebrew into all of them. Mirror the backend
+    # en-terms rule and fail fast; other overlays may stay partial (they
+    # degrade to English, never Hebrew).
+    missing_en = sorted(base_keys - set(catalogs.get("en", {})))
+    if missing_en:
+        raise ValueError(
+            f"{UI_CATALOG_DIR / 'en.json'} is missing English translations for "
+            f"{len(missing_en)} base key(s), e.g. {missing_en[:5]}. Add the English "
+            f"value(s) so no locale falls back to Hebrew."
+        )
+    return catalogs
+
+
+def _ui_ident(locale: str) -> str:
+    """Map a locale tag to a TS const identifier (``pt-BR`` -> ``ui_pt_BR``)."""
+    return "ui_" + re.sub(r"[^A-Za-z0-9]", "_", locale)
+
+
+def _ts_union(keys: list[str]) -> str:
+    """Render a sorted key list as a TS string-literal union type body."""
+    return "\n".join(f"  | {json.dumps(k, ensure_ascii=False)}" for k in keys)
+
+
+def _render_ui_ts(catalogs: dict[str, dict[str, str]]) -> str:
+    """Build the frontend UI catalog TS source.
+
+    Emits the ``MessageKey`` union (from the base locale's keys), the complete
+    base catalog as ``UI_MESSAGES``, each overlay locale as a ``Partial`` const,
+    and a ``UI_CATALOGS`` registry keyed by locale tag. The server-only loader
+    merges a request's fallback chain over this registry; the client never
+    imports it, so no catalog ships in the browser bundle.
+
+    Args:
+        catalogs: Per-locale catalogs from ``_load_ui_catalogs``.
+
+    Returns:
+        Full TS file contents (including trailing newline).
+    """
+    base = catalogs[UI_BASE_LOCALE]
+    base_keys = sorted(base)
+    base_sorted = {k: base[k] for k in base_keys}
+    overlay_locales = sorted(loc for loc in catalogs if loc != UI_BASE_LOCALE)
+
+    lines = [
+        "// Generated by scripts/generate_i18n.py. Do not edit by hand.",
+        "",
+        "export type MessageKey =",
+        f"{_ts_union(base_keys)};",
+        "",
+        f"export const UI_MESSAGES: Record<MessageKey, string> = {_ts_object(base_sorted)} as Record<MessageKey, string>;",
+        "",
+    ]
+    for locale in overlay_locales:
+        overlay_sorted = {k: catalogs[locale][k] for k in sorted(catalogs[locale])}
+        lines.append(
+            f"const {_ui_ident(locale)}: Partial<Record<MessageKey, string>> = {_ts_object(overlay_sorted)};"
+        )
+        lines.append("")
+    registry = ["export const UI_CATALOGS: Record<string, Partial<Record<MessageKey, string>>> = {"]
+    registry.append(f"  {UI_BASE_LOCALE}: UI_MESSAGES,")
+    for locale in overlay_locales:
+        prop = locale if re.fullmatch(r"[A-Za-z_$][0-9A-Za-z_$]*", locale) else json.dumps(locale)
+        registry.append(f"  {prop}: {_ui_ident(locale)},")
+    registry.append("};")
+    lines.append("\n".join(registry))
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _write(path: Path, content: str) -> None:
@@ -272,9 +515,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     catalog = _load_catalog()
-    ts_content = _render_ts(catalog)
+    overlays = _load_backend_overlays()
+    _validate_backend_overlays(catalog, overlays)
+    ts_content = _render_ts(catalog, overlays)
     py_content = _render_py(catalog)
     py_catalog_content = CATALOG_PATH.read_text(encoding="utf-8")
+    ui_ts_content = _render_ui_ts(_load_ui_catalogs())
 
     if args.check:
         return _check_drift(
@@ -282,11 +528,13 @@ def main(argv: list[str] | None = None) -> int:
                 (TS_OUT, ts_content),
                 (PY_OUT, py_content),
                 (PY_CATALOG_OUT, py_catalog_content),
+                (UI_TS_OUT, ui_ts_content),
             ]
         )
 
     _write(TS_OUT, ts_content)
     _write(PY_OUT, py_content)
+    _write(UI_TS_OUT, ui_ts_content)
     PY_CATALOG_OUT.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(CATALOG_PATH, PY_CATALOG_OUT)
     return 0

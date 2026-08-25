@@ -5,7 +5,11 @@ import { Skeleton } from "@/shared/ui/skeleton";
 export function OptimizationDetailSkeleton() {
   return (
     <div className="space-y-6 pb-12" aria-hidden="true">
-      <div className="rounded-xl border border-border/40 bg-gradient-to-br from-card to-card/80 p-5">
+      <div
+        className="rounded-xl border border-border/40 bg-gradient-to-br from-card to-card/80 p-5"
+        data-tutorial="detail-header-skeleton"
+        aria-hidden="true"
+      >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-3">
@@ -33,7 +37,7 @@ export function OptimizationDetailSkeleton() {
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-5 border-b border-border/50 pb-2.5" dir="rtl">
+      <div className="flex items-center justify-end gap-5 border-b border-border/50 pb-2.5">
         {Array.from({ length: 4 }).map((_, i) => (
           <span key={i} className="flex items-center gap-1.5">
             <Skeleton width={14} height={14} />
@@ -47,7 +51,7 @@ export function OptimizationDetailSkeleton() {
           <Skeleton height={14} />
         </span>
 
-        <div className="flex items-start justify-between" dir="rtl">
+        <div className="flex items-start justify-between">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex flex-col items-center gap-2">
               <Skeleton circle width={28} height={28} />

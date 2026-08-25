@@ -2,26 +2,38 @@
  * Tutorial System — Step Definitions
  * Skynet prompt optimization platform
  *
- * Single comprehensive tutorial covering every feature.
+ * Focused, replayable walkthroughs for the product's main user workflows.
  * Works even for users with zero optimizations.
  */
 
 import {
   resetDemoSimulation,
-  DEMO_DASHBOARD_JOBS,
-  DEMO_DASHBOARD_ANALYTICS,
-  DEMO_COMPARE_JOBS,
-  DEMO_COMPARE_IDS,
-  DEMO_COMPARE_EXAMPLES,
-  DEMO_COMPARE_DATASET,
-  DEMO_EXPLORE_POINTS,
-  DEMO_GRID_OPTIMIZATION_ID,
+  DEMO_METRIC_CODE,
   DEMO_OPTIMIZATION_ID,
+  DEMO_SIGNATURE_CODE,
+  getCachedDemoDashboardAnalytics,
+  getCachedDemoDashboardJobs,
+  getCachedDemoExplorePoints,
 } from "./demo-data";
 import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
+import { TUTORIAL_SUBMIT_SPLASH_MS } from "./tutorial-timing";
 
-export type TutorialTrack = "deep-dive";
+/**
+ * The short end-to-end path plus three focused workflow guides.
+ *
+ * Keeping each guide narrow makes the tutorial useful after onboarding too:
+ * users can replay only the part they need instead of stepping through the
+ * entire application again.
+ */
+export type TutorialTrack = "quick" | "data" | "results" | "workspace";
+
+const QUICK_ONLY: readonly TutorialTrack[] = ["quick"];
+const QUICK_AND_RESULTS: readonly TutorialTrack[] = ["quick", "results"];
+const DATA_ONLY: readonly TutorialTrack[] = ["data"];
+const RESULTS_ONLY: readonly TutorialTrack[] = ["results"];
+const WORKSPACE_ONLY: readonly TutorialTrack[] = ["workspace"];
 
 export interface TutorialStep {
   id: string;
@@ -29,6 +41,14 @@ export interface TutorialStep {
   description: string;
   target: string;
   placement?: "top" | "bottom" | "left" | "right" | "auto";
+  /** Vertical nudge in pixels — positive moves the card down, negative up. Used to de-overlap dense sections. */
+  offsetY?: number;
+  /** Override the default popover height (260px) for steps that need more breathing room. */
+  popoverHeight?: number;
+  /** Override spotlight padding (default 8) for this step. */
+  highlightPadding?: number;
+  /** Override spotlight border radius (default 12) for this step. */
+  highlightRadius?: number;
   beforeShow?: () => void | Promise<void>;
   /**
    * Best-effort UI cleanup fired when the step is left (PREV / NEXT / exit).
@@ -37,7 +57,8 @@ export interface TutorialStep {
    * the return value is not awaited.
    */
   afterHide?: () => void | Promise<void>;
-  track: TutorialTrack;
+  /** Focused guides that include this step. */
+  tracks: readonly TutorialTrack[];
   readingTimeSec: number;
 }
 
@@ -47,6 +68,8 @@ export interface TutorialTrackDefinition {
   description: string;
   icon: string;
   stepCount: number;
+  /** Rounded wall-clock estimate, for setting expectations before starting. */
+  estimatedMinutes: number;
   steps: TutorialStep[];
 }
 
@@ -55,12 +78,9 @@ import {
   hasTutorialHook,
   setTutorialNavigating,
   queryTutorialHook,
-  setPendingCompareDemo,
-  setPendingCompareExamples,
   waitForHook,
 } from "./bridge";
 import { isGeneralistAgentEnabled } from "@/features/agent-panel";
-import { readPref } from "@/features/settings";
 
 function navigateTo(path: string) {
   // Prefer in-app client navigation via the tutorial-overlay hook.
@@ -74,19 +94,26 @@ function navigateTo(path: string) {
 }
 
 /**
- * Wait for a selector to appear in the DOM (up to timeoutMs).
- * Resolves true when the element appears, false on timeout — so callers
- * can branch on "element really arrived" vs "we gave up waiting".
+ * Wait for a selector to appear and have layout (non-zero rect) — handles
+ * route + wizard + AnimatePresence transitions where the element exists
+ * in the DOM but is still at 0×0 during the enter animation.
  */
+function isElementVisible(selector: string): boolean {
+  const el = document.querySelector(selector) as HTMLElement | null;
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0;
+}
+
 function waitForElement(selector: string, timeoutMs = 5000): Promise<boolean> {
   return new Promise((resolve) => {
-    if (document.querySelector(selector)) {
+    if (isElementVisible(selector)) {
       resolve(true);
       return;
     }
     const start = Date.now();
     const check = () => {
-      if (document.querySelector(selector)) {
+      if (isElementVisible(selector)) {
         resolve(true);
         return;
       }
@@ -103,7 +130,7 @@ function waitForElement(selector: string, timeoutMs = 5000): Promise<boolean> {
 /** Show a splash screen identical to the real submit animation */
 function showSubmitSplash(): Promise<void> {
   callTutorialHook("showTutorialSplash");
-  return new Promise((resolve) => setTimeout(resolve, 1500));
+  return new Promise((resolve) => setTimeout(resolve, TUTORIAL_SUBMIT_SPLASH_MS));
 }
 
 export function resetTutorialOneShotState(): void {
@@ -117,15 +144,15 @@ async function ensureDashboard() {
     navigateTo("/");
     await waitForElement("[data-tutorial='dashboard-kpis']");
   }
-  // The dashboard's tab/demo hooks live in a useEffect that fires AFTER
-  // the JSX commits — waitForElement can resolve before they're registered.
   await waitForHook("setTab");
+  // One commit tick so backward arrivals measure after React tab commit
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
 
-/** Inject demo jobs + analytics into dashboard for the tutorial */
+/** Inject demo jobs + analytics into dashboard for the tutorial — cached “real” data path */
 function injectDemoDashboardData() {
-  callTutorialHook("setDemoJobs", DEMO_DASHBOARD_JOBS);
-  callTutorialHook("setDemoAnalytics", DEMO_DASHBOARD_ANALYTICS);
+  callTutorialHook("setDemoJobs", getCachedDemoDashboardJobs());
+  callTutorialHook("setDemoAnalytics", getCachedDemoDashboardAnalytics());
 }
 
 async function ensureSubmit() {
@@ -133,57 +160,21 @@ async function ensureSubmit() {
     navigateTo("/submit");
     await waitForElement("[data-tutorial='wizard-stepper']");
   }
-  // SubmitWizard registers setWizardStep in a useEffect that runs after
-  // the stepper paints — waitForElement can resolve before that effect.
   await waitForHook("setWizardStep");
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
 
 async function ensureDemoDetail() {
   const path = `/optimizations/${DEMO_OPTIMIZATION_ID}`;
   if (window.location.pathname === path) {
     await waitForHook("setDetailTab");
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
     return;
   }
   navigateTo(path);
   await waitForElement("[data-tutorial='detail-header']");
   await waitForHook("setDetailTab");
-}
-
-async function ensureCompareDemo() {
-  const query = `?jobs=${DEMO_COMPARE_IDS.join(",")}`;
-  const alreadyThere = window.location.pathname === "/compare" && window.location.search === query;
-  if (alreadyThere) {
-    await waitForHook("setCompareTab");
-    return;
-  }
-  setPendingCompareDemo(DEMO_COMPARE_JOBS);
-  setPendingCompareExamples({
-    byJobId: DEMO_COMPARE_EXAMPLES,
-    dataset: DEMO_COMPARE_DATASET,
-  });
-  navigateTo(`/compare${query}`);
-  await waitForElement("[data-tutorial='compare-verdict']");
-  await waitForHook("setCompareTab");
-}
-
-async function ensureGridDemo() {
-  const path = `/optimizations/${DEMO_GRID_OPTIMIZATION_ID}`;
-  if (window.location.pathname === path && !window.location.search.includes("pair=")) {
-    await waitForHook("setDetailTab");
-    return;
-  }
-  navigateTo(path);
-  await waitForElement("[data-tutorial='grid-search']");
-  await waitForHook("setDetailTab");
-}
-
-async function ensureGridPairDetail() {
-  const path = `/optimizations/${DEMO_GRID_OPTIMIZATION_ID}`;
-  const wantSearch = "?pair=0";
-  const alreadyThere = window.location.pathname === path && window.location.search === wantSearch;
-  if (alreadyThere) return;
-  navigateTo(`${path}${wantSearch}`);
-  await waitForElement("[data-tutorial='pair-detail']");
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
 
 function setTab(tab: string) {
@@ -198,10 +189,6 @@ function setDetailTab(tab: string) {
   callTutorialHook("setDetailTab", tab);
 }
 
-function setCompareTab(tab: string) {
-  callTutorialHook("setCompareTab", tab);
-}
-
 function setOptimizerName(name: string) {
   callTutorialHook("setOptimizerName", name);
 }
@@ -209,6 +196,14 @@ function setOptimizerName(name: string) {
 async function ensureTagger() {
   if (!window.location.pathname.startsWith("/tagger")) {
     navigateTo("/tagger");
+    await waitForHook("setTaggerStartingNew");
+    // Force the sessions chooser into setup; no-op if already in setup
+    callTutorialHook("setTaggerStartingNew", true);
+    await waitForElement("[data-tutorial='tagger-setup']");
+  } else if (!hasTutorialHook("setTaggerStep")) {
+    // Already on /tagger but still on the sessions panel (startingNew false)
+    await waitForHook("setTaggerStartingNew");
+    callTutorialHook("setTaggerStartingNew", true);
     await waitForElement("[data-tutorial='tagger-setup']");
   }
   await waitForHook("setTaggerStep");
@@ -220,25 +215,29 @@ async function ensureExplore() {
     await waitForElement("[data-tutorial='explore-search']");
   }
   await waitForHook("setDemoExplorePoints");
-  callTutorialHook("setDemoExplorePoints", DEMO_EXPLORE_POINTS);
+  callTutorialHook("setDemoExplorePoints", getCachedDemoExplorePoints());
+}
+
+async function ensureDatasets() {
+  if (window.location.pathname !== "/datasets") {
+    navigateTo("/datasets");
+    await waitForElement("[data-tutorial='datasets-library']");
+  }
+}
+
+async function openSettingsTab(tab: string) {
+  await ensureDashboard();
+  await waitForHook("setSettingsTab");
+  callTutorialHook("setSettingsTab", tab);
+  await waitForElement(`[data-tutorial='settings-${tab}']`);
+}
+
+function closeSettings() {
+  callTutorialHook("setSettingsTab", null);
 }
 
 function setGeneralistPanelOpen(open: boolean) {
   callTutorialHook("setGeneralistPanelOpen", open);
-}
-
-/**
- * Slide the off-canvas sidebar drawer into view before a step spotlights it.
- * Below 768px the sidebar is translated off-screen, so its target rect would
- * sit off the viewport edge and the spotlight would highlight nothing. Open
- * the drawer and let its 300ms transform settle before the overlay measures.
- * On desktop the sidebar is permanently docked, so we skip the work entirely.
- */
-async function revealSidebarDrawer() {
-  if (typeof window === "undefined") return;
-  if (!window.matchMedia("(max-width: 767.98px)").matches) return;
-  callTutorialHook("setSidebarOpen", true);
-  await new Promise((r) => setTimeout(r, 340));
 }
 
 /** Inject demo data into tagger setup when empty and advance to the requested step */
@@ -280,414 +279,108 @@ function injectSampleDataset() {
     category: "output",
   });
   callTutorialHook("setDatasetFileName", "emails_sample.csv");
-  callTutorialHook(
-    "setSignatureCode",
-    `class EmailClassifier(dspy.Signature):
-    """Classify an email into a category: spam, important, or promotional."""
-
-    # inputs
-    email_text: str = dspy.InputField(desc="The email content to classify")
-
-    # outputs
-    category: str = dspy.OutputField(desc="One of: spam, important, promotional")
-`,
-  );
-  callTutorialHook(
-    "setMetricCode",
-    `def metric(example: dspy.Example, prediction: dspy.Prediction, trace: bool = None) -> float:
-    return float(example.category.strip().lower() == prediction.category.strip().lower())
-`,
-  );
+  callTutorialHook("setSignatureCode", DEMO_SIGNATURE_CODE);
+  callTutorialHook("setMetricCode", DEMO_METRIC_CODE);
 }
 
-const tutorialSteps: TutorialStep[] = [
+const tutorialSteps: TutorialStep[] = perLocale(() => [
   {
-    id: "dd-kpis",
-    title: msg("auto.features.tutorial.lib.steps.literal.6"),
-    description: msg("auto.features.tutorial.lib.steps.literal.7"),
-    target: "[data-tutorial='dashboard-kpis']",
+    id: "dd-dataset-library",
+    title: msg("tutorial.step.dataset_library.title"),
+    description: msg("tutorial.step.dataset_library.body"),
+    target: "[data-tutorial='datasets-library']",
     placement: "bottom",
-    beforeShow: async () => {
-      await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("jobs");
-    },
-    track: "deep-dive",
-    readingTimeSec: 4,
-  },
-  {
-    id: "dd-table",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.1", {
-      p1: TERMS.optimizationPlural,
-    }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.2", {
-      p1: TERMS.optimization,
-    }),
-    target: "[data-tutorial='dashboard-table']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("jobs");
-    },
-    track: "deep-dive",
-    readingTimeSec: 6,
-  },
-  {
-    id: "dd-sidebar",
-    title: msg("auto.features.tutorial.lib.steps.literal.8"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.3", {
-      p1: TERMS.optimization,
-      p2: TERMS.optimization,
-    }),
-    target: "[data-tutorial='sidebar-full']",
-    placement: "left",
-    beforeShow: async () => {
-      await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("jobs");
-      await revealSidebarDrawer();
-    },
-    afterHide: () => {
-      callTutorialHook("setSidebarOpen", false);
-    },
-    track: "deep-dive",
-    readingTimeSec: 7,
-  },
-  {
-    id: "dd-analytics",
-    title: msg("auto.features.tutorial.lib.steps.literal.9"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.47", {
-      p1: TERMS.scorePlural,
-      p2: TERMS.optimization,
-      p3: TERMS.optimization,
-    }),
-    target: "[data-tutorial='dashboard-stats']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("analytics");
-      await waitForElement("[data-tutorial='dashboard-stats']");
-      await new Promise((r) => setTimeout(r, 250));
-    },
-    track: "deep-dive",
-    readingTimeSec: 5,
-  },
-
-  {
-    id: "dd-compare-trigger",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.5", {
-      p1: TERMS.optimizationPlural,
-    }),
-    description: msg("auto.features.tutorial.lib.steps.literal.10"),
-    target: "[data-tutorial='compare-button']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDashboard();
-      injectDemoDashboardData();
-      setTab("jobs");
-      callTutorialHook("setSelectedJobIds", ["demo-001", "demo-002"]);
-      await waitForElement("[data-tutorial='compare-button']");
-      await new Promise((r) => setTimeout(r, 450));
-    },
-    afterHide: () => {
-      // Drop the demo selection so dashboard steps revisited via PREV
-      // don't show the compare-button still hovering with rows pre-checked.
-      callTutorialHook("setSelectedJobIds", []);
-    },
-    track: "deep-dive",
-    readingTimeSec: 8,
-  },
-  {
-    id: "dd-compare-verdict",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.6", {
-      p1: TERMS.optimizationPlural,
-    }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.7", {
-      p1: TERMS.score,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='compare-verdict']",
-    placement: "bottom",
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("overview");
-    },
-    track: "deep-dive",
-    readingTimeSec: 8,
-  },
-  {
-    id: "dd-compare-scores",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.8", { p1: TERMS.scorePlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.46", {
-      p1: TERMS.finalScore,
-      p2: TERMS.baselineScore,
-      p3: TERMS.finalScore,
-    }),
-    target: "[data-tutorial='compare-scores']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("overview");
-      await waitForElement("[data-tutorial='compare-scores']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 8,
-  },
-  {
-    id: "dd-compare-config",
-    title: msg("auto.features.tutorial.lib.steps.literal.11"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.10", {
-      p1: TERMS.module,
-      p2: TERMS.optimizer,
-      p3: TERMS.modelPlural,
-      p4: TERMS.dataset,
-    }),
-    target: "[data-tutorial='compare-config']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("config");
-      await waitForElement("[data-tutorial='compare-config']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 9,
-  },
-  {
-    id: "dd-compare-prompts",
-    title: msg("auto.features.tutorial.lib.steps.literal.12"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.11", {
-      p1: TERMS.examplePlural,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='compare-prompts']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("prompts");
-      await waitForElement("[data-tutorial='compare-prompts']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 9,
-  },
-  {
-    id: "dd-compare-examples",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.12", { p1: TERMS.examplePlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.13", {
-      p1: TERMS.examplePlural,
-      p2: TERMS.score,
-      p3: TERMS.examplePlural,
-    }),
-    target: "[data-tutorial='compare-examples']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureCompareDemo();
-      setCompareTab("examples");
-      await waitForElement("[data-tutorial='compare-examples']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 9,
-  },
-
-  {
-    id: "dd-stepper",
-    title: msg("auto.features.tutorial.lib.steps.literal.13"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.14", {
-      p1: TERMS.dataset,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='wizard-stepper']",
-    placement: "bottom",
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(0);
-    },
-    track: "deep-dive",
-    readingTimeSec: 4,
-  },
-
-  {
-    id: "dd-basics",
-    title: msg("auto.features.tutorial.lib.steps.literal.14"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.15", {
-      p1: TERMS.optimization,
-      p2: TERMS.optimizationTypeRun,
-      p3: TERMS.optimizationTypeGrid,
-    }),
-    target: "[data-tutorial='wizard-step-1']",
-    placement: "right",
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(0);
-    },
-    track: "deep-dive",
-    readingTimeSec: 5,
-  },
-
-  {
-    id: "dd-data-upload",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.16", { p1: TERMS.dataset }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.17", {
-      p1: TERMS.examplePlural,
-      p2: TERMS.optimization,
-    }),
-    target: "[data-tutorial='wizard-step-2']",
-    placement: "right",
-    beforeShow: async () => {
-      await ensureSubmit();
-      injectSampleDataset();
-      setWizardStep(1);
-    },
-    track: "deep-dive",
-    readingTimeSec: 7,
-  },
-  {
-    id: "dd-columns",
-    title: msg("auto.features.tutorial.lib.steps.literal.15"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.18", { p1: TERMS.model }),
-    target: "[data-tutorial='column-mapping']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureSubmit();
-      injectSampleDataset();
-      setWizardStep(1);
-    },
-    track: "deep-dive",
-    readingTimeSec: 7,
-  },
-
-  {
-    id: "dd-module",
-    title: TERMS.module,
-    description: formatMsg("auto.features.tutorial.lib.steps.template.45", {
-      p1: TERMS.model,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='module-selector']",
-    placement: "auto",
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(0);
-    },
-    track: "deep-dive",
-    readingTimeSec: 9,
-  },
-  {
-    id: "dd-splits",
-    title: msg("auto.features.tutorial.lib.steps.literal.16"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.20", {
-      p1: TERMS.splitTrain,
-      p2: TERMS.optimizer,
-      p3: TERMS.examplePlural,
-      p4: TERMS.splitVal,
-      p5: TERMS.examplePlural,
-      p6: TERMS.splitTest,
-      p7: TERMS.examplePlural,
-      p8: TERMS.optimizer,
-    }),
-    target: "[data-tutorial='data-splits']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(2);
-    },
-    track: "deep-dive",
+    beforeShow: ensureDatasets,
+    tracks: DATA_ONLY,
     readingTimeSec: 10,
   },
   {
-    id: "dd-auto-level",
-    title: msg("auto.features.tutorial.lib.steps.literal.17"),
-    description: msg("auto.features.tutorial.lib.steps.literal.18"),
-    target: "[data-tutorial='auto-level']",
-    placement: "top",
+    id: "dd-tagger-setup",
+    title: msg("auto.features.tutorial.lib.steps.literal.29"),
+    description: msg("auto.features.tutorial.lib.steps.literal.30"),
+    target: "[data-tutorial='tagger-setup']",
+    placement: "auto",
     beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(2);
+      await ensureTagger();
+      injectDemoTaggerData(0);
     },
-    track: "deep-dive",
+    tracks: DATA_ONLY,
     readingTimeSec: 8,
   },
   {
-    id: "dd-gepa",
-    title: msg("auto.features.tutorial.lib.steps.literal.19"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.21", {
+    id: "dd-tagger-modes",
+    title: msg("auto.features.tutorial.lib.steps.literal.31"),
+    description: msg("auto.features.tutorial.lib.steps.literal.32"),
+    target: "[data-tutorial='tagger-modes']",
+    placement: "auto",
+    beforeShow: async () => {
+      await ensureTagger();
+      injectDemoTaggerData(1);
+      await waitForElement("[data-tutorial='tagger-modes']");
+    },
+    tracks: DATA_ONLY,
+    readingTimeSec: 9,
+  },
+  {
+    id: "dd-data-upload",
+    title: formatMsg("auto.features.tutorial.lib.steps.template.16", { p1: TERMS.dataset }),
+    description: `${formatMsg("auto.features.tutorial.lib.steps.template.17", {
       p1: TERMS.examplePlural,
-      p2: TERMS.model,
-    }),
-    target: "[data-tutorial='gepa-params']",
-    placement: "top",
+      p2: TERMS.optimization,
+    })} ${formatMsg("auto.features.tutorial.lib.steps.template.18", { p1: TERMS.model })}`,
+    target: "[data-tutorial='dataset-upload']",
+    placement: "left",
     beforeShow: async () => {
       await ensureSubmit();
-      setOptimizerName("gepa");
-      setWizardStep(2);
+      injectSampleDataset();
+      setWizardStep(1);
     },
-    track: "deep-dive",
-    readingTimeSec: 16,
+    tracks: QUICK_ONLY,
+    readingTimeSec: 7,
   },
-
   {
-    id: "dd-signature",
-    title: msg("auto.features.tutorial.lib.steps.literal.20"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.22", { p1: TERMS.model }),
+    id: "dd-code-setup",
+    title: `${msg("auto.features.tutorial.lib.steps.literal.20")} + ${TERMS.metric}`,
+    description: `${formatMsg("auto.features.tutorial.lib.steps.template.22", {
+      p1: TERMS.model,
+    })} ${formatMsg("auto.features.tutorial.lib.steps.template.23", {
+      p1: TERMS.score,
+      p2: TERMS.optimizer,
+      p3: TERMS.score,
+    })}`,
     target: "[data-tutorial='signature-editor']",
     placement: "top",
     beforeShow: async () => {
       await ensureSubmit();
+      injectSampleDataset();
       setWizardStep(3);
+      callTutorialHook("setCodeAssistMode", "manual");
+      callTutorialHook("chooseModule", "predict");
+      callTutorialHook("setSignatureCode", DEMO_SIGNATURE_CODE);
+      callTutorialHook("setMetricCode", DEMO_METRIC_CODE);
+      await waitForElement("[data-tutorial='signature-editor']");
     },
-    track: "deep-dive",
-    readingTimeSec: 11,
-  },
-  {
-    id: "dd-metric",
-    title: TERMS.metric,
-    description: formatMsg("auto.features.tutorial.lib.steps.template.23", {
-      p1: TERMS.score,
-      p2: TERMS.optimizer,
-      p3: TERMS.score,
-    }),
-    target: "[data-tutorial='metric-editor']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(3);
-    },
-    track: "deep-dive",
-    readingTimeSec: 8,
+    tracks: QUICK_ONLY,
+    readingTimeSec: 12,
   },
 
   {
     id: "dd-models",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.24", { p1: TERMS.modelPlural }),
+    title: msg("auto.features.tutorial.lib.steps.template.24"),
     description: formatMsg("auto.features.tutorial.lib.steps.template.25", {
       p1: TERMS.generationModel,
       p2: TERMS.reflectionModel,
       p3: TERMS.modelPlural,
     }),
     target: "[data-tutorial='model-catalog']",
-    placement: "top",
+    placement: "bottom",
     beforeShow: async () => {
       await ensureSubmit();
       setWizardStep(4);
     },
-    track: "deep-dive",
+    tracks: QUICK_ONLY,
     readingTimeSec: 7,
   },
-  {
-    id: "dd-model-probe",
-    title: msg("auto.features.tutorial.lib.steps.literal.36"),
-    description: msg("auto.features.tutorial.lib.steps.literal.51"),
-    target: "[data-tutorial='model-probe']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(4);
-    },
-    track: "deep-dive",
-    readingTimeSec: 8,
-  },
-
   {
     id: "dd-review",
     title: msg("auto.features.tutorial.lib.steps.literal.21"),
@@ -697,56 +390,27 @@ const tutorialSteps: TutorialStep[] = [
       p3: TERMS.optimizer,
     }),
     target: "[data-tutorial='wizard-step-6']",
-    placement: "right",
+    placement: "bottom",
     beforeShow: async () => {
       await ensureSubmit();
       setOptimizerName("gepa");
       setWizardStep(5);
     },
-    track: "deep-dive",
+    tracks: QUICK_ONLY,
     readingTimeSec: 5,
   },
   {
-    id: "dd-submit",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.27", { p1: TERMS.optimization }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.28", {
-      p1: TERMS.baselineScore,
-      p2: TERMS.optimizer,
-    }),
-    target: "[data-tutorial='submit-button']",
-    placement: "top",
+    id: "dd-result-actions",
+    title: msg("tutorial.step.result_actions.title"),
+    description: msg("tutorial.step.result_actions.body"),
+    target: "[data-tutorial='result-actions']",
+    placement: "left",
     beforeShow: async () => {
-      await ensureSubmit();
-      setWizardStep(5);
-    },
-    track: "deep-dive",
-    readingTimeSec: 8,
-  },
-
-  {
-    id: "dd-detail-header",
-    title: msg("auto.features.tutorial.lib.steps.literal.22"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.29", {
-      p1: TERMS.optimization,
-      p2: TERMS.optimization,
-      p3: TERMS.optimization,
-    }),
-    target: "[data-tutorial='detail-header']",
-    placement: "bottom",
-    beforeShow: async () => {
-      const onDetail = window.location.pathname === `/optimizations/${DEMO_OPTIMIZATION_ID}`;
-      // Splash plays whenever we cross into /detail from another route
-      // (typically /submit). When the user is already on /detail (e.g.
-      // PREV-then-NEXT cycling within the detail tabs), the splash is
-      // suppressed so the morph isn't gratuitously replayed.
-      if (!onDetail) {
-        resetDemoSimulation();
-        await showSubmitSplash();
-      }
       await ensureDemoDetail();
       setDetailTab("overview");
+      await waitForElement("[data-tutorial='result-actions']");
     },
-    track: "deep-dive",
+    tracks: RESULTS_ONLY,
     readingTimeSec: 9,
   },
   {
@@ -759,33 +423,13 @@ const tutorialSteps: TutorialStep[] = [
       p4: TERMS.optimization,
     }),
     target: "[data-tutorial='pipeline-stages']",
-    placement: "top",
+    placement: "bottom",
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("overview");
     },
-    track: "deep-dive",
+    tracks: RESULTS_ONLY,
     readingTimeSec: 8,
-  },
-  {
-    id: "dd-trajectory",
-    title: msg("auto.features.tutorial.lib.steps.literal.46"),
-    description: msg("auto.features.tutorial.lib.steps.literal.48"),
-    target: "[data-tutorial='trajectory-panel']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDemoDetail();
-      setDetailTab("overview");
-      // Re-stream the candidates so the user sees the tree grow live (with
-      // the GEPA TQDM bar visible in the pipeline) instead of jumping to
-      // the completed graph. Placed right after dd-pipeline so the
-      // optimization stage is showcased end-to-end before we move on to
-      // the baseline-vs-final score comparison.
-      callTutorialHook("replayDemoSimulation");
-      await waitForElement("[data-tutorial='trajectory-panel']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 12,
   },
   {
     id: "dd-scores",
@@ -796,43 +440,77 @@ const tutorialSteps: TutorialStep[] = [
       p3: TERMS.optimizedScore,
     }),
     target: "[data-tutorial='score-cards']",
-    placement: "top",
+    placement: "bottom",
     beforeShow: async () => {
+      const onDetail = window.location.pathname === `/optimizations/${DEMO_OPTIMIZATION_ID}`;
+      if (!onDetail) {
+        resetDemoSimulation();
+        await showSubmitSplash();
+      }
       await ensureDemoDetail();
       setDetailTab("overview");
     },
-    track: "deep-dive",
+    tracks: QUICK_ONLY,
     readingTimeSec: 5,
   },
   {
-    id: "dd-score-chart",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.33", { p1: TERMS.scorePlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.34", {
-      p1: TERMS.score,
-      p2: TERMS.optimizer,
-      p3: TERMS.score,
-    }),
-    target: "[data-tutorial='score-chart']",
+    id: "dd-trajectory",
+    title: msg("auto.features.tutorial.lib.steps.literal.46"),
+    description: msg("auto.features.tutorial.lib.steps.literal.48"),
+    target: "[data-tutorial='trajectory-panel']",
     placement: "top",
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("overview");
+      // Re-stream the candidates so the user sees the tree grow instead of
+      // landing on a completed graph with no explanation of its branches.
+      callTutorialHook("replayDemoSimulation");
+      await waitForElement("[data-tutorial='trajectory-panel']");
     },
-    track: "deep-dive",
-    readingTimeSec: 7,
+    tracks: RESULTS_ONLY,
+    readingTimeSec: 12,
   },
   {
     id: "dd-playground",
     title: msg("auto.features.tutorial.lib.steps.literal.25"),
     description: `${formatMsg("auto.features.tutorial.lib.steps.template.36", { p1: TERMS.model })} ${msg("auto.features.tutorial.lib.steps.literal.41")}`,
     target: "[data-tutorial='serve-playground']",
-    placement: "top",
+    placement: "bottom",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("playground");
       await waitForElement("[data-tutorial='serve-playground']");
     },
-    track: "deep-dive",
+    tracks: QUICK_ONLY,
+    readingTimeSec: 12,
+  },
+  {
+    id: "dd-code",
+    title: msg("tutorial.step.code.title"),
+    description: msg("tutorial.step.code.body"),
+    target: "[data-tutorial='code-sources']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureDemoDetail();
+      setDetailTab("code");
+      await waitForElement("[data-tutorial='code-sources']");
+    },
+    tracks: RESULTS_ONLY,
+    readingTimeSec: 9,
+  },
+  {
+    id: "dd-artifact",
+    title: msg("tutorial.step.artifact.title"),
+    description: msg("tutorial.step.artifact.body"),
+    target: "[data-tutorial='artifact-output']",
+    placement: "top",
+    beforeShow: async () => {
+      await ensureDemoDetail();
+      setDetailTab("artifact");
+      await waitForElement("[data-tutorial='artifact-output']");
+    },
+    tracks: QUICK_AND_RESULTS,
     readingTimeSec: 12,
   },
   {
@@ -849,12 +527,13 @@ const tutorialSteps: TutorialStep[] = [
     }),
     target: "[data-tutorial='data-table']",
     placement: "top",
+    offsetY: 0,
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("data");
       await waitForElement("[data-tutorial='data-table']");
     },
-    track: "deep-dive",
+    tracks: RESULTS_ONLY,
     readingTimeSec: 9,
   },
   {
@@ -862,129 +541,68 @@ const tutorialSteps: TutorialStep[] = [
     title: msg("auto.features.tutorial.lib.steps.literal.26"),
     description: formatMsg("auto.features.tutorial.lib.steps.template.37", { p1: TERMS.optimizer }),
     target: "[data-tutorial='live-logs']",
-    placement: "bottom",
+    placement: "top",
     beforeShow: async () => {
       await ensureDemoDetail();
       setDetailTab("logs");
       await waitForElement("[data-tutorial='live-logs']");
     },
-    track: "deep-dive",
+    tracks: RESULTS_ONLY,
     readingTimeSec: 6,
   },
   {
-    id: "dd-lm-activity",
-    title: msg("auto.features.tutorial.lib.steps.literal.52"),
-    description: msg("auto.features.tutorial.lib.steps.literal.53"),
-    target: "[data-tutorial='lm-activity']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDemoDetail();
-      setDetailTab("lm-activity");
-      await waitForElement("[data-tutorial='lm-activity']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 11,
-  },
-  {
-    id: "dd-config",
-    title: msg("auto.features.tutorial.lib.steps.literal.27"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.38", {
-      p1: TERMS.modelPlural,
-    }),
-    target: "[data-tutorial='config-summary']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDemoDetail();
-      setDetailTab("config");
-      await waitForElement("[data-tutorial='config-summary']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 7,
-  },
-
-  {
-    id: "dd-grid-overview",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.39", { p1: TERMS.modelPlural }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.40", {
-      p1: TERMS.model,
-      p2: TERMS.pairPlural,
-      p3: TERMS.generationModel,
-      p4: TERMS.reflectionModel,
-      p5: TERMS.task,
-      p6: TERMS.pair,
-      p7: TERMS.score,
-    }),
-    target: "[data-tutorial='grid-pair-list']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureGridDemo();
-      setDetailTab("overview");
-      await waitForElement("[data-tutorial='grid-pair-list']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 14,
-  },
-  {
-    id: "dd-grid-pair",
-    title: formatMsg("auto.features.tutorial.lib.steps.template.41", {
-      p1: TERMS.pair,
-      p2: TERMS.modelPlural,
-    }),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.42", {
-      p1: TERMS.pair,
-      p2: TERMS.scorePlural,
-      p3: TERMS.modelPlural,
-      p4: TERMS.pair,
-      p5: TERMS.model,
-    }),
-    target: "[data-tutorial='pair-detail-summary']",
-    placement: "auto",
-    beforeShow: async () => {
-      await ensureGridPairDetail();
-      await waitForElement("[data-tutorial='pair-detail-summary']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 11,
-  },
-
-  {
-    id: "dd-tagger-intro",
-    title: msg("auto.features.tutorial.lib.steps.literal.28"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.43", { p1: TERMS.dataset }),
-    target: "[data-tutorial='sidebar-tagger']",
-    placement: "left",
+    id: "dd-kpis",
+    title: msg("auto.features.tutorial.lib.steps.literal.6"),
+    description: msg("auto.features.tutorial.lib.steps.literal.7"),
+    target: "[data-tutorial='dashboard-kpis']",
+    placement: "bottom",
     beforeShow: async () => {
       await ensureDashboard();
+      injectDemoDashboardData();
+      setTab("jobs");
     },
-    track: "deep-dive",
-    readingTimeSec: 7,
+    tracks: WORKSPACE_ONLY,
+    readingTimeSec: 4,
   },
   {
-    id: "dd-tagger-setup",
-    title: msg("auto.features.tutorial.lib.steps.literal.29"),
-    description: msg("auto.features.tutorial.lib.steps.literal.30"),
-    target: "[data-tutorial='tagger-setup']",
-    placement: "right",
+    id: "dd-table",
+    title: formatMsg("auto.features.tutorial.lib.steps.template.1", {
+      p1: TERMS.optimizationPlural,
+    }),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.2", {
+      p1: TERMS.optimization,
+    }),
+    target: "[data-tutorial='dashboard-table']",
+    placement: "top",
+    offsetY: 0,
     beforeShow: async () => {
-      await ensureTagger();
-      injectDemoTaggerData(0);
+      await ensureDashboard();
+      injectDemoDashboardData();
+      setTab("jobs");
+      await waitForElement("[data-tutorial='dashboard-table']");
     },
-    track: "deep-dive",
-    readingTimeSec: 8,
+    tracks: WORKSPACE_ONLY,
+    readingTimeSec: 6,
   },
   {
-    id: "dd-tagger-modes",
-    title: msg("auto.features.tutorial.lib.steps.literal.31"),
-    description: msg("auto.features.tutorial.lib.steps.literal.32"),
-    target: "[data-tutorial='tagger-modes']",
-    placement: "right",
+    id: "dd-analytics",
+    title: msg("auto.features.tutorial.lib.steps.literal.9"),
+    description: formatMsg("auto.features.tutorial.lib.steps.template.47", {
+      p1: TERMS.scorePlural,
+      p2: TERMS.optimization,
+      p3: TERMS.optimization,
+    }),
+    target: "[data-tutorial='dashboard-stats']",
+    placement: "bottom",
     beforeShow: async () => {
-      await ensureTagger();
-      injectDemoTaggerData(1);
-      await waitForElement("[data-tutorial='tagger-modes']");
+      await ensureDashboard();
+      injectDemoDashboardData();
+      setTab("analytics");
+      await waitForElement("[data-tutorial='dashboard-stats']");
+      await new Promise((r) => setTimeout(r, 250));
     },
-    track: "deep-dive",
-    readingTimeSec: 9,
+    tracks: WORKSPACE_ONLY,
+    readingTimeSec: 5,
   },
   {
     id: "dd-explore",
@@ -995,32 +613,15 @@ const tutorialSteps: TutorialStep[] = [
     beforeShow: async () => {
       await ensureExplore();
     },
-    track: "deep-dive",
+    tracks: WORKSPACE_ONLY,
     readingTimeSec: 14,
-  },
-  // Agent panel steps. Filtered out below when the generalist agent
-  // feature flag is off so prod users without the panel don't get
-  // dead spotlights.
-  {
-    id: "dd-agent-pill",
-    title: msg("auto.features.tutorial.lib.steps.literal.42"),
-    description: msg("auto.features.tutorial.lib.steps.literal.43"),
-    target: "[data-tutorial='agent-pill']",
-    placement: "top",
-    beforeShow: async () => {
-      await ensureDashboard();
-      setGeneralistPanelOpen(false);
-      await waitForElement("[data-tutorial='agent-pill']");
-    },
-    track: "deep-dive",
-    readingTimeSec: 7,
   },
   {
     id: "dd-agent-panel",
     title: msg("auto.features.tutorial.lib.steps.literal.44"),
     description: msg("auto.features.tutorial.lib.steps.literal.50"),
     target: "[data-tutorial='agent-panel']",
-    placement: "right",
+    placement: "left",
     beforeShow: async () => {
       await ensureDashboard();
       setGeneralistPanelOpen(true);
@@ -1029,80 +630,77 @@ const tutorialSteps: TutorialStep[] = [
     afterHide: () => {
       setGeneralistPanelOpen(false);
     },
-    track: "deep-dive",
+    tracks: WORKSPACE_ONLY,
     readingTimeSec: 10,
   },
   {
-    id: "dd-done",
-    title: msg("auto.features.tutorial.lib.steps.literal.33"),
-    description: formatMsg("auto.features.tutorial.lib.steps.template.44", {
-      p1: TERMS.optimization,
-      p2: TERMS.scorePlural,
-    }),
-    target: "[data-tutorial='sidebar-full']",
+    id: "dd-settings-billing",
+    title: msg("tutorial.step.settings_billing.title"),
+    description: msg("tutorial.step.settings_billing.body"),
+    target: "[data-tutorial='settings-billing']",
     placement: "left",
-    beforeShow: async () => {
-      await ensureDashboard();
-      await revealSidebarDrawer();
-    },
-    afterHide: () => {
-      callTutorialHook("setSidebarOpen", false);
-    },
-    track: "deep-dive",
-    readingTimeSec: 5,
+    beforeShow: () => openSettingsTab("billing"),
+    afterHide: closeSettings,
+    tracks: WORKSPACE_ONLY,
+    readingTimeSec: 11,
   },
-];
-
-const AGENT_PANEL_STEP_IDS = new Set(["dd-agent-pill", "dd-agent-panel"]);
-// Steps that only run in advanced mode. A few of these have targets that
-// are physically only mounted in advanced (explore canvas, grid pair list,
-// signature/metric editors, deeper compare/detail tabs). The rest are
-// kept advanced-only to keep the basic tour focused on the essentials —
-// "click these few things to ship your first run" — while advanced gets
-// the full feature tour including grid search and power-user controls.
-const ADVANCED_ONLY_STEP_IDS = new Set([
-  "dd-compare-scores",
-  "dd-compare-config",
-  "dd-compare-prompts",
-  "dd-compare-examples",
-  "dd-splits",
-  "dd-auto-level",
-  "dd-model-probe",
-  "dd-score-chart",
-  "dd-trajectory",
-  "dd-playground",
-  "dd-logs",
-  "dd-lm-activity",
-  "dd-config",
-  "dd-grid-overview",
-  "dd-grid-pair",
-  "dd-tagger-modes",
-  "dd-module",
-  "dd-gepa",
+  {
+    id: "dd-settings-providers",
+    title: msg("tutorial.step.settings_providers.title"),
+    description: msg("tutorial.step.settings_providers.body"),
+    target: "[data-tutorial='settings-providers']",
+    placement: "left",
+    beforeShow: () => openSettingsTab("providers"),
+    afterHide: closeSettings,
+    tracks: WORKSPACE_ONLY,
+    readingTimeSec: 9,
+  },
 ]);
-const BASIC_ONLY_STEP_IDS = new Set<string>();
+
+const AGENT_PANEL_STEP_IDS = new Set(["dd-agent-panel"]);
 
 function getVisibleSteps(): TutorialStep[] {
-  const advanced = readPref("advancedMode");
   const generalist = isGeneralistAgentEnabled();
   return tutorialSteps.filter((s) => {
     if (!generalist && AGENT_PANEL_STEP_IDS.has(s.id)) return false;
-    if (advanced && BASIC_ONLY_STEP_IDS.has(s.id)) return false;
-    if (!advanced && ADVANCED_ONLY_STEP_IDS.has(s.id)) return false;
     return true;
   });
 }
 
+// Reading time alone undersells a step: the tour also navigates, waits for
+// the target to paint, and gives the user a moment to look at it. Padding
+// each step keeps the menu's estimate from reading as optimistic.
+const STEP_OVERHEAD_SEC = 6;
+
 export function getTrack(trackId: TutorialTrack): TutorialTrackDefinition | undefined {
-  if (trackId !== "deep-dive") return undefined;
-  const steps = getVisibleSteps();
+  const steps = getVisibleSteps().filter((s) => s.tracks.includes(trackId));
+  if (steps.length === 0) return undefined;
+  const seconds = steps.reduce((sum, s) => sum + s.readingTimeSec + STEP_OVERHEAD_SEC, 0);
+  const metadata: Record<TutorialTrack, { name: string; description: string }> = {
+    quick: {
+      name: msg("tutorial.track.quick.name"),
+      description: msg("tutorial.track.quick.desc"),
+    },
+    data: {
+      name: msg("tutorial.track.data.name"),
+      description: msg("tutorial.track.data.desc"),
+    },
+    results: {
+      name: msg("tutorial.track.results.name"),
+      description: msg("tutorial.track.results.desc"),
+    },
+    workspace: {
+      name: msg("tutorial.track.workspace.name"),
+      description: msg("tutorial.track.workspace.desc"),
+    },
+  };
   return {
-    id: "deep-dive",
-    name: msg("auto.features.tutorial.lib.steps.literal.34"),
-    description: msg("auto.features.tutorial.lib.steps.literal.35"),
-    icon: "deep-dive",
+    id: trackId,
+    name: metadata[trackId].name,
+    description: metadata[trackId].description,
+    icon: trackId,
     stepCount: steps.length,
+    estimatedMinutes: Math.max(1, Math.round(seconds / 60)),
     steps,
   };
 }
-

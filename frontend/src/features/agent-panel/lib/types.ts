@@ -1,3 +1,5 @@
+import type { WorkflowSpec } from "@/shared/types/api";
+
 /** Trust mode — how much the agent must ask before acting. */
 export type TrustMode = "ask" | "auto_safe" | "yolo";
 
@@ -24,11 +26,18 @@ export interface WizardState {
   metric_code?: string;
   model_configured?: boolean;
   staged_dataset_id?: string;
+  // Id of a saved library dataset the run submits by reference (durable),
+  // set when the user picks from the library instead of uploading. Mutually
+  // exclusive with staged_dataset_id.
+  source_dataset_id?: string;
   job_name?: string;
   job_description?: string;
   job_type?: "run" | "grid_search";
   optimizer_name?: string;
   module_name?: string;
+  // Authored graph for a ``workflow`` (multi-module) run — carried in place of
+  // signature_code and injected into the run request on submit.
+  workflow?: WorkflowSpec;
   // React (ReAct-agent) run config — the live tool source. Excludes the secret
   // mcp_auth_header, which is never shared.
   react_config?: Record<string, unknown>;
@@ -38,14 +47,13 @@ export interface WizardState {
   reflection_model_config?: Record<string, unknown>;
   generation_models?: Array<Record<string, unknown>>;
   reflection_models?: Array<Record<string, unknown>>;
-  use_all_generation_models?: boolean;
-  use_all_reflection_models?: boolean;
   split_fractions?: { train: number; val: number; test: number };
   split_mode?: "auto" | "manual";
   seed?: number;
   shuffle?: boolean;
   is_private?: boolean;
   optimizer_kwargs?: Record<string, unknown>;
+  target_score?: number;
 }
 
 export interface ToolStartPayload {

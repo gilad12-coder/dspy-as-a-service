@@ -57,36 +57,6 @@ class CloneJobResponse(BaseModel):
     created: list[OptimizationSubmissionResponse]
 
 
-class CompareJobsRequest(BaseModel):
-    """Request body for side-by-side comparison of 2–5 optimizations."""
-
-    optimization_ids: list[str] = Field(min_length=2, max_length=5)
-
-
-class CompareJobSnapshot(BaseModel):
-    """Compact per-optimization snapshot used in comparison responses."""
-
-    optimization_id: str
-    status: str
-    name: str | None = None
-    optimization_type: str | None = None
-    module_name: str | None = None
-    optimizer_name: str | None = None
-    model_name: str | None = None
-    dataset_rows: int | None = None
-    baseline_test_metric: float | None = None
-    optimized_test_metric: float | None = None
-    metric_improvement: float | None = None
-
-
-class CompareJobsResponse(BaseModel):
-    """Response for POST /optimizations/compare."""
-
-    jobs: list[CompareJobSnapshot]
-    differing_fields: list[str]
-    missing_optimization_ids: list[str]
-
-
 class BulkMetadataRequest(BaseModel):
     """Request body for bulk pin."""
 

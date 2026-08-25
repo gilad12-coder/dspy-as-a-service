@@ -176,7 +176,7 @@ function OwnerDonut({
               label={d.label}
               pct={total > 0 ? Math.round((d.count / total) * 100) : 0}
               count={d.count}
-              dir={d.isMe ? "rtl" : "ltr"}
+              dir={d.isMe ? undefined : "ltr"}
               title={d.name}
               onSelect={() => onSelect(d.name)}
             />

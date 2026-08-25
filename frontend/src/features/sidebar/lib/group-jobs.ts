@@ -1,17 +1,12 @@
 import type { SidebarJobItem } from "@/shared/lib/api";
 import { isActiveStatus } from "@/shared/constants/job-status";
 import { msg } from "@/shared/lib/messages";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
 export interface JobGroup {
   label: string;
   jobs: SidebarJobItem[];
 }
-
-const DATE_FORMATTER = new Intl.DateTimeFormat("he-IL", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-});
 
 /**
  * Bucket jobs into pinned → active → concrete calendar dates.
@@ -41,7 +36,11 @@ export function groupJobsByRecency(jobs: SidebarJobItem[], now: Date = new Date(
         ).padStart(2, "0")}`
       : "unknown";
     const label = validDate
-      ? DATE_FORMATTER.format(created)
+      ? created.toLocaleDateString(getActiveIntlLocale(), {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
       : msg("auto.features.sidebar.lib.group.jobs.literal.6");
     const group = dated.get(key) ?? { label, jobs: [] };
     group.jobs.push(job);

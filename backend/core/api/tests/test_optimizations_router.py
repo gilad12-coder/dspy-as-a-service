@@ -7,18 +7,27 @@ splits, and grid-search pair operations.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import pickle
+import zipfile
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
+from ...billing.byok_vault import ProviderKeyVault
 from ...config import settings
 from ...models.artifacts import ProgramArtifact
 from ...models.common import SplitCounts
-from ...models.results import RunResponse
+from ...models.results import GridSearchResponse, PairResult, RunResponse
+from ...storage.models import Base
 from ..errors import DomainError
 from ..routers.optimizations import create_optimizations_router
 from ..routers.optimizations._local import clone_payload
@@ -64,6 +73,13 @@ def test_list_jobs_returns_empty_when_store_is_empty(opt_client: TestClient) -> 
     assert resp.json()["items"] == []
 
 
+def test_compare_endpoint_is_not_registered(opt_client: TestClient) -> None:
+    """Keep the removed cross-optimization comparison API out of OpenAPI."""
+    schema = opt_client.get("/openapi.json").json()
+
+    assert "/optimizations/compare" not in schema["paths"]
+
+
 def test_list_jobs_invalid_status_returns_422(opt_client: TestClient) -> None:
     """Unknown ``status`` query values are rejected with 422."""
     resp = opt_client.get("/optimizations?status=bogus")
@@ -100,6 +116,26 @@ def test_get_job_returns_404_for_unknown_id(opt_client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+def test_get_job_returns_404_for_internal_tagger_job(opt_client: TestClient, store: _ExtendedFakeJobStore) -> None:
+    """Internal tagger worker rows cannot render as optimization details."""
+    store.seed_job("internal-tagger", payload_overview={"optimization_type": "tagging_autotag"})
+
+    resp = opt_client.get("/optimizations/internal-tagger")
+
+    assert resp.status_code == 404
+
+
+def test_get_job_returns_404_for_unknown_internal_job_type(
+    opt_client: TestClient, store: _ExtendedFakeJobStore
+) -> None:
+    """Unknown worker job types cannot render as optimization details."""
+    store.seed_job("future-internal", payload_overview={"optimization_type": "future_internal_job"})
+
+    resp = opt_client.get("/optimizations/future-internal")
+
+    assert resp.status_code == 404
+
+
 def test_get_job_returns_200_for_existing_job(opt_client: TestClient, store: _ExtendedFakeJobStore) -> None:
     """An existing job can be fetched by id."""
     store.seed_job("abc", status="success")
@@ -129,9 +165,7 @@ def test_get_job_returns_304_when_etag_matches(opt_client: TestClient, store: _E
     assert second.headers.get("etag") == etag
 
 
-def _seed_streamed_job(
-    store: _ExtendedFakeJobStore, optimization_id: str, *, n_progress: int, n_logs: int
-) -> None:
+def _seed_streamed_job(store: _ExtendedFakeJobStore, optimization_id: str, *, n_progress: int, n_logs: int) -> None:
     """Seed a running job with synthetic, ordered progress events and log rows.
 
     Args:
@@ -142,8 +176,7 @@ def _seed_streamed_job(
     """
     store.seed_job(optimization_id, status="running")
     store._progress[optimization_id] = [
-        {"timestamp": f"2026-01-01T00:00:{i:02d}+00:00", "event": f"ev{i}", "metrics": {}}
-        for i in range(n_progress)
+        {"timestamp": f"2026-01-01T00:00:{i:02d}+00:00", "event": f"ev{i}", "metrics": {}} for i in range(n_progress)
     ]
     store._logs[optimization_id] = [
         {"timestamp": f"2026-01-01T00:00:{i:02d}+00:00", "level": "INFO", "logger": "test", "message": f"log{i}"}
@@ -151,9 +184,7 @@ def _seed_streamed_job(
     ]
 
 
-def test_get_job_full_fetch_reports_zero_offsets(
-    opt_client: TestClient, store: _ExtendedFakeJobStore
-) -> None:
+def test_get_job_full_fetch_reports_zero_offsets(opt_client: TestClient, store: _ExtendedFakeJobStore) -> None:
     """A cursorless fetch returns the whole stream with zero offsets."""
     _seed_streamed_job(store, "d0", n_progress=5, n_logs=4)
 
@@ -167,9 +198,7 @@ def test_get_job_full_fetch_reports_zero_offsets(
     assert len(body["logs"]) == 4
 
 
-def test_get_job_delta_cursor_returns_tail_only(
-    opt_client: TestClient, store: _ExtendedFakeJobStore
-) -> None:
+def test_get_job_delta_cursor_returns_tail_only(opt_client: TestClient, store: _ExtendedFakeJobStore) -> None:
     """A valid since_* cursor returns only the rows past the offset, echoing it back."""
     _seed_streamed_job(store, "d1", n_progress=5, n_logs=4)
 
@@ -183,9 +212,7 @@ def test_get_job_delta_cursor_returns_tail_only(
     assert [log["message"] for log in body["logs"]] == ["log2", "log3"]
 
 
-def test_get_job_stale_cursor_falls_back_to_full(
-    opt_client: TestClient, store: _ExtendedFakeJobStore
-) -> None:
+def test_get_job_stale_cursor_falls_back_to_full(opt_client: TestClient, store: _ExtendedFakeJobStore) -> None:
     """A cursor past the current count re-sends the whole stream at offset 0."""
     _seed_streamed_job(store, "d2", n_progress=3, n_logs=3)
 
@@ -457,6 +484,145 @@ def test_artifact_returns_404_for_grid_search_job(opt_client: TestClient, store:
     resp = opt_client.get("/optimizations/gs/artifact")
 
     assert resp.status_code == 404
+
+
+_EXPORT_WORKFLOW_SPEC = {
+    "nodes": [
+        {"id": "start", "kind": "input", "fields": [{"name": "question"}]},
+        {
+            "id": "draft",
+            "kind": "signature",
+            "signature_code": "import dspy\n\n\nclass QA(dspy.Signature):\n"
+            "    question: str = dspy.InputField()\n    answer: str = dspy.OutputField()\n",
+        },
+        {"id": "end", "kind": "output", "fields": [{"name": "answer"}]},
+    ],
+    "edges": [
+        {"source": "start", "source_port": "question", "target": "draft", "target_port": "question"},
+        {"source": "draft", "source_port": "answer", "target": "end", "target_port": "answer"},
+    ],
+}
+
+
+def test_program_export_serves_a_workflow_run(opt_client: TestClient, store: _ExtendedFakeJobStore) -> None:
+    """A workflow run carries no top-level signature_code and is still exportable."""
+    result_data = _make_run_response_dict(
+        module_name="workflow",
+        program_artifact=ProgramArtifact(program_state_json={"n_draft": {"demos": []}}).model_dump(),
+    )
+    store.seed_job(
+        "wf",
+        status="success",
+        payload_overview={"module_name": "workflow", "workflow": _EXPORT_WORKFLOW_SPEC},
+        result=result_data,
+    )
+
+    resp = opt_client.get("/optimizations/wf/program-export")
+
+    assert resp.status_code == 200
+    names = set(zipfile.ZipFile(io.BytesIO(resp.content)).namelist())
+    assert "workflow.json" in names
+    assert "signature.py" not in names
+
+
+def test_program_export_serves_the_requested_grid_pair(opt_client: TestClient, store: _ExtendedFakeJobStore) -> None:
+    """A grid export packages the requested pair's state and generation model."""
+    first_pair = PairResult(
+        pair_index=0,
+        generation_model="openai/gpt-4o-mini",
+        reflection_model="openai/gpt-4o",
+        program_artifact=ProgramArtifact(program_state_json={"pair": "first"}),
+    )
+    winning_pair = PairResult(
+        pair_index=1,
+        generation_model="anthropic/claude-3-5-haiku",
+        reflection_model="openai/gpt-4o",
+        program_artifact=ProgramArtifact(program_state_json={"pair": "winner"}),
+    )
+    grid_result = GridSearchResponse(
+        module_name="predict",
+        optimizer_name="gepa",
+        split_counts=SplitCounts(train=4, val=1, test=1),
+        total_pairs=2,
+        completed_pairs=2,
+        pair_results=[first_pair, winning_pair],
+        best_pair=winning_pair,
+    )
+    store.seed_job(
+        "grid-export",
+        status="success",
+        payload_overview={
+            "optimization_type": "grid_search",
+            "module_name": "predict",
+            "module_kwargs": {},
+            "optimizer_name": "gepa",
+            "signature_code": "import dspy\nclass QA(dspy.Signature):\n    pass\n",
+        },
+        result=grid_result.model_dump(),
+    )
+
+    resp = opt_client.get("/optimizations/grid-export/program-export?pair_index=0")
+
+    assert resp.status_code == 200
+    assert "pair_0.zip" in resp.headers["content-disposition"]
+    archive = zipfile.ZipFile(io.BytesIO(resp.content))
+    assert json.loads(archive.read("program.json")) == {"pair": "first"}
+    assert json.loads(archive.read("metadata.json"))["model"] == "openai/gpt-4o-mini"
+
+
+def test_program_export_defaults_to_the_winning_grid_pair(opt_client: TestClient, store: _ExtendedFakeJobStore) -> None:
+    """A grid export without a pair index packages the winning program."""
+    winning_pair = PairResult(
+        pair_index=3,
+        generation_model="openai/gpt-4o",
+        reflection_model="anthropic/claude-3-5-haiku",
+        program_artifact=ProgramArtifact(program_state_json={"pair": "winner"}),
+    )
+    grid_result = GridSearchResponse(
+        module_name="cot",
+        optimizer_name="dspy.teleprompt.GEPA",
+        split_counts=SplitCounts(train=4, val=1, test=1),
+        total_pairs=1,
+        completed_pairs=1,
+        pair_results=[winning_pair],
+        best_pair=winning_pair,
+    )
+    store.seed_job(
+        "grid-winner-export",
+        status="success",
+        payload_overview={
+            "optimization_type": "grid_search",
+            "module_name": "cot",
+            "module_kwargs": {},
+            "optimizer_name": "dspy.teleprompt.GEPA",
+            "signature_code": "import dspy\nclass QA(dspy.Signature):\n    pass\n",
+        },
+        result=grid_result.model_dump(),
+    )
+
+    resp = opt_client.get("/optimizations/grid-winner-export/program-export")
+
+    assert resp.status_code == 200
+    assert "pair_3.zip" in resp.headers["content-disposition"]
+    archive = zipfile.ZipFile(io.BytesIO(resp.content))
+    assert json.loads(archive.read("program.json")) == {"pair": "winner"}
+    metadata = json.loads(archive.read("metadata.json"))
+    assert metadata["model"] == "openai/gpt-4o"
+    assert metadata["optimizer"] == "dspy.teleprompt.GEPA"
+
+
+def test_program_export_409s_without_any_program_definition(
+    opt_client: TestClient, store: _ExtendedFakeJobStore
+) -> None:
+    """A non-workflow run with no signature_code still has nothing to rebuild from."""
+    result_data = _make_run_response_dict(
+        program_artifact=ProgramArtifact(program_state_json={"demos": []}).model_dump()
+    )
+    store.seed_job("nosig", status="success", payload_overview={"module_name": "predict"}, result=result_data)
+
+    resp = opt_client.get("/optimizations/nosig/program-export")
+
+    assert resp.status_code == 409
 
 
 def test_grid_result_returns_404_for_unknown_job(opt_client: TestClient) -> None:
@@ -1013,6 +1179,80 @@ def test_evaluate_examples_baseline_branch_calls_module_factory(
     body = resp.json()
     assert body["program_type"] == "baseline"
     assert len(body["results"]) == 1
+
+
+def test_evaluate_examples_resolves_stored_custom_byok_connection(
+    opt_client: TestClient,
+    store: _ExtendedFakeJobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Playground evaluation uses the caller's verified custom inference provider."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    store.engine = engine
+    monkeypatch.setattr(
+        settings,
+        "byok_vault_key",
+        SecretStr(Fernet.generate_key().decode("utf-8")),
+    )
+    response = SimpleNamespace(status_code=200, is_success=True)
+    with patch("core.billing.byok_vault.httpx.get", return_value=response):
+        ProviderKeyVault(engine=engine).save_key(
+            "alice",
+            "custom",
+            "private-secret",
+            api_base="https://inference.example/v1",
+        )
+    fake_prediction = MagicMock(answer="yes")
+    fake_program = MagicMock(return_value=fake_prediction)
+    store.seed_job(
+        "baseline-byok",
+        status="success",
+        payload={
+            "dataset": [{"q": "hello", "a": "world"}],
+            "column_mapping": {"inputs": {"question": "q"}, "outputs": {"answer": "a"}},
+            "metric_code": "def metric(ex, pred): return 1.0",
+            "model_config": {
+                "name": "openai/private-chat",
+                "token_source": "byok",
+                "byok_provider": "custom",
+            },
+            "signature_code": "",
+            "module_name": "predict",
+            "module_kwargs": {},
+        },
+    )
+    builder = MagicMock(return_value=MagicMock())
+
+    with (
+        patch("core.api.routers.optimizations.detail.build_language_model", builder),
+        patch(
+            "core.api.routers.optimizations.detail.load_metric_from_code",
+            return_value=lambda ex, pred: 1.0,
+        ),
+        patch(
+            "core.api.routers.optimizations.detail.load_signature_from_code",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "core.api.routers.optimizations.detail.resolve_module_factory",
+            return_value=(MagicMock(return_value=fake_program), True),
+        ),
+        patch("dspy.context"),
+    ):
+        resp = opt_client.post(
+            "/optimizations/baseline-byok/evaluate-examples",
+            json={"indices": [0], "program_type": "baseline"},
+        )
+
+    assert resp.status_code == 200
+    resolved = builder.call_args.args[0]
+    assert resolved.base_url == "https://inference.example/v1"
+    assert resolved.extra["api_key"] == "private-secret"
 
 
 def test_evaluate_examples_metric_raises_records_zero_score(

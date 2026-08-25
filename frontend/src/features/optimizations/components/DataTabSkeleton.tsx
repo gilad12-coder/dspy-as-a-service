@@ -7,10 +7,7 @@ export function DataTabSkeleton() {
     <div className="space-y-4 mt-4" aria-hidden="true">
       <Skeleton width="55%" height={14} />
 
-      <div
-        className="rounded-2xl border border-[#E5DDD4] bg-gradient-to-l from-[#FAF8F5] to-[#F5F1EC] p-4 space-y-3"
-        dir="rtl"
-      >
+      <div className="rounded-2xl border border-[#E5DDD4] bg-gradient-to-l from-[#FAF8F5] to-[#F5F1EC] p-4 space-y-3">
         <div className="flex items-center gap-3">
           <div className="flex-1 min-w-0">
             <Skeleton width={140} height={14} />

@@ -11,7 +11,9 @@ import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { readServerSentEvents } from "@/shared/lib/sse";
 import { fetchWithAuthRetry } from "@/shared/lib/api";
 
-const API = getRuntimeEnv().apiUrl;
+// Resolve lazily — a module-load const races the injected window.__SKYNET_ENV__
+// and freezes the build-time localhost fallback. See shared/lib/api.ts.
+const apiBase = () => getRuntimeEnv().apiUrl;
 
 export interface ReactServeChatRequest {
   user_message: string;
@@ -43,7 +45,7 @@ export async function streamReactServeChat(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetchWithAuthRetry(`${API}/serve/${optimizationId}/chat`, {
+    res = await fetchWithAuthRetry(`${apiBase()}/serve/${optimizationId}/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -143,7 +145,7 @@ export async function confirmReactServeApproval(
 ): Promise<boolean> {
   let res: Response;
   try {
-    res = await fetchWithAuthRetry(`${API}/serve/${optimizationId}/chat/confirm`, {
+    res = await fetchWithAuthRetry(`${apiBase()}/serve/${optimizationId}/chat/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ call_id: callId, approved }),

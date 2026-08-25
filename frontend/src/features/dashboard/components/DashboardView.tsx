@@ -4,12 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { motion, useReducedMotion } from "framer-motion";
-import { BarChart3, TableIcon } from "lucide-react";
+import { ChartBar, Table } from "@/shared/ui/icons";
 import { DashboardSkeleton } from "./DashboardSkeleton";
-import { toast } from "react-toastify";
+import { Card } from "@/shared/ui/primitives/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
 import { FadeIn } from "@/shared/ui/motion";
 import { msg } from "@/shared/lib/messages";
+import { sessionIdentity } from "@/shared/lib/session-identity";
 import { TERMS } from "@/shared/lib/terms";
 import { useColumnFilters, useColumnResize, type SortDir } from "@/shared/ui/excel-filter";
 import { getJobTypeLabel, getStatusLabel } from "@/shared/constants/job-status";
@@ -24,8 +25,8 @@ import { useJobsList } from "../hooks/use-jobs-list";
 import { useDashboardAnalytics } from "../hooks/use-dashboard-analytics";
 import { useJobsRealtime } from "../hooks/use-jobs-realtime";
 import { useBulkDelete } from "../hooks/use-bulk-delete";
-import { COMPARE_MAX } from "../constants";
 import { DashboardHeader } from "./DashboardHeader";
+import { WorkspaceStrip } from "./WorkspaceStrip";
 import { QueueStatusAlert } from "./QueueStatusAlert";
 import { BulkActionBar } from "./BulkActionBar";
 import { DeleteDialogs } from "./DeleteDialogs";
@@ -36,7 +37,7 @@ import { AnalyticsTab } from "./AnalyticsTab";
 // triggers via Framer's layoutId (see DashboardView). The button itself stays
 // transparent and only fades text color + reacts to the press transform.
 const DASHBOARD_TAB_CLASS =
-  "relative z-10 min-h-10 rounded-md px-3 py-2 text-sm font-semibold cursor-pointer border-none bg-transparent text-foreground/65 shadow-none transition-[color,transform] data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:px-4";
+  "relative z-10 min-h-[44px] rounded-full px-3 py-2 text-sm font-semibold cursor-pointer border-none bg-transparent text-foreground/65 shadow-none transition-[color,transform] data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:border-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:px-4 lg:min-h-10";
 
 function getJobField(job: OptimizationSummaryResponse, key: string): unknown {
   return (job as unknown as Record<string, unknown>)[key];
@@ -56,7 +57,7 @@ export function DashboardView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
-  const sessionUser = session?.user?.name ?? "";
+  const sessionUser = sessionIdentity(session);
   const isAdmin = session?.user?.role === "admin";
 
   const [mounted, setMounted] = useState(false);
@@ -181,22 +182,6 @@ export function DashboardView() {
     confirmBulkDelete,
   } = useBulkDelete({ data, setData, setPageOffset, fetchJobs, visibleData: effectiveData });
 
-  useEffect(
-    () => registerTutorialHook("setSelectedJobIds", (ids) => setSelectedIds(new Set(ids))),
-    [setSelectedIds],
-  );
-
-  // Compare-eligible subset of the current selection. Exact metric/test-set
-  // compatibility is validated on the compare page after loading payloads.
-  const compareEligibleIds = useMemo(() => {
-    if (!effectiveData || selectedIds.size === 0) return [];
-    const selectedItems = effectiveData.items.filter(
-      (j) => selectedIds.has(j.optimization_id) && j.status === "success",
-    );
-    return selectedItems.map((j) => j.optimization_id);
-  }, [effectiveData, selectedIds]);
-  const canCompare = compareEligibleIds.length >= 2;
-
   // Admins delete anything; everyone else may bulk-delete only runs they own
   // outright (role null/absent) or co-own (role "owner"). Shared viewer/editor
   // grants can't delete. Mirrors the detail page's canDeleteRun (effective_role
@@ -205,23 +190,15 @@ export function DashboardView() {
   // when the server actually skipped them.
   const canBulkDelete = useMemo(() => {
     if (isAdmin) return true;
-    if (!effectiveData || selectedIds.size === 0) return false;
+    if (!effectiveData || !Array.isArray(effectiveData.items) || selectedIds.size === 0)
+      return false;
     const selected = effectiveData.items.filter((j) => selectedIds.has(j.optimization_id));
     if (selected.length !== selectedIds.size) return false;
     return selected.every((j) => j.role == null || j.role === "owner");
   }, [isAdmin, effectiveData, selectedIds]);
 
-  const onCompare = useCallback(() => {
-    if (compareEligibleIds.length < 2) return;
-    if (compareEligibleIds.length > COMPARE_MAX) {
-      toast.error(msg("compare.cap_reached"));
-      return;
-    }
-    router.push(`/compare?jobs=${compareEligibleIds.join(",")}`);
-  }, [compareEligibleIds, router]);
-
   const filteredItems = useMemo(() => {
-    if (!effectiveData) return [];
+    if (!effectiveData || !Array.isArray(effectiveData.items)) return [];
     const items = effectiveData.items.filter((job) => {
       for (const [col, allowed] of Object.entries(filters)) {
         if (allowed.size === 0) continue;
@@ -261,7 +238,8 @@ export function DashboardView() {
   };
 
   const filterOptions = useMemo(() => {
-    if (!effectiveData) return {} as Record<string, Array<{ value: string; label: string }>>;
+    if (!effectiveData || !Array.isArray(effectiveData.items))
+      return {} as Record<string, Array<{ value: string; label: string }>>;
     const items = effectiveData.items;
     const unique = (key: string, labelFn?: (v: string) => string) => {
       const vals = [...new Set(items.map((j) => String(getJobField(j, key) ?? "")))]
@@ -314,7 +292,9 @@ export function DashboardView() {
   // Owner/Role columns and the shared stat card only appear once the caller
   // actually collaborates — a solo user's control panel stays unchanged.
   const hasShared =
-    (counts?.shared ?? 0) > 0 || (effectiveData?.items.some((j) => Boolean(j.role)) ?? false);
+    (counts?.shared ?? 0) > 0 ||
+    (Array.isArray(effectiveData?.items) && effectiveData.items.some((j) => Boolean(j.role))) ||
+    false;
 
   if (initialLoad && !effectiveData) {
     return <DashboardSkeleton />;
@@ -326,28 +306,28 @@ export function DashboardView() {
 
   return (
     <>
-      <div className="flex flex-col gap-8 -mt-2 md:-mt-4">
-        <DashboardHeader stats={stats} />
+      <div className="flex flex-col gap-6 -mt-2 md:-mt-4">
+        <Card className="gap-0 p-0">
+          <DashboardHeader stats={stats} />
+          <WorkspaceStrip />
+        </Card>
         <QueueStatusAlert queueStatus={queueStatus} />
 
         <FadeIn delay={0.2}>
           {mounted && (
-            <Tabs value={activeTab} dir="rtl" onValueChange={handleTabChange}>
-              <TabsList className="inline-flex h-auto w-full gap-1 rounded-lg border border-border/60 bg-muted/50 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
-                <TabsTrigger
-                  value="jobs"
-                  className={DASHBOARD_TAB_CLASS}
-                >
+            <Tabs value={activeTab} onValueChange={handleTabChange}>
+              <TabsList className="inline-flex h-auto w-full gap-1 rounded-full border border-border/60 bg-muted/50 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
+                <TabsTrigger value="jobs" className={DASHBOARD_TAB_CLASS}>
                   {activeTab === "jobs" && (
                     <motion.span
                       layoutId="dashboardTabPill"
                       transition={tabPillTransition}
-                      className="absolute inset-0 z-0 rounded-md bg-background shadow-sm"
+                      className="absolute inset-0 z-0 rounded-full bg-background shadow-sm"
                       aria-hidden="true"
                     />
                   )}
                   <span className="relative z-10 inline-flex items-center gap-1.5">
-                    <TableIcon className="size-3.5" />
+                    <Table className="size-3.5" />
                     {TERMS.optimizationPlural}
                   </span>
                 </TabsTrigger>
@@ -360,12 +340,12 @@ export function DashboardView() {
                     <motion.span
                       layoutId="dashboardTabPill"
                       transition={tabPillTransition}
-                      className="absolute inset-0 z-0 rounded-md bg-background shadow-sm"
+                      className="absolute inset-0 z-0 rounded-full bg-background shadow-sm"
                       aria-hidden="true"
                     />
                   )}
                   <span className="relative z-10 inline-flex items-center gap-1.5">
-                    <BarChart3 className="size-3.5" />
+                    <ChartBar className="size-3.5" />
                     {msg("auto.features.dashboard.components.dashboardview.1")}
                   </span>
                 </TabsTrigger>
@@ -411,7 +391,6 @@ export function DashboardView() {
                   sessionUser={sessionUser}
                 />
               </TabsContent>
-
             </Tabs>
           )}
         </FadeIn>
@@ -419,10 +398,7 @@ export function DashboardView() {
         <BulkActionBar
           canDelete={canBulkDelete}
           selectedCount={selectedIds.size}
-          compareEligibleCount={compareEligibleIds.length}
-          canCompare={canCompare}
           onClear={clearSelection}
-          onCompare={onCompare}
           onRequestBulkDelete={() => setBulkDeleteOpen(true)}
         />
         <DeleteDialogs

@@ -26,25 +26,101 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..billing import (
+    OpenRouterKeyProvisioner,
+    ProviderKeyVault,
+    StripeBillingService,
+    inject_byok_connections,
+    inject_provisioned_openrouter_key,
+    payload_uses_token_source,
+)
+from ..billing.pricing import ModelUsage
 from ..config import settings
 from ..constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
+    OPTIMIZATION_TYPE_TAGGING,
+    PAYLOAD_OVERVIEW_ESTIMATED_HIGH,
+    PAYLOAD_OVERVIEW_ESTIMATED_LOW,
+    PAYLOAD_OVERVIEW_MODEL_NAME,
+    PAYLOAD_OVERVIEW_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
+    PAYLOAD_OVERVIEW_OPTIMIZER_NAME,
+    PAYLOAD_OVERVIEW_TOKEN_SOURCE,
+    PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL,
     PAYLOAD_OVERVIEW_USERNAME,
+    PROGRESS_GRID_PAIR_COMPLETED,
+    PROGRESS_GRID_PAIR_FAILED,
+    TOKEN_SOURCE_BYOK,
+    TOKEN_SOURCE_MANAGED,
 )
 from ..i18n import CANCELLATION_REASON
-from ..models import GridSearchRequest, RunRequest
+from ..models import GridSearchRequest, GridSearchResponse, PairResult, RunRequest, SplitCounts
 from ..notifications import notify_job_completed
 from ..registry import ServiceRegistry
 from ..service_gateway import DspyService
 from ..service_gateway.embedding_pipeline import embed_finished_job
+from ..service_gateway.optimization.core import _merge_usage_rows
 from ..service_gateway.optimization.trajectory import GEPA_STATE_FILENAME, GRID_PAIR_RESULT_FILENAME
 from ..storage import JobStore
+from ..telemetry import record_server_event
 from .constants import EVENT_ERROR, EVENT_LOG, EVENT_PROGRESS, EVENT_RESULT
+from .memory_guard import memory_usage_fraction
 from .subprocess_runner import run_service_in_subprocess, set_fork_service
+from .tagging_job import TaggingAutotagPayload, run_autotag_job
 
 logger = logging.getLogger(__name__)
+
+# Sentinel pair index for the grid "envelope" row a distributed pair child
+# stores alongside its PairResult: split counts and metric/module names the
+# finalizer needs but individual pair results don't carry. Real pair indices
+# are >= 0, and the resume path ignores out-of-range keys, so the sentinel can
+# never collide with a pair.
+GRID_ENVELOPE_PAIR_INDEX = -1
+
+# A pair child is terminal only in one of these; ``paused`` never applies to
+# grid children (grids are not pausable).
+_PAIR_TERMINAL_STATUSES = ("success", "failed", "cancelled")
+
+
+def _usages_from_result(result_dict: dict[str, Any] | None, fallback_model: str | None) -> list[ModelUsage]:
+    """Build per-model :class:`ModelUsage` from a serialized run/grid result.
+
+    Reads the result's ``usage_by_model`` rows (stamped by the optimizer from the
+    LM histories). A result that predates the per-model split — or an in-flight
+    job spanning the deploy — has no rows; it falls back to pricing the whole
+    ``total_tokens`` on ``fallback_model``, attributing it to input (the cheaper
+    side) so the legacy path under-charges rather than over-charges.
+
+    Args:
+        result_dict: The serialized run/grid result, or ``None``.
+        fallback_model: Model id to price a rows-less legacy result against.
+
+    Returns:
+        Per-model usage rows with positive token counts, or ``[]`` when the run
+        reported no usage at all.
+    """
+    if not isinstance(result_dict, dict):
+        return []
+    usages: list[ModelUsage] = []
+    rows = result_dict.get("usage_by_model")
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            model = row.get("model")
+            in_tokens = row.get("input_tokens", 0)
+            out_tokens = row.get("output_tokens", 0)
+            if not isinstance(model, str) or not isinstance(in_tokens, int) or not isinstance(out_tokens, int):
+                continue
+            if in_tokens > 0 or out_tokens > 0:
+                usages.append(ModelUsage(model=model, input_tokens=in_tokens, output_tokens=out_tokens))
+    if usages:
+        return usages
+    total_tokens = result_dict.get("total_tokens")
+    if isinstance(total_tokens, int) and total_tokens > 0:
+        return [ModelUsage(model=fallback_model or "unknown", input_tokens=total_tokens, output_tokens=0)]
+    return []
 
 
 class CancellationError(Exception):
@@ -143,6 +219,8 @@ class BackgroundWorker:
         self._activity_lock = threading.Lock()
         # Per-thread current job for lease heartbeats.
         self._thread_current_job: dict[int, str] = {}
+        # Rate-limits the memory-pressure deferral warning across all threads.
+        self._admission_last_log = 0.0
 
     @staticmethod
     def _resolve_mp_context() -> mp.context.BaseContext:
@@ -196,7 +274,12 @@ class BackgroundWorker:
                 self._pending_jobs.append(optimization_id)
                 logger.info("Optimization %s enqueued (local hint)", optimization_id)
 
-    def submit_job(self, optimization_id: str, payload: RunRequest | GridSearchRequest) -> None:
+    def submit_job(
+        self,
+        optimization_id: str,
+        payload: RunRequest | GridSearchRequest | TaggingAutotagPayload,
+        payload_dump: dict[str, Any] | None = None,
+    ) -> None:
         """Persist payload to the job store; rely on DB claim for pickup.
 
         Writes the payload onto the existing ``pending`` row and registers a
@@ -207,10 +290,16 @@ class BackgroundWorker:
         Args:
             optimization_id: ID of the job being submitted.
             payload: Pydantic model whose ``model_dump`` is stored on the job.
+            payload_dump: Optional pre-built ``model_dump(mode="json",
+                by_alias=True)`` of ``payload``. The submit routers already
+                serialize it for the storage-quota gate; passing it here
+                avoids a second full copy of the dataset per request.
         """
+        if payload_dump is None:
+            payload_dump = payload.model_dump(mode="json", by_alias=True)
         self._job_store.update_job(
             optimization_id,
-            payload=payload.model_dump(mode="json", by_alias=True),
+            payload=payload_dump,
             code_version=settings.code_version,
         )
         with self._queue_lock:
@@ -262,6 +351,8 @@ class BackgroundWorker:
         Returns:
             The optimization ID to process next, or ``None`` when idle.
         """
+        if self._defer_for_memory_pressure():
+            return None
         with self._queue_lock:
             hinted = self._pending_jobs.pop(0) if self._pending_jobs else None
         if hinted is not None and not hasattr(self._job_store, "claim_next_job"):
@@ -269,6 +360,36 @@ class BackgroundWorker:
                 self._processing_jobs.add(hinted)
             return hinted
         return self._claim_job_from_store()
+
+    def _defer_for_memory_pressure(self) -> bool:
+        """Report whether claiming a new job should wait for memory headroom.
+
+        Running jobs are never touched — this only keeps an idle worker thread
+        from adding one more forked child to a pod already near its cgroup
+        limit. The row waits in the shared queue for this pod (or a peer) to
+        free up, instead of the whole container being OOM-killed mid-run.
+
+        Returns:
+            True when container memory usage exceeds the admission threshold.
+        """
+        threshold = settings.job_admission_max_memory_fraction
+        if threshold <= 0:
+            return False
+        usage = memory_usage_fraction()
+        if usage is None or usage < threshold:
+            return False
+        now = time.monotonic()
+        with self._activity_lock:
+            should_log = now - self._admission_last_log >= 60.0
+            if should_log:
+                self._admission_last_log = now
+        if should_log:
+            logger.warning(
+                "Deferring job claim: container memory at %.0f%% of limit (threshold %.0f%%)",
+                usage * 100,
+                threshold * 100,
+            )
+        return True
 
     def _mark_job_done(self, optimization_id: str) -> None:
         """Release the claim and clean up per-job worker state.
@@ -312,10 +433,14 @@ class BackgroundWorker:
                     time.sleep(self._poll_interval)
                     idle_cycles += 1
                     # Heartbeat every ~5 min so observability dashboards
-                    # can distinguish "idle but alive" from "stuck".
+                    # can distinguish "idle but alive" from "stuck". Worker 0
+                    # also backstops distributed grids whose last finisher
+                    # died before assembling the parent result.
                     if idle_cycles % 150 == 0:
                         logger.info("Worker %d heartbeat, idle cycles: %d", worker_id, idle_cycles)
                         self._touch_activity(worker_id)
+                        if worker_id == 0:
+                            self._finalize_stuck_grids()
                     continue
 
                 idle_cycles = 0
@@ -358,6 +483,10 @@ class BackgroundWorker:
         logger.info("Processing job %s", optimization_id)
 
         overview: dict[str, Any] = {}  # pre-init so BaseException handler has a defined value even if early error
+        # Pair-child context, resolved after the payload loads; the exception
+        # handler reads these to route notifications and finalize the parent.
+        pair_parent_id: str | None = None
+        pair_index_val = 0
 
         with self._queue_lock:
             cancel_event = self._cancel_events.get(optimization_id)
@@ -381,8 +510,36 @@ class BackgroundWorker:
                 overview = {}
             optimization_type = overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE, OPTIMIZATION_TYPE_RUN)
 
-            if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
+            if optimization_type == OPTIMIZATION_TYPE_TAGGING:
+                self._process_tagging_job(optimization_id, worker_id, cancel_event, payload_dict)
+                return
+
+            pair_parent_id = job_data.get("parent_optimization_id")
+            pair_index_val = int(job_data.get("pair_index") or 0)
+
+            if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH and pair_parent_id is not None:
+                # Distributed pair child: its stored payload is a tiny
+                # reference; the real single-pair payload (dataset included)
+                # derives from the parent row at claim time.
+                derived = self._derive_pair_payload(pair_parent_id, pair_index_val)
+                if derived is None:
+                    # Parent deleted or no longer running (cancelled, failed,
+                    # already finalized): this pair must not spend anything.
+                    with contextlib.suppress(Exception):
+                        self._job_store.update_job(
+                            optimization_id,
+                            status="cancelled",
+                            message="Parent grid is no longer running",
+                            completed_at=datetime.now(UTC).isoformat(),
+                        )
+                    self._maybe_finalize_grid(pair_parent_id)
+                    return
+                payload_dict, grid_payload = derived
+            elif optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
                 grid_payload = GridSearchRequest.model_validate(payload_dict)
+                if self._should_distribute_grid(optimization_id, grid_payload):
+                    self._fan_out_grid(optimization_id, grid_payload, overview)
+                    return
             else:
                 run_payload = RunRequest.model_validate(payload_dict)
 
@@ -452,8 +609,65 @@ class BackgroundWorker:
                     payload_dict["_gepa_log_dir"] = str(gepa_dir)
                     if is_grid:
                         # Resume: hand the child the pairs that already finished so
-                        # it keeps them and runs only the rest.
+                        # it keeps them and runs only the rest. For a pair child
+                        # this reads the CHILD's own store — global-indexed, so a
+                        # requeued pair resumes exactly like a requeued grid.
                         payload_dict["_completed_pairs"] = self._job_store.get_grid_pair_results(optimization_id)
+
+                # Events (progress, logs, latest metrics) from a pair child land
+                # on the PARENT id the user watches; the child row keeps only
+                # scheduling state. The subprocess reports global pair indices
+                # via the base/total keys so those events line up.
+                events_target = optimization_id
+                if pair_parent_id is not None:
+                    events_target = pair_parent_id
+                    payload_dict["_pair_index_base"] = pair_index_val
+                    payload_dict["_grid_total_pairs"] = payload_dict.pop("_parent_total_pairs", 1)
+
+                # BYOK bridge: for a run that bills the user's own provider key,
+                # resolve each model's key from the vault and stamp it onto the
+                # payload's ModelConfigs in memory — the only seam where the key
+                # crosses into the run subprocess (and the grid threads it fans
+                # out). Never persisted: the stored overview already dropped any
+                # client-supplied key.
+                token_source = overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED
+                byok_engine = getattr(self._job_store, "engine", None)
+                if byok_engine is not None:
+                    execution_payload = grid_payload if is_grid else run_payload
+                    if payload_uses_token_source(
+                        payload_dict,
+                        TOKEN_SOURCE_BYOK,
+                        default_token_source=token_source,
+                    ):
+                        inject_byok_connections(
+                            payload_dict,
+                            username=execution_payload.username,
+                            vault=ProviderKeyVault(engine=byok_engine),
+                            default_token_source=token_source,
+                        )
+                # Managed-run mirror of the BYOK seam: when key provisioning is
+                # configured, dispatch under a per-user OpenRouter runtime key
+                # whose spend limit was just synced to the account's balance —
+                # a provider-side backstop on top of the ledger clamp. Any
+                # failure leaves the payload untouched and the run falls back
+                # to the shared gateway key.
+                if byok_engine is not None and payload_uses_token_source(
+                    payload_dict,
+                    TOKEN_SOURCE_MANAGED,
+                    default_token_source=token_source,
+                ):
+                    provisioner = OpenRouterKeyProvisioner(engine=byok_engine)
+                    if provisioner.enabled:
+                        spendable = StripeBillingService(engine=byok_engine).spendable_credits(
+                            execution_payload.username
+                        )
+                        runtime_key = provisioner.ensure_runtime_key(execution_payload.username, spendable)
+                        if runtime_key is not None:
+                            inject_provisioned_openrouter_key(
+                                payload_dict,
+                                api_key=runtime_key,
+                                default_token_source=token_source,
+                            )
 
                 event_queue = self._mp_ctx.Queue()
                 run_process = self._mp_ctx.Process(  # type: ignore[attr-defined]
@@ -465,6 +679,16 @@ class BackgroundWorker:
                 assert run_process is not None
                 run_process.start()
 
+                # From here the child owns its copy of the payload. The
+                # validated request model is a second full copy of the
+                # dataset that would otherwise sit in this process for the
+                # whole multi-hour run — and be duplicated into every
+                # sibling job's fork image. ``payload_dict`` itself stays
+                # pinned by ``run_process``'s args tuple; only ``attempts``
+                # is read from ``job_data`` after this point.
+                job_data = {"attempts": job_data.get("attempts")}
+                run_payload = grid_payload = None
+
                 # Stall watchdog: the lease heartbeat (_touch_activity) renews
                 # on every tick regardless of progress, so a child wedged on a
                 # timeout-less blocking call (e.g. a hung LLM socket read) would
@@ -474,13 +698,14 @@ class BackgroundWorker:
                 # first; this only catches genuine wedges that produce nothing.
                 stall_timeout = settings.job_stall_timeout_seconds
                 last_event_at = time.monotonic()
+                progress_rewrite = self._pair_progress_rewrite(pair_parent_id) if pair_parent_id else None
                 while run_process.is_alive():
                     _raise_if_cancelled(cancel_event, optimization_id)
                     self._touch_activity(worker_id)
                     self._raise_if_store_cancelled(optimization_id)
                     run_process.join(timeout=self._cancel_poll_interval)
                     drained_result, drained_error, drained_count = self._drain_subprocess_events(
-                        optimization_id, event_queue
+                        events_target, event_queue, progress_rewrite=progress_rewrite
                     )
                     if drained_result is not None:
                         result_dict = drained_result
@@ -497,7 +722,9 @@ class BackgroundWorker:
                     if gepa_dir is not None:
                         self._persist_gepa_checkpoint(optimization_id, gepa_dir, checkpoint_tracker, is_grid=is_grid)
 
-                drained_result, drained_error, _ = self._drain_subprocess_events(optimization_id, event_queue)
+                drained_result, drained_error, _ = self._drain_subprocess_events(
+                    events_target, event_queue, progress_rewrite=progress_rewrite
+                )
                 if drained_result is not None:
                     result_dict = drained_result
                 if drained_error is not None:
@@ -510,9 +737,10 @@ class BackgroundWorker:
                     if traceback_text:
                         logger.error("Optimization %s subprocess traceback:\n%s", optimization_id, traceback_text)
                         # Persist traceback so users can see it via GET /jobs/{id}/logs
+                        # (a pair child's traceback belongs on the parent the user reads).
                         with contextlib.suppress(Exception):
                             self._job_store.append_log(
-                                optimization_id,
+                                events_target,
                                 level="ERROR",
                                 logger_name="dspy.subprocess",
                                 message=traceback_text,
@@ -552,6 +780,8 @@ class BackgroundWorker:
                 _raise_if_cancelled(cancel_event, optimization_id)
 
                 # Grid search with all pairs failed is a failure, not a success.
+                # A pair child's 1-pair grid rides the same check: its single
+                # failed pair marks the CHILD row failed.
                 final_status = "success"
                 final_message = "Optimization completed successfully"
                 if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH and isinstance(result_dict, dict):
@@ -567,6 +797,13 @@ class BackgroundWorker:
                         )
                         if first_error:
                             final_message = f"{final_message}: {first_error}"
+
+                # A pair child durably records its PairResult (and the grid
+                # envelope) onto the PARENT before its own terminal write, so
+                # the finalizer can assemble the grid even if this process
+                # dies right after the status lands.
+                if pair_parent_id is not None and isinstance(result_dict, dict):
+                    self._record_pair_outcome(pair_parent_id, result_dict)
 
                 try:
                     current = self._job_store.get_job(optimization_id)
@@ -585,7 +822,10 @@ class BackgroundWorker:
                         "status": final_status,
                         "message": final_message,
                         "completed_at": datetime.now(UTC).isoformat(),
-                        "result": result_dict,
+                        # A pair child's result already lives in the parent's
+                        # pair-result store; storing it again on the hidden
+                        # child row would triple the artifact bytes.
+                        "result": None if pair_parent_id is not None else result_dict,
                     }
                     cas = getattr(self._job_store, "update_job_if_status", None)
                     if cas is not None:
@@ -607,6 +847,13 @@ class BackgroundWorker:
                                 self._job_store.delete_grid_pair_results(optimization_id)
                             else:
                                 self._job_store.delete_gepa_checkpoint(optimization_id)
+                    if pair_parent_id is not None:
+                        # Parent-level side effects (user notification, credit
+                        # debit, billing stamp, embedding) happen ONCE at grid
+                        # finalization — a pair child only checks whether it
+                        # was the last sibling standing.
+                        self._maybe_finalize_grid(pair_parent_id)
+                        return
                     _username = overview.get(PAYLOAD_OVERVIEW_USERNAME, "")
                     _baseline = result_dict.get("baseline_test_metric") if isinstance(result_dict, dict) else None
                     _optimized = result_dict.get("optimized_test_metric") if isinstance(result_dict, dict) else None
@@ -619,6 +866,30 @@ class BackgroundWorker:
                             baseline_score=_baseline,
                             optimized_score=_optimized,
                         )
+                        self._record_run_outcome(optimization_id, _username, final_status, overview)
+                        # The credit debit shares the once-only completion claim so
+                        # a redelivered/re-run job is never double-billed. Success
+                        # only — a failed (e.g. all-pairs-failed) run is not billed.
+                        if final_status == "success":
+                            billed = self._debit_run_credits(
+                                _username,
+                                result_dict,
+                                run_name=overview.get(PAYLOAD_OVERVIEW_NAME) or "",
+                                model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
+                                token_source=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED,
+                                token_sources_by_model=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL),
+                            )
+                            # Stamp the billing outcome onto the persisted result so
+                            # the result screen can show what the run cost.
+                            # Re-persisted because the debit runs after the first
+                            # completion write.
+                            self._stamp_billing_outcome(
+                                optimization_id,
+                                result_dict,
+                                billed=billed,
+                                estimated_low=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_LOW),
+                                estimated_high=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_HIGH),
+                            )
                     if final_status == "success":
                         self._schedule_embedding_indexing(optimization_id)
                 except KeyError:
@@ -673,8 +944,15 @@ class BackgroundWorker:
                 persisted_status = None
                 with contextlib.suppress(Exception):
                     persisted_status = self._job_store.get_job(optimization_id).get("status")
-                if persisted_status != "paused" and self._job_store.claim_completion_notification(optimization_id):
+                if (
+                    pair_parent_id is None
+                    and persisted_status != "paused"
+                    and self._job_store.claim_completion_notification(optimization_id)
+                ):
                     notify_job_completed(optimization_id=optimization_id, username=_username, status="cancelled")
+                    self._record_run_outcome(
+                        optimization_id, _username, "cancelled", overview if isinstance(overview, dict) else {}
+                    )
             else:
                 # Failed jobs are retained so users can inspect the error
                 now = datetime.now(UTC).isoformat()
@@ -684,15 +962,81 @@ class BackgroundWorker:
                     )
                 except Exception:  # isolation boundary: a DB hiccup must not prevent the notification below
                     logger.exception("Optimization %s: failed to update status to %s", optimization_id, final_status)
-                if self._job_store.claim_completion_notification(optimization_id):
+                if pair_parent_id is None and self._job_store.claim_completion_notification(optimization_id):
                     notify_job_completed(
                         optimization_id=optimization_id,
                         username=_username,
                         status=final_status,
                         message=error_message,
                     )
+                    self._record_run_outcome(
+                        optimization_id, _username, final_status, overview if isinstance(overview, dict) else {}
+                    )
+            # A pair child's terminal state may have been the grid's last:
+            # run the finalize check on every exit path (it no-ops unless all
+            # siblings are terminal and the parent is still running).
+            if pair_parent_id is not None and not is_shutdown:
+                with contextlib.suppress(Exception):
+                    self._maybe_finalize_grid(pair_parent_id)
             if is_shutdown:
                 raise
+
+    def _process_tagging_job(
+        self,
+        optimization_id: str,
+        worker_id: int,
+        cancel_event: threading.Event | None,
+        payload_dict: dict[str, Any],
+    ) -> None:
+        """Run a bulk auto-tag job in the worker thread (no subprocess).
+
+        The batch loop lives in :mod:`core.worker.tagging_job`; this wrapper
+        owns the job-row lifecycle: the ``running`` transition, the heartbeat
+        the loop's monitor thread calls to renew the claim lease, and the
+        terminal write. A user cancel is observed cooperatively (the route
+        wrote the terminal ``cancelled`` status already, so no write happens
+        here); a lease lost to a peer pod abandons silently. Failures
+        propagate to ``_process_job``'s generic handler.
+
+        Args:
+            optimization_id: ID of the claimed job.
+            worker_id: Index of the calling worker thread (lease renewal).
+            cancel_event: The job's cooperative cancel flag.
+            payload_dict: The stored ``TaggingAutotagPayload`` dict.
+        """
+        payload = TaggingAutotagPayload.model_validate(payload_dict)
+        self._job_store.update_job(
+            optimization_id,
+            status="running",
+            message="Auto-tagging dataset rows",
+            started_at=datetime.now(UTC).isoformat(),
+        )
+        self._touch_activity(worker_id)
+        outcome = run_autotag_job(
+            self._job_store,
+            optimization_id,
+            payload.session_id,
+            username=payload.username,
+            cancel_event=cancel_event or threading.Event(),
+            heartbeat=lambda: self._touch_activity(worker_id),
+        )
+        if outcome.get("status") != "done":
+            logger.info("Tagging job %s ended without completion: %s", optimization_id, outcome)
+            return
+        completion_fields: dict[str, Any] = {
+            "status": "success",
+            "message": f"Tagged {outcome.get('rows_tagged', 0)} rows",
+            "completed_at": datetime.now(UTC).isoformat(),
+            "result": outcome,
+        }
+        cas = getattr(self._job_store, "update_job_if_status", None)
+        if cas is not None:
+            if not cas(optimization_id, ("running", "validating"), **completion_fields):
+                # A cancel raced the finish; its terminal status stands.
+                return
+        else:
+            self._job_store.update_job(optimization_id, **completion_fields)
+        logger.info("Tagging job %s completed", optimization_id)
 
     def start(self) -> None:
         """Start the background worker threads and begin polling.
@@ -703,6 +1047,11 @@ class BackgroundWorker:
             return
 
         self._running = True
+        # Boot backstop: a fleet restart may have interrupted the last pair
+        # finisher of a distributed grid mid-handoff; sweep once before the
+        # idle-loop cadence takes over.
+        with contextlib.suppress(Exception):
+            self._finalize_stuck_grids()
         for i in range(self._num_workers):
             # Non-daemon: the SIGTERM handler joins these threads explicitly so
             # in-flight subprocesses get a chance to terminate cleanly.
@@ -857,6 +1206,153 @@ class BackgroundWorker:
         except Exception as exc:  # isolation boundary: best-effort indexing must never impact job status
             logger.debug("Embedding indexing for %s failed: %s", optimization_id, exc)
 
+    def _record_run_outcome(
+        self,
+        optimization_id: str,
+        username: str,
+        status: str,
+        overview: dict[str, Any],
+    ) -> None:
+        """Emit the ``run_completed`` / ``run_failed`` / ``run_cancelled`` milestone.
+
+        Called next to :func:`notify_job_completed` (inside the same exactly-once
+        completion claim) so each run yields one outcome event, mirroring the
+        browser's ``run_submitted``. Only structural descriptors are recorded —
+        no error text, no run name — and a telemetry failure never touches the
+        run's status.
+
+        Args:
+            optimization_id: Finished job id (logged only, never exported).
+            username: Owner of the run.
+            status: Terminal status (``success``, ``failed`` or ``cancelled``).
+            overview: The job's ``payload_overview`` mapping.
+        """
+        name = {"success": "run_completed", "cancelled": "run_cancelled"}.get(status, "run_failed")
+        try:
+            record_server_event(
+                getattr(self._job_store, "engine", None),
+                username=username or None,
+                name=name,
+                properties={
+                    "status": status,
+                    "optimization_type": overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE),
+                    "optimizer": overview.get(PAYLOAD_OVERVIEW_OPTIMIZER_NAME),
+                    "model": overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
+                    "token_source": overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE),
+                },
+            )
+        except Exception:  # isolation boundary: telemetry must never affect a run outcome
+            logger.debug("Optimization %s: run outcome telemetry failed", optimization_id, exc_info=True)
+
+    def _debit_run_credits(
+        self,
+        username: str,
+        result_dict: dict[str, Any] | None,
+        *,
+        run_name: str,
+        model: str | None,
+        token_source: str = TOKEN_SOURCE_MANAGED,
+        token_sources_by_model: dict[str, str] | None = None,
+    ) -> int:
+        """Debit a finished run's credit cost from the account's local ledger.
+
+        Writes a signed ``run`` row and decrements the account's grant/balance via
+        :meth:`StripeBillingService.debit_run`. Runs inline (not on a daemon
+        thread) so the wallet visibly reflects the spend the moment the run lands,
+        but wrapped so a billing-DB hiccup can never flip job status — the local
+        ledger is the credit source of truth, independent of whether Stripe is
+        configured. A managed run is charged its full per-token cost; a BYOK run is
+        charged only Skynet's platform fee (the provider tokens were paid on the
+        user's own key), so credits still meter a BYOK run without double-charging
+        for inference. A no-op when the store exposes no SQL engine (legacy/in-memory),
+        the caller is anonymous, or the run reported no token usage.
+
+        Args:
+            username: Account the run is billed to.
+            result_dict: The serialized run/grid result; its ``usage_by_model`` is
+                priced per-model into the charge (falling back to ``total_tokens``).
+            run_name: Run name for the ledger row's human label.
+            model: Model id stamped on the ledger row, or ``None``.
+            token_source: ``"managed"`` (full cost) or ``"byok"`` (platform fee
+                only); defaults to managed.
+            token_sources_by_model: Optional model-to-source map for mixed jobs.
+
+        Returns:
+            The credits charged (``0`` when nothing was billed or the debit was
+            skipped/failed).
+        """
+        engine = getattr(self._job_store, "engine", None)
+        if engine is None or not username:
+            return 0
+        usages = _usages_from_result(result_dict, model)
+        if not usages:
+            return 0
+        try:
+            billing_kwargs: dict[str, Any] = {
+                "model": model,
+                "description": run_name or "Run",
+                "token_source": token_source,
+            }
+            if token_sources_by_model is not None:
+                billing_kwargs["token_sources_by_model"] = token_sources_by_model
+            return StripeBillingService(engine=engine).debit_run(
+                username,
+                usages,
+                **billing_kwargs,
+            )
+        except Exception as exc:  # isolation boundary: a debit failure must never impact job status
+            logger.debug("Credit debit for %s failed: %s", username, exc)
+            return 0
+
+    def _stamp_billing_outcome(
+        self,
+        optimization_id: str,
+        result_dict: dict[str, Any] | None,
+        *,
+        billed: int,
+        estimated_low: int | None = None,
+        estimated_high: int | None = None,
+    ) -> None:
+        """Record the run's billed cost on its result for the result screen.
+
+        Writes ``result['details']['billing']`` — ``{outcome: "billed", credits}``
+        where ``credits`` is the amount charged. When the run was submitted with a
+        projected bracket, ``estimated_low``/``estimated_high`` are echoed
+        alongside so the estimate can be reconciled against the actual charge.
+        Only stamps single-run results (a grid envelope has no per-run
+        ``details``) and only when a credit amount exists, so a free-grant run
+        that cost nothing adds no row. Re-persists the result via the job store
+        because the debit runs after the first completion write; wrapped so a
+        store hiccup can never flip job status.
+
+        Args:
+            optimization_id: The finished run whose result is updated.
+            result_dict: The serialized run result; mutated in place and re-saved.
+            billed: Credits charged by :meth:`_debit_run_credits`.
+            estimated_low: Low end of the projected credit bracket, or None when
+                the run carried no estimate.
+            estimated_high: High end of the projected credit bracket, or None.
+        """
+        if not isinstance(result_dict, dict) or "pair_results" in result_dict:
+            return
+        outcome = "billed"
+        credits = billed
+        if credits <= 0:
+            return
+        try:
+            details = result_dict.get("details")
+            if not isinstance(details, dict):
+                details = {}
+                result_dict["details"] = details
+            billing: dict[str, Any] = {"outcome": outcome, "credits": credits}
+            if estimated_low is not None and estimated_high is not None:
+                billing["estimated_low"] = estimated_low
+                billing["estimated_high"] = estimated_high
+            details["billing"] = billing
+            self._job_store.update_job(optimization_id, result=result_dict)
+        except Exception as exc:  # isolation boundary: stamping must never impact job status
+            logger.debug("Billing-outcome stamp for %s failed: %s", optimization_id, exc)
+
     def _terminate_run_process(self, run_process: mp.process.BaseProcess, optimization_id: str) -> None:
         """Terminate a still-running job subprocess, escalating to SIGKILL after a 3-second grace period.
 
@@ -882,6 +1378,8 @@ class BackgroundWorker:
         self,
         optimization_id: str,
         event_queue: Any,
+        *,
+        progress_rewrite: Any | None = None,
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, int]:
         """Drain all pending events from the subprocess queue, routing each by type.
 
@@ -892,8 +1390,12 @@ class BackgroundWorker:
         swallowed so a DB hiccup cannot abort an otherwise-healthy optimization.
 
         Args:
-            optimization_id: ID of the running job (for log routing).
+            optimization_id: ID the events are persisted under — the job itself,
+                or a pair child's PARENT grid (the id the user watches).
             event_queue: The shared multiprocessing queue to drain.
+            progress_rewrite: Optional ``(event_name, metrics) -> metrics`` hook
+                applied before persisting a progress event; pair children use it
+                to correct grid-wide counters their single-pair view can't know.
 
         Returns:
             ``(result_dict, error_dict, drained_count)`` — the first two may be
@@ -917,10 +1419,13 @@ class BackgroundWorker:
             event_type = event.get("type")
             if event_type == EVENT_PROGRESS:
                 try:
+                    metrics = event.get("metrics") or {}
+                    if progress_rewrite is not None:
+                        metrics = progress_rewrite(event.get("event"), metrics)
                     self._job_store.record_progress(
                         optimization_id,
                         event.get("event"),
-                        event.get("metrics") or {},
+                        metrics,
                     )
                 except Exception:
                     logger.exception("Optimization %s: failed to persist subprocess progress event", optimization_id)
@@ -1114,6 +1619,406 @@ class BackgroundWorker:
             logger.exception("Optimization %s pair %s: failed to persist pair result", optimization_id, pair_index)
             return False
         return True
+
+    def _should_distribute_grid(self, optimization_id: str, grid_payload: GridSearchRequest) -> bool:
+        """Decide whether a claimed grid fans out into per-pair jobs.
+
+        Multi-pair grids distribute when the flag is on and the store supports
+        pair rows. A parent that ALREADY has children takes the distributed
+        path regardless of the flag — flipping the flag mid-flight must never
+        strand or double-run a grid that started distributed.
+
+        Args:
+            optimization_id: The claimed grid parent.
+            grid_payload: Its validated payload.
+
+        Returns:
+            ``True`` when the grid should run as distributed pair jobs.
+        """
+        if not hasattr(self._job_store, "create_grid_pair_jobs"):
+            return False
+        total = len(grid_payload.generation_models) * len(grid_payload.reflection_models)
+        if total <= 1:
+            return False
+        if settings.grid_distributed_pairs:
+            return True
+        try:
+            return bool(self._job_store.get_grid_pair_children(optimization_id))
+        except Exception:
+            return False
+
+    def _fan_out_grid(self, optimization_id: str, grid_payload: GridSearchRequest, overview: dict[str, Any]) -> None:
+        """Fan a claimed grid parent out into claimable per-pair jobs.
+
+        First claim: creates one child row per (generation, reflection) pair
+        and parks the parent at ``running`` (atomically, in the store). Reclaim
+        after a resume/crash: re-pends every child that hasn't succeeded —
+        their own checkpoints give per-pair resume — then re-parks the parent.
+        The child-requeue happens BEFORE the parent flip so a crash between
+        the two leaves the parent claimable and the sequence simply re-runs.
+
+        Args:
+            optimization_id: The claimed grid parent.
+            grid_payload: Its validated payload.
+            overview: The parent's payload overview (token source, username).
+        """
+        store = self._job_store
+        total = len(grid_payload.generation_models) * len(grid_payload.reflection_models)
+        children = store.get_grid_pair_children(optimization_id)
+        requeued = 0
+        if children:
+            for child in children:
+                if child.get("status") != "success":
+                    store.requeue_for_resume(child["optimization_id"], bump_attempts=False)
+                    requeued += 1
+        child_overview = {
+            PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE: OPTIMIZATION_TYPE_GRID_SEARCH,
+            PAYLOAD_OVERVIEW_USERNAME: overview.get(PAYLOAD_OVERVIEW_USERNAME) or grid_payload.username or "",
+            PAYLOAD_OVERVIEW_TOKEN_SOURCE: overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED,
+            PAYLOAD_OVERVIEW_NAME: overview.get(PAYLOAD_OVERVIEW_NAME) or "",
+        }
+        child_ids = store.create_grid_pair_jobs(
+            optimization_id,
+            total,
+            username=grid_payload.username,
+            payload_overview=child_overview,
+        )
+        if children:
+            logger.info(
+                "Grid %s resumed as distributed pairs: %d/%d children re-queued",
+                optimization_id,
+                requeued,
+                len(children),
+            )
+        else:
+            logger.info("Grid %s distributed into %d pair jobs", optimization_id, len(child_ids))
+
+    def _derive_pair_payload(
+        self, parent_optimization_id: str, pair_index: int
+    ) -> tuple[dict[str, Any], GridSearchRequest] | None:
+        """Build a pair child's real single-pair payload from its parent row.
+
+        The child row stores only a tiny reference; the dataset and every other
+        field live once, on the parent. Pair enumeration matches
+        ``run_grid_search`` exactly (generation-major), so ``pair_index``
+        selects the same (generation, reflection) combination the classic
+        in-child path would have run.
+
+        Args:
+            parent_optimization_id: The grid parent to derive from.
+            pair_index: This child's global pair index.
+
+        Returns:
+            ``(payload_dict, validated_payload)`` ready for the normal job
+            pipeline, or ``None`` when the parent is gone / not running /
+            malformed — the child must then cancel itself without spending.
+        """
+        try:
+            parent = self._job_store.get_job(parent_optimization_id)
+        except KeyError:
+            return None
+        except Exception:
+            logger.exception("Pair child of %s: failed to load parent", parent_optimization_id)
+            return None
+        if parent.get("status") != "running":
+            return None
+        parent_payload = parent.get("payload")
+        if not isinstance(parent_payload, dict):
+            return None
+        raw_gens = parent_payload.get("generation_models") or []
+        raw_refs = parent_payload.get("reflection_models") or []
+        total = len(raw_gens) * len(raw_refs)
+        if not raw_refs or not 0 <= pair_index < total:
+            return None
+        child_dict = dict(parent_payload)
+        child_dict["generation_models"] = [raw_gens[pair_index // len(raw_refs)]]
+        child_dict["reflection_models"] = [raw_refs[pair_index % len(raw_refs)]]
+        # Consumed by the spawn wiring in _process_job; pydantic ignores it.
+        child_dict["_parent_total_pairs"] = total
+        try:
+            return child_dict, GridSearchRequest.model_validate(child_dict)
+        except Exception:
+            logger.exception("Pair child of %s: derived payload failed validation", parent_optimization_id)
+            return None
+
+    def _pair_progress_rewrite(self, parent_optimization_id: str) -> Any:
+        """Build the progress-metric corrector for one pair child's events.
+
+        A pair child's single-pair view reports ``completed_so_far=1`` /
+        ``failed_so_far=0-or-1``; the dashboard needs grid-wide counters, so
+        the pair-terminal events get them recomputed from sibling statuses
+        (plus this event's own outcome — the emitting child is not terminal
+        in the DB yet). Only the two pair-terminal events are touched.
+
+        Args:
+            parent_optimization_id: The grid parent whose siblings are counted.
+
+        Returns:
+            A ``(event_name, metrics) -> metrics`` callable for the drain.
+        """
+
+        def rewrite(event_name: Any, metrics: dict[str, Any]) -> dict[str, Any]:
+            """Patch grid-wide counters onto pair-terminal events."""
+            if event_name not in (PROGRESS_GRID_PAIR_COMPLETED, PROGRESS_GRID_PAIR_FAILED):
+                return metrics
+            try:
+                siblings = self._job_store.get_grid_pair_children(parent_optimization_id)
+            except Exception:
+                return metrics
+            done_ok = sum(1 for s in siblings if s.get("status") == "success")
+            done_bad = sum(1 for s in siblings if s.get("status") in ("failed", "cancelled"))
+            if event_name == PROGRESS_GRID_PAIR_COMPLETED:
+                done_ok += 1
+            else:
+                done_bad += 1
+            return {**metrics, "completed_so_far": done_ok, "failed_so_far": done_bad}
+
+        return rewrite
+
+    def _record_pair_outcome(self, parent_optimization_id: str, result_dict: dict[str, Any]) -> None:
+        """Durably record a pair child's outcome onto its parent grid.
+
+        Stores the child's single ``PairResult`` (success OR soft-failure —
+        both carry the global ``pair_index``) plus the grid envelope (split
+        counts, metric/module names) the finalizer needs. Runs BEFORE the
+        child's terminal status write so a crash between the two can only
+        lose the status (the sweeper re-runs the child), never the result.
+
+        Args:
+            parent_optimization_id: The grid parent to record onto.
+            result_dict: The child's serialized 1-pair ``GridSearchResponse``.
+        """
+        try:
+            pair_rows = result_dict.get("pair_results") or []
+            pair_row = pair_rows[0] if pair_rows and isinstance(pair_rows[0], dict) else None
+            if pair_row is None:
+                return
+            self._job_store.save_grid_pair_result(
+                parent_optimization_id, int(pair_row.get("pair_index") or 0), pair_row
+            )
+            self._job_store.save_grid_pair_result(
+                parent_optimization_id,
+                GRID_ENVELOPE_PAIR_INDEX,
+                {
+                    "split_counts": result_dict.get("split_counts"),
+                    "metric_name": result_dict.get("metric_name"),
+                    "module_name": result_dict.get("module_name"),
+                    "optimizer_name": result_dict.get("optimizer_name"),
+                },
+            )
+        except Exception:
+            logger.exception("Pair child of %s: failed to record pair outcome", parent_optimization_id)
+
+    def _maybe_finalize_grid(self, parent_optimization_id: str) -> None:
+        """Assemble and complete a distributed grid once every pair is terminal.
+
+        Runs after every pair child's terminal transition (and from the
+        stuck-grid backstop). No-ops unless ALL siblings are terminal and the
+        parent is still ``running``. The terminal write is CAS-guarded against
+        ``running`` so two racing finalizers (or a finalize racing a cancel)
+        produce exactly one outcome, and the notification + credit debit ride
+        the same once-only completion claim as a classic job.
+        """
+        store = self._job_store
+        if not hasattr(store, "get_grid_pair_children"):
+            return
+        try:
+            children = store.get_grid_pair_children(parent_optimization_id)
+            if not children:
+                return
+            if any(c.get("status") not in _PAIR_TERMINAL_STATUSES for c in children):
+                return
+            parent = store.get_job(parent_optimization_id)
+        except KeyError:
+            return
+        except Exception:
+            logger.exception("Grid %s: finalize pre-check failed", parent_optimization_id)
+            return
+        if parent.get("status") != "running":
+            return
+
+        try:
+            result_dict, final_status, final_message = self._assemble_grid_result(parent, children)
+        except Exception:
+            logger.exception("Grid %s: result assembly failed", parent_optimization_id)
+            result_dict = None
+            final_status = "failed"
+            final_message = "Grid finalization failed; see worker logs"
+
+        completion_fields: dict[str, Any] = {
+            "status": final_status,
+            "message": final_message,
+            "completed_at": datetime.now(UTC).isoformat(),
+            "result": result_dict,
+        }
+        cas = getattr(store, "update_job_if_status", None)
+        if cas is not None:
+            if not cas(parent_optimization_id, ("running",), **completion_fields):
+                return
+        else:
+            store.update_job(parent_optimization_id, **completion_fields)
+        logger.info("Grid %s finalized: status=%s", parent_optimization_id, final_status)
+        # NOTE: unlike the in-child grid path, the parent's stored pair
+        # results are KEPT after success — they are the durable per-pair
+        # archive that seeds targeted re-runs and resumes.
+
+        overview = parent.get("payload_overview", {})
+        if isinstance(overview, str):
+            with contextlib.suppress(Exception):
+                overview = json.loads(overview)
+        if not isinstance(overview, dict):
+            overview = {}
+        _username = overview.get(PAYLOAD_OVERVIEW_USERNAME, "")
+        if store.claim_completion_notification(parent_optimization_id):
+            notify_job_completed(
+                optimization_id=parent_optimization_id,
+                username=_username,
+                status=final_status,
+                message=final_message,
+            )
+            self._record_run_outcome(parent_optimization_id, _username, final_status, overview)
+            if final_status == "success" and isinstance(result_dict, dict):
+                billed = self._debit_run_credits(
+                    _username,
+                    result_dict,
+                    run_name=overview.get(PAYLOAD_OVERVIEW_NAME) or "",
+                    model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
+                    token_source=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED,
+                    token_sources_by_model=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL),
+                )
+                self._stamp_billing_outcome(
+                    parent_optimization_id,
+                    result_dict,
+                    billed=billed,
+                    estimated_low=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_LOW),
+                    estimated_high=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_HIGH),
+                )
+        if final_status == "success":
+            self._schedule_embedding_indexing(parent_optimization_id)
+
+    def _assemble_grid_result(
+        self, parent: dict[str, Any], children: list[dict[str, Any]]
+    ) -> tuple[dict[str, Any], str, str]:
+        """Rebuild the parent ``GridSearchResponse`` from stored pair outcomes.
+
+        Mirrors the tail of ``run_grid_search``: stored ``PairResult`` rows are
+        taken verbatim; a child that died without recording one (hard crash,
+        cancel, attempts exhausted) synthesizes an errored pair from its row so
+        every index is accounted for — a grid can complete with missing pairs
+        only as explicit failures, never silently.
+
+        Args:
+            parent: The parent ``JobRecord`` (payload included).
+            children: The terminal pair-child rows.
+
+        Returns:
+            ``(result_dict, final_status, final_message)`` for the parent's
+            terminal write.
+        """
+        store = self._job_store
+        parent_id = str(parent.get("optimization_id"))
+        payload = parent.get("payload") if isinstance(parent.get("payload"), dict) else {}
+        raw_gens = payload.get("generation_models") or []
+        raw_refs = payload.get("reflection_models") or []
+        total = len(raw_gens) * len(raw_refs) if raw_gens and raw_refs else len(children)
+
+        stored = dict(store.get_grid_pair_results(parent_id))
+        envelope = stored.pop(GRID_ENVELOPE_PAIR_INDEX, None) or {}
+        children_by_index = {int(c.get("pair_index") or 0): c for c in children}
+
+        pair_results: list[PairResult] = []
+        for k in range(total):
+            raw = stored.get(k)
+            if isinstance(raw, dict):
+                pair_results.append(PairResult.model_validate(raw))
+                continue
+            gen_name = ""
+            ref_name = ""
+            if raw_refs:
+                gen_raw = raw_gens[k // len(raw_refs)] if k // len(raw_refs) < len(raw_gens) else {}
+                ref_raw = raw_refs[k % len(raw_refs)]
+                gen_name = str(gen_raw.get("name") or "") if isinstance(gen_raw, dict) else ""
+                ref_name = str(ref_raw.get("name") or "") if isinstance(ref_raw, dict) else ""
+            child = children_by_index.get(k, {})
+            if child.get("status") == "cancelled":
+                error = "Pair cancelled"
+            else:
+                error = str(child.get("message") or "Pair failed without a recorded result")
+            pair_results.append(
+                PairResult(pair_index=k, generation_model=gen_name, reflection_model=ref_name, error=error)
+            )
+
+        successful = [p for p in pair_results if p.error is None and p.optimized_test_metric is not None]
+        best_pair = (
+            max(
+                successful,
+                key=lambda p: p.optimized_test_metric if p.optimized_test_metric is not None else float("-inf"),
+            )
+            if successful
+            else None
+        )
+        completed_count = len([p for p in pair_results if p.error is None])
+        failed_count = len([p for p in pair_results if p.error is not None])
+        pair_token_counts = [p.total_tokens for p in pair_results if p.total_tokens is not None]
+        runtime_seconds: float | None = None
+        started_raw = parent.get("started_at")
+        if isinstance(started_raw, str):
+            with contextlib.suppress(ValueError):
+                started = datetime.fromisoformat(started_raw)
+                # SQLite round-trips naive timestamps; the rows are UTC either way.
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=UTC)
+                runtime_seconds = round((datetime.now(UTC) - started).total_seconds(), 2)
+        split_raw = envelope.get("split_counts")
+        split_counts = (
+            SplitCounts.model_validate(split_raw)
+            if isinstance(split_raw, dict)
+            else SplitCounts(train=0, val=0, test=0)
+        )
+        response = GridSearchResponse(
+            module_name=str(envelope.get("module_name") or payload.get("module_name") or ""),
+            optimizer_name=str(envelope.get("optimizer_name") or payload.get("optimizer_name") or ""),
+            metric_name=envelope.get("metric_name"),
+            split_counts=split_counts,
+            total_pairs=total,
+            completed_pairs=completed_count,
+            failed_pairs=failed_count,
+            pair_results=pair_results,
+            best_pair=best_pair,
+            runtime_seconds=runtime_seconds,
+            total_tokens=sum(pair_token_counts) if pair_token_counts else None,
+            usage_by_model=_merge_usage_rows([row for p in pair_results for row in p.usage_by_model]),
+        )
+
+        final_status = "success"
+        final_message = "Optimization completed successfully"
+        if completed_count == 0 and total > 0:
+            final_status = "failed"
+            final_message = f"All {total} model pairs failed"
+            first_error = next((p.error for p in pair_results if p.error), None)
+            if first_error:
+                final_message = f"{final_message}: {first_error}"
+        return response.model_dump(mode="json"), final_status, final_message
+
+    def _finalize_stuck_grids(self) -> None:
+        """Backstop: finalize grids whose last pair finisher died mid-handoff.
+
+        The normal finalizer is the last pair child to reach a terminal
+        status; if that pod crashed between the child's status write and the
+        parent assembly, the grid would sit at ``running`` with nothing left
+        to run. Idle workers sweep for exactly that shape and finish the job.
+        """
+        lister = getattr(self._job_store, "list_finalizable_grid_parents", None)
+        if lister is None:
+            return
+        try:
+            parents = lister()
+        except Exception:
+            logger.exception("Stuck-grid sweep failed")
+            return
+        for parent_id in parents:
+            with contextlib.suppress(Exception):
+                self._maybe_finalize_grid(parent_id)
 
     def seconds_since_last_activity(self) -> float | None:
         """Return seconds since the most recent worker activity, or ``None`` if none recorded yet.

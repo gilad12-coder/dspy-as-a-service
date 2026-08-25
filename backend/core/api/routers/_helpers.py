@@ -7,6 +7,7 @@ router. Kept under a leading underscore to signal "package-internal".
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -19,6 +20,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from ...billing import StripeBillingService
+from ...billing.metering import meter_llm_run
 from ...config import settings
 from ...constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
@@ -33,8 +36,11 @@ from ...constants import (
     PAYLOAD_OVERVIEW_SHUFFLE,
     PAYLOAD_OVERVIEW_SIGNATURE_CODE,
     PAYLOAD_OVERVIEW_SPLIT_FRACTIONS,
-    PAYLOAD_OVERVIEW_TASK_FINGERPRINT,
+    PAYLOAD_OVERVIEW_TOOL_SOURCE,
+    PAYLOAD_OVERVIEW_WORKFLOW,
+    TOKEN_SOURCE_MANAGED,
 )
+from ...exceptions import ServiceError
 from ...models import (
     GridSearchResponse,
     OptimizationStatus,
@@ -43,7 +49,9 @@ from ...models import (
     ProgramArtifact,
     ReactOverlay,
     RunResponse,
+    WorkflowSpec,
 )
+from ...models.serve import WorkflowNodeTrace
 from ...registry import ResolverError, resolve_module_factory
 from ...service_gateway.optimization.data import load_signature_from_code
 from ...service_gateway.optimization.retrying_react import RetryingReActV2
@@ -56,6 +64,7 @@ from ...service_gateway.optimization.tool_overlay import (
 from ...service_gateway.optimization.training_ground.run_react import (
     resolve_react_tools,
 )
+from ...service_gateway.optimization.workflow import build_workflow_program, workflow_tool_users
 from ..auth import AuthenticatedUser, is_admin
 from ..converters import (
     compute_elapsed,
@@ -67,6 +76,7 @@ from ..converters import (
     status_to_job_status,
 )
 from ..errors import DomainError
+from ..response_limits import AGENT_MAX_TEXT, truncate_text
 from ..sharing_access import (
     MEMBER_ROLES,
     ShareRole,
@@ -77,6 +87,9 @@ from ..sharing_access import (
 from .constants import TERMINAL_STATUSES
 
 logger = logging.getLogger(__name__)
+
+_USER_FACING_OPTIMIZATION_TYPES = frozenset({OPTIMIZATION_TYPE_RUN, OPTIMIZATION_TYPE_GRID_SEARCH})
+
 
 class _BoundedProgramCache(OrderedDict[str, Any]):
     """OrderedDict-backed LRU for deserialized DSPy programs.
@@ -147,6 +160,85 @@ def clear_program_cache() -> None:
     _program_cache.clear()
 
 
+def enforce_llm_credits(job_store, username: str) -> None:
+    """Refuse an interactive LLM turn for an account with no spendable credits.
+
+    The turn-surface twin of the submit gate: agent chats, interview turns and
+    tagging predictions spend managed tokens, so a depleted account is stopped
+    before the LLM call rather than billed into the negative. The free grant
+    means a brand-new account always passes. A store with no SQL engine
+    (legacy/in-memory) skips the gate, matching the submit path.
+
+    Args:
+        job_store: Job-store instance whose ORM engine backs the billing tables.
+        username: Account attempting the turn.
+
+    Raises:
+        DomainError: 402 when the account has no spendable credits.
+    """
+    engine = getattr(job_store, "engine", None)
+    if engine is None or not username:
+        return
+    if StripeBillingService(engine=engine).spendable_credits(username) > 0:
+        return
+    raise DomainError("billing.insufficient_credits", status=402)
+
+
+async def stream_with_llm_metering(
+    source: AsyncIterable[dict[str, Any]],
+    *,
+    job_store,
+    username: str,
+    description: str,
+    usage_sink: list,
+    token_source: str = TOKEN_SOURCE_MANAGED,
+) -> AsyncIterator[dict[str, Any]]:
+    """Mirror SSE events and meter the turn's LLM usage when the stream ends.
+
+    Wraps a turn's event stream; on teardown — normal completion, error, or
+    the client dropping the SSE connection mid-turn — it debits and
+    Stripe-meters whatever usage the LMs in ``usage_sink`` accumulated. The
+    sink is harvested in ``finally`` (not on the ``done`` event) because the
+    frontend routinely tears streams down early, and a ``MeteredLM``'s running
+    totals are current at any point. The synchronous billing write is
+    offloaded to a worker thread, mirroring the persistence wrapper.
+
+    Args:
+        source: Upstream async event stream for one turn.
+        job_store: Job-store whose engine backs the billing tables; a store
+            without an engine streams unmetered.
+        username: Account the turn is billed to.
+        description: Ledger-row label for the charge (e.g. ``"Agent chat"``).
+        usage_sink: List the run function appends its ``MeteredLM``(s) to.
+        token_source: Billing source for this interactive model call.
+
+    Yields:
+        The upstream events, unchanged.
+    """
+    try:
+        async for event in source:
+            yield event
+    finally:
+        engine = getattr(job_store, "engine", None)
+        if engine is not None and usage_sink:
+            try:
+                await asyncio.to_thread(
+                    meter_llm_run,
+                    engine,
+                    username,
+                    list(usage_sink),
+                    description=description,
+                    token_source=token_source,
+                )
+            except Exception:
+                logger.exception("LLM turn metering failed for %s", username)
+
+
+# Idle gap after which the SSE serializer emits a comment line to keep the
+# connection alive through proxy/LB idle timeouts (commonly 30-60s).
+SSE_KEEPALIVE_SECONDS = 15.0
+
+
 async def sse_from_events(
     source: AsyncIterable[dict[str, Any]],
 ) -> AsyncIterator[str]:
@@ -158,16 +250,39 @@ async def sse_from_events(
     ``"event: <name>\\ndata: <json>\\n\\n"``. Centralising it here lets
     route handlers stay free of nested ``event_generator`` closures.
 
+    A ``: keep-alive`` comment is emitted whenever the source stays quiet for
+    ``SSE_KEEPALIVE_SECONDS`` — a model with a long time-to-first-token
+    otherwise leaves the connection idle long enough for an intermediary
+    (ingress/LB idle timeout) to silently drop it mid-turn.
+
     Args:
         source: Async iterable yielding ``{"event": str, "data": dict}`` mappings.
 
     Yields:
         SSE-formatted strings ready for ``StreamingResponse``.
     """
-    async for event in source:
-        name = event["event"]
-        payload = json.dumps(event["data"], ensure_ascii=False, default=str)
-        yield f"event: {name}\ndata: {payload}\n\n"
+    iterator = aiter(source)
+    next_event: asyncio.Task | None = None
+    try:
+        while True:
+            if next_event is None:
+                next_event = asyncio.ensure_future(anext(iterator))
+            done, _ = await asyncio.wait({next_event}, timeout=SSE_KEEPALIVE_SECONDS)
+            if not done:
+                yield ": keep-alive\n\n"
+                continue
+            try:
+                event = next_event.result()
+            except StopAsyncIteration:
+                next_event = None
+                return
+            next_event = None
+            name = event["event"]
+            payload = json.dumps(event["data"], ensure_ascii=False, default=str)
+            yield f"event: {name}\ndata: {payload}\n\n"
+    finally:
+        if next_event is not None:
+            next_event.cancel()
 
 
 def strip_api_key(d: dict) -> dict:
@@ -216,8 +331,8 @@ def compute_task_fingerprint(
     """Return a stable SHA256 fingerprint identifying the ML task.
 
     Two jobs share a fingerprint iff their signature source, metric source,
-    and dataset content are byte-identical. Used by the frontend to gate
-    apples-to-apples run comparisons.
+    and dataset content are byte-identical. The stable identity makes default
+    data splits repeatable across submissions and retries.
 
     Args:
         signature_code: Source code of the user's DSPy signature.
@@ -231,41 +346,6 @@ def compute_task_fingerprint(
     dataset_hash = hashlib.sha256(dataset_blob.encode("utf-8")).hexdigest()
     task_blob = f"{signature_code}\x00{metric_code}\x00{dataset_hash}"
     return hashlib.sha256(task_blob.encode("utf-8")).hexdigest()
-
-
-def compute_compare_fingerprint(optimization_id: str, overview: dict[str, Any]) -> str | None:
-    """Return a fingerprint identifying compareability (same task + same split).
-
-    Two jobs share a ``compare_fingerprint`` iff they share a ``task_fingerprint``
-    AND evaluate on byte-identical train/val/test splits. ``task_fingerprint``
-    alone only proves the signature/metric/dataset match; jobs with mismatching
-    seeds, shuffle flags, or split fractions land on different test rows and
-    must not be compared row-by-row.
-
-    The effective seed mirrors the fallback in ``/dataset`` and ``/test-results``:
-    use the stored seed when present, otherwise derive ``stable_seed(optimization_id)``
-    — the same value those endpoints used to compute the actual split.
-
-    Args:
-        optimization_id: Optimization id; used as the seed fallback.
-        overview: Parsed ``payload_overview`` dict for the job.
-
-    Returns:
-        A hex-encoded SHA256 digest, or ``None`` when the base ``task_fingerprint``
-        is missing (legacy job; can't be compared either way).
-    """
-    task_fp = overview.get(PAYLOAD_OVERVIEW_TASK_FINGERPRINT)
-    if not isinstance(task_fp, str) or not task_fp:
-        return None
-    stored_seed = overview.get(PAYLOAD_OVERVIEW_SEED)
-    effective_seed = stored_seed if stored_seed is not None else stable_seed(optimization_id)
-    shuffle = overview.get(PAYLOAD_OVERVIEW_SHUFFLE, True)
-    fractions = overview.get(PAYLOAD_OVERVIEW_SPLIT_FRACTIONS) or {}
-    if hasattr(fractions, "model_dump"):
-        fractions = fractions.model_dump()
-    fractions_blob = json.dumps(fractions, sort_keys=True, separators=(",", ":"))
-    blob = f"{task_fp}\x00{effective_seed}\x00{bool(shuffle)}\x00{fractions_blob}"
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _grant_role(job_store, optimization_id: str, username: str) -> ShareRole | None:
@@ -299,6 +379,8 @@ def load_job_with_role(
     job_store,
     optimization_id: str,
     user: AuthenticatedUser,
+    *,
+    include_payload: bool = True,
 ) -> tuple[dict[str, Any], ShareRole]:
     """Load a job row and resolve the caller's effective role on it.
 
@@ -311,6 +393,9 @@ def load_job_with_role(
         job_store: Job-store the row is read from.
         optimization_id: Optimization id to load.
         user: Authenticated caller.
+        include_payload: When ``False``, the row's ``payload`` JSONB is never
+            materialized — the status-poll endpoint passes ``False`` because
+            its response carries no raw payload.
 
     Returns:
         ``(job_row, effective_role)`` where ``effective_role`` is
@@ -320,9 +405,20 @@ def load_job_with_role(
         DomainError: 404 when the id is unknown or the caller has no access.
     """
     try:
-        job_data = job_store.get_job(optimization_id)
+        # Narrow through get_job_no_payload so store doubles that predate the
+        # kwarg fall back to the full read instead of a TypeError.
+        if include_payload:
+            job_data = job_store.get_job(optimization_id)
+        else:
+            job_data = get_job_no_payload(job_store, optimization_id)
     except KeyError:
         raise DomainError("optimization.not_found", status=404, optimization_id=optimization_id) from None
+    overview = parse_overview(job_data)
+    optimization_type = (
+        overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE) or job_data.get("optimization_type") or OPTIMIZATION_TYPE_RUN
+    )
+    if optimization_type not in _USER_FACING_OPTIMIZATION_TYPES:
+        raise DomainError("optimization.not_found", status=404, optimization_id=optimization_id)
     if is_admin(user):
         return job_data, ShareRole.owner
     owner = job_owner(job_data)
@@ -399,9 +495,7 @@ def require_role_at_least(
     return job_data, role
 
 
-def grant_roles_for(
-    job_store, optimization_ids: list[str], username: str
-) -> dict[str, str]:
+def grant_roles_for(job_store, optimization_ids: list[str], username: str) -> dict[str, str]:
     """Batch-resolve the caller's grant roles across many optimizations.
 
     One query for the whole id set (see :func:`list_grants_for_user`); stores
@@ -420,6 +514,29 @@ def grant_roles_for(
         return {}
     with Session(engine) as session:
         return list_grants_for_user(session, optimization_ids, username)
+
+
+def get_job_no_payload(job_store, optimization_id: str) -> dict[str, Any]:
+    """Read a job row without materializing its payload when the store can.
+
+    Bulk ownership/metadata paths only read the overview and owner, so the
+    (potentially multi-MB) payload JSONB is skipped on stores that support the
+    narrowing kwarg; older store doubles fall back to the full read.
+
+    Args:
+        job_store: Job-store to read from.
+        optimization_id: Row to fetch.
+
+    Returns:
+        The job row (``payload`` reported as ``None`` when deferred).
+
+    Raises:
+        KeyError: When the job does not exist.
+    """
+    try:
+        return job_store.get_job(optimization_id, include_payload=False)
+    except TypeError:
+        return job_store.get_job(optimization_id)
 
 
 def filter_ids_at_least(
@@ -453,7 +570,7 @@ def filter_ids_at_least(
     denied: list[str] = []
     for oid in optimization_ids:
         try:
-            job_data = job_store.get_job(oid)
+            job_data = get_job_no_payload(job_store, oid)
         except KeyError:
             denied.append(oid)
             continue
@@ -544,21 +661,61 @@ def is_resumable(job_store: Any, job_data: dict) -> bool:
     Returns:
         ``True`` when the run should offer Resume rather than Restart.
     """
-    status = status_to_job_status(job_data.get("status", "pending"))
-    if status not in {OptimizationStatus.failed, OptimizationStatus.cancelled, OptimizationStatus.paused}:
-        return False
-    # A grid is resumed per pair (in its results), not via a whole-job button, so
-    # the top-level flag stays False for grids — see ``grid_resumable_pairs``.
-    if parse_overview(job_data).get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE) == OPTIMIZATION_TYPE_GRID_SEARCH:
-        return False
-    # A manual pause is user-driven, not failure recovery, so it is exempt from the
-    # attempt cap; only failed/cancelled (auto-recovery) runs are bounded by it.
-    if status != OptimizationStatus.paused and int(job_data.get("attempts") or 0) >= settings.job_max_attempts:
-        return False
-    optimization_id = job_data.get("optimization_id")
+    optimization_id = _resume_candidate_id(job_data)
     if not optimization_id:
         return False
     return _has_resumable_state(job_store, optimization_id)
+
+
+def _resume_candidate_id(job_data: dict) -> str | None:
+    """Apply the cheap (no-query) resume gates and return the job id when they pass.
+
+    Shared by :func:`is_resumable` (per-row) and :func:`resumable_id_flags`
+    (batched) so both paths gate identically before the checkpoint lookup.
+
+    Args:
+        job_data: Raw job row from the store.
+
+    Returns:
+        The optimization id when the row is a resume candidate, else ``None``.
+    """
+    status = status_to_job_status(job_data.get("status", "pending"))
+    if status not in {OptimizationStatus.failed, OptimizationStatus.cancelled, OptimizationStatus.paused}:
+        return None
+    # A grid is resumed per pair (in its results), not via a whole-job button, so
+    # the top-level flag stays False for grids — see ``grid_resumable_pairs``.
+    if parse_overview(job_data).get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE) == OPTIMIZATION_TYPE_GRID_SEARCH:
+        return None
+    # A manual pause is user-driven, not failure recovery, so it is exempt from the
+    # attempt cap; only failed/cancelled (auto-recovery) runs are bounded by it.
+    if status != OptimizationStatus.paused and int(job_data.get("attempts") or 0) >= settings.job_max_attempts:
+        return None
+    return job_data.get("optimization_id") or None
+
+
+def resumable_id_flags(job_store: Any, rows: list[dict]) -> set[str]:
+    """Return the ids in ``rows`` whose runs can offer Resume, in one batch.
+
+    The batched counterpart of :func:`is_resumable` for list pages: the cheap
+    gates run in Python, then a single ``IN (...)`` existence query covers all
+    candidates instead of one probe per row (up to page-size round trips).
+    Stores without the batch method fall back to the per-row probe with
+    identical results.
+
+    Args:
+        job_store: The job store used to test for saved checkpoints.
+        rows: Raw job rows from the store.
+
+    Returns:
+        The set of resumable optimization ids.
+    """
+    candidates = [oid for row in rows if (oid := _resume_candidate_id(row))]
+    if not candidates:
+        return set()
+    batch = getattr(job_store, "resumable_state_ids", None)
+    if callable(batch):
+        return set(batch(candidates))
+    return {oid for oid in candidates if _has_resumable_state(job_store, oid)}
 
 
 def is_pausable(job_store: Any, job_data: dict) -> bool:
@@ -694,9 +851,8 @@ def build_summary(job_data: dict) -> OptimizationSummaryResponse:
         created_at, started_at, completed_at, job_data.get("accumulated_runtime_seconds") or 0.0
     )
 
-    optimization_id = job_data["optimization_id"]
     return OptimizationSummaryResponse(
-        optimization_id=optimization_id,
+        optimization_id=job_data["optimization_id"],
         status=job_status,
         message=job_data.get("message"),
         created_at=created_at,
@@ -706,7 +862,6 @@ def build_summary(job_data: dict) -> OptimizationSummaryResponse:
         elapsed_seconds=elapsed_secs,
         estimated_remaining=est_remaining,
         **overview_to_base_fields(overview),
-        compare_fingerprint=compute_compare_fingerprint(optimization_id, overview),
         split_fractions=overview.get(PAYLOAD_OVERVIEW_SPLIT_FRACTIONS),
         shuffle=overview.get(PAYLOAD_OVERVIEW_SHUFFLE),
         seed=overview.get(PAYLOAD_OVERVIEW_SEED),
@@ -764,6 +919,10 @@ def _materialize_program(artifact: ProgramArtifact, overview: dict) -> Any:
             ``signature_code`` is missing from the overview for a JSON
             artifact, or when module reconstruction fails.
     """
+    workflow_spec = workflow_spec_from_overview(overview)
+    if workflow_spec is not None:
+        return _materialize_workflow_program(artifact, overview, workflow_spec)
+
     if artifact.react_overlay is not None:
         return _materialize_react_program(artifact, overview)
 
@@ -783,9 +942,7 @@ def _materialize_program(artifact: ProgramArtifact, overview: dict) -> Any:
             signature_cls = load_signature_from_code(signature_code)
             module_factory, auto_signature = resolve_module_factory(module_name)
         except ResolverError as exc:
-            raise DomainError(
-                "optimization.module_reconstruction_failed", status=409, error=str(exc)
-            ) from exc
+            raise DomainError("optimization.module_reconstruction_failed", status=409, error=str(exc)) from exc
 
         if auto_signature or "signature" not in module_kwargs:
             module_kwargs["signature"] = signature_cls
@@ -794,6 +951,115 @@ def _materialize_program(artifact: ProgramArtifact, overview: dict) -> Any:
         return program
 
     return _legacy_pickle_load(artifact.program_pickle_base64)
+
+
+def workflow_spec_from_overview(overview: dict) -> WorkflowSpec | None:
+    """Parse the persisted workflow spec off a payload overview, if any.
+
+    Args:
+        overview: Parsed payload-overview dict from the job row.
+
+    Returns:
+        The parsed ``WorkflowSpec``, or ``None`` for non-workflow runs.
+    """
+    payload = overview.get(PAYLOAD_OVERVIEW_WORKFLOW)
+    if not payload:
+        return None
+    return WorkflowSpec.model_validate(payload)
+
+
+def sanitize_node_traces(raw_traces: list[dict[str, Any]]) -> list[WorkflowNodeTrace]:
+    """Convert raw workflow trace dicts into response-safe trace models.
+
+    Node port values are arbitrary Python objects produced by user code;
+    anything that is not JSON-native is stringified so the response always
+    serializes, and long strings are capped like serve outputs.
+
+    Args:
+        raw_traces: Trace dicts collected by ``capture_node_traces``.
+
+    Returns:
+        Response-ready ``WorkflowNodeTrace`` models in execution order.
+    """
+    return [
+        WorkflowNodeTrace(
+            node_id=trace["node_id"],
+            kind=trace["kind"],
+            name=trace["name"],
+            inputs=sanitize_port_values(trace.get("inputs") or {}),
+            outputs=sanitize_port_values(trace["outputs"]) if trace.get("outputs") is not None else None,
+            elapsed_ms=trace.get("elapsed_ms", 0.0),
+            error=trace.get("error"),
+        )
+        for trace in raw_traces
+    ]
+
+
+def sanitize_port_values(values: dict[str, Any]) -> dict[str, Any]:
+    """Make one trace value dict JSON-safe and size-capped.
+
+    Args:
+        values: Raw port-name to value mapping from a node trace.
+
+    Returns:
+        A new dict with non-JSON-native values stringified and long
+        strings truncated.
+    """
+    sanitized: dict[str, Any] = {}
+    for key, value in values.items():
+        if isinstance(value, str):
+            sanitized[key] = truncate_text(value, AGENT_MAX_TEXT)
+        elif value is None or isinstance(value, (bool, int, float)):
+            sanitized[key] = value
+        else:
+            sanitized[key] = truncate_text(str(value), AGENT_MAX_TEXT)
+    return sanitized
+
+
+def _materialize_workflow_program(artifact: ProgramArtifact, overview: dict, workflow_spec: WorkflowSpec) -> Any:
+    """Rebuild a served workflow program from its spec and state JSON.
+
+    The shell is reconstructed with the same deterministic builder the run
+    path used, so the saved per-node predictor state keys line up 1:1.
+    Tool-using graphs re-source their roster from the overview's scrubbed
+    ``tool_source``; a ``dataset_snapshot`` source cannot be re-sourced
+    without the original dataset and is rejected until snapshot specs are
+    persisted for workflows.
+
+    Args:
+        artifact: The artifact carrying ``program_state_json``.
+        overview: Parsed payload-overview dict.
+        workflow_spec: The workflow spec parsed from the overview.
+
+    Returns:
+        A live ``WorkflowProgram`` ready for inference.
+
+    Raises:
+        DomainError: 409 when the artifact lacks state JSON, the graph needs
+            tools it cannot re-source, or reconstruction fails.
+    """
+    if artifact.program_state_json is None:
+        raise DomainError("optimization.no_program_artifact_scoped", status=409)
+    tool_source = overview.get(PAYLOAD_OVERVIEW_TOOL_SOURCE)
+    if workflow_tool_users(workflow_spec):
+        if not tool_source:
+            raise DomainError(
+                "optimization.module_reconstruction_failed",
+                status=409,
+                error="workflow uses tools but no tool_source was persisted.",
+            )
+        if tool_source.get("kind") == "dataset_snapshot":
+            raise DomainError(
+                "optimization.module_reconstruction_failed",
+                status=409,
+                error="serving a workflow with dataset_snapshot tools is not supported yet.",
+            )
+    try:
+        program, _schema_hashes = build_workflow_program(workflow_spec, tool_source=tool_source)
+    except (ServiceError, ValueError) as exc:
+        raise DomainError("optimization.module_reconstruction_failed", status=409, error=str(exc)) from exc
+    program.load_state(artifact.program_state_json)
+    return program
 
 
 def _materialize_react_program(artifact: ProgramArtifact, overview: dict) -> Any:
@@ -830,13 +1096,9 @@ def _materialize_react_program(artifact: ProgramArtifact, overview: dict) -> Any
         # and is intentionally never persisted on the overlay (see
         # _persist_react_program), so serve falls back to the settings-default
         # URL with no header rather than replaying a stored credential.
-        tools, _live_hashes = resolve_react_tools(
-            react_overlay.tool_source, signature_cls, settings
-        )
+        tools, _live_hashes = resolve_react_tools(react_overlay.tool_source, signature_cls, settings)
     except (ResolverError, ValueError) as exc:
-        raise DomainError(
-            "optimization.module_reconstruction_failed", status=409, error=str(exc)
-        ) from exc
+        raise DomainError("optimization.module_reconstruction_failed", status=409, error=str(exc)) from exc
 
     try:
         # Strict: a served run must materialise against the exact tool surface
@@ -845,9 +1107,7 @@ def _materialize_react_program(artifact: ProgramArtifact, overview: dict) -> Any
         # surfaces gate identically.
         _assert_tool_set_matches(react_overlay.tool_schema_hashes, tools, strict=True)
     except ToolSchemaDriftError as exc:
-        raise DomainError(
-            "optimization.tool_schema_drift", status=409, error=str(exc)
-        ) from exc
+        raise DomainError("optimization.tool_schema_drift", status=409, error=str(exc)) from exc
 
     _apply_bundle_tool_overrides(
         tools,
@@ -858,9 +1118,7 @@ def _materialize_react_program(artifact: ProgramArtifact, overview: dict) -> Any
     # above key on the original names). None preserves pre-rename behavior.
     _apply_tool_name_overrides(tools, react_overlay.tool_names)
 
-    program = RetryingReActV2(
-        signature_cls, tools=tools, max_iters=react_overlay.max_iters
-    )
+    program = RetryingReActV2(signature_cls, tools=tools, max_iters=react_overlay.max_iters)
     program.load_state(artifact.program_state_json)
     return program
 

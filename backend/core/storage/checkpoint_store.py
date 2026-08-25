@@ -8,7 +8,7 @@ iteration with no budget double-spend, instead of restarting from scratch.
 
 Both seams are keyed by ``(optimization_id, pair_index)``: a single run uses the
 sentinel ``pair_index = -1``; a grid search runs one GEPA optimization per model
-pair, so it keeps a checkpoint per in-flight pair plus a :class:`GridPairResult`
+pair, so it keeps a checkpoint per in-flight pair plus a stored pair result
 for each pair that already finished — a resumed grid keeps the finished pairs and
 re-runs only the rest. The bytes go through these stores — mirroring the
 dataset-library blob seam — so they can later move behind an object store without
@@ -39,16 +39,6 @@ class GepaCheckpoint:
     pair_index: int
     iteration: int
     data: bytes
-    stored_bytes: int
-
-
-@dataclass(frozen=True)
-class GridPairResult:
-    """One completed grid pair's serialized :class:`PairResult` and its size."""
-
-    optimization_id: str
-    pair_index: int
-    result: dict[str, Any]
     stored_bytes: int
 
 
@@ -172,6 +162,29 @@ class PostgresCheckpointBlobStore:
             )
             return row is not None
 
+    def has_any_batch(self, optimization_ids: list[str]) -> set[str]:
+        """Return the subset of ids that have at least one saved checkpoint.
+
+        One ``IN (...)`` round trip replaces a per-row :meth:`has_any` probe
+        on list pages.
+
+        Args:
+            optimization_ids: Job ids to test.
+
+        Returns:
+            The ids with at least one checkpoint row.
+        """
+        if not optimization_ids:
+            return set()
+        with Session(self._engine) as session:
+            rows = (
+                session.query(GepaCheckpointModel.optimization_id)
+                .filter(GepaCheckpointModel.optimization_id.in_(optimization_ids))
+                .distinct()
+                .all()
+            )
+            return {row[0] for row in rows}
+
     @staticmethod
     def _to_checkpoint(row: GepaCheckpointModel) -> GepaCheckpoint:
         """Project an ORM row onto an immutable :class:`GepaCheckpoint`."""
@@ -249,6 +262,22 @@ class PostgresGridPairResultStore:
             )
             session.commit()
 
+    def delete_one(self, optimization_id: str, pair_index: int) -> None:
+        """Remove a single pair's stored result (e.g. before re-running it).
+
+        Args:
+            optimization_id: Grid job owning the pair.
+            pair_index: The pair whose result is dropped.
+        """
+        with Session(self._engine) as session:
+            session.execute(
+                delete(GridPairResultModel).where(
+                    GridPairResultModel.optimization_id == optimization_id,
+                    GridPairResultModel.pair_index == pair_index,
+                )
+            )
+            session.commit()
+
     def has_any(self, optimization_id: str) -> bool:
         """Return whether the grid has any completed-pair result stored.
 
@@ -265,3 +294,26 @@ class PostgresGridPairResultStore:
                 .first()
             )
             return row is not None
+
+    def has_any_batch(self, optimization_ids: list[str]) -> set[str]:
+        """Return the subset of ids that have at least one stored pair result.
+
+        One ``IN (...)`` round trip replaces a per-row :meth:`has_any` probe
+        on list pages.
+
+        Args:
+            optimization_ids: Grid job ids to test.
+
+        Returns:
+            The ids with at least one pair-result row.
+        """
+        if not optimization_ids:
+            return set()
+        with Session(self._engine) as session:
+            rows = (
+                session.query(GridPairResultModel.optimization_id)
+                .filter(GridPairResultModel.optimization_id.in_(optimization_ids))
+                .distinct()
+                .all()
+            )
+            return {row[0] for row in rows}

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
+
+from ..preferences import configure_notification_preferences
 
 
 class FakeMail:
@@ -21,7 +25,7 @@ class FakeMail:
             html_body: Rendered HTML body.
 
         Returns:
-            Always ``True`` to mimic a successful Outlook delivery.
+            Always ``True`` to mimic successful SMTP delivery.
         """
         self.calls.append({"to": to, "subject": subject, "html": html_body})
         return True
@@ -45,3 +49,11 @@ def fake_mail() -> FakeMail:
         A ``FakeMail`` ready to record ``send_mail`` invocations.
     """
     return FakeMail()
+
+
+@pytest.fixture(autouse=True)
+def _reset_notification_preference_engine() -> Iterator[None]:
+    """Keep notifier tests independent from application-factory side effects."""
+    configure_notification_preferences(None)
+    yield
+    configure_notification_preferences(None)

@@ -144,7 +144,6 @@ def test_model_config_minimal_defaults() -> None:
     assert m.temperature is None
     assert m.base_url is None
     assert m.max_tokens is None
-    assert m.top_p is None
     assert m.extra == {}
 
 
@@ -187,27 +186,6 @@ def test_model_config_temperature_boundary(temp: float, valid: bool) -> None:
     else:
         with pytest.raises(ValidationError):
             ModelConfig(name="x", temperature=temp)
-
-
-@pytest.mark.parametrize(
-    ("top_p", "valid"),
-    [
-        (-0.01, False),
-        (0.0, True),
-        (0.5, True),
-        (1.0, True),
-        (1.01, False),
-    ],
-    ids=["below_min", "min", "mid", "max", "above_max"],
-)
-def test_model_config_top_p_boundary(top_p: float, valid: bool) -> None:
-    """Verify ModelConfig.top_p accepts [0.0, 1.0] and rejects values outside."""
-    if valid:
-        m = ModelConfig(name="x", top_p=top_p)
-        assert m.top_p == pytest.approx(top_p)
-    else:
-        with pytest.raises(ValidationError):
-            ModelConfig(name="x", top_p=top_p)
 
 
 @pytest.mark.parametrize(

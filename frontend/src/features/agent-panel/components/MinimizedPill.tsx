@@ -1,17 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkle } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 import { formatShortcut, useUserPrefs } from "@/features/settings";
 
 import { cn } from "@/shared/lib/utils";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
 
 interface MinimizedPillProps {
   onOpen: () => void;
   active: boolean;
   statusLabel?: string;
   hue?: string;
+  /** Rendered inside an AgentPillDock: the dock places it, so don't float. */
+  inline?: boolean;
   className?: string;
 }
 
@@ -20,23 +24,32 @@ export function MinimizedPill({
   active,
   statusLabel,
   hue = "#3D2E22",
+  inline = false,
   className,
 }: MinimizedPillProps) {
   const { prefs } = useUserPrefs();
+  // No keyboard on a phone, so the shortcut hint would only be noise.
+  const isPhone = useIsPhone();
   const shortcutLabel = formatShortcut(prefs.agentShortcut);
-  const ariaLabel = `${msg("auto.features.agent.panel.components.minimizedpill.literal.1")} (${shortcutLabel})`;
+  const ariaLabel = isPhone
+    ? msg("auto.features.agent.panel.components.minimizedpill.literal.1")
+    : `${msg("auto.features.agent.panel.components.minimizedpill.literal.1")} (${shortcutLabel})`;
   const showLabel = active && Boolean(statusLabel);
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      dir="rtl"
       data-tutorial="agent-pill"
       aria-label={ariaLabel}
       title={ariaLabel}
+      // Set the writing direction on the pill itself so its logical `end-4`
+      // follows the locale (right in LTR/English, left in RTL/Hebrew),
+      // independent of whatever direction an ancestor or portal resolves to.
+      dir={getActiveDir()}
       className={cn(
-        "fixed bottom-4 left-4 z-40 inline-flex items-center gap-2 rounded-full",
+        inline ? "relative" : "fixed bottom-4 end-4 z-40",
+        "inline-flex min-h-[44px] items-center gap-2 rounded-full",
         "border border-border/60 bg-background/90 backdrop-blur-md",
         "px-3.5 py-2 text-[0.75rem] text-foreground shadow-[0_6px_18px_rgba(61,46,34,0.08)]",
         "transition-all duration-200 hover:bg-background hover:shadow-[0_10px_24px_rgba(61,46,34,0.12)]",
@@ -55,7 +68,7 @@ export function MinimizedPill({
           className="relative inline-flex size-5 items-center justify-center rounded-full text-[#FAF8F5]"
           style={{ backgroundColor: hue }}
         >
-          <Sparkles className="size-3" aria-hidden="true" />
+          <Sparkle className="size-3" aria-hidden="true" />
         </span>
       </span>
       <span className="truncate max-w-[18ch] leading-none">
@@ -63,9 +76,11 @@ export function MinimizedPill({
           ? statusLabel
           : msg("auto.features.agent.panel.components.minimizedpill.literal.3")}
       </span>
-      <span className="text-muted-foreground/70 font-mono text-[0.625rem] tracking-tight">
-        {shortcutLabel}
-      </span>
+      {!isPhone && (
+        <span className="text-muted-foreground/70 font-mono text-[0.625rem] tracking-tight">
+          {shortcutLabel}
+        </span>
+      )}
     </button>
   );
 }

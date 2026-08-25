@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Bot, XCircle, RotateCcw, Ruler, FileCode2, MessageSquarePlus } from "lucide-react";
+import { Robot, XCircle, Ruler, FileCode, ChatCenteredDots, ShareNetwork } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
@@ -10,6 +10,7 @@ import { AgentThread, ChatTranscript, Composer } from "@/shared/ui/agent";
 import { ActivityBreadcrumb } from "@/shared/ui/agent/activity-breadcrumb";
 import type { AgentToolCall as SharedAgentToolCall } from "@/shared/ui/agent";
 import { EmptyState as SharedEmptyState } from "@/shared/ui/empty-state";
+import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { IndexPager } from "@/shared/ui/index-pager";
 import { ToolCallRow } from "@/features/agent-panel";
 
@@ -21,8 +22,6 @@ interface Props {
   disabledReason?: string;
   className?: string;
 }
-
-const COMPOSER_PLACEHOLDER = msg("auto.features.submit.components.steps.codeagentpanel.literal.1");
 
 export function CodeAgentPanel({ agent, disabled, disabledReason, className }: Props) {
   const [draft, setDraft] = React.useState("");
@@ -54,7 +53,7 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
   );
 
   return (
-    <div dir="rtl" className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
+    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
       {hasConversation && !disabled && (
         <div className="border-b border-[#3D2E22]/10 px-3 py-2 shrink-0">
           <button
@@ -63,7 +62,7 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
             className={cn(
               "group flex w-full items-center justify-center gap-1.5 rounded-full",
               "border border-[#3D2E22]/10 bg-[#3D2E22]/[0.02]",
-              "px-2.5 py-1.5 text-[0.6875rem] font-medium text-[#3D2E22]/75",
+              "min-h-[44px] px-2.5 py-1.5 text-[0.6875rem] font-medium text-[#3D2E22]/75 lg:min-h-0",
               "shadow-[inset_0_-1px_0_rgba(61,46,34,0.04)]",
               "transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-out",
               "hover:border-[#3D2E22]/20 hover:bg-[#3D2E22]/[0.06] hover:text-[#3D2E22]",
@@ -74,9 +73,8 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
             title={msg("auto.features.submit.components.steps.codeagentpanel.literal.2")}
             aria-label={msg("auto.features.submit.components.steps.codeagentpanel.literal.3")}
           >
-            <MessageSquarePlus
+            <ChatCenteredDots
               className="size-3.5 opacity-75 transition-opacity duration-150 ease-out group-hover:opacity-100"
-              strokeWidth={2}
               aria-hidden
             />
             <span>{msg("auto.features.submit.components.steps.codeagentpanel.1")}</span>
@@ -114,24 +112,21 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
               {agent.error && agent.status === "error" && (
                 <div className="rounded-lg bg-[#FCEFEB]/60 border border-[#9B2C1F]/20 px-2.5 py-2 text-xs text-[#7A1E13] space-y-1.5">
                   <div className="flex items-start gap-1.5">
-                    <XCircle className="size-3 shrink-0 mt-0.5 text-[#9B2C1F]" />
-                    <span className="flex-1 break-words min-w-0" dir="auto">
+                    <XCircle className="mt-0.5 size-3 shrink-0 text-[#9B2C1F]" />
+                    <span className="min-w-0 flex-1 break-words" dir="auto">
                       {agent.error}
                     </span>
+                    <RetryIconButton
+                      label={msg("auto.features.submit.components.steps.codeagentpanel.2")}
+                      onClick={agent.retry}
+                      className="size-[44px] border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13] lg:size-7"
+                    />
                   </div>
                   <div className="flex gap-1.5 ps-4">
                     <button
                       type="button"
-                      onClick={agent.retry}
-                      className="inline-flex items-center gap-1 text-[0.6875rem] text-[#7A1E13] bg-[#9B2C1F]/10 hover:bg-[#9B2C1F]/20 px-2 py-0.5 rounded cursor-pointer transition-colors"
-                    >
-                      <RotateCcw className="size-3" />
-                      {msg("auto.features.submit.components.steps.codeagentpanel.2")}
-                    </button>
-                    <button
-                      type="button"
                       onClick={agent.fallbackToManual}
-                      className="text-[0.6875rem] text-[#7A1E13] hover:bg-[#9B2C1F]/10 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                      className="min-h-[44px] cursor-pointer rounded px-2 py-0.5 text-[0.6875rem] text-[#7A1E13] transition-colors hover:bg-[#9B2C1F]/10 lg:min-h-0"
                     >
                       {msg("auto.features.submit.components.steps.codeagentpanel.3")}
                     </button>
@@ -152,7 +147,7 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
           disabled
             ? disabledReason ||
               msg("auto.features.submit.components.steps.codeagentpanel.literal.4")
-            : COMPOSER_PLACEHOLDER
+            : msg("auto.features.submit.components.steps.codeagentpanel.literal.1")
         }
         disabled={disabled}
         streaming={streaming}
@@ -243,10 +238,13 @@ function computeLineDiff(oldText: string, newText: string): DiffLine[] {
 function ToolCallCard({ call, isRetry = false }: { call: SharedAgentToolCall; isRetry?: boolean }) {
   const codeCall = call as AgentToolCall;
   const isSignature = codeCall.tool === "edit_signature";
-  const Icon = isSignature ? FileCode2 : Ruler;
+  const isMetric = codeCall.tool === "edit_metric";
+  const Icon = isSignature ? FileCode : isMetric ? Ruler : ShareNetwork;
   const title = isSignature
     ? msg("submit.code.agent.tool.signature.title")
-    : msg("submit.code.agent.tool.metric.title");
+    : isMetric
+      ? msg("submit.code.agent.tool.metric.title")
+      : msg(`workflow.agent.tool.${codeCall.tool}` as Parameters<typeof msg>[0]);
 
   const diff = React.useMemo<DiffLine[]>(() => {
     if (!codeCall.newCode) return [];
@@ -325,7 +323,7 @@ function DiffRow({ line }: { line: DiffLine }) {
 function EmptyState({ disabled, disabledReason }: { disabled?: boolean; disabledReason?: string }) {
   return (
     <SharedEmptyState
-      icon={Bot}
+      icon={Robot}
       iconWrap="tile"
       variant="compact"
       title={
@@ -335,8 +333,7 @@ function EmptyState({ disabled, disabledReason }: { disabled?: boolean; disabled
       }
       description={
         disabled
-          ? disabledReason ||
-            msg("auto.features.submit.components.steps.codeagentpanel.literal.16")
+          ? disabledReason || msg("auto.features.submit.components.steps.codeagentpanel.literal.16")
           : formatMsg("auto.features.submit.components.steps.codeagentpanel.template.2", {
               p1: TERMS.dataset,
               p2: TERMS.signature,

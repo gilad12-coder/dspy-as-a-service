@@ -18,6 +18,7 @@ import hmac
 import json
 import time
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -29,8 +30,15 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from ...storage.models import AgentConversationModel, AgentMessageModel, Base
+from ...storage.models import (
+    AgentConversationModel,
+    AgentMessageModel,
+    Base,
+    BillingCustomerModel,
+    CreditLedgerModel,
+)
 from .. import auth as auth_mod
+from .. import model_catalog
 from ..routers import generalist_agent as agent_mod
 from ..routers.generalist_agent import create_generalist_agent_router
 
@@ -108,7 +116,16 @@ def persistence_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Eng
         on the persisted rows directly.
     """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[AgentConversationModel.__table__, AgentMessageModel.__table__])
+    # Billing tables back the turn's credit gate + usage metering seam.
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            AgentConversationModel.__table__,
+            AgentMessageModel.__table__,
+            BillingCustomerModel.__table__,
+            CreditLedgerModel.__table__,
+        ],
+    )
     monkeypatch.setattr(auth_mod.settings, "backend_auth_secret", SecretStr(_SECRET))
     monkeypatch.setattr(agent_mod, "run_generalist_agent", _fake_stream)
     monkeypatch.setattr(agent_mod, "queue_conversation_embed", lambda *a, **k: None)
@@ -120,13 +137,40 @@ def persistence_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Eng
     return TestClient(app), engine
 
 
-def _post_turn(client: TestClient, message: str, token: str | None) -> Any:
+def _fund(engine: Engine) -> None:
+    """Give the test identity a purchased balance to pass the 402 credit gate.
+
+    There is no free allowance, so any turn that should stream must be backed by
+    an explicitly funded account.
+    """
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice@example.com",
+                stripe_customer_id="cus_alice",
+                credit_balance=10_000,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
+
+
+def _post_turn(
+    client: TestClient,
+    message: str,
+    token: str | None,
+    *,
+    conversation_id: str | None = None,
+    regenerate: bool = False,
+) -> Any:
     """POST one generalist-agent turn and return the response.
 
     Args:
         client: Bound test client.
         message: User message text.
         token: Bearer token, or None to omit the Authorization header.
+        conversation_id: Existing conversation to continue, if any.
+        regenerate: Whether to replace the conversation's final persisted turn.
 
     Returns:
         The streaming ``Response`` (already fully read by the test client).
@@ -134,7 +178,14 @@ def _post_turn(client: TestClient, message: str, token: str | None) -> Any:
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     return client.post(
         "/optimizations/generalist-agent",
-        json={"user_message": message, "chat_history": [], "wizard_state": {}, "trust_mode": "ask"},
+        json={
+            "user_message": message,
+            "chat_history": [],
+            "wizard_state": {},
+            "trust_mode": "ask",
+            "conversation_id": conversation_id,
+            "regenerate": regenerate,
+        },
         headers=headers,
     )
 
@@ -144,6 +195,7 @@ def test_authenticated_turn_persists_conversation_and_messages(
 ) -> None:
     """A signed-in turn writes the conversation header and both messages."""
     client, engine = persistence_client
+    _fund(engine)
 
     resp = _post_turn(client, "hi", _session_token())
 
@@ -159,6 +211,95 @@ def test_authenticated_turn_persists_conversation_and_messages(
             ("user", "hi"),
             ("assistant", "שלום"),
         ]
+
+
+def test_depleted_account_gets_402_before_streaming(
+    persistence_client: tuple[TestClient, Engine],
+) -> None:
+    """A zero-balance account is refused before any LLM work or persistence."""
+    client, engine = persistence_client
+    with Session(engine) as session:
+        session.add(
+            BillingCustomerModel(
+                username="alice@example.com",
+                stripe_customer_id="cus_alice",
+                credit_balance=0,
+                grant_remaining=0,
+            )
+        )
+        session.commit()
+
+    resp = _post_turn(client, "hi", _session_token())
+
+    # The bare test app skips create_app's DomainError handler (which adds the
+    # machine-readable ``code``), so the status is the assertable contract.
+    assert resp.status_code == 402
+    with Session(engine) as session:
+        assert session.query(AgentConversationModel).count() == 0
+
+
+def test_turn_forwards_chosen_model(
+    persistence_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The composer menu's model rides the request into the agent engine."""
+    client, engine = persistence_client
+    _fund(engine)
+    seen: dict[str, Any] = {}
+
+    async def capture_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        """Record the forwarded kwargs and finish in one turn."""
+        seen.update(kwargs)
+        yield {"event": "done", "data": {"assistant_message": "ok", "model": "m"}}
+
+    monkeypatch.setattr(agent_mod, "run_generalist_agent", capture_stream)
+    monkeypatch.setattr(
+        model_catalog,
+        "get_catalog_cached",
+        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
+    )
+    resp = client.post(
+        "/optimizations/generalist-agent",
+        json={
+            "user_message": "hi",
+            "chat_history": [],
+            "wizard_state": {},
+            "trust_mode": "ask",
+            "model": "openai/gpt-test",
+            "reasoning_effort": "high",
+        },
+        headers={"Authorization": f"Bearer {_session_token()}"},
+    )
+    assert resp.status_code == 200
+    assert seen["model_config"] is not None
+    assert seen["model_config"].name == "openai/gpt-test"
+    assert seen["model_config"].extra == {"reasoning_effort": "high"}
+
+
+def test_turn_rejects_unknown_model(
+    persistence_client: tuple[TestClient, Engine],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-catalog model is refused before the engine ever runs."""
+    client, engine = persistence_client
+    _fund(engine)
+    monkeypatch.setattr(
+        model_catalog,
+        "get_catalog_cached",
+        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
+    )
+    resp = client.post(
+        "/optimizations/generalist-agent",
+        json={
+            "user_message": "hi",
+            "chat_history": [],
+            "wizard_state": {},
+            "trust_mode": "ask",
+            "model": "openai/not-a-model",
+        },
+        headers={"Authorization": f"Bearer {_session_token()}"},
+    )
+    assert resp.status_code == 422
 
 
 def test_unauthenticated_turn_is_rejected(
@@ -180,6 +321,36 @@ def test_unauthenticated_turn_is_rejected(
         assert session.query(AgentMessageModel).count() == 0
 
 
+def test_regenerate_replaces_final_persisted_turn(
+    persistence_client: tuple[TestClient, Engine],
+) -> None:
+    """Regenerating the latest reply keeps one user/assistant pair after reload."""
+    client, engine = persistence_client
+    _fund(engine)
+    token = _session_token()
+
+    first = _post_turn(client, "hi", token)
+    assert first.status_code == 200
+    with Session(engine) as session:
+        conversation_id = session.query(AgentConversationModel.id).scalar()
+
+    regenerated = _post_turn(
+        client,
+        "hi",
+        token,
+        conversation_id=conversation_id,
+        regenerate=True,
+    )
+
+    assert regenerated.status_code == 200
+    with Session(engine) as session:
+        messages = session.query(AgentMessageModel).order_by(AgentMessageModel.id).all()
+        assert [(message.role, message.content) for message in messages] == [
+            ("user", "hi"),
+            ("assistant", "שלום"),
+        ]
+
+
 _CONV_ID = "conv-1"
 
 
@@ -195,7 +366,16 @@ def wrapper_engine(monkeypatch: pytest.MonkeyPatch) -> Engine:
         The bound ``Engine`` holding one ``agent_conversations`` row.
     """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[AgentConversationModel.__table__, AgentMessageModel.__table__])
+    # Billing tables back the turn's credit gate + usage metering seam.
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            AgentConversationModel.__table__,
+            AgentMessageModel.__table__,
+            BillingCustomerModel.__table__,
+            CreditLedgerModel.__table__,
+        ],
+    )
     monkeypatch.setattr(agent_mod, "queue_conversation_embed", lambda *a, **k: None)
     with Session(engine) as session:
         session.add(AgentConversationModel(id=_CONV_ID, username="alice@example.com", title="hi"))

@@ -6,8 +6,13 @@ import { TERMS } from "@/shared/lib/terms";
 
 import { UUID_RE } from "../lib/entry-format";
 
+import { AnalyticsSummaryCard } from "./AnalyticsSummaryCard";
+import { JobSummaryCard } from "./JobSummaryCard";
 import { SearchResultsCard } from "./SearchResultsCard";
 import { SubmitSummaryCard } from "./SubmitSummaryCard";
+import { TaggingSessionsCard } from "./TaggingSessionsCard";
+import { TestResultsCard } from "./TestResultsCard";
+import { WalletCard } from "./WalletCard";
 
 export interface ToolRenderer {
   card?: (call: AgentToolCall) => React.ReactNode;
@@ -253,6 +258,15 @@ const RENDERERS: Record<string, ToolRenderer> = {
       }),
   },
 
+  update_user_preferences: {
+    summary: (call) =>
+      byStatus(call, {
+        running: msg("settings.agent.settings_tool.updating"),
+        done: msg("settings.agent.settings_tool.updated"),
+        error: msg("settings.agent.settings_tool.update_failed"),
+      }),
+  },
+
   list_jobs_optimizations_get: {
     summary: (call) => {
       if (call.status === "running")
@@ -272,21 +286,6 @@ const RENDERERS: Record<string, ToolRenderer> = {
       return count !== null
         ? `${count} ${TERMS.optimizationPlural}`
         : msg("auto.features.agent.panel.lib.tool.renderers.literal.27");
-    },
-  },
-
-  compare_jobs_optimizations_compare_post: {
-    summary: (call) => {
-      const n = pickIds(getArgs(call)).length;
-      return byStatus(call, {
-        running: n
-          ? formatMsg("auto.features.agent.panel.lib.tool.renderers.template.34", { p1: n })
-          : msg("auto.features.agent.panel.lib.tool.renderers.literal.40"),
-        done: n
-          ? formatMsg("auto.features.agent.panel.lib.tool.renderers.template.35", { p1: n })
-          : msg("auto.features.agent.panel.lib.tool.renderers.literal.41"),
-        error: msg("auto.features.agent.panel.lib.tool.renderers.literal.42"),
-      });
     },
   },
 
@@ -347,6 +346,26 @@ const RENDERERS: Record<string, ToolRenderer> = {
 
   public_search_dashboard_search_post: {
     card: (call) => <SearchResultsCard call={call} />,
+  },
+
+  get_job_summary_optimizations: {
+    card: (call) => <JobSummaryCard call={call} />,
+  },
+
+  get_analytics_summary_analytics_summary_get: {
+    card: (call) => <AnalyticsSummaryCard call={call} />,
+  },
+
+  get_test_results_optimizations: {
+    card: (call) => <TestResultsCard call={call} />,
+  },
+
+  get_wallet_for_agent: {
+    card: (call) => <WalletCard call={call} />,
+  },
+
+  list_tagging_sessions_for_agent: {
+    card: (call) => <TaggingSessionsCard call={call} />,
   },
 
 };

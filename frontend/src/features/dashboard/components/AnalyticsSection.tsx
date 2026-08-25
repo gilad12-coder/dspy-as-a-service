@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown } from "lucide-react";
+import { CaretDown } from "@/shared/ui/icons";
 import { useState, type ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/primitives/card";
 
@@ -42,7 +42,7 @@ export function AnalyticsSection({
             animate={{ rotate: isOpen ? 0 : 180 }}
             transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
           >
-            <ChevronDown className="size-4 text-muted-foreground" />
+            <CaretDown className="size-4 text-muted-foreground" />
           </motion.div>
         </CardTitle>
       </CardHeader>

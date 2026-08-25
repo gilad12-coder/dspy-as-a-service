@@ -1,0 +1,170 @@
+"use client";
+
+import * as React from "react";
+import { Coins, Plus } from "@/shared/ui/icons";
+import { msg, formatMsg } from "@/shared/lib/messages";
+import { cn } from "@/shared/lib/utils";
+import { useLocale } from "@/shared/providers";
+import { useSettingsModal } from "@/features/settings";
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
+import { useCredits } from "../providers/credit-provider";
+import { formatCredits } from "../lib/credit";
+
+/**
+ * Header credit-balance chip — the spine of the billing UI.
+ *
+ * Sits inline-end beside the language switcher. Shows total spendable credits
+ * (free grant + purchased). Theming is calm by design: gold `#C8A882` marks a healthy balance and the
+ * primary "Add credits" affordance only; a low balance reads as quiet taupe, not
+ * an alarm.
+ */
+export function CreditBalanceChip({ className }: { className?: string }) {
+  const { wallet, status, totalCredits, loading, syncing, available } = useCredits();
+  const { locale } = useLocale();
+  const { openTo } = useSettingsModal();
+  const [open, setOpen] = React.useState(false);
+
+  if (loading) {
+    return (
+      <div
+        className={cn(
+          "h-[26px] w-16 animate-pulse rounded-lg border border-border/60 bg-muted/60",
+          className,
+        )}
+        aria-hidden="true"
+      />
+    );
+  }
+
+  // One trigger, three visual registers. Healthy spends the gold accent; low and
+  // empty stay in the warm neutrals so the chip never shouts. Empty reframes the
+  // chip itself as the "add credits" call to action.
+  const triggerTone = !available
+    ? "border-border/70 text-muted-foreground hover:bg-accent"
+    : status === "healthy"
+      ? "border-border/70 text-foreground hover:bg-accent"
+      : status === "low"
+        ? "border-border/70 text-muted-foreground hover:bg-accent"
+        : "border-[#C8A882]/60 text-foreground hover:bg-[#C8A882]/10";
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={formatMsg("billing.chip.aria", {
+            p1: !available ? msg("billing.chip.unavailable") : formatCredits(totalCredits, locale),
+          })}
+          aria-busy={syncing || undefined}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-semibold transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45",
+            triggerTone,
+            className,
+          )}
+        >
+          {!available ? (
+            <>
+              <Coins className="size-3.5 text-muted-foreground" aria-hidden="true" />
+              <span>{msg("billing.chip.unavailable")}</span>
+            </>
+          ) : status === "empty" ? (
+            <>
+              <Plus className="size-3.5 text-[#C8A882]" aria-hidden="true" />
+              <span>{msg("billing.chip.empty")}</span>
+            </>
+          ) : (
+            <>
+              <Coins
+                className={cn(
+                  "size-3.5",
+                  status === "healthy" ? "text-[#C8A882]" : "text-muted-foreground",
+                )}
+                aria-hidden="true"
+              />
+              {/* Post-checkout sync [FG-3]: a quiet shimmer over the *prior* balance
+                  until the webhook lands, so the chip never flashes a false zero. */}
+              <span
+                dir="ltr"
+                className={cn("tabular-nums", syncing && "animate-pulse text-muted-foreground")}
+              >
+                {formatCredits(totalCredits, locale)}
+              </span>
+            </>
+          )}
+        </button>
+      </PopoverTrigger>
+
+      <PopoverContent align="end" className="w-72 p-0">
+        <div className="flex flex-col">
+          <div className="flex items-baseline justify-between gap-3 px-4 pt-4 pb-3">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {msg("billing.popover.title")}
+            </span>
+          </div>
+
+          {!available ? (
+            <p className="px-4 pb-4 text-xs text-muted-foreground">
+              {msg("billing.popover.unavailable")}
+            </p>
+          ) : (
+            <>
+              {/* Balance sits directly under the title. An inline-block (not a
+                  full-width `text-right` block) lets the parent's logical
+                  `text-start` place it at the inline-start in both LTR and RTL,
+                  while `dir="ltr"` keeps the numerals themselves left-to-right. */}
+              <div className="px-4 pb-3 text-start">
+                <span
+                  dir="ltr"
+                  className="inline-block text-2xl font-semibold text-foreground tabular-nums"
+                >
+                  {formatCredits(totalCredits, locale)}
+                </span>
+              </div>
+              <dl className="flex flex-col gap-2 border-t border-border/40 px-4 py-3 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">{msg("billing.popover.paid")}</dt>
+                  <dd dir="ltr" className="font-medium text-foreground tabular-nums">
+                    {formatCredits(wallet.paidBalanceCredits, locale)}
+                  </dd>
+                </div>
+                {/* Only legacy accounts still hold a grant — new accounts have
+                    none, so an empty 0/0 row would advertise a perk that no
+                    longer exists. */}
+                {wallet.freeGrant.creditsTotal > 0 && (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-muted-foreground">{msg("billing.popover.free_grant")}</dt>
+                    <dd dir="ltr" className="font-medium text-foreground tabular-nums">
+                      {formatCredits(wallet.freeGrant.creditsRemaining, locale)}
+                      <span className="text-muted-foreground">
+                        {" / "}
+                        {formatCredits(wallet.freeGrant.creditsTotal, locale)}
+                      </span>
+                    </dd>
+                  </div>
+                )}
+                {/* Low balance reads as an operational metric, not an alarm: one
+                    calm factual line in the warm neutrals, no red, no urgency. */}
+                {status === "low" && (
+                  <p className="text-muted-foreground/80">{msg("billing.chip.low_note")}</p>
+                )}
+              </dl>
+            </>
+          )}
+
+          <div className="flex items-center gap-2 border-t border-border/40 p-3">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                openTo("billing");
+              }}
+              className="inline-flex w-full items-center justify-center rounded-lg border border-border/70 px-3 py-1.5 text-xs font-medium text-foreground transition-colors duration-200 cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+            >
+              {msg("billing.action.view_wallet")}
+            </button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}

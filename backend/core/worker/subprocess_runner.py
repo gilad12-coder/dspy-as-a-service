@@ -16,15 +16,20 @@ from datetime import UTC, datetime
 from functools import partial
 from typing import Any
 
+import dspy
+
+from ..config import settings
 from ..constants import OPTIMIZATION_TYPE_GRID_SEARCH, OPTIMIZATION_TYPE_RUN
 from ..models import GridSearchRequest, RunRequest
 from ..registry import ServiceRegistry
 from ..service_gateway import DspyService
+from ..service_gateway.language_models import activate_job_lm_budget
 from ..service_gateway.optimization.llm_error import (
     LlmErrorCapture,
     enrich_error_message,
     reset_llm_error,
 )
+from ..service_gateway.react_compat import configure_native_tool_calling
 from .constants import EVENT_ERROR, EVENT_LOG, EVENT_PROGRESS, EVENT_RESULT
 from .log_handler import get_current_pair_index
 
@@ -149,6 +154,26 @@ def run_service_in_subprocess(
         event_queue: Shared multiprocessing queue back to the parent.
         start_method: The active multiprocessing start method (e.g. ``"fork"``).
     """
+    # Disable dspy caching entirely for this child. The in-memory cache pins
+    # every response in a process-wide LRU (1M-entry cap — unbounded in
+    # practice) for its whole multi-hour lifetime, and the disk cache routes
+    # through diskcache, whose pickle-backed store has an unpatched
+    # deserialization flaw (GHSA-w8v5-vhqr-4h9v — no fixed release exists).
+    # Dropping the disk cache keeps that path out of the worker, trading away
+    # retry/resume dedup. suppress() so an incompatible dspy build can't fail
+    # the job.
+    with contextlib.suppress(Exception):
+        dspy.configure_cache(enable_disk_cache=False, enable_memory_cache=False)
+    # Route ReActV2 tools through the provider's native function-calling API
+    # when REACT_NATIVE_TOOL_CALLING is set, matching the serve process so
+    # optimization rollouts and serving share one tool protocol. No-op when
+    # off; suppress() so an incompatible dspy build can't fail the job.
+    with contextlib.suppress(Exception):
+        configure_native_tool_calling()
+    # Cap this child's in-flight LM calls: grid pair threads x GEPA eval
+    # threads multiply, and without a ceiling a single job can spray the
+    # provider hard enough to trip rate limits and fail the run.
+    activate_job_lm_budget(settings.job_lm_max_concurrency)
     service = _FORK_SERVICE if start_method == "fork" and _FORK_SERVICE is not None else DspyService(ServiceRegistry())
     log_handler = SubprocessLogHandler(event_queue)
     log_handler.setLevel(logging.DEBUG)
@@ -183,6 +208,10 @@ def run_service_in_subprocess(
         optimization_type = payload_dict.pop("_optimization_type", OPTIMIZATION_TYPE_RUN)
         gepa_log_dir_path = payload_dict.pop("_gepa_log_dir", None)
         completed_pairs = payload_dict.pop("_completed_pairs", None)
+        # Distributed grid pair: this child holds one pair of a larger grid and
+        # must report the pair's GLOBAL index / the grid's real pair count.
+        pair_index_base = int(payload_dict.pop("_pair_index_base", 0) or 0)
+        grid_total_pairs = payload_dict.pop("_grid_total_pairs", None)
         progress_callback = partial(_emit_progress_event, event_queue)
 
         if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
@@ -195,6 +224,8 @@ def run_service_in_subprocess(
                 progress_callback=progress_callback,
                 gepa_log_dir_path=gepa_log_dir_path,
                 completed_pairs=completed_pairs,
+                pair_index_base=pair_index_base,
+                total_pairs_override=int(grid_total_pairs) if grid_total_pairs is not None else None,
             )
         else:
             run_payload = RunRequest.model_validate(payload_dict)
