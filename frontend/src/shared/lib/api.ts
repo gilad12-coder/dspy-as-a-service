@@ -247,6 +247,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       if (fresh) res = await send(fresh);
     }
   } catch (err) {
+    // Effect cleanup intentionally aborts stale requests. Reporting that as a
+    // network failure makes Next's dev overlay surface a harmless AbortError.
+    if (init?.signal?.aborted || (err as Error | undefined)?.name === "AbortError") {
+      throw err;
+    }
     // Report handled network failures because they never reach the global reporter.
     reportHandledError(err, {
       tags: { source: "api", kind: "network", endpoint: endpointTag(path), method: init?.method ?? "GET" },
