@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from alembic import op
-
 from core.storage.models import Base, ConversationEmbeddingModel, JobEmbeddingModel
 
 revision = "0001_onprem"

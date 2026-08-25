@@ -31,11 +31,8 @@ jobs:
       - name: Load-test release-gate unit tests
         run: uv run pytest tests/unit/test_load_test_slo.py -q
       # requirements.txt is the pip install path's copy of uv.lock. When only
-      # one of the two moves, the pip-path image silently ships a different
-      # dependency set than CI ever tested — that drift is how starlette landed
-      # on a version the pinned instrumentator rejects, and how `stripe` went
-      # missing from the export entirely. Compare pins only, so the hand-written
-      # header block above the export is free to differ.
+      # one moves, the image silently ships a dependency set CI never tested.
+      # Compare pins only so the hand-written header may differ.
       - name: requirements.txt in sync with uv.lock
         run: |
           uv export --no-emit-project --no-hashes --no-header -o /tmp/req-expected.txt >/dev/null
@@ -46,12 +43,9 @@ jobs:
           fi
 
   # Everything above installs through uv. The Dockerfile's other path
-  # (PKG_MANAGER=pip) installs the compiled requirements files with --no-deps,
-  # which means pip never re-resolves and never notices a package the file
-  # forgot to list — `stripe` was absent from requirements.txt while
-  # core/billing/service.py imported it unguarded, so a pip-path image would
-  # have died on the billing import with nothing in CI to catch it. Build the
-  # image both ways and import the modules that actually pull the runtime deps.
+  # (PKG_MANAGER=pip) installs compiled requirements with --no-deps, so pip does
+  # not re-resolve or notice an omitted runtime package. Build both DSPy lines
+  # and import modules that pull the third-party surface.
   # The stable line matters most here: its compile is not reproducible on
   # demand, so the requirements-sync guard cannot cover it and this is its only
   # gate.
@@ -76,13 +70,8 @@ jobs:
           tags: skynet-backend:pip-${{ matrix.dspy_line }}
           cache-from: type=gha,scope=pip-${{ matrix.dspy_line }}
           cache-to: type=gha,mode=max,scope=pip-${{ matrix.dspy_line }}
-      # `pip check` is the sharp end: --no-deps means pip installed the file
-      # verbatim without ever validating it, so this is the first thing in the
-      # pipeline that reads the wheels' own metadata. It catches both failure
-      # modes we actually hit — a package the file forgot ("skynet requires
-      # stripe, which is not installed") and two pins that cannot coexist
-      # ("prometheus-fastapi-instrumentator 7.1.0 has requirement
-      # starlette<1.0.0, but you have starlette 1.3.1").
+      # --no-deps installs the file verbatim. pip check is the first gate that
+      # validates the installed wheels' dependency metadata.
       # Both lines pin gepa 0.1.4 over dspy's hard gepa[dspy] requirement on
       # purpose (for GEPA PxN batched sampling; see the requirements headers) —
       # ==0.0.27 on the stable line (dspy 3.2.1), ==0.1.1 on the preview line
@@ -105,7 +94,7 @@ jobs:
         run: |
           docker run --rm skynet-backend:pip-${{ matrix.dspy_line }} python -c "
           import core.api.app
-          import core.billing.service
+          import core.byok.vault
           import core.worker.subprocess_runner
           import core.service_gateway.optimization
           print('pip-path image imports OK')
