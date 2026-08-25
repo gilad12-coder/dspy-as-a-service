@@ -30,7 +30,6 @@ from ..routers._helpers import (
     build_summary,
     clear_program_cache,
     enforce_storage_quota,
-    enforce_user_quota,
     load_program,
     strip_api_key,
 )
@@ -234,63 +233,6 @@ def test_build_summary_estimated_remaining_absent_for_finished_job() -> None:
     summary = build_summary(job_data)
 
     assert summary.estimated_remaining is None
-
-
-class _MinimalJobStore:
-    """Smallest possible store that returns a fixed count for any user."""
-
-    def __init__(self, count: int) -> None:
-        """Capture the canned count to return from ``count_jobs``.
-
-        Args:
-            count: Number of jobs to report regardless of username.
-        """
-        self._count = count
-
-    def count_jobs(self, *, username: str | None = None, **_: object) -> int:
-        """Return the canned count.
-
-        Args:
-            username: Ignored; present for signature compatibility.
-            **_: Ignored extra filters.
-
-        Returns:
-            The fixed count captured during construction.
-        """
-        return self._count
-
-
-def test_enforce_user_quota_allows_user_below_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A user under the cap passes ``enforce_user_quota`` without raising."""
-    monkeypatch.setattr(_helpers_mod.settings.__class__, "get_user_quota", lambda self, u: 100)
-    store = _MinimalJobStore(42)
-    enforce_user_quota(store, "alice")
-
-
-def test_enforce_user_quota_rejects_user_at_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A user exactly at the cap is rejected with a 409 referencing the cap."""
-    monkeypatch.setattr(_helpers_mod.settings.__class__, "get_user_quota", lambda self, u: 100)
-    store = _MinimalJobStore(100)
-    with pytest.raises(HTTPException) as exc:
-        enforce_user_quota(store, "alice")
-    assert exc.value.status_code == 409
-    assert "100" in exc.value.detail
-
-
-def test_enforce_user_quota_rejects_user_over_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A user above the cap is rejected with a 409."""
-    monkeypatch.setattr(_helpers_mod.settings.__class__, "get_user_quota", lambda self, u: 100)
-    store = _MinimalJobStore(250)
-    with pytest.raises(HTTPException) as exc:
-        enforce_user_quota(store, "alice")
-    assert exc.value.status_code == 409
-
-
-def test_enforce_user_quota_none_quota_bypasses_check(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A ``None`` quota disables the check entirely."""
-    monkeypatch.setattr(_helpers_mod.settings.__class__, "get_user_quota", lambda self, u: None)
-    store = _MinimalJobStore(9999)
-    enforce_user_quota(store, "admin")
 
 
 class _StorageJobStore:

@@ -1,12 +1,11 @@
 """Access-control foundation for sharing personal-library datasets.
 
 The dataset-library twin of :mod:`core.api.sharing_access`. It reuses that
-module's effective-role vocabulary (:class:`ShareRole`, :func:`role_rank`, the
-``GENERAL_ACCESS_*`` policies, ``MEMBER_ROLES`` / ``LINK_ROLES`` and the
-``LINK_GRANT_MARKER`` sentinel) so a dataset and an optimization grant the same
-tiers, and supplies the dataset-scoped reads of the share-link and grant rows
-plus :func:`resolve_share_access` — the single resolver every shared-dataset
-route consults.
+module's effective-role vocabulary (:class:`ShareRole`, :func:`role_rank`,
+``MEMBER_ROLES`` and ``LINK_ROLES``) so a dataset and an optimization grant the
+same tiers, and supplies the dataset-scoped reads of the share-link and grant
+rows plus :func:`resolve_share_access` — the single resolver every
+shared-dataset route consults.
 
 The one structural difference from the optimization resolver: a dataset's owner
 is a first-class column (``DatasetModel.owner_username``), so ownership is read
@@ -27,8 +26,6 @@ from ..storage.models import DatasetModel, DatasetShareGrantModel, DatasetShareL
 from .auth import AuthenticatedUser, is_admin
 from .errors import DomainError
 from .sharing_access import (
-    GENERAL_ACCESS_ANYONE,
-    LINK_ROLES,
     MEMBER_ROLES,
     ShareRole,
     _normalize_username,
@@ -213,10 +210,8 @@ def resolve_share_access(
 ) -> ShareRole | None:
     """Resolve the effective role a caller has on a shared dataset.
 
-    The caller gets the *highest* tier any applicable rule grants, assembled
-    from the active link by ``token``, the owner/admin/member resolution, and —
-    under an ``'anyone'`` link — the link's ``general_role``. Access is
-    login-gated, so a bare URL never resolves to access on its own.
+    The token identifies the dataset but grants no access by itself. The caller
+    must be its owner, an administrator, or a named member.
 
     Args:
         session: Open DB session backing the datasets and share tables.
@@ -231,18 +226,7 @@ def resolve_share_access(
     if link is None:
         return None
 
-    candidates: list[ShareRole] = []
-    resolved = resolve_effective_role(session, link.dataset_id, user)
-    if resolved is not None:
-        candidates.append(resolved)
-
-    if link.general_access == GENERAL_ACCESS_ANYONE:
-        link_role = link.general_role if link.general_role in LINK_ROLES else ShareRole.viewer
-        candidates.append(ShareRole(link_role))
-
-    if not candidates:
-        return None
-    return max(candidates, key=role_rank)
+    return resolve_effective_role(session, link.dataset_id, user)
 
 
 def require_role(

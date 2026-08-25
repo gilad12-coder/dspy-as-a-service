@@ -72,7 +72,7 @@ function TokenSourcePill({ source }: { source: ModelConfig["token_source"] }) {
   if (!source) return null;
   const byok = source === "byok";
   const Icon = byok ? Key : Coins;
-  const label = msg(byok ? "billing.mode.byok" : "billing.mode.managed");
+  const label = msg(byok ? "model_source.byok" : "model_source.managed");
   return (
     <span
       className="inline-flex shrink-0 items-center gap-0.5 rounded bg-muted/50 px-1 py-0.5 text-[9px] font-semibold text-muted-foreground/80"

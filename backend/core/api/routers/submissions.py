@@ -11,19 +11,16 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Annotated, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
-from ...billing import (
+from ...byok import (
     ProviderKeyVault,
-    StripeBillingService,
     byok_provider_for_litellm,
-    committed_spend_credits,
-    cost_ceiling_budget,
     provider_slug_for_model,
 )
 from ...config import settings
@@ -38,11 +35,8 @@ from ...constants import (
     PAYLOAD_OVERVIEW_DATASET_FILENAME,
     PAYLOAD_OVERVIEW_DATASET_ROWS,
     PAYLOAD_OVERVIEW_DESCRIPTION,
-    PAYLOAD_OVERVIEW_ESTIMATED_HIGH,
-    PAYLOAD_OVERVIEW_ESTIMATED_LOW,
     PAYLOAD_OVERVIEW_GENERATION_MODELS,
     PAYLOAD_OVERVIEW_IS_PRIVATE,
-    PAYLOAD_OVERVIEW_MAX_COST_CREDITS,
     PAYLOAD_OVERVIEW_MODEL_NAME,
     PAYLOAD_OVERVIEW_MODEL_SETTINGS,
     PAYLOAD_OVERVIEW_MODULE_KWARGS,
@@ -91,7 +85,6 @@ from ..auth import AuthenticatedUser, get_authenticated_user
 from ..dataset_access import resolve_effective_role
 from ..errors import DomainError
 from ..model_catalog import get_catalog_cached
-from ..rate_limit import enforce_submission_rate
 from ._helpers import compute_task_fingerprint, enforce_storage_quota, stable_seed, strip_api_key
 
 logger = logging.getLogger(__name__)
@@ -362,177 +355,6 @@ def _expand_catalog_grid_payload(payload: GridSearchRequest) -> None:
         payload.reflection_models = expanded
 
 
-# Statuses whose runs hold a live claim on the balance: queued/leased work,
-# plus paused runs — resume re-enqueues those without a fresh credit gate.
-_COMMITTED_JOB_STATUSES = ("pending", "validating", "running", "paused")
-
-
-def _committed_active_credits(job_store, username: str) -> int:
-    """Sum the balance credits the user's still-active runs can yet debit.
-
-    Each active run's stamped cost ceiling (``max_cost_credits`` in its payload
-    overview) is converted to the balance credits it can actually consume
-    (:func:`committed_spend_credits` — the full budget for a managed run, only
-    the platform fee for BYOK) and summed. Rows predating the overview stamp
-    contribute zero; for those the clamped debit remains the backstop. The sum
-    is deliberately conservative for partially-complete runs: the full ceiling
-    is counted even when part of it was already spent and debited.
-
-    Args:
-        job_store: Job-store instance; a store without ``list_jobs`` commits zero.
-        username: Account whose active runs are summed.
-
-    Returns:
-        The non-negative committed credits.
-    """
-    list_jobs = getattr(job_store, "list_jobs", None)
-    if not callable(list_jobs):
-        return 0
-    committed = 0
-    for status in _COMMITTED_JOB_STATUSES:
-        for job in list_jobs(status=status, username=username, limit=200, with_counts=False):
-            overview = job.get("payload_overview") or {}
-            budget = overview.get(PAYLOAD_OVERVIEW_MAX_COST_CREDITS)
-            if budget is None:
-                continue
-            token_source = str(overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or "")
-            committed += committed_spend_credits(int(budget), token_source)
-    return committed
-
-
-def _enforce_credit_balance(job_store, username: str, token_source: str) -> int | None:
-    """Block a depleted account from starting a run, and report its free balance.
-
-    Reads the account's spendable credits (any remaining legacy grant plus the
-    purchased balance), subtracts the ceilings its still-active runs are already
-    committed to (:func:`_committed_active_credits`), and refuses the submission
-    when nothing uncommitted is left — so concurrent submissions cannot
-    collectively promise more than the account holds. There is no free
-    allowance — a brand-new account is gated until it buys credits. Both run
-    modes are gated: a managed run spends its full per-token cost, and a BYOK
-    run still spends Skynet's platform fee (the provider tokens are on the
-    user's own key), so a zero balance can cover neither. The returned balance
-    feeds the per-run cost ceiling (see :func:`_cap_cost_ceiling_to_balance`) so
-    a run can never spend past what the account holds.
-
-    Args:
-        job_store: Job-store instance whose ORM engine backs the billing tables.
-        username: Account attempting the submission.
-        token_source: ``"managed"`` or ``"byok"`` — carried to the cost-ceiling cap.
-
-    Returns:
-        The account's uncommitted spendable credits, or ``None`` for a store
-        with no SQL engine (legacy/in-memory).
-
-    Raises:
-        DomainError: 402 when the account has no spendable credits, or every
-            remaining credit is already committed to active runs.
-    """
-    engine = getattr(job_store, "engine", None)
-    if engine is None or not username:
-        return None
-    service = StripeBillingService(engine=engine)
-    spendable = service.spendable_credits(username)
-    if spendable <= 0:
-        raise DomainError("billing.insufficient_credits", status=402)
-    uncommitted = spendable - _committed_active_credits(job_store, username)
-    if uncommitted <= 0:
-        raise DomainError("billing.insufficient_credits", status=402)
-    return uncommitted
-
-
-def _enforce_global_daily_spend_ceiling(job_store) -> None:
-    """Refuse a submission once platform-wide 24h spend hits the configured ceiling.
-
-    A cost backstop that sits above the per-user credit gate: it caps the whole
-    platform's trailing-24h run spend, so a spike in traffic (or an abusive
-    fleet of funded accounts) cannot run the shared provider float dry. No-op
-    when the ceiling is unset (``0``) or the store has no SQL engine.
-
-    Args:
-        job_store: Job-store instance whose ORM engine backs the billing tables.
-
-    Raises:
-        DomainError: 503 ``submission.capacity_reached`` when the trailing-window
-            spend is at or above the ceiling. The message is deliberately generic
-            so internal budget figures are not leaked to callers.
-    """
-    ceiling = settings.global_daily_spend_ceiling_credits
-    if ceiling <= 0:
-        return
-    engine = getattr(job_store, "engine", None)
-    if engine is None:
-        return
-    service = StripeBillingService(engine=engine)
-    if service.credits_spent_since(datetime.now(UTC) - timedelta(hours=24)) >= ceiling:
-        raise DomainError("submission.capacity_reached", status=503)
-
-
-def _enforce_submission_admission(job_store, username: str) -> None:
-    """Gate a submission on the global kill-switches and the per-user concurrency cap.
-
-    Runs before any dataset materialization or payload validation so an
-    over-cap or globally-paused submission is rejected cheaply, and after the
-    idempotency short-circuit so a retry of an already-accepted run is never
-    blocked. Four controls, in order: a per-user request-rate cap (the
-    cross-replica limiter that stops a runaway script), a manual global pause
-    (an operator emergency brake), the automatic platform-wide daily spend
-    ceiling (:func:`_enforce_global_daily_spend_ceiling`), and a per-user cap on
-    concurrently active runs. Each is a no-op when its setting is unset/zero.
-
-    Args:
-        job_store: Job-store instance whose ORM engine backs jobs and billing.
-        username: Account attempting the submission.
-
-    Raises:
-        DomainError: 429 ``rate_limit.exceeded`` when the user exceeds the
-            per-minute submission rate; 503 ``submission.capacity_reached`` when
-            submissions are paused or the daily spend ceiling is reached; 429
-            ``quota.concurrent_reached`` when the user is at their active-run cap.
-    """
-    enforce_submission_rate(username)
-    if settings.submissions_paused:
-        raise DomainError("submission.capacity_reached", status=503)
-    _enforce_global_daily_spend_ceiling(job_store)
-    limit = settings.max_concurrent_jobs_per_user
-    if limit <= 0:
-        return
-    counter = getattr(job_store, "count_jobs_by_status", None)
-    if not callable(counter):
-        return
-    counts = counter(username=username)
-    active = sum(int(counts.get(status, 0)) for status in _COMMITTED_JOB_STATUSES)
-    if active >= limit:
-        raise DomainError("quota.concurrent_reached", status=429, limit=limit)
-
-
-def _cap_cost_ceiling_to_balance(payload: _OptimizationRequestBase, spendable: int | None, token_source: str) -> None:
-    """Pin a run's cost ceiling to what the account's spendable credits can back.
-
-    With model-tier gating gone, any model is runnable and credits are the only
-    thing between a user and an expensive one — so a run must not be allowed to
-    spend more credits than the account holds. This clamps ``max_cost_credits`` to
-    the balance-backed budget: a user-set cap still wins when it is tighter, but an
-    absent or larger cap is lowered to the budget. For a managed run the budget is
-    the spendable balance; for a BYOK run it is proportionally larger, since the run
-    only spends the platform fee (see :func:`cost_ceiling_budget`). The run's
-    ``CostCeilingCallback`` then hard-stops it once usage crosses that budget, so an
-    over-ambitious run fails mid-flight (and is never billed) instead of driving the
-    balance negative. A no-op for engine-less stores, where ``spendable`` is ``None``.
-
-    Args:
-        payload: The submission whose ``max_cost_credits`` is clamped in place.
-        spendable: The account's spendable credits from
-            :func:`_enforce_credit_balance`, or ``None`` to leave the cap as-is.
-        token_source: ``"managed"`` or ``"byok"`` — sets the balance→budget conversion.
-    """
-    if spendable is None:
-        return
-    budget = cost_ceiling_budget(spendable, token_source)
-    current = payload.max_cost_credits
-    payload.max_cost_credits = budget if current is None else min(current, budget)
-
-
 def _request_model_configs(payload: _OptimizationRequestBase) -> list[ModelConfig]:
     """Return every executable model config carried by a submission.
 
@@ -566,7 +388,7 @@ def _normalize_model_token_sources(
         payload: Run or grid request to normalize in place.
 
     Returns:
-        The model configs and their normalized model-to-source billing map.
+        The model configs and their normalized model-to-connection map.
 
     Raises:
         DomainError: 400 when one model id is assigned conflicting sources.
@@ -601,17 +423,17 @@ def _enforce_byok_connections(job_store, username: str, model_configs: list[Mode
     resolved from the encrypt-at-rest vault at run time. If the account saved no
     connection for a model's provider, the run would have nothing to authenticate
     with, so reject it at submit with a clear, translated error rather than
-    letting the job fail mid-run. Managed runs are exempt (they spend platform
-    credits). Models with no ``provider/`` prefix are skipped — there is no
+    letting the job fail mid-run. Organization-managed runs are exempt. Models
+    with no ``provider/`` prefix are skipped — there is no
     provider to resolve a key for. A no-op when the store exposes no SQL engine.
 
     Args:
-        job_store: Job-store instance whose ORM engine backs the billing tables.
+        job_store: Job-store instance whose ORM engine backs the vault tables.
         username: Account attempting the submission.
         model_configs: Executable configs with normalized per-model sources.
 
     Raises:
-        DomainError: 400 ``billing.byok_missing_connection`` listing the providers
+        DomainError: 400 ``byok.missing_connection`` listing the providers
             the account has no saved connection for.
     """
     engine = getattr(job_store, "engine", None)
@@ -632,9 +454,9 @@ def _enforce_byok_connections(job_store, username: str, model_configs: list[Mode
                 provider = byok_provider_for_litellm(prefix)
         if provider:
             providers.add(provider)
-    missing = sorted(provider for provider in providers if not vault.has_verified_connection(username, provider))
+    missing = sorted(provider for provider in providers if not vault.has_connection(username, provider))
     if missing:
-        raise DomainError("billing.byok_missing_connection", status=400, provider=", ".join(missing))
+        raise DomainError("byok.missing_connection", status=400, provider=", ".join(missing))
 
 
 def _scrubbed_tool_source(tool_source) -> dict | None:
@@ -723,8 +545,6 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                     )
                     return cached
 
-        _enforce_submission_admission(job_store, payload.username)
-
         staged_id = _materialize_staged_dataset(payload, job_store=job_store, username=payload.username)
         source_dataset_id = _materialize_library_dataset(payload, job_store=job_store, user=current_user)
 
@@ -745,8 +565,6 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             )
 
         _run_model_configs, _token_sources_by_model = _normalize_model_token_sources(payload)
-        _spendable = _enforce_credit_balance(job_store, payload.username, payload.token_source)
-        _cap_cost_ceiling_to_balance(payload, _spendable, payload.token_source)
         _enforce_byok_connections(job_store, payload.username, _run_model_configs)
 
         optimization_id = str(uuid4())
@@ -808,9 +626,6 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 PAYLOAD_OVERVIEW_TASK_FINGERPRINT: task_fingerprint,
                 PAYLOAD_OVERVIEW_TOKEN_SOURCE: payload.token_source,
                 PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL: _token_sources_by_model,
-                PAYLOAD_OVERVIEW_MAX_COST_CREDITS: payload.max_cost_credits,
-                PAYLOAD_OVERVIEW_ESTIMATED_LOW: payload.estimated_credits_low,
-                PAYLOAD_OVERVIEW_ESTIMATED_HIGH: payload.estimated_credits_high,
                 PAYLOAD_OVERVIEW_IS_PRIVATE: payload.is_private,
                 PAYLOAD_OVERVIEW_SOURCE_DATASET_ID: source_dataset_id,
                 PAYLOAD_OVERVIEW_WORKFLOW: payload.workflow.model_dump() if payload.workflow else None,
@@ -899,8 +714,6 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                     )
                     return cached
 
-        _enforce_submission_admission(job_store, payload.username)
-
         staged_id = _materialize_staged_dataset(payload, job_store=job_store, username=payload.username)
         source_dataset_id = _materialize_library_dataset(payload, job_store=job_store, user=current_user)
 
@@ -918,8 +731,6 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
         )
 
         _grid_model_configs, _token_sources_by_model = _normalize_model_token_sources(payload)
-        _spendable = _enforce_credit_balance(job_store, payload.username, payload.token_source)
-        _cap_cost_ceiling_to_balance(payload, _spendable, payload.token_source)
         _enforce_byok_connections(job_store, payload.username, _grid_model_configs)
 
         optimization_id = str(uuid4())
@@ -962,9 +773,6 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 PAYLOAD_OVERVIEW_TASK_FINGERPRINT: task_fingerprint,
                 PAYLOAD_OVERVIEW_TOKEN_SOURCE: payload.token_source,
                 PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL: _token_sources_by_model,
-                PAYLOAD_OVERVIEW_MAX_COST_CREDITS: payload.max_cost_credits,
-                PAYLOAD_OVERVIEW_ESTIMATED_LOW: payload.estimated_credits_low,
-                PAYLOAD_OVERVIEW_ESTIMATED_HIGH: payload.estimated_credits_high,
                 PAYLOAD_OVERVIEW_IS_PRIVATE: payload.is_private,
                 PAYLOAD_OVERVIEW_SOURCE_DATASET_ID: source_dataset_id,
             },

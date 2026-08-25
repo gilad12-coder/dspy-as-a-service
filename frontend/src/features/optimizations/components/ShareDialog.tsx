@@ -22,19 +22,15 @@ import {
   SelectValue,
 } from "@/shared/ui/primitives/select";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
-import { CopyButton } from "@/shared/ui/copy-button";
 import { SettingsRow } from "@/shared/ui/settings-row";
 import {
   addShareMember,
   getSharing,
-  putSharing,
   removeShareMember,
   searchUsers,
   setOptimizationVisibility,
   transferOwnership,
   updateShareMember,
-  type GeneralAccess,
-  type LinkRole,
   type MemberRole,
   type ShareRole,
   type SharingState,
@@ -95,7 +91,6 @@ export function ShareDialog({
     onOpenChange?.(next);
   };
   const [state, setState] = useState<SharingState | null>(null);
-  const [savingAccess, setSavingAccess] = useState(false);
   const [savingVisibility, setSavingVisibility] = useState(false);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
   const [transferring, setTransferring] = useState(false);
@@ -114,11 +109,6 @@ export function ShareDialog({
   // owner, ``me`` the signed-in caller.
   const isOwner = !!state?.owner && state.owner.toLowerCase() === me;
 
-  const shareUrl =
-    state?.token && typeof window !== "undefined"
-      ? `${window.location.origin}/share/${state.token}`
-      : null;
-
   // Owner (if present) plus every invited member — drives the header count.
   const accessCount = state ? (state.owner ? 1 : 0) + state.members.length : 0;
 
@@ -135,20 +125,15 @@ export function ShareDialog({
     }
   }, [open, state, optimizationId]);
 
-  const handleAccessChange = async (value: GeneralAccess) => {
-    setSavingAccess(true);
+  const handleRoleChange = async (username: string, role: MemberRole) => {
     try {
-      setState(await putSharing(optimizationId, { general_access: value }));
-      if (value !== "restricted") track(TelemetryEvent.ShareCreated, { kind: "optimization", mode: "link" });
-      toast.success(msg("share.access_updated"));
+      setState(await updateShareMember(optimizationId, username, { role }));
+      toast.success(msg("share.member_updated"));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
-    } finally {
-      setSavingAccess(false);
     }
   };
 
-  // Explore-corpus visibility — distinct from the link's general_access below.
   const handleVisibilityChange = async (isPrivate: boolean) => {
     setSavingVisibility(true);
     try {
@@ -160,29 +145,6 @@ export function ShareDialog({
       toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
     } finally {
       setSavingVisibility(false);
-    }
-  };
-
-  // The tier an "anyone with the link" link grants signed-in visitors. Anonymous
-  // visitors stay read-only regardless, so this never elevates a bare URL.
-  const handleLinkRoleChange = async (role: LinkRole) => {
-    setSavingAccess(true);
-    try {
-      setState(await putSharing(optimizationId, { general_access: "anyone", general_role: role }));
-      toast.success(msg("share.access_updated"));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
-    } finally {
-      setSavingAccess(false);
-    }
-  };
-
-  const handleRoleChange = async (username: string, role: MemberRole) => {
-    try {
-      setState(await updateShareMember(optimizationId, username, { role }));
-      toast.success(msg("share.member_updated"));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
     }
   };
 
@@ -386,10 +348,7 @@ export function ShareDialog({
                   )}
                 </div>
 
-                <div className="shrink-0 space-y-3 border-t border-border/40 px-6 py-4">
-                  {/* Explore-corpus visibility — a separate axis from the
-                      link's general access: this controls public discovery in
-                      /explore, not who can open the share link. */}
+                <div className="shrink-0 border-t border-border/40 px-6 py-4">
                   <SettingsRow
                     icon={state.is_private ? Lock : Globe}
                     label={msg("share.visibility.label")}
@@ -401,13 +360,10 @@ export function ShareDialog({
                   >
                     <Select
                       value={state.is_private ? "private" : "public"}
-                      onValueChange={(next) => handleVisibilityChange(next === "private")}
+                      onValueChange={(next) => void handleVisibilityChange(next === "private")}
                       disabled={savingVisibility}
                     >
-                      <SelectTrigger
-                        size="sm"
-                        className="min-h-[44px] min-w-[120px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
-                      >
+                      <SelectTrigger size="sm" className="min-h-[44px] min-w-[120px] sm:min-h-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -416,84 +372,8 @@ export function ShareDialog({
                       </SelectContent>
                     </Select>
                   </SettingsRow>
-
-                  <SettingsRow
-                    icon={state.general_access === "anyone" ? Globe : Lock}
-                    label={msg("share.general_access")}
-                    description={
-                      state.general_access === "restricted"
-                        ? msg("share.general_access.restricted_desc")
-                        : undefined
-                    }
-                  >
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <Select
-                        value={state.general_access}
-                        onValueChange={(next) => handleAccessChange(next as GeneralAccess)}
-                        disabled={savingAccess}
-                      >
-                        <SelectTrigger
-                          size="sm"
-                          className="min-h-[44px] min-w-[140px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="restricted">
-                            {msg("share.general_access.restricted")}
-                          </SelectItem>
-                          <SelectItem value="anyone">
-                            {msg("share.general_access.anyone")}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {state.general_access === "anyone" && (
-                        // Drive-style: pick the tier the link grants (caps at editor).
-                        <Select
-                          value={state.general_role}
-                          onValueChange={(next) => handleLinkRoleChange(next as LinkRole)}
-                          disabled={savingAccess}
-                        >
-                          <SelectTrigger
-                            size="sm"
-                            className="min-h-[44px] min-w-[104px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
-                            aria-label={msg("share.role.change_aria")}
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="viewer">{roleLabel("viewer")}</SelectItem>
-                            <SelectItem value="editor">{roleLabel("editor")}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                  </SettingsRow>
-
-                  {shareUrl && state.general_access === "anyone" && (
-                    // Only an "anyone with the link" link grants access by URL;
-                    // in Restricted mode the link is useless to non-members, so
-                    // showing it is misleading.
-                    <div
-                      dir="ltr"
-                      className="flex items-center gap-1 rounded-md border border-input bg-background ps-3 pe-1 transition-[color,box-shadow,border-color] duration-120 ease-[cubic-bezier(0.2,0.8,0.2,1)] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
-                    >
-                      <code className="min-w-0 flex-1 truncate py-2 font-mono text-[0.6875rem] text-muted-foreground">
-                        {shareUrl}
-                      </code>
-                      <div aria-hidden className="h-5 w-px shrink-0 bg-border/70" />
-                      <TooltipButton tooltip={msg("share.copy_link")}>
-                        <CopyButton
-                          text={shareUrl}
-                          ariaLabel={msg("share.copy_link")}
-                          onCopied={() => toast.success(msg("share.link_copied"))}
-                          onCopyError={() => toast.error(msg("clipboard.copy_failed"))}
-                          className="size-[44px] shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0 sm:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
-                        />
-                      </TooltipButton>
-                    </div>
-                  )}
                 </div>
+
               </>
             )}
           </div>

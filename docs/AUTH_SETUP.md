@@ -1,105 +1,83 @@
-# Auth setup — hosted Skynet
+# On-prem authentication setup
 
-Skynet's hosted login offers three ways in:
+Skynet supports one identity model with two entry paths: ADFS/OIDC and an administrator-managed local username fallback. There are no passwords, signup forms, reset flows, social providers, email verification, passkeys, TOTP, or anonymous sessions.
 
-- **Google** (OAuth)
-- **GitHub** (OAuth)
-- **Email + password** — a real account created in Skynet itself
+## Shared backend authentication secret
 
-Identity is the **email** for every provider, so one person is one account no
-matter how they sign in. SSO (ADFS/OIDC) still takes over when configured; the
-providers below are the default when SSO is unset.
+Generate a secret and put the exact same value in the backend and frontend environments:
 
-All secrets go in `frontend/.env.local` (never commit it). After editing env,
-restart `next dev` so the server picks them up.
+```bash
+openssl rand -base64 48
+```
 
----
+```dotenv
+# backend/.env
+BACKEND_AUTH_SECRET=...
 
-## 0. Shared prerequisites (required for email/password)
+# frontend/.env.local
+BACKEND_AUTH_SECRET=...
+AUTH_SECRET=...another independently generated value...
+```
 
-The email/password path stores accounts in the backend's Postgres and is gated
-by a shared secret so only the frontend can reach the register/login endpoints.
+The frontend uses `BACKEND_AUTH_SECRET` to call the internal provisioning endpoints and sign short-lived backend bearer tokens. Never expose it to browser JavaScript or commit it.
 
-1. Generate a secret and set the **same value** on both sides:
-   ```bash
-   openssl rand -base64 32
-   ```
-   - `frontend/.env.local` → `BACKEND_AUTH_SECRET=<value>`
-   - backend env → `BACKEND_AUTH_SECRET=<value>`
-2. Also set `AUTH_SECRET` (NextAuth session secret) in `frontend/.env.local`:
-   ```
-   AUTH_SECRET=<another `openssl rand -base64 32`>
-   ```
-3. Run the DB migration that creates the `users` table:
-   ```bash
-   cd backend && alembic upgrade head
-   ```
-4. (Optional) Make yourself admin — works for every provider:
-   ```
-   AUTH_ADMINS=you@example.com
-   ```
+## Bootstrap administrator
 
-That's enough for **email/password** to work end-to-end. Social providers are
-additive — set up either or both below.
+Set at least one normalized username before first start:
 
----
+```dotenv
+# backend
+ADMIN_USERNAMES=admin
 
-## 1. Google
+# frontend
+AUTH_ADMINS=admin
+```
 
-1. Go to <https://console.cloud.google.com> → create/select a project.
-2. **APIs & Services → OAuth consent screen**: choose **External**, fill app
-   name + support email, save. (While "Testing", add your Google account under
-   **Test users**.)
-3. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
-   - Application type: **Web application**
-   - **Authorized redirect URIs** — add the exact callback for each origin you
-     run on:
-     - `http://localhost:3000/api/auth/callback/google`
-     - `https://YOUR_DOMAIN/api/auth/callback/google` (production)
-4. Copy the **Client ID** and **Client secret** into `frontend/.env.local`:
-   ```
-   AUTH_GOOGLE_ID=...
-   AUTH_GOOGLE_SECRET=...
-   ```
+Sign in at `/login?local=1` as `admin`, open Settings > Administration, and create the other local usernames. The UI can promote/demote database-managed administrators and set each user's storage allowance. Environment usernames and configured ADFS groups remain administrators even if the database role is demoted.
 
-The "Continue with Google" button appears automatically once both are set.
+Local login is passwordless but not open registration: the backend accepts only active usernames already present in PostgreSQL or declared in `ADMIN_USERNAMES`.
 
----
+## ADFS/OIDC
 
-## 2. GitHub
+Configure the frontend runtime:
 
-1. Go to <https://github.com/settings/developers> → **OAuth Apps → New OAuth App**
-   (or an org's Developer settings for an org-owned app).
-2. Fill in:
-   - **Homepage URL**: `http://localhost:3000` (or your production URL)
-   - **Authorization callback URL**: `http://localhost:3000/api/auth/callback/github`
-     (add a second OAuth App for production with the prod callback — GitHub
-     allows only one callback per app)
-3. **Generate a new client secret**, then copy both into `frontend/.env.local`:
-   ```
-   AUTH_GITHUB_ID=...
-   AUTH_GITHUB_SECRET=...
-   ```
+```dotenv
+AUTH_URL=https://skynet.example.internal
+AUTH_SSO_ISSUER=https://adfs.example.internal/adfs
+AUTH_SSO_CLIENT_ID=skynet
+AUTH_SSO_CLIENT_SECRET=...
+AUTH_SSO_SCOPE=openid profile email groups
+AUTH_USERNAME_CLAIM=upn
+AUTH_GROUP_CLAIM=groups
+AUTH_ADMIN_GROUPS=Skynet Admins,Platform Ops
+AUTH_ADMINS=break-glass-admin
+```
 
-The "Continue with GitHub" button appears automatically once both are set.
+Register this callback in the IdP:
 
----
+```text
+https://skynet.example.internal/api/auth/callback/adfs
+```
 
-## 3. Email / password
+Use the issuer URL exposed by the ADFS OpenID Connect discovery document. If the IdP uses an internal CA, mount its bundle and set `NODE_EXTRA_CA_CERTS` in the frontend container.
 
-Nothing more to configure beyond **section 0**. On the login screen, the
-**יצירת חשבון** (Create account) tab registers an account (min 8-char password,
-stored only as a salted scrypt hash — never the plaintext) and signs in
-immediately. The **התחברות** (Sign in) tab logs an existing account back in.
+When all three `AUTH_SSO_ISSUER`, `AUTH_SSO_CLIENT_ID`, and `AUTH_SSO_CLIENT_SECRET` values exist, the login page immediately leads with ADFS. A failed SSO screen reveals the local fallback; `/login?local=1` is the direct break-glass path.
 
----
+Every valid ADFS login auto-provisions the user. The selected username claim is lowercased and trimmed. A matching local username resolves to the same account, data, role, sharing grants, and storage quota.
 
-## Production notes
+## Internal and browser backend URLs
 
-- Set `AUTH_SECRET` and `BACKEND_AUTH_SECRET` to strong, unique values.
-- Register the production callback URLs (`https://YOUR_DOMAIN/api/auth/callback/<provider>`)
-  in each OAuth app.
-- Serve over HTTPS so session cookies and the backend token aren't exposed.
-- Apple Sign-In is intentionally not wired up (it needs a paid Apple Developer
-  Program membership and a rotating JWT client secret); add it later the same
-  way if needed.
+The frontend needs two backend addresses in a clustered deployment:
+
+```dotenv
+API_URL=https://skynet-api.example.internal
+BACKEND_INTERNAL_URL=http://skynet-backend:8000
+```
+
+`API_URL` is injected into the browser and must be reachable from user workstations. `BACKEND_INTERNAL_URL` is server-only and should use the private cluster Service. Both must target the same backend deployment.
+
+## Deletion behavior
+
+Deleting a user from the administration UI hard-deletes that user's jobs, artifacts, datasets, tagging sessions, conversations, API token, notification settings, quotas, share grants, and encrypted BYOK connections. It also removes inbound grants tied to the username. The operation is intentionally not reversible.
+
+If the deleted username later completes a valid ADFS login, Skynet auto-creates a fresh empty account.

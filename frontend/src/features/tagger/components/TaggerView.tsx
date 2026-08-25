@@ -288,8 +288,8 @@ export function TaggerView({ initialSession }: { initialSession?: TaggerSessionD
               />
             </div>
           )}
-          {/* The finished run's accounting — who labeled what, the credit
-              cost, and the one-click flagged pass — rides above the table
+          {/* The finished run's accounting — who labeled what, token usage,
+              and the one-click flagged pass — rides above the table
               instead of on a separate summary screen. */}
           {tagger.assist && (
             <div className="mb-3">

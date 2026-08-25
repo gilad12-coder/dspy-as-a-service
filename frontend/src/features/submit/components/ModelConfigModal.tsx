@@ -3,7 +3,7 @@
 import * as React from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Coins, Key, X } from "@/shared/ui/icons";
-import { useByokKeys, litellmProviderForByok, type TokenSourceMode } from "@/features/billing";
+import { useByokKeys, litellmProviderForByok, type TokenSourceMode } from "@/features/byok";
 import { useSettingsModal } from "@/features/settings";
 import { getByokModelCatalog, cachedByokCatalog } from "@/shared/lib/model-catalog";
 import { Dialog, DialogContent, DialogFooter } from "@/shared/ui/primitives/dialog";
@@ -41,10 +41,10 @@ interface ModelConfigModalProps {
 const TOKEN_SOURCE_SEGMENTS: Array<{
   mode: TokenSourceMode;
   icon: typeof Coins;
-  labelKey: "billing.mode.managed" | "billing.mode.byok";
+  labelKey: "model_source.managed" | "model_source.byok";
 }> = [
-  { mode: "managed", icon: Coins, labelKey: "billing.mode.managed" },
-  { mode: "byok", icon: Key, labelKey: "billing.mode.byok" },
+  { mode: "managed", icon: Coins, labelKey: "model_source.managed" },
+  { mode: "byok", icon: Key, labelKey: "model_source.byok" },
 ];
 
 const TOKEN_SOURCE_TRANSITION = {
@@ -90,13 +90,11 @@ export function ModelConfigModal({
   const [draft, setDraft] = React.useState<ModelConfig>(() => withoutInlineConnection(config));
   const mode = draft.token_source ?? "managed";
 
-  // In BYOK mode the picker lists the BYOK catalog narrowed to the providers
-  // the user has a *verified* key for (mapped to their LiteLLM prefix), so a
-  // typo'd, revoked, or unverified key never offers models a run could only
-  // fail to authenticate.
+  // In BYOK mode the picker lists models for every saved connection. On-prem
+  // endpoints may be unreachable from the web process during configuration,
+  // so verification status is informative rather than an admission gate.
   const byokProviders = React.useMemo(
-    () =>
-      keys.filter((k) => k.status === "verified").map((k) => litellmProviderForByok(k.provider)),
+    () => keys.map((key) => litellmProviderForByok(key.provider)),
     [keys],
   );
   const byokProviderKey = [...byokProviders].sort().join("\u0000");
@@ -222,12 +220,12 @@ export function ModelConfigModal({
 
           <div className="space-y-2">
             <Label className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
-              {msg("billing.mode.label")}
+              {msg("model_source.label")}
             </Label>
             <div
               role="group"
-              aria-label={msg("billing.mode.aria")}
-              data-tutorial="model-billing-source"
+              aria-label={msg("model_source.aria")}
+              data-tutorial="model-source"
               className="flex w-full rounded-lg bg-muted p-0.5 sm:w-fit"
             >
               {TOKEN_SOURCE_SEGMENTS.map(({ mode: value, icon: Icon, labelKey }) => (
@@ -269,14 +267,14 @@ export function ModelConfigModal({
             </div>
             {mode === "managed" && (
               <div className="flex items-center gap-2 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
-                <span className="min-w-0 flex-1">{msg("billing.mode.managed_hint")}</span>
+                <span className="min-w-0 flex-1">{msg("model_source.managed_hint")}</span>
               </div>
             )}
           </div>
 
           {mode === "byok" && (
             <div className="flex items-center gap-2 rounded-md bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground">
-              <span className="min-w-0 flex-1">{msg("billing.mode.byok_hint")}</span>
+              <span className="min-w-0 flex-1">{msg("model_source.byok_hint")}</span>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -285,13 +283,13 @@ export function ModelConfigModal({
                       onOpenChange(false);
                       openTo("providers");
                     }}
-                    aria-label={msg("billing.mode.manage_keys")}
+                    aria-label={msg("model_source.manage_keys")}
                     className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/60 lg:size-8"
                   >
                     <Key className="size-4" aria-hidden="true" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>{msg("billing.mode.manage_keys")}</TooltipContent>
+                <TooltipContent>{msg("model_source.manage_keys")}</TooltipContent>
               </Tooltip>
             </div>
           )}

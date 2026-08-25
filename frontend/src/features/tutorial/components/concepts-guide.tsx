@@ -614,10 +614,6 @@ function SectionParameters() {
             name: msg("auto.features.tutorial.components.concepts.guide.literal.316"),
             desc: msg("auto.features.tutorial.components.concepts.guide.literal.118"),
           },
-          {
-            name: msg("auto.features.tutorial.components.concepts.guide.literal.317"),
-            desc: msg("auto.features.tutorial.components.concepts.guide.literal.119"),
-          },
         ]}
       />
 
@@ -1019,10 +1015,6 @@ function SectionTips() {
     [
       msg("auto.features.tutorial.components.concepts.guide.literal.248"),
       msg("auto.features.tutorial.components.concepts.guide.literal.249"),
-    ],
-    [
-      msg("auto.features.tutorial.components.concepts.guide.literal.250"),
-      msg("auto.features.tutorial.components.concepts.guide.literal.251"),
     ],
   ];
   return (

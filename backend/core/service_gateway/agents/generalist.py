@@ -85,7 +85,7 @@ def _build_generalist_lm() -> dspy.LM:
     config = apply_model_reasoning_config(
         ModelConfig(
             name=settings.generalist_agent_model,
-            base_url=settings.generalist_agent_base_url or None,
+            base_url=settings.generalist_agent_base_url or settings.openai_api_base or None,
         )
     )
     _apply_interactive_timeout(config)
@@ -109,7 +109,7 @@ logger = logging.getLogger(__name__)
 
 TrustMode = Literal["ask", "auto_safe", "yolo"]
 
-# Tools whose side-effects can destroy or create billing-bearing work.
+# Tools whose side effects can destroy data or start expensive compute.
 # Always require confirmation except in YOLO mode.
 _DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
     {
@@ -527,11 +527,6 @@ class _ApprovalGatedTool:
                 and not kwargs.get("dataset")
             ):
                 kwargs["source_dataset_id"] = self._source_dataset_id
-            # Privacy is private-by-default, matching the wizard. The submit
-            # request models default ``is_private=False`` (public), so an agent
-            # run that never set it would silently publish to Explore — force the
-            # snapshot value, defaulting to private, so a run only goes public
-            # when the user explicitly asked for it.
             kwargs["is_private"] = bool(self._wizard_state.get("is_private", True))
             # The wizard's description rides the same rails as privacy: set via
             # ``update_wizard_state`` (or typed in the Basics step), it lands on
@@ -808,9 +803,6 @@ _ALWAYS_TOOLS = frozenset(
         "get_analytics_summary_analytics_summary_get",
         "get_optimizer_stats_analytics_optimizers_get",
         "get_model_stats_analytics_models_get",
-        # Read-only wallet: credit balance, free grant, plan, and recent ledger —
-        # lets the agent answer "how many credits do I have / what did I spend?".
-        "get_wallet_for_agent",
         "serve_info_serve",
         "serve_pair_info_serve",
         # UI-trigger tool — calling it renders an inline inference-input
@@ -1490,9 +1482,9 @@ class GeneralistSig(dspy.Signature):
       ``use_all_*`` flags) instead of the single configs, and unlocks
       ``submit_grid_search_grid_search_post`` instead. Only propose a grid
       search when the user asks to compare/sweep models.
-    * Run privacy: runs are private by default (excluded from public
-      Explore). Set ``is_private`` to false via update_wizard_state ONLY
-      when the user explicitly asks to make the run public.
+    * Run privacy: runs are private by default. Set ``is_private`` to false
+      only when the user explicitly asks to publish in the authenticated
+      on-premise Explorer corpus.
     * Dataset handoff for submit: never inline ``dataset`` rows into the
       submit tool arguments. The wizard stages the parsed rows on the
       backend after upload and surfaces a ``staged_dataset_id`` in the
@@ -1876,6 +1868,7 @@ async def run_generalist_agent(
                 update={
                     "base_url": model_config.base_url
                     or settings.generalist_agent_base_url
+                    or settings.openai_api_base
                     or None
                 }
             )

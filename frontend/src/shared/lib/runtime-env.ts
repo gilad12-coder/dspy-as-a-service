@@ -20,6 +20,7 @@
 export interface RuntimeEnv {
   apiUrl: string;
   appVersion: string;
+  transcriptionEnabled: boolean;
 }
 
 declare global {
@@ -31,6 +32,10 @@ declare global {
 const DEFAULT_API_URL = "http://localhost:8000";
 const DEFAULT_APP_VERSION = "0.1.0";
 
+function envEnabled(value: string | undefined): boolean {
+  return ["1", "true", "yes", "on"].includes((value ?? "").trim().toLocaleLowerCase());
+}
+
 /**
  * Server-side: read `process.env.API_URL` first (the runtime override that
  * Kubernetes sets on the pod), then fall back to `NEXT_PUBLIC_API_URL` so the
@@ -41,6 +46,9 @@ export function getServerRuntimeEnv(): RuntimeEnv {
     apiUrl: process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_URL,
     appVersion:
       process.env.APP_VERSION ?? process.env.NEXT_PUBLIC_APP_VERSION ?? DEFAULT_APP_VERSION,
+    transcriptionEnabled: envEnabled(
+      process.env.TRANSCRIPTION_ENABLED ?? process.env.NEXT_PUBLIC_TRANSCRIPTION_ENABLED,
+    ),
   };
 }
 
@@ -61,6 +69,8 @@ export function getRuntimeEnv(): RuntimeEnv {
     apiUrl: injected?.apiUrl ?? process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_URL,
     appVersion:
       injected?.appVersion ?? process.env.NEXT_PUBLIC_APP_VERSION ?? DEFAULT_APP_VERSION,
+    transcriptionEnabled:
+      injected?.transcriptionEnabled ?? envEnabled(process.env.NEXT_PUBLIC_TRANSCRIPTION_ENABLED),
   };
 }
 

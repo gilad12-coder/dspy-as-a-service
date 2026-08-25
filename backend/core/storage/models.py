@@ -5,7 +5,7 @@ Defines the shared database models used by the PostgreSQL storage backend.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -14,8 +14,6 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
-    CheckConstraint,
-    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -78,59 +76,20 @@ class AgentApprovalModel(Base):
 
 
 class UserModel(Base):
-    """A Skynet-native account for email/password sign-in.
-
-    Backs only the "create an account in Skynet" path — OAuth (Google/GitHub)
-    users authenticate against their provider and never get a row here. The
-    lowercased ``email`` is the primary key because it is also the cross-app
-    identity (the ``username`` every other table — jobs, datasets, shares —
-    keys ownership on), so a local account and the work it owns line up on a
-    single value. Only the scrypt ``password_hash`` is persisted; the plaintext
-    password is never stored.
-    """
+    """A normalized identity shared by ADFS and local username login."""
 
     __tablename__ = "users"
 
-    email: Mapped[str] = mapped_column(String(255), primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    local_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
+    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Whether the sign-up email address has been confirmed via an emailed code.
-    # Defaults True so rows created before this column existed, and accounts
-    # created on a deployment with no SMTP relay, are treated as verified; the
-    # register route flips it to False only when it actually sends a code, and
-    # login refuses an unverified account while email delivery is configured.
-    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    # Optional profile captured on the rich sign-up form. Nullable because OAuth
-    # accounts (no ``users`` row) and rows created before these columns existed
-    # never set them, and ``job_role`` is optional even on the sign-up form.
-    use_case: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    experience_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    job_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    # Two-factor state for password sign-ins. A non-null ``totp_secret`` means
-    # TOTP is enabled; ``totp_pending_secret`` holds the secret between setup
-    # and the first verified code, so an abandoned setup never locks the
-    # account. ``recovery_codes`` is a JSON array of scrypt hashes, each
-    # consumed on use.
-    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    totp_pending_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    email_2fa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    recovery_codes: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-
-class MonthlyActiveUserModel(Base):
-    """One identity admitted to use the application during a UTC month."""
-
-    __tablename__ = "monthly_active_users"
-
-    month_start: Mapped[date] = mapped_column(Date, primary_key=True)
-    username: Mapped[str] = mapped_column(String(255), primary_key=True)
-    first_seen_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
+    adfs_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class NotificationPreferenceModel(Base):
@@ -154,240 +113,10 @@ class NotificationPreferenceModel(Base):
     )
 
 
-class WebAuthnCredentialModel(Base):
-    """A registered passkey (WebAuthn credential) owned by one identity.
+class ByokProviderKeyModel(Base):
+    """Store one encrypted user-supplied model connection."""
 
-    ``user_email`` is a plain indexed column rather than a foreign key to
-    ``users``: OAuth identities (Google/GitHub) have no ``users`` row yet can
-    still register passkeys, since the email is the cross-provider identity.
-    ``credential_id`` and ``public_key`` are stored base64url-encoded exactly
-    as the WebAuthn ceremony emits them; ``sign_count`` tracks the
-    authenticator's signature counter for clone detection.
-    """
-
-    __tablename__ = "webauthn_credentials"
-
-    credential_id: Mapped[str] = mapped_column(String(1024), primary_key=True)
-    user_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    public_key: Mapped[str] = mapped_column(Text, nullable=False)
-    sign_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    transports: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    nickname: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class WebAuthnChallengeModel(Base):
-    """Single-use server-issued challenge for an in-flight WebAuthn ceremony.
-
-    Stored server-side (not in a cookie) so registration and sign-in stay
-    stateless across backend replicas. Keyed by the base64url challenge
-    itself — the verify step extracts the challenge echoed in the client's
-    ``clientDataJSON``, consumes the row, and rejects anything unknown or past
-    ``expires_at``. Expired rows are purged opportunistically on each insert.
-    """
-
-    __tablename__ = "webauthn_challenges"
-
-    challenge: Mapped[str] = mapped_column(String(255), primary_key=True)
-    purpose: Mapped[str] = mapped_column(String(16), nullable=False)
-    user_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
-class TwoFactorEmailCodeModel(Base):
-    """The active emailed one-time sign-in code for a local account.
-
-    One row per email (re-sending replaces it), holding only the scrypt hash
-    of the 6-digit code. ``attempts`` counts failed verifies so a code dies
-    after a handful of guesses well before ``expires_at``.
-    """
-
-    __tablename__ = "two_factor_email_codes"
-
-    email: Mapped[str] = mapped_column(String(255), primary_key=True)
-    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-
-class PasswordResetCodeModel(Base):
-    """The active password-reset code for a local account.
-
-    One row per email (requesting again replaces it), holding only the scrypt
-    hash of the emailed 6-digit code. ``attempts`` counts failed verifies so a
-    code dies after a handful of guesses well before ``expires_at``. ``sent_at``
-    backs a per-account resend cooldown: the request route is unauthenticated,
-    so the cooldown is what keeps it from being a mail-bomb oracle.
-    """
-
-    __tablename__ = "password_reset_codes"
-
-    email: Mapped[str] = mapped_column(String(255), primary_key=True)
-    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    sent_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-
-class EmailVerificationCodeModel(Base):
-    """The active email-confirmation code for a freshly registered account.
-
-    One row per email (re-sending replaces it), holding only the scrypt hash of
-    the emailed 6-digit code. ``attempts`` counts failed verifies so a code dies
-    after a handful of guesses well before ``expires_at``. ``sent_at`` backs a
-    per-account resend cooldown, since the resend route is unauthenticated and
-    would otherwise be a mail-bomb oracle. Kept separate from the sign-in and
-    reset code tables so a pending confirmation never collides with either.
-    """
-
-    __tablename__ = "email_verification_codes"
-
-    email: Mapped[str] = mapped_column(String(255), primary_key=True)
-    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    sent_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-
-class BillingCustomerModel(Base):
-    """Per-user billing state synced from Stripe (one row per paying identity).
-
-    Keyed on ``username`` (the lowercased email every other table owns rows by)
-    rather than a foreign key to ``users`` so SSO accounts — which never get a
-    ``users`` row — are billed too. ``stripe_customer_id`` is the durable link to
-    Stripe. ``credit_balance`` is the denormalized spendable purchased-credit
-    total, kept in step with ``credit_ledger`` on every mutation so a balance
-    read is a single fast integer.
-    """
-
-    __tablename__ = "billing_customers"
-    # Credits are prepaid: a balance below zero would mean the platform lent
-    # tokens, so the DB refuses it outright — the clamped debit in
-    # ``StripeBillingService.debit_run`` keeps writes inside these bounds.
-    __table_args__ = (
-        CheckConstraint(
-            "credit_balance >= 0",
-            name="ck_billing_customers_credit_balance_non_negative",
-        ),
-        CheckConstraint(
-            "grant_remaining IS NULL OR grant_remaining >= 0",
-            name="ck_billing_customers_grant_remaining_non_negative",
-        ),
-    )
-
-    username: Mapped[str] = mapped_column(String(255), primary_key=True)
-    stripe_customer_id: Mapped[str] = mapped_column(
-        String(64), nullable=False, unique=True, index=True
-    )
-    credit_balance: Mapped[int] = mapped_column(
-        BigInteger().with_variant(Integer(), "sqlite"),
-        nullable=False,
-        default=0,
-        server_default="0",
-    )
-    # ``grant_remaining`` is what is left of the account's one-time free credit
-    # grant (500 credits, seeded once and never renewed). NULL until the first
-    # wallet read or run seeds it; seeding is lazy-evaluated on read, never
-    # cron'd.
-    grant_remaining: Mapped[int | None] = mapped_column(
-        BigInteger().with_variant(Integer(), "sqlite"), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-
-
-class CreditLedgerModel(Base):
-    """Immutable, append-only record of every credit movement for an account.
-
-    Each row is a signed ``delta_credits`` against ``username``: positive for a
-    top-up (pack purchase) or monthly grant, negative for a run charge. The
-    running sum is denormalized onto ``billing_customers.credit_balance`` for
-    fast gating; this table is the audit trail that explains that balance and
-    backs the wallet's usage ledger. ``stripe_event_id`` ties a top-up row to the
-    webhook event that created it so a redelivered event can't double-credit.
-    """
-
-    __tablename__ = "credit_ledger"
-
-    id: Mapped[int] = mapped_column(
-        BigInteger().with_variant(Integer(), "sqlite"),
-        primary_key=True,
-        autoincrement=True,
-    )
-    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    delta_credits: Mapped[int] = mapped_column(
-        BigInteger().with_variant(Integer(), "sqlite"), nullable=False
-    )
-    kind: Mapped[str] = mapped_column(String(16), nullable=False)
-    description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # Measured usage behind a run row's charge; None on top-ups/grants and on
-    # rows written before token metering landed.
-    input_tokens: Mapped[int | None] = mapped_column(
-        BigInteger().with_variant(Integer(), "sqlite"), nullable=True
-    )
-    output_tokens: Mapped[int | None] = mapped_column(
-        BigInteger().with_variant(Integer(), "sqlite"), nullable=True
-    )
-    stripe_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    # The PaymentIntent behind a top-up (``pi_…``), the join key a refund or
-    # dispute webhook uses to find the account and the credits to claw back —
-    # it is the one id present on the checkout, charge, and dispute objects
-    # alike. None on grants/runs/adjustments and on top-ups predating this column.
-    stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
-    )
-
-
-class BillingWebhookEventModel(Base):
-    """Idempotency ledger of Stripe webhook events already applied.
-
-    The webhook endpoint records each ``evt_…`` id here inside the same
-    transaction that applies the event's effect, and skips any event whose id is
-    already present. Stripe guarantees at-least-once delivery, so without this a
-    retried ``checkout.session.completed`` would credit the same purchase twice.
-    """
-
-    __tablename__ = "billing_webhook_events"
-
-    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    received_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-
-
-class BillingProviderKeyModel(Base):
-    """One stored BYOK provider connection for an account, encrypted at rest.
-
-    Backs BYOK mode: when an account runs in ``byok`` token source, jobs bill the
-    user's own provider key instead of Skynet credits. The secret is never stored
-    in plaintext — only ``secret_ciphertext`` (the Fernet-encrypted bytes) is
-    persisted, so a database dump never leaks a usable key. ``last4`` is the
-    recognizable tail kept for masked display, and ``status`` records whether the
-    connection was checked against its provider (``unverified`` / ``verified`` /
-    ``invalid``) so the UI can tell a typo'd key from a working one before a job
-    ever runs. ``api_base`` and ``params`` carry an optional custom endpoint and
-    extra LiteLLM kwargs so a connection can target any OpenAI-compatible host,
-    and ``label`` is an optional user-facing name. The surrogate ``id`` is the
-    primary key, so an account may hold several connections for one provider
-    (e.g. two OpenAI-compatible endpoints); ``(username, provider)`` is indexed
-    for the run-path and settings lookups.
-    """
-
-    __tablename__ = "billing_provider_keys"
+    __tablename__ = "byok_provider_keys"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
     username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
@@ -408,34 +137,7 @@ class BillingProviderKeyModel(Base):
     )
 
     __table_args__ = (
-        Index("ix_billing_provider_keys_username_provider", "username", "provider"),
-    )
-
-
-class BillingOpenRouterKeyModel(Base):
-    """One platform-provisioned OpenRouter runtime key per account.
-
-    Backs provider-side spend capping for managed runs: when
-    ``OPENROUTER_PROVISIONING_KEY`` is configured, the worker mints one
-    OpenRouter runtime key per account and syncs its spend limit to the
-    account's credit balance before each managed dispatch, so upstream spend is
-    capped at OpenRouter itself even if every backend-side gate fails (see
-    ``core.billing.openrouter_keys``). Only the Fernet-encrypted secret is
-    persisted — the same at-rest contract as the BYOK vault — and ``key_hash``
-    addresses the key in OpenRouter's key-management API. Deleting a row forces
-    a fresh key to be minted on the account's next managed dispatch.
-    """
-
-    __tablename__ = "billing_openrouter_keys"
-
-    username: Mapped[str] = mapped_column(String(255), primary_key=True)
-    key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
-    secret_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+        Index("ix_byok_provider_keys_username_provider", "username", "provider"),
     )
 
 
@@ -761,35 +463,6 @@ class GridPairResultModel(Base):
     )
 
 
-class UserQuotaOverrideModel(Base):
-    """SQLAlchemy model for live per-user quota overrides."""
-
-    __tablename__ = "user_quota_overrides"
-
-    username: Mapped[str] = mapped_column(String(255), primary_key=True)
-    quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-
-class UserQuotaAuditModel(Base):
-    """SQLAlchemy model for quota administration audit events."""
-
-    __tablename__ = "user_quota_audit_events"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    actor: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    target_username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    action: Mapped[str] = mapped_column(String(32), nullable=False)
-    old_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    new_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-
-
 class UserStorageQuotaOverrideModel(Base):
     """SQLAlchemy model for per-user storage-budget overrides.
 
@@ -845,7 +518,7 @@ class JobEmbeddingModel(Base):
     is_recommendable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false", index=True
     )
-    is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false", index=True)
+    is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true", index=True)
     baseline_metric: Mapped[float | None] = mapped_column(Float, nullable=True)
     optimized_metric: Mapped[float | None] = mapped_column(Float, nullable=True)
     summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)

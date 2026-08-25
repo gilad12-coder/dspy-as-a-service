@@ -94,7 +94,6 @@ import { ArtifactTab } from "./ArtifactTab";
 import { StageInfoModal } from "./StageInfoModal";
 import { PairSelectionStrip } from "./PairSelectionStrip";
 import { OverviewTab } from "./OverviewTab";
-import { RunCreditsChip } from "./RunCreditsChip";
 import { GridServeTab } from "./GridServeTab";
 import { LMActivityTab } from "./LMActivityTab";
 import { ReactServeChat } from "./ReactServeChat";
@@ -1125,7 +1124,6 @@ export function OptimizationDetailView({ shareData }: { shareData?: SharedOptimi
                     {formatBytes(job.stored_bytes ?? 0)}
                   </Link>
                 )}
-                {!isPairContext && <RunCreditsChip details={job.result?.details} />}
               </div>
             </div>
             {!isShare && (

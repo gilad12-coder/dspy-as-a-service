@@ -46,7 +46,6 @@ except ImportError:  # Optional dep: tests/CI can run without the Scalar docs UI
     DocumentDownloadType = None  # type: ignore[assignment, misc]
     get_scalar_api_reference = None  # type: ignore[assignment]
 
-from ..billing import StripeBillingService, start_openrouter_float_sweeper
 from ..config import settings
 from ..error_reporting import capture_exception
 from ..exceptions import AppError
@@ -80,16 +79,14 @@ from .observability import (
     start_staged_dataset_sweeper,
     start_stale_conversation_sweeper,
 )
-from .rate_limit import build_login_throttle
-from .routers.account_data import create_account_data_router
-from .routers.account_security import create_account_security_router
 from .routers.accounts import create_accounts_router
 from .routers.admin import create_admin_router
+from .routers.admin_accounts import create_admin_accounts_router
 from .routers.agent_history import create_agent_history_router
 from .routers.agent_memory import create_agent_memory_router
 from .routers.analytics import create_analytics_router
 from .routers.api_tokens import create_api_tokens_router
-from .routers.billing import create_billing_router
+from .routers.byok import create_byok_router
 from .routers.code_agent import create_code_agent_router
 from .routers.code_validation import create_code_validation_router
 from .routers.dashboard import create_dashboard_router
@@ -698,7 +695,6 @@ def create_app(
     orphan_sweeper = None
     stale_conversation_sweeper = None
     staged_dataset_sweeper = None
-    openrouter_float_sweeper = None
     embedding_sweeper = None
     loop_lag_monitor = None
 
@@ -718,7 +714,6 @@ def create_app(
             queue_metrics_refresher, \
             staged_dataset_sweeper, \
             stale_conversation_sweeper, \
-            openrouter_float_sweeper, \
             embedding_sweeper, \
             worker
         # Reclaim jobs whose worker lease has expired. Under multi-pod scaling
@@ -748,11 +743,6 @@ def create_app(
         orphan_sweeper = start_orphan_recovery_sweeper(job_store)
         stale_conversation_sweeper = start_stale_conversation_sweeper(getattr(job_store, "engine", None))
         staged_dataset_sweeper = start_staged_dataset_sweeper(getattr(job_store, "engine", None))
-        # The Stripe webhook only checks the OpenRouter float when someone buys
-        # credits; this loop catches a declined Auto Top-Up card on a quiet day.
-        openrouter_float_sweeper = start_openrouter_float_sweeper(
-            job_store.engine, StripeBillingService(engine=job_store.engine).total_outstanding_credits
-        )
         if settings.event_loop_lag_monitor_enabled:
             loop_lag_monitor = start_event_loop_lag_monitor()
             logger.info("Event-loop lag monitor enabled (threshold %.0fms)", settings.event_loop_lag_threshold_ms)
@@ -838,8 +828,6 @@ def create_app(
                 stale_conversation_sweeper.stop()
             if staged_dataset_sweeper:
                 staged_dataset_sweeper.stop()
-            if openrouter_float_sweeper:
-                openrouter_float_sweeper.stop()
             if embedding_sweeper:
                 embedding_sweeper.stop()
             if loop_lag_monitor:
@@ -1270,6 +1258,7 @@ def create_app(
         create_admin_router(job_store=job_store, directory_client=build_directory_client()),
         tags=["Admin"],
     )
+    app.include_router(create_admin_accounts_router(job_store=job_store), tags=["Admin"])
     app.include_router(create_registry_router(registry=registry), tags=["Registry"])
     app.include_router(create_code_validation_router(), tags=["Code Validation"])
     app.include_router(create_mcp_probe_router(), tags=["Code Validation"])
@@ -1279,13 +1268,8 @@ def create_app(
     app.include_router(create_agent_memory_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_agent_history_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_api_tokens_router(job_store=job_store), tags=["Settings"])
-    app.include_router(create_billing_router(job_store=job_store), tags=["Billing"])
-    app.include_router(
-        create_accounts_router(job_store=job_store, login_throttle=build_login_throttle()),
-        tags=["Auth"],
-    )
-    app.include_router(create_account_security_router(job_store=job_store), tags=["Auth"])
-    app.include_router(create_account_data_router(job_store=job_store), tags=["Settings"])
+    app.include_router(create_byok_router(job_store=job_store), tags=["Settings"])
+    app.include_router(create_accounts_router(job_store=job_store), tags=["Auth"])
     app.include_router(create_notification_preferences_router(job_store=job_store), tags=["Settings"])
     app.include_router(create_datasets_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_dataset_library_router(job_store=job_store), tags=["Datasets"])

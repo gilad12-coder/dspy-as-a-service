@@ -40,7 +40,7 @@ const SOURCE_COLOR = {
 export function TaggerResultsSummary({ assist, annotations, onFlaggedPass }: Props) {
   const counts = provenanceCounts(assist, annotations);
   const flagged = flaggedRowIds(assist);
-  const credits = assist.autotag?.credits_spent ?? 0;
+  const totalTokens = assist.autotag?.total_tokens ?? 0;
 
   const stats = [
     {
@@ -114,12 +114,12 @@ export function TaggerResultsSummary({ assist, annotations, onFlaggedPass }: Pro
             hint={s.hint}
           />
         ))}
-        {credits > 0 && (
+        {totalTokens > 0 && (
           <StatCell
-            value={credits}
+            value={totalTokens}
             icon={Coins}
-            label={msg("tagger.results.recap.credits")}
-            hint={msg("tagger.results.recap.credits_hint")}
+            label={msg("tagger.results.recap.tokens")}
+            hint={msg("tagger.results.recap.tokens_hint")}
           />
         )}
       </div>

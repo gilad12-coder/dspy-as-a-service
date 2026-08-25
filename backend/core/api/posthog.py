@@ -14,21 +14,18 @@ from ..config import settings
 logger = logging.getLogger(__name__)
 
 # Browser-emitted names plus the server-emitted milestones recorded through
-# :func:`core.telemetry.server_events.record_server_event` (purchase and run
-# outcomes), so both halves of a funnel reach the same PostHog project.
+# :func:`core.telemetry.server_events.record_server_event`, so both halves of a
+# run lifecycle reach the same explicitly configured PostHog project.
 _EVENT_NAMES = {
     "page_view",
     "element_click",
     "login_succeeded",
     "login_failed",
-    "signup_started",
-    "signup_succeeded",
+    "client_error",
     "run_submitted",
     "grid_search_submitted",
     "settings_opened",
     "settings_tab_changed",
-    "checkout_started",
-    "purchase_completed",
     "run_completed",
     "run_failed",
     "run_cancelled",
@@ -41,7 +38,6 @@ _EVENT_NAMES = {
     "share_created",
 }
 _PROPERTY_KEYS = {
-    "credits",
     "generation_models",
     "has_reflection",
     "href",
@@ -54,7 +50,6 @@ _PROPERTY_KEYS = {
     "name",
     "optimization_type",
     "optimizer",
-    "pack_id",
     "path",
     "provider",
     "react",

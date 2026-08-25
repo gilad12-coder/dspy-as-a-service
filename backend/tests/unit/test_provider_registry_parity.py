@@ -1,12 +1,7 @@
-"""Pin every BYOK provider list to the canonical ``core.provider_registry``.
+"""Pin BYOK provider shortcuts to the canonical ``core.provider_registry``.
 
-The registry is the single source of truth for which providers a user may bring
-a key for and the vault-slug <-> LiteLLM-prefix bridge. Three other lists must
-stay in lockstep with it or a key could be saved for a provider whose models
-aren't offered (or the reverse): the vault's verify-probe table, the model
-catalog's offered prefixes, and the frontend's ``byok.ts`` catalog. The first
-two are derived in code; the frontend is a separate language and keeps its own
-copy, so this test parses it and fails loudly the moment it drifts.
+The registry is the source of truth for the manual picker and bundled catalog.
+Arbitrary JSON-imported connections remain valid outside this convenience set.
 """
 
 from __future__ import annotations
@@ -15,7 +10,7 @@ import re
 from pathlib import Path
 
 from core.api.model_catalog import _BYOK_CATALOG_PROVIDERS
-from core.billing.byok_vault import _PROVIDER_PROBES
+from core.byok.vault import _PROVIDER_PROBES
 from core.provider_registry import (
     BYOK_CATALOG_PREFIXES,
     BYOK_PROVIDER_SLUGS,
@@ -27,7 +22,7 @@ _FRONTEND_BYOK_TS = (
     / "frontend"
     / "src"
     / "features"
-    / "billing"
+    / "byok"
     / "lib"
     / "byok.ts"
 )
@@ -37,15 +32,15 @@ def _frontend_byok_source() -> str:
     """Return the text of the frontend BYOK catalog module.
 
     Returns:
-        The full source of ``frontend/src/features/billing/lib/byok.ts``.
+        The full source of ``frontend/src/features/byok/lib/byok.ts``.
     """
     return _FRONTEND_BYOK_TS.read_text(encoding="utf-8")
 
 
-def test_vault_probe_table_covers_exactly_the_registry_slugs() -> None:
-    """The vault verify-probe table keys are exactly the registry's vault slugs."""
+def test_vault_probe_table_only_uses_registry_slugs() -> None:
+    """Every built-in verification probe belongs to a provider shortcut."""
     registry_slugs = {slug for slug, _ in BYOK_PROVIDER_SLUGS}
-    assert set(_PROVIDER_PROBES) == registry_slugs
+    assert set(_PROVIDER_PROBES) <= registry_slugs
 
 
 def test_catalog_prefixes_match_the_registry() -> None:

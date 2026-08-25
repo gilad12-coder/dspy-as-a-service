@@ -19,7 +19,7 @@ export type ProfileKind = "categorical" | "numeric" | "freeform";
 
 export interface ModelConfig {
   name: string;
-  /** Billing/auth source for this model only. Older saved configs default to managed. */
+  /** Credential source for this model. Older saved configs default to managed. */
   token_source?: "managed" | "byok";
   /** Vault provider slug when a BYOK model comes from a custom connection. */
   byok_provider?: string | null;
@@ -204,24 +204,12 @@ interface OptimizationRequestBase {
   shuffle?: boolean;
   seed?: number | null;
   is_private?: boolean;
-  // How the run's tokens are billed: "managed" (Skynet credits) or "byok" (the
-  // user's own key — not billed). Threaded from the wizard's token-source toggle
-  // so billing mode is enforced server-side, not advisory. Defaults to "managed".
+  // Where model credentials are resolved: deployment-managed or the user's
+  // encrypted provider connection.
   token_source?: "managed" | "byok";
-  // User-set Max Cost Ceiling in credits [FG-1]. A DSPy job's token use isn't
-  // linear, so the wizard shows a projected bracket instead of a tight estimate
-  // and lets the user cap the run here; the backend hard-stops the job once spend
-  // exceeds the budget this cap buys. Omitted when no ceiling is set.
-  max_cost_credits?: number;
   // Optional GEPA validation target, expressed as a percentage (0–100). The
   // optimizer stops searching when its best validation candidate reaches it.
   target_score?: number;
-  // Projected credit bracket the wizard showed at submit [FG-1], persisted with
-  // the billing stamp so the estimate can be reconciled against the actual
-  // charge. Carries the chargeable bracket for the run's token source
-  // (managed: full per-model cost; byok: platform fee). Omitted when unestimated.
-  estimated_credits_low?: number;
-  estimated_credits_high?: number;
 }
 
 export interface RunRequest extends OptimizationRequestBase {
@@ -414,21 +402,6 @@ export interface LMStageStats {
 export interface LMActivity {
   generation: Record<string, LMStageStats>;
   reflection: Record<string, LMStageStats>;
-}
-
-/**
- * What a finished run cost against the credit ledger: every run bills, and
- * `credits` is the charged amount. Stamped by the worker under
- * `RunResult.details.billing`.
- */
-export interface RunBillingOutcome {
-  outcome: "billed";
-  credits: number;
-  // The projected credit bracket persisted at submit, echoed back so the
-  // estimate can be reconciled against the actual charge. Absent on runs
-  // submitted before an estimate was persisted (older runs).
-  estimated_low?: number;
-  estimated_high?: number;
 }
 
 export interface PairResult {

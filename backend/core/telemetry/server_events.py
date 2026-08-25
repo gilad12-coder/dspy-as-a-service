@@ -1,15 +1,14 @@
 """Record product-telemetry milestones from server code paths.
 
-The browser SDK can only report what the browser sees. Two funnel milestones
-happen out of its sight — a Stripe checkout completing (a webhook, often after
-the tab closed) and an optimisation run reaching a terminal state (the worker,
-minutes to hours later). Those are recorded here so the ``telemetry_events``
+The browser SDK can only report what the browser sees. Optimization runs reach
+their terminal state in a worker, often minutes or hours after the browser
+request. Those milestones are recorded here so the ``telemetry_events``
 table and the PostHog export hold the whole funnel, attributed by the same
 server-trusted ``username`` and (best-effort) the user's last-known browser
 ``anonymous_id`` so the PostHog distinct id lines up with the browser events.
 
 Everything in this module is best-effort: a telemetry failure must never turn
-a credited purchase or a finished run into an error.
+a finished run into an error.
 """
 
 from __future__ import annotations

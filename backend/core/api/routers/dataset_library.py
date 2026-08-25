@@ -25,8 +25,6 @@ uncompressed ``byte_size``; the per-file cap still measures the compressed
 
 from __future__ import annotations
 
-import secrets
-from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
@@ -51,11 +49,7 @@ from ...storage.dataset_library import (
     PostgresDatasetBlobStore,
     StagedDataset,
 )
-from ...storage.models import (
-    DatasetShareGrantModel,
-    DatasetShareLinkModel,
-    TaggingSessionModel,
-)
+from ...storage.models import DatasetShareGrantModel, TaggingSessionModel
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..converters import parse_overview
 from ..dataset_access import (
@@ -64,9 +58,7 @@ from ..dataset_access import (
     require_role,
 )
 from ..errors import DomainError
-from ..tagging_session_access import (
-    get_active_link as get_active_session_link,
-)
+from ..sharing_access import LINK_GRANT_MARKER
 from ..tagging_session_access import (
     list_grants as list_session_grants,
 )
@@ -306,42 +298,27 @@ def _schema_from_run_payload(payload: dict[str, Any], rows: list[dict[str, Any]]
 def _copy_session_sharing_to_dataset(
     db: Session, *, session_id: str, dataset_id: str, actor: str
 ) -> None:
-    """Mirror a tagger session's sharing onto a freshly-created dataset.
+    """Copy named tagger-session grants onto a freshly created dataset.
 
-    Copies the session's live share link (its general-access policy and tier)
-    and every member grant onto the new dataset, so a session that reached a set
-    of people keeps reaching exactly them once it lands in the library. The
-    dataset link is minted with a fresh token — it is a new resource at a new
-    ``/datasets/share/<token>`` URL — while each grant preserves its original
-    ``created_by`` (including the link-derived marker) so named invites and
-    link-claimed members render on the dataset just as they did on the session.
-    The caller owns the transaction and commits.
+    On-premises sharing is account-specific. Historical link-derived grants
+    are deliberately discarded so moving a session cannot recreate anonymous
+    or anyone-with-link access.
 
     Args:
         db: Open DB session carrying the caller's transaction.
         session_id: Source tagger session whose sharing is copied.
         dataset_id: Destination dataset, just created and not yet shared.
-        actor: Username recorded as the new dataset link's creator.
+        actor: Username recorded as the copier for grants without an actor.
     """
-    link = get_active_session_link(db, session_id)
-    if link is not None:
-        db.add(
-            DatasetShareLinkModel(
-                token=secrets.token_urlsafe(24),
-                dataset_id=dataset_id,
-                created_by=actor,
-                created_at=datetime.now(UTC),
-                general_access=link.general_access,
-                general_role=link.general_role,
-            )
-        )
     for grant in list_session_grants(db, session_id):
+        if grant.created_by == LINK_GRANT_MARKER:
+            continue
         db.add(
             DatasetShareGrantModel(
                 dataset_id=dataset_id,
                 grantee_username=grant.grantee_username,
                 role=grant.role,
-                created_by=grant.created_by,
+                created_by=grant.created_by or actor,
                 created_at=grant.created_at,
             )
         )

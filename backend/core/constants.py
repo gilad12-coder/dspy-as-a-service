@@ -47,22 +47,10 @@ PAYLOAD_OVERVIEW_SEED = "seed"
 PAYLOAD_OVERVIEW_OPTIMIZER_KWARGS = "optimizer_kwargs"
 PAYLOAD_OVERVIEW_COMPILE_KWARGS = "compile_kwargs"
 PAYLOAD_OVERVIEW_TASK_FINGERPRINT = "task_fingerprint"
-# Token source the run bills against: "managed" (Skynet credits) or "byok"
-# (the user's own provider key). Threaded from the wizard so billing mode is
-# enforced server-side, not advisory.
+# Whether a model uses the organization connection or the user's own key.
 PAYLOAD_OVERVIEW_TOKEN_SOURCE = "token_source"
-# Per-model token sources used for mixed managed/BYOK billing after completion.
+# Per-model connection sources for mixed organization/BYOK runs.
 PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL = "token_sources_by_model"
-# Low/high ends of the projected credit bracket the wizard showed at submit.
-# Persisted alongside the billing stamp so the estimate can be reconciled
-# against the actual charge; advisory only — never gates or bills.
-PAYLOAD_OVERVIEW_ESTIMATED_LOW = "estimated_credits_low"
-PAYLOAD_OVERVIEW_ESTIMATED_HIGH = "estimated_credits_high"
-# The run's effective cost ceiling after the balance clamp, in full-cost
-# credits. Persisted in the overview (not just the payload JSON) so the submit
-# gate can sum the commitments of a user's still-active runs without loading
-# every payload; rows predating this stamp contribute zero to that sum.
-PAYLOAD_OVERVIEW_MAX_COST_CREDITS = "max_cost_credits"
 PAYLOAD_OVERVIEW_IS_PRIVATE = "is_private"
 # Id of the personal-library dataset a run was submitted from, when the submit
 # was by-reference. Persisted so the optimization detail surfaces a live link
@@ -122,8 +110,7 @@ COMPOSITION_WORKFLOW = "workflow"
 # worker thread (no subprocess) — see core.worker.tagging_job.
 OPTIMIZATION_TYPE_TAGGING = "tagging_autotag"
 
-# Token source modes. "managed" bills Skynet credits; "byok" runs on the user's
-# own provider key and is never billed.
+# Token source modes: organization-managed or the user's provider connection.
 TOKEN_SOURCE_MANAGED = "managed"
 TOKEN_SOURCE_BYOK = "byok"
 

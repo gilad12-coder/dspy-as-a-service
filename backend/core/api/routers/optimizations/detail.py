@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from ....billing import ProviderKeyVault, resolve_byok_model_config
+from ....byok import ProviderKeyVault, resolve_byok_model_config
 from ....config import settings
 from ....constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
@@ -515,7 +515,7 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         if model_config.token_source == TOKEN_SOURCE_BYOK:
             engine = getattr(job_store, "engine", None)
             if engine is None:
-                raise DomainError("billing.byok_missing_connection", status=400, provider="")
+                raise DomainError("byok.missing_connection", status=400, provider="")
             try:
                 model_config = resolve_byok_model_config(
                     model_config,
@@ -523,7 +523,7 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
                     vault=ProviderKeyVault(engine=engine),
                 )
             except ValueError as exc:
-                raise DomainError("billing.byok_missing_connection", status=400, provider=str(exc)) from exc
+                raise DomainError("byok.missing_connection", status=400, provider=str(exc)) from exc
         lm = build_language_model(model_config)
 
         if program_type == "baseline":

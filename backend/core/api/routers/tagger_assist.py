@@ -2,7 +2,7 @@
 
 Drives the tagger's assist modes on top of the persisted session rows:
 the dataset interview (rubric distillation), batched label predictions for
-calibration and review rounds, pre-run credit estimates, and the bulk
+calibration and review rounds, pre-run token estimates, and the bulk
 auto-tag job.
 
 The bulk job is a ``tagging_autotag`` row in the shared jobs table, claimed
@@ -21,7 +21,6 @@ status) need ``viewer``. Hidden from the public Scalar reference.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -33,19 +32,18 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ...billing import ProviderKeyVault, resolve_byok_model_config
-from ...billing.metering import meter_llm_run
+from ...byok import ProviderKeyVault, resolve_byok_model_config
 from ...constants import (
     OPTIMIZATION_TYPE_TAGGING,
     PAYLOAD_OVERVIEW_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_USERNAME,
     TOKEN_SOURCE_BYOK,
-    TOKEN_SOURCE_MANAGED,
 )
 from ...models import ModelConfig
 from ...service_gateway import tagging
 from ...storage.models import TaggingSessionModel
+from ...usage_observability import record_llm_usage
 from ...worker.tagging_job import TaggingAutotagPayload, untagged_rows
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
@@ -53,7 +51,7 @@ from ..model_catalog import get_catalog_cached
 from ..model_router import route_menu_model
 from ..sharing_access import ShareRole
 from ..tagging_session_access import require_role
-from ._helpers import enforce_llm_credits, sse_from_events, stream_with_llm_metering
+from ._helpers import sse_from_events, stream_with_llm_observation
 
 logger = logging.getLogger(__name__)
 
@@ -126,19 +124,19 @@ class PredictRequest(BaseModel):
 
 
 class PredictResponse(BaseModel):
-    """Per-row predictions plus the credit cost of the calls made."""
+    """Per-row predictions plus observed token use."""
 
     predictions: dict[str, dict[str, Any]]
-    credits: int
+    total_tokens: int
 
 
 class EstimateResponse(BaseModel):
-    """Credit estimate for auto-tagging every currently-unlabeled row."""
+    """Token estimate for auto-tagging every currently-unlabeled row."""
 
     rows: int
     model: str
-    credits_low: int
-    credits_high: int
+    estimated_input_tokens: int
+    estimated_output_tokens: int
 
 
 class AutotagStartResponse(BaseModel):
@@ -153,7 +151,7 @@ class AutotagStatusResponse(BaseModel):
     status: str
     total: int
     done: int
-    credits_spent: int = 0
+    total_tokens: int
     live: bool = Field(
         description="False when the session claims 'running' but the worker fleet "
         "no longer owns an active job for it — the client should offer a resume."
@@ -210,8 +208,8 @@ def _require_known_model(assist: dict[str, Any]) -> None:
     """Reject a session whose chosen tagging model is not in the catalog.
 
     The client only offers catalog models, but ``assist`` is a free-form JSON
-    column any API caller can write — and tagging spends platform credits, so
-    the curated catalog stays the boundary of what a session may run on.
+    column any API caller can write, so the curated catalog stays the boundary
+    of what a centrally managed session may run on.
 
     Args:
         assist: The session's assist state (may carry ``model``).
@@ -251,7 +249,7 @@ def _resolve_assist_model(job_store: Any, username: str, assist: dict[str, Any])
         return model_config
     engine = getattr(job_store, "engine", None)
     if engine is None:
-        raise DomainError("billing.byok_missing_connection", status=400, provider="")
+        raise DomainError("byok.missing_connection", status=400, provider="")
     try:
         return resolve_byok_model_config(
             model_config,
@@ -259,7 +257,7 @@ def _resolve_assist_model(job_store: Any, username: str, assist: dict[str, Any])
             vault=ProviderKeyVault(engine=engine),
         )
     except ValueError as exc:
-        raise DomainError("billing.byok_missing_connection", status=400, provider=str(exc)) from exc
+        raise DomainError("byok.missing_connection", status=400, provider=str(exc)) from exc
 
 
 def _interview_config(row: TaggingSessionModel) -> dict[str, Any]:
@@ -324,7 +322,6 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         Returns:
             The assistant turn; ``rubric`` is populated once ``done`` is true.
         """
-        enforce_llm_credits(job_store, user.username)
         with Session(job_store.engine) as db:
             row = _load_for_role(db, session_id, user)
             config = _interview_config(row)
@@ -348,8 +345,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             logger.exception("interview turn failed for session %s", session_id)
             raise DomainError("tagger.assist.llm_failed", status=502) from exc
         finally:
-            # A failed turn's retries still consumed tokens; bill what ran.
-            meter_llm_run(
+            record_llm_usage(
                 job_store.engine, user.username, usage_sink, description="Tagging interview"
             )
         return InterviewResponse(**turn)
@@ -378,7 +374,6 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         Returns:
             A ``text/event-stream`` response.
         """
-        await asyncio.to_thread(enforce_llm_credits, job_store, user.username)
         with Session(job_store.engine) as db:
             row = _load_for_role(db, session_id, user)
             config = _interview_config(row)
@@ -406,7 +401,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                 logger.exception("interview stream failed for session %s", session_id)
                 yield {"event": "error", "data": {"code": "tagger.assist.llm_failed"}}
 
-        metered = stream_with_llm_metering(
+        metered = stream_with_llm_observation(
             source(),
             job_store=job_store,
             username=user.username,
@@ -441,8 +436,8 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             user: Authenticated caller; must own the session.
 
         Returns:
-            The ``{row_id: {value, confidence, reason}}`` map and the credit
-            cost of the calls made.
+            The ``{row_id: {value, confidence, reason}}`` map and observed
+            token count.
         """
         with Session(job_store.engine) as db:
             row = _load_for_role(db, session_id, user)
@@ -455,13 +450,12 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         rows = [r for r in data if str(r.get("id")) in wanted]
         if not rows:
             raise DomainError("tagger.assist.rows_not_found", status=404)
-        enforce_llm_credits(job_store, user.username)
         rubric = [str(r) for r in assist.get("rubric") or []]
         examples = tagging.select_examples(config, data, annotations, assist, exclude_ids=wanted)
         instructions = tagging.compile_instructions(config, rubric, examples)
         usage_sink: list = []
         try:
-            predictions, credits = tagging.predict_rows(
+            predictions, total_tokens = tagging.predict_rows(
                 config,
                 instructions,
                 rows,
@@ -472,15 +466,13 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             logger.exception("prediction failed for session %s", session_id)
             raise DomainError("tagger.assist.llm_failed", status=502) from exc
         finally:
-            # A failed batch's completed calls still consumed tokens; bill what ran.
-            meter_llm_run(
+            record_llm_usage(
                 job_store.engine,
                 user.username,
                 usage_sink,
                 description="Tagging predictions",
-                token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
             )
-        return PredictResponse(predictions=predictions, credits=credits)
+        return PredictResponse(predictions=predictions, total_tokens=total_tokens)
 
     @router.post(
         "/tagging-sessions/{session_id}/assist/predict/stream",
@@ -494,7 +486,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         The streaming twin of the predict route — same few-shot compilation
         and row lookup — emitting a ``prediction`` event per row the moment
         its label lands, a terminal ``predict_done`` with the merged map and
-        credit cost, and ``error`` on total failure.
+        observed token count, and ``error`` on total failure.
 
         Args:
             session_id: UUID of the tagger session.
@@ -504,7 +496,6 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         Returns:
             A ``text/event-stream`` response.
         """
-        await asyncio.to_thread(enforce_llm_credits, job_store, user.username)
         with Session(job_store.engine) as db:
             row = _load_for_role(db, session_id, user)
             config = _effective_config(row)
@@ -536,13 +527,13 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                 logger.exception("prediction stream failed for session %s", session_id)
                 yield {"event": "error", "data": {"code": "tagger.assist.llm_failed"}}
 
-        metered = stream_with_llm_metering(
+        metered = stream_with_llm_observation(
             source(),
             job_store=job_store,
             username=user.username,
             description="Tagging predictions",
             usage_sink=usage_sink,
-            token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
+            token_source=model_config.token_source or "managed",
         )
         return StreamingResponse(
             sse_from_events(metered),
@@ -557,17 +548,17 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
     @router.post(
         "/tagging-sessions/{session_id}/assist/estimate",
         response_model=EstimateResponse,
-        summary="Estimate the credit cost of auto-tagging the remaining rows",
+        summary="Estimate token volume for auto-tagging the remaining rows",
     )
     def assist_estimate(session_id: str, user: AuthenticatedUserDep) -> EstimateResponse:
-        """Estimate credits for tagging every currently-unlabeled row.
+        """Estimate token volume for tagging every currently-unlabeled row.
 
         Args:
             session_id: UUID of the tagger session.
             user: Authenticated caller; needs at least ``viewer`` access.
 
         Returns:
-            Row count, model id and a low/high credit range.
+            Row count, model id and input/output token estimates.
         """
         with Session(job_store.engine) as db:
             row = _load_for_role(db, session_id, user, ShareRole.viewer)
@@ -581,11 +572,10 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
         instructions = tagging.compile_instructions(config, rubric, examples)
         pending = untagged_rows(data, annotations)
         return EstimateResponse(
-            **tagging.estimate_credits_for_rows(
+            **tagging.estimate_tokens_for_rows(
                 instructions,
                 pending,
                 model=model_config.name,
-                token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
             )
         )
 
@@ -613,7 +603,6 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                 or 422 when every row is already labeled.
         """
         worker = get_worker_ref()
-        enforce_llm_credits(job_store, user.username)
         job_id = str(uuid4())
         with Session(job_store.engine) as db:
             row = _load_for_role(db, session_id, user)
@@ -636,7 +625,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                 "status": "running",
                 "total": len(pending),
                 "done": 0,
-                "credits_spent": int(prior.get("credits_spent", 0)),
+                "total_tokens": 0,
                 "job_id": job_id,
             }
             row.assist = cast(Any, state)
@@ -681,7 +670,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             user: Authenticated caller; must own the session.
 
         Returns:
-            Status, done/total counters, credits spent, and ``live``.
+            Status, done/total counters and ``live``.
         """
         with Session(job_store.engine) as db:
             row = _load_for_role(db, session_id, user, ShareRole.viewer)
@@ -701,7 +690,7 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             status=status,
             total=int(autotag.get("total", 0)),
             done=int(autotag.get("done", 0)),
-            credits_spent=int(autotag.get("credits_spent", 0)),
+            total_tokens=int(autotag.get("total_tokens", 0)),
             live=live if status == "running" else False,
         )
 

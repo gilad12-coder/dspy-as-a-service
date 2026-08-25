@@ -8,9 +8,9 @@ metadata:
     app.kubernetes.io/component: frontend
 data:
   {{- range $key, $val := .Values.frontend.env }}
-  {{- if and (ne $key "API_URL") (or (kindIs "string" $val) (kindIs "int" $val) (kindIs "float64" $val) (kindIs "bool" $val)) }}
+  {{- if and (ne $key "API_URL") (ne $key "BACKEND_INTERNAL_URL") (or (kindIs "string" $val) (kindIs "int" $val) (kindIs "float64" $val) (kindIs "bool" $val)) }}
   {{ $key }}: {{ $val | quote }}
   {{- end }}
   {{- end }}
-  # API_URL is computed from the backend Service when not explicitly set.
   API_URL: {{ include "skynet.frontend.apiUrl" . | quote }}
+  BACKEND_INTERNAL_URL: {{ include "skynet.frontend.internalApiUrl" . | quote }}

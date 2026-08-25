@@ -397,12 +397,10 @@ def test_always_tools_include_discovery_and_post_submit() -> None:
 
 
 def test_read_only_reach_tools_always_available() -> None:
-    """Wallet and tagging-session reads are always-on and never gate."""
+    """Tagging-session reads are always-on and never gate."""
     allowed = tools_for(WizardState())
-    assert "get_wallet_for_agent" in allowed
     assert "list_tagging_sessions_for_agent" in allowed
-    for name in ("get_wallet_for_agent", "list_tagging_sessions_for_agent"):
-        assert _needs_approval(name, "ask") is False
+    assert _needs_approval("list_tagging_sessions_for_agent", "ask") is False
 
 
 def test_dataset_library_tools_always_available() -> None:

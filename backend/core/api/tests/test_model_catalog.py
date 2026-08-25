@@ -342,15 +342,8 @@ def test_single_endpoint_provider_has_none_data_center(monkeypatch: pytest.Monke
     assert providers[0].data_center is None
 
 
-def test_platform_catalog_is_openrouter_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Non-OpenRouter providers never reach the hosted catalog.
-
-    Other providers' keys may exist for non-LLM features (OpenAI powers
-    Whisper dictation) and an on-prem gateway may be configured — neither
-    may leak chat models into the platform-billed menu.
-    """
-    monkeypatch.setattr(settings, "code_agent_base_url", "https://llm.internal/v1")
-    monkeypatch.setattr(settings, "embeddings_base_url", "")
+def test_platform_catalog_includes_each_configured_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The central catalog can expose any operator-configured provider."""
 
     fake_cost: dict = {
         "gpt-4o": {
@@ -388,18 +381,18 @@ def test_platform_catalog_is_openrouter_only(monkeypatch: pytest.MonkeyPatch) ->
 
     result = get_catalog()
 
-    assert {m.provider for m in result.models} == {"openrouter"}
-    assert {p.slug for p in result.providers} == {"openrouter"}
+    assert {m.provider for m in result.models} == {"openai", "anthropic", "openrouter"}
+    assert {p.slug for p in result.providers} == {"openai", "anthropic", "openrouter"}
 
 
-def test_on_prem_falls_back_to_embeddings_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``EMBEDDINGS_BASE_URL`` is used as the on-prem DC when no agent URL is set."""
-    monkeypatch.setattr(settings, "code_agent_base_url", "")
-    monkeypatch.setattr(settings, "embeddings_base_url", "https://embed.internal/v1")
+def test_on_prem_uses_openai_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The central OpenAI-compatible endpoint replaces the public one."""
+    monkeypatch.setattr(settings, "openai_api_base", "https://llm.internal/v1")
 
     centers = _provider_data_centers("openai")
-    on_prem = next(c for c in centers if c.label == "On-prem gateway")
-    assert on_prem.base_url == "https://embed.internal/v1"
+    assert len(centers) == 1
+    assert centers[0].label == "On-prem gateway"
+    assert centers[0].base_url == "https://llm.internal/v1"
 
 
 def test_get_catalog_adds_probe_only_models_with_metadata(monkeypatch: pytest.MonkeyPatch) -> None:

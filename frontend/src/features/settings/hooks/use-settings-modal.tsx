@@ -8,7 +8,7 @@ interface SettingsModalContextValue {
   setOpen: (open: boolean) => void;
   /** Tab to jump to on the next open, or null to keep the last/default tab. */
   targetTab: string | null;
-  /** Open the modal focused on a specific tab (e.g. the credit chip → wallet). */
+  /** Open the modal focused on a specific tab. */
   openTo: (tab: string) => void;
   /** Consume the pending target tab so it doesn't re-apply on the next manual open. */
   clearTarget: () => void;

@@ -634,17 +634,6 @@ const tutorialSteps: TutorialStep[] = perLocale(() => [
     readingTimeSec: 10,
   },
   {
-    id: "dd-settings-billing",
-    title: msg("tutorial.step.settings_billing.title"),
-    description: msg("tutorial.step.settings_billing.body"),
-    target: "[data-tutorial='settings-billing']",
-    placement: "left",
-    beforeShow: () => openSettingsTab("billing"),
-    afterHide: closeSettings,
-    tracks: WORKSPACE_ONLY,
-    readingTimeSec: 11,
-  },
-  {
     id: "dd-settings-providers",
     title: msg("tutorial.step.settings_providers.title"),
     description: msg("tutorial.step.settings_providers.body"),

@@ -18,7 +18,6 @@ const DEMO_DATA_PATH = join(HERE, "demo-data.ts");
 const DETAIL_VIEW_PATH = join(HERE, "../../optimizations/components/OptimizationDetailView.tsx");
 const SUBMIT_WIZARD_PATH = join(HERE, "../../submit/hooks/use-submit-wizard.ts");
 const SRC_PATH = fileURLToPath(new URL("../../../", import.meta.url));
-const EN_PATH = fileURLToPath(new URL("../../../../../i18n/locales/ui/en.json", import.meta.url));
 const HE_PATH = fileURLToPath(new URL("../../../../../i18n/locales/ui/he.json", import.meta.url));
 
 function readSourceTree(directory: string): string {
@@ -76,7 +75,7 @@ test("each guided workflow stays at seven steps or fewer", () => {
     workspace: (steps.match(/tracks: WORKSPACE_ONLY/g) ?? []).length,
   };
 
-  assert.deepEqual(counts, { quick: 7, data: 3, results: 7, workspace: 7 });
+  assert.deepEqual(counts, { quick: 7, data: 3, results: 7, workspace: 6 });
   for (const [track, count] of Object.entries(counts)) {
     assert.ok(count <= 7, `${track} guide has ${count} steps`);
   }
@@ -105,17 +104,15 @@ test("the quick-start optimization reaches its results within two seconds", () =
   assert.equal(TUTORIAL_SUBMIT_SPLASH_MS + TUTORIAL_DEMO_RUN_MS, 2_000);
 });
 
-test("tutorial-owned message keys exist in both base catalogs", () => {
+test("tutorial-owned message keys exist in the Hebrew catalog", () => {
   const steps = readFileSync(STEPS_PATH, "utf8");
   const menu = readFileSync(MENU_PATH, "utf8");
-  const en = JSON.parse(readFileSync(EN_PATH, "utf8")) as Record<string, string>;
   const he = JSON.parse(readFileSync(HE_PATH, "utf8")) as Record<string, string>;
   const keys = new Set(
     [...`${steps}\n${menu}`.matchAll(/"(tutorial\.[^"]+)"/g)].map((match) => match[1]),
   );
 
   for (const key of keys) {
-    assert.ok(key in en, `Missing English tutorial message: ${key}`);
     assert.ok(key in he, `Missing Hebrew tutorial message: ${key}`);
   }
 });

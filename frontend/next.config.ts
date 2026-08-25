@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -18,15 +17,6 @@ const nextConfig: NextConfig = {
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "X-Frame-Options", value: "DENY" },
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-        // HSTS: after the first HTTPS response, browsers refuse plain HTTP for
-        // two years. All skynetml.com hosts (apex + www) terminate TLS on
-        // Railway; the API runs on a separate *.up.railway.app host, so
-        // includeSubDomains stays safe. No `preload` — that opts into the
-        // browser preload list, which is slow to reverse.
-        {
-          key: "Strict-Transport-Security",
-          value: "max-age=63072000; includeSubDomains",
-        },
       ],
     },
     {
@@ -54,12 +44,6 @@ const nextConfig: NextConfig = {
       "@fontsource-variable/heebo",
       "@fontsource-variable/geist",
       "@fontsource-variable/jetbrains-mono",
-      "@fontsource-variable/noto-sans-arabic",
-      "@fontsource-variable/vazirmatn",
-      "@fontsource-variable/noto-sans-devanagari",
-      "@fontsource-variable/noto-sans-jp",
-      "@fontsource-variable/noto-sans-kr",
-      "@fontsource-variable/noto-sans-sc",
       "@uiw/react-codemirror",
       "@codemirror/lang-python",
       "xlsx",
@@ -68,11 +52,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig, {
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-  authToken: process.env.SENTRY_AUTH_TOKEN,
-  silent: true,
-  webpack: { treeshake: { removeDebugLogging: true } },
-  telemetry: false,
-});
+export default nextConfig;

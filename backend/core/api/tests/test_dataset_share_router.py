@@ -4,8 +4,8 @@ Mounts the library and sharing routers on one in-memory SQLite store (the
 ``RemoteDBJobStore`` subclass that skips the pgvector bootstrap) and switches the
 acting user per client, so a single store backs an owner and the people they
 share with. Covers the effective-role gate (viewer reads/clones, editor edits,
-owner manages), named-member grants, the anyone-with-link claim flow, link
-restriction revoking link memberships, and ownership transfer.
+owner manages), restricted named-member links, rejection of anyone-link access,
+and ownership transfer.
 """
 
 from __future__ import annotations
@@ -114,8 +114,8 @@ def _add_member(owner: TestClient, dataset_id: str, username: str, role: str) ->
     assert resp.status_code == 200, resp.text
 
 
-def test_sharing_defaults_and_set_general_access() -> None:
-    """Sharing starts restricted with no link; PUT anyone mints a link + path."""
+def test_sharing_defaults_restricted_and_rejects_anyone_links() -> None:
+    """Keep dataset sharing named-only and reject anyone-with-link access."""
     store = _MemStore()
     alice = _client(store, _ALICE)
     dataset_id = _save(alice)
@@ -126,13 +126,11 @@ def test_sharing_defaults_and_set_general_access() -> None:
     assert initial["owner"] == "alice"
     assert initial["members"] == []
 
-    updated = alice.put(
+    rejected = alice.put(
         f"/datasets/library/{dataset_id}/sharing",
         json={"general_access": "anyone", "general_role": "viewer"},
-    ).json()
-    assert updated["general_access"] == "anyone"
-    assert updated["token"]
-    assert updated["share_path"] == f"/datasets/share/{updated['token']}"
+    )
+    assert rejected.status_code == 400
 
 
 def test_invited_viewer_can_read_and_clone_but_not_edit_or_manage() -> None:
@@ -258,57 +256,11 @@ def test_non_owner_cannot_manage_sharing() -> None:
     _add_member(alice, dataset_id, "bob", "viewer")
     assert bob.get(f"/datasets/library/{dataset_id}/sharing").status_code == 403
     assert bob.put(
-        f"/datasets/library/{dataset_id}/sharing", json={"general_access": "anyone"}
+        f"/datasets/library/{dataset_id}/sharing", json={"general_access": "restricted"}
     ).status_code == 403
     assert bob.post(
         f"/datasets/library/{dataset_id}/sharing/members", json={"username": "carol", "role": "viewer"}
     ).status_code == 403
-
-
-def test_anyone_link_grants_viewer_and_claim_lists_dataset() -> None:
-    """An anyone link reads via token for any signed-in user; claim lists it."""
-    store = _MemStore()
-    alice = _client(store, _ALICE)
-    bob = _client(store, _BOB)
-    dataset_id = _save(alice)
-    token = alice.put(
-        f"/datasets/library/{dataset_id}/sharing",
-        json={"general_access": "anyone", "general_role": "viewer"},
-    ).json()["token"]
-
-    page = bob.get(f"/datasets/share/{token}")
-    assert page.status_code == 200
-    assert page.json()["role"] == "viewer"
-    assert page.json()["rows"] == _ROWS
-    assert page.json()["owner"] == "alice"
-
-    claim = bob.post(f"/datasets/share/{token}/claim")
-    assert claim.status_code == 200
-    assert claim.json() == {"dataset_id": dataset_id, "role": "viewer"}
-
-    listed = bob.get("/datasets/library").json()["datasets"]
-    assert any(d["id"] == dataset_id and d["role"] == "viewer" for d in listed)
-    assert bob.get(f"/datasets/library/{dataset_id}").status_code == 200
-
-
-def test_restricting_link_revokes_link_memberships() -> None:
-    """Flipping an anyone link back to restricted drops link-claimed access."""
-    store = _MemStore()
-    alice = _client(store, _ALICE)
-    bob = _client(store, _BOB)
-    dataset_id = _save(alice)
-    token = alice.put(
-        f"/datasets/library/{dataset_id}/sharing",
-        json={"general_access": "anyone", "general_role": "viewer"},
-    ).json()["token"]
-    bob.post(f"/datasets/share/{token}/claim")
-    assert bob.get(f"/datasets/library/{dataset_id}").status_code == 200
-
-    alice.put(f"/datasets/library/{dataset_id}/sharing", json={"general_access": "restricted"})
-
-    assert bob.get(f"/datasets/library/{dataset_id}").status_code == 404
-    assert bob.get("/datasets/library").json()["datasets"] == []
-    assert bob.get(f"/datasets/share/{token}").status_code == 404
 
 
 def test_transfer_ownership_moves_owner_and_demotes_previous() -> None:

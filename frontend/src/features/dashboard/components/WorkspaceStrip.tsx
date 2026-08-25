@@ -2,14 +2,10 @@
 
 import { Fragment, type ReactElement, type ReactNode } from "react";
 import Link from "next/link";
-import { CaretRight, Coins, Database, Tag } from "@/shared/ui/icons";
-import { creditsToUsd, formatCredits, formatUsd, useCredits } from "@/features/billing";
-import { useSettingsModal } from "@/features/settings";
+import { CaretRight, Database, Tag } from "@/shared/ui/icons";
 import { useIsPhone } from "@/shared/hooks/use-device-class";
 import { formatBytes } from "@/shared/lib/formatters";
 import { formatMsg, msg } from "@/shared/lib/messages";
-import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
-import { cn } from "@/shared/lib/utils";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { useWorkspaceSummary } from "../hooks/use-workspace-summary";
 
@@ -122,25 +118,11 @@ function SectionSkeleton({ children }: { children: ReactNode }) {
   );
 }
 
-function CreditsSectionSkeleton() {
-  return (
-    <SectionSkeleton>
-      <div className="flex items-baseline gap-1.5">
-        <Skeleton width={64} height={20} />
-        <Skeleton width={48} height={12} />
-      </div>
-      <RowSkeleton nameWidth={148} />
-      <RowSkeleton nameWidth={96} />
-      <RowSkeleton nameWidth={120} />
-    </SectionSkeleton>
-  );
-}
-
 /**
  * The workspace band of the dashboard's summary card (rendered under the
  * KPI band), surfacing the surfaces the run-centric dashboard predates:
- * labeling sessions, the dataset library (with its storage meter), and the
- * credit wallet, as divider-separated sections. Every section is one cheap,
+ * labeling sessions and the dataset library (with its storage meter), as
+ * divider-separated sections. Every section is one cheap,
  * mostly-cached call — the band renders nothing for a section whose fetch
  * failed rather than blocking the page. While a fetch is in flight the band
  * shows section skeletons at the loaded geometry, so values fill in place
@@ -148,19 +130,10 @@ function CreditsSectionSkeleton() {
  */
 export function WorkspaceStrip() {
   const { tagging, datasets, loading } = useWorkspaceSummary();
-  const { wallet, loading: walletLoading } = useCredits();
-  const { openTo } = useSettingsModal();
   const isPhone = useIsPhone();
-  const locale = getActiveIntlLocale();
 
   if (loading) {
-    if (isPhone) {
-      return (
-        <div className="flex flex-col border-t border-[#DDD4C8]/50 first:border-t-0">
-          <CreditsSectionSkeleton />
-        </div>
-      );
-    }
+    if (isPhone) return null;
     return (
       <div className="flex flex-col border-t border-[#DDD4C8]/50 first:border-t-0 lg:flex-row lg:items-stretch">
         <SectionSkeleton>
@@ -176,12 +149,10 @@ export function WorkspaceStrip() {
             <Skeleton width={96} height={11} />
           </div>
         </SectionSkeleton>
-        <SectionDivider />
-        <CreditsSectionSkeleton />
       </div>
     );
   }
-  if (!tagging && !datasets && walletLoading) return null;
+  if ((!tagging && !datasets) || isPhone) return null;
 
   const usagePct = datasets
     ? Math.min(
@@ -189,11 +160,7 @@ export function WorkspaceStrip() {
         Math.round((datasets.usage.used_bytes / Math.max(1, datasets.usage.quota_bytes)) * 100),
       )
     : 0;
-  const walletTotal = wallet.paidBalanceCredits + wallet.freeGrant.creditsRemaining;
-
   const sections: ReactElement[] = [];
-  // Tagging and datasets are desktop-only surfaces; the phone shell keeps only
-  // the credits section (its billing tab stays available on a phone).
   if (tagging && !isPhone) {
     sections.push(
       <WorkspaceSection
@@ -250,55 +217,6 @@ export function WorkspaceStrip() {
       </WorkspaceSection>,
     );
   }
-  if (walletLoading) {
-    sections.push(<CreditsSectionSkeleton key="credits" />);
-  } else {
-    sections.push(
-      <WorkspaceSection
-        key="credits"
-        icon={<Coins className="size-3.5" aria-hidden="true" />}
-        title={msg("dashboard.workspace.credits.title")}
-        onOpen={() => openTo("billing")}
-      >
-        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
-          <span
-            dir="ltr"
-            className="text-xl font-bold leading-none tracking-tight text-foreground tabular-nums"
-          >
-            {formatCredits(walletTotal, locale)}
-          </span>
-          <span aria-hidden className="text-xs text-muted-foreground">
-            ≈
-          </span>
-          <span dir="ltr" className="text-xs text-muted-foreground">
-            {formatUsd(creditsToUsd(walletTotal), "en")}
-          </span>
-        </div>
-        {wallet.usage.length === 0 ? (
-          <EmptyHint text={msg("dashboard.workspace.credits.cta")} />
-        ) : (
-          wallet.usage.slice(0, 3).map((entry) => (
-            <div key={entry.id} className="flex items-baseline justify-between gap-3 text-xs">
-              <span className="min-w-0 truncate text-foreground/80" dir="auto">
-                {entry.label}
-              </span>
-              <span
-                className={cn(
-                  "shrink-0 tabular-nums",
-                  entry.credits > 0 ? "text-emerald-600" : "text-muted-foreground",
-                )}
-                dir="ltr"
-              >
-                {entry.credits > 0 ? "+" : ""}
-                {formatCredits(entry.credits, locale)}
-              </span>
-            </div>
-          ))
-        )}
-      </WorkspaceSection>,
-    );
-  }
-
   return (
     <div className="flex flex-col border-t border-[#DDD4C8]/50 first:border-t-0 lg:flex-row lg:items-stretch">
       {sections.map((section, i) => (

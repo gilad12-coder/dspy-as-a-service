@@ -1,12 +1,11 @@
 """Access-control foundation for sharing saved tagger sessions.
 
 The tagging-session twin of :mod:`core.api.dataset_access`. It reuses the
-effective-role vocabulary from :mod:`core.api.sharing_access` (:class:`ShareRole`,
-:func:`role_rank`, the ``GENERAL_ACCESS_*`` policies, ``MEMBER_ROLES`` /
-``LINK_ROLES`` and the ``LINK_GRANT_MARKER`` sentinel) so a session grants the
-same tiers as a dataset, and supplies the session-scoped reads of the
-share-link and grant rows plus :func:`resolve_share_access` — the single
-resolver every shared-session route consults.
+effective-role vocabulary from :mod:`core.api.sharing_access`
+(:class:`ShareRole`, :func:`role_rank`, ``MEMBER_ROLES`` and ``LINK_ROLES``) so
+a session grants the same tiers as a dataset, and supplies the session-scoped
+reads of the share-link and grant rows plus :func:`resolve_share_access` — the
+single resolver every shared-session route consults.
 
 A session's owner is its ``username`` column (there is no separate owner
 column), so ownership is read straight off the ``tagging_sessions`` row. On
@@ -30,8 +29,6 @@ from ..storage.models import (
 from .auth import AuthenticatedUser, is_admin
 from .errors import DomainError
 from .sharing_access import (
-    GENERAL_ACCESS_ANYONE,
-    LINK_ROLES,
     MEMBER_ROLES,
     ShareRole,
     _normalize_username,
@@ -190,10 +187,8 @@ def resolve_share_access(
 ) -> ShareRole | None:
     """Resolve the effective role a caller has on a shared tagger session.
 
-    The caller gets the *highest* tier any applicable rule grants, assembled
-    from the active link by ``token``, the owner/admin/member resolution, and —
-    under an ``'anyone'`` link — the link's ``general_role``. Access is
-    login-gated, so a bare URL never resolves to access on its own.
+    The token identifies the session but grants no access by itself. The caller
+    must be its owner, an administrator, or a named member.
 
     Args:
         session: Open DB session backing the sessions and share tables.
@@ -208,18 +203,7 @@ def resolve_share_access(
     if link is None:
         return None
 
-    candidates: list[ShareRole] = []
-    resolved = resolve_effective_role(session, link.session_id, user)
-    if resolved is not None:
-        candidates.append(resolved)
-
-    if link.general_access == GENERAL_ACCESS_ANYONE:
-        link_role = link.general_role if link.general_role in LINK_ROLES else ShareRole.viewer
-        candidates.append(ShareRole(link_role))
-
-    if not candidates:
-        return None
-    return max(candidates, key=role_rank)
+    return resolve_effective_role(session, link.session_id, user)
 
 
 def require_role(

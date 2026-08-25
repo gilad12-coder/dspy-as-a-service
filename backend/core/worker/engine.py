@@ -26,28 +26,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..billing import (
-    OpenRouterKeyProvisioner,
+from ..byok import (
     ProviderKeyVault,
-    StripeBillingService,
     inject_byok_connections,
-    inject_provisioned_openrouter_key,
     payload_uses_token_source,
 )
-from ..billing.pricing import ModelUsage
 from ..config import settings
 from ..constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
     OPTIMIZATION_TYPE_TAGGING,
-    PAYLOAD_OVERVIEW_ESTIMATED_HIGH,
-    PAYLOAD_OVERVIEW_ESTIMATED_LOW,
     PAYLOAD_OVERVIEW_MODEL_NAME,
     PAYLOAD_OVERVIEW_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_OPTIMIZER_NAME,
     PAYLOAD_OVERVIEW_TOKEN_SOURCE,
-    PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL,
     PAYLOAD_OVERVIEW_USERNAME,
     PROGRESS_GRID_PAIR_COMPLETED,
     PROGRESS_GRID_PAIR_FAILED,
@@ -81,46 +74,6 @@ GRID_ENVELOPE_PAIR_INDEX = -1
 # A pair child is terminal only in one of these; ``paused`` never applies to
 # grid children (grids are not pausable).
 _PAIR_TERMINAL_STATUSES = ("success", "failed", "cancelled")
-
-
-def _usages_from_result(result_dict: dict[str, Any] | None, fallback_model: str | None) -> list[ModelUsage]:
-    """Build per-model :class:`ModelUsage` from a serialized run/grid result.
-
-    Reads the result's ``usage_by_model`` rows (stamped by the optimizer from the
-    LM histories). A result that predates the per-model split — or an in-flight
-    job spanning the deploy — has no rows; it falls back to pricing the whole
-    ``total_tokens`` on ``fallback_model``, attributing it to input (the cheaper
-    side) so the legacy path under-charges rather than over-charges.
-
-    Args:
-        result_dict: The serialized run/grid result, or ``None``.
-        fallback_model: Model id to price a rows-less legacy result against.
-
-    Returns:
-        Per-model usage rows with positive token counts, or ``[]`` when the run
-        reported no usage at all.
-    """
-    if not isinstance(result_dict, dict):
-        return []
-    usages: list[ModelUsage] = []
-    rows = result_dict.get("usage_by_model")
-    if isinstance(rows, list):
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            model = row.get("model")
-            in_tokens = row.get("input_tokens", 0)
-            out_tokens = row.get("output_tokens", 0)
-            if not isinstance(model, str) or not isinstance(in_tokens, int) or not isinstance(out_tokens, int):
-                continue
-            if in_tokens > 0 or out_tokens > 0:
-                usages.append(ModelUsage(model=model, input_tokens=in_tokens, output_tokens=out_tokens))
-    if usages:
-        return usages
-    total_tokens = result_dict.get("total_tokens")
-    if isinstance(total_tokens, int) and total_tokens > 0:
-        return [ModelUsage(model=fallback_model or "unknown", input_tokens=total_tokens, output_tokens=0)]
-    return []
 
 
 class CancellationError(Exception):
@@ -645,30 +598,6 @@ class BackgroundWorker:
                             vault=ProviderKeyVault(engine=byok_engine),
                             default_token_source=token_source,
                         )
-                # Managed-run mirror of the BYOK seam: when key provisioning is
-                # configured, dispatch under a per-user OpenRouter runtime key
-                # whose spend limit was just synced to the account's balance —
-                # a provider-side backstop on top of the ledger clamp. Any
-                # failure leaves the payload untouched and the run falls back
-                # to the shared gateway key.
-                if byok_engine is not None and payload_uses_token_source(
-                    payload_dict,
-                    TOKEN_SOURCE_MANAGED,
-                    default_token_source=token_source,
-                ):
-                    provisioner = OpenRouterKeyProvisioner(engine=byok_engine)
-                    if provisioner.enabled:
-                        spendable = StripeBillingService(engine=byok_engine).spendable_credits(
-                            execution_payload.username
-                        )
-                        runtime_key = provisioner.ensure_runtime_key(execution_payload.username, spendable)
-                        if runtime_key is not None:
-                            inject_provisioned_openrouter_key(
-                                payload_dict,
-                                api_key=runtime_key,
-                                default_token_source=token_source,
-                            )
-
                 event_queue = self._mp_ctx.Queue()
                 run_process = self._mp_ctx.Process(  # type: ignore[attr-defined]
                     target=run_service_in_subprocess,
@@ -848,8 +777,8 @@ class BackgroundWorker:
                             else:
                                 self._job_store.delete_gepa_checkpoint(optimization_id)
                     if pair_parent_id is not None:
-                        # Parent-level side effects (user notification, credit
-                        # debit, billing stamp, embedding) happen ONCE at grid
+                        # Parent-level side effects (user notification and
+                        # embedding) happen ONCE at grid
                         # finalization — a pair child only checks whether it
                         # was the last sibling standing.
                         self._maybe_finalize_grid(pair_parent_id)
@@ -867,29 +796,6 @@ class BackgroundWorker:
                             optimized_score=_optimized,
                         )
                         self._record_run_outcome(optimization_id, _username, final_status, overview)
-                        # The credit debit shares the once-only completion claim so
-                        # a redelivered/re-run job is never double-billed. Success
-                        # only — a failed (e.g. all-pairs-failed) run is not billed.
-                        if final_status == "success":
-                            billed = self._debit_run_credits(
-                                _username,
-                                result_dict,
-                                run_name=overview.get(PAYLOAD_OVERVIEW_NAME) or "",
-                                model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
-                                token_source=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED,
-                                token_sources_by_model=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL),
-                            )
-                            # Stamp the billing outcome onto the persisted result so
-                            # the result screen can show what the run cost.
-                            # Re-persisted because the debit runs after the first
-                            # completion write.
-                            self._stamp_billing_outcome(
-                                optimization_id,
-                                result_dict,
-                                billed=billed,
-                                estimated_low=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_LOW),
-                                estimated_high=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_HIGH),
-                            )
                     if final_status == "success":
                         self._schedule_embedding_indexing(optimization_id)
                 except KeyError:
@@ -1243,115 +1149,6 @@ class BackgroundWorker:
             )
         except Exception:  # isolation boundary: telemetry must never affect a run outcome
             logger.debug("Optimization %s: run outcome telemetry failed", optimization_id, exc_info=True)
-
-    def _debit_run_credits(
-        self,
-        username: str,
-        result_dict: dict[str, Any] | None,
-        *,
-        run_name: str,
-        model: str | None,
-        token_source: str = TOKEN_SOURCE_MANAGED,
-        token_sources_by_model: dict[str, str] | None = None,
-    ) -> int:
-        """Debit a finished run's credit cost from the account's local ledger.
-
-        Writes a signed ``run`` row and decrements the account's grant/balance via
-        :meth:`StripeBillingService.debit_run`. Runs inline (not on a daemon
-        thread) so the wallet visibly reflects the spend the moment the run lands,
-        but wrapped so a billing-DB hiccup can never flip job status — the local
-        ledger is the credit source of truth, independent of whether Stripe is
-        configured. A managed run is charged its full per-token cost; a BYOK run is
-        charged only Skynet's platform fee (the provider tokens were paid on the
-        user's own key), so credits still meter a BYOK run without double-charging
-        for inference. A no-op when the store exposes no SQL engine (legacy/in-memory),
-        the caller is anonymous, or the run reported no token usage.
-
-        Args:
-            username: Account the run is billed to.
-            result_dict: The serialized run/grid result; its ``usage_by_model`` is
-                priced per-model into the charge (falling back to ``total_tokens``).
-            run_name: Run name for the ledger row's human label.
-            model: Model id stamped on the ledger row, or ``None``.
-            token_source: ``"managed"`` (full cost) or ``"byok"`` (platform fee
-                only); defaults to managed.
-            token_sources_by_model: Optional model-to-source map for mixed jobs.
-
-        Returns:
-            The credits charged (``0`` when nothing was billed or the debit was
-            skipped/failed).
-        """
-        engine = getattr(self._job_store, "engine", None)
-        if engine is None or not username:
-            return 0
-        usages = _usages_from_result(result_dict, model)
-        if not usages:
-            return 0
-        try:
-            billing_kwargs: dict[str, Any] = {
-                "model": model,
-                "description": run_name or "Run",
-                "token_source": token_source,
-            }
-            if token_sources_by_model is not None:
-                billing_kwargs["token_sources_by_model"] = token_sources_by_model
-            return StripeBillingService(engine=engine).debit_run(
-                username,
-                usages,
-                **billing_kwargs,
-            )
-        except Exception as exc:  # isolation boundary: a debit failure must never impact job status
-            logger.debug("Credit debit for %s failed: %s", username, exc)
-            return 0
-
-    def _stamp_billing_outcome(
-        self,
-        optimization_id: str,
-        result_dict: dict[str, Any] | None,
-        *,
-        billed: int,
-        estimated_low: int | None = None,
-        estimated_high: int | None = None,
-    ) -> None:
-        """Record the run's billed cost on its result for the result screen.
-
-        Writes ``result['details']['billing']`` — ``{outcome: "billed", credits}``
-        where ``credits`` is the amount charged. When the run was submitted with a
-        projected bracket, ``estimated_low``/``estimated_high`` are echoed
-        alongside so the estimate can be reconciled against the actual charge.
-        Only stamps single-run results (a grid envelope has no per-run
-        ``details``) and only when a credit amount exists, so a free-grant run
-        that cost nothing adds no row. Re-persists the result via the job store
-        because the debit runs after the first completion write; wrapped so a
-        store hiccup can never flip job status.
-
-        Args:
-            optimization_id: The finished run whose result is updated.
-            result_dict: The serialized run result; mutated in place and re-saved.
-            billed: Credits charged by :meth:`_debit_run_credits`.
-            estimated_low: Low end of the projected credit bracket, or None when
-                the run carried no estimate.
-            estimated_high: High end of the projected credit bracket, or None.
-        """
-        if not isinstance(result_dict, dict) or "pair_results" in result_dict:
-            return
-        outcome = "billed"
-        credits = billed
-        if credits <= 0:
-            return
-        try:
-            details = result_dict.get("details")
-            if not isinstance(details, dict):
-                details = {}
-                result_dict["details"] = details
-            billing: dict[str, Any] = {"outcome": outcome, "credits": credits}
-            if estimated_low is not None and estimated_high is not None:
-                billing["estimated_low"] = estimated_low
-                billing["estimated_high"] = estimated_high
-            details["billing"] = billing
-            self._job_store.update_job(optimization_id, result=result_dict)
-        except Exception as exc:  # isolation boundary: stamping must never impact job status
-            logger.debug("Billing-outcome stamp for %s failed: %s", optimization_id, exc)
 
     def _terminate_run_process(self, run_process: mp.process.BaseProcess, optimization_id: str) -> None:
         """Terminate a still-running job subprocess, escalating to SIGKILL after a 3-second grace period.
@@ -1816,8 +1613,8 @@ class BackgroundWorker:
         stuck-grid backstop). No-ops unless ALL siblings are terminal and the
         parent is still ``running``. The terminal write is CAS-guarded against
         ``running`` so two racing finalizers (or a finalize racing a cancel)
-        produce exactly one outcome, and the notification + credit debit ride
-        the same once-only completion claim as a classic job.
+        produce exactly one outcome, and the notification rides the same
+        once-only completion claim as a classic job.
         """
         store = self._job_store
         if not hasattr(store, "get_grid_pair_children"):
@@ -1877,22 +1674,6 @@ class BackgroundWorker:
                 message=final_message,
             )
             self._record_run_outcome(parent_optimization_id, _username, final_status, overview)
-            if final_status == "success" and isinstance(result_dict, dict):
-                billed = self._debit_run_credits(
-                    _username,
-                    result_dict,
-                    run_name=overview.get(PAYLOAD_OVERVIEW_NAME) or "",
-                    model=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
-                    token_source=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCE) or TOKEN_SOURCE_MANAGED,
-                    token_sources_by_model=overview.get(PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL),
-                )
-                self._stamp_billing_outcome(
-                    parent_optimization_id,
-                    result_dict,
-                    billed=billed,
-                    estimated_low=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_LOW),
-                    estimated_high=overview.get(PAYLOAD_OVERVIEW_ESTIMATED_HIGH),
-                )
         if final_status == "success":
             self._schedule_embedding_indexing(parent_optimization_id)
 

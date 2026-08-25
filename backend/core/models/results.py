@@ -29,9 +29,8 @@ class LMActivity(BaseModel):
 
 
 # Per-model measured token usage (input/output split) stamped onto a run result
-# so the billing worker charges per-model and the UI reconciles the pre-run
-# estimate against real per-model spend. Pydantic class docstrings are part of
-# the OpenAPI contract — see AGENTS.md — so this annotation lives in a comment.
+# for local observability. Pydantic class docstrings are part of the OpenAPI
+# contract — see AGENTS.md — so this annotation lives in a comment.
 class ModelTokenUsage(BaseModel):
     model: str
     input_tokens: int = 0
@@ -55,8 +54,7 @@ class RunResponse(BaseModel):
     runtime_seconds: float | None = None
     num_lm_calls: int | None = None
     total_tokens: int | None = None
-    # Per-model input/output split behind ``total_tokens`` — the basis the billing
-    # worker charges from and the UI reconciles the estimate against.
+    # Per-model input/output split behind ``total_tokens`` for diagnostics.
     usage_by_model: list[ModelTokenUsage] = Field(default_factory=list)
     avg_response_time_ms: float | None = None
     lm_activity: LMActivity | None = None

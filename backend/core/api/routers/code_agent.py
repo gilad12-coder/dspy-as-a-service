@@ -7,7 +7,6 @@ interactively — not part of the dev integration surface.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import AsyncIterator
 from typing import Annotated, Literal
@@ -21,7 +20,7 @@ from ...service_gateway.agents.code_interview import interview_turn_stream
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..model_router import route_menu_model
-from ._helpers import enforce_llm_credits, sse_from_events, stream_with_llm_metering
+from ._helpers import sse_from_events, stream_with_llm_observation
 
 logger = logging.getLogger(__name__)
 
@@ -240,9 +239,9 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
     """Mount the ``POST /optimizations/ai-generate-code`` SSE endpoint.
 
     Args:
-        job_store: Optional job-store whose engine backs the credit gate and
-            per-turn usage metering. When ``None``, turns stream unmetered
-            (legacy behavior).
+        job_store: Optional job-store whose engine backs BYOK resolution and
+            per-turn usage telemetry. When ``None``, turns stream without
+            persistence.
 
     Returns:
         A configured :class:`APIRouter` with the code-agent endpoints attached.
@@ -281,7 +280,6 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
         Returns:
             A :class:`StreamingResponse` of Server-Sent Events.
         """
-        await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         model, lm_extra_body = route_menu_model(req.model)
         usage_sink: list = []
         source = run_code_agent(
@@ -306,7 +304,7 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
             lm_extra_body=lm_extra_body,
             usage_sink=usage_sink,
         )
-        metered = stream_with_llm_metering(
+        metered = stream_with_llm_observation(
             source,
             job_store=job_store,
             username=current_user.username,
@@ -352,7 +350,6 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
         Returns:
             A :class:`StreamingResponse` of Server-Sent Events.
         """
-        await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         model, lm_extra_body = route_menu_model(req.model)
         usage_sink: list = []
 
@@ -377,7 +374,7 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
                 logger.exception("code interview stream failed")
                 yield {"event": "error", "data": {"code": "submit.code.interview.llm_failed"}}
 
-        metered = stream_with_llm_metering(
+        metered = stream_with_llm_observation(
             source(),
             job_store=job_store,
             username=current_user.username,
@@ -419,7 +416,6 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
         Raises:
             DomainError: 502 when the code agent emits an ``error`` event.
         """
-        await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         final_signature = req.current_signature
         final_metric = req.current_metric
         assistant_message = ""
@@ -436,7 +432,7 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
             prior_metric=req.current_metric,
             usage_sink=usage_sink,
         )
-        async for event in stream_with_llm_metering(
+        async for event in stream_with_llm_observation(
             source,
             job_store=job_store,
             username=current_user.username,

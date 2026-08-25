@@ -25,11 +25,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from ...billing import ProviderKeyVault
+from ...byok import ProviderKeyVault
 from ...config import settings
 from ...constants import OPTIMIZATION_TYPE_TAGGING
 from ...service_gateway import tagging
-from ...storage.models import Base, BillingCustomerModel, TaggingSessionModel
+from ...storage.models import Base, TaggingSessionModel
 from ...storage.remote import RemoteDBJobStore
 from ...worker.tagging_job import TaggingAutotagPayload, run_autotag_job
 from .. import model_catalog, model_router
@@ -133,19 +133,6 @@ def _client(
     """
     store = store or _MemStore()
     worker = (worker or _FakeWorker()) if worker_available else None
-    # No free allowance exists, so the authed user is funded explicitly to pass
-    # the 402 credit gate on the LLM-invoking assist routes.
-    with Session(store.engine) as session:
-        if session.get(BillingCustomerModel, user.username) is None:
-            session.add(
-                BillingCustomerModel(
-                    username=user.username,
-                    stripe_customer_id=f"cus_{user.username}",
-                    credit_balance=10_000,
-                    grant_remaining=0,
-                )
-            )
-            session.commit()
     app = FastAPI()
     app.include_router(create_tagging_session_router(job_store=store))
     app.include_router(
@@ -410,7 +397,7 @@ def test_predict_excludes_requested_rows_from_examples(monkeypatch) -> None:
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["credits"] == 2
+    assert body["total_tokens"] == 2
     assert set(body["predictions"]) == {"2", "3"}
     # Row 1 is the only labeled row, so it is the only candidate example; the
     # requested rows must not appear as examples even if labeled.
@@ -465,7 +452,8 @@ def test_estimate_counts_untagged_rows() -> None:
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["rows"] == 3
-    assert body["credits_high"] >= body["credits_low"] >= 0
+    assert body["estimated_input_tokens"] >= 0
+    assert body["estimated_output_tokens"] >= 0
 
 
 def _catalog_with(*values: str) -> SimpleNamespace:
@@ -498,7 +486,7 @@ def test_resolve_assist_model_injects_verified_byok_connection(monkeypatch) -> N
         SecretStr(Fernet.generate_key().decode("utf-8")),
     )
     with patch(
-        "core.billing.byok_vault.httpx.get",
+        "core.byok.vault.httpx.get",
         return_value=SimpleNamespace(status_code=200, is_success=True),
     ):
         ProviderKeyVault(engine=store.engine).save_key(
@@ -540,7 +528,7 @@ def test_byok_tagger_without_verified_connection_is_blocked() -> None:
     session_id = resp.json()["id"]
     resp = client.post(f"/tagging-sessions/{session_id}/assist/estimate")
     assert resp.status_code == 400
-    assert resp.json()["code"] == "billing.byok_missing_connection"
+    assert resp.json()["code"] == "byok.missing_connection"
 
 
 def test_unknown_model_rejected_before_spending(monkeypatch) -> None:
@@ -618,7 +606,7 @@ def test_autotag_start_submits_worker_job(monkeypatch) -> None:
     outcome = run_autotag_job(
         store, job_id, session_id, cancel_event=threading.Event(), heartbeat=lambda: None
     )
-    assert outcome == {"status": "done", "rows_tagged": 3, "credits_spent": 5}
+    assert outcome == {"status": "done", "rows_tagged": 3, "total_tokens": 5}
 
     detail = client.get(f"/tagging-sessions/{session_id}").json()
     assert detail["phase"] == "complete"

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   ArrowUpRight,
-  ChartBar,
   Compass,
   Database,
   GearSix,
@@ -81,34 +80,6 @@ const SETTINGS_ITEMS: Array<{
     kwKey: "app.shell.search.kw.account",
     icon: GearSix,
     settingsTab: "account",
-  },
-  {
-    id: "settings-security",
-    label: "settings.tab.security",
-    kwKey: "app.shell.search.kw.security",
-    icon: GearSix,
-    settingsTab: "security",
-  },
-  {
-    id: "settings-privacy",
-    label: "settings.tab.privacy",
-    kwKey: "app.shell.search.kw.privacy",
-    icon: GearSix,
-    settingsTab: "privacy",
-  },
-  {
-    id: "settings-billing",
-    label: "settings.tab.billing",
-    kwKey: "app.shell.search.kw.billing",
-    icon: GearSix,
-    settingsTab: "billing",
-  },
-  {
-    id: "settings-usage",
-    label: "settings.tab.usage",
-    kwKey: "app.shell.search.kw.usage",
-    icon: ChartBar,
-    settingsTab: "usage",
   },
   {
     id: "settings-providers",

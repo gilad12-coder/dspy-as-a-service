@@ -2,7 +2,7 @@
 
 Powers the tagger's assist modes: the dataset interview that distills a
 labeling rubric, silent per-row predictions during calibration, batched
-review/auto-tagging, and the pre-run credit estimate. Pure functions over the
+review/auto-tagging, and the pre-run token estimate. Pure functions over the
 session payload — persistence stays in the router; nothing here touches the
 database.
 
@@ -23,10 +23,8 @@ from typing import Any
 
 import dspy
 
-from ..billing.pricing import ModelUsage
-from ..billing.service import run_cost_credits
 from ..config import settings
-from ..constants import TOKEN_SOURCE_BYOK, TOKEN_SOURCE_MANAGED
+from ..constants import TOKEN_SOURCE_BYOK
 from ..models import ModelConfig
 from .agents.code import ReasoningStreamListener, _reply_language
 from .agents.code_interview import INTERVIEW_TURN_ATTEMPTS, normalize_options
@@ -69,7 +67,7 @@ def _sanitize_model_params(params: Any) -> dict[str, Any]:
 
     ``assist`` is a free-form JSON column any API caller can write, so only
     temperature, max_tokens, the reasoning-effort extra, and the
-    non-secret billing/provider selectors pass through. Connection fields
+    non-secret connection selectors pass through. Connection fields
     (endpoints, keys, arbitrary LiteLLM kwargs) never reach the tagging LM;
     the API or worker resolves a verified vault connection separately.
 
@@ -149,12 +147,22 @@ def _build_assist_lm(
         config = model_config
         if config.token_source != TOKEN_SOURCE_BYOK and not config.base_url:
             config = config.model_copy(
-                update={"base_url": settings.tagger_assist_base_url or settings.generalist_agent_base_url or None}
+                update={
+                    "base_url": settings.tagger_assist_base_url
+                    or settings.generalist_agent_base_url
+                    or settings.openai_api_base
+                    or None
+                }
             )
     else:
         config = ModelConfig(
             name=model_name or assist_model_name(),
-            base_url=settings.tagger_assist_base_url or settings.generalist_agent_base_url or None,
+            base_url=(
+                settings.tagger_assist_base_url
+                or settings.generalist_agent_base_url
+                or settings.openai_api_base
+                or None
+            ),
             **kwargs,
         )
     config = apply_reasoning_effort(config, reasoning_effort)
@@ -1105,7 +1113,7 @@ def predict_rows(
     usage_sink: list | None = None,
     model_config: ModelConfig | None = None,
 ) -> tuple[dict[str, dict[str, Any]], int]:
-    """Label rows in concurrent batches and report the credit cost.
+    """Label rows in concurrent batches and report total token use.
 
     Args:
         config: The session's effective config; when it carries the user's
@@ -1116,14 +1124,12 @@ def predict_rows(
         on_batch: Called with each completed batch's predictions (bulk-job
             progress persistence); called from worker threads.
         cancel: Cooperative cancellation; pending batches are skipped once set.
-        usage_sink: Optional list the built LM is appended to, so the caller
-            can debit the run's token usage on any exit path.
+        usage_sink: Optional list the built LM is appended to for observability.
         model_config: Optional resolved model config, including an in-memory
             BYOK vault connection when that source was selected.
 
     Returns:
-        ``(predictions, credits)`` — the merged ``{row_id: prediction}`` map
-        and the credit cost of the LM calls actually made.
+        ``(predictions, total_tokens)`` for the LM calls actually made.
     """
     selected = model_config or assist_model_config(
         {"model": config.get("model"), "modelParams": config.get("modelParams")}
@@ -1148,11 +1154,8 @@ def predict_rows(
         for result in pool.map(work, batches):
             merged.update(result)
     usage = usage_by_model_from_history(lm)
-    credits = run_cost_credits(
-        (ModelUsage(model=model, input_tokens=tokens[0], output_tokens=tokens[1]) for model, tokens in usage.items()),
-        selected.token_source or TOKEN_SOURCE_MANAGED,
-    )
-    return merged, credits
+    total_tokens = sum(input_tokens + output_tokens for input_tokens, output_tokens in usage.values())
+    return merged, total_tokens
 
 
 class _StreamedArrayItems:
@@ -1303,7 +1306,7 @@ async def predict_rows_stream(
 
     Yields ``{"event": "prediction", "data": {"id", "prediction"}}`` per row,
     then a terminal ``{"event": "predict_done", "data": {"predictions",
-    "credits"}}`` with the merged map and the credit cost of the calls made.
+    "total_tokens"}}`` with the merged map and observed token count.
 
     Args:
         config: The session's effective config; when it carries the user's
@@ -1311,8 +1314,7 @@ async def predict_rows_stream(
             parameters (``modelParams``), predictions run on them.
         instructions: Compiled tagging instructions.
         rows: Row payloads (each needs ``id`` and ``text``).
-        usage_sink: Optional list the built LM is appended to, so the caller
-            can debit the run's token usage on any exit path.
+        usage_sink: Optional list the built LM is appended to for observability.
         model_config: Optional resolved model config, including an in-memory
             BYOK vault connection when that source was selected.
     """
@@ -1360,20 +1362,16 @@ async def predict_rows_stream(
         task.cancel()
         raise
     usage = usage_by_model_from_history(lm)
-    credits = run_cost_credits(
-        (ModelUsage(model=model, input_tokens=tokens[0], output_tokens=tokens[1]) for model, tokens in usage.items()),
-        selected.token_source or TOKEN_SOURCE_MANAGED,
-    )
-    yield {"event": "predict_done", "data": {"predictions": merged, "credits": credits}}
+    total_tokens = sum(input_tokens + output_tokens for input_tokens, output_tokens in usage.values())
+    yield {"event": "predict_done", "data": {"predictions": merged, "total_tokens": total_tokens}}
 
 
-def estimate_credits_for_rows(
+def estimate_tokens_for_rows(
     instructions: str,
     rows: list[dict[str, Any]],
     model: str | None = None,
-    token_source: str = TOKEN_SOURCE_MANAGED,
 ) -> dict[str, Any]:
-    """Estimate the credit cost of auto-tagging the given rows.
+    """Estimate token volume for auto-tagging the given rows.
 
     A chars/4 token heuristic over the compiled instructions (repeated once
     per batch) plus the row texts, with a fixed per-row output allowance.
@@ -1383,26 +1381,24 @@ def estimate_credits_for_rows(
         rows: The rows that would be tagged.
         model: LiteLLM id of the session's chosen tagging model; falls back
             to the configured default when empty.
-        token_source: ``managed`` for full model cost or ``byok`` for the
-            platform-fee portion only.
-
     Returns:
-        ``{"rows", "model", "credits_low", "credits_high"}``.
+        Row count, model and estimated input and output tokens.
     """
     model = (model or "").strip() or assist_model_name()
     if not rows:
-        return {"rows": 0, "model": model, "credits_low": 0, "credits_high": 0}
+        return {
+            "rows": 0,
+            "model": model,
+            "estimated_input_tokens": 0,
+            "estimated_output_tokens": 0,
+        }
     batch_count = max(1, (len(rows) + BATCH_SIZE - 1) // BATCH_SIZE)
     row_chars = sum(len(_row_text(r)) for r in rows)
     input_tokens = (len(instructions) * batch_count + row_chars) // CHARS_PER_TOKEN
     output_tokens = OUTPUT_TOKENS_PER_ROW * len(rows)
-    base = run_cost_credits(
-        [ModelUsage(model=model, input_tokens=input_tokens, output_tokens=output_tokens)],
-        token_source,
-    )
     return {
         "rows": len(rows),
         "model": model,
-        "credits_low": base,
-        "credits_high": max(base, int(base * 1.8)),
+        "estimated_input_tokens": input_tokens,
+        "estimated_output_tokens": output_tokens,
     }

@@ -107,8 +107,8 @@ export interface AutotagProgress {
   status: "running" | "done" | "failed" | "canceled";
   total: number;
   done: number;
-  /** Credits the bulk job actually spent (server-written, snake_case). */
-  credits_spent?: number;
+  /** Tokens the bulk job consumed (server-written, snake_case). */
+  total_tokens?: number;
 }
 
 /**

@@ -20,8 +20,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ...billing import StripeBillingService
-from ...billing.metering import meter_llm_run
 from ...config import settings
 from ...constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
@@ -38,7 +36,6 @@ from ...constants import (
     PAYLOAD_OVERVIEW_SPLIT_FRACTIONS,
     PAYLOAD_OVERVIEW_TOOL_SOURCE,
     PAYLOAD_OVERVIEW_WORKFLOW,
-    TOKEN_SOURCE_MANAGED,
 )
 from ...exceptions import ServiceError
 from ...models import (
@@ -65,6 +62,7 @@ from ...service_gateway.optimization.training_ground.run_react import (
     resolve_react_tools,
 )
 from ...service_gateway.optimization.workflow import build_workflow_program, workflow_tool_users
+from ...usage_observability import record_llm_usage
 from ..auth import AuthenticatedUser, is_admin
 from ..converters import (
     compute_elapsed,
@@ -160,57 +158,27 @@ def clear_program_cache() -> None:
     _program_cache.clear()
 
 
-def enforce_llm_credits(job_store, username: str) -> None:
-    """Refuse an interactive LLM turn for an account with no spendable credits.
-
-    The turn-surface twin of the submit gate: agent chats, interview turns and
-    tagging predictions spend managed tokens, so a depleted account is stopped
-    before the LLM call rather than billed into the negative. The free grant
-    means a brand-new account always passes. A store with no SQL engine
-    (legacy/in-memory) skips the gate, matching the submit path.
-
-    Args:
-        job_store: Job-store instance whose ORM engine backs the billing tables.
-        username: Account attempting the turn.
-
-    Raises:
-        DomainError: 402 when the account has no spendable credits.
-    """
-    engine = getattr(job_store, "engine", None)
-    if engine is None or not username:
-        return
-    if StripeBillingService(engine=engine).spendable_credits(username) > 0:
-        return
-    raise DomainError("billing.insufficient_credits", status=402)
-
-
-async def stream_with_llm_metering(
+async def stream_with_llm_observation(
     source: AsyncIterable[dict[str, Any]],
     *,
     job_store,
     username: str,
     description: str,
     usage_sink: list,
-    token_source: str = TOKEN_SOURCE_MANAGED,
+    token_source: str = "managed",
 ) -> AsyncIterator[dict[str, Any]]:
-    """Mirror SSE events and meter the turn's LLM usage when the stream ends.
+    """Mirror SSE events and record token usage when the stream ends.
 
-    Wraps a turn's event stream; on teardown — normal completion, error, or
-    the client dropping the SSE connection mid-turn — it debits and
-    Stripe-meters whatever usage the LMs in ``usage_sink`` accumulated. The
-    sink is harvested in ``finally`` (not on the ``done`` event) because the
-    frontend routinely tears streams down early, and a ``MeteredLM``'s running
-    totals are current at any point. The synchronous billing write is
-    offloaded to a worker thread, mirroring the persistence wrapper.
+    The usage sink is harvested in ``finally`` so normal completion, failures,
+    and dropped SSE connections all leave local diagnostic token counts.
 
     Args:
         source: Upstream async event stream for one turn.
-        job_store: Job-store whose engine backs the billing tables; a store
-            without an engine streams unmetered.
-        username: Account the turn is billed to.
-        description: Ledger-row label for the charge (e.g. ``"Agent chat"``).
+        job_store: Job store whose engine backs local telemetry.
+        username: Account that initiated the turn.
+        description: Stable operation label such as ``"Agent chat"``.
         usage_sink: List the run function appends its ``MeteredLM``(s) to.
-        token_source: Billing source for this interactive model call.
+        token_source: Credential source included for call-site compatibility.
 
     Yields:
         The upstream events, unchanged.
@@ -219,19 +187,15 @@ async def stream_with_llm_metering(
         async for event in source:
             yield event
     finally:
-        engine = getattr(job_store, "engine", None)
-        if engine is not None and usage_sink:
-            try:
-                await asyncio.to_thread(
-                    meter_llm_run,
-                    engine,
-                    username,
-                    list(usage_sink),
-                    description=description,
-                    token_source=token_source,
-                )
-            except Exception:
-                logger.exception("LLM turn metering failed for %s", username)
+        del token_source
+        if usage_sink:
+            await asyncio.to_thread(
+                record_llm_usage,
+                getattr(job_store, "engine", None),
+                username,
+                list(usage_sink),
+                description=description,
+            )
 
 
 # Idle gap after which the SSE serializer emits a comment line to keep the
@@ -585,28 +549,6 @@ def filter_ids_at_least(
         else:
             denied.append(oid)
     return allowed, denied
-
-
-def enforce_user_quota(job_store, username: str) -> None:
-    """Raise if ``username`` is at or over their job quota.
-
-    Live DB overrides take precedence over static config. Admins and users
-    with an explicit ``None`` override bypass the check entirely.
-
-    Args:
-        job_store: The job store used to count the user's existing jobs.
-        username: The user whose quota should be enforced.
-
-    Raises:
-        DomainError: When the user already has at least ``quota`` jobs (HTTP 409).
-    """
-    live_quota_resolver = getattr(job_store, "get_effective_user_quota", None)
-    quota = live_quota_resolver(username) if callable(live_quota_resolver) else settings.get_user_quota(username)
-    if quota is None:
-        return
-    current = job_store.count_jobs(username=username)
-    if current >= quota:
-        raise DomainError("quota.reached", status=409, quota=quota)
 
 
 def _mb(num_bytes: int) -> float:

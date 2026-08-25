@@ -6,22 +6,18 @@ import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
 import { motion, useReducedMotion } from "framer-motion";
 import {
-  ChartBar,
   ChatText,
   BookOpen,
   Robot,
   Brain,
   Columns,
   Cpu,
-  CreditCard,
   Key,
   ArrowSquareOut,
   Feather,
   HardDrive,
   Keyboard,
-  Lock,
   type Icon,
-  Translate,
   Microphone,
   PencilSimple,
   PencilSimpleLine,
@@ -60,7 +56,7 @@ import {
 import { Switch } from "@/shared/ui/primitives/switch";
 import { Button } from "@/shared/ui/primitives/button";
 import { CopyButton } from "@/shared/ui/copy-button";
-import { WalletTab, UsageTab, ByokKeysSection } from "@/features/billing";
+import { ByokKeysSection } from "@/features/byok";
 import { Input } from "@/shared/ui/primitives/input";
 import { NumberInput } from "@/shared/ui/number-input";
 import {
@@ -97,8 +93,6 @@ import { ModelChip } from "@/shared/ui/model-chip";
 import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
 import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
-import { LEGAL_CONFIG } from "@/features/legal";
-import { LanguageSwitcher } from "@/shared/ui/language-switcher";
 import { useTutorialContext } from "@/features/tutorial";
 import {
   deleteStorageQuotaOverride,
@@ -123,8 +117,7 @@ import { useSettingsModal } from "../hooks/use-settings-modal";
 import { useIsPhone } from "@/shared/hooks/use-device-class";
 import { isPhoneSettingsTab } from "@/shared/lib/device-class";
 import { ShortcutRecorder } from "./ShortcutRecorder";
-import { PrivacyTab } from "./PrivacyTab";
-import { SecurityTab } from "./SecurityTab";
+import { AdminAccountsSection } from "./AdminAccountsSection";
 import { SettingsRow } from "@/shared/ui/settings-row";
 
 function WizardTab() {
@@ -278,6 +271,7 @@ function MemoryKnobControl({
 function AgentTab() {
   const { prefs, setPref } = useUserPrefs();
   const [memory, setMemory] = React.useState<MemorySettings | null>(null);
+  const transcriptionEnabled = getRuntimeEnv().transcriptionEnabled;
   const saveTimers = React.useRef<Partial<Record<MemoryKnobName, ReturnType<typeof setTimeout>>>>(
     {},
   );
@@ -340,16 +334,18 @@ function AgentTab() {
         />
       </SettingsRow>
 
-      <SettingsRow
-        icon={Microphone}
-        label={msg("settings.agent.dictation.label")}
-        description={msg("settings.agent.dictation.description")}
-      >
-        <Switch
-          checked={prefs.dictationEnabled}
-          onCheckedChange={(v) => setPref("dictationEnabled", v)}
-        />
-      </SettingsRow>
+      {transcriptionEnabled && (
+        <SettingsRow
+          icon={Microphone}
+          label={msg("settings.agent.dictation.label")}
+          description={msg("settings.agent.dictation.description")}
+        >
+          <Switch
+            checked={prefs.dictationEnabled}
+            onCheckedChange={(v) => setPref("dictationEnabled", v)}
+          />
+        </SettingsRow>
+      )}
 
       <SettingsRow
         icon={Shield}
@@ -444,10 +440,6 @@ function AccountTab() {
         <span className="text-xs uppercase tracking-wide font-semibold text-muted-foreground">
           {isAdmin ? msg("settings.account.role.admin") : msg("settings.account.role.user")}
         </span>
-      </SettingsRow>
-
-      <SettingsRow icon={Translate} label={msg("shared.language.switch_aria")}>
-        <LanguageSwitcher />
       </SettingsRow>
 
       {!isPhone && (
@@ -921,6 +913,8 @@ function AdminTab() {
 
   return (
     <div className="space-y-4">
+      <AdminAccountsSection />
+
       {!session?.backendAccessToken && (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           {msg("settings.admin.storage.auth_missing")}
@@ -1179,9 +1173,6 @@ function AboutTab() {
     resetAll();
     toast.success(msg("settings.about.reset_all.success"));
   }, [resetAll]);
-  const feedbackHref = `mailto:${LEGAL_CONFIG.contactEmail}?subject=${encodeURIComponent(
-    msg("settings.about.feedback.subject"),
-  )}`;
 
   return (
     <div className="space-y-1">
@@ -1195,16 +1186,6 @@ function AboutTab() {
         <span className="max-w-full break-all text-xs font-mono text-muted-foreground" dir="ltr">
           {apiUrl}
         </span>
-      </SettingsRow>
-
-      <SettingsRow
-        icon={ChatText}
-        label={msg("settings.about.feedback.label")}
-        description={msg("settings.about.feedback.description")}
-      >
-        <Button variant="outline" size="sm" asChild>
-          <a href={feedbackHref}>{msg("settings.about.feedback.action")}</a>
-        </Button>
       </SettingsRow>
 
       <SettingsRow
@@ -1438,10 +1419,6 @@ const SETTINGS_TAB_ORDER = [
   "tagging",
   "agent",
   "account",
-  "security",
-  "privacy",
-  "billing",
-  "usage",
   "providers",
   "api",
   "admin",
@@ -1477,26 +1454,6 @@ const SETTINGS_TAB_META: Record<
     icon: User,
     labelKey: "settings.tab.account",
     group: "preferences",
-  },
-  security: {
-    icon: ShieldCheck,
-    labelKey: "settings.tab.security",
-    group: "access",
-  },
-  privacy: {
-    icon: Lock,
-    labelKey: "settings.tab.privacy",
-    group: "access",
-  },
-  billing: {
-    icon: CreditCard,
-    labelKey: "settings.tab.billing",
-    group: "access",
-  },
-  usage: {
-    icon: ChartBar,
-    labelKey: "settings.tab.usage",
-    group: "access",
   },
   providers: {
     icon: Plug,
@@ -1568,7 +1525,7 @@ export function SettingsModal() {
   React.useEffect(() => {
     if (!tabs.includes(activeTab)) setActiveTab(isPhone ? "account" : "wizard");
   }, [activeTab, tabs, isPhone]);
-  // Honor a deep-link (e.g. the credit chip → wallet): when something opens the
+  // Honor a deep-link (for example, a model picker opening Providers): when something opens the
   // modal targeting a tab, jump there once, then clear so a later manual open
   // keeps whatever tab the user last left it on.
   React.useEffect(() => {
@@ -1666,18 +1623,6 @@ export function SettingsModal() {
               </TabsContent>
               <TabsContent value="account" data-tutorial="settings-account">
                 <AccountTab />
-              </TabsContent>
-              <TabsContent value="security">
-                <SecurityTab />
-              </TabsContent>
-              <TabsContent value="privacy" data-tutorial="settings-privacy">
-                <PrivacyTab />
-              </TabsContent>
-              <TabsContent value="billing">
-                <WalletTab />
-              </TabsContent>
-              <TabsContent value="usage">
-                <UsageTab />
               </TabsContent>
               <TabsContent value="providers" data-tutorial="settings-providers">
                 <ByokKeysSection />

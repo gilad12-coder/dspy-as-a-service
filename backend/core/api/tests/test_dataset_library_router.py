@@ -374,7 +374,7 @@ def test_move_session_creates_dataset_and_deletes_session() -> None:
 
 
 def test_move_transfers_session_sharing_to_dataset() -> None:
-    """The moved dataset inherits the session's link policy and every grant."""
+    """The moved dataset inherits named grants but drops link-derived access."""
     client, store = _make_client(_ALICE)
     _insert_session(
         store,
@@ -388,16 +388,8 @@ def test_move_transfers_session_sharing_to_dataset() -> None:
     body = _move(client, "sess-1").json()
     link, grants = _dataset_sharing(store, body["dataset"]["id"])
 
-    assert link is not None
-    token, general_access, general_role, created_by = link
-    assert (general_access, general_role) == ("anyone", "editor")
-    assert created_by == "alice"
-    # A fresh token — the dataset link is a new resource, not the session's.
-    assert token != "sesslink-tok"
-    assert grants == [
-        ("carol", "editor", "alice"),
-        ("dave", "viewer", LINK_GRANT_MARKER),
-    ]
+    assert link is None
+    assert grants == [("carol", "editor", "alice")]
 
 
 def test_move_dedupe_leaves_existing_sharing_and_still_deletes_session() -> None:

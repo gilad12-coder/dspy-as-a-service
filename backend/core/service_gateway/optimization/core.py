@@ -75,7 +75,6 @@ from ..language_models import (
 from ..react_compat import REACT_CLASS
 from ..safe_exec import validate_metric_code, validate_signature_code
 from .artifacts import persist_program
-from .cost_ceiling import CostCeilingCallback
 from .data import (
     extract_signature_fields,
     image_input_field_names,
@@ -126,8 +125,8 @@ def _usage_by_model_rows(*language_models: object) -> list[ModelTokenUsage]:
     """Build a result's per-model usage rows from the run's LM histories.
 
     Wraps :func:`usage_by_model_from_history`, turning its ``model → (input,
-    output)`` breakdown into the :class:`ModelTokenUsage` rows the billing worker
-    charges from and the UI reconciles against. Returns an empty list when usage
+    output)`` breakdown into :class:`ModelTokenUsage` observability rows.
+    Returns an empty list when usage
     is untracked (e.g. mocked LMs), mirroring the ``total_tokens`` companion.
 
     Args:
@@ -346,7 +345,6 @@ class _GridPairContext:
     # Per-pair token budget from the Max Cost Ceiling: the job-wide cap split
     # evenly across pairs (pairs run concurrently with independent LM histories),
     # so the grid's aggregate spend never exceeds the user's cap. 0 = no ceiling.
-    pair_max_credits: int = 0
     # Worker-owned base dir for resumable grids; each pair writes its GEPA state
     # and (on success) ``result.json`` under ``<base>/pair_<i>``. None = ephemeral.
     gepa_log_dir_base: str | None = None
@@ -461,8 +459,6 @@ def _run_grid_pair(
         callbacks: list[Any] = list(timing_callbacks)
         # Hard-stop this pair at its share of the Max Cost Ceiling so the grid's
         # concurrent pairs can't collectively overrun the user's job-wide cap.
-        if ctx.pair_max_credits > 0:
-            callbacks.append(CostCeilingCallback(ctx.pair_max_credits, language_model, reflection_lm))
 
         with (
             dspy.context(lm=language_model, callbacks=callbacks),
@@ -637,7 +633,7 @@ def _run_grid_pair(
     except Exception as exc:
         pair_runtime = (datetime.now(UTC) - pair_start).total_seconds()
         # DSPy reports a generic "Execution cancelled" when an LM call fails;
-        # recover the real cause (billing, auth, rate limit) it only logged.
+        # recover the provider-side cause it only logged.
         error_msg = enrich_error_message(str(exc))
         result = PairResult(
             pair_index=i,
@@ -841,12 +837,6 @@ class DspyService:
         if refl_timing is not None:
             timing_callbacks.append(refl_timing)
         callbacks: list[Any] = list(timing_callbacks)
-        # Hard-stop the run once token spend exceeds the user's Max Cost Ceiling.
-        # Registered alongside the timing callbacks so it sees every LM call on
-        # every worker thread; a trip raises out of the run and the worker leaves
-        # the job failed (and unbilled — debiting only fires on success).
-        if payload.max_cost_credits is not None:
-            callbacks.append(CostCeilingCallback(payload.max_cost_credits, language_model, reflection_lm))
         with gepa_log_dir(payload.optimizer_name, gepa_log_dir_path) as trajectory_log_dir:
             training_metric = maybe_wrap_minibatch_recorder(
                 metric,
@@ -1112,11 +1102,6 @@ class DspyService:
 
         gen_timing = GenLMTimingCallback(student_lm)
         react_callbacks: list[Any] = [gen_timing]
-        # Same Max Cost Ceiling hard-stop the scalar path registers. React routes
-        # both the student and the reflection LM through ``gepa.optimize``; the
-        # ceiling totals usage across both so the cap covers the whole run.
-        if payload.max_cost_credits is not None:
-            react_callbacks.append(CostCeilingCallback(payload.max_cost_credits, student_lm, reflection_lm))
         # Mirror the scalar run's trajectory wiring so react gets the same
         # candidate tree: GEPA persists state into trajectory_log_dir,
         # trajectory_watch streams candidate/rejected events, capture_proposal_prompts
@@ -1451,17 +1436,6 @@ class DspyService:
             if (pair_index_base + i) not in completed
         ]
 
-        # Split the job-wide cost ceiling (in credits) evenly across pairs so
-        # concurrent pairs can't collectively exceed the user's cap; 0 = no
-        # ceiling. Divided by the PARENT's pair count so a distributed child
-        # holding one pair still gets 1/Nth of the grid-wide cap.
-        pair_max_credits = (
-            payload.max_cost_credits // display_total
-            if payload.max_cost_credits is not None and display_total > 0
-            else 0
-        )
-        # Events display the parent's real pair count; local mechanics (result
-        # slots, ceiling split) already use the child-local values above.
         grid_ctx = _GridPairContext(
             total_pairs=display_total,
             module_factory=module_factory,
@@ -1472,7 +1446,6 @@ class DspyService:
             splits=splits,
             artifact_id=artifact_id,
             progress_callback=progress_callback,
-            pair_max_credits=pair_max_credits,
             gepa_log_dir_base=gepa_log_dir_path,
             completed=len(completed),
         )

@@ -34,8 +34,6 @@ from ...storage.models import (
     AgentConversationModel,
     AgentMessageModel,
     Base,
-    BillingCustomerModel,
-    CreditLedgerModel,
 )
 from .. import auth as auth_mod
 from .. import model_catalog
@@ -116,14 +114,11 @@ def persistence_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Eng
         on the persisted rows directly.
     """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    # Billing tables back the turn's credit gate + usage metering seam.
     Base.metadata.create_all(
         engine,
         tables=[
             AgentConversationModel.__table__,
             AgentMessageModel.__table__,
-            BillingCustomerModel.__table__,
-            CreditLedgerModel.__table__,
         ],
     )
     monkeypatch.setattr(auth_mod.settings, "backend_auth_secret", SecretStr(_SECRET))
@@ -135,24 +130,6 @@ def persistence_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Eng
     app.state.job_store = store
     app.include_router(create_generalist_agent_router(job_store=store))
     return TestClient(app), engine
-
-
-def _fund(engine: Engine) -> None:
-    """Give the test identity a purchased balance to pass the 402 credit gate.
-
-    There is no free allowance, so any turn that should stream must be backed by
-    an explicitly funded account.
-    """
-    with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username="alice@example.com",
-                stripe_customer_id="cus_alice",
-                credit_balance=10_000,
-                grant_remaining=0,
-            )
-        )
-        session.commit()
 
 
 def _post_turn(
@@ -195,7 +172,6 @@ def test_authenticated_turn_persists_conversation_and_messages(
 ) -> None:
     """A signed-in turn writes the conversation header and both messages."""
     client, engine = persistence_client
-    _fund(engine)
 
     resp = _post_turn(client, "hi", _session_token())
 
@@ -213,38 +189,12 @@ def test_authenticated_turn_persists_conversation_and_messages(
         ]
 
 
-def test_depleted_account_gets_402_before_streaming(
-    persistence_client: tuple[TestClient, Engine],
-) -> None:
-    """A zero-balance account is refused before any LLM work or persistence."""
-    client, engine = persistence_client
-    with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username="alice@example.com",
-                stripe_customer_id="cus_alice",
-                credit_balance=0,
-                grant_remaining=0,
-            )
-        )
-        session.commit()
-
-    resp = _post_turn(client, "hi", _session_token())
-
-    # The bare test app skips create_app's DomainError handler (which adds the
-    # machine-readable ``code``), so the status is the assertable contract.
-    assert resp.status_code == 402
-    with Session(engine) as session:
-        assert session.query(AgentConversationModel).count() == 0
-
-
 def test_turn_forwards_chosen_model(
     persistence_client: tuple[TestClient, Engine],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The composer menu's model rides the request into the agent engine."""
-    client, engine = persistence_client
-    _fund(engine)
+    client, _engine = persistence_client
     seen: dict[str, Any] = {}
 
     async def capture_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
@@ -281,8 +231,7 @@ def test_turn_rejects_unknown_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A non-catalog model is refused before the engine ever runs."""
-    client, engine = persistence_client
-    _fund(engine)
+    client, _engine = persistence_client
     monkeypatch.setattr(
         model_catalog,
         "get_catalog_cached",
@@ -326,7 +275,6 @@ def test_regenerate_replaces_final_persisted_turn(
 ) -> None:
     """Regenerating the latest reply keeps one user/assistant pair after reload."""
     client, engine = persistence_client
-    _fund(engine)
     token = _session_token()
 
     first = _post_turn(client, "hi", token)
@@ -366,14 +314,11 @@ def wrapper_engine(monkeypatch: pytest.MonkeyPatch) -> Engine:
         The bound ``Engine`` holding one ``agent_conversations`` row.
     """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    # Billing tables back the turn's credit gate + usage metering seam.
     Base.metadata.create_all(
         engine,
         tables=[
             AgentConversationModel.__table__,
             AgentMessageModel.__table__,
-            BillingCustomerModel.__table__,
-            CreditLedgerModel.__table__,
         ],
     )
     monkeypatch.setattr(agent_mod, "queue_conversation_embed", lambda *a, **k: None)

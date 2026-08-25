@@ -50,8 +50,8 @@ const TYPING_DEBOUNCE_MS = 250;
 
 /**
  * The page's center of gravity. A segmented corpus toggle sits on top so the
- * user can pick where to search (their own jobs, runs shared with them, or
- * other users' public ones), and the rounded input surface below carries the
+ * user can pick owned, explicitly shared, or deployment-published runs, and
+ * the rounded input surface below carries the
  * free-text query and
  * filters affordance. Keyboard: pressing "/" anywhere focuses the input;
  * Enter fires the search immediately.

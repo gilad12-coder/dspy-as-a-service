@@ -3,9 +3,9 @@
 Mounts the session CRUD router together with the sharing router on one
 in-memory SQLite store (the sibling routers' pattern) and exercises the
 Drive-style flows end-to-end: invited viewers read but cannot edit, editors
-annotate but cannot manage, an ``anyone`` link claim lists the session in the
-claimer's chooser and restricting the link revokes it, and ownership transfer
-moves the ``username`` column while demoting the previous owner.
+annotate but cannot manage, restricted links resolve only named members, and
+ownership transfer moves the ``username`` column while demoting the previous
+owner.
 """
 
 from __future__ import annotations
@@ -141,34 +141,6 @@ def test_invited_editor_can_autosave_but_not_manage() -> None:
     # Editors cannot bulk-delete a shared-in session either.
     bulk = alice_client.post("/tagging-sessions/bulk-delete", json={"ids": [sid]})
     assert bulk.json()["deleted"] == [sid]
-
-
-def test_anyone_link_claim_lists_session_and_restrict_revokes() -> None:
-    """Claiming an ``anyone`` link grants its tier; restricting prunes it."""
-    alice_client, store = _client(_ALICE)
-    sid = _create(alice_client)
-    bob_client, _ = _client(_BOB, store=store)
-
-    state = alice_client.put(
-        f"/tagging-sessions/{sid}/sharing",
-        json={"general_access": "anyone", "general_role": "editor"},
-    ).json()
-    token = state["token"]
-    assert state["share_path"] == f"/tagger/share/{token}"
-
-    claim = bob_client.post(f"/tagging-sessions/share/{token}/claim")
-    assert claim.status_code == 200
-    assert claim.json() == {"session_id": sid, "role": "editor"}
-    assert bob_client.get(f"/tagging-sessions/{sid}").json()["role"] == "editor"
-    assert bob_client.get("/tagging-sessions").json()["total"] == 1
-
-    # Link-derived memberships are invisible to the owner's member list.
-    assert alice_client.get(f"/tagging-sessions/{sid}/sharing").json()["members"] == []
-
-    alice_client.put(f"/tagging-sessions/{sid}/sharing", json={"general_access": "restricted"})
-    assert bob_client.get(f"/tagging-sessions/{sid}").status_code == 404
-    assert bob_client.post(f"/tagging-sessions/share/{token}/claim").status_code == 404
-    assert bob_client.get("/tagging-sessions").json()["total"] == 0
 
 
 def test_transfer_ownership_moves_owner_and_demotes_previous() -> None:

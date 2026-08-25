@@ -21,19 +21,10 @@ services:
     environment:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set the OpenRouter master key}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set a strong admin/master key}
-      LITELLM_DATABASE_URL: ${LITELLM_DATABASE_URL:?Postgres URL for virtual keys + spend}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      LITELLM_DATABASE_URL: ${LITELLM_DATABASE_URL:?Postgres URL for gateway state}
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_started
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
     restart: unless-stopped
 
   db:

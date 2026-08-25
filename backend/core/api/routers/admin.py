@@ -1,8 +1,4 @@
-"""Admin-only operational routes. [INTERNAL]
-
-All endpoints are hidden from the public Scalar reference (none are in
-``_SCALAR_PUBLIC_PATHS``). Used by the in-app admin console only.
-"""
+"""Expose administrator-only storage quota and directory search routes."""
 
 from __future__ import annotations
 
@@ -19,48 +15,8 @@ from ..errors import DomainError
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
 
 
-class UserQuotaOverrideResponse(BaseModel):
-    """Live per-user quota override returned to admin UI."""
-
-    username: str
-    quota: int | None = None
-    updated_at: str | None = None
-    updated_by: str | None = None
-    effective_quota: int | None = None
-    job_count: int = 0
-    last_action: str | None = None
-
-
-class UserQuotaOverrideRequest(BaseModel):
-    """Request body for setting a user's live quota override."""
-
-    username: str = Field(min_length=1)
-    quota: int | None = Field(default=None, ge=1)
-
-
-class UserQuotaAuditResponse(BaseModel):
-    """Audit event for a live quota override change."""
-
-    id: int
-    actor: str
-    target_username: str
-    action: str
-    old_quota: int | None = None
-    new_quota: int | None = None
-    created_at: str | None = None
-
-
-class UserQuotaOverrideListResponse(BaseModel):
-    """Envelope for admin quota override listing."""
-
-    default_quota: int
-    overrides: list[UserQuotaOverrideResponse]
-    audit_events: list[UserQuotaAuditResponse]
-
-
+# Per-user storage ceiling and current use returned to the administrator UI.
 class StorageQuotaOverrideResponse(BaseModel):
-    """Live per-user storage-budget override returned to the admin UI."""
-
     username: str
     quota_bytes: int | None = None
     updated_at: str | None = None
@@ -69,87 +25,42 @@ class StorageQuotaOverrideResponse(BaseModel):
     used_bytes: int = 0
 
 
+# Administrator request for setting a user's storage ceiling.
 class StorageQuotaOverrideRequest(BaseModel):
-    """Request body for setting a user's storage-budget override in bytes."""
-
     username: str = Field(min_length=1)
     quota_bytes: int = Field(ge=1)
 
 
+# Envelope for all explicit per-user storage overrides.
 class StorageQuotaOverrideListResponse(BaseModel):
-    """Envelope for admin storage-budget override listing."""
-
     default_bytes: int
     overrides: list[StorageQuotaOverrideResponse]
 
 
+# One autocomplete match from the database or configured directory.
 class DirectoryUserMatch(BaseModel):
-    """Single autocomplete suggestion for the admin user search."""
-
     username: str
     display_name: str | None = None
     email: str | None = None
     source: str
 
 
+# Envelope for administrator user-search results.
 class DirectoryUserSearchResponse(BaseModel):
-    """Envelope for the admin user-search endpoint."""
-
     matches: list[DirectoryUserMatch]
 
 
-def _build_quota_response(row: dict[str, Any], *, job_store) -> UserQuotaOverrideResponse:
-    """Build one admin quota response row.
+def _build_storage_quota_response(
+    row: dict[str, Any], *, job_store: Any
+) -> StorageQuotaOverrideResponse:
+    """Build a storage quota response with live use.
 
     Args:
-        row: Raw quota override mapping from storage.
-        job_store: Backing job store used to resolve counts and effective quota.
+        row: Raw storage override mapping from the job store.
+        job_store: Store used to resolve effective quota and storage use.
 
     Returns:
-        A populated response model.
-    """
-    username = str(row["username"])
-    return UserQuotaOverrideResponse(
-        username=username,
-        quota=row.get("quota"),
-        updated_at=row.get("updated_at"),
-        updated_by=row.get("updated_by"),
-        effective_quota=job_store.get_effective_user_quota(username),
-        job_count=job_store.count_jobs(username=username),
-        last_action=row.get("last_action"),
-    )
-
-
-def _build_audit_response(row: dict[str, Any]) -> UserQuotaAuditResponse:
-    """Build one admin quota audit response row.
-
-    Args:
-        row: Raw quota audit mapping from storage.
-
-    Returns:
-        A populated response model.
-    """
-    return UserQuotaAuditResponse(
-        id=int(row["id"]),
-        actor=str(row["actor"]),
-        target_username=str(row["target_username"]),
-        action=str(row["action"]),
-        old_quota=row.get("old_quota"),
-        new_quota=row.get("new_quota"),
-        created_at=row.get("created_at"),
-    )
-
-
-def _build_storage_quota_response(row: dict[str, Any], *, job_store) -> StorageQuotaOverrideResponse:
-    """Build one admin storage-budget response row.
-
-    Args:
-        row: Raw storage override mapping from storage.
-        job_store: Backing job store used to resolve the effective budget and
-            the user's live footprint.
-
-    Returns:
-        A populated response model with the user's live usage and ceiling.
+        Storage quota row for the administrator UI.
     """
     username = str(row["username"])
     return StorageQuotaOverrideResponse(
@@ -163,13 +74,13 @@ def _build_storage_quota_response(row: dict[str, Any], *, job_store) -> StorageQ
 
 
 def _require_admin_dependency(user: AuthenticatedUserDep) -> AuthenticatedUser:
-    """FastAPI dependency that returns an authorized admin user.
+    """Require an authenticated administrator.
 
     Args:
-        user: Authenticated user from the signed bearer token.
+        user: Authenticated bearer-token identity.
 
     Returns:
-        The same user when admin authorization passes.
+        Authorized administrator identity.
     """
     return require_admin_user(user)
 
@@ -179,151 +90,32 @@ AdminUserDep = Annotated[AuthenticatedUser, Depends(_require_admin_dependency)]
 
 def create_admin_router(
     *,
-    job_store,
+    job_store: Any,
     directory_client: DirectoryClient | None = None,
 ) -> APIRouter:
-    """Build admin operational routes.
+    """Build administrator routes for storage quotas and user discovery.
 
     Args:
-        job_store: Backing job store used for live quota override operations.
-        directory_client: Optional directory provider for network-wide user
-            search; defaults to :class:`NullDirectoryClient` when omitted.
+        job_store: Store used for quota and username operations.
+        directory_client: Optional ADFS-compatible directory search provider.
 
     Returns:
-        A configured :class:`APIRouter` exposing admin-only endpoints.
+        Configured administrator router.
     """
     router = APIRouter(prefix="/admin")
-    resolved_directory_client: DirectoryClient = directory_client or NullDirectoryClient()
+    resolved_directory_client = directory_client or NullDirectoryClient()
 
-    @router.get(
-        "/quotas",
-        response_model=UserQuotaOverrideListResponse,
-        status_code=200,
-        summary="List live user quota overrides",
-    )
-    def list_user_quota_overrides(
-        admin_user: AdminUserDep,
-    ) -> UserQuotaOverrideListResponse:
-        """List live per-user quota overrides.
-
-        Args:
-            admin_user: Authenticated admin user from the signed bearer token.
-
-        Returns:
-            The default quota plus every live override.
-        """
-        rows = job_store.list_user_quota_overrides()
-        audit_rows = job_store.list_user_quota_audit_events()
-        return UserQuotaOverrideListResponse(
-            default_quota=settings.max_jobs_per_user,
-            overrides=[_build_quota_response(row, job_store=job_store) for row in rows],
-            audit_events=[_build_audit_response(row) for row in audit_rows],
-        )
-
-    @router.put(
-        "/quotas",
-        response_model=UserQuotaOverrideResponse,
-        status_code=200,
-        summary="Set a live user quota override",
-    )
-    def set_user_quota_override(
-        payload: UserQuotaOverrideRequest,
-        admin_user: AdminUserDep,
-    ) -> UserQuotaOverrideResponse:
-        """Create or update a live per-user quota override.
-
-        Args:
-            payload: Username and quota. A ``null`` quota means unlimited.
-            admin_user: Authenticated admin user from the signed bearer token.
-
-        Returns:
-            The saved override with current job count.
-        """
-        normalized_username = payload.username.strip().lower()
-        if not normalized_username:
-            raise DomainError("admin.invalid_username", status=400)
-        has_old_override, old_quota = job_store.get_user_quota_override(normalized_username)
-        old_value = old_quota if has_old_override else job_store.get_effective_user_quota(normalized_username)
-        job_store.set_user_quota_override(normalized_username, payload.quota, updated_by=admin_user.username)
-        job_store.record_user_quota_audit(
-            actor=admin_user.username,
-            target_username=normalized_username,
-            action="set",
-            old_quota=old_value,
-            new_quota=payload.quota,
-        )
-        has_override, quota = job_store.get_user_quota_override(normalized_username)
-        if not has_override:
-            raise DomainError("admin.quota_save_failed", status=500)
-        return _build_quota_response(
-            {
-                "username": normalized_username,
-                "quota": quota,
-                "updated_at": None,
-                "updated_by": admin_user.username,
-                "last_action": "set",
-            },
-            job_store=job_store,
-        )
-
-    @router.delete(
-        "/quotas/{username}",
-        response_model=UserQuotaOverrideResponse,
-        status_code=200,
-        summary="Delete a live user quota override",
-    )
-    def delete_user_quota_override(
-        username: str,
-        admin_user: AdminUserDep,
-    ) -> UserQuotaOverrideResponse:
-        """Delete a live quota override so config fallback applies.
-
-        Args:
-            username: User whose live quota override should be removed.
-            admin_user: Authenticated admin user from the signed bearer token.
-
-        Returns:
-            The user's current effective quota after deletion.
-        """
-        normalized_username = username.strip().lower()
-        if not normalized_username:
-            raise DomainError("admin.invalid_username", status=400)
-        has_old_override, old_quota = job_store.get_user_quota_override(normalized_username)
-        job_store.delete_user_quota_override(normalized_username)
-        if has_old_override:
-            job_store.record_user_quota_audit(
-                actor=admin_user.username,
-                target_username=normalized_username,
-                action="delete",
-                old_quota=old_quota,
-                new_quota=job_store.get_effective_user_quota(normalized_username),
-            )
-        return UserQuotaOverrideResponse(
-            username=normalized_username,
-            quota=None,
-            updated_at=None,
-            updated_by=None,
-            effective_quota=job_store.get_effective_user_quota(normalized_username),
-            job_count=job_store.count_jobs(username=normalized_username),
-            last_action="delete",
-        )
-
-    @router.get(
-        "/storage-quotas",
-        response_model=StorageQuotaOverrideListResponse,
-        status_code=200,
-        summary="List per-user storage-budget overrides",
-    )
+    @router.get("/storage-quotas", response_model=StorageQuotaOverrideListResponse)
     def list_user_storage_quota_overrides(
         admin_user: AdminUserDep,
     ) -> StorageQuotaOverrideListResponse:
-        """List per-user storage-budget overrides with live usage.
+        """List explicit storage overrides and live use.
 
         Args:
-            admin_user: Authenticated admin user from the signed bearer token.
+            admin_user: Authenticated administrator.
 
         Returns:
-            The default byte budget plus every per-user override.
+            Default quota and all explicit per-user overrides.
         """
         del admin_user
         rows = job_store.list_user_storage_quota_overrides()
@@ -332,30 +124,30 @@ def create_admin_router(
             overrides=[_build_storage_quota_response(row, job_store=job_store) for row in rows],
         )
 
-    @router.put(
-        "/storage-quotas",
-        response_model=StorageQuotaOverrideResponse,
-        status_code=200,
-        summary="Set a per-user storage-budget override",
-    )
+    @router.put("/storage-quotas", response_model=StorageQuotaOverrideResponse)
     def set_user_storage_quota_override(
         payload: StorageQuotaOverrideRequest,
         admin_user: AdminUserDep,
     ) -> StorageQuotaOverrideResponse:
-        """Create or update a per-user storage-budget override.
+        """Set a per-user storage ceiling.
 
         Args:
-            payload: Username and byte ceiling that replaces the default budget.
-            admin_user: Authenticated admin user from the signed bearer token.
+            payload: Username and replacement byte ceiling.
+            admin_user: Authenticated administrator making the change.
 
         Returns:
-            The saved override with the user's effective budget and live usage.
+            Saved override with effective quota and live use.
+
+        Raises:
+            DomainError: When the normalized username is empty.
         """
-        normalized_username = payload.username.strip().lower()
+        normalized_username = payload.username.strip().casefold()
         if not normalized_username:
             raise DomainError("admin.invalid_username", status=400)
         job_store.set_user_storage_quota_override(
-            normalized_username, payload.quota_bytes, updated_by=admin_user.username
+            normalized_username,
+            payload.quota_bytes,
+            updated_by=admin_user.username,
         )
         return _build_storage_quota_response(
             {
@@ -367,27 +159,25 @@ def create_admin_router(
             job_store=job_store,
         )
 
-    @router.delete(
-        "/storage-quotas/{username}",
-        response_model=StorageQuotaOverrideResponse,
-        status_code=200,
-        summary="Delete a per-user storage-budget override",
-    )
+    @router.delete("/storage-quotas/{username}", response_model=StorageQuotaOverrideResponse)
     def delete_user_storage_quota_override(
         username: str,
         admin_user: AdminUserDep,
     ) -> StorageQuotaOverrideResponse:
-        """Delete a storage-budget override so the default budget applies again.
+        """Restore the default storage ceiling for one user.
 
         Args:
-            username: User whose storage-budget override should be removed.
-            admin_user: Authenticated admin user from the signed bearer token.
+            username: User whose explicit override should be removed.
+            admin_user: Authenticated administrator.
 
         Returns:
-            The user's effective budget and live usage after deletion.
+            Effective default quota and current storage use.
+
+        Raises:
+            DomainError: When the normalized username is empty.
         """
         del admin_user
-        normalized_username = username.strip().lower()
+        normalized_username = username.strip().casefold()
         if not normalized_username:
             raise DomainError("admin.invalid_username", status=400)
         job_store.delete_user_storage_quota_override(normalized_username)
@@ -401,26 +191,21 @@ def create_admin_router(
             job_store=job_store,
         )
 
-    @router.get(
-        "/users/search",
-        response_model=DirectoryUserSearchResponse,
-        status_code=200,
-        summary="Autocomplete users by username, display name, or email",
-    )
+    @router.get("/users/search", response_model=DirectoryUserSearchResponse)
     def search_users(
         admin_user: AdminUserDep,
         q: Annotated[str, Query(description="Free-text fragment to match.")] = "",
         limit: Annotated[int, Query(ge=1, le=50)] = 10,
     ) -> DirectoryUserSearchResponse:
-        """Return merged autocomplete matches from DB-known users + the directory.
+        """Search known and directory identities for administrator workflows.
 
         Args:
-            admin_user: Authenticated admin user from the signed bearer token.
-            q: Free-text fragment.
-            limit: Maximum number of matches to return.
+            admin_user: Authenticated administrator.
+            q: Username, display-name, or email fragment.
+            limit: Maximum distinct matches.
 
         Returns:
-            Distinct matches with the source channel attached to each row.
+            Merged case-normalized matches.
         """
         del admin_user
         query = q.strip()
@@ -429,16 +214,15 @@ def create_admin_router(
 
         matches: list[DirectoryUserMatch] = []
         seen: set[str] = set()
-
         for username in job_store.search_usernames(query, limit=limit):
-            normalized = (username or "").strip().lower()
+            normalized = (username or "").strip().casefold()
             if not normalized or normalized in seen:
                 continue
             seen.add(normalized)
-            matches.append(DirectoryUserMatch(username=normalized, source="db"))
+            matches.append(DirectoryUserMatch(username=normalized, source="database"))
 
         for entry in resolved_directory_client.search_users(query, limit=limit):
-            normalized = entry.username.strip().lower()
+            normalized = entry.username.strip().casefold()
             if not normalized or normalized in seen:
                 continue
             seen.add(normalized)

@@ -2,8 +2,8 @@
 
 Covers label normalization across the three annotation modes, defensive JSON
 parsing of model output, few-shot example selection (corrections-first,
-exclusions, provenance filtering), instruction compilation, and the credit
-estimator.
+exclusions, provenance filtering), instruction compilation, and token
+estimation.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from ..tagging import (
     assist_model_name,
     compile_instructions,
     effective_task_config,
-    estimate_credits_for_rows,
+    estimate_tokens_for_rows,
     normalize_label,
     select_examples,
     summarize_dataset,
@@ -272,7 +272,7 @@ def test_predict_rows_stream_merges_batches_into_terminal_event(monkeypatch) -> 
     assert events[-1]["event"] == "predict_done"
     assert all(e["event"] == "prediction" for e in events[:-1])
     assert set(events[-1]["data"]["predictions"]) == {str(i) for i in range(tagging.BATCH_SIZE + 2)}
-    assert events[-1]["data"]["credits"] == 0
+    assert events[-1]["data"]["total_tokens"] == 0
 
 
 def test_summarize_dataset_samples_rows() -> None:
@@ -294,36 +294,29 @@ def test_summarize_dataset_marks_unselected_columns_excluded() -> None:
 
 
 def test_estimate_scales_with_rows_and_handles_empty() -> None:
-    """More rows cost more; zero rows cost nothing."""
+    """More rows require more tokens; zero rows require none."""
     rows = [{"id": i, "text": "x" * 400} for i in range(50)]
-    small = estimate_credits_for_rows("instructions", rows[:10])
-    large = estimate_credits_for_rows("instructions", rows)
+    small = estimate_tokens_for_rows("instructions", rows[:10])
+    large = estimate_tokens_for_rows("instructions", rows)
     assert small["rows"] == 10
-    assert large["credits_high"] >= large["credits_low"] >= small["credits_low"] >= 0
-    empty = estimate_credits_for_rows("instructions", [])
+    assert large["estimated_input_tokens"] >= small["estimated_input_tokens"] >= 0
+    assert large["estimated_output_tokens"] >= small["estimated_output_tokens"] >= 0
+    empty = estimate_tokens_for_rows("instructions", [])
     assert empty == {
         "rows": 0,
         "model": empty["model"],
-        "credits_low": 0,
-        "credits_high": 0,
+        "estimated_input_tokens": 0,
+        "estimated_output_tokens": 0,
     }
 
 
 def test_estimate_prices_on_chosen_model() -> None:
     """A chosen tagging model rides the estimate; blank falls back to default."""
     rows = [{"id": 1, "text": "x" * 400}]
-    chosen = estimate_credits_for_rows("instructions", rows, model="openai/gpt-test")
+    chosen = estimate_tokens_for_rows("instructions", rows, model="openai/gpt-test")
     assert chosen["model"] == "openai/gpt-test"
-    fallback = estimate_credits_for_rows("instructions", rows, model="  ")
+    fallback = estimate_tokens_for_rows("instructions", rows, model="  ")
     assert fallback["model"] == assist_model_name()
-
-
-def test_estimate_applies_byok_platform_fee() -> None:
-    """A BYOK estimate charges only the platform-fee share of the same usage."""
-    rows = [{"id": i, "text": "x" * 4000} for i in range(100)]
-    managed = estimate_credits_for_rows("instructions", rows, model="openai/gpt-test", token_source="managed")
-    byok = estimate_credits_for_rows("instructions", rows, model="openai/gpt-test", token_source="byok")
-    assert 0 < byok["credits_low"] < managed["credits_low"]
 
 
 def test_effective_task_config_lifts_chosen_model() -> None:

@@ -1527,7 +1527,7 @@ def _build_agent_lm(
         extra["extra_body"] = {**extra.get("extra_body", {}), **lm_extra_body}
     config = ModelConfig(
         name=model_name,
-        base_url=settings.code_agent_base_url or None,
+        base_url=settings.code_agent_base_url or settings.openai_api_base or None,
         # Reasoning models spend their thinking tokens against this same
         # budget, and on real datasets the seed's reasoning alone can run
         # thousands of tokens; keep enough headroom that code is never cut

@@ -33,15 +33,16 @@ backend:
   replicas: 2
   containerPort: 8000
 
-  # Resources tuned for medium load. Embeddings are served by an internal API,
-  # so backend pods do not carry local model weights.
+  # Conservative requests keep idle pods efficient; limits leave headroom for
+  # optimization children. Tune from measured job size before raising worker
+  # concurrency.
   resources:
     requests:
-      cpu: 500m
-      memory: 2Gi
+      cpu: 250m
+      memory: 1Gi
     limits:
       cpu: "2000m"
-      memory: 6Gi
+      memory: 4Gi
 
   # Optional mounts for internal CA bundles or site-specific runtime files.
   # Example:
@@ -64,9 +65,10 @@ backend:
     LOG_FORMAT: json
     API_HOST: 0.0.0.0
     API_PORT: "8000"
-    WORKER_CONCURRENCY: "4"
+    WORKER_CONCURRENCY: "2"
     WORKER_POLL_INTERVAL: "2.0"
     WORKER_STALE_THRESHOLD: "600"
+    JOB_ADMISSION_MAX_MEMORY_FRACTION: "0.85"
     # SQLAlchemy pool budget per pod. Total connections = replicas ×
     # (DB_POOL_SIZE + DB_POOL_MAX_OVERFLOW). Keep total well below
     # postgres.maxConnections (default 200) to leave room for migrations
@@ -83,6 +85,17 @@ backend:
     # during staged rollouts.
     REQUIRE_CODE_VERSION: "true"
     ALLOWED_ORIGINS: ""
+    USER_STORAGE_QUOTA_BYTES: "262144000"
+    DATASET_MAX_FILE_BYTES: "52428800"
+    TELEMETRY_ENABLED: "true"
+    LOG_SHIP_URL: ""
+    ALERT_WEBHOOK_URL: ""
+    ALERT_MIN_LEVEL: "ERROR"
+    ALERT_ENVIRONMENT: "production"
+    ALERT_THROTTLE_SECONDS: "300"
+    POSTHOG_HOST: ""
+    TRANSCRIPTION_BASE_URL: ""
+    TRANSCRIPTION_MODEL: "whisper-large-v3-turbo"
     # Explore search engine — also decides which Postgres extension the deploy
     # needs. The single knob to switch search profiles:
     #   "lexical"  (default): vanilla Postgres, no extension, ILIKE search. The
@@ -134,6 +147,11 @@ backend:
       EMBEDDINGS_API_KEY: ""
       # Must match frontend.secrets.data.BACKEND_AUTH_SECRET.
       BACKEND_AUTH_SECRET: ""
+      # Fernet key for encrypted provider connections. Required to save BYOK.
+      BYOK_VAULT_KEY: ""
+      TRANSCRIPTION_API_KEY: ""
+      LOG_SHIP_TOKEN: ""
+      POSTHOG_PROJECT_API_KEY: ""
       # REMOTE_DB_URL is composed below — see externalDatabase / postgres stanzas.
       # Override here only if you want to bypass the composer.
       REMOTE_DB_URL: ""
@@ -236,16 +254,24 @@ frontend:
   env:
     NODE_ENV: production
     PORT: "3001"
-    # API_URL is the runtime backend address (replacing build-time NEXT_PUBLIC_API_URL).
-    # Default points at the in-cluster backend Service.
-    API_URL: ""  # auto-defaults to http://<release>-skynet-backend:8000 if empty
+    # API_URL is injected into browser pages and must be reachable from user
+    # workstations. When empty, an explicit backend Route host is used; dev
+    # values fall back to localhost.
+    API_URL: ""
+    # Server-only address used by NextAuth provisioning calls. Empty defaults
+    # to the in-cluster backend Service.
+    BACKEND_INTERNAL_URL: ""
+    AUTH_URL: ""
     AUTH_SSO_ISSUER: ""
     AUTH_SSO_CLIENT_ID: ""
     AUTH_SSO_SCOPE: "openid profile email groups"
+    AUTH_USERNAME_CLAIM: ""
     AUTH_GROUP_CLAIM: "groups"
     AUTH_ADMIN_GROUPS: ""
     # Break-glass admin users only. Prefer AUTH_ADMIN_GROUPS for normal admin assignment.
     AUTH_ADMINS: ""
+    BACKEND_AUTH_TOKEN_TTL_SECONDS: "900"
+    TRANSCRIPTION_ENABLED: "false"
     NODE_EXTRA_CA_CERTS: ""
     # Set to the deployed version so the UI footer reflects it. Defaults to a
     # stale 0.1.0 when unset.
@@ -522,14 +548,8 @@ networkPolicy:
   dbEgress: []
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Migration job — runs `alembic upgrade head` as a Helm pre-install/upgrade hook.
-# The runner reads REMOTE_DB_URL from the same envFrom as the backend pods so
-# both move forward in lockstep. To adopt a database that already sits at the
-# squashed baseline (revision 342f7449be26), override to:
-#   command: ["alembic", "stamp", "342f7449be26"]
-# on the first deploy, then revert to ["alembic", "upgrade", "head"] so the
-# remaining revisions apply normally. The live single head is c1d2e3f4a5b6;
-# verify with `alembic heads` against the shipped image before stamping.
+# Migration job — runs the single fresh-install on-prem baseline. This chart
+# intentionally does not adopt databases from hosted or older private builds.
 # ─────────────────────────────────────────────────────────────────────────────
 migration:
   enabled: true
@@ -543,15 +563,6 @@ migration:
       memory: 1Gi
   backoffLimit: 1
   activeDeadlineSeconds: 600
-  # Source timezone assumed for any legacy ``timestamp without time zone`` rows
-  # written before revision b2c3d4e5f6a7. Only relevant when upgrading an
-  # existing on-prem DB whose PostgreSQL session timezone is not UTC (e.g.
-  # an operator-managed external DB running with ``Asia/Jerusalem`` or
-  # ``America/New_York``). Leave empty for fresh installs and for the bundled
-  # pgvector StatefulSet — the migration then falls back to
-  # ``current_setting('timezone')`` which is UTC for those cases.
-  # Example: legacyNaiveTz: "Asia/Jerusalem"
-  legacyNaiveTz: ""
 
 # Extra labels/annotations applied to every resource in the chart.
 commonLabels: {}

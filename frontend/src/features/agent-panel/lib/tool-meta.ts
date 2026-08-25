@@ -20,7 +20,6 @@ import {
   Square,
   Tag,
   Trash,
-  Wallet,
   type Icon,
 } from "@/shared/ui/icons";
 import { TERMS } from "@/shared/lib/terms";
@@ -261,13 +260,6 @@ export const TOOL_META: Record<string, ToolMetaDef> = {
     confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.72"),
     severity: "info",
     icon: Sparkle,
-  },
-  get_wallet_for_agent: {
-    title: () => msg("auto.features.agent.panel.components.walletcard.title"),
-    description: () => msg("auto.features.agent.panel.lib.tool.meta.literal.80"),
-    confirmLabel: () => msg("auto.features.agent.panel.lib.tool.meta.literal.62"),
-    severity: "info",
-    icon: Wallet,
   },
   list_tagging_sessions_for_agent: {
     title: () => msg("auto.features.agent.panel.components.taggingsessionscard.title"),

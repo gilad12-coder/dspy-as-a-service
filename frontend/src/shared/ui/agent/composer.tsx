@@ -9,6 +9,7 @@ import { useUserPrefs } from "@/features/settings";
 import { Button } from "@/shared/ui/primitives/button";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { cn } from "@/shared/lib/utils";
+import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 
 import { autoResizeTextarea } from "./auto-resize";
 import { formatRecSeconds, useDictation } from "./use-dictation";
@@ -87,7 +88,7 @@ export function Composer({
   const dictating = dictation.state.kind !== "idle";
   // A recording in flight keeps its controls even if the pref flips off in
   // the settings modal mid-take.
-  const showMic = prefs.dictationEnabled || dictating;
+  const showMic = getRuntimeEnv().transcriptionEnabled && (prefs.dictationEnabled || dictating);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

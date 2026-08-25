@@ -224,8 +224,8 @@ class LmUsageTotals:
     split_found: bool = False
 
 
-# None (the default everywhere, including the API process) means unmetered —
-# the gate costs nothing until a job child installs it.
+# None (the default everywhere, including the API process) leaves concurrency
+# unrestricted until a job child installs the gate.
 _job_lm_gate: threading.BoundedSemaphore | None = None
 
 
@@ -390,8 +390,8 @@ def build_language_model(config: ModelConfig, *, disable_cache: bool = False) ->
     _translate_gateway_reasoning(lm_kwargs)
     if disable_cache:
         lm_kwargs["cache"] = False
-        # ``cache=False`` only disables the client-side cache — the LiteLLM
-        # proxy keeps its own Redis cache whose key ignores params like
+        # ``cache=False`` only disables the client-side cache — a configured
+        # proxy can keep a server-side cache whose key ignores params like
         # ``reasoning``, so a user-facing turn could replay a stale cached
         # answer (and cached replays drop reasoning deltas entirely). The
         # body-level directive opts this request out server-side too.
@@ -436,8 +436,8 @@ def total_tokens_from_history(*language_models: object) -> int | None:
     Prefers each LM's ``MeteredLM`` running aggregate; otherwise reads the
     ``usage`` block each stock ``dspy.LM`` stamps onto every ``history`` entry,
     summing ``total_tokens`` — or ``prompt_tokens + completion_tokens`` when a
-    provider omits the total. This is the per-run token figure the billing
-    worker meters to Stripe.
+    provider omits the total. This is the per-run token figure recorded for
+    local observability.
 
     Args:
         *language_models: LMs whose usage to total; ``None`` entries and LMs
@@ -446,7 +446,7 @@ def total_tokens_from_history(*language_models: object) -> int | None:
     Returns:
         The summed token count, or ``None`` when no usage information is present
         (e.g. mocked LMs in tests) so callers can tell "zero usage" apart from
-        "usage not tracked" and skip metering rather than bill nothing.
+        "usage not tracked" and avoid recording a misleading zero.
     """
     total = 0
     found = False
@@ -509,10 +509,9 @@ def usage_by_model_from_history(*language_models: object) -> dict[str, tuple[int
 
     The per-model companion to :func:`total_tokens_from_history`: it keys usage
     by each ``dspy.LM``'s ``model`` id and preserves the input/output split that
-    per-model pricing needs, folding several LMs on the same model together.
+    operator diagnostics need, folding several LMs on the same model together.
     Prefers the ``MeteredLM`` aggregate, falling back to history entries.
-    Stays billing-agnostic — it returns plain token counts, leaving the
-    cost conversion to :mod:`core.billing.pricing`.
+    Returns plain token counts without cost or licensing policy.
 
     Args:
         *language_models: LMs whose usage to total; ``None`` entries and LMs
@@ -523,7 +522,7 @@ def usage_by_model_from_history(*language_models: object) -> dict[str, tuple[int
         A ``model id → (input_tokens, output_tokens)`` mapping, or ``None`` when
         no usage information is present anywhere — mirroring
         :func:`total_tokens_from_history` so callers can tell "zero usage" from
-        "usage not tracked" and skip charging rather than bill nothing.
+        "usage not tracked" and avoid recording a misleading zero.
     """
     by_model: dict[str, list[int]] = {}
     found = False

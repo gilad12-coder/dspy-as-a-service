@@ -61,16 +61,13 @@ test("deviceClassFromRequest falls back to the UA mobile token", () => {
 });
 
 test("isPhoneSettingsTab keeps only the view-first settings tabs", () => {
-  for (const t of ["account", "billing", "usage", "about"]) {
+  for (const t of ["account", "providers", "about"]) {
     assert.equal(isPhoneSettingsTab(t), true, t);
   }
   for (const t of [
     "wizard",
     "tagging",
     "agent",
-    "security",
-    "privacy",
-    "providers",
     "api",
     "admin",
   ]) {

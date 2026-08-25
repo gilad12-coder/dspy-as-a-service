@@ -43,7 +43,7 @@ from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..model_catalog import require_known_model
 from ..model_router import resolve_auto_tier, route_auto_model
-from ._helpers import enforce_llm_credits, sse_from_events, stream_with_llm_metering
+from ._helpers import sse_from_events, stream_with_llm_observation
 
 logger = logging.getLogger(__name__)
 
@@ -569,7 +569,6 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
                 logger.exception("Failed to wake agent memory")
                 return ""
 
-        await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         conversation_id, title = await asyncio.to_thread(_setup_turn)
         memory_context = await asyncio.to_thread(_wake_memory)
 
@@ -596,7 +595,7 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
             model_config=model_config,
             usage_sink=usage_sink,
         )
-        metered = stream_with_llm_metering(
+        metered = stream_with_llm_observation(
             source,
             job_store=job_store,
             username=current_user.username,

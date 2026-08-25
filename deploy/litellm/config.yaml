@@ -1,14 +1,10 @@
 # LiteLLM proxy — the managed-inference gateway for Skynet.
 #
-# Fronts a single OpenRouter master account: when LITELLM_PROXY_URL points the
-# backend here, every *managed* run routes through this proxy, gets metered, and
-# is capped by per-key budgets. BYOK runs never reach this proxy — the run-path
+# Fronts a centrally managed OpenRouter account: when LITELLM_PROXY_URL points
+# the backend here, managed runs route through this proxy. BYOK runs never reach
+# this proxy — the run-path
 # bridge stamps the user's own key onto the request, which sends it straight to
-# the provider (see backend/core/billing/byok_bridge.py).
-#
-# Spend caps here are a backstop only. The Skynet credit ledger
-# (backend/core/billing/service.py) stays the source of truth for what a user is
-# charged; the proxy budget is a circuit breaker against runaway upstream spend.
+# the provider (see backend/core/byok/bridge.py).
 
 model_list:
   # Wildcard pass-through: any model the OpenRouter master key can reach is
@@ -22,11 +18,6 @@ model_list:
 
 litellm_settings:
   drop_params: true
-  # Shared daily upstream-spend circuit breaker. This is independent of the
-  # application's credit ledger, so a metering regression cannot create an
-  # unbounded OpenRouter bill. Raise deliberately after observing launch use.
-  max_budget: 50
-  budget_duration: 1d
   # Retry fast transient upstream failures (429/5xx) at the proxy instead of
   # passing every one straight through to the turn/run. Kept low: the backend
   # retries too, and slow failures are bounded by the client-side timeouts.
@@ -40,27 +31,10 @@ litellm_settings:
   # concrete model OpenRouter's Auto Router served (the backend's per-turn
   # "Auto · <model>" reveal). The callback object itself is a no-op.
   callbacks: custom_callbacks.proxy_handler_instance
-  # Prompt caching is a margin lever; provider/model dependent. Backed by Redis
-  # so cache survives a proxy restart. Remove this block to disable caching.
-  cache: true
-  cache_params:
-    type: redis
-    host: os.environ/REDIS_HOST
-    port: os.environ/REDIS_PORT
-    # Empty for the bundled local redis (no auth); set in hosted deploys where
-    # the managed Redis requires AUTH (e.g. Railway). redis-py skips AUTH on an
-    # empty password, so this stays backward-compatible with the local stack.
-    password: os.environ/REDIS_PASSWORD
-
 general_settings:
-  # Admin key for minting per-user / per-job virtual keys via the proxy's
-  # /key/generate endpoint. The backend presents a virtual key (LITELLM_PROXY_API_KEY),
-  # never this master key.
+  # The backend presents a gateway key, never this master key.
   master_key: os.environ/LITELLM_MASTER_KEY
-  # Postgres backing the proxy's virtual keys + spend tracking. Keep this
-  # separate from the Skynet application database.
+  # PostgreSQL backs the gateway's own keys and operational state.
   database_url: os.environ/LITELLM_DATABASE_URL
-  # Bound in-flight provider work per proxy replica. Excess calls receive 429
-  # and flow through the backend's existing retry/queue behavior instead of
-  # allowing a traffic spike to fan out without limit.
+  # Bound in-flight provider work per proxy replica for resource protection.
   global_max_parallel_requests: 64

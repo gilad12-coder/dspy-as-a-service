@@ -29,7 +29,6 @@ const FEATURED_TOOLS: readonly string[] = [
   "get_job_logs_optimizations",
   "get_test_results_optimizations",
   "list_jobs_optimizations_get",
-  "get_wallet_for_agent",
   "list_tagging_sessions_for_agent",
   "rename_job_optimizations",
   "toggle_pin_job_optimizations",

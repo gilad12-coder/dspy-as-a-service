@@ -19,7 +19,7 @@ from sqlalchemy.pool import StaticPool
 
 from ...constants import OPTIMIZATION_TYPE_TAGGING, PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE
 from ...service_gateway import tagging
-from ...storage.models import Base, BillingCustomerModel, TaggingSessionModel
+from ...storage.models import Base, TaggingSessionModel
 from ...storage.remote import RemoteDBJobStore
 from .. import tagging_job
 from ..engine import BackgroundWorker
@@ -73,30 +73,10 @@ def _seed_session(store: _MemStore) -> None:
                     "rubric": ["Sarcasm counts as negative."],
                     "predictions": {},
                     "provenance": {"1": "human"},
-                    "autotag": {"status": "running", "total": 3, "done": 0, "credits_spent": 0},
+                    "autotag": {"status": "running", "total": 3, "done": 0, "total_tokens": 0},
                 },
                 row_count=4,
                 tagged_count=1,
-            )
-        )
-        db.commit()
-
-
-def _fund(store: _MemStore, username: str = "alice", credits: int = 10_000) -> None:
-    """Seed a funded billing row so a job run under ``username`` passes the credit gate.
-
-    Args:
-        store: The store whose engine backs the billing tables.
-        username: Account to fund.
-        credits: Paid balance to seed.
-    """
-    with Session(store.engine) as db:
-        db.add(
-            BillingCustomerModel(
-                username=username,
-                stripe_customer_id=f"cus_{username}",
-                credit_balance=credits,
-                grant_remaining=0,
             )
         )
         db.commit()
@@ -147,7 +127,7 @@ def _autotag_state(store: _MemStore) -> dict:
 
 
 def test_run_autotag_job_done_path(monkeypatch) -> None:
-    """A clean run labels everything, flips the phase, and reports credits."""
+    """A clean run labels everything, flips the phase, and reports tokens."""
     monkeypatch.setattr(tagging, "predict_rows", _fake_predict_all)
     store = _MemStore()
     _seed_session(store)
@@ -161,11 +141,11 @@ def test_run_autotag_job_done_path(monkeypatch) -> None:
         cancel_event=threading.Event(),
         heartbeat=lambda: beats.append(1),
     )
-    assert outcome == {"status": "done", "rows_tagged": 3, "credits_spent": 7}
+    assert outcome == {"status": "done", "rows_tagged": 3, "total_tokens": 7}
     state = _autotag_state(store)
     assert state["status"] == "done"
     assert state["done"] == 3
-    assert state["credits_spent"] == 7
+    assert state["total_tokens"] == 7
     assert state["phase"] == "complete"
 
 
@@ -263,79 +243,11 @@ def test_run_autotag_job_failure_marks_session(monkeypatch) -> None:
     assert _autotag_state(store)["status"] == "failed"
 
 
-def test_run_autotag_job_depleted_account_stops_before_first_call(monkeypatch) -> None:
-    """A job for a zero-balance account cancels up front without one LLM call."""
-
-    def never_called(config, instructions, rows, on_batch=None, cancel=None, usage_sink=None):
-        """Fail the test if the batch loop is ever reached."""
-        raise AssertionError("predict_rows must not run for a depleted account")
-
-    monkeypatch.setattr(tagging, "predict_rows", never_called)
-    store = _MemStore()
-    _seed_session(store)
-    _seed_job(store, "job-1", status="running")
-
-    outcome = run_autotag_job(
-        store,
-        "job-1",
-        _SESSION_ID,
-        username="alice",
-        cancel_event=threading.Event(),
-        heartbeat=lambda: None,
-    )
-    assert outcome == {"status": "cancelled", "reason": "credits_exhausted"}
-    state = _autotag_state(store)
-    assert state["status"] == "canceled"
-    assert state["reason"] == "credits_exhausted"
-
-
-def test_run_autotag_job_credit_watch_stops_mid_run(monkeypatch) -> None:
-    """The monitor stops the loop once accrued cost reaches the balance."""
-    monkeypatch.setattr(tagging_job, "MONITOR_TICK_SECONDS", 0.01)
-    monkeypatch.setattr(
-        tagging_job, "estimate_run_credits", lambda sink, token_source="managed": 10_000
-    )
-
-    def waiting_predict(
-        config,
-        instructions,
-        rows,
-        on_batch=None,
-        cancel=None,
-        usage_sink=None,
-        model_config=None,
-    ):
-        """Block until the stop signal arrives, like a long real run."""
-        assert cancel is not None
-        cancel.wait(5.0)
-        return {}, 3
-
-    monkeypatch.setattr(tagging, "predict_rows", waiting_predict)
-    store = _MemStore()
-    _seed_session(store)
-    _fund(store, credits=10)
-    _seed_job(store, "job-1", status="running")
-
-    outcome = run_autotag_job(
-        store,
-        "job-1",
-        _SESSION_ID,
-        username="alice",
-        cancel_event=threading.Event(),
-        heartbeat=lambda: None,
-    )
-    assert outcome == {"status": "cancelled", "reason": "credits_exhausted"}
-    state = _autotag_state(store)
-    assert state["status"] == "canceled"
-    assert state["reason"] == "credits_exhausted"
-
-
 def test_process_job_dispatches_tagging_type(monkeypatch) -> None:
     """The worker runs a tagging_autotag row in-thread and lands success."""
     monkeypatch.setattr(tagging, "predict_rows", _fake_predict_all)
     store = _MemStore()
     _seed_session(store)
-    _fund(store)
     _seed_job(store, "job-1")
     store.update_job(
         "job-1", payload={"session_id": _SESSION_ID, "username": "alice"}
@@ -346,6 +258,6 @@ def test_process_job_dispatches_tagging_type(monkeypatch) -> None:
 
     job = store.get_job("job-1")
     assert job["status"] == "success"
-    assert job["result"] == {"status": "done", "rows_tagged": 3, "credits_spent": 7}
+    assert job["result"] == {"status": "done", "rows_tagged": 3, "total_tokens": 7}
     assert job["message"] == "Tagged 3 rows"
     assert _autotag_state(store)["phase"] == "complete"

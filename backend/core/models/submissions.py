@@ -103,28 +103,17 @@ class _OptimizationRequestBase(BaseModel):
     seed: int | None = None
     dataset_filename: str | None = Field(default=None, description="Original dataset file name.")
     is_private: bool = Field(
-        default=False,
-        description="When true, the optimization is excluded from the public explore page.",
+        default=True,
+        description=(
+            "When true, the run stays private. False explicitly publishes it to the "
+            "authenticated on-premise Explorer corpus."
+        ),
     )
     token_source: Literal["managed", "byok"] = Field(
         default="managed",
         description=(
-            "How the run's tokens are billed: 'managed' (Skynet credits — any model is runnable, "
-            "and the run's cost ceiling is capped at the account's spendable credits so it can't "
-            "overspend) or 'byok' (the user's own provider key — billed directly, no credits). "
-            "Threaded from the wizard so the credit gate is enforced server-side, not advisory."
-        ),
-    )
-    max_cost_credits: int | None = Field(
-        default=None,
-        ge=1,
-        description=(
-            "User-set per-job spend ceiling, in credits. A DSPy optimizer's token use is not "
-            "linear (bootstrapping, compile steps, validation loops), so the wizard shows a "
-            "projected bracket rather than a tight estimate and lets the user cap the run here. "
-            "The run is hard-stopped server-side once its accumulated credit cost reaches this "
-            "cap; a stopped run fails and is never billed. "
-            "Omit (null) for no ceiling."
+            "Credential source for model calls: 'managed' uses an operator-configured connection; "
+            "'byok' uses the authenticated user's encrypted provider connection."
         ),
     )
     target_score: float | None = Field(
@@ -137,26 +126,6 @@ class _OptimizationRequestBase(BaseModel):
             "budget remains a safety ceiling."
         ),
     )
-    estimated_credits_low: int | None = Field(
-        default=None,
-        ge=0,
-        description=(
-            "Low end of the projected credit bracket the wizard showed at submit. Persisted so "
-            "the post-run proof moment can reconcile the estimate against the actual charge. "
-            "Carries the chargeable bracket for the run's token_source (managed: full per-model "
-            "cost; byok: platform fee). Advisory only — never gates or bills. Omit (null) when "
-            "no estimate was computed."
-        ),
-    )
-    estimated_credits_high: int | None = Field(
-        default=None,
-        ge=0,
-        description=(
-            "High end of the projected credit bracket (see estimated_credits_low). Seeds the "
-            "post-run estimate-vs-actual reconciliation. Advisory only."
-        ),
-    )
-
     @model_validator(mode="after")
     def _ensure_dataset(self) -> _OptimizationRequestBase:
         """Require exactly one dataset source: inline rows, a staged id, or a library id.

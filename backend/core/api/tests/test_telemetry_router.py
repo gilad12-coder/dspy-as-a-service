@@ -28,7 +28,6 @@ from ..routers import telemetry as telemetry_module
 from ..routers.telemetry import (
     MAX_EVENTS_PER_BATCH,
     MAX_PROPERTY_BYTES,
-    _optional_user,
     create_telemetry_router,
 )
 
@@ -54,13 +53,15 @@ def _client(
     *,
     optional_user: AuthenticatedUser | None = None,
     admin: AuthenticatedUser | None = None,
+    unauthenticated: bool = False,
 ) -> tuple[TestClient, _MemStore]:
     """Mount the telemetry router on a fresh store with optional auth overrides.
 
     Args:
         optional_user: When set, the ingest endpoint resolves to this caller
-            (simulating an authenticated batch); otherwise ingest is anonymous.
+            for an authenticated batch.
         admin: When set, the admin read endpoints resolve to this caller.
+        unauthenticated: Leave the authentication dependency unconfigured.
 
     Returns:
         A ``(client, store)`` pair sharing one in-memory store.
@@ -68,10 +69,9 @@ def _client(
     store = _MemStore()
     app = FastAPI()
     app.include_router(create_telemetry_router(job_store=store))
-    if optional_user is not None:
-        app.dependency_overrides[_optional_user] = lambda: optional_user
-    if admin is not None:
-        app.dependency_overrides[get_authenticated_user] = lambda: admin
+    resolved_user = admin or optional_user or _NONADMIN
+    if not unauthenticated:
+        app.dependency_overrides[get_authenticated_user] = lambda: resolved_user
     return TestClient(app), store
 
 
@@ -100,18 +100,13 @@ def _batch(
     }
 
 
-def test_anonymous_ingest_is_accepted_and_unattributed() -> None:
-    """A batch with no auth is stored with ``username`` null and its anon id set."""
-    client, store = _client()
+def test_anonymous_ingest_is_rejected() -> None:
+    """Reject product telemetry that has no authenticated local identity."""
+    client, store = _client(unauthenticated=True)
     resp = client.post("/telemetry/events", json=_batch(["page_view", "run_submitted"]))
-    assert resp.status_code == 200, resp.text
-    assert resp.json() == {"accepted": 2}
+    assert resp.status_code == 401
     with store._session_factory() as session:
-        rows = session.query(TelemetryEventModel).order_by(TelemetryEventModel.id).all()
-    assert [row.event_name for row in rows] == ["page_view", "run_submitted"]
-    assert all(row.username is None for row in rows)
-    assert all(row.anonymous_id == "anon-1" for row in rows)
-    assert all(row.received_at is not None for row in rows)
+        assert session.query(TelemetryEventModel).count() == 0
 
 
 def test_authenticated_ingest_attributes_username_server_side() -> None:
@@ -207,7 +202,7 @@ def test_summary_aggregates_events_visitors_and_top_events() -> None:
     body = client.get("/telemetry/summary", params={"window_hours": 24}).json()
     assert body["total_events"] == 4
     assert body["visitors"] == 2
-    assert body["users"] == 0
+    assert body["users"] == 1
     counts = {event["name"]: event["count"] for event in body["top_events"]}
     assert counts == {"page_view": 3, "run_submitted": 1}
     assert body["top_events"][0]["name"] == "page_view"

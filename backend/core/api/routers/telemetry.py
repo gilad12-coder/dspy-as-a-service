@@ -1,12 +1,9 @@
 """First-party product-telemetry ingestion and admin read endpoints.
 
 The browser SDK batches interaction events (page views, labelled clicks, named
-flow events) to ``POST /telemetry/events`` — a public endpoint that accepts both
-authenticated and anonymous callers, so pre-login activity is captured too. The
-caller's identity is taken from the request's auth token, never the request
-body: an anonymous batch lands with ``username = None`` and is attributed only
-by the SDK's opaque ``anonymous_id``. The admin-only read endpoints aggregate
-the table into the "how is Skynet actually used" figures.
+flow events) to ``POST /telemetry/events``. The route requires an authenticated
+local or ADFS identity and stores the data in PostgreSQL. The admin-only read
+endpoints aggregate the table into the "how is Skynet actually used" figures.
 """
 
 from __future__ import annotations
@@ -15,7 +12,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -23,7 +20,6 @@ from sqlalchemy.orm import Session
 from ...config import settings
 from ...storage.models import TelemetryEventModel
 from ..auth import AuthenticatedUser, get_authenticated_user, require_admin_user
-from ..errors import DomainError
 from ..posthog import export_telemetry_events
 
 # Hard caps the public ingest endpoint enforces so a single request can't be
@@ -33,32 +29,6 @@ MAX_PROPERTY_BYTES = 4096
 MAX_EVENT_NAME = 80
 
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
-
-
-def _optional_user(request: Request, authorization: str | None = Header(default=None)) -> AuthenticatedUser | None:
-    """Resolve the caller from the auth header, or ``None`` when absent/invalid.
-
-    The ingest endpoint is public — logged-out and pre-login events are part of
-    the funnel — so a missing or expired token is not an error here: it just
-    means the batch is attributed anonymously. Mirrors
-    :func:`core.api.auth.get_authenticated_user` but swallows its 401.
-
-    Args:
-        request: Incoming request (reached through to the PAT lookup path).
-        authorization: HTTP Authorization header, when the SDK sent a token.
-
-    Returns:
-        The authenticated user, or ``None`` for an anonymous batch.
-    """
-    if not authorization:
-        return None
-    try:
-        return get_authenticated_user(request, authorization)
-    except DomainError:
-        return None
-
-
-OptionalUserDep = Annotated[AuthenticatedUser | None, Depends(_optional_user)]
 
 
 class TelemetryEventIn(BaseModel):
@@ -200,25 +170,23 @@ def create_telemetry_router(*, job_store) -> APIRouter:
     @router.post(
         "/telemetry/events",
         response_model=TelemetryIngestResponse,
-        summary="Ingest a batch of product-telemetry events (public, best-effort)",
+        summary="Ingest an authenticated batch of local product-telemetry events",
     )
     def ingest_events(
         batch: TelemetryBatchIn,
         background_tasks: BackgroundTasks,
-        current_user: OptionalUserDep,
+        current_user: AuthenticatedUserDep,
     ) -> TelemetryIngestResponse:
         """Persist a batch of interaction events, attributing the caller server-side.
 
-        Public so logged-out and pre-login events are captured; when a valid
-        token is present the rows are tagged with that identity, otherwise they
-        are anonymous. When ``settings.telemetry_enabled`` is off the call is a
-        silent no-op (nothing stored) so ingestion can be killed without a
-        client change.
+        Rows are tagged with the server-resolved identity. When
+        ``settings.telemetry_enabled`` is off the call is a silent no-op so
+        ingestion can be stopped without a client change.
 
         Args:
             batch: The session-scoped batch of events from the browser SDK.
             background_tasks: Post-response task queue for optional PostHog export.
-            current_user: The token-resolved caller, or ``None`` when anonymous.
+            current_user: Authenticated local or ADFS caller.
 
         Returns:
             A :class:`TelemetryIngestResponse` with the number of rows persisted
@@ -226,7 +194,7 @@ def create_telemetry_router(*, job_store) -> APIRouter:
         """
         if not settings.telemetry_enabled:
             return TelemetryIngestResponse(accepted=0)
-        username = current_user.username if current_user else None
+        username = current_user.username
         received_at = datetime.now(UTC)
         rows = [
             TelemetryEventModel(

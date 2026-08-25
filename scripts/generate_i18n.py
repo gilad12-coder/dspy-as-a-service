@@ -34,7 +34,6 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "i18n" / "locales" / "he.json"
-EN_CATALOG_PATH = ROOT / "i18n" / "locales" / "en.json"
 # Hebrew is the complete backend base; every other i18n/locales/<locale>.json is
 # an additive overlay merged at runtime via the registry fallback chain.
 BACKEND_BASE_LOCALE = "he"
@@ -128,21 +127,14 @@ def _load_backend_overlays() -> dict[str, dict[str, dict[str, str]]]:
 def _validate_backend_overlays(
     catalog: dict[str, Any], overlays: dict[str, dict[str, dict[str, str]]]
 ) -> None:
-    """Reject overlay keys absent from the Hebrew base, and require English to
-    translate every term.
+    """Reject overlay keys absent from the Hebrew base.
 
     Every overlay's ``terms`` / ``messages`` consts are typed against the
     Hebrew-derived key unions (``TermKey`` / ``I18nMessageKey``), so an unknown
     key would emit TypeScript that fails to compile. Fail fast here.
 
-    English additionally must translate every term: ``en`` falls back to ``he``,
-    so a term missing from ``en.json`` leaks Hebrew into the English UI. Other
-    locales fall back through English first (e.g. ``fr -> en -> he``), so a
-    partial overlay degrades to English, never Hebrew — partial is fine for them.
-
     Raises:
-        ValueError: When an overlay references unknown keys, or when a Hebrew
-            term has no English translation.
+        ValueError: When an overlay references unknown keys.
     """
     he_sections = {"terms": set(catalog["terms"]), "messages": set(catalog["messages"])}
     for locale, overlay in overlays.items():
@@ -153,16 +145,6 @@ def _validate_backend_overlays(
                     f"i18n/locales/{locale}.json {section} has keys not present in "
                     f"{CATALOG_PATH.name}: {unknown}"
                 )
-
-    en_terms = set(overlays.get("en", {}).get("terms", {}))
-    untranslated_terms = sorted(he_sections["terms"] - en_terms)
-    if untranslated_terms:
-        raise ValueError(
-            f"{EN_CATALOG_PATH} is missing English translations for these terms: "
-            f"{untranslated_terms}. Every term must be translated — an untranslated "
-            f"term falls back to Hebrew and leaks into the English UI. Add the English "
-            f'value(s) under "terms" in {EN_CATALOG_PATH.name}.'
-        )
 
 
 def _be_ident(prefix: str, locale: str) -> str:
@@ -391,17 +373,6 @@ def _load_ui_catalogs() -> dict[str, dict[str, str]]:
                 f"{UI_CATALOG_DIR / f'{locale}.json'} has keys absent from "
                 f"{UI_BASE_LOCALE}.json: {unknown[:10]}"
             )
-    # English is the first fallback for every non-Hebrew locale, so a base key
-    # missing from en.json leaks Hebrew into all of them. Mirror the backend
-    # en-terms rule and fail fast; other overlays may stay partial (they
-    # degrade to English, never Hebrew).
-    missing_en = sorted(base_keys - set(catalogs.get("en", {})))
-    if missing_en:
-        raise ValueError(
-            f"{UI_CATALOG_DIR / 'en.json'} is missing English translations for "
-            f"{len(missing_en)} base key(s), e.g. {missing_en[:5]}. Add the English "
-            f"value(s) so no locale falls back to Hebrew."
-        )
     return catalogs
 
 

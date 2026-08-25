@@ -44,17 +44,9 @@ dependencies = [
     "alembic>=1.13",
     "psycopg2-binary>=2.9",
     "pgvector>=0.3",
-    # Cross-replica rate limiter + login lockout (core.api.rate_limit). Optional
-    # at runtime: an unset REDIS_URL fails the limiters open (see that module).
-    "redis>=5,<6",
     "numpy>=1.24",
     "requests>=2.31",
-    "stripe>=11,<13",
     "ldap3>=2.9",
-    # Account security: TOTP two-factor codes and WebAuthn passkey ceremonies
-    # (core.api.routers.account_security).
-    "pyotp>=2.9",
-    "webauthn>=2.5,<3",
     "python-dotenv>=1.0",
     "scalar-fastapi>=1.8",
     "scipy>=1.15.3",
@@ -62,7 +54,6 @@ dependencies = [
     "prometheus-client>=0.20",
     "prometheus-fastapi-instrumentator>=7.0",
     "python-json-logger>=2.0",
-    "sentry-sdk>=2.67,<3",
 ]
 
 [project.optional-dependencies]
@@ -71,8 +62,6 @@ dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.21",
     "ruff>=0.11",
-    # In-memory Redis double for core.api.rate_limit tests.
-    "fakeredis>=2.21",
 ]
 load = [
     "locust>=2.0",
@@ -191,7 +180,7 @@ pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = ["--strict-markers"]
 markers = [
-    "e2e: full end-to-end tests requiring a live LLM (slow, costs API credits)",
+    "e2e: full end-to-end tests requiring a live LLM (slow, incurs provider usage)",
     "slow: tests that take > 30 s to complete",
     "load: concurrency / latency stress tests",
 ]

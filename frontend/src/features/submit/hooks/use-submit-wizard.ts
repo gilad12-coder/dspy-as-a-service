@@ -21,7 +21,6 @@ import {
   getStagedDataset,
   getDatasetRows,
   isStorageQuotaError,
-  isInsufficientCreditsError,
   type DatasetSummary,
 } from "@/shared/lib/api";
 import type {
@@ -47,13 +46,6 @@ import type { ReactConfig, ColumnRole } from "../constants";
 import { buildSignatureTemplate } from "../lib/build-signature";
 import { buildMetricTemplate } from "../lib/build-metric";
 import { buildOptimizerKwargs } from "../lib/build-kwargs";
-import {
-  projectCostBracket,
-  defaultCeilingForBracket,
-  chargeableBracket,
-  aggregateTokenSource,
-  type CostBracket,
-} from "../lib/cost-bracket";
 import {
   saveWizardDraft,
   readWizardDraft,
@@ -399,11 +391,6 @@ export function useSubmitWizard() {
     pxnProposals,
   ]);
   const [shuffle, setShuffle] = useState(true);
-  // User-set Max Cost Ceiling, in credits — null until the user opts into a cap.
-  // The run is hard-stopped server-side once spend exceeds it (Phase 2 [FG-1]),
-  // and the run button carries the cap. `null` ⇒ no ceiling sent.
-  const [maxCostCredits, setMaxCostCredits] = useState<number | null>(null);
-
   const [submitting, setSubmitting] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<"idle" | "sending" | "splash" | "done">("idle");
 
@@ -528,7 +515,6 @@ export function useSubmitWizard() {
       pxnParents,
       pxnProposals,
       shuffle,
-      maxCostCredits,
     };
   });
 
@@ -602,7 +588,6 @@ export function useSubmitWizard() {
     setPxnParents(d.pxnParents ?? DEFAULT_PXN);
     setPxnProposals(d.pxnProposals ?? DEFAULT_PXN);
     setShuffle(d.shuffle);
-    setMaxCostCredits(d.maxCostCredits);
     if (!advancedMode && d.jobType === "grid_search") {
       const firstGeneration = d.generationModels.find((model) => model.name.trim());
       const firstReflection = d.reflectionModels.find((model) => model.name.trim());
@@ -765,64 +750,6 @@ export function useSubmitWizard() {
       wizardCtx.setField("dataset_columns", columns, "user");
     }
   }, [parsedDataset, wizardCtx]);
-
-  // Projected pre-run credit bracket [FG-1]: a DSPy job's token use isn't linear,
-  // so we show a range rather than a false-precision single number and seed the
-  // Max Cost Ceiling from its high end. For a grid, count the (gen × refl) pairs
-  // so the bracket reflects the whole sweep.
-  const gridPairs =
-    effectiveJobType === "grid_search"
-      ? Math.max(
-          1,
-          (generationModels.filter((m) => m.name.trim()).length || 1) *
-            (reflectionModels.filter((m) => m.name.trim()).length || 1),
-        )
-      : 1;
-  const costBracket: CostBracket = useMemo(() => {
-    // Price the projection on the actually-chosen models (a representative
-    // gen/refl pair for a grid). Looked up in the catalog so each model's real
-    // $/token moves the estimate; unresolved names price at the engine defaults.
-    const taskName =
-      effectiveJobType === "grid_search"
-        ? generationModels.find((m) => m.name.trim())?.name
-        : modelConfig.name;
-    const reflName =
-      effectiveJobType === "grid_search"
-        ? reflectionModels.find((m) => m.name.trim())?.name
-        : secondModelConfig?.name;
-    const taskModel = taskName?.trim()
-      ? (catalog?.models.find((m) => m.value === taskName) ?? null)
-      : null;
-    const reflectionModel = reflName?.trim()
-      ? (catalog?.models.find((m) => m.value === reflName) ?? null)
-      : null;
-    return projectCostBracket({
-      autoLevel,
-      maxFullEvals: advancedMode ? maxFullEvals : DEFAULT_MAX_FULL_EVALS,
-      maxMetricCalls: advancedMode ? maxMetricCalls : "",
-      datasetRows: parsedDataset?.rowCount ?? 0,
-      pairs: gridPairs,
-      taskModel,
-      reflectionModel,
-    });
-  }, [
-    autoLevel,
-    advancedMode,
-    maxFullEvals,
-    maxMetricCalls,
-    parsedDataset?.rowCount,
-    effectiveJobType,
-    modelConfig.name,
-    secondModelConfig,
-    generationModels,
-    reflectionModels,
-    catalog,
-    gridPairs,
-  ]);
-
-  // Default the cap to the bracket's high end (with headroom) the first time a
-  // user opens the ceiling control; once they set a value we leave it alone.
-  const suggestedCeiling = useMemo(() => defaultCeilingForBracket(costBracket), [costBracket]);
 
   // Stage the parsed rows on the backend so the agent can submit by id
   // without inlining tens of thousands of rows into its tool arguments.
@@ -2005,15 +1932,6 @@ export function useSubmitWizard() {
         librarySourceRef.current && librarySourceRef.current.parsed === parsedDataset
           ? librarySourceRef.current.id
           : null;
-      const selectedConfigs =
-        effectiveJobType === "run"
-          ? [modelConfig, ...(secondModelConfig?.name?.trim() ? [secondModelConfig] : [])]
-          : [...generationModels, ...reflectionModels];
-      const tokenSource = aggregateTokenSource(selectedConfigs);
-      // Persist the chargeable bracket the user just saw so it can be
-      // reconciled against the actual charge. Same bracket the cost
-      // surface and review recap showed (managed: full per-model; byok: fee).
-      const estimate = chargeableBracket(costBracket, tokenSource);
       const base = {
         name: jobName.trim() || undefined,
         description: jobDescription.trim() || undefined,
@@ -2037,10 +1955,6 @@ export function useSubmitWizard() {
         split_fractions: split,
         shuffle,
         is_private: isPrivate,
-        token_source: tokenSource,
-        estimated_credits_low: estimate.lowCredits,
-        estimated_credits_high: estimate.highCredits,
-        ...(maxCostCredits != null && { max_cost_credits: maxCostCredits }),
         ...(parsedTargetScore != null && { target_score: parsedTargetScore }),
         ...(seed != null && { seed }),
         ...(Object.keys(optKw).length > 0 && { optimizer_kwargs: optKw }),
@@ -2123,10 +2037,9 @@ export function useSubmitWizard() {
         router.push(jobUrl);
       }, 1500);
     } catch (err) {
-      // The storage-budget 409 and the credit-gate 402 each open their own shared
-      // modal centrally; suppress the redundant toast so the modal is the single
-      // surface for both.
-      if (!isStorageQuotaError(err) && !isInsufficientCreditsError(err)) {
+      // Storage-budget failures open their shared modal centrally; suppress the
+      // redundant toast so the modal is the single surface.
+      if (!isStorageQuotaError(err)) {
         toast.error(err instanceof Error ? err.message : msg("submit.submit_failed"));
       }
       setSubmitPhase("idle");
@@ -2390,10 +2303,6 @@ export function useSubmitWizard() {
     setPxnParents,
     pxnProposals,
     setPxnProposals,
-    maxCostCredits,
-    setMaxCostCredits,
-    costBracket,
-    suggestedCeiling,
     submitting,
     submitPhase,
     advancing,

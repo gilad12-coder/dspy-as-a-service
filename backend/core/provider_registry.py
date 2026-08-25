@@ -1,35 +1,31 @@
-"""Canonical registry of bring-your-own-key (BYOK) providers.
+"""Define convenient BYOK providers and their LiteLLM prefix mappings.
 
-Single source of truth for the set of providers a user may bring a key for and
-the bridge between *where the key is saved* (the vault slug) and *what prefix
-that provider's model ids carry* (the LiteLLM prefix). Both the vault — which
-stores and verifies keys, keyed by slug — and the model catalog — which offers
-each provider's registry models, keyed by LiteLLM prefix — derive their provider
-sets from here, so the two can never drift: a divergence would let a key be saved
-for a provider whose models aren't offered, or a model be offered for a provider
-no key can be saved for (the exact failure class this registry exists to rule
-out).
-
-Deliberately a stdlib-only leaf with no imports back into ``core.api`` or
-``core.billing``: the model catalog must reach it without dragging in the Stripe
-import chain that ``core.billing`` pulls at package-import time, and the vault
-must reach it without a cycle. The frontend keeps a parallel copy in
-``frontend/src/features/billing/lib/byok.ts`` (it also carries UI-only labels and
-placeholders); a parity test pins that copy's slugs and bridge to this registry.
+These entries populate the manual provider picker and bundled model registry.
+They are not an allowlist: the JSON connection importer and backend vault also
+accept arbitrary provider slugs, endpoints, and pass-through parameter maps.
 """
 
 from __future__ import annotations
 
-# Ordered ``(vault slug, LiteLLM provider prefix)`` for every BYOK provider. The
-# slug is what a user saves a key under (and how the vault keys it); the prefix
-# is what that provider's model ids carry in the catalog. The platform brokers
-# every LLM call through OpenRouter, so OpenRouter is the only key worth
-# bringing — a direct-provider key would pay for models the catalog never
-# offers. Self-hosted/on-prem gateways remain reachable through the vault's
-# custom ``api_base`` path, which accepts any slug. The bridge maps below stay
-# derived (empty today) so a future slug≠prefix provider needs no new plumbing.
+# Ordered ``(vault slug, LiteLLM provider prefix)`` conveniences. Custom slugs
+# still pass through unchanged.
 BYOK_PROVIDER_SLUGS: tuple[tuple[str, str], ...] = (
+    ("openai", "openai"),
+    ("anthropic", "anthropic"),
+    ("google", "gemini"),
+    ("groq", "groq"),
+    ("deepseek", "deepseek"),
+    ("xai", "xai"),
+    ("together", "together_ai"),
     ("openrouter", "openrouter"),
+    ("cerebras", "cerebras"),
+    ("fireworks", "fireworks_ai"),
+    ("cohere", "cohere_chat"),
+    ("mistral", "mistral"),
+    ("moonshot", "moonshot"),
+    ("volcengine", "volcengine"),
+    ("novita", "novita"),
+    ("ollama", "ollama"),
 )
 
 # vault slug -> LiteLLM prefix, listing only the providers whose two names differ

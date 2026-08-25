@@ -36,10 +36,8 @@ function byRecency(a: { updated_at: string }, b: { updated_at: string }): number
 
 /**
  * Fetch the light workspace summaries the dashboard strip renders: labeling
- * sessions and the dataset library (credits come from the shared
- * CreditProvider, which the header chip already keeps warm). Both calls are
- * cheap list endpoints; each fails soft to null so one outage never blanks
- * the other cards.
+ * sessions and the dataset library. Both calls are cheap list endpoints; each
+ * fails soft to null so one outage never blanks the other card.
  */
 export function useWorkspaceSummary(): WorkspaceSummary {
   const { data: session, status } = useSession();

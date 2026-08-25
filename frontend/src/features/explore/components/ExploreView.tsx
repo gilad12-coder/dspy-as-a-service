@@ -42,8 +42,7 @@ export function ExploreView() {
   const isPhone = useIsPhone();
   const { points: realPoints, loading: corpusLoading, error: corpusError } = usePublicDashboard();
   const [demoPoints, setDemoPoints] = React.useState<PublicDashboardPoint[] | null>(null);
-  const rawPoints = demoPoints ?? realPoints;
-  const points = Array.isArray(rawPoints) ? rawPoints : [];
+  const points = demoPoints ?? realPoints;
 
   React.useEffect(() => registerTutorialHook("setDemoExplorePoints", setDemoPoints), []);
   React.useEffect(() => {
@@ -60,13 +59,6 @@ export function ExploreView() {
 
   const { recent, push: pushRecent, clear: clearRecent } = useRecentQueries();
 
-  // A query is recorded only when it leads to an opened optimization — a result
-  // row clicked, or Enter pressed on a keyboard-highlighted row — never on a
-  // bare Enter-to-search or debounced typing. Tying the signal to a click-through
-  // keeps idle or mistyped queries out of recent and the trending counts. Recent
-  // is personal and per-device, recorded for any corpus; trending is public-corpus
-  // only and logged server-side. The consecutive-dedup ref guards against a
-  // keyboard-open and the row's own click handler double-counting the same query.
   const lastLoggedRef = React.useRef("");
   const commitQuery = React.useCallback(
     (raw: string) => {
@@ -74,22 +66,19 @@ export function ExploreView() {
       if (!trimmed) return;
       pushRecent(trimmed);
       if (query.corpus !== "public") return;
-      const normalized = trimmed.toLowerCase();
+      const normalized = trimmed.toLocaleLowerCase();
       if (normalized.length < 2 || normalized === lastLoggedRef.current) return;
       lastLoggedRef.current = normalized;
       logSearchQuery(trimmed);
     },
-    [query.corpus, pushRecent],
+    [pushRecent, query.corpus],
   );
 
   const { activeIndex, onInputKeyDown } = useResultKeyboardNav(response.results, () =>
     commitQuery(query.text),
   );
 
-  // Filter options come from a per-corpus facets fetch so each tab lists only
-  // the chips it can filter to (a model private to "mine" never shows under
-  // "public"). The tutorial's demo corpus has no backend scope, so there we
-  // fall back to deriving options from the injected demo points.
+  // Filter options come from the caller's own or explicitly shared scope.
   const facets = useCorpusFacets(query.corpus, sessionUser);
   const modelOptions = React.useMemo(
     () => (demoPoints ? collectDistinct(demoPoints, "winning_model") : facets.models),
@@ -103,30 +92,14 @@ export function ExploreView() {
     () => (demoPoints ? collectDistinct(demoPoints, "module_name") : facets.modules),
     [demoPoints, facets.modules],
   );
-  // Popular searches for a blank field: real trending only — what people
-  // actually searched (public corpus, logged server-side on explicit commit).
-  // When the log has no data yet, this is empty and the section simply doesn't
-  // render; showing nothing beats surfacing irrelevant filler.
-  const trendingQueries = usePopularQueries();
-  const popularSearches = React.useMemo<string[]>(
-    () => trendingQueries.map((q) => q.query),
-    [trendingQueries],
-  );
-
-  const corpusTotal = points.length;
+  const popularSearches = usePopularQueries().map((entry) => entry.query);
   const isPublicCorpus = query.corpus === "public";
-  // The dashed empty state only fires when the public corpus is genuinely
-  // empty — we still want the corpus toggle visible so the user can pivot
-  // to "Mine" without first creating a public job.
-  const isTrulyEmpty = isPublicCorpus && !corpusLoading && !corpusError && corpusTotal === 0;
+  const isTrulyEmpty =
+    isPublicCorpus && !corpusLoading && !corpusError && points.length === 0;
 
-  // Until the session resolves we don't yet know the default corpus (mine when
-  // signed in, public when anonymous); show the skeleton rather than briefly
-  // mounting the wrong tab and flashing its results.
   if (status === "loading") {
     return <ExploreSkeleton />;
   }
-
   if (isPublicCorpus && corpusLoading && points.length === 0) {
     return <ExploreSkeleton />;
   }
@@ -143,7 +116,6 @@ export function ExploreView() {
             <span>{corpusError}</span>
           </div>
         )}
-
         <div className="flex flex-col gap-3">
           <SearchBar
             text={query.text}

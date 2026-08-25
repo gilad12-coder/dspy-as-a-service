@@ -275,10 +275,10 @@ def test_apply_reasoning_config_native_minimax_sets_extra_and_floor() -> None:
 
 
 def test_apply_reasoning_config_shipped_default_floors_without_extra() -> None:
-    """The shipped auto-router default gets max_tokens>=4000 and no extra."""
+    """The inert on-prem default gets max_tokens>=4000 and no extra."""
     out = apply_model_reasoning_config(ModelConfig(name=settings.generalist_agent_model))
 
-    assert settings.generalist_agent_model == "openrouter/openrouter/auto-beta"
+    assert settings.generalist_agent_model == "openai/on-prem-default"
     assert out.max_tokens == 4000
     assert out.extra == {}
 

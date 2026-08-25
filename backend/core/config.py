@@ -6,7 +6,6 @@ validates environment variables at startup and provides typed access.
 
 from __future__ import annotations
 
-import json
 import subprocess
 from functools import cached_property
 from pathlib import Path
@@ -18,17 +17,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _ENV_FILE = Path(__file__).parent.parent / ".env"
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Both agents (submit-wizard code agent + Cmd/Ctrl+J generalist) default
-# to this one model id, so a single swap covers both; override per agent
-# via CODE_AGENT_MODEL / GENERALIST_AGENT_MODEL.
-#
-# TODO: On-prem / air-gap — set this to whatever LiteLLM identifier your
-# internal gateway exposes (e.g. "openai/<model>") and point
-# CODE_AGENT_BASE_URL / GENERALIST_AGENT_BASE_URL at the gateway via env.
-# The shipped default is OpenRouter's Auto Router Beta: OpenRouter is the
-# platform's sole LLM provider, and the router picks a concrete model
-# per request. Requires OPENROUTER_API_KEY in the env.
-DEFAULT_AGENT_MODEL_ID = "openrouter/openrouter/auto-beta"
+# Operators should override this alias with the model id exposed by their
+# internal gateway. The placeholder cannot silently target a public provider.
+DEFAULT_AGENT_MODEL_ID = "openai/on-prem-default"
 
 
 class Settings(BaseSettings):
@@ -58,67 +49,52 @@ class Settings(BaseSettings):
     )
     groq_api_key: SecretStr | None = Field(
         default=None,
-        description=(
-            "Groq API key for dictation speech-to-text (Whisper large-v3-turbo "
-            "on Groq LPUs) — the platform's sole STT provider. Unset disables "
-            "dictation with a typed 503."
-        ),
+        description="Optional operator-managed Groq key for centrally configured models.",
     )
     anthropic_api_key: SecretStr | None = Field(default=None, description="Anthropic API key for Claude models")
-
-    stripe_secret_key: SecretStr | None = Field(
+    transcription_base_url: str = Field(
+        default="",
+        alias="TRANSCRIPTION_BASE_URL",
+        description=(
+            "OpenAI-compatible speech-to-text API base inside the private network. "
+            "Unset disables dictation and its UI."
+        ),
+    )
+    transcription_api_key: SecretStr | None = Field(
         default=None,
-        alias="STRIPE_SECRET_KEY",
-        description="Stripe secret API key (sk_test_… in test mode). Unset disables every billing mutation; reads still work.",
-    )
-    stripe_webhook_secret: SecretStr | None = Field(
-        default=None,
-        alias="STRIPE_WEBHOOK_SECRET",
-        description="Stripe webhook signing secret (whsec_…) used to verify event payload authenticity.",
-    )
-    stripe_price_pack_starter: str = Field(
-        default="", alias="STRIPE_PRICE_PACK_STARTER", description="Stripe price id for the 'starter' one-time credit pack."
-    )
-    stripe_price_pack_plus: str = Field(
-        default="", alias="STRIPE_PRICE_PACK_PLUS", description="Stripe price id for the 'plus' one-time credit pack."
-    )
-    stripe_price_pack_pro: str = Field(
-        default="", alias="STRIPE_PRICE_PACK_PRO", description="Stripe price id for the 'pro' one-time credit pack."
-    )
-    app_public_url: str = Field(
-        default="http://localhost:3000",
-        alias="APP_PUBLIC_URL",
-        description="Public origin of the web app, used to build Stripe Checkout success/cancel return URLs.",
+        alias="TRANSCRIPTION_API_KEY",
+        description="Optional bearer token for the configured transcription endpoint.",
     )
     smtp_host: str | None = Field(
         default=None,
         alias="SMTP_HOST",
-        description="SMTP relay host for outbound mail (email one-time sign-in codes). Unset disables email-based 2FA with a typed error.",
+        description="Optional internal SMTP relay for operational notifications.",
     )
     smtp_port: int = Field(default=587, alias="SMTP_PORT", description="SMTP relay port.")
     smtp_username: str | None = Field(
-        default=None, alias="SMTP_USERNAME", description="SMTP auth username; unset sends unauthenticated."
+        default=None,
+        alias="SMTP_USERNAME",
+        description="Optional SMTP authentication username.",
     )
     smtp_password: SecretStr | None = Field(
-        default=None, alias="SMTP_PASSWORD", description="SMTP auth password."
+        default=None,
+        alias="SMTP_PASSWORD",
+        description="Optional SMTP authentication password.",
     )
     smtp_from: str | None = Field(
         default=None,
         alias="SMTP_FROM",
-        description="From address for outbound mail; falls back to SMTP_USERNAME.",
+        description="Notification sender address; falls back to SMTP_USERNAME.",
     )
     smtp_starttls: bool = Field(
-        default=True, alias="SMTP_STARTTLS", description="Upgrade the SMTP connection with STARTTLS."
+        default=True,
+        alias="SMTP_STARTTLS",
+        description="Upgrade the SMTP connection with STARTTLS.",
     )
-    webauthn_rp_id: str | None = Field(
-        default=None,
-        alias="WEBAUTHN_RP_ID",
-        description="WebAuthn relying-party id (the site's registrable domain, e.g. 'skynet.example.com'). Unset derives it from APP_PUBLIC_URL's hostname.",
-    )
-    webauthn_origins: str = Field(
-        default="",
-        alias="WEBAUTHN_ORIGINS",
-        description="Comma-separated browser origins accepted in passkey ceremonies. Unset allows APP_PUBLIC_URL plus the localhost dev origins.",
+    transcription_model: str = Field(
+        default="whisper-large-v3-turbo",
+        alias="TRANSCRIPTION_MODEL",
+        description="Model identifier sent to the OpenAI-compatible transcription endpoint.",
     )
     byok_vault_key: SecretStr | None = Field(
         default=None,
@@ -135,37 +111,10 @@ class Settings(BaseSettings):
         alias="LITELLM_PROXY_API_KEY",
         description="Virtual key the backend presents to the LiteLLM proxy for managed runs. Only consulted when LITELLM_PROXY_URL is set.",
     )
-    openrouter_provisioning_key: SecretStr | None = Field(
-        default=None,
-        alias="OPENROUTER_PROVISIONING_KEY",
-        description="OpenRouter key-management (provisioning) API key. When set, managed runs authenticate with a per-user OpenRouter runtime key whose spend limit is synced to the account's credit balance before each dispatch, capping upstream spend at the provider itself. Unset (the default) sends managed runs through the shared gateway key. Requires BYOK_VAULT_KEY to encrypt the minted secrets at rest.",
-    )
     openrouter_api_key: SecretStr | None = Field(
         default=None,
         alias="OPENROUTER_API_KEY",
-        description="OpenRouter master-account (inference) API key. Read-only here: the float monitor uses it to read the shared prepaid balance (GET /api/v1/credits) so it can warn when the OpenRouter float runs thin against outstanding credit liability. Managed inference itself routes through the LiteLLM proxy or per-user provisioned keys, not this field.",
-    )
-    openrouter_balance_floor_credits: int = Field(
-        default=1000,
-        alias="OPENROUTER_BALANCE_FLOOR_CREDITS",
-        description="Low-water mark for the OpenRouter master-account balance, in credits (1 credit = 1 cent; default 1000 = $10). When the balance falls below this floor the float monitor logs a WARNING — native Auto Top-Up may have failed or demand is outrunning refills. 0 disables the monitor. Only consulted when OPENROUTER_API_KEY is set.",
-    )
-    openrouter_float_check_interval_seconds: float = Field(
-        default=900.0,
-        ge=0.0,
-        alias="OPENROUTER_FLOAT_CHECK_INTERVAL_SECONDS",
-        description="Seconds between periodic OpenRouter float checks on the API pods (advisory-lock-gated so one replica per tick reads the balance). Complements the post-purchase check, which only fires when a customer buys credits — a failed Auto Top-Up on a quiet day would otherwise go unnoticed until the next 402. 0 disables the periodic check; values below 60 are raised to 60.",
-    )
-    openrouter_float_alert_email: str = Field(
-        default="",
-        alias="OPENROUTER_FLOAT_ALERT_EMAIL",
-        description="Operator address that receives an email when the OpenRouter float falls below OPENROUTER_BALANCE_FLOOR_CREDITS (requires SMTP_HOST). Empty disables the email; the WARNING log and ALERT_WEBHOOK_URL forward still fire.",
-    )
-    openrouter_float_alert_cooldown_seconds: float = Field(
-        default=21600.0,
-        ge=0.0,
-        alias="OPENROUTER_FLOAT_ALERT_COOLDOWN_SECONDS",
-        description="Minimum seconds between two low-float notifications (email + webhook). Shared across replicas through Redis when REDIS_URL is set, per-process otherwise, so a 15-minute check loop can't page every tick. 0 sends on every breach.",
+        description="Optional operator-managed OpenRouter key for centrally configured models.",
     )
     worker_enabled: bool = Field(
         default=True,
@@ -267,23 +216,6 @@ class Settings(BaseSettings):
         default="https://eu.i.posthog.com",
         alias="POSTHOG_HOST",
         description="PostHog event-ingestion origin; defaults to the EU cloud endpoint.",
-    )
-    sentry_dsn: SecretStr | None = Field(
-        default=None,
-        alias="SENTRY_DSN",
-        description="Sentry DSN for backend and worker error reporting. Unset disables the SDK.",
-    )
-    sentry_environment: str = Field(
-        default="development",
-        alias="SENTRY_ENVIRONMENT",
-        description="Deployment environment attached to Sentry events.",
-    )
-    sentry_traces_sample_rate: float = Field(
-        default=0.05,
-        ge=0.0,
-        le=1.0,
-        alias="SENTRY_TRACES_SAMPLE_RATE",
-        description="Fraction of backend performance traces exported to Sentry.",
     )
     event_loop_lag_threshold_ms: float = Field(
         default=100.0,
@@ -626,13 +558,9 @@ class Settings(BaseSettings):
         default=DEFAULT_AGENT_MODEL_ID,
         description=(
             "LiteLLM model id used by the submit-wizard code agent. "
-            "Defaults to DEFAULT_AGENT_MODEL_ID (OpenRouter's Auto Router); "
-            "override via CODE_AGENT_MODEL for on-prem deployments."
+            "Defaults to the inert on-prem alias; override via CODE_AGENT_MODEL."
         ),
     )
-    # TODO: On-prem / air-gap — set CODE_AGENT_BASE_URL to your internal
-    # OpenAI-compatible gateway (e.g. https://llm.your-company.com/v1) so the
-    # agent stops trying to reach the public OpenRouter endpoint.
     code_agent_base_url: str = Field(
         default="",
         description="Optional custom base URL for the code agent LM (e.g. internal OpenAI-compatible gateway)",
@@ -650,13 +578,10 @@ class Settings(BaseSettings):
         default=DEFAULT_AGENT_MODEL_ID,
         description=(
             "LiteLLM model id used by the generalist agent (Cmd/Ctrl+J "
-            "panel). Defaults to DEFAULT_AGENT_MODEL_ID (OpenRouter's Auto "
-            "Router, which picks a concrete model per request)."
+            "panel). Defaults to the inert on-prem alias; override via "
+            "GENERALIST_AGENT_MODEL."
         ),
     )
-    # TODO: On-prem / air-gap — set GENERALIST_AGENT_BASE_URL to your internal
-    # OpenAI-compatible gateway. The default empty string lets LiteLLM choose
-    # the public OpenRouter endpoint, which an air-gapped host cannot reach.
     generalist_agent_base_url: str = Field(
         default="",
         description="Optional custom base URL for the generalist agent LM (e.g. internal OpenAI-compatible gateway)",
@@ -677,10 +602,6 @@ class Settings(BaseSettings):
             "back to generalist_agent_base_url."
         ),
     )
-    # TODO: On-prem / air-gap — point this at an internal OpenAI-compatible
-    # embeddings endpoint (usually the same gateway family as CODE_AGENT_BASE_URL).
-    # The backend sends POST {base_url}/embeddings with {model, input}; no model
-    # weights are bundled in this repo.
     embeddings_base_url: str = Field(
         default="",
         description="Internal OpenAI-compatible embedding API base URL, e.g. https://llm.internal/v1",
@@ -822,71 +743,6 @@ class Settings(BaseSettings):
         self.search_bm25_enabled = self.search_backend == "bm25"
         return self
 
-    max_jobs_per_user: int = Field(default=100, ge=1, description="Default per-user job cap")
-    max_total_users: int = Field(
-        default=0,
-        ge=0,
-        description=(
-            "Hard cap on total registered accounts; sign-ups are refused at or above it "
-            "to bound platform cost. 0 disables the cap."
-        ),
-    )
-    max_monthly_active_users: int = Field(
-        default=0,
-        ge=0,
-        description=(
-            "Hard cap on distinct non-admin identities admitted during each UTC calendar "
-            "month. Users already admitted that month continue normally; new identities are "
-            "refused once the cap is reached. 0 disables the cap."
-        ),
-    )
-    max_concurrent_jobs_per_user: int = Field(
-        default=5,
-        ge=0,
-        description=(
-            "Cap on a single user's concurrently active runs (pending/validating/running/"
-            "paused); further submissions are refused until one finishes. 0 disables the cap."
-        ),
-    )
-    global_daily_spend_ceiling_credits: int = Field(
-        default=0,
-        ge=0,
-        description=(
-            "Platform-wide credit-spend backstop over a trailing 24h; new submissions are "
-            "refused once reached. 0 disables the kill-switch (per-user credit gate still applies)."
-        ),
-    )
-    submissions_paused: bool = Field(
-        default=False,
-        description=(
-            "Operator kill-switch: when true, all new run/grid-search submissions are refused "
-            "(in-flight runs continue). An instant emergency brake independent of spend."
-        ),
-    )
-    redis_url: str | None = Field(
-        default=None,
-        description=(
-            "Redis connection URL backing the cross-replica rate limiter and login lockout. "
-            "When unset the limiters fail open (allow) and the login lockout falls back to "
-            "per-process in-memory state — correct for a single backend instance."
-        ),
-    )
-    rate_limit_submissions_per_minute: int = Field(
-        default=30,
-        ge=0,
-        description=(
-            "Per-account cap on run/grid-search submissions per rolling minute, enforced across "
-            "replicas via Redis. Bounds a runaway script or abusive key. 0 disables the cap."
-        ),
-    )
-    rate_limit_account_requests_per_hour: int = Field(
-        default=20,
-        ge=0,
-        description=(
-            "Per-email cap on account-action requests (register, password-reset, email-verify) "
-            "per rolling hour, enforced across replicas via Redis. 0 disables the cap."
-        ),
-    )
     backend_auth_secret: SecretStr | None = Field(
         default=None,
         description="Shared HS256 secret used by the frontend to sign backend API tokens",
@@ -899,56 +755,6 @@ class Settings(BaseSettings):
         default="",
         description="Comma-separated IdP groups that grant backend admin access",
     )
-    quota_overrides_json: str = Field(
-        default="{}",
-        description='Per-user quota overrides as JSON, e.g. \'{"power_user": 500, "researcher": null}\'',
-        alias="QUOTA_OVERRIDES",
-    )
-
-    @field_validator("quota_overrides_json")
-    @classmethod
-    def _validate_quota_overrides_json(cls, v: str) -> str:
-        """Validate that QUOTA_OVERRIDES is a JSON object of {username: int|null}.
-
-        Args:
-            v: Raw env value (a JSON string).
-
-        Returns:
-            The validated JSON string with lowercase keys, normalised to ``"{}"``
-            when blank. Lower-casing here keeps the wire-level representation
-            stable across reads of ``quota_overrides_json`` and makes lookups
-            in ``get_user_quota`` cheap.
-
-        Raises:
-            ValueError: When the JSON is malformed, not an object, or contains
-                values that are not ``int`` or ``null``.
-        """
-        if not v.strip():
-            return "{}"
-        try:
-            parsed = json.loads(v)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"QUOTA_OVERRIDES is not valid JSON: {exc}") from exc
-        # Pydantic field_validator surfaces only ValueError as a ValidationError,
-        # so keep the type-check failures as ValueError despite TRY004 preferring
-        # TypeError for type errors.
-        if not isinstance(parsed, dict):
-            raise ValueError(  # noqa: TRY004
-                "QUOTA_OVERRIDES must be a JSON object mapping usernames to int|null"
-            )
-        normalised: dict[str, int | None] = {}
-        for key, value in parsed.items():
-            if not isinstance(key, str):
-                raise ValueError(  # noqa: TRY004
-                    f"QUOTA_OVERRIDES keys must be strings, got {type(key).__name__}"
-                )
-            # bool is an int subclass, so reject it explicitly to avoid silently
-            # treating ``true``/``false`` as quota 1/0.
-            if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
-                raise ValueError(f"QUOTA_OVERRIDES['{key}'] must be int or null, got {type(value).__name__}")
-            normalised[key.strip().lower()] = value
-        return json.dumps(normalised)
-
     @model_validator(mode="after")
     def _derive_generalist_mcp_url(self) -> Settings:
         """Fill an unset generalist MCP URL from the server's own HOST/PORT.
@@ -986,33 +792,9 @@ class Settings(BaseSettings):
         return frozenset(s.strip().lower() for s in self.admin_groups.split(",") if s.strip())
 
     @property
-    def is_stripe_configured(self) -> bool:
-        """Return whether a Stripe secret key is present (billing mutations enabled)."""
-        return self.stripe_secret_key is not None
-
-    @property
     def is_byok_vault_configured(self) -> bool:
         """Return whether a BYOK vault key is present (saving provider keys enabled)."""
         return self.byok_vault_key is not None
-
-    @property
-    def stripe_pack_price_ids(self) -> dict[str, str]:
-        """Return the one-time credit-pack Stripe price ids keyed by pack id."""
-        return {
-            "starter": self.stripe_price_pack_starter,
-            "plus": self.stripe_price_pack_plus,
-            "pro": self.stripe_price_pack_pro,
-        }
-
-    @cached_property
-    def quota_overrides(self) -> dict[str, int | None]:
-        """Return parsed quota overrides keyed by lowercase username.
-
-        Cached because every job-submission goes through ``get_user_quota`` and
-        re-parsing JSON on each call is wasteful; the validator already
-        normalises the JSON to lowercase keys.
-        """
-        return json.loads(self.quota_overrides_json)
 
     @cached_property
     def code_version(self) -> str:
@@ -1052,26 +834,6 @@ class Settings(BaseSettings):
                 "into the image (Dockerfile passes GIT_SHA build arg).",
             )
         return "unknown"
-
-    def get_user_quota(self, username: str) -> int | None:
-        """Return the effective job quota for a user.
-
-        Users with a ``null`` override receive ``None`` (unlimited). Per-user
-        overrides in ``quota_overrides_json`` take precedence over
-        ``max_jobs_per_user``. Lookup is case-insensitive to match how override
-        keys are stored.
-
-        Args:
-            username: The username to look up.
-
-        Returns:
-            Maximum number of allowed jobs, or ``None`` for unlimited access.
-        """
-        normalised = (username or "").strip().lower()
-        if normalised in self.quota_overrides:
-            return self.quota_overrides[normalised]
-        return self.max_jobs_per_user
-
 
 settings = Settings()
 

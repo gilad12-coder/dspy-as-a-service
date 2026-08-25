@@ -185,12 +185,6 @@ export const STORAGE_QUOTA_CODE = I18N_KEY.USER_STORAGE_QUOTA_EXCEEDED;
 /** Browser event the central error path fires when a write hits the storage budget. */
 export const STORAGE_QUOTA_EVENT = "storage-quota-exceeded";
 
-/** Backend error code for a managed run blocked by an empty credit balance (HTTP 402). */
-export const INSUFFICIENT_CREDITS_CODE = I18N_KEY.BILLING_INSUFFICIENT_CREDITS;
-
-/** Browser event the central error path fires when a submit hits the credit gate. */
-export const INSUFFICIENT_CREDITS_EVENT = "billing-insufficient-credits";
-
 /** Browser event fired after a storage-freeing delete so the meter re-reads usage. */
 export const STORAGE_CHANGED_EVENT = "storage-changed";
 
@@ -221,13 +215,8 @@ export function isStorageQuotaError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.code === STORAGE_QUOTA_CODE;
 }
 
-/** Narrow a caught value to the credit-gate 402 so its toast can be suppressed. */
-export function isInsufficientCreditsError(err: unknown): err is ApiError {
-  return err instanceof ApiError && err.code === INSUFFICIENT_CREDITS_CODE;
-}
-
 /**
- * Collapse ids out of a request path so Sentry groups by endpoint, not by
+ * Collapse ids out of a request path so local reports group by endpoint, not by
  * record: `/optimizations/3f9c…/logs` → `/optimizations/:id/logs`.
  */
 function endpointTag(path: string): string {
@@ -258,8 +247,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       if (fresh) res = await send(fresh);
     }
   } catch (err) {
-    // A network drop is caught and toasted upstream, so without this Sentry
-    // would only ever hear about it if it escaped as an uncaught exception.
+    // Report handled network failures because they never reach the global reporter.
     reportHandledError(err, {
       tags: { source: "api", kind: "network", endpoint: endpointTag(path), method: init?.method ?? "GET" },
     });
@@ -268,8 +256,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     const parsed = parseError(text);
-    // 4xx are the user's (or the gate's) business — a bad token, a paywall, a
-    // storage quota, a validation slip. 5xx means the backend broke; report it
+    // 4xx are expected request failures: a bad token, a storage quota, or a
+    // validation slip. 5xx means the backend broke; report it
     // even though every caller catches and toasts it.
     if (res.status >= 500) {
       reportHandledError(new Error(`API ${res.status} on ${endpointTag(path)}`), {
@@ -289,12 +277,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // isStorageQuotaError so the modal is the single surface.
     if (parsed.code === STORAGE_QUOTA_CODE && typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(STORAGE_QUOTA_EVENT, { detail: parsed.params }));
-    }
-    // The credit gate is account-wide like the storage budget: any blocked submit
-    // opens the one paywall modal, and producers suppress their own toast via
-    // isInsufficientCreditsError so the modal is the single surface.
-    if (parsed.code === INSUFFICIENT_CREDITS_CODE && typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent(INSUFFICIENT_CREDITS_EVENT));
     }
     throw new ApiError(
       parsed.message ?? formatMsg("auto.shared.lib.api.template.1", { p1: res.status }),
@@ -559,127 +541,6 @@ export async function revokeApiToken(): Promise<void> {
   }
 }
 
-export interface PasskeyInfo {
-  credential_id: string;
-  nickname: string;
-  created_at: string;
-  last_used_at: string | null;
-}
-
-export interface SecurityStatus {
-  has_password: boolean;
-  totp_enabled: boolean;
-  email_2fa_enabled: boolean;
-  email_2fa_available: boolean;
-  passkeys: PasskeyInfo[];
-}
-
-export interface TotpSetup {
-  secret: string;
-  otpauth_url: string;
-}
-
-/** Fetch the caller's 2FA enrollment state and registered passkeys. */
-export function getSecurityStatus() {
-  return request<SecurityStatus>("/auth/security");
-}
-
-/** Begin authenticator-app enrollment; returns the secret + otpauth URI. */
-export function setupTotp() {
-  return request<TotpSetup>("/auth/security/totp/setup", { method: "POST" });
-}
-
-/** Confirm the first authenticator code; returns the one-time recovery codes. */
-export function enableTotp(code: string) {
-  return request<{ recovery_codes: string[] }>("/auth/security/totp/enable", {
-    method: "POST",
-    body: JSON.stringify({ code }),
-  });
-}
-
-/** Disable TOTP after re-proving a current (or recovery) code. */
-export function disableTotp(code: string) {
-  return request<{ ok: boolean }>("/auth/security/totp/disable", {
-    method: "POST",
-    body: JSON.stringify({ code }),
-  });
-}
-
-/** Toggle emailed one-time sign-in codes for the caller's local account. */
-export function setEmailCodes(enabled: boolean) {
-  return request<{ ok: boolean }>("/auth/security/email-codes", {
-    method: "PUT",
-    body: JSON.stringify({ enabled }),
-  });
-}
-
-/** Fetch WebAuthn creation options to register a new passkey. */
-export function getPasskeyRegistrationOptions() {
-  return request<Record<string, unknown>>("/auth/security/passkeys/options", { method: "POST" });
-}
-
-/** Store a browser-created passkey credential under the caller's identity. */
-export function registerPasskey(credential: unknown, nickname: string) {
-  return request<PasskeyInfo>("/auth/security/passkeys", {
-    method: "POST",
-    body: JSON.stringify({ credential, nickname }),
-  });
-}
-
-/** Rename one of the caller's passkeys. */
-export function renamePasskey(credentialId: string, nickname: string) {
-  return request<PasskeyInfo>(`/auth/security/passkeys/${encodeURIComponent(credentialId)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ nickname }),
-  });
-}
-
-/** Remove one of the caller's passkeys. */
-export function deletePasskey(credentialId: string) {
-  return request<{ ok: boolean }>(`/auth/security/passkeys/${encodeURIComponent(credentialId)}`, {
-    method: "DELETE",
-  });
-}
-
-export interface AccountDeletionResult {
-  deleted_rows: number;
-  anonymized_rows: number;
-}
-
-export interface NotificationPreferences {
-  job_updates_enabled: boolean;
-  sharing_updates_enabled: boolean;
-}
-
-/** Fetch the caller's optional product-email preferences. */
-export function getNotificationPreferences() {
-  return request<NotificationPreferences>("/account/notification-preferences");
-}
-
-/** Persist one or more optional product-email preference switches. */
-export function updateNotificationPreferences(patch: Partial<NotificationPreferences>) {
-  return request<NotificationPreferences>("/account/notification-preferences", {
-    method: "PATCH",
-    body: JSON.stringify(patch),
-  });
-}
-
-/** Download every record the caller owns as an untyped JSON bundle. */
-export function exportAccountData() {
-  return request<Record<string, unknown>>("/account/export");
-}
-
-/**
- * Irreversibly delete the caller's account and all its data. Local accounts
- * must pass their current password; OAuth accounts leave it empty.
- */
-export function deleteAccount(password: string) {
-  return request<AccountDeletionResult>("/account/delete", {
-    method: "POST",
-    body: JSON.stringify({ password }),
-  });
-}
-
 export interface MemoryKnob {
   value: number;
   override: number | null;
@@ -709,154 +570,6 @@ export function updateMemorySettings(patch: Partial<Record<MemoryKnobName, numbe
   });
 }
 
-export interface BillingFreeGrant {
-  credits_remaining: number;
-  credits_total: number;
-}
-
-export interface BillingUsageEntry {
-  id: string;
-  at: string;
-  label: string;
-  model: string | null;
-  credits: number;
-  kind: string;
-}
-
-/** The caller's wallet as the backend reports it (snake_case mirrors the API). */
-export interface BillingWalletResponse {
-  paid_balance_credits: number;
-  free_grant: BillingFreeGrant;
-  usage: BillingUsageEntry[];
-}
-
-/** Fetch the caller's credit wallet. Reads work even without Stripe. */
-export function getWallet() {
-  return request<BillingWalletResponse>("/billing/wallet");
-}
-
-/** One day's billed run spend (the usage dashboard's time series). */
-export interface BillingUsageDay {
-  date: string;
-  billed_credits: number;
-}
-
-/** One model's share of run spend over the window. */
-export interface BillingUsageModel {
-  model: string | null;
-  credits: number;
-  runs: number;
-  /** Measured token counts behind the billed runs; absent on the client-side
-   *  ledger fallback, which has no per-row token data. */
-  input_tokens?: number;
-  output_tokens?: number;
-}
-
-/** A date-ranged usage rollup for the Usage dashboard (snake_case mirrors the API). */
-export interface BillingUsageResponse {
-  start: string;
-  end: string;
-  billed_credits: number;
-  runs: number;
-  by_day: BillingUsageDay[];
-  by_model: BillingUsageModel[];
-  entries: BillingUsageEntry[];
-}
-
-/**
- * Fetch a date-ranged usage rollup (totals + per-day + per-model + recent rows).
- * `start`/`end` are ISO-8601; omit both for the backend's default 30-day window.
- */
-export function getUsage(start?: string, end?: string) {
-  const params = new URLSearchParams();
-  if (start) params.set("start", start);
-  if (end) params.set("end", end);
-  const qs = params.toString();
-  return request<BillingUsageResponse>(`/billing/usage${qs ? `?${qs}` : ""}`);
-}
-
-/** Display-safe billing address fields stored on the Stripe customer. */
-export interface BillingAddressResponse {
-  line1: string | null;
-  line2: string | null;
-  city: string | null;
-  state: string | null;
-  postal_code: string | null;
-  country: string | null;
-}
-
-/** Masked saved payment method. Full payment credentials never reach the app. */
-export interface BillingPaymentMethod {
-  id: string;
-  type: string;
-  brand: string | null;
-  last4: string | null;
-  exp_month: number | null;
-  exp_year: number | null;
-  is_default: boolean;
-}
-
-/** Stripe-backed billing details for the authenticated account. */
-export interface BillingProfileResponse {
-  available: boolean;
-  has_customer: boolean;
-  email: string | null;
-  name: string | null;
-  phone: string | null;
-  address: BillingAddressResponse;
-  payment_methods: BillingPaymentMethod[];
-}
-
-/** One completed Stripe Checkout purchase. Amount is in the currency's minor unit. */
-export interface BillingTransaction {
-  id: string;
-  at: string;
-  amount: number;
-  currency: string;
-  status: "paid" | "processing" | "refunded" | "partially_refunded" | "disputed";
-  credits: number | null;
-  pack_id: string | null;
-  document_url: string | null;
-}
-
-/** Date-ranged Stripe purchase history for the authenticated account. */
-export interface BillingTransactionsResponse {
-  available: boolean;
-  entries: BillingTransaction[];
-}
-
-/** Fetch billing contact details and masked saved payment methods from Stripe. */
-export function getBillingProfile() {
-  return request<BillingProfileResponse>("/billing/profile");
-}
-
-/** Fetch completed Stripe purchases over an optional ISO-8601 date window. */
-export function getBillingTransactions(start?: string, end?: string) {
-  const params = new URLSearchParams();
-  if (start) params.set("start", start);
-  if (end) params.set("end", end);
-  const qs = params.toString();
-  return request<BillingTransactionsResponse>(`/billing/transactions${qs ? `?${qs}` : ""}`);
-}
-
-/** Start a Stripe Customer Portal session for billing or payment-method management. */
-export function createBillingPortalSession(flow: "manage" | "payment_method") {
-  return request<{ url: string }>("/billing/portal", {
-    method: "POST",
-    body: JSON.stringify({ flow }),
-  });
-}
-
-/** Start a Stripe Checkout session for a credit pack; redirect the browser to `.url`. */
-export function createCheckoutSession(purchase: { packId: string } | { credits: number }) {
-  return request<{ url: string }>("/billing/checkout", {
-    method: "POST",
-    body: JSON.stringify(
-      "packId" in purchase ? { pack_id: purchase.packId } : { credits: purchase.credits },
-    ),
-  });
-}
-
 /** One stored BYOK provider connection as the backend reports it — masked, never the secret. */
 export interface ProviderKeyResponse {
   id: string;
@@ -864,6 +577,7 @@ export interface ProviderKeyResponse {
   label?: string | null;
   last4: string;
   api_base?: string | null;
+  params?: Record<string, unknown>;
   status: "verified" | "unverified" | "invalid";
   added_at: string;
 }
@@ -882,12 +596,12 @@ export interface ProviderKeysResponse {
 
 /** List the caller's stored BYOK provider keys (masked). Reads work without the vault key. */
 export function getProviderKeys() {
-  return request<ProviderKeysResponse>("/billing/byok/keys");
+  return request<ProviderKeysResponse>("/byok/keys");
 }
 
 /** List BYOK models available through the caller's verified stored connections. */
 export function getByokModels() {
-  return request<ModelCatalogResponse>("/billing/byok/models");
+  return request<ModelCatalogResponse>("/byok/models");
 }
 
 /**
@@ -897,7 +611,7 @@ export function getByokModels() {
  * the entry-time verify verdict; the plaintext is never echoed back.
  */
 export function saveProviderKey(provider: string, secret: string, opts?: SaveProviderKeyOptions) {
-  return request<ProviderKeyResponse>("/billing/byok/keys", {
+  return request<ProviderKeyResponse>("/byok/keys", {
     method: "PUT",
     body: JSON.stringify({
       provider,
@@ -911,12 +625,16 @@ export function saveProviderKey(provider: string, secret: string, opts?: SavePro
 
 /** Re-run the verify probe against a stored BYOK key and return the fresh verdict. */
 export function verifyProviderKey(provider: string) {
-  return request<ProviderKeyResponse>(`/billing/byok/keys/${provider}/verify`, { method: "POST" });
+  return request<ProviderKeyResponse>(`/byok/keys/${encodeURIComponent(provider)}/verify`, {
+    method: "POST",
+  });
 }
 
 /** Forget a stored BYOK provider key; returns the remaining masked keys. */
 export function removeProviderKey(provider: string) {
-  return request<ProviderKeysResponse>(`/billing/byok/keys/${provider}`, { method: "DELETE" });
+  return request<ProviderKeysResponse>(`/byok/keys/${encodeURIComponent(provider)}`, {
+    method: "DELETE",
+  });
 }
 
 export interface DirectoryUserMatch {
@@ -933,6 +651,53 @@ export interface DirectoryUserSearchResponse {
 export function searchAdminUsers(query: string, limit = 10) {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   return request<DirectoryUserSearchResponse>(`/admin/users/search?${params.toString()}`);
+}
+
+export interface ManagedAccount {
+  username: string;
+  display_name: string;
+  local_enabled: boolean;
+  adfs_seen: boolean;
+  is_admin: boolean;
+  created_at?: string | null;
+  last_login_at?: string | null;
+}
+
+export interface ManagedAccountListResponse {
+  accounts: ManagedAccount[];
+}
+
+/** List every ADFS-provisioned or locally approved account. */
+export function getManagedAccounts() {
+  return request<ManagedAccountListResponse>("/admin/accounts");
+}
+
+/** Approve a passwordless local username, optionally with administrator rights. */
+export function createManagedAccount(body: {
+  username: string;
+  display_name?: string;
+  is_admin?: boolean;
+}) {
+  return request<ManagedAccount>("/admin/accounts", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Persist an account's administrator role. */
+export function updateManagedAccountRole(username: string, isAdmin: boolean) {
+  return request<ManagedAccount>(`/admin/accounts/${encodeURIComponent(username)}/role`, {
+    method: "PUT",
+    body: JSON.stringify({ is_admin: isAdmin }),
+  });
+}
+
+/** Permanently delete an account and all of its owned data. */
+export function deleteManagedAccount(username: string) {
+  return request<{ username: string; deleted_rows: number; anonymized_rows: number }>(
+    `/admin/accounts/${encodeURIComponent(username)}`,
+    { method: "DELETE" },
+  );
 }
 
 export interface DashboardAnalyticsJob {
@@ -1212,7 +977,7 @@ export function removeShareMember(optimizationId: string, username: string) {
  * Transfer ownership to an existing member (owner-only). Single-owner model:
  * the new owner must already be a member, the previous owner is demoted to an
  * editor, and the new owner's member grant is dropped. The serving key stays
- * with the optimization, so this moves control, not billing. Returns the
+ * with the optimization, so this moves control without changing execution. Returns the
  * refreshed sharing state (`owner` is now the new owner).
  */
 export function transferOwnership(optimizationId: string, username: string) {
@@ -1501,9 +1266,14 @@ export async function moveTaggerSessionToLibrary(
   return res;
 }
 
-/** Credit estimate for auto-tagging every currently-unlabeled row. */
+/** Token estimate for auto-tagging every currently-unlabeled row. */
 export function taggerAssistEstimate(sessionId: string) {
-  return request<{ rows: number; model: string; credits_low: number; credits_high: number }>(
+  return request<{
+    rows: number;
+    model: string;
+    estimated_input_tokens: number;
+    estimated_output_tokens: number;
+  }>(
     `/tagging-sessions/${sessionId}/assist/estimate`,
     { method: "POST" },
   );
@@ -1522,7 +1292,7 @@ export function taggerAssistAutotagStatus(sessionId: string) {
     status: string;
     total: number;
     done: number;
-    credits_spent: number;
+    total_tokens: number;
     live: boolean;
   }>(`/tagging-sessions/${sessionId}/assist/autotag`);
 }
@@ -2636,8 +2406,8 @@ export interface CorpusFacets {
 /**
  * Distinct filter options (models / optimizers / modules) present in one
  * corpus scope, so each /explore tab offers exactly the chips it can filter
- * to. Pass no scope for the public archive; pass `owner_username` for the
- * caller's own runs or `shared_with_username` for runs shared with them (the
+ * to. Pass no scope for the authenticated public corpus, `owner_username` for the caller's own runs or
+ * `shared_with_username` for runs shared with them (the
  * backend requires the bearer token to match the requested username).
  */
 export function getCorpusFacets(
@@ -2721,31 +2491,16 @@ export interface PopularQueriesResponse {
   queries: PopularQuery[];
 }
 
-/** Trending public-corpus search queries, ranked by frequency over a recent window. */
+/** Fetch popular public-corpus queries from this deployment. */
 export function getPopularQueries(): Promise<PopularQueriesResponse> {
   return cachedGet("/dashboard/search/popular", 60000);
 }
 
-/**
- * Record an explicitly-committed public search query for trending. Fire-and-
- * forget: only call on an explicit commit (Enter / opening a result), never on
- * debounced typing, and never for the "mine" corpus.
- *
- * Uses ``keepalive`` so the request still completes when the result-open click
- * navigates the page away mid-flight. The 204 response is ignored and all
- * errors are swallowed — a failed log never affects the user.
- */
+/** Record one deliberate public-corpus search through the authenticated API. */
 export function logSearchQuery(query: string): void {
-  try {
-    void fetch(`${apiBase()}/dashboard/search/log`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
-      keepalive: true,
-    }).catch(() => {
-      // Best-effort telemetry; ignore network failures.
-    });
-  } catch {
-    // Ignore synchronous fetch construction errors.
-  }
+  void request<void>("/dashboard/search/log", {
+    method: "POST",
+    body: JSON.stringify({ query }),
+    keepalive: true,
+  }).catch(() => undefined);
 }

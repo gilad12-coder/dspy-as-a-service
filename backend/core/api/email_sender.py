@@ -1,7 +1,4 @@
-"""Outbound SMTP mail for account and notification flows.
-
-The same transport serves account-security messages and rich app notifications.
-"""
+"""Outbound SMTP transport for optional on-premise notifications."""
 
 from __future__ import annotations
 

@@ -21,8 +21,7 @@ from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
-from ...billing import ProviderKeyVault, resolve_byok_model_config
-from ...billing.metering import meter_llm_run
+from ...byok import ProviderKeyVault, resolve_byok_model_config
 from ...config import settings
 from ...constants import (
     PAYLOAD_OVERVIEW_GENERATION_MODELS,
@@ -38,12 +37,12 @@ from ...service_gateway.agents.generalist import TrustMode, get_approval_registr
 from ...service_gateway.agents.react_serve import run_react_chat
 from ...service_gateway.language_models import build_language_model
 from ...service_gateway.optimization.workflow import capture_node_traces
+from ...usage_observability import record_llm_usage
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..response_limits import AGENT_MAX_INSTRUCTIONS, AGENT_MAX_TEXT, truncate_text
 from ..sharing_access import ShareRole
 from ._helpers import (
-    enforce_llm_credits,
     load_job_for_user,
     load_pair_program,
     load_program,
@@ -51,7 +50,7 @@ from ._helpers import (
     require_role_at_least,
     sanitize_node_traces,
     sse_from_events,
-    stream_with_llm_metering,
+    stream_with_llm_observation,
     workflow_spec_from_overview,
 )
 
@@ -78,7 +77,7 @@ def _resolve_inference_model_config(job_store, username: str, model_config: Mode
         return model_config
     engine = getattr(job_store, "engine", None)
     if engine is None:
-        raise DomainError("billing.byok_missing_connection", status=400, provider="")
+        raise DomainError("byok.missing_connection", status=400, provider="")
     try:
         return resolve_byok_model_config(
             model_config,
@@ -86,7 +85,7 @@ def _resolve_inference_model_config(job_store, username: str, model_config: Mode
             vault=ProviderKeyVault(engine=engine),
         )
     except ValueError as exc:
-        raise DomainError("billing.byok_missing_connection", status=400, provider=str(exc)) from exc
+        raise DomainError("byok.missing_connection", status=400, provider=str(exc)) from exc
 
 
 def _pair_model_config(
@@ -583,9 +582,8 @@ def create_serve_router(*, job_store) -> APIRouter:
             A ``ServeResponse`` with the predicted outputs and resolved model.
 
         Raises:
-            DomainError: 400 (bad inputs / no model), 402 (caller has no
-                spendable credits), 404 (unknown or inaccessible), 409 (not
-                in a serveable state).
+            DomainError: 400 (bad inputs / no model), 404 (unknown or
+                inaccessible), or 409 (not in a serveable state).
         """
         program, result, overview = load_program(job_store, optimization_id, current_user)
         artifact = result.program_artifact
@@ -620,7 +618,6 @@ def create_serve_router(*, job_store) -> APIRouter:
             )
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
-        enforce_llm_credits(job_store, current_user.username)
         model_config = _resolve_inference_model_config(job_store, current_user.username, model_config)
         lm = build_language_model(model_config)
 
@@ -634,14 +631,11 @@ def create_serve_router(*, job_store) -> APIRouter:
                 else:
                     prediction = program(**filtered_inputs)
         finally:
-            # A failed inference still consumed provider tokens (dspy retries
-            # under the hood), so the debit rides ``finally``.
-            meter_llm_run(
+            record_llm_usage(
                 getattr(job_store, "engine", None),
                 current_user.username,
                 [lm],
                 description="Serve inference",
-                token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
             )
 
         outputs: dict[str, Any] = {}
@@ -682,8 +676,8 @@ def create_serve_router(*, job_store) -> APIRouter:
             A streaming ``StreamingResponse`` with ``text/event-stream`` body.
 
         Raises:
-            DomainError: 400, 402, 404 (including inaccessible to caller),
-                or 409 mirroring the non-streaming route.
+            DomainError: 400, 404 (including inaccessible to caller), or 409
+                mirroring the non-streaming route.
         """
         # Offload the synchronous DB read + program deserialization so it does
         # not block the single event loop (and every other in-flight request /
@@ -725,7 +719,6 @@ def create_serve_router(*, job_store) -> APIRouter:
             )
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
-        await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         model_config = _resolve_inference_model_config(job_store, current_user.username, model_config)
         lm = build_language_model(model_config)
         model_used = model_config.normalized_identifier()
@@ -740,7 +733,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             model_used=model_used,
             error_log_context=f"job {optimization_id}",
         )
-        metered = stream_with_llm_metering(
+        metered = stream_with_llm_observation(
             source,
             job_store=job_store,
             username=current_user.username,
@@ -825,9 +818,8 @@ def create_serve_router(*, job_store) -> APIRouter:
             A ``ServeResponse`` with the predicted outputs and resolved model.
 
         Raises:
-            DomainError: 400 (bad inputs), 402 (caller has no spendable
-                credits), 404 (unknown / inaccessible), 409 (not finished
-                or pair failed).
+            DomainError: 400 (bad inputs), 404 (unknown / inaccessible), or
+                409 (not finished or pair failed).
         """
         program, pair, overview = load_pair_program(job_store, optimization_id, pair_index, current_user)
         artifact = pair.program_artifact
@@ -848,7 +840,6 @@ def create_serve_router(*, job_store) -> APIRouter:
             )
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
-        enforce_llm_credits(job_store, current_user.username)
         model_config = _resolve_inference_model_config(job_store, current_user.username, model_config)
         lm = build_language_model(model_config)
 
@@ -856,14 +847,11 @@ def create_serve_router(*, job_store) -> APIRouter:
             with dspy.context(lm=lm):
                 prediction = program(**filtered_inputs)
         finally:
-            # A failed inference still consumed provider tokens (dspy retries
-            # under the hood), so the debit rides ``finally``.
-            meter_llm_run(
+            record_llm_usage(
                 getattr(job_store, "engine", None),
                 current_user.username,
                 [lm],
                 description="Serve inference",
-                token_source=model_config.token_source or TOKEN_SOURCE_MANAGED,
             )
 
         outputs: dict[str, Any] = {}
@@ -907,9 +895,8 @@ def create_serve_router(*, job_store) -> APIRouter:
             A streaming ``StreamingResponse`` with ``text/event-stream`` body.
 
         Raises:
-            DomainError: 400 (bad inputs), 402 (caller has no spendable
-                credits), 404 (unknown / inaccessible), 409 (not finished
-                or pair failed).
+            DomainError: 400 (bad inputs), 404 (unknown / inaccessible), or
+                409 (not finished or pair failed).
         """
         # Offload the synchronous DB read + program deserialization so it does
         # not block the single event loop before the first byte is produced.
@@ -934,7 +921,6 @@ def create_serve_router(*, job_store) -> APIRouter:
             )
         filtered_inputs = {f: req.inputs[f] for f in input_fields}
 
-        await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         model_config = _resolve_inference_model_config(job_store, current_user.username, model_config)
         lm = build_language_model(model_config)
         model_used = model_config.normalized_identifier()
@@ -949,7 +935,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             model_used=model_used,
             error_log_context=f"job {optimization_id} pair {pair_index}",
         )
-        metered = stream_with_llm_metering(
+        metered = stream_with_llm_observation(
             source,
             job_store=job_store,
             username=current_user.username,
@@ -999,8 +985,7 @@ def create_serve_router(*, job_store) -> APIRouter:
 
         Raises:
             DomainError: 404 (unknown/inaccessible), 409 (not a success react
-                run, or not served from a live-MCP source), 400 (no model),
-                402 (caller has no spendable credits).
+                run, or not served from a live-MCP source), or 400 (no model).
         """
         # Offload the synchronous DB read + program deserialization so it does
         # not block the single event loop before the first byte is produced.
@@ -1020,7 +1005,6 @@ def create_serve_router(*, job_store) -> APIRouter:
             else:
                 raise DomainError("serve.no_model_config", status=400)
 
-        await asyncio.to_thread(enforce_llm_credits, job_store, current_user.username)
         model_config = _resolve_inference_model_config(job_store, current_user.username, model_config)
         lm = build_language_model(model_config)
         tool_source = react_overlay.tool_source or {}
@@ -1037,7 +1021,7 @@ def create_serve_router(*, job_store) -> APIRouter:
             mcp_url=mcp_url,
             auth_header=authorization,
         )
-        metered = stream_with_llm_metering(
+        metered = stream_with_llm_observation(
             source,
             job_store=job_store,
             username=current_user.username,

@@ -69,25 +69,19 @@ def _spy_facets(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 def _client(monkeypatch: pytest.MonkeyPatch, user: str | None = "adi") -> TestClient:
     """Build a TestClient over the dashboard router with a fixed auth identity.
 
-    The router resolves the caller by calling ``get_authenticated_user``
-    directly (not via ``Depends``), so the identity is monkeypatched on the
-    router module rather than through ``dependency_overrides``.
-
     Args:
         monkeypatch: Pytest patcher scoped to the test.
-        user: Username the auth resolver returns, or ``None`` to leave the
-            resolver untouched (for public, no-scope requests that never auth).
+        user: Username the auth dependency returns, or ``None`` to leave it
+            unauthenticated.
 
     Returns:
         A ``TestClient`` over a minimal app mounting only the dashboard router.
     """
-    if user is not None:
-        identity = AuthenticatedUser(username=user, role="user", groups=())
-        monkeypatch.setattr(
-            dashboard_module, "get_authenticated_user", lambda *a, **k: identity
-        )
     app = FastAPI()
     app.include_router(create_dashboard_router(job_store=object()))
+    if user is not None:
+        identity = AuthenticatedUser(username=user, role="user", groups=())
+        app.dependency_overrides[dashboard_module.get_authenticated_user] = lambda: identity
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -115,9 +109,9 @@ def test_owner_scope_takes_precedence_over_shared(monkeypatch: pytest.MonkeyPatc
 
 
 def test_public_search_forwards_no_scope(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A bare query forwards both scopes as None and needs no auth."""
+    """An authenticated bare query forwards both scopes as None."""
     captured = _spy_search(monkeypatch)
-    client = _client(monkeypatch, user=None)
+    client = _client(monkeypatch)
     resp = client.post("/dashboard/search", json={"query": "mipro"})
     assert resp.status_code == 200
     assert captured["owner_username"] is None
@@ -127,7 +121,7 @@ def test_public_search_forwards_no_scope(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_structured_filters_are_forwarded(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every categorical filter, including tasks/modules, reaches the gateway."""
     captured = _spy_search(monkeypatch)
-    client = _client(monkeypatch, user=None)
+    client = _client(monkeypatch)
     resp = client.post(
         "/dashboard/search",
         json={
@@ -155,9 +149,9 @@ def test_shared_scope_mismatch_is_forbidden(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_facets_public_forwards_no_scope(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Bare ``GET /dashboard/facets`` forwards both scopes as None, no auth."""
+    """Authenticated ``GET /dashboard/facets`` forwards no scope."""
     captured = _spy_facets(monkeypatch)
-    client = _client(monkeypatch, user=None)
+    client = _client(monkeypatch)
     resp = client.get("/dashboard/facets")
     assert resp.status_code == 200
     assert resp.json() == {"models": [], "optimizers": [], "modules": []}

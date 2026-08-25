@@ -259,7 +259,7 @@ def _embed_finished_job_once(optimization_id: str, *, job_store: Any) -> bool:
     baseline, optimized = _extract_scores(job)
     display = _extract_display_fields(job)
     user_id = overview.get(PAYLOAD_OVERVIEW_USERNAME)
-    is_private = bool(overview.get(PAYLOAD_OVERVIEW_IS_PRIVATE, False))
+    is_private = bool(overview.get(PAYLOAD_OVERVIEW_IS_PRIVATE, True))
 
     try:
         with Session(job_store.engine) as session:

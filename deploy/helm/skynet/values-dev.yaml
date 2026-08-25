@@ -14,7 +14,6 @@ backend:
     LOG_LEVEL: DEBUG
     WORKER_CONCURRENCY: "1"
     ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:3001"
-    RECOMMENDATIONS_ENABLED: "false"  # skip embedding API calls in dev
   secrets:
     data:
       OPENAI_API_KEY: ""  # supply via --set or external secret
@@ -33,7 +32,9 @@ frontend:
     limits:
       cpu: 250m
       memory: 256Mi
-  env: {}
+  env:
+    API_URL: "http://localhost:8000"
+    AUTH_URL: "http://localhost:3001"
   autoscaling:
     enabled: false
   podDisruptionBudget:

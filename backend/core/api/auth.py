@@ -19,7 +19,6 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..storage.models import ApiTokenModel
 from .errors import DomainError
-from .monthly_active_users import enforce_monthly_active_user_limit
 
 _EXPECTED_ALGORITHM = "HS256"
 _EXPECTED_AUDIENCE = "skynet-backend"
@@ -252,12 +251,6 @@ def get_authenticated_user(
             role=role,
             groups=_normalise_groups(payload.get("groups")),
         )
-    app_state = getattr(getattr(request, "app", None), "state", None)
-    enforce_monthly_active_user_limit(
-        getattr(app_state, "job_store", None),
-        user.username,
-        exempt=is_admin(user),
-    )
     return user
 
 

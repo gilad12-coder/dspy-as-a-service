@@ -1,99 +1,74 @@
-# Skynet Helm Chart
+# Skynet on-prem Helm chart
 
-Production-grade Helm chart for the Skynet platform — FastAPI backend with
-embedded worker, Next.js frontend, and an optional bundled pgvector Postgres.
-Targets OpenShift; horizontally scalable via HPAs and a DB-backed worker
-claim queue (Wave 2).
+The chart deploys the Hebrew-only Skynet frontend, FastAPI backend with PostgreSQL-lease workers, a migration Job, and either bundled or external PostgreSQL. It targets OpenShift and standard Kubernetes primitives where possible. No Redis, Stripe, external queue, or cloud observability service is required.
 
-## Quick install
+## Render first
 
 ```bash
-# 1. From the repo root, render & inspect first:
 helm lint deploy/helm/skynet
-helm template skynet deploy/helm/skynet > /tmp/rendered.yaml
+helm template skynet deploy/helm/skynet -n skynet -f values-production.yaml > rendered.yaml
+```
 
-# 2. Install (uses bundled pgvector by default):
+## Install
+
+```bash
 helm upgrade --install skynet deploy/helm/skynet \
   --namespace skynet --create-namespace \
-  --set backend.image.repository=artifactory.example.com/skynet/backend \
-  --set frontend.image.repository=artifactory.example.com/skynet/frontend \
-  --set backend.image.tag=0.1.0 \
-  --set frontend.image.tag=0.1.0 \
-  --set backend.secrets.data.OPENAI_API_KEY=sk-...
-
-# 3. Dev install (single replica, looser probes, no HPA/PDB):
-helm upgrade --install skynet deploy/helm/skynet \
-  -n skynet-dev --create-namespace \
-  -f deploy/helm/skynet/values-dev.yaml
+  --set backend.image.repository=registry.example.internal/skynet/backend \
+  --set frontend.image.repository=registry.example.internal/skynet/frontend \
+  --set backend.image.tag=1.0.0 \
+  --set frontend.image.tag=1.0.0 \
+  --set openshift.routes.backend.host=skynet-api.example.internal \
+  --set openshift.routes.frontend.host=skynet.example.internal
 ```
 
-## What gets deployed
+Use existing Secrets in production. The backend Secret needs `BACKEND_AUTH_SECRET`, `BYOK_VAULT_KEY`, database/model credentials, and optional transcription/log-shipping credentials. The frontend Secret needs `AUTH_SECRET`, the same `BACKEND_AUTH_SECRET`, and `AUTH_SSO_CLIENT_SECRET`.
 
-| Component | Kind                      | Default replicas | HPA range |
-|-----------|---------------------------|------------------|-----------|
-| backend   | Deployment + Service + Route + HPA + PDB + NetworkPolicy | 2 | 2–8 |
-| frontend  | Deployment + Service + Route + HPA + PDB + NetworkPolicy | 2 | 2–4 |
-| pgbouncer | Deployment + Service (optional, transaction pooling) | 2 | n/a |
-| postgres  | StatefulSet + headless Service (gated by `postgres.enabled`) | 1 | n/a |
-| migrate   | Job (pre-install / pre-upgrade hook, weight -5) | one-shot | n/a |
+## Components
 
-## Common upgrade flows
-
-```bash
-# Bump image tag only:
-helm upgrade skynet deploy/helm/skynet --reuse-values \
-  --set backend.image.tag=0.2.0 --set frontend.image.tag=0.2.0
-
-# Switch to external pgvector (e.g. managed RDS / Crunchy):
-helm upgrade skynet deploy/helm/skynet --reuse-values \
-  --set postgres.enabled=false \
-  --set externalDatabase.enabled=true \
-  --set externalDatabase.host=pg.internal \
-  --set externalDatabase.user=skynet \
-  --set externalDatabase.database=skynet \
-  --set externalDatabase.password='***'
-```
+| Component | Default | Scaling/state |
+|---|---:|---|
+| backend API + workers | 2 pods | HPA 2-8; PostgreSQL queue leases |
+| frontend | 2 pods | HPA 2-4; stateless JWT sessions |
+| migration | one-shot | Fresh on-prem baseline only |
+| PostgreSQL | optional 1 pod | PersistentVolume; external DB preferred for production |
+| PgBouncer | optional 2 pods | Stateless transaction pooler |
 
 ## Production checklist
 
-- [ ] `global.imageRegistry` set to your internal Artifactory. It must prefix
-      ALL FOUR images — `skynet/backend`, `skynet/frontend`, `pgvector/pgvector:pg16`,
-      and `edoburu/pgbouncer`. The last two are easy to forget on the bundled-DB /
-      pooler paths and will `ImagePullBackOff` from Docker Hub otherwise.
-- [ ] `global.imagePullSecrets` references a `kubernetes.io/dockerconfigjson` secret.
-- [ ] `externalDatabase.enabled=true` pointing at managed pgvector (set `postgres.enabled=false`).
-- [ ] External-DB deployments (`postgres.enabled=false`) MUST set `networkPolicy.dbEgress`
-      to the managed Postgres subnet, or the backend pool and migration Job cannot reach it.
-- [ ] Backend secrets sourced from an external secret store (set `backend.secrets.existingSecret`).
-- [ ] `frontend.secrets.data.AUTH_SECRET` rotated (`openssl rand -base64 32`).
-- [ ] OIDC vars populated: `AUTH_SSO_ISSUER`, `AUTH_SSO_CLIENT_ID`, `AUTH_SSO_CLIENT_SECRET`.
-- [ ] `openshift.routes.*.host` pinned to a real DNS name with a valid certificate.
-- [ ] `networkPolicy.egressCidrs` narrowed to your LLM gateway + IdP CIDRs.
-- [ ] An empty egress allowlist renders `0.0.0.0/0` (NOT air-gapped). After install,
-      verify with `kubectl get networkpolicy <release>-skynet-backend -o yaml` that the
-      egress `ipBlock` is NOT `0.0.0.0/0`.
-- [ ] `backend.env.ALLOWED_ORIGINS` lists every front-door host.
+- Mirror backend, frontend, PostgreSQL, and PgBouncer images into the internal registry.
+- Use an external PostgreSQL service with backups and tested restores when available.
+- Set `frontend.env.API_URL` to the browser-reachable backend URL. `BACKEND_INTERNAL_URL` defaults to the in-cluster Service.
+- Set `frontend.env.AUTH_URL`, all `AUTH_SSO_*` ADFS values, username/group claims, and admin groups.
+- Set matching backend/frontend `BACKEND_AUTH_SECRET` values and a separate stable `AUTH_SECRET`.
+- Set `backend.env.ADMIN_USERNAMES` and frontend `AUTH_ADMINS` for one break-glass identity.
+- Set `backend.env.ALLOWED_ORIGINS` to the frontend HTTPS origin.
+- Keep OpenShift Route TLS enabled with redirect, or provide equivalent TLS ingress.
+- Restrict NetworkPolicy egress to PostgreSQL, IdP, LLM, embedding, transcription, SMTP, and local observability endpoints.
+- Confirm no empty allowlist leaves the chart's documented `0.0.0.0/0` fallback in production.
+- Start at two worker threads per backend pod and tune from memory/CPU metrics.
+- Set `BYOK_VAULT_KEY` before enabling provider-key storage.
 
-## Key values
+## Important values
 
 | Value | Purpose |
-|-------|---------|
-| `backend.env.WORKER_CONCURRENCY` | Threaded worker fan-out per replica (default 4). |
-| `backend.env.WORKER_POLL_INTERVAL` | DB poll cadence in seconds (default 2.0). |
-| `backend.env.SEARCH_BACKEND` | Explore search engine and the Postgres extension it needs: `lexical` (default, vanilla — no extension), `bm25` (needs `pg_search`), or `semantic` (needs `pgvector` + embedding gateway; the only profile whose migrate Job runs `CREATE EXTENSION vector`). |
-| `backend.env.EMBEDDINGS_BASE_URL` | Internal OpenAI-compatible embedding API base URL (only used when `SEARCH_BACKEND=semantic`). |
-| `networkPolicy.embeddingEgress` | Optional backend egress allowlist when the embedding API uses a separate CIDR. |
-| `backend.env.CODE_AGENT_BASE_URL` | Override for internal OpenAI-compatible gateway. |
-| `frontend.env.API_URL` | Runtime backend address. Empty → in-cluster service. |
-| `openshift.routes.backend.annotations` | Default `haproxy.router.openshift.io/timeout: 5m` for long optimization runs. |
-| `backend.autoscaling.queueDepth` | External metric target for pending jobs; requires Prometheus Adapter. CPU remains as fallback. |
-| `pgbouncer.enabled` | Optional transaction-pooler in front of Postgres; backend pods set `DB_PGBOUNCER_TRANSACTION_MODE=true` when enabled. |
-| `migration.command` | Pre-install/upgrade hook command; default `["alembic","upgrade","head"]`. Override to `["alembic","stamp","342f7449be26"]` once when adopting a DB already at the baseline. |
+|---|---|
+| `backend.env.WORKER_CONCURRENCY` | Job threads per pod; default 2 for predictable memory use. |
+| `backend.env.JOB_ADMISSION_MAX_MEMORY_FRACTION` | Defers new claims near the cgroup memory limit. |
+| `backend.env.USER_STORAGE_QUOTA_BYTES` | Default per-user unified quota; UI overrides are stored in PostgreSQL. |
+| `backend.env.SEARCH_BACKEND` | `lexical` (plain PostgreSQL), `bm25` (`pg_search`), or `semantic` (`pgvector`). |
+| `backend.autoscaling.queueDepth` | Optional `skynet_jobs_pending` external metric. |
+| `pgbouncer.enabled` | PostgreSQL transaction pooling at high replica counts. |
+| `frontend.env.API_URL` | Browser-reachable backend origin. |
+| `frontend.env.BACKEND_INTERNAL_URL` | Server-only backend Service used during authentication. |
+| `frontend.env.TRANSCRIPTION_ENABLED` | Shows dictation only when backend transcription is also configured. |
 
-## Uninstall
+## Database lifecycle
+
+The migration hook runs `alembic upgrade head` against a fresh database. This private edition intentionally does not upgrade hosted or older private schemas. PostgreSQL PVCs survive Helm uninstall; delete them only as an explicit data-destruction operation.
 
 ```bash
 helm uninstall skynet -n skynet
-# Bundled Postgres PVCs survive uninstall by design — clean up explicitly:
-kubectl delete pvc -l app.kubernetes.io/instance=skynet -n skynet
 ```
+
+See `docs/ON_PREM_DEPLOYMENT.md` for secrets, ADFS, observability, smoke tests, and deployment examples.

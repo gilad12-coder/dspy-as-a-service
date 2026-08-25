@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections import defaultdict
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -42,12 +42,9 @@ from .models import (
     JobEmbeddingModel,
     JobModel,
     LogEntryModel,
-    MonthlyActiveUserModel,
     OptimizationShareGrantModel,
     ProgressEventModel,
     UserModel,
-    UserQuotaAuditModel,
-    UserQuotaOverrideModel,
     UserStorageQuotaOverrideModel,
 )
 from .schema_lock import schema_bootstrap_lock
@@ -1365,42 +1362,6 @@ class RemoteDBJobStore:
         finally:
             session.close()
 
-    def get_user_quota_override(self, username: str) -> tuple[bool, int | None]:
-        """Return the live quota override row for ``username`` if present.
-
-        Args:
-            username: User identifier to resolve case-insensitively.
-
-        Returns:
-            ``(False, None)`` when no row exists, otherwise ``(True, quota)``.
-            A present ``None`` quota means unlimited.
-        """
-        normalized_username = username.strip().lower()
-        if not normalized_username:
-            return False, None
-        session = self._get_session()
-        try:
-            row = session.get(UserQuotaOverrideModel, normalized_username)
-            if row is None:
-                return False, None
-            return True, row.quota
-        finally:
-            session.close()
-
-    def get_effective_user_quota(self, username: str) -> int | None:
-        """Resolve a user's quota from live DB override, then static config.
-
-        Args:
-            username: User identifier to resolve.
-
-        Returns:
-            The numeric quota, or ``None`` for unlimited.
-        """
-        has_override, quota = self.get_user_quota_override(username)
-        if has_override:
-            return quota
-        return settings.get_user_quota(username)
-
     def get_effective_user_storage_quota(self, username: str) -> int:
         """Return the unified storage budget in bytes the user is held to.
 
@@ -1555,86 +1516,11 @@ class RemoteDBJobStore:
         finally:
             session.close()
 
-    def set_user_quota_override(self, username: str, quota: int | None, updated_by: str | None = None) -> None:
-        """Create or update the live quota override for a user.
-
-        Args:
-            username: User identifier to store case-insensitively.
-            quota: Numeric quota, or ``None`` for unlimited.
-            updated_by: Optional operator identifier for audit context.
-
-        Raises:
-            ValueError: When ``username`` is blank or ``quota`` is below one.
-        """
-        normalized_username = username.strip().lower()
-        if not normalized_username:
-            raise ValueError("username must not be blank")
-        if quota is not None and quota < 1:
-            raise ValueError("quota must be at least 1")
-        session = self._get_session()
-        try:
-            row = session.get(UserQuotaOverrideModel, normalized_username)
-            if row is None:
-                row = UserQuotaOverrideModel(username=normalized_username)
-                session.add(row)
-            row.quota = quota
-            row.updated_at = datetime.now(UTC)
-            row.updated_by = updated_by
-            session.commit()
-        finally:
-            session.close()
-
-    def delete_user_quota_override(self, username: str) -> bool:
-        """Delete a live quota override so config fallback applies again.
-
-        Args:
-            username: User identifier to clear case-insensitively.
-
-        Returns:
-            Whether a row was deleted.
-        """
-        normalized_username = username.strip().lower()
-        if not normalized_username:
-            return False
-        session = self._get_session()
-        try:
-            deleted = (
-                session.query(UserQuotaOverrideModel)
-                .filter(UserQuotaOverrideModel.username == normalized_username)
-                .delete()
-            )
-            session.commit()
-            return bool(deleted)
-        finally:
-            session.close()
-
-    def list_user_quota_overrides(self) -> list[dict[str, Any]]:
-        """Return all live quota overrides ordered by username.
-
-        Returns:
-            A list of override rows with ISO-formatted ``updated_at`` values.
-        """
-        session = self._get_session()
-        try:
-            rows = session.query(UserQuotaOverrideModel).order_by(UserQuotaOverrideModel.username.asc()).all()
-            return [
-                {
-                    "username": row.username,
-                    "quota": row.quota,
-                    "updated_at": row.updated_at.isoformat() if row.updated_at else None,
-                    "updated_by": row.updated_by,
-                }
-                for row in rows
-            ]
-        finally:
-            session.close()
-
     def search_usernames(self, query: str, *, limit: int = 10) -> list[str]:
         """Return distinct usernames known to the DB matching ``query``.
 
-        Searches both job submissions (``jobs.username``) and existing quota
-        overrides so admins can autocomplete previously-seen users without
-        an external directory lookup.
+        Searches persisted accounts and job submissions so administrators can
+        autocomplete identities without an external directory lookup.
 
         Args:
             query: Case-insensitive substring to match.
@@ -1656,82 +1542,16 @@ class RemoteDBJobStore:
                 .distinct()
                 .all()
             )
-            override_rows = (
-                session.query(UserQuotaOverrideModel.username)
-                .filter(func.lower(UserQuotaOverrideModel.username).like(pattern))
+            account_rows = (
+                session.query(UserModel.username)
+                .filter(func.lower(UserModel.username).like(pattern))
                 .all()
             )
             seen: set[str] = set()
-            for (username,) in (*job_rows, *override_rows):
+            for (username,) in (*job_rows, *account_rows):
                 if username:
                     seen.add(username.strip().lower())
             return sorted(seen)[: max(0, limit)]
-        finally:
-            session.close()
-
-    def record_user_quota_audit(
-        self,
-        *,
-        actor: str,
-        target_username: str,
-        action: str,
-        old_quota: int | None,
-        new_quota: int | None,
-    ) -> None:
-        """Record a quota administration audit event.
-
-        Args:
-            actor: Admin user who made the change.
-            target_username: User whose quota changed.
-            action: Operation name such as ``set`` or ``delete``.
-            old_quota: Previous live quota, or ``None`` for unlimited/no row.
-            new_quota: New live quota, or ``None`` for unlimited/default fallback.
-        """
-        session = self._get_session()
-        try:
-            session.add(
-                UserQuotaAuditModel(
-                    actor=actor.strip().lower(),
-                    target_username=target_username.strip().lower(),
-                    action=action,
-                    old_quota=old_quota,
-                    new_quota=new_quota,
-                    created_at=datetime.now(UTC),
-                )
-            )
-            session.commit()
-        finally:
-            session.close()
-
-    def list_user_quota_audit_events(self, *, limit: int = 50) -> list[dict[str, Any]]:
-        """Return recent quota administration audit events.
-
-        Args:
-            limit: Maximum number of recent events to return.
-
-        Returns:
-            Recent audit events ordered newest-first.
-        """
-        session = self._get_session()
-        try:
-            rows = (
-                session.query(UserQuotaAuditModel)
-                .order_by(UserQuotaAuditModel.created_at.desc(), UserQuotaAuditModel.id.desc())
-                .limit(limit)
-                .all()
-            )
-            return [
-                {
-                    "id": row.id,
-                    "actor": row.actor,
-                    "target_username": row.target_username,
-                    "action": row.action,
-                    "old_quota": row.old_quota,
-                    "new_quota": row.new_quota,
-                    "created_at": row.created_at.isoformat() if row.created_at else None,
-                }
-                for row in rows
-            ]
         finally:
             session.close()
 
@@ -2755,79 +2575,14 @@ class RemoteDBJobStore:
             session.close()
 
     def count_users(self) -> int:
-        """Count total registered accounts.
-
-        Backs the sign-up cap (:data:`core.config.settings.max_total_users`): the
-        registration path refuses new accounts once this reaches the cap. The
-        count is advisory — it runs outside the insert's transaction, so a small
-        overshoot at the boundary under concurrent sign-ups is acceptable.
+        """Count persisted ADFS and local accounts.
 
         Returns:
             The number of rows in the ``users`` table.
         """
         session = self._get_session()
         try:
-            return session.query(func.count(UserModel.email)).scalar() or 0
-        finally:
-            session.close()
-
-    def count_monthly_active_users(self, month_start: date) -> int:
-        """Count identities admitted during one UTC calendar month.
-
-        Args:
-            month_start: First UTC date of the month to count.
-
-        Returns:
-            Number of distinct admitted identities for the month.
-        """
-        session = self._get_session()
-        try:
-            return (
-                session.query(func.count(MonthlyActiveUserModel.username))
-                .filter(MonthlyActiveUserModel.month_start == month_start)
-                .scalar()
-                or 0
-            )
-        finally:
-            session.close()
-
-    def admit_monthly_active_user(self, username: str, month_start: date, limit: int) -> bool:
-        """Atomically admit one identity if monthly capacity remains.
-
-        A transaction-scoped advisory lock serializes only first-seen monthly
-        identities across API replicas. Returning users hit the composite key
-        fast path, while PgBouncer transaction mode safely releases the lock at
-        commit.
-
-        Args:
-            username: Normalized authenticated identity.
-            month_start: First UTC date of the month being admitted.
-            limit: Maximum distinct identities allowed for the month.
-
-        Returns:
-            ``True`` for an existing or newly admitted identity; ``False`` when
-            the month is already at capacity.
-        """
-        session = self._get_session()
-        try:
-            if session.bind is not None and session.bind.dialect.name == "postgresql":
-                session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 742137000004})
-            key = (month_start, username)
-            if session.get(MonthlyActiveUserModel, key) is not None:
-                session.commit()
-                return True
-            count = (
-                session.query(func.count(MonthlyActiveUserModel.username))
-                .filter(MonthlyActiveUserModel.month_start == month_start)
-                .scalar()
-                or 0
-            )
-            if count >= limit:
-                session.rollback()
-                return False
-            session.add(MonthlyActiveUserModel(month_start=month_start, username=username))
-            session.commit()
-            return True
+            return session.query(func.count(UserModel.username)).scalar() or 0
         finally:
             session.close()
 

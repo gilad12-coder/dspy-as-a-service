@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { preload } from "react-dom";
 import { cache } from "react";
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 import { AppShell } from "@/shared/layout/app-shell";
 import { DeviceClassProvider } from "@/shared/hooks/use-device-class";
 import { deviceClassFromRequest } from "@/shared/lib/device-class";
@@ -22,16 +22,13 @@ import {
   SettingsModal,
 } from "@/features/settings";
 import { StorageQuotaModalHost } from "@/features/storage";
-import { CreditProvider, ByokKeysProvider, InsufficientCreditsModalHost } from "@/features/billing";
+import { ByokKeysProvider } from "@/features/byok";
 import { AppSkeletonTheme } from "@/shared/ui/skeleton";
 import { msg } from "@/shared/lib/messages";
 import { getServerRuntimeEnv, serializeRuntimeEnv } from "@/shared/lib/runtime-env";
 import {
   DEFAULT_LOCALE,
-  LOCALE_COOKIE,
   dirForLocale,
-  isLocale,
-  localeFromAcceptLanguage,
   type Locale,
 } from "@/shared/lib/locale";
 import { serializeLocale, setServerLocale } from "@/shared/lib/runtime-locale";
@@ -49,12 +46,6 @@ import "@fontsource-variable/jetbrains-mono/index.css";
 // Script-matched faces for locales Geist/Heebo don't cover. Each ships
 // unicode-range subsets, so a font's glyphs download only when that script is
 // actually on screen — an English visitor never fetches the CJK/Arabic bytes.
-import "@fontsource-variable/noto-sans-arabic/index.css";
-import "@fontsource-variable/vazirmatn/index.css";
-import "@fontsource-variable/noto-sans-devanagari/index.css";
-import "@fontsource-variable/noto-sans-jp/index.css";
-import "@fontsource-variable/noto-sans-kr/index.css";
-import "@fontsource-variable/noto-sans-sc/index.css";
 import "react-toastify/dist/ReactToastify.css";
 import "./globals.css";
 
@@ -75,20 +66,9 @@ function ogLocale(locale: Locale): string {
 }
 
 /**
- * Resolve the request's locale by precedence: an explicit switcher cookie wins,
- * else the browser's `Accept-Language` is auto-detected (q-weighted, honoring
- * regional variants like `pt-BR` and primary-language matches like `en-AU -> en`),
- * else the English default. A returning visitor who picked a language keeps it;
- * a new visitor lands in the best supported match for their browser. Wrapped in
- * React `cache()` so the layout and `generateMetadata` share a single
- * cookie/header read per request.
+ * Resolve the only locale shipped by the on-prem deployment.
  */
-const resolveRequestLocale = cache(async (): Promise<Locale> => {
-  const cookieLocale = (await cookies()).get(LOCALE_COOKIE)?.value;
-  if (isLocale(cookieLocale)) return cookieLocale;
-  const detected = localeFromAcceptLanguage((await headers()).get("accept-language"));
-  return detected ?? DEFAULT_LOCALE;
-});
+const resolveRequestLocale = cache(async (): Promise<Locale> => DEFAULT_LOCALE);
 
 /**
  * Build the request's merged UI catalog once and share it across `generateMetadata`
@@ -102,8 +82,6 @@ const resolveActiveCatalog = cache(async (): Promise<UiCatalog> => {
 
 // Render per-request so the pod's runtime API_URL is read at request time and
 // injected into window.__SKYNET_ENV__, instead of being frozen at build time.
-export const dynamic = "force-dynamic";
-
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -149,11 +127,11 @@ export async function generateMetadata(): Promise<Metadata> {
       description: siteDescription,
     },
     robots: {
-      index: true,
-      follow: true,
+      index: false,
+      follow: false,
       googleBot: {
-        index: true,
-        follow: true,
+        index: false,
+        follow: false,
         "max-video-preview": -1,
         "max-image-preview": "large",
         "max-snippet": -1,
@@ -235,9 +213,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <DeviceClassProvider initial={deviceClass}>
           <LocaleProvider initialLocale={locale}>
             <SessionProvider session={session}>
-              <CreditProvider>
-                <ByokKeysProvider>
-                  <UserPrefsProvider>
+              <ByokKeysProvider>
+                <UserPrefsProvider>
                     <LiteModeProvider>
                       <ThemeProvider>
                         <TooltipProvider>
@@ -247,9 +224,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                               <SettingsModalProvider>
                                 <AppShell>{children}</AppShell>
                                 <SettingsModal />
-                                {/* Inside SettingsModalProvider: its CTA opens the
-                                    wallet settings tab now that /upgrade is gone. */}
-                                <InsufficientCreditsModalHost />
                               </SettingsModalProvider>
                               <TutorialOverlay />
                             </TutorialProvider>
@@ -257,9 +231,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                         </TooltipProvider>
                       </ThemeProvider>
                     </LiteModeProvider>
-                  </UserPrefsProvider>
-                </ByokKeysProvider>
-              </CreditProvider>
+                </UserPrefsProvider>
+              </ByokKeysProvider>
             </SessionProvider>
             <TelemetryProvider />
             <StorageQuotaModalHost />

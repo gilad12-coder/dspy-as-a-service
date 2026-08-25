@@ -1,15 +1,9 @@
 """Speech-to-text for composer dictation. [INTERNAL]
 
-``POST /transcribe`` — accept one recorded clip (multipart ``audio`` plus an
-optional ``language`` hint from the UI locale) and return its transcript.
-
-Groq's LPU-served Whisper large-v3-turbo is the platform's sole dictation
-provider: a clip returns in hundreds of milliseconds, and running one leg
-keeps the failure surface honest — no key configured answers a typed 503 the
-composer turns into a transient failure notice, a provider error answers 502.
-The ``language`` field is accepted for wire compatibility but never
-forwarded: Whisper treats the param as a directive, and the UI locale isn't
-necessarily the spoken language.
+``POST /transcribe`` accepts one recorded clip and forwards it to an explicitly
+configured OpenAI-compatible endpoint inside the private network. Unconfigured
+deployments expose no dictation control in the UI and return a typed 503 if the
+endpoint is called directly.
 """
 
 from __future__ import annotations
@@ -27,8 +21,6 @@ from ..errors import DomainError
 
 logger = logging.getLogger("skynet.api.transcription")
 
-_GROQ_BASE = "https://api.groq.com/openai/v1"
-_GROQ_MODEL = "whisper-large-v3-turbo"
 # whisper's documented upload cap; dictation takes are far below it.
 _MAX_AUDIO_MB = 25
 _MAX_AUDIO_BYTES = _MAX_AUDIO_MB * 1024 * 1024
@@ -42,16 +34,23 @@ class TranscriptionResponse(BaseModel):
     provider: str
 
 
-async def _groq_transcribe(
-    client: httpx.AsyncClient, audio: bytes, filename: str, api_key: str
+async def _transcribe_audio(
+    client: httpx.AsyncClient,
+    audio: bytes,
+    filename: str,
+    base_url: str,
+    model: str,
+    api_key: str | None,
 ) -> str:
-    """Transcribe one clip via Whisper large-v3-turbo on Groq.
+    """Transcribe one clip through an OpenAI-compatible endpoint.
 
     Args:
         client: Shared HTTP client.
         audio: Raw audio bytes.
         filename: Client filename, used for container detection.
-        api_key: Groq bearer token.
+        base_url: Configured API base URL.
+        model: Transcription model identifier.
+        api_key: Optional bearer token.
 
     Returns:
         The transcript text.
@@ -59,14 +58,15 @@ async def _groq_transcribe(
     Raises:
         RuntimeError: On a non-OK provider response.
     """
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     res = await client.post(
-        f"{_GROQ_BASE}/audio/transcriptions",
-        headers={"Authorization": f"Bearer {api_key}"},
+        f"{base_url.rstrip('/')}/audio/transcriptions",
+        headers=headers,
         files={"file": (filename, audio)},
-        data={"model": _GROQ_MODEL},
+        data={"model": model},
     )
     if res.status_code >= 400:
-        raise RuntimeError(f"groq transcribe: {res.status_code}")
+        raise RuntimeError(f"transcription endpoint: {res.status_code}")
     return str(res.json().get("text") or "")
 
 
@@ -109,18 +109,28 @@ def create_transcription_router() -> APIRouter:
         data = await audio.read()
         if len(data) > _MAX_AUDIO_BYTES:
             raise DomainError("transcription.too_large", status=413, max_mb=_MAX_AUDIO_MB)
-        if not settings.groq_api_key:
+        if not settings.transcription_base_url:
             raise DomainError("transcription.unconfigured", status=503)
         filename = audio.filename or "take.webm"
+        api_key = (
+            settings.transcription_api_key.get_secret_value()
+            if settings.transcription_api_key is not None
+            else None
+        )
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(_HTTP_TIMEOUT_S)) as client:
             try:
-                text = await _groq_transcribe(
-                    client, data, filename, settings.groq_api_key.get_secret_value()
+                text = await _transcribe_audio(
+                    client,
+                    data,
+                    filename,
+                    settings.transcription_base_url,
+                    settings.transcription_model,
+                    api_key,
                 )
             except (RuntimeError, httpx.HTTPError, KeyError, ValueError) as err:
-                logger.warning("transcription failed (groq): %s", err)
+                logger.warning("transcription failed: %s", err)
                 raise DomainError("transcription.failed", status=502) from err
-        return TranscriptionResponse(text=text, provider="groq")
+        return TranscriptionResponse(text=text, provider="configured")
 
     return router

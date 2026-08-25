@@ -46,8 +46,7 @@ export function TaggerReviewGate({
   const autotagLabel = estimate
     ? formatMsg("tagger.assist.gate.tag_rest_estimate", {
         rows: remainingCount,
-        low: estimate.credits_low,
-        high: estimate.credits_high,
+        tokens: estimate.estimated_input_tokens + estimate.estimated_output_tokens,
       })
     : formatMsg("tagger.assist.gate.tag_rest", { rows: remainingCount });
 

@@ -15,18 +15,15 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from ...billing.byok_vault import ProviderKeyVault
+from ...byok.vault import ProviderKeyVault
 from ...config import settings
 from ...i18n_keys import I18nKey
 from ...models import ProgramArtifact
 from ...storage.models import (
     Base,
-    BillingCustomerModel,
-    BillingProviderKeyModel,
-    CreditLedgerModel,
+    ByokProviderKeyModel,
 )
 
 # noinspection PyProtectedMember
@@ -696,7 +693,7 @@ class _UsageLm:
 
 @pytest.fixture
 def metered_store(serve_store: _FakeJobStore) -> _FakeJobStore:
-    """Back the fake store with a real SQLite engine carrying the billing tables.
+    """Back the fake store with a real SQLite engine carrying BYOK keys.
 
     Seeds a servable run job (``ok``) and a grid job (``grid1``) so every
     LLM-invoking serve route can be exercised against the same store.
@@ -711,9 +708,7 @@ def metered_store(serve_store: _FakeJobStore) -> _FakeJobStore:
     Base.metadata.create_all(
         engine,
         tables=[
-            BillingCustomerModel.__table__,
-            BillingProviderKeyModel.__table__,
-            CreditLedgerModel.__table__,
+            ByokProviderKeyModel.__table__,
         ],
     )
     serve_store.engine = engine
@@ -741,109 +736,19 @@ def metered_client(metered_store: _FakeJobStore) -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
-def _deplete(engine: object) -> None:
-    """Seed the test user's billing row with zero balance and zero grant."""
-    with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username="alice",
-                stripe_customer_id="cus_alice",
-                credit_balance=0,
-                grant_remaining=0,
-            )
-        )
-        session.commit()
-
-
-def _fund(engine: object, credits: int = 10_000) -> None:
-    """Seed the test user's billing row with a purchased balance.
-
-    There is no free allowance, so any test that must pass the 402 credit gate
-    funds the account explicitly.
-    """
-    with Session(engine) as session:
-        session.add(
-            BillingCustomerModel(
-                username="alice",
-                stripe_customer_id="cus_alice",
-                credit_balance=credits,
-                grant_remaining=0,
-            )
-        )
-        session.commit()
-
-
-def _ledger_rows(engine: object) -> list[CreditLedgerModel]:
-    """Return every credit-ledger row, oldest first."""
-    with Session(engine) as session:
-        return session.query(CreditLedgerModel).order_by(CreditLedgerModel.id).all()
-
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        "/serve/ok",
-        "/serve/ok/stream",
-        "/serve/grid1/pair/0",
-        "/serve/grid1/pair/0/stream",
-    ],
-)
-def test_serve_endpoints_return_402_when_depleted(
-    metered_client: TestClient, metered_store: _FakeJobStore, url: str
-) -> None:
-    """Every program-serving route refuses a zero-balance account before the LLM call."""
-    _deplete(metered_store.engine)
-
-    resp = metered_client.post(url, json={"inputs": {"question": "hi"}})
-
-    assert resp.status_code == 402
-    assert resp.json()["code"] == I18nKey.BILLING_INSUFFICIENT_CREDITS.value
-
-
-def test_serve_chat_returns_402_when_depleted(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
-    """The react-serve chat refuses a zero-balance account before streaming."""
-    _deplete(metered_store.engine)
-    overlay = SimpleNamespace(tool_source={"kind": "live_mcp", "mcp_url": "http://mcp.local"})
-
-    with patch(
-        "core.api.routers.serve.load_react_chat_inputs",
-        return_value=(object, "{}", overlay, {"model_name": "openai/gpt-4o-mini"}),
-    ):
-        resp = metered_client.post("/serve/any/chat", json={"user_message": "hi"})
-
-    assert resp.status_code == 402
-
-
-def test_serve_program_debits_the_turn(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
-    """A blocking serve call books one ledger row with the measured tokens."""
-    _fund(metered_store.engine)
-    lm = _UsageLm()
-
-    with patch("core.api.routers.serve.build_language_model", return_value=lm), _PATCH_DSPY_CTX:
-        resp = metered_client.post("/serve/ok", json={"inputs": {"question": "hi"}})
-
-    assert resp.status_code == 200
-    (row,) = _ledger_rows(metered_store.engine)
-    assert row.description == "Serve inference"
-    assert row.delta_credits < 0
-    assert row.input_tokens == 120_000
-    assert row.output_tokens == 30_000
-
-
 def test_serve_program_resolves_stored_custom_byok_connection(
     metered_client: TestClient,
     metered_store: _FakeJobStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Interactive inference uses the caller's verified custom endpoint and key."""
-    _fund(metered_store.engine)
     monkeypatch.setattr(
         settings,
         "byok_vault_key",
         SecretStr(Fernet.generate_key().decode("utf-8")),
     )
     response = SimpleNamespace(status_code=200, is_success=True)
-    with patch("core.billing.byok_vault.httpx.get", return_value=response):
+    with patch("core.byok.vault.httpx.get", return_value=response):
         ProviderKeyVault(engine=metered_store.engine).save_key(
             "alice",
             "custom",
@@ -871,47 +776,6 @@ def test_serve_program_resolves_stored_custom_byok_connection(
     assert resolved.name == "openai/private-chat"
     assert resolved.base_url == "https://inference.example/v1"
     assert resolved.extra["api_key"] == "private-secret"
-
-
-def test_serve_stream_debits_on_completion(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
-    """A streamed serve call books its ledger row when the stream winds down."""
-    _fund(metered_store.engine)
-    lm = _UsageLm()
-
-    with (
-        patch("core.api.routers.serve.build_language_model", return_value=lm),
-        _PATCH_DSPY_CTX,
-        patch("dspy.streamify", side_effect=RuntimeError("not streamable")),
-    ):
-        resp = metered_client.post("/serve/ok/stream", json={"inputs": {"question": "hi"}})
-
-    assert resp.status_code == 200
-    assert "event: final" in resp.text
-    (row,) = _ledger_rows(metered_store.engine)
-    assert row.description == "Serve inference"
-    assert row.delta_credits < 0
-
-
-def test_serve_chat_debits_the_turn(metered_client: TestClient, metered_store: _FakeJobStore) -> None:
-    """A react-serve chat turn books its ledger row under the chat label."""
-    _fund(metered_store.engine)
-    overlay = SimpleNamespace(tool_source={"kind": "live_mcp", "mcp_url": "http://mcp.local"})
-    lm = _UsageLm()
-
-    with (
-        patch(
-            "core.api.routers.serve.load_react_chat_inputs",
-            return_value=(object, "{}", overlay, {"model_name": "openai/gpt-4o-mini"}),
-        ),
-        patch("core.api.routers.serve.build_language_model", return_value=lm),
-        patch("core.api.routers.serve.run_react_chat", side_effect=lambda **_kw: _fake_react_chat_stream()),
-    ):
-        resp = metered_client.post("/serve/any/chat", json={"user_message": "hi"})
-
-    assert resp.status_code == 200
-    (row,) = _ledger_rows(metered_store.engine)
-    assert row.description == "Serve chat"
-    assert row.delta_credits < 0
 
 
 def test_coerce_sample_value_keeps_clean_values_and_drops_unusable() -> None:

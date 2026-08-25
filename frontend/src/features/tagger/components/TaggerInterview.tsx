@@ -81,8 +81,8 @@ interface Props {
    *  final turn — the labeling-guide contract. */
   pending: "options" | "contract" | null;
   error: string | null;
-  /** Row count and live credit estimate for the contract card's autopilot
-   *  start buttons — cost shown before commitment. */
+  /** Row count and live token estimate for the contract card's autopilot
+   *  start buttons. */
   rowCount: number;
   estimate: AutotagEstimate | null;
   onFetchEstimate: () => void;
@@ -365,7 +365,7 @@ function Rise({
  * override, so the human fills it in.
  *
  * On autopilot the launch button commits to tagging every row — scope and
- * credit estimate on the button itself — and confirming goes straight into
+ * token estimate on the button itself — and confirming goes straight into
  * the bulk job with no interstitial screen. On copilot it commits to the
  * opening batch: the AI tags it first and the human keeps or corrects each
  * label, so nobody hand-labels from a blank slate.
@@ -769,16 +769,10 @@ function RubricCard({
                 autopilot &&
                 estimate && (
                   <span className="text-xs font-normal tabular-nums text-primary-foreground/75">
-                    {estimate.credits_low === estimate.credits_high
-                      ? estimate.credits_low === 1
-                        ? msg("tagger.assist.rubric.credits_estimate_one")
-                        : formatMsg("tagger.assist.rubric.credits_estimate_flat", {
-                            count: estimate.credits_low,
-                          })
-                      : formatMsg("tagger.assist.rubric.credits_estimate", {
-                          low: estimate.credits_low,
-                          high: estimate.credits_high,
-                        })}
+                    {formatMsg("tagger.assist.rubric.tokens_estimate", {
+                      count:
+                        estimate.estimated_input_tokens + estimate.estimated_output_tokens,
+                    })}
                   </span>
                 )
               )}

@@ -55,7 +55,6 @@ export interface WizardDraftData {
   pxnParents?: string;
   pxnProposals?: string;
   shuffle: boolean;
-  maxCostCredits: number | null;
 }
 
 // A half-filled draft survives sidebar navigation for this long, then self-expires

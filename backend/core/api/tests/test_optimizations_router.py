@@ -22,7 +22,7 @@ from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
-from ...billing.byok_vault import ProviderKeyVault
+from ...byok.vault import ProviderKeyVault
 from ...config import settings
 from ...models.artifacts import ProgramArtifact
 from ...models.common import SplitCounts
@@ -1200,7 +1200,7 @@ def test_evaluate_examples_resolves_stored_custom_byok_connection(
         SecretStr(Fernet.generate_key().decode("utf-8")),
     )
     response = SimpleNamespace(status_code=200, is_success=True)
-    with patch("core.billing.byok_vault.httpx.get", return_value=response):
+    with patch("core.byok.vault.httpx.get", return_value=response):
         ProviderKeyVault(engine=engine).save_key(
             "alice",
             "custom",

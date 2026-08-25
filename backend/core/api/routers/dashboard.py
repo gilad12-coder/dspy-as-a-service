@@ -1,8 +1,8 @@
-"""Public anonymous dashboard routes (PER-11 Feature B). [INTERNAL]
+"""Authenticated on-premise Explorer routes. [INTERNAL]
 
-``GET /dashboard/public`` returns the full corpus point list. ``POST
-/dashboard/search`` runs semantic + structured search and returns ranked
-results plus the matched-id set the list view uses to scope filters.
+The Explorer exposes the caller's runs, named shares, and runs that owners
+explicitly published to the deployment-wide corpus. Every route requires an
+authenticated account; there is no anonymous corpus.
 
 Hidden from the public Scalar reference (none are in
 ``_SCALAR_PUBLIC_PATHS``) — the response shapes are bound to the /explore
@@ -12,9 +12,9 @@ view, not a stable dev contract.
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ...service_gateway.dashboard import (
@@ -29,16 +29,13 @@ from ...service_gateway.dashboard import (
     record_public_search_query,
     search_optimizations,
 )
-from ..auth import get_authenticated_user
+from ..auth import AuthenticatedUser, get_authenticated_user
+
+AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
 
 
 class PublicDashboardPoint(BaseModel):
-    """One point in the public optimization corpus.
-
-    Heavy fields like ``signature_code``, ``optimizer_kwargs``, and
-    ``metric_name`` were dropped from the public payload — they are not
-    consumed by the /explore UI and bloated the bulk response at scale.
-    """
+    """Represent one explicitly published optimization in Explorer."""
 
     optimization_id: str
     optimization_type: str | None = None
@@ -50,8 +47,10 @@ class PublicDashboardPoint(BaseModel):
     module_name: str | None = None
     optimizer_name: str | None = None
     created_at: str | None = None
+
+
 class PublicDashboardResponse(BaseModel):
-    """Envelope for ``GET /dashboard/public`` — the cross-user optimization corpus."""
+    """Envelope for the authenticated deployment-wide corpus."""
 
     points: list[PublicDashboardPoint]
 
@@ -133,38 +132,32 @@ class SearchResponse(BaseModel):
 
 
 class SearchLogRequest(BaseModel):
-    """Body for ``POST /dashboard/search/log`` — one explicitly-committed query.
-
-    Sent by the /explore UI only on an explicit commit (Enter or opening a
-    result), never on debounced typing, so trending counts reflect intent
-    rather than every half-typed prefix.
-    """
+    """Carry one explicitly committed public-corpus query."""
 
     query: str
 
 
 class PopularQuery(BaseModel):
-    """One trending public search query and how often it was run."""
+    """Represent one frequently used public-corpus query."""
 
     query: str
     count: int
 
 
 class PopularQueriesResponse(BaseModel):
-    """Envelope for ``GET /dashboard/search/popular`` — trending public queries."""
+    """Envelope for recent popular public-corpus queries."""
 
     queries: list[PopularQuery]
 
 
 def create_dashboard_router(*, job_store: Any) -> APIRouter:
-    """Build the public cross-user dashboard router.
+    """Build the authenticated Explorer router.
 
     Args:
-        job_store: Backing job store used to fetch the public dashboard payload.
+        job_store: Backing job store used to search accessible optimizations.
 
     Returns:
-        A configured :class:`APIRouter` exposing ``/dashboard/public``
-        and ``/dashboard/search``.
+        A configured :class:`APIRouter` exposing facets and search routes.
     """
     router = APIRouter()
 
@@ -172,18 +165,21 @@ def create_dashboard_router(*, job_store: Any) -> APIRouter:
         "/dashboard/public",
         response_model=PublicDashboardResponse,
         status_code=200,
-        summary="Anonymous cross-user corpus",
+        summary="Authenticated deployment-wide corpus",
     )
-    def public_dashboard() -> PublicDashboardResponse:
-        """Public corpus points for the /explore page.
+    def public_dashboard(current_user: AuthenticatedUserDep) -> PublicDashboardResponse:
+        """Return runs that owners explicitly published inside the deployment.
+
+        Args:
+            current_user: Authenticated account permitted to use Explorer.
 
         Returns:
-            A :class:`PublicDashboardResponse` with one point per public
-            success-state job.
+            Published corpus points.
         """
+        del current_user
         data = fetch_public_dashboard(job_store=job_store)
         return PublicDashboardResponse(
-            points=[PublicDashboardPoint(**p) for p in data["points"]],
+            points=[PublicDashboardPoint(**point) for point in data["points"]]
         )
 
     @router.get(
@@ -193,10 +189,9 @@ def create_dashboard_router(*, job_store: Any) -> APIRouter:
         summary="Distinct filter options for one corpus scope",
     )
     def corpus_facets(
-        http_request: Request,
+        current_user: AuthenticatedUserDep,
         owner_username: str | None = None,
         shared_with_username: str | None = None,
-        authorization: str | None = Header(default=None),
     ) -> FacetsResponse:
         """Distinct model / optimizer / module options for the requested corpus.
 
@@ -206,14 +201,10 @@ def create_dashboard_router(*, job_store: Any) -> APIRouter:
         for their own (mine) or shared-with-them options.
 
         Args:
-            http_request: Incoming request, forwarded to
-                ``get_authenticated_user`` so the PAT branch can reach
-                ``app.state.job_store`` when a scope is set.
+            current_user: Authenticated caller.
             owner_username: When set, scope to the caller's own jobs.
             shared_with_username: When set (and ``owner_username`` is not),
                 scope to jobs shared with the caller.
-            authorization: Bearer token, required only when a scope is set.
-
         Returns:
             A :class:`FacetsResponse` with the distinct options for the scope.
 
@@ -221,15 +212,11 @@ def create_dashboard_router(*, job_store: Any) -> APIRouter:
             HTTPException: When a scope is set but the request is
                 unauthenticated or targets a different user than the session.
         """
-        resolved_owner = _resolve_owner_username(
-            http_request, owner_username, authorization
-        )
+        resolved_owner = _resolve_owner_username(owner_username, current_user)
         resolved_shared = (
             None
             if resolved_owner is not None
-            else _resolve_owner_username(
-                http_request, shared_with_username, authorization
-            )
+            else _resolve_owner_username(shared_with_username, current_user)
         )
         data = fetch_corpus_facets(
             job_store=job_store,
@@ -250,19 +237,14 @@ def create_dashboard_router(*, job_store: Any) -> APIRouter:
         tags=["agent"],
     )
     def public_search(
-        http_request: Request,
         request: SearchRequest,
-        authorization: str | None = Header(default=None),
+        current_user: AuthenticatedUserDep,
     ) -> SearchResponse:
         """Rank embedded jobs by pgvector similarity (or recency / gain).
 
         Args:
-            http_request: Incoming request, forwarded to
-                ``get_authenticated_user`` so the PAT branch can reach
-                ``app.state.job_store`` when ``owner_username`` is set.
             request: The query, filters, sort, and paging parameters.
-            authorization: Bearer token, required only when ``owner_username``
-                is set so the mine corpus can include the user's private rows.
+            current_user: Authenticated caller.
 
         Returns:
             Ranked page plus the full matched-id set for explore-page dimming.
@@ -272,15 +254,11 @@ def create_dashboard_router(*, job_store: Any) -> APIRouter:
                 unauthenticated or targets a different user than the session.
         """
         sort = request.sort if request.sort in SEARCH_SORTS else SEARCH_SORT_RELEVANCE
-        owner_username = _resolve_owner_username(
-            http_request, request.owner_username, authorization
-        )
+        owner_username = _resolve_owner_username(request.owner_username, current_user)
         shared_with_username = (
             None
             if owner_username is not None
-            else _resolve_owner_username(
-                http_request, request.shared_with_username, authorization
-            )
+            else _resolve_owner_username(request.shared_with_username, current_user)
         )
         data = search_optimizations(
             job_store=job_store,
@@ -308,43 +286,48 @@ def create_dashboard_router(*, job_store: Any) -> APIRouter:
     @router.post(
         "/dashboard/search/log",
         status_code=204,
-        summary="Record an explicitly-committed public search query",
+        summary="Record an explicitly committed public-corpus query",
     )
-    def log_search_query(request: SearchLogRequest) -> None:
-        """Record one public query for trending on an explicit commit.
-
-        Fire-and-forget from the /explore UI (Enter or opening a result). The
-        gateway normalizes and best-effort writes the row; failures are
-        swallowed so logging never affects the user.
+    def log_search_query(
+        request: SearchLogRequest,
+        current_user: AuthenticatedUserDep,
+    ) -> None:
+        """Record a deliberate public-corpus search for local trend analysis.
 
         Args:
-            request: The committed query to record.
+            request: Committed query.
+            current_user: Authenticated caller.
         """
+        del current_user
         record_public_search_query(job_store, request.query)
 
     @router.get(
         "/dashboard/search/popular",
         response_model=PopularQueriesResponse,
         status_code=200,
-        summary="Trending public search queries",
+        summary="Popular authenticated public-corpus queries",
     )
-    def popular_searches() -> PopularQueriesResponse:
-        """Most-run public-corpus search queries over a recent window.
+    def popular_searches(current_user: AuthenticatedUserDep) -> PopularQueriesResponse:
+        """Return frequently committed searches within this deployment.
+
+        Args:
+            current_user: Authenticated caller.
 
         Returns:
-            A :class:`PopularQueriesResponse` ranked by occurrence count, most
-            popular first. Empty until the public corpus has been searched.
+            Popular queries ordered by occurrence count.
         """
+        del current_user
         rows = fetch_popular_queries(
-            job_store=job_store, limit=POPULAR_QUERIES_LIMIT_DEFAULT
+            job_store=job_store,
+            limit=POPULAR_QUERIES_LIMIT_DEFAULT,
         )
-        return PopularQueriesResponse(queries=[PopularQuery(**r) for r in rows])
+        return PopularQueriesResponse(queries=[PopularQuery(**row) for row in rows])
 
     return router
 
 
 def _resolve_owner_username(
-    request: Request, requested: str | None, authorization: str | None
+    requested: str | None, user: AuthenticatedUser
 ) -> str | None:
     """Verify a requested user-scope matches the authenticated session.
 
@@ -353,14 +336,11 @@ def _resolve_owner_username(
     own session, so the requested username must equal the authenticated user.
 
     Args:
-        request: Incoming request, forwarded to ``get_authenticated_user`` so
-            the PAT branch can reach ``app.state.job_store``.
-        requested: The requested scope username from the request body, or None
-            when the caller is searching the public corpus.
-        authorization: Raw ``Authorization`` header.
+        requested: The requested scope username from the request body.
+        user: Authenticated caller whose identity bounds the scope.
 
     Returns:
-        The trusted username to forward to the gateway, or None for public.
+        The trusted username to forward to the gateway, or ``None``.
 
     Raises:
         HTTPException: 401 when authentication is missing or invalid; 403 when
@@ -368,7 +348,6 @@ def _resolve_owner_username(
     """
     if requested is None:
         return None
-    user = get_authenticated_user(request, authorization=authorization)
     normalized = requested.strip().lower()
     if not normalized:
         return None

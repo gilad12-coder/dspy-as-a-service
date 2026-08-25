@@ -2,7 +2,7 @@
 
 ``POST /workflows/dry-run`` executes an *unoptimized* workflow graph once on
 a caller-supplied sample input so the canvas can verify wiring, signatures,
-and transforms before the user spends optimization credits. Node failures
+and transforms before a user starts a full optimization. Node failures
 are an expected, renderable outcome — they return 200 with the failing node
 id and the traces collected up to the failure, never a 5xx.
 
@@ -30,7 +30,7 @@ from dspy.streaming import StreamListener, StreamResponse
 from fastapi import APIRouter, Depends
 from starlette.responses import StreamingResponse
 
-from ...billing import (
+from ...byok import (
     ProviderKeyVault,
     resolve_byok_model_config,
 )
@@ -101,11 +101,11 @@ def _prepare_dry_run(
     model_settings = req.model_settings
     if model_settings.token_source == TOKEN_SOURCE_BYOK:
         if vault is None or username is None:
-            raise DomainError("billing.byok_missing_connection", status=400, provider="")
+            raise DomainError("byok.missing_connection", status=400, provider="")
         try:
             model_settings = resolve_byok_model_config(model_settings, username=username, vault=vault)
         except ValueError as exc:
-            raise DomainError("billing.byok_missing_connection", status=400, provider=str(exc)) from exc
+            raise DomainError("byok.missing_connection", status=400, provider=str(exc)) from exc
     lm = build_language_model(model_settings)
     return program, filtered_inputs, lm, model_settings.normalized_identifier()
 
@@ -226,9 +226,8 @@ def create_workflows_router(*, job_store=None) -> APIRouter:
         """Run one test execution of a workflow graph before submission.
 
         Deep-validates the graph, builds the composed program, and executes
-        it on the supplied inputs under the requested model. Billing follows
-        the same semantics as serve calls (the model config carries the
-        token source).
+        it on the supplied inputs under the requested model. Model credentials
+        follow the same organization-managed or BYOK semantics as serve calls.
 
         Args:
             req: The workflow spec, sample inputs, model config, and

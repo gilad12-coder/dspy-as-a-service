@@ -1,24 +1,20 @@
-"""Google-Drive-style sharing for saved tagger sessions.
+"""Named, authenticated sharing for saved tagger sessions.
 
 The tagging-session twin of :mod:`core.api.routers.dataset_share`. Owner-gated
 management endpoints plus the access-gated claim:
 
 * ``GET    /tagging-sessions/{id}/sharing`` — current sharing config (owner).
-* ``PUT    /tagging-sessions/{id}/sharing`` — set the general-access policy.
+* ``PUT    /tagging-sessions/{id}/sharing`` — mint or update a restricted link.
 * ``POST   /tagging-sessions/{id}/sharing/members`` — add/replace a member grant.
 * ``PATCH  /tagging-sessions/{id}/sharing/members/{username}`` — change a role.
 * ``DELETE /tagging-sessions/{id}/sharing/members/{username}`` — remove a grant.
 * ``POST   /tagging-sessions/{id}/sharing/transfer`` — reassign ownership to an
   existing member (the previous owner is demoted to an editor).
-* ``POST   /tagging-sessions/share/{token}/claim`` — redeem an ``anyone`` link,
-  recording a link membership so the session lists in the caller's chooser.
+* ``POST   /tagging-sessions/share/{token}/claim`` — resolve a restricted link.
 
-There is no composite token read: once a caller is a member (invited or via
-claim), the role-gated ``GET /tagging-sessions/{id}`` serves the session, so
-the claim page just redeems and redirects. Two sharing modes coexist per
-:mod:`core.api.tagging_session_access`: the active link's ``general_access``
-and ``general_role`` combine with per-user member grants; effective access is
-the highest the rules allow. The invite people-picker reuses the shared
+There is no composite token read: a named member uses the role-gated
+``GET /tagging-sessions/{id}``, and the claim page only resolves and redirects.
+The token itself grants nothing. The invite people-picker reuses the shared
 ``GET /users/search`` autocomplete.
 """
 
@@ -41,7 +37,6 @@ from ...storage.models import (
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..sharing_access import (
-    GENERAL_ACCESS_ANYONE,
     GENERAL_ACCESS_RESTRICTED,
     LINK_GRANT_MARKER,
     LINK_ROLES,
@@ -60,7 +55,7 @@ from ..tagging_session_access import (
 
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
 
-_GENERAL_ACCESS_VALUES = (GENERAL_ACCESS_RESTRICTED, GENERAL_ACCESS_ANYONE)
+_GENERAL_ACCESS_VALUES = (GENERAL_ACCESS_RESTRICTED,)
 _LINK_ROLE_VALUES = tuple(sorted(LINK_ROLES))
 
 
@@ -206,20 +201,12 @@ def create_tagging_session_share_router(*, job_store) -> APIRouter:
             session.add(link)
         return link
 
-    def _sync_link_memberships(
-        session: Session, session_id: str, link: TaggingSessionShareLinkModel
-    ) -> None:
-        """Reconcile link-derived memberships with the link's current policy.
-
-        Drive-style live propagation: an ``anyone`` link re-points every link
-        membership at its current tier; a ``restricted`` link (turning the link
-        off) deletes them, revoking access and dropping the session from those
-        users' choosers. Named invites are never touched. Caller commits.
+    def _delete_link_memberships(session: Session, session_id: str) -> None:
+        """Delete legacy link-derived memberships without touching named grants.
 
         Args:
             session: Open DB session.
             session_id: Tagger session whose link memberships are reconciled.
-            link: The just-updated active link row.
         """
         markers = session.scalars(
             select(TaggingSessionShareGrantModel).where(
@@ -227,12 +214,8 @@ def create_tagging_session_share_router(*, job_store) -> APIRouter:
                 TaggingSessionShareGrantModel.created_by == LINK_GRANT_MARKER,
             )
         )
-        if link.general_access == GENERAL_ACCESS_ANYONE and link.general_role in MEMBER_ROLES:
-            for grant in markers:
-                grant.role = link.general_role
-        else:
-            for grant in markers:
-                session.delete(grant)
+        for grant in markers:
+            session.delete(grant)
 
     @router.get(
         "/tagging-sessions/{session_id}/sharing",
@@ -262,18 +245,17 @@ def create_tagging_session_share_router(*, job_store) -> APIRouter:
     @router.put(
         "/tagging-sessions/{session_id}/sharing",
         response_model=TaggingSessionSharingState,
-        summary="Set the general-access policy (restricted vs anyone-with-link)",
+        summary="Mint or update a restricted named-share link",
     )
     def put_sharing(
         session_id: str,
         req: PutTaggingSessionSharingRequest,
         current_user: AuthenticatedUserDep,
     ) -> TaggingSessionSharingState:
-        """Set the link's general-access policy and tier, minting a link if needed.
+        """Mint a restricted link or update its compatibility metadata.
 
-        ``general_role`` is the tier an ``anyone`` link grants a signed-in
-        visitor (``viewer``/``editor``); omit it to leave the current tier
-        unchanged.
+        Only ``restricted`` is accepted. ``general_role`` never grants access
+        without a matching named member row.
 
         Args:
             session_id: Tagger session to update.
@@ -307,7 +289,7 @@ def create_tagging_session_share_router(*, job_store) -> APIRouter:
             link.general_access = req.general_access
             if req.general_role is not None:
                 link.general_role = req.general_role
-            _sync_link_memberships(session, session_id, link)
+            _delete_link_memberships(session, session_id)
             session.commit()
             return _sharing_state(session, session_id, owner)
 
@@ -519,19 +501,14 @@ def create_tagging_session_share_router(*, job_store) -> APIRouter:
     @router.post(
         "/tagging-sessions/share/{token}/claim",
         response_model=ClaimTaggingSessionResponse,
-        summary="Redeem a share link: record a link membership and return the session",
+        summary="Resolve a restricted session link for a named member",
     )
     def claim_shared_session(
         token: str, current_user: AuthenticatedUserDep
     ) -> ClaimTaggingSessionResponse:
-        """Redeem a share link, joining the caller to it, then point them at it.
+        """Resolve a restricted link for its owner, an admin, or a named member.
 
-        Opening an ``anyone`` link records a link membership for the signed-in
-        caller at the link's current tier, so the session lists in their
-        chooser and the normal session routes resolve them to that tier. The
-        membership tracks the link (not frozen): a later tier change or
-        restriction syncs or removes it. A ``restricted`` link grants nothing —
-        the caller must be the owner or a named invitee, else 404.
+        Opening the link never creates access or a membership row.
 
         Args:
             token: The public share token from the URL.
@@ -554,27 +531,6 @@ def create_tagging_session_share_router(*, job_store) -> APIRouter:
             session_id = link.session_id
             if session.get(TaggingSessionModel, session_id) is None:
                 raise DomainError("tagger.session.share.not_found", status=404)
-            if (
-                role != ShareRole.owner
-                and link.general_access == GENERAL_ACCESS_ANYONE
-                and link.general_role in MEMBER_ROLES
-            ):
-                username = current_user.username.strip().lower()
-                existing = get_grant(session, session_id, username)
-                if existing is None:
-                    session.add(
-                        TaggingSessionShareGrantModel(
-                            session_id=session_id,
-                            grantee_username=username,
-                            role=link.general_role,
-                            created_by=LINK_GRANT_MARKER,
-                            created_at=datetime.now(UTC),
-                        )
-                    )
-                    session.commit()
-                elif existing.created_by == LINK_GRANT_MARKER and existing.role != link.general_role:
-                    existing.role = link.general_role
-                    session.commit()
         return ClaimTaggingSessionResponse(session_id=session_id, role=str(role))
 
     return router

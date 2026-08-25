@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { CircleNotch, Globe, Lock, User, UserPlus, Users, X } from "@/shared/ui/icons";
+import { CircleNotch, User, UserPlus, Users, X } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -22,19 +22,15 @@ import {
   SelectValue,
 } from "@/shared/ui/primitives/select";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
-import { CopyButton } from "@/shared/ui/copy-button";
 import { SettingsRow } from "@/shared/ui/settings-row";
 import {
   addDatasetShareMember,
   getDatasetSharing,
-  putDatasetSharing,
   removeDatasetShareMember,
   searchUsers,
   transferDatasetOwnership,
   updateDatasetShareMember,
   type DatasetSharingState,
-  type GeneralAccess,
-  type LinkRole,
   type MemberRole,
   type ShareRole,
 } from "@/shared/lib/api";
@@ -74,7 +70,6 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
   const me = sessionIdentity(session);
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<DatasetSharingState | null>(null);
-  const [savingAccess, setSavingAccess] = useState(false);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
   const [transferring, setTransferring] = useState(false);
   // Split the confirm copy around the {name} token so the target username can
@@ -87,11 +82,6 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
 
   const isOwner = !!state?.owner && state.owner.toLowerCase() === me;
 
-  const shareUrl =
-    state?.token && typeof window !== "undefined"
-      ? `${window.location.origin}/datasets/share/${state.token}`
-      : null;
-
   const accessCount = state ? (state.owner ? 1 : 0) + state.members.length : 0;
 
   const handleOpenChange = (next: boolean) => {
@@ -100,34 +90,6 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
       getDatasetSharing(datasetId)
         .then(setState)
         .catch((err) => toast.error(err instanceof Error ? err.message : msg("share.error")));
-    }
-  };
-
-  const handleAccessChange = async (value: GeneralAccess) => {
-    setSavingAccess(true);
-    try {
-      setState(await putDatasetSharing(datasetId, { general_access: value }));
-      if (value !== "restricted") track(TelemetryEvent.ShareCreated, { kind: "dataset", mode: "link" });
-      toast.success(msg("share.access_updated"));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
-    } finally {
-      setSavingAccess(false);
-    }
-  };
-
-  // The tier an "anyone with the link" link grants signed-in visitors.
-  const handleLinkRoleChange = async (role: LinkRole) => {
-    setSavingAccess(true);
-    try {
-      setState(
-        await putDatasetSharing(datasetId, { general_access: "anyone", general_role: role }),
-      );
-      toast.success(msg("share.access_updated"));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
-    } finally {
-      setSavingAccess(false);
     }
   };
 
@@ -332,77 +294,6 @@ export function DatasetShareDialog({ datasetId }: { datasetId: string }) {
                   )}
                 </div>
 
-                <div className="shrink-0 space-y-3 border-t border-border/40 px-4 py-4 sm:px-6">
-                  <SettingsRow
-                    icon={state.general_access === "anyone" ? Globe : Lock}
-                    label={msg("share.general_access")}
-                    description={
-                      state.general_access === "restricted"
-                        ? msg("share.general_access.restricted_desc")
-                        : undefined
-                    }
-                  >
-                    <div className="flex w-[140px] flex-wrap items-center justify-end gap-2 sm:w-auto">
-                      <Select
-                        value={state.general_access}
-                        onValueChange={(next) => handleAccessChange(next as GeneralAccess)}
-                        disabled={savingAccess}
-                      >
-                        <SelectTrigger size="sm" className="!h-[44px] min-w-[140px] lg:!h-8">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="restricted">
-                            {msg("share.general_access.restricted")}
-                          </SelectItem>
-                          <SelectItem value="anyone">
-                            {msg("share.general_access.anyone")}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {state.general_access === "anyone" && (
-                        <Select
-                          value={state.general_role}
-                          onValueChange={(next) => handleLinkRoleChange(next as LinkRole)}
-                          disabled={savingAccess}
-                        >
-                          <SelectTrigger
-                            size="sm"
-                            className="!h-[44px] min-w-[104px] lg:!h-8"
-                            aria-label={msg("share.role.change_aria")}
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="viewer">{roleLabel("viewer")}</SelectItem>
-                            <SelectItem value="editor">{roleLabel("editor")}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                  </SettingsRow>
-
-                  {shareUrl && state.general_access === "anyone" && (
-                    <div
-                      dir="ltr"
-                      className="flex items-center gap-1 rounded-md border border-input bg-background ps-3 pe-1 transition-[color,box-shadow,border-color] duration-120 ease-[cubic-bezier(0.2,0.8,0.2,1)] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
-                    >
-                      <code className="min-w-0 flex-1 truncate py-2 font-mono text-[0.6875rem] text-muted-foreground">
-                        {shareUrl}
-                      </code>
-                      <div aria-hidden className="h-5 w-px shrink-0 bg-border/70" />
-                      <TooltipButton tooltip={msg("share.copy_link")}>
-                        <CopyButton
-                          text={shareUrl}
-                          ariaLabel={msg("share.copy_link")}
-                          onCopied={() => toast.success(msg("share.link_copied"))}
-                          onCopyError={() => toast.error(msg("clipboard.copy_failed"))}
-                          className="size-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0"
-                        />
-                      </TooltipButton>
-                    </div>
-                  )}
-                </div>
               </>
             )}
           </div>

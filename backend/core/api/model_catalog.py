@@ -1,12 +1,10 @@
-"""Dynamic model catalog powered by LiteLLM's ``model_cost`` registry.
+"""Build the central and user-scoped model catalogs.
 
 LiteLLM ships ``model_prices_and_context_window.json`` — ~2600 models with
 metadata (provider, mode, context window, ``supports_reasoning``, etc.).
-We filter to chat-mode models, de-duplicate dated variants, and mark which
-providers have active API keys via ``litellm.get_valid_models()``. The
-hosted (platform-billed) catalog is restricted to OpenRouter — the
-platform's sole LLM provider; the BYOK catalog still spans every provider
-a user may bring a key for.
+We filter to chat-mode models, de-duplicate dated variants, and expose models
+reachable through operator-configured providers or an internal OpenAI-
+compatible gateway. BYOK adds bundled shortcuts plus arbitrary user endpoints.
 """
 
 from __future__ import annotations
@@ -73,8 +71,7 @@ class CatalogModel(BaseModel):
         default=None,
         description=(
             "Provider input (prompt) cost per token in USD, from LiteLLM's price "
-            "table. None when unpriced; the client falls back to a default rate. "
-            "Drives the per-model pre-run credit estimate."
+            "table. None when unpriced. Kept as informational provider metadata."
         ),
     )
     output_cost_per_token: float | None = Field(
@@ -252,66 +249,55 @@ _PROVIDER_META: dict[str, tuple[str, list[_DataCenter]]] = {
 
 _ON_PREM_DC_LABEL = "On-prem gateway"
 
-# The platform brokers every LLM call through OpenRouter, so the hosted
-# catalog lists only its models — other providers' keys may exist for
-# non-LLM features (OpenAI powers Whisper dictation) without their chat
-# models leaking into the menu. The full ``_PROVIDER_META`` table stays:
-# the BYOK catalog still needs the other providers' labels.
-_PLATFORM_PROVIDERS: frozenset[str] = frozenset({"openrouter"})
+# Every provider remains dormant unless its key or internal endpoint is
+# configured. This lets operators choose a central provider without rebuilding.
+_PLATFORM_PROVIDERS: frozenset[str] = frozenset(_PROVIDER_META)
 
 _DATE_SUFFIX_RE = re.compile(r"-\d{4}-\d{2}-\d{2}$")
 
 # LiteLLM provider prefixes offered for bring-your-own-key. The BYOK catalog
 # lists these providers' registry models regardless of platform API keys, since
 # a BYOK run authenticates with the user's own key. Sourced from the canonical
-# ``core.provider_registry`` — a stdlib-only leaf, so this stays clear of the
-# Stripe import chain ``core.billing`` pulls at import time — which the vault
-# shares, so the offered prefixes and the savable slugs can never drift apart.
+# ``core.provider_registry`` — a stdlib-only leaf also shared by the vault.
 _BYOK_CATALOG_PROVIDERS: frozenset[str] = BYOK_CATALOG_PREFIXES
 
 
 def _on_prem_base_url() -> str | None:
     """Return the configured internal OpenAI-compatible gateway URL, if any.
 
-    Prefers ``code_agent_base_url`` (the submit-wizard agent gateway) and
-    falls back to ``embeddings_base_url`` since on-prem deployments commonly
-    point both at the same internal gateway family.
+    Uses the deployment-wide OpenAI-compatible base URL.
 
     Returns:
-        The configured internal base URL, or ``None`` when neither
-        ``CODE_AGENT_BASE_URL`` nor ``EMBEDDINGS_BASE_URL`` is set.
+        The configured internal base URL, or ``None`` when unset.
     """
-    return settings.code_agent_base_url.strip() or settings.embeddings_base_url.strip() or None
+    return (settings.openai_api_base or "").strip() or None
 
 
 def _provider_data_centers(provider_slug: str) -> list[_DataCenter]:
     """Return the data centers for ``provider_slug`` including the on-prem one.
 
-    The configured on-prem gateway is OpenAI-compatible, so it is surfaced as
-    an extra data center on the ``openai`` provider (its native ``/models``
-    shape matches). All other providers return their static endpoint list
-    unchanged.
+    The configured on-prem gateway is OpenAI-compatible, so it replaces the
+    public OpenAI endpoint. This prevents an internal key from being sent to a
+    public host during catalog discovery. Other providers keep their endpoints.
 
     Args:
         provider_slug: LiteLLM provider key (e.g. ``"openai"``).
 
     Returns:
-        The provider's data centers, with the on-prem gateway appended when
-        configured and applicable to this provider.
+        The provider's configured data centers.
     """
-    centers = list(_PROVIDER_META[provider_slug][1])
     if provider_slug == "openai":
         on_prem = _on_prem_base_url()
         if on_prem:
-            centers.append(
+            return [
                 _DataCenter(
                     label=_ON_PREM_DC_LABEL,
                     base_url=on_prem,
                     models_url=f"{on_prem.rstrip('/')}/models",
                     env_var="OPENAI_API_KEY",
                 )
-            )
-    return centers
+            ]
+    return list(_PROVIDER_META[provider_slug][1])
 
 
 def _make_label(model_id: str) -> str:
@@ -880,8 +866,8 @@ def get_byok_catalog_cached() -> ModelCatalogResponse:
 def require_known_model(model: str | None) -> None:
     """Reject a model id that is not in the curated catalog.
 
-    Guards every endpoint that lets the client pick the LM for a
-    platform-billed call: only catalog models may spend platform credits.
+    Guards every endpoint that lets the client pick an organization-managed
+    model so arbitrary endpoints cannot bypass the configured catalog.
 
     Args:
         model: LiteLLM model id; empty/None passes (the server default runs).

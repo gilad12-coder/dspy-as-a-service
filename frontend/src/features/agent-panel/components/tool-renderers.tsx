@@ -12,7 +12,6 @@ import { SearchResultsCard } from "./SearchResultsCard";
 import { SubmitSummaryCard } from "./SubmitSummaryCard";
 import { TaggingSessionsCard } from "./TaggingSessionsCard";
 import { TestResultsCard } from "./TestResultsCard";
-import { WalletCard } from "./WalletCard";
 
 export interface ToolRenderer {
   card?: (call: AgentToolCall) => React.ReactNode;
@@ -360,9 +359,6 @@ const RENDERERS: Record<string, ToolRenderer> = {
     card: (call) => <TestResultsCard call={call} />,
   },
 
-  get_wallet_for_agent: {
-    card: (call) => <WalletCard call={call} />,
-  },
 
   list_tagging_sessions_for_agent: {
     card: (call) => <TaggingSessionsCard call={call} />,

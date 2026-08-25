@@ -91,32 +91,24 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
         </div>
         <div className="space-y-3">
           <Label>{msg("submit.basics.privacy.label")}</Label>
-          <div className="relative inline-flex w-full rounded-lg bg-muted p-1 gap-1">
+          <div className="relative inline-flex w-full gap-1 rounded-lg bg-muted p-1">
             <div
-              className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-100 ease-out"
+              className="absolute inset-y-1 w-[calc(50%-6px)] rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-100 ease-out"
               style={{ insetInlineStart: isPrivate ? 4 : "calc(50% + 2px)" }}
             />
             {(
               [
-                [
-                  true,
-                  msg("submit.basics.privacy.private"),
-                  msg("submit.basics.privacy.private_desc"),
-                ],
-                [
-                  false,
-                  msg("submit.basics.privacy.public"),
-                  msg("submit.basics.privacy.public_desc"),
-                ],
+                [true, msg("submit.basics.privacy.private"), msg("submit.basics.privacy.private_desc")],
+                [false, msg("submit.basics.privacy.public"), msg("submit.basics.privacy.public_desc")],
               ] as const
-            ).map(([val, label, desc]) => (
+            ).map(([value, label, description]) => (
               <button
-                key={String(val)}
+                key={String(value)}
                 type="button"
-                onClick={() => setIsPrivate(val)}
+                onClick={() => setIsPrivate(value)}
                 className={cn(
                   "relative z-10 flex-1 cursor-pointer rounded-md px-2 py-2.5 text-center transition-colors duration-200 sm:px-4",
-                  isPrivate === val
+                  isPrivate === value
                     ? "text-foreground"
                     : "text-foreground/60 hover:text-foreground",
                 )}
@@ -124,11 +116,11 @@ export function BasicsStep({ w }: { w: SubmitWizardContext }) {
                 <span className="text-sm font-medium">{label}</span>
                 <span
                   className={cn(
-                    "block text-[0.6875rem] mt-0.5 transition-colors duration-200",
-                    isPrivate === val ? "text-muted-foreground" : "text-foreground/40",
+                    "mt-0.5 block text-[0.6875rem] transition-colors duration-200",
+                    isPrivate === value ? "text-muted-foreground" : "text-foreground/40",
                   )}
                 >
-                  {desc}
+                  {description}
                 </span>
               </button>
             ))}
