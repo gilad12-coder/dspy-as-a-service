@@ -140,31 +140,36 @@ export function AdminAccountsSection() {
           {accounts.map((account) => (
             <div
               key={account.username}
-              className="flex flex-col gap-2.5 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+              className="flex flex-col gap-3 px-3.5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
             >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-foreground">
-                  <bdi dir="ltr">{account.username}</bdi>
-                </p>
-                <p className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground/80">
-                  {account.display_name && account.display_name !== account.username ? (
-                    <>
-                      {account.display_name}
-                      <span className="px-1" aria-hidden="true">
-                        ·
-                      </span>
-                    </>
-                  ) : null}
-                  {account.adfs_seen
-                    ? account.local_enabled
-                      ? msg("settings.admin.accounts.source_adfs_local")
-                      : msg("settings.admin.accounts.source_adfs")
-                    : msg("settings.admin.accounts.source_local")}
-                </p>
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted/45 text-muted-foreground">
+                  <User className="size-4" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    <bdi dir="ltr">{account.username}</bdi>
+                  </p>
+                  <p className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground/80">
+                    {account.display_name && account.display_name !== account.username ? (
+                      <>
+                        {account.display_name}
+                        <span className="px-1" aria-hidden="true">
+                          ·
+                        </span>
+                      </>
+                    ) : null}
+                    {account.adfs_seen
+                      ? account.local_enabled
+                        ? msg("settings.admin.accounts.source_adfs_local")
+                        : msg("settings.admin.accounts.source_adfs")
+                      : msg("settings.admin.accounts.source_local")}
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center justify-between gap-1.5 sm:justify-end">
-                <label className="flex min-h-[44px] items-center gap-2 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50 sm:min-h-9">
-                  {msg("settings.admin.accounts.admin")}
+              <div className="flex items-center gap-1.5 border-t border-border/35 pt-2.5 sm:border-t-0 sm:pt-0">
+                <label className="flex min-h-[44px] flex-1 items-center justify-between gap-3 rounded-lg bg-muted/35 px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted/55 sm:min-h-10 sm:flex-none">
+                  {msg("settings.admin.accounts.admin_access")}
                   <Switch
                     checked={account.is_admin}
                     onCheckedChange={(next) => void setRole(account, next)}
@@ -173,11 +178,11 @@ export function AdminAccountsSection() {
                   />
                 </label>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="icon-sm"
                   onClick={() => void removeAccount(account)}
                   disabled={busyUsername !== null}
-                  className="size-[44px] text-destructive hover:text-destructive sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
+                  className="size-[44px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive sm:size-9 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                   aria-label={`${msg("settings.admin.accounts.delete")}: ${account.username}`}
                 >
                   {busyUsername === account.username ? (

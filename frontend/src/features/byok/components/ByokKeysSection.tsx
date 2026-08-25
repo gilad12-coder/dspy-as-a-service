@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, CircleNotch, Key, PencilSimple, Trash, X } from "@/shared/ui/icons";
+import { Check, CircleNotch, Key, PencilSimple, Plus, Trash, X } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
@@ -10,8 +10,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { useByokKeys } from "../providers/byok-provider";
-import { BYOK_PROVIDERS, type ByokProviderInfo, type KeyStatus } from "../lib/byok";
-import { ProviderLogo } from "@/shared/ui/provider-logo";
+import { type KeyStatus, type ProviderKey } from "../lib/byok";
 import { ByokJsonImport } from "./ByokJsonImport";
 
 /** The status pill next to a saved key. Gold for verified, calm muted/destructive otherwise. */
@@ -38,13 +37,12 @@ function StatusPill({ status }: { status: KeyStatus }) {
   );
 }
 
-function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
-  const { keyFor, saveKey, verifyKey, removeKey } = useByokKeys();
+function ConnectionRow({ connection }: { connection: ProviderKey }) {
+  const { saveKey, verifyKey, removeKey } = useByokKeys();
   const { locale } = useLocale();
-  const saved = keyFor(provider.slug);
-  const addedAt = saved
-    ? new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(saved.addedAt))
-    : null;
+  const addedAt = new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
+    new Date(connection.addedAt),
+  );
 
   const [editing, setEditing] = React.useState(false);
   const [secret, setSecret] = React.useState("");
@@ -54,7 +52,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
 
   const startEditing = () => {
     setSecret("");
-    setBaseUrl(saved?.apiBase ?? "");
+    setBaseUrl(connection.apiBase ?? "");
     setEditing(true);
   };
 
@@ -63,7 +61,11 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
     if (!trimmed) return;
     setSaving(true);
     try {
-      const status = await saveKey(provider.slug, trimmed, { apiBase: baseUrl.trim() || null });
+      const status = await saveKey(connection.provider, trimmed, {
+        apiBase: baseUrl.trim() || null,
+        label: connection.label ?? null,
+        params: connection.params,
+      });
       setSecret("");
       setBaseUrl("");
       setEditing(false);
@@ -84,7 +86,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
   const handleVerify = async () => {
     setVerifying(true);
     try {
-      const status = await verifyKey(provider.slug);
+      const status = await verifyKey(connection.provider);
       if (status === "verified") {
         toast.success(msg("settings.keys.verified_toast"));
       } else if (status === "invalid") {
@@ -101,7 +103,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
 
   const handleRemove = async () => {
     try {
-      await removeKey(provider.slug);
+      await removeKey(connection.provider);
       toast.success(msg("settings.keys.removed_toast"));
     } catch {
       toast.error(msg("settings.keys.remove_failed_toast"));
@@ -112,41 +114,35 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
     <div className="rounded-lg border border-border/50 px-3 py-2.5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <ProviderLogo slug={provider.slug} size={28} />
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground">
+            <Key className="size-4" aria-hidden="true" />
+          </span>
           <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-sm font-medium text-foreground">{provider.label}</span>
-            {saved && (
-              <span className="flex flex-wrap items-center gap-2">
-                <code dir="ltr" className="font-mono text-xs text-muted-foreground">
-                  ••••&nbsp;{saved.last4}
-                </code>
-                <StatusPill status={saved.status} />
-              </span>
-            )}
-            {saved?.apiBase && (
+            <span className="text-sm font-medium text-foreground">
+              {connection.label?.trim() || connection.provider}
+            </span>
+            <span className="flex flex-wrap items-center gap-2">
+              <code dir="ltr" className="font-mono text-xs text-muted-foreground">
+                {formatMsg("settings.keys.connection_mask", {
+                  provider: connection.provider,
+                  last4: connection.last4,
+                })}
+              </code>
+              <StatusPill status={connection.status} />
+            </span>
+            {connection.apiBase && (
               <code
                 dir="ltr"
                 className="truncate font-mono text-[0.6875rem] text-muted-foreground/70"
               >
-                {saved.apiBase}
+                {connection.apiBase}
               </code>
             )}
           </div>
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-          {!saved && !editing && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={startEditing}
-              className="min-h-[44px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
-            >
-              <Key className="size-3.5" />
-              {msg("settings.keys.add")}
-            </Button>
-          )}
-          {saved && saved.status !== "verified" && !editing && (
+          {connection.status !== "verified" && !editing && (
             <Button
               variant="outline"
               size="sm"
@@ -162,7 +158,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
               {verifying ? msg("settings.keys.verifying") : msg("settings.keys.verify")}
             </Button>
           )}
-          {saved && !editing && (
+          {!editing && (
             <>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -197,9 +193,9 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
         </div>
       </div>
 
-      {saved && !editing && (
+      {!editing && (
         <p className="mt-1.5 text-[0.6875rem] text-muted-foreground/70">
-          {formatMsg("settings.keys.added", { date: addedAt ?? "" })}
+          {formatMsg("settings.keys.added", { date: addedAt })}
         </p>
       )}
 
@@ -211,7 +207,7 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
               type="password"
               autoFocus
               autoComplete="new-password"
-              placeholder={provider.placeholder}
+              placeholder={msg("settings.keys.secret_placeholder")}
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
               onKeyDown={(e) => {
@@ -264,40 +260,193 @@ function ProviderKeyRow({ provider }: { provider: ByokProviderInfo }) {
   );
 }
 
-/**
- * BYOK provider-key manager — lives in the Settings "Providers" tab.
- *
- * Each major provider gets a row: add a key, verify it, replace it, or remove
- * it. The secret is entered once and never shown again (only its masked tail),
- * and the privacy line states the encrypt-at-rest guarantee up front. This is
- * the in-app home referenced by the model picker's BYOK mode.
- */
-export function ByokKeysSection() {
-  const { keys } = useByokKeys();
-  const [pendingProvider, setPendingProvider] = React.useState("");
-  const [additionalProviders, setAdditionalProviders] = React.useState<ByokProviderInfo[]>([]);
-  const providers = React.useMemo(() => {
-    const entries = [...BYOK_PROVIDERS, ...additionalProviders];
-    for (const key of keys) {
-      if (entries.some((entry) => entry.slug === key.provider)) continue;
-      entries.push({
-        slug: key.provider,
-        label: key.label?.trim() || key.provider,
-        placeholder: msg("settings.keys.secret_placeholder"),
-      });
-    }
-    return entries;
-  }, [additionalProviders, keys]);
+function NewConnectionForm({ existingProviders }: { existingProviders: Set<string> }) {
+  const { saveKey } = useByokKeys();
+  const providerId = React.useId();
+  const labelId = React.useId();
+  const secretId = React.useId();
+  const baseUrlId = React.useId();
+  const [open, setOpen] = React.useState(false);
+  const [provider, setProvider] = React.useState("");
+  const [label, setLabel] = React.useState("");
+  const [secret, setSecret] = React.useState("");
+  const [baseUrl, setBaseUrl] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
 
-  const addProvider = () => {
-    const slug = pendingProvider.trim().toLocaleLowerCase();
-    if (!slug || providers.some((provider) => provider.slug === slug)) return;
-    setAdditionalProviders((current) => [
-      ...current,
-      { slug, label: slug, placeholder: msg("settings.keys.secret_placeholder") },
-    ]);
-    setPendingProvider("");
+  const normalizedProvider = provider.trim().toLocaleLowerCase();
+  const duplicate = existingProviders.has(normalizedProvider);
+
+  const close = () => {
+    setOpen(false);
+    setProvider("");
+    setLabel("");
+    setSecret("");
+    setBaseUrl("");
   };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!normalizedProvider || !secret.trim() || duplicate) return;
+    setSaving(true);
+    try {
+      const status = await saveKey(normalizedProvider, secret.trim(), {
+        label: label.trim() || null,
+        apiBase: baseUrl.trim() || null,
+      });
+      close();
+      if (status === "invalid") {
+        toast.error(msg("settings.keys.invalid_toast"));
+      } else {
+        toast.success(msg("settings.keys.saved_toast"));
+      }
+    } catch {
+      toast.error(msg("settings.keys.save_failed_toast"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        className="min-h-[44px] w-full sm:min-h-9"
+        onClick={() => setOpen(true)}
+      >
+        <Plus className="size-4" />
+        {msg("settings.keys.add_provider")}
+      </Button>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-xl border border-border/60 bg-muted/15 p-3.5 animate-in fade-in-0 slide-in-from-top-1"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-semibold text-foreground">
+            {msg("settings.keys.new_connection")}
+          </h4>
+          <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">
+            {msg("settings.keys.new_connection_hint")}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={close}
+          className="size-[44px] sm:size-8"
+          aria-label={msg("settings.keys.cancel")}
+        >
+          <X className="size-3.5" />
+        </Button>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium" htmlFor={providerId}>
+          {msg("settings.keys.connection_id_label")}
+          <Input
+            id={providerId}
+            dir="ltr"
+            autoFocus
+            required
+            maxLength={32}
+            value={provider}
+            onChange={(event) => setProvider(event.target.value)}
+            placeholder={msg("settings.keys.provider_placeholder")}
+            aria-invalid={duplicate}
+            className="h-[44px] sm:h-9"
+          />
+          {duplicate && (
+            <span className="text-[0.6875rem] font-normal text-destructive">
+              {msg("settings.keys.duplicate")}
+            </span>
+          )}
+        </label>
+        <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium" htmlFor={labelId}>
+          {msg("settings.keys.connection_label_label")}
+          <Input
+            id={labelId}
+            maxLength={120}
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder={msg("settings.keys.connection_label_placeholder")}
+            className="h-[44px] sm:h-9"
+          />
+        </label>
+        <label
+          className="flex min-w-0 flex-col gap-1.5 text-xs font-medium sm:col-span-2"
+          htmlFor={secretId}
+        >
+          {msg("settings.keys.secret_label")}
+          <Input
+            id={secretId}
+            dir="ltr"
+            type="password"
+            required
+            autoComplete="new-password"
+            value={secret}
+            onChange={(event) => setSecret(event.target.value)}
+            placeholder={msg("settings.keys.secret_placeholder")}
+            className="h-[44px] sm:h-9"
+          />
+        </label>
+        <label
+          className="flex min-w-0 flex-col gap-1.5 text-xs font-medium sm:col-span-2"
+          htmlFor={baseUrlId}
+        >
+          {msg("settings.keys.base_url_label")}
+          <Input
+            id={baseUrlId}
+            dir="ltr"
+            type="url"
+            maxLength={255}
+            autoComplete="off"
+            value={baseUrl}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            placeholder={msg("settings.keys.base_url_placeholder")}
+            className="h-[44px] sm:h-9"
+          />
+        </label>
+      </div>
+
+      <p className="mt-2 text-[0.6875rem] text-muted-foreground/75">
+        {msg("settings.keys.base_url_hint")}
+      </p>
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="min-h-[44px] sm:min-h-8"
+          onClick={close}
+        >
+          {msg("settings.keys.cancel")}
+        </Button>
+        <Button
+          type="submit"
+          size="sm"
+          className="min-h-[44px] sm:min-h-8"
+          disabled={!normalizedProvider || !secret.trim() || duplicate || saving}
+        >
+          {saving ? <CircleNotch className="size-3.5 animate-spin" /> : msg("settings.keys.save")}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Render provider-agnostic BYOK connection management. */
+export function ByokKeysSection() {
+  const { keys, loading } = useByokKeys();
+  const existingProviders = React.useMemo(
+    () => new Set(keys.map((key) => key.provider)),
+    [keys],
+  );
 
   return (
     <div className="space-y-3">
@@ -311,35 +460,26 @@ export function ByokKeysSection() {
         <p className="text-xs text-muted-foreground">{msg("settings.keys.description")}</p>
       </div>
 
-      <div className="flex flex-col gap-2">
-        {providers.map((p) => (
-          <ProviderKeyRow key={p.slug} provider={p} />
-        ))}
-      </div>
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <CircleNotch className="size-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : keys.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {keys.map((connection) => (
+            <ConnectionRow key={connection.provider} connection={connection} />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border/60 px-4 py-6 text-center">
+          <p className="text-sm font-medium text-foreground">{msg("settings.keys.empty_title")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {msg("settings.keys.empty_description")}
+          </p>
+        </div>
+      )}
 
-      <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border/60 p-3 sm:flex-row">
-        <Input
-          dir="ltr"
-          value={pendingProvider}
-          onChange={(event) => setPendingProvider(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") addProvider();
-          }}
-          placeholder={msg("settings.keys.provider_placeholder")}
-          className="h-[44px] flex-1 sm:h-8"
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={addProvider}
-          disabled={!pendingProvider.trim()}
-          className="min-h-[44px] sm:min-h-0"
-        >
-          {msg("settings.keys.add_provider")}
-        </Button>
-      </div>
-
+      <NewConnectionForm existingProviders={existingProviders} />
       <ByokJsonImport />
     </div>
   );

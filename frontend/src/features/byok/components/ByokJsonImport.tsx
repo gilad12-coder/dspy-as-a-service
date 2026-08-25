@@ -7,8 +7,6 @@ import { msg, formatMsg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";
 import { useByokKeys } from "../providers/byok-provider";
-import { BYOK_PROVIDERS } from "../lib/byok";
-import { ProviderLogo } from "@/shared/ui/provider-logo";
 
 /** One connection entry parsed and validated from the pasted JSON. */
 interface ParsedConnection {
@@ -27,30 +25,22 @@ interface Validation {
   warnings: string[];
 }
 
-const LABEL_FOR: Record<string, string> = Object.fromEntries(
-  BYOK_PROVIDERS.map((p) => [p.slug, p.label]),
-);
-
-// A worked example users can drop in and adapt. Provider names, endpoints and
-// params are intentionally passed through without a product-level allowlist.
-const EXAMPLE = JSON.stringify(
-  [
-    { provider: "openai", api_key: "sk-…", label: "My OpenAI key" },
-    { provider: "groq", api_key: "gsk_…", label: "Groq personal" },
-    {
-      provider: "custom",
-      api_base: "https://api.example.com/v1",
-      api_key: "abc123",
-      label: "Local gateway",
-    },
-  ],
-  null,
-  2,
-);
-
-/** A provider label for display — the offered brand name, or the raw slug for custom/unknown. */
-function providerLabel(slug: string): string {
-  return LABEL_FOR[slug] ?? slug;
+// A worked example users can drop in and adapt. Connection identifiers,
+// endpoints and params pass through without a product-level allowlist.
+function exampleJson(): string {
+  return JSON.stringify(
+    [
+      {
+        provider: "internal-gateway",
+        api_base: "https://models.example.internal/v1",
+        api_key: "replace-with-secret",
+        label: msg("settings.keys.json_example_label"),
+        params: { timeout: 60 },
+      },
+    ],
+    null,
+    2,
+  );
 }
 
 /** Show a key's head and mask the rest, so a pasted secret is recognizable but never exposed. */
@@ -126,14 +116,12 @@ function validate(raw: string, existing: Set<string>): Validation {
     if (provider) {
       if (seen.has(provider)) {
         warnings.push(
-          formatMsg("settings.keys.json_warn_dupe", { n, provider: providerLabel(provider) }),
+          formatMsg("settings.keys.json_warn_dupe", { n, provider }),
         );
       }
       seen.add(provider);
       if (itemOk && existing.has(provider)) {
-        warnings.push(
-          formatMsg("settings.keys.json_warn_replace", { provider: providerLabel(provider) }),
-        );
+        warnings.push(formatMsg("settings.keys.json_warn_replace", { provider }));
       }
     }
 
@@ -157,12 +145,12 @@ function validate(raw: string, existing: Set<string>): Validation {
 /**
  * Advanced JSON importer for BYOK connections — a power-user escape hatch.
  *
- * Collapsed by default under the provider rows. Expanded, it's a small import
+ * Collapsed by default under the saved connections. Expanded, it's a small import
  * wizard: paste a JSON array, optionally pull in an example or pretty-print it,
  * then Validate to see a per-item error/warning pass and a masked preview table
  * before committing. Import round-trips every row through the same vault
  * `saveKey` as the manual form (encrypt-at-rest + verify on entry), so a saved
- * connection lands in its provider row exactly as a hand-typed one would — the
+ * connection lands in the saved-connection list exactly as a hand-typed one would — the
  * bulk path feeds the front door, it never bypasses it.
  */
 export function ByokJsonImport() {
@@ -179,7 +167,7 @@ export function ByokJsonImport() {
   );
 
   const handleUseExample = () => {
-    setText(EXAMPLE);
+    setText(exampleJson());
     setShowResults(false);
   };
 
@@ -257,7 +245,9 @@ export function ByokJsonImport() {
             spellCheck={false}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={'[\n  { "provider": "openai", "api_key": "sk-…" }\n]'}
+            placeholder={
+              '[\n  { "provider": "internal-gateway", "api_key": "…", "api_base": "https://…/v1" }\n]'
+            }
             className="h-36 w-full resize-y rounded-md border border-border/50 bg-background px-2.5 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
 
@@ -342,12 +332,12 @@ export function ByokJsonImport() {
                         key={i}
                         className="grid min-w-[480px] grid-cols-[1.4fr_1.3fr_1.5fr_0.9fr] items-center gap-2 px-3 py-2 text-xs [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border/40"
                       >
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <ProviderLogo slug={c.provider} size={18} />
-                          <span className="truncate text-foreground">
-                            {providerLabel(c.provider)}
-                          </span>
-                        </span>
+                        <code
+                          className="truncate font-mono text-[0.6875rem] text-foreground"
+                          dir="ltr"
+                        >
+                          {c.provider}
+                        </code>
                         <span className="truncate text-muted-foreground" dir="auto">
                           {c.label || "—"}
                         </span>

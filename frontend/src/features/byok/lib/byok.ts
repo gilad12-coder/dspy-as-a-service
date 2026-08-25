@@ -14,18 +14,11 @@
 /** Whether a saved key has been checked against its provider. */
 export type KeyStatus = "verified" | "unverified" | "invalid";
 
-/** A provider a user can bring their own key for. `placeholder` hints the key shape. */
-export interface ByokProviderInfo {
-  slug: string;
-  label: string;
-  placeholder: string;
-}
-
 /** A saved provider connection as the UI sees it — never the secret, only its tail + state. */
 export interface ProviderKey {
   /** Stable handle for the connection. */
   id: string;
-  /** Matches a `ByokProviderInfo.slug`. */
+  /** Arbitrary connection identifier supplied by the user. */
   provider: string;
   /** Optional user-facing name for the connection. */
   label?: string | null;
@@ -39,29 +32,6 @@ export interface ProviderKey {
   /** ISO-8601 instant the key was saved. */
   addedAt: string;
 }
-
-/**
- * Convenient provider shortcuts. Saved arbitrary providers are appended at
- * runtime, and the JSON importer accepts any provider slug and parameter map.
- */
-export const BYOK_PROVIDERS: ByokProviderInfo[] = [
-  { slug: "openai", label: "OpenAI", placeholder: "sk-…" },
-  { slug: "anthropic", label: "Anthropic", placeholder: "sk-ant-…" },
-  { slug: "google", label: "Google Gemini", placeholder: "AIza…" },
-  { slug: "groq", label: "Groq", placeholder: "gsk_…" },
-  { slug: "deepseek", label: "DeepSeek", placeholder: "sk-…" },
-  { slug: "xai", label: "xAI", placeholder: "xai-…" },
-  { slug: "together", label: "Together AI", placeholder: "…" },
-  { slug: "openrouter", label: "OpenRouter", placeholder: "sk-or-…" },
-  { slug: "cerebras", label: "Cerebras", placeholder: "csk-…" },
-  { slug: "fireworks", label: "Fireworks AI", placeholder: "fw_…" },
-  { slug: "cohere", label: "Cohere", placeholder: "…" },
-  { slug: "mistral", label: "Mistral", placeholder: "…" },
-  { slug: "moonshot", label: "Moonshot", placeholder: "…" },
-  { slug: "volcengine", label: "Volcengine", placeholder: "…" },
-  { slug: "novita", label: "Novita AI", placeholder: "…" },
-  { slug: "ollama", label: "Ollama", placeholder: "local" },
-];
 
 /**
  * Maps a connection slug to the LiteLLM provider prefix its models carry.

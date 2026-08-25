@@ -1917,6 +1917,7 @@ export type MessageKey =
   | "settings.account.signed_out"
   | "settings.account.username.label"
   | "settings.admin.accounts.admin"
+  | "settings.admin.accounts.admin_access"
   | "settings.admin.accounts.create"
   | "settings.admin.accounts.created"
   | "settings.admin.accounts.delete"
@@ -2013,9 +2014,17 @@ export type MessageKey =
   | "settings.keys.add_provider"
   | "settings.keys.added"
   | "settings.keys.base_url_hint"
+  | "settings.keys.base_url_label"
   | "settings.keys.base_url_placeholder"
   | "settings.keys.cancel"
+  | "settings.keys.connection_id_label"
+  | "settings.keys.connection_label_label"
+  | "settings.keys.connection_label_placeholder"
+  | "settings.keys.connection_mask"
   | "settings.keys.description"
+  | "settings.keys.duplicate"
+  | "settings.keys.empty_description"
+  | "settings.keys.empty_title"
   | "settings.keys.invalid"
   | "settings.keys.invalid_toast"
   | "settings.keys.json_advanced"
@@ -2031,6 +2040,7 @@ export type MessageKey =
   | "settings.keys.json_err_parse"
   | "settings.keys.json_err_provider"
   | "settings.keys.json_errors_heading"
+  | "settings.keys.json_example_label"
   | "settings.keys.json_format"
   | "settings.keys.json_import_count"
   | "settings.keys.json_imported"
@@ -2045,6 +2055,8 @@ export type MessageKey =
   | "settings.keys.json_validate"
   | "settings.keys.json_warn_dupe"
   | "settings.keys.json_warn_replace"
+  | "settings.keys.new_connection"
+  | "settings.keys.new_connection_hint"
   | "settings.keys.provider_placeholder"
   | "settings.keys.remove"
   | "settings.keys.remove_failed_toast"
@@ -2053,6 +2065,7 @@ export type MessageKey =
   | "settings.keys.save"
   | "settings.keys.save_failed_toast"
   | "settings.keys.saved_toast"
+  | "settings.keys.secret_label"
   | "settings.keys.secret_placeholder"
   | "settings.keys.title"
   | "settings.keys.unverified"
@@ -4759,6 +4772,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.account.signed_out": "לא מחובר",
   "settings.account.username.label": "שם משתמש",
   "settings.admin.accounts.admin": "מנהל/ת",
+  "settings.admin.accounts.admin_access": "הרשאת מנהל/ת",
   "settings.admin.accounts.create": "יצירת חשבון",
   "settings.admin.accounts.created": "החשבון המקומי נוצר",
   "settings.admin.accounts.delete": "מחיקת חשבון",
@@ -4852,12 +4866,20 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.group.system": "מערכת",
   "settings.group.workflows": "תהליכי עבודה",
   "settings.keys.add": "הוספת מפתח",
-  "settings.keys.add_provider": "הוספת ספק",
+  "settings.keys.add_provider": "הוספת חיבור BYOK",
   "settings.keys.added": "נוסף ב-{date}",
-  "settings.keys.base_url_hint": "הפנה/הפני את המפתח לנקודת קצה תואמת-OpenAI מותאמת. השאר/השאירי ריק לברירת המחדל של הספק.",
-  "settings.keys.base_url_placeholder": "כתובת בסיס מותאמת (רשות)",
+  "settings.keys.base_url_hint": "אפשר להפנות את החיבור לכל כתובת API תואמת. השאירו ריק כאשר המתאם משתמש בכתובת ברירת המחדל שלו.",
+  "settings.keys.base_url_label": "כתובת API (רשות)",
+  "settings.keys.base_url_placeholder": "https://models.example.internal/v1",
   "settings.keys.cancel": "ביטול",
-  "settings.keys.description": "שמירת חיבורי ספק מוצפנים לשימוש במודלים עם המפתחות שלך. שמות ספק, נקודות קצה ופרמטרים אינם מוגבלים על ידי Skynet.",
+  "settings.keys.connection_id_label": "מזהה חיבור",
+  "settings.keys.connection_label_label": "שם לתצוגה (רשות)",
+  "settings.keys.connection_label_placeholder": "לדוגמה שער המודלים הארגוני",
+  "settings.keys.connection_mask": "{provider} · •••• {last4}",
+  "settings.keys.description": "הוסיפו מפתח וחיבור API משלכם. הסוד נשמר מוצפן, ללא קטלוג ספקים או רשימת חיבורים מוגבלת.",
+  "settings.keys.duplicate": "כבר קיים חיבור עם המזהה הזה.",
+  "settings.keys.empty_description": "הוסיפו חיבור אחד או ייבאו סכימה ב-JSON.",
+  "settings.keys.empty_title": "עדיין לא הוגדרו חיבורי BYOK",
   "settings.keys.invalid": "לא תקין",
   "settings.keys.invalid_toast": "המפתח נדחה על ידי הספק. בדוק/י אותו ונסה/י שוב.",
   "settings.keys.json_advanced": "מתקדם — ייבוא מ-JSON",
@@ -4865,7 +4887,7 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.keys.json_col_base": "כתובת API",
   "settings.keys.json_col_key": "מפתח",
   "settings.keys.json_col_label": "תווית",
-  "settings.keys.json_col_provider": "ספק",
+  "settings.keys.json_col_provider": "מזהה חיבור",
   "settings.keys.json_err_base": "פריט {n}: api_base חייב להיות כתובת URL תקינה.",
   "settings.keys.json_err_custom_base": "פריט {n}: ספק custom מחייב api_base.",
   "settings.keys.json_err_missing": "פריט {n}: חסר שדה חובה \"{field}\".",
@@ -4873,21 +4895,24 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.keys.json_err_parse": "JSON לא תקין — בדקו פסיק או סוגר חסרים.",
   "settings.keys.json_err_provider": "פריט {n}: provider חייב להיות אחד מ-{providers} (או \"custom\" עם api_base).",
   "settings.keys.json_errors_heading": "תקנו {count} בעיות לפני הייבוא",
+  "settings.keys.json_example_label": "שער המודלים הארגוני",
   "settings.keys.json_format": "סידור",
   "settings.keys.json_import_count": "ייבוא {count} חיבורים",
   "settings.keys.json_imported": "יובאו {count} חיבורים.",
-  "settings.keys.json_intro": "הדביקו מערך JSON של חיבורים. שימושי בעת העברת מפתחות או הגדרת כמה ספקים בבת אחת.",
+  "settings.keys.json_intro": "הדביקו מערך JSON של חיבורי BYOK. כל מזהה, כתובת קצה ומפת פרמטרים עוברים ללא רשימת ספקים קבועה.",
   "settings.keys.json_optional": "רשות: api_base, label, params",
   "settings.keys.json_partial": "יובאו {ok} מתוך {total}; {failed} לא נשמרו.",
   "settings.keys.json_required": "חובה: provider, api_key",
-  "settings.keys.json_security": "המפתחות מוצפנים ומשמשים רק לבקשות דרך הספק שבחרתם. לא נציג שוב את המפתח המלא לאחר השמירה.",
+  "settings.keys.json_security": "המפתחות מוצפנים ומשמשים רק לבקשות דרך החיבור שהגדרתם. לא נציג שוב את המפתח המלא לאחר השמירה.",
   "settings.keys.json_title": "ייבוא מ-JSON",
   "settings.keys.json_use_example": "טעינת דוגמה",
   "settings.keys.json_valid": "{count} חיבורים תקינים",
   "settings.keys.json_validate": "בדיקה",
   "settings.keys.json_warn_dupe": "פריט {n}: כפילות בערך {provider} — האחרון גובר.",
   "settings.keys.json_warn_replace": "ל-{provider} כבר קיים מפתח שמור — הייבוא יחליף אותו.",
-  "settings.keys.provider_placeholder": "מזהה ספק, לדוגמה openai",
+  "settings.keys.new_connection": "חיבור BYOK חדש",
+  "settings.keys.new_connection_hint": "הזינו מזהה חיבור, סוד וכתובת API אם נדרשת.",
+  "settings.keys.provider_placeholder": "internal-gateway",
   "settings.keys.remove": "הסרה",
   "settings.keys.remove_failed_toast": "לא ניתן היה להסיר את המפתח. נסה/י שוב.",
   "settings.keys.removed_toast": "המפתח הוסר.",
@@ -4895,8 +4920,9 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.keys.save": "שמירת מפתח",
   "settings.keys.save_failed_toast": "לא ניתן היה לשמור את המפתח. נסה/י שוב.",
   "settings.keys.saved_toast": "המפתח נשמר.",
+  "settings.keys.secret_label": "מפתח API או סוד",
   "settings.keys.secret_placeholder": "מפתח API או סוד חיבור",
-  "settings.keys.title": "מפתחות API של ספקים",
+  "settings.keys.title": "מפתחות אישיים (BYOK)",
   "settings.keys.unverified": "לא מאומת",
   "settings.keys.unverified_toast": "לא ניתן היה ליצור קשר עם הספק לאימות. המפתח נשמר — נסה/י לאמת שוב.",
   "settings.keys.verified": "מאומת",
