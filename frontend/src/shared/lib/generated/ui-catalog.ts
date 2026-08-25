@@ -1923,7 +1923,6 @@ export type MessageKey =
   | "settings.admin.accounts.delete_confirm"
   | "settings.admin.accounts.deleted"
   | "settings.admin.accounts.description"
-  | "settings.admin.accounts.display_name_placeholder"
   | "settings.admin.accounts.empty"
   | "settings.admin.accounts.role_saved"
   | "settings.admin.accounts.title"
@@ -4763,7 +4762,6 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.admin.accounts.delete_confirm": "למחוק לצמיתות את {username} ואת כל הנתונים שבבעלותו?",
   "settings.admin.accounts.deleted": "החשבון וכל הנתונים שבבעלותו נמחקו",
   "settings.admin.accounts.description": "ניהול שמות משתמש מקומיים ללא סיסמה והרשאות מנהל. משתמשי ADFS נוצרים אוטומטית בכניסה הראשונה.",
-  "settings.admin.accounts.display_name_placeholder": "שם תצוגה (רשות)",
   "settings.admin.accounts.empty": "עדיין אין חשבונות.",
   "settings.admin.accounts.role_saved": "הרשאת המנהל נשמרה",
   "settings.admin.accounts.title": "חשבונות משתמשים",

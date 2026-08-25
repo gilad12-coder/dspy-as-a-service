@@ -19,7 +19,6 @@ import { msg } from "@/shared/lib/messages";
 export function AdminAccountsSection() {
   const [accounts, setAccounts] = React.useState<ManagedAccount[]>([]);
   const [username, setUsername] = React.useState("");
-  const [displayName, setDisplayName] = React.useState("");
   const [isAdmin, setIsAdmin] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [busyUsername, setBusyUsername] = React.useState<string | null>(null);
@@ -46,7 +45,6 @@ export function AdminAccountsSection() {
     try {
       const created = await createManagedAccount({
         username: normalized,
-        display_name: displayName.trim(),
         is_admin: isAdmin,
       });
       setAccounts((current) =>
@@ -55,7 +53,6 @@ export function AdminAccountsSection() {
         ),
       );
       setUsername("");
-      setDisplayName("");
       setIsAdmin(false);
       toast.success(msg("settings.admin.accounts.created"));
     } catch (error) {
@@ -108,19 +105,13 @@ export function AdminAccountsSection() {
         </div>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-center">
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
         <Input
           value={username}
           onChange={(event) => setUsername(event.target.value)}
           placeholder={msg("settings.admin.accounts.username_placeholder")}
           autoComplete="off"
           dir="ltr"
-        />
-        <Input
-          value={displayName}
-          onChange={(event) => setDisplayName(event.target.value)}
-          placeholder={msg("settings.admin.accounts.display_name_placeholder")}
-          autoComplete="off"
         />
         <label className="flex min-h-10 items-center justify-between gap-2 text-xs sm:justify-start">
           {msg("settings.admin.accounts.admin")}
