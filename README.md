@@ -60,8 +60,6 @@ Horizontal backend replicas safely share work through PostgreSQL `SELECT ... FOR
 - Environment usernames/groups remain external admin grants; UI role changes are stored in PostgreSQL.
 - Deleting a user hard-deletes all owned data, grants, preferences, quota overrides, and BYOK secrets. A later valid SSO login creates a fresh account.
 
-See [docs/AUTH_SETUP.md](docs/AUTH_SETUP.md).
-
 ## Data and sharing
 
 - Private is the default for optimization runs.
@@ -79,7 +77,6 @@ Operators may configure central OpenAI-compatible model endpoints. Users can als
 - Docker Compose: `backend/docker-compose.yml`
 - OpenShift/Kubernetes: `deploy/helm/skynet`
 - Air-gapped build notes: `backend/AIRGAP.html`
-- Full operator runbook: [docs/ON_PREM_DEPLOYMENT.md](docs/ON_PREM_DEPLOYMENT.md)
 
 The Helm chart enables TLS redirects, NetworkPolicies, HPAs, PodDisruptionBudgets, Prometheus scraping, a migration Job, and optional PgBouncer. It supports either bundled PostgreSQL or an external PostgreSQL service.
 

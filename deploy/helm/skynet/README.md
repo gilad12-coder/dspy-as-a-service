@@ -70,5 +70,3 @@ The migration hook runs `alembic upgrade head` against a fresh database. This pr
 ```bash
 helm uninstall skynet -n skynet
 ```
-
-See `docs/ON_PREM_DEPLOYMENT.md` for secrets, ADFS, observability, smoke tests, and deployment examples.
