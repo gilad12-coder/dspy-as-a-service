@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  agentRules: false,
   reactStrictMode: true,
   compress: true,
   poweredByHeader: false,
