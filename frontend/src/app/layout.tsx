@@ -27,6 +27,10 @@ const siteUrl = getSiteUrl();
 const siteName = "Skynet";
 const siteDescription = msg("app.meta.description");
 
+// Render per-request so the pod's runtime API_URL is read at request time and
+// injected into window.__SKYNET_ENV__, instead of being frozen at build time.
+export const dynamic = "force-dynamic";
+
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
