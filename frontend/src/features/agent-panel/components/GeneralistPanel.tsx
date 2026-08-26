@@ -10,7 +10,6 @@ import {
   Plus,
   Sparkle,
   MagicWand,
-  XCircle,
 } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
@@ -18,11 +17,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 
 import { AgentThread } from "@/shared/ui/agent/agent-thread";
+import { ChatErrorBanner } from "@/shared/ui/agent/chat-error-banner";
 import { ChatTranscript } from "@/shared/ui/agent/chat-transcript";
 import { Composer } from "@/shared/ui/agent/composer";
 import type { AgentThinking, AgentToolCall } from "@/shared/ui/agent/types";
 import { EmptyState } from "@/shared/ui/empty-state";
-import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { SubmitSplashOverlay, SUBMIT_SPLASH_HOLD_MS } from "@/shared/ui/submit-splash-overlay";
 import { cn } from "@/shared/lib/utils";
 import { formatMsg } from "@/shared/lib/messages";
@@ -857,31 +856,13 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                         />
                       )}
                       {agent.error && (
-                        <div
-                          className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-destructive shadow-xs"
-                          role="alert"
-                        >
-                          <div className="flex items-start gap-2.5">
-                            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-destructive/10 ring-1 ring-destructive/10">
-                              <XCircle className="size-4" aria-hidden="true" />
-                            </span>
-                            <div className="flex min-w-0 flex-1 flex-col items-start gap-2.5">
-                              <p
-                                className="w-full break-words text-[0.75rem] leading-5 text-destructive/90 [overflow-wrap:anywhere]"
-                                dir="auto"
-                              >
-                                {agent.error}
-                              </p>
-                              <RetryIconButton
-                                label={msg(
-                                  "auto.features.agent.panel.components.generalistpanel.error_retry",
-                                )}
-                                onClick={agent.retry}
-                                className="ms-0 size-9 rounded-full border-destructive/20 bg-background/75 text-destructive shadow-xs hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive [@media(hover:none)_and_(pointer:coarse)]:size-[44px] [&_svg]:size-4"
-                              />
-                            </div>
-                          </div>
-                        </div>
+                        <ChatErrorBanner
+                          message={agent.error}
+                          retryLabel={msg(
+                            "auto.features.agent.panel.components.generalistpanel.error_retry",
+                          )}
+                          onRetry={agent.retry}
+                        />
                       )}
                     </>
                   )}

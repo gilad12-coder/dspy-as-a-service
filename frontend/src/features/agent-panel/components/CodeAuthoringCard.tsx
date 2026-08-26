@@ -9,6 +9,7 @@ import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { ActivityBreadcrumb } from "@/shared/ui/agent/activity-breadcrumb";
+import { ChatErrorBanner } from "@/shared/ui/agent/chat-error-banner";
 import { ThinkingSection } from "@/shared/ui/agent/thinking-section";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import type { ValidateCodeResponse } from "@/shared/types/api";
@@ -54,14 +55,7 @@ export function CodeAuthoringCard({ agent }: CodeAuthoringCardProps) {
   // hint below and swallow the reason. Surface the error itself so the user can
   // act (retry, or pick a different model in the composer).
   if (hasError && !hasOutput) {
-    return (
-      <div className="flex items-start gap-1.5 rounded-2xl border border-[#9B2C1F]/20 bg-[#FCEFEB]/60 px-4 py-3 text-xs text-[#7A1E13]">
-        <XCircle className="mt-0.5 size-3 shrink-0 text-[#9B2C1F]" aria-hidden="true" />
-        <span className="min-w-0 flex-1 break-words" dir="auto">
-          {agent.error}
-        </span>
-      </div>
-    );
+    return <ChatErrorBanner message={agent.error} />;
   }
 
   // Before the seed starts (or on a reopened historical conversation where the

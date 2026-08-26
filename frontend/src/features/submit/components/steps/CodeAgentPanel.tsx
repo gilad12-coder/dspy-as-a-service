@@ -1,16 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { Robot, XCircle, Ruler, FileCode, ChatCenteredDots, ShareNetwork } from "@/shared/ui/icons";
+import { Robot, Ruler, FileCode, ChatCenteredDots, ShareNetwork } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
 import { TERMS } from "@/shared/lib/terms";
-import { AgentThread, ChatTranscript, Composer } from "@/shared/ui/agent";
+import { AgentThread, ChatErrorBanner, ChatTranscript, Composer } from "@/shared/ui/agent";
 import { ActivityBreadcrumb } from "@/shared/ui/agent/activity-breadcrumb";
 import type { AgentToolCall as SharedAgentToolCall } from "@/shared/ui/agent";
 import { EmptyState as SharedEmptyState } from "@/shared/ui/empty-state";
-import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { IndexPager } from "@/shared/ui/index-pager";
 import { ToolCallRow } from "@/features/agent-panel";
 
@@ -110,28 +109,20 @@ export function CodeAgentPanel({ agent, disabled, disabledReason, className }: P
               )}
 
               {agent.error && agent.status === "error" && (
-                <div className="rounded-lg bg-[#FCEFEB]/60 border border-[#9B2C1F]/20 px-2.5 py-2 text-xs text-[#7A1E13] space-y-1.5">
-                  <div className="flex items-start gap-1.5">
-                    <XCircle className="mt-0.5 size-3 shrink-0 text-[#9B2C1F]" />
-                    <span className="min-w-0 flex-1 break-words" dir="auto">
-                      {agent.error}
-                    </span>
-                    <RetryIconButton
-                      label={msg("auto.features.submit.components.steps.codeagentpanel.2")}
-                      onClick={agent.retry}
-                      className="size-[44px] border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13] lg:size-7"
-                    />
-                  </div>
-                  <div className="flex gap-1.5 ps-4">
+                <ChatErrorBanner
+                  message={agent.error}
+                  retryLabel={msg("auto.features.submit.components.steps.codeagentpanel.2")}
+                  onRetry={agent.retry}
+                  action={
                     <button
                       type="button"
                       onClick={agent.fallbackToManual}
-                      className="min-h-[44px] cursor-pointer rounded px-2 py-0.5 text-[0.6875rem] text-[#7A1E13] transition-colors hover:bg-[#9B2C1F]/10 lg:min-h-0"
+                      className="-ms-2 min-h-[44px] cursor-pointer rounded px-2 py-0.5 text-[0.6875rem] text-[#7A1E13] transition-colors hover:bg-[#9B2C1F]/10 lg:min-h-0"
                     >
                       {msg("auto.features.submit.components.steps.codeagentpanel.3")}
                     </button>
-                  </div>
-                </div>
+                  }
+                />
               )}
             </>
           )}
