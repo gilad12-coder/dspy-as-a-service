@@ -33,6 +33,7 @@ import logging
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any, Literal, TypedDict
 
@@ -40,18 +41,22 @@ import dspy
 from dspy.streaming import StatusMessageProvider
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from sqlalchemy import delete
+from sqlalchemy.orm import Session
 
 from ...config import settings
 from ...exceptions import ServiceError
 from ...i18n import t
 from ...models import ModelConfig
+from ...storage.models import AgentApprovalModel
 from ..language_models import (
     apply_model_reasoning_config,
     build_language_model,
+    served_model_from,
 )
+from ..optimization.retrying_react import RetryingReActV2
 from ..optimization.training_ground.registry import hash_tool_schema
-from ..react_compat import REACT_CLASS
-from .code import ReactReplyStream, _format_agent_error
+from .code import ReactReplyStream, _agent_error_payload, _format_agent_error, _reply_language
 from .constants import REASONING_FIELD
 
 
@@ -80,17 +85,31 @@ def _build_generalist_lm() -> dspy.LM:
     config = apply_model_reasoning_config(
         ModelConfig(
             name=settings.generalist_agent_model,
-            base_url=settings.generalist_agent_base_url or None,
+            base_url=settings.generalist_agent_base_url or settings.openai_api_base or None,
         )
     )
+    _apply_interactive_timeout(config)
     return build_language_model(config, disable_cache=True)
+
+
+def _apply_interactive_timeout(config: ModelConfig) -> None:
+    """Give a chat-turn LM an interactive timeout instead of the job-scale one.
+
+    ``build_language_model`` defaults to ``lm_request_timeout_seconds`` (sized
+    for batch optimization runs) with watchdog-derived retries — on a stalled
+    provider that is tens of minutes of dead air for a chat turn. ``extra``
+    merges over those defaults, so seed it with the chat-scale knobs unless the
+    caller pinned its own.
+    """
+    config.extra.setdefault("timeout", settings.agent_request_timeout_seconds)
+    config.extra.setdefault("num_retries", 2)
 
 
 logger = logging.getLogger(__name__)
 
 TrustMode = Literal["ask", "auto_safe", "yolo"]
 
-# Tools whose side-effects can destroy or create billing-bearing work.
+# Tools whose side effects can destroy data or start expensive compute.
 # Always require confirmation except in YOLO mode.
 _DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
     {
@@ -117,23 +136,52 @@ _SAFE_MUTATIONS: frozenset[str] = frozenset(
         "discover_models_models_discover_post",
         "set_column_roles_datasets_column_roles_post",
         "update_wizard_state",
+        # Device-scoped preferences: the frontend applies the validated patch
+        # returned by this tool to its local settings store.
+        "update_user_preferences",
         "bulk_pin_jobs_optimizations_bulk_pin_post",
     }
 )
 
 
+# Upper bound on how long a tool waits for the user's approval decision. The
+# registry is per-process, so a confirm POST that lands on another replica (or
+# a client that vanished) can never resolve the future — without a bound the
+# stream hangs forever with a spinning tool pill. Long enough for a human who
+# stepped away; on expiry the tool is treated as declined.
+APPROVAL_TIMEOUT_SECONDS = 900.0
+
+
+# How often the awaiting stream checks the durable store for a decision that
+# a confirm landing on another replica persisted. The in-process future still
+# resolves same-pod confirms instantly; this only bounds cross-pod latency.
+_DURABLE_POLL_SECONDS = 1.5
+
+
 class ApprovalRegistry:
-    """In-memory ``call_id → Future[bool]`` store for pending approvals.
+    """``call_id → Future[bool]`` store for pending tool approvals.
 
     The generalist SSE stream emits a ``pending_approval`` event carrying
     a ``call_id``; the paired ``POST /optimizations/generalist-agent/confirm``
-    endpoint calls :meth:`resolve` with the same id to unblock the tool.
-    In-process for v1; swap for Redis when we need cross-worker consistency.
+    endpoint calls :meth:`resolve_or_persist` with the same id to unblock the
+    tool. The in-process future is the fast path; when the confirm lands on a
+    different replica (the registry is per-process), the decision is written
+    to the shared ``agent_approvals`` table and :meth:`wait_for_decision`'s
+    poll loop on the streaming replica picks it up.
     """
 
     def __init__(self) -> None:
         """Initialize the in-memory pending-approvals map."""
         self._pending: dict[str, asyncio.Future[bool]] = {}
+        self._engine = None
+
+    def bind_engine(self, engine: Any) -> None:
+        """Attach the app database engine that backs cross-replica handoff.
+
+        Args:
+            engine: SQLAlchemy engine for the shared application database.
+        """
+        self._engine = engine
 
     def register(self, call_id: str) -> asyncio.Future[bool]:
         """Register ``call_id`` and return a future the tool awaits until resolved.
@@ -175,6 +223,98 @@ class ApprovalRegistry:
         fut = self._pending.pop(call_id, None)
         if fut is not None and not fut.done():
             fut.cancel()
+
+    def resolve_or_persist(self, call_id: str, approved: bool) -> bool:
+        """Resolve locally, else persist the decision for the owning replica.
+
+        Args:
+            call_id: The pending tool call's identifier.
+            approved: The user's decision.
+
+        Returns:
+            True when the decision was delivered locally or persisted; False
+            only when the id is unknown here and no durable store is bound.
+        """
+        if self.resolve(call_id, approved):
+            return True
+        if self._engine is None:
+            return False
+        self._persist(call_id, approved)
+        return True
+
+    def _persist(self, call_id: str, approved: bool) -> None:
+        """Write (or overwrite) a decision row, purging stale leftovers.
+
+        Args:
+            call_id: The pending tool call's identifier.
+            approved: The user's decision.
+        """
+        now = datetime.now(UTC)
+        with Session(self._engine) as session:
+            row = session.get(AgentApprovalModel, call_id)
+            if row is None:
+                session.add(AgentApprovalModel(call_id=call_id, approved=approved, created_at=now))
+            else:
+                row.approved = approved
+            # Rows are normally consumed within seconds; anything older than
+            # the approval timeout belongs to a stream that already gave up.
+            cutoff = now - timedelta(seconds=APPROVAL_TIMEOUT_SECONDS)
+            session.execute(delete(AgentApprovalModel).where(AgentApprovalModel.created_at < cutoff))
+            session.commit()
+
+    def _take_durable(self, call_id: str) -> bool | None:
+        """Consume a persisted decision for ``call_id``, if one arrived.
+
+        Args:
+            call_id: The pending tool call's identifier.
+
+        Returns:
+            The decision, or None when no row exists yet.
+        """
+        with Session(self._engine) as session:
+            row = session.get(AgentApprovalModel, call_id)
+            if row is None:
+                return None
+            approved = bool(row.approved)
+            session.delete(row)
+            session.commit()
+            return approved
+
+    async def wait_for_decision(self, call_id: str, fut: asyncio.Future[bool]) -> bool:
+        """Await the user's decision from either delivery path, bounded.
+
+        Races the in-process future (same-replica confirm, instant) against a
+        poll of the durable store (cross-replica confirm). Expires as declined
+        after :data:`APPROVAL_TIMEOUT_SECONDS` so a lost confirm can never
+        hang the stream forever.
+
+        Args:
+            call_id: The pending tool call's identifier.
+            fut: The future returned by :meth:`register` for this call.
+
+        Returns:
+            The user's decision, or False on expiry.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + APPROVAL_TIMEOUT_SECONDS
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                self.cancel(call_id)
+                return False
+            try:
+                # shield(): a poll-interval timeout must not cancel the shared
+                # future — the next loop iteration keeps awaiting it.
+                return await asyncio.wait_for(
+                    asyncio.shield(fut), timeout=min(_DURABLE_POLL_SECONDS, remaining)
+                )
+            except TimeoutError:
+                if self._engine is None:
+                    continue
+                decision = await asyncio.to_thread(self._take_durable, call_id)
+                if decision is not None:
+                    self.cancel(call_id)
+                    return decision
 
 
 _global_registry = ApprovalRegistry()
@@ -233,7 +373,7 @@ def _serialize_tool_result(v: Any) -> Any:
         ``v`` unchanged if already JSON-friendly, the parsed JSON value
         when ``str(v)`` decodes, or the stringified form as a last resort.
     """
-    if v is None or isinstance(v, (dict, list, bool, int, float)):
+    if v is None or isinstance(v, dict | list | bool | int | float):
         return v
     s = str(v)
     try:
@@ -264,6 +404,7 @@ class _ApprovalGatedTool:
         emit: Callable[[dict], None],
         outer_loop: asyncio.AbstractEventLoop,
         staged_dataset_id: str | None = None,
+        source_dataset_id: str | None = None,
         wizard_state: WizardState | None = None,
         authoring_flag: _TurnAuthoringFlag | None = None,
         needs_approval: Callable[[str, TrustMode], bool] | None = None,
@@ -288,6 +429,11 @@ class _ApprovalGatedTool:
                 Anthropic Files API convention where uploaded files are
                 bound to the thread and tools pick them up automatically
                 instead of the LLM relaying the id on every turn.
+            source_dataset_id: Id of a saved library dataset the user picked
+                for this conversation; auto-injected into submit-tool calls
+                that supply no dataset. The by-reference twin of
+                ``staged_dataset_id`` — the two are mutually exclusive, so
+                whichever the wizard carries is the one that lands.
             wizard_state: Turn-start wizard snapshot, used to validate the
                 field order of ``update_wizard_state`` patches in real time
                 (so the agent can't populate a later-step field before its
@@ -310,6 +456,7 @@ class _ApprovalGatedTool:
         self._emit = emit
         self._outer_loop = outer_loop
         self._staged_dataset_id = staged_dataset_id
+        self._source_dataset_id = source_dataset_id
         self._wizard_state = wizard_state or {}
         self._authoring_flag = authoring_flag or _TurnAuthoringFlag()
         self._needs_approval = needs_approval or _needs_approval
@@ -358,27 +505,61 @@ class _ApprovalGatedTool:
         if self._tool_name in _CODE_AUTHORING_TOOLS:
             self._authoring_flag.authoring_requested = True
         submit_after_authoring = (
-            self._tool_name in _READY_TO_SUBMIT_TOOLS
+            self._tool_name in _SUBMIT_TOOLS
             and self._authoring_flag.authoring_requested
         )
-        if self._tool_name in _READY_TO_SUBMIT_TOOLS and not submit_after_authoring:
+        if self._tool_name in _SUBMIT_TOOLS and not submit_after_authoring:
             if (
                 self._staged_dataset_id
                 and not kwargs.get("staged_dataset_id")
                 and not kwargs.get("dataset")
             ):
                 kwargs["staged_dataset_id"] = self._staged_dataset_id
-            # Signature/Metric are authored and validated by
-            # ``request_code_authoring``; the validated source is mirrored into
-            # the wizard snapshot. The agent has historically re-typed its own
-            # broken code into submit args even after a clean authoring pass
+            # By-reference twin: a library dataset the user picked. Only inject
+            # when no other dataset source is present — ``RunRequest`` requires
+            # exactly one of dataset / staged_dataset_id / source_dataset_id, and
+            # the two id fields are mutually exclusive by construction (the
+            # wizard carries one or the other, never both).
+            if (
+                self._source_dataset_id
+                and not kwargs.get("source_dataset_id")
+                and not kwargs.get("staged_dataset_id")
+                and not kwargs.get("dataset")
+            ):
+                kwargs["source_dataset_id"] = self._source_dataset_id
+            kwargs["is_private"] = bool(self._wizard_state.get("is_private", True))
+            # The wizard's description rides the same rails as privacy: set via
+            # ``update_wizard_state`` (or typed in the Basics step), it lands on
+            # submit even when the agent omits the arg. An agent-supplied
+            # ``description`` wins. Clipped to the submit model's 280-char cap —
+            # the wizard patch accepts up to 500.
+            if not kwargs.get("description"):
+                snapshot_desc = str(self._wizard_state.get("job_description") or "").strip()
+                if snapshot_desc:
+                    kwargs["description"] = snapshot_desc[:280]
+            # Signature/Metric (or, for a workflow run, the authored graph) are
+            # produced and validated by ``request_code_authoring`` and mirrored
+            # into the wizard snapshot. The agent has historically re-typed its
+            # own broken code into submit args even after a clean authoring pass
             # (3-arg metrics, unmatched braces), producing 400s that dead-ended
-            # at the user. Source the code from the snapshot and discard
+            # at the user. Source the program from the snapshot and discard
             # whatever the agent supplied so only validated code reaches submit.
-            for code_field in ("signature_code", "metric_code"):
-                snapshot_code = self._wizard_state.get(code_field)
-                if snapshot_code:
-                    kwargs[code_field] = snapshot_code
+            module_name = str(self._wizard_state.get("module_name") or "").strip().lower()
+            workflow_snapshot = self._wizard_state.get("workflow")
+            if module_name == "workflow" and workflow_snapshot:
+                # ``RunRequest`` enforces workflow XOR signature_code; ship the
+                # graph and drop any signature the agent may have supplied.
+                kwargs["module_name"] = "workflow"
+                kwargs["workflow"] = workflow_snapshot
+                kwargs.pop("signature_code", None)
+                metric_snapshot = self._wizard_state.get("metric_code")
+                if metric_snapshot:
+                    kwargs["metric_code"] = metric_snapshot
+            else:
+                for code_field in ("signature_code", "metric_code"):
+                    snapshot_code = self._wizard_state.get(code_field)
+                    if snapshot_code:
+                        kwargs[code_field] = snapshot_code
         # Profiling a staged dataset needs the same rehydration submit relies
         # on: the rows live behind an opaque id, never inline in the model's
         # args, so without this the agent passes an empty dataset, the profile
@@ -446,7 +627,9 @@ class _ApprovalGatedTool:
                     }
                 )
                 try:
-                    approved = await fut
+                    # Bounded wait racing the local future against the durable
+                    # store — see ApprovalRegistry.wait_for_decision.
+                    approved = await self._registry.wait_for_decision(call_id, fut)
                 except asyncio.CancelledError:
                     self._registry.cancel(call_id)
                     self._emit(
@@ -518,6 +701,7 @@ def _wrap_tool_with_approval(
     emit: Callable[[dict], None],
     outer_loop: asyncio.AbstractEventLoop,
     staged_dataset_id: str | None = None,
+    source_dataset_id: str | None = None,
     wizard_state: WizardState | None = None,
     authoring_flag: _TurnAuthoringFlag | None = None,
     needs_approval: Callable[[str, TrustMode], bool] | None = None,
@@ -535,6 +719,8 @@ def _wrap_tool_with_approval(
             sync ``Tool.__call__`` from worker threads with no loop.
         staged_dataset_id: Optional staged-dataset id auto-injected into
             submit tool calls that omit it.
+        source_dataset_id: Optional library-dataset id auto-injected into
+            submit tool calls that supply no dataset (by-reference runs).
         wizard_state: Turn-start wizard snapshot used to validate
             ``update_wizard_state`` field ordering.
         authoring_flag: Turn-scoped flag shared across all wrappers in the
@@ -554,6 +740,7 @@ def _wrap_tool_with_approval(
         emit=emit,
         outer_loop=outer_loop,
         staged_dataset_id=staged_dataset_id,
+        source_dataset_id=source_dataset_id,
         wizard_state=wizard_state,
         authoring_flag=authoring_flag,
         needs_approval=needs_approval,
@@ -570,15 +757,35 @@ class WizardState(TypedDict, total=False):
     """
 
     job_name: str
+    # Run description authored in the wizard (Basics step) or patched by the
+    # agent via ``update_wizard_state``; injected into submit calls that omit
+    # ``description`` so an agent-driven run keeps the description the wizard
+    # carries.
+    job_description: str
     dataset_ready: bool
     columns_configured: bool
     signature_code: str
     metric_code: str
     model_configured: bool
     staged_dataset_id: str
+    # Id of a saved library dataset the run submits by reference (durable),
+    # set when the user picks from the dataset library instead of uploading.
+    # Mutually exclusive with ``staged_dataset_id`` (an evicted upload).
+    source_dataset_id: str
     optimizer_name: str
+    module_name: str
+    job_type: str
+    is_private: bool
+    # Authored ``WorkflowSpec`` graph for multi-module runs. Present only when
+    # ``module_name == "workflow"``; carries the run's program in place of
+    # ``signature_code`` (the two are mutually exclusive at submit).
+    workflow: dict[str, Any]
     model_config: dict[str, Any]
     reflection_model_config: dict[str, Any]
+    generation_models: list[dict[str, Any]]
+    reflection_models: list[dict[str, Any]]
+    use_all_generation_models: bool
+    use_all_reflection_models: bool
 
 
 _ALWAYS_TOOLS = frozenset(
@@ -604,13 +811,16 @@ _ALWAYS_TOOLS = frozenset(
         # the agent NEVER calls serve_program directly because it cannot
         # know the user's inputs.
         "request_user_inference",
+        # Grid-search twin of request_user_inference: renders the inference card
+        # for one pair. The agent picks pair_index from serve_pair_info /
+        # get_grid_search_result; the card runs the pair inference client-side.
+        "request_user_pair_inference",
         "discover_models_models_discover_post",
         "rename_job_optimizations",
         "toggle_pin_job_optimizations",
         # Job lifecycle tools that can run on an existing optimization at any time.
         "clone_job_optimizations",
         "retry_job_optimizations",
-        "compare_jobs_optimizations_compare_post",
         "bulk_pin_jobs_optimizations_bulk_pin_post",
         # Wizard-prefill tools — safe to expose before a dataset is staged;
         # they patch wizard state, they don't consume rows.
@@ -619,8 +829,15 @@ _ALWAYS_TOOLS = frozenset(
         # chat. The card handles parsing + column-role confirmation
         # client-side and dispatches wizard:dataset-staged on confirm.
         "request_user_dataset_datasets_request_upload_post",
+        # Saved dataset library: a read tool to surface the caller's datasets,
+        # and a UI-trigger picker whose selection hydrates the wizard with a
+        # source_dataset_id — a durable by-reference run, unlike the evicted
+        # staged upload above.
+        "list_datasets_for_agent",
+        "request_user_dataset_from_library",
         # Generalized wizard patch — any editable field, partial updates.
         "update_wizard_state",
+        "update_user_preferences",
         # Semantic + structured search across every public optimization. The
         # agent uses it to surface comparable runs ("find me sentiment jobs
         # that beat 0.8 with GEPA") before the user has filled the wizard.
@@ -631,6 +848,17 @@ _ALWAYS_TOOLS = frozenset(
         "get_test_results_optimizations",
         "get_grid_search_result_optimizations",
         "get_pair_test_results_optimizations",
+        # Read-only tagger reach: list the caller's tagging sessions so the agent
+        # can answer questions about them and point the user at /tagger/{id}. The
+        # tagger has its own assist agent; the generalist only reads here.
+        "list_tagging_sessions_for_agent",
+        # Permanent per-user memory (OptMem port, core.api.agent_memory). The
+        # wake document arrives as the ``memory_context`` signature input;
+        # these tools record, compress, search, and navigate it.
+        "memory_note",
+        "memory_nap",
+        "memory_recall",
+        "memory_zoom",
     }
 )
 # Diagnostic tools unlocked the moment a dataset has columns + roles. These
@@ -651,12 +879,17 @@ _DATASET_READY_TOOLS = frozenset(
 # Basics (name) → Data → Params → Code — and the wizard is populated and
 # verifiable before any code is authored.
 _CODE_AUTHORING_TOOLS = frozenset({"request_code_authoring"})
-# Single-tool submit surface. ``submit_grid_search`` was historically here
-# alongside ``submit_job_run_post``; exposing both at the same time made
-# MiniMax oscillate between them and occasionally lapse into a "no submit
-# tool" hallucinated refusal. Grid search is still reachable from the UI
-# wizard for users who need it; the agent's flow is single-run only.
+# The submit surface is job-type-exclusive: exactly ONE submit tool is exposed
+# per turn, chosen by ``job_type`` (see ``tools_for``). Exposing both at once
+# historically made MiniMax oscillate between them and occasionally lapse into a
+# "no submit tool" hallucinated refusal — so a single run only ever sees
+# ``submit_job_run_post`` and a grid run only ever sees the grid tool; the two
+# are never visible together.
 _READY_TO_SUBMIT_TOOLS = frozenset({"submit_job_run_post"})
+_GRID_SUBMIT_TOOLS = frozenset({"submit_grid_search_grid_search_post"})
+# Every submit surface — used to scope the wrapper's argument injection (staged
+# dataset, validated program, privacy) uniformly across single and grid runs.
+_SUBMIT_TOOLS = _READY_TO_SUBMIT_TOOLS | _GRID_SUBMIT_TOOLS
 _POST_SUBMIT_TOOLS = frozenset(
     {
         "cancel_job_optimizations",
@@ -736,44 +969,73 @@ def _is_placeholder_metric(code: str) -> bool:
 
 
 def _code_ready(state: WizardState) -> bool:
-    """Return True when authored Signature and Metric code are present (Code step).
+    """Return True when the Code step is authored for the chosen module.
 
     A non-empty value is not enough: the frontend seeds placeholder templates
     into the wizard, so the gate must reject those un-edited placeholders and
-    stay locked until the user authors real code.
+    stay locked until the user authors real code. Workflow runs carry an
+    authored graph instead of a single Signature — a valid graph plus a real
+    metric is the ready state for that module.
     """
-    signature = state.get("signature_code") or ""
     metric = state.get("metric_code") or ""
-    if not signature or not metric:
+    metric_ready = bool(metric) and not _is_placeholder_metric(metric)
+    if str(state.get("module_name") or "").strip().lower() == "workflow":
+        workflow = state.get("workflow")
+        graph_ready = bool(isinstance(workflow, dict) and workflow.get("nodes"))
+        return graph_ready and metric_ready
+    signature = state.get("signature_code") or ""
+    if not signature or not metric_ready:
         return False
-    return not (_is_placeholder_signature(signature) or _is_placeholder_metric(metric))
+    return not _is_placeholder_signature(signature)
+
+
+def _is_grid(state: WizardState) -> bool:
+    """Return True when the run is configured as a grid-search sweep."""
+    return str(state.get("job_type") or "run").strip().lower() == "grid_search"
+
+
+def _has_model_list(value: object) -> bool:
+    """Return True when ``value`` is a non-empty list of named model configs."""
+    return isinstance(value, list) and any(
+        isinstance(m, dict) and m.get("name") for m in value
+    )
 
 
 def _model_ready(state: WizardState) -> bool:
-    """Return True when the Model step is complete for the chosen optimizer.
+    """Return True when the Model step is complete for the chosen run type.
 
-    A generation model is always required. GEPA additionally reflects on a
-    second model, and submitting it without a ``reflection_model_config`` is a
-    known 422 — so the gate mirrors the manual wizard's
-    ``reflection_model_required`` check and stays locked until both are set.
-    GEPA is the only supported optimizer, so an absent ``optimizer_name``
-    defaults to it (the strict path).
+    A single run needs a generation model (and, for GEPA, a reflection model —
+    submitting GEPA without one is a known 422). A grid-search sweep instead
+    needs a non-empty generation-model list (or the sweep-all flag) and, for
+    GEPA, a reflection-model list (or its sweep-all flag). GEPA is the only
+    supported optimizer, so an absent ``optimizer_name`` defaults to it (the
+    strict path).
 
     Args:
         state: Current wizard snapshot.
 
     Returns:
-        True when the generation model (and, for GEPA, the reflection model)
-        are present.
+        True when the model(s) the chosen run type requires are present.
     """
+    is_gepa = str(state.get("optimizer_name") or "gepa").strip().lower() == "gepa"
+    if _is_grid(state):
+        has_generation = bool(state.get("use_all_generation_models")) or _has_model_list(
+            state.get("generation_models")
+        )
+        if not has_generation:
+            return False
+        if is_gepa:
+            return bool(state.get("use_all_reflection_models")) or _has_model_list(
+                state.get("reflection_models")
+            )
+        return True
     model_cfg = state.get("model_config") or {}
     has_generation = bool(state.get("model_configured")) or bool(
         isinstance(model_cfg, dict) and model_cfg.get("name")
     )
     if not has_generation:
         return False
-    optimizer = str(state.get("optimizer_name") or "gepa").strip().lower()
-    if optimizer == "gepa":
+    if is_gepa:
         reflection_cfg = state.get("reflection_model_config") or {}
         return bool(isinstance(reflection_cfg, dict) and reflection_cfg.get("name"))
     return True
@@ -808,7 +1070,10 @@ def tools_for(state: WizardState) -> set[str]:
         and _code_ready(state)
         and _model_ready(state)
     ):
-        allowed |= _READY_TO_SUBMIT_TOOLS
+        # Expose exactly one submit surface, matching the chosen run type, so
+        # the agent never sees two submit tools at once (which made the model
+        # oscillate). Grid runs sweep model lists; single runs use one pair.
+        allowed |= _GRID_SUBMIT_TOOLS if _is_grid(state) else _READY_TO_SUBMIT_TOOLS
     return allowed
 
 
@@ -824,6 +1089,7 @@ _WIZARD_STEP_LABELS = ("Basics", "Data", "Params", "Code", "Model")
 _FIELD_STEP: dict[str, int] = {
     "job_name": 0,
     "job_description": 0,
+    "is_private": 0,
     "column_roles": 1,
     "optimizer_name": 2,
     "module_name": 2,
@@ -928,15 +1194,16 @@ class GeneralistSig(dspy.Signature):
 
     FORBIDDEN reasoning patterns (these all cause blank bubbles):
       • "No tools needed for a greeting" — WRONG. ``submit`` IS a tool;
-        a greeting is ONE ``submit`` call with the Hebrew greeting in
-        ``assistant_message``.
+        a greeting is ONE ``submit`` call with the greeting (written in
+        ``reply_language``) in ``assistant_message``.
       • "Let me craft a reply" then stopping without calling ``submit`` —
         WRONG. Crafting in reasoning is invisible; the reply only exists
         when you call ``submit(assistant_message=<your text>)``.
       • "I'll respond directly" — WRONG. There is no "respond directly"
         path. Responding == calling ``submit``.
 
-    Examples — every turn ends in submit:
+    Examples — every turn ends in submit (example replies below are shown
+    in Hebrew; YOUR replies are always written in ``reply_language``):
 
     User says "הי" → one tool call only:
         submit(assistant_message="שלום! אני העוזר של Skynet לאופטימיזציית
@@ -954,16 +1221,19 @@ class GeneralistSig(dspy.Signature):
         2. submit(assistant_message="ההגשה הוגשה. עוקב אחר ההתקדמות.")
 
     You are the Skynet assistant driving a DSPy optimization wizard. The
-    user is typically non-technical and communicates in Hebrew (RTL).
-    Your job is to move the user toward a successful optimization run by
-    calling tools — one coherent action per turn, not a chain of every
-    possible step. Every turn still ends with ``submit``.
+    user is typically non-technical; the UI language they chose arrives in
+    ``reply_language``. Your job is to move the user toward a successful
+    optimization run by calling tools — one coherent action per turn, not
+    a chain of every possible step. Every turn still ends with ``submit``.
 
     Rules:
-    * Reply in Hebrew. Product terms (Signature, Metric, optimizer names)
-      stay in English inside Hebrew prose.
+    * Reply in ``reply_language`` — every ``assistant_message``, status
+      line, and user-facing ``prompt`` argument you write. Product terms
+      (Signature, Metric, optimizer names) stay in English inside the
+      localized prose.
     * Prefer calling tools over explaining. One tool call per turn is ideal.
-    * Opening turn (greeting): 2–3 short Hebrew sentences ending in a
+    * Opening turn (greeting): 2–3 short sentences in ``reply_language``
+      ending in a
       single targeted question. Never enumerate specific model names from
       memory — wait until the user is ready to pick a model, then call
       ``list_models_for_agent`` and use THAT result.
@@ -972,8 +1242,8 @@ class GeneralistSig(dspy.Signature):
       pills.
     * WIZARD ORDER — mandatory, mirrors the manual wizard. Fill the wizard
       in this sequence; earlier steps gate the tools for the later ones:
-        1. Basics — set ``job_name`` (a short descriptive Hebrew/English
-           name) via ``update_wizard_state``. Do this FIRST, before
+        1. Basics — set ``job_name`` (a short descriptive name in the
+           user's language or English) via ``update_wizard_state``. Do this FIRST, before
            authoring code or submitting, even when the user only described
            the task in prose. NEVER leave the run unnamed.
         2. Data — call ``request_user_dataset`` so the user attaches the
@@ -999,7 +1269,8 @@ class GeneralistSig(dspy.Signature):
       complete first. On an "Out of order" error, do EXACTLY this, then STOP:
         1. Do the ONE named step (e.g. "Do these first: Code" → call
            ``request_code_authoring`` once).
-        2. END THE TURN with a short Hebrew status line via ``submit``.
+        2. END THE TURN with a short status line (in ``reply_language``)
+           via ``submit``.
       Then OBEY these hard NEVERs on an out-of-order rejection:
         • NEVER re-fire the rejected patch. The field that was rejected
           (e.g. ``model_config``) belongs to a LATER step — do not retry it
@@ -1012,7 +1283,8 @@ class GeneralistSig(dspy.Signature):
           loop that doubles the turn — do not do it.
       Re-firing the rejected patch or re-requesting authoring in response to
       an out-of-order error is a forbidden loop.
-    * If a tool returns an error, surface it to the user in Hebrew and ask
+    * If a tool returns an error, surface it to the user in
+      ``reply_language`` and ask
       how to proceed — do not retry blindly. A 422/400 on submit is proof
       a wizard field is missing, not proof the submit tool is unavailable.
     * Never invent optimization IDs or model names. Get them from the
@@ -1033,7 +1305,8 @@ class GeneralistSig(dspy.Signature):
         • Call it AT MOST ONCE per turn and REUSE that result for the rest
           of the turn. Do not re-call it to look up a second model — the
           first response already lists the matches.
-    * When the user says "תגיש" / "תשלח" / "יש אישור" / "submit": if
+    * When the user asks to submit in any language (e.g. "תגיש" / "תשלח" /
+      "יש אישור" / "submit"): if
       ``submit_job_run_post`` is in your tool list THIS turn, call it;
       if it isn't, identify the missing wizard field and patch it via
       ``update_wizard_state`` / ``set_column_roles`` /
@@ -1047,20 +1320,27 @@ class GeneralistSig(dspy.Signature):
       optimizer. Do not mention BootstrapFewShot, MIPRO/MIPROv2, COPRO,
       BootstrapFinetune, Ensemble, or any other DSPy optimizer — they are
       not wired into this backend.
-    * Module (``module_name``): ``predict`` (dspy.Predict) and ``cot``
-      (dspy.ChainOfThought) are the only supported modules.
+    * Module (``module_name``): ``predict`` (dspy.Predict), ``cot``
+      (dspy.ChainOfThought), and ``workflow`` are the only supported
+      modules. ``workflow`` is a multi-node graph (a chain/DAG of
+      signatures, Python transforms, and tool calls) that the user
+      composes in the visual builder on the Code step; pick it when the
+      task needs multiple LLM steps wired together. The graph itself is
+      authored in the canvas (via ``request_code_authoring``), never as a
+      single ``signature_code``.
     * Metric: there are no preset metrics. The user writes a metric
       function as Python source in ``metric_code`` (a callable taking
       ``(example, pred, trace=None)`` and returning a float).
     * If the user asks "which optimizers can I use?" answer GEPA only.
-      If the user names an unsupported optimizer/module, tell them in
-      Hebrew that it isn't wired into Skynet and offer the supported
-      alternative.
+      If the user names an unsupported optimizer/module, tell them (in
+      ``reply_language``) that it isn't wired into Skynet and offer the
+      supported alternative.
 
     Capabilities worth knowing about:
     * Dataset uploads: when the user needs to provide a dataset (or you
       determine one is required to proceed), call ``request_user_dataset``
-      with a short Hebrew ``prompt`` sentence asking the user to attach a
+      with a short ``prompt`` sentence (in ``reply_language``) asking the
+      user to attach a
       dataset file. That renders an upload card inline in the chat — the
       user picks the file, the panel parses it, the user confirms which
       columns are input/output, and the wizard hydrates automatically.
@@ -1071,8 +1351,7 @@ class GeneralistSig(dspy.Signature):
       configuration with ``set_column_roles`` if needed. Never invent
       column names — use what the user confirms verbatim.
     * Existing jobs: ``clone_job`` duplicates a job (1–5 copies),
-      ``retry_job`` re-runs a failed/cancelled one, ``compare_jobs`` gives
-      a side-by-side snapshot of 2–5 optimizations, ``bulk_pin_jobs``
+      ``retry_job`` re-runs a failed/cancelled one, ``bulk_pin_jobs``
       toggles pin state in batch, ``bulk_cancel_jobs`` stops many
       running/pending jobs at once, ``bulk_delete_jobs`` removes many
       terminal jobs at once.
@@ -1088,6 +1367,21 @@ class GeneralistSig(dspy.Signature):
       thing. Do NOT patch ``signature_code`` / ``metric_code`` here — they
       are authored only by ``request_code_authoring`` (see below); the
       ``update_wizard_state`` endpoint REJECTS those two fields.
+    * User preferences: when the user explicitly asks to turn a local
+      preference on or off, call ``update_user_preferences``. Supported fields
+      are ``advanced_mode``, ``expand_advanced``, ``lite_mode``,
+      ``wizard_code_assist`` (``auto`` or ``manual``), ``wizard_split_mode``
+      (``auto`` or ``manual``), ``tagger_assist``, and ``dictation_enabled``.
+      Bundle all requested changes into one call and end the turn with a
+      concise status.
+      The tool updates this browser's device-scoped settings; it does not
+      change server-wide configuration.
+    * When you NAME a run, describe it too: set ``job_description`` (one
+      or two plain sentences — the task, the data, the goal, in
+      ``reply_language``) in the SAME ``update_wizard_state`` patch as
+      ``job_name``. It shows on the wizard's Basics step and lands as the
+      run's description on submit automatically — a run you drive should
+      never ship with a name but no description.
     * HARD RULE — one ``update_wizard_state`` call per turn. If you are
       patching N fields this turn, bundle them into a single ``patch``
       object on one call. Splitting "set optimizer, then set model, then
@@ -1123,7 +1417,8 @@ class GeneralistSig(dspy.Signature):
       ``wizard_state``, so submitting now ships stale or wrong code that
       dead-ends in a doomed run. The instant you (re)request authoring —
       whether to seed code or to FIX a problem you just found in the existing
-      Signature/Metric — END the turn with a short Hebrew status line and
+      Signature/Metric — END the turn with a short status line (in
+      ``reply_language``) and
       submit ONLY on a LATER turn, once the authored code is reflected in the
       ``wizard_state`` snapshot you are handed. Requesting authoring and
       submitting in one turn is a contradiction: you cannot submit code you
@@ -1134,7 +1429,8 @@ class GeneralistSig(dspy.Signature):
       search over every public optimization (free-text query in any
       language, plus optional models / optimizers / optimization_types /
       date filters, sorted by relevance / recency / gain). Use it when the
-      user asks to find comparable runs (free-text Hebrew queries like
+      user asks to find comparable runs (free-text queries in the user's
+      language, like
       "show me sentiment runs that scored above 0.8") before reaching for
       the wizard.
     * Run diagnostics: ``get_test_results`` returns per-example baseline
@@ -1163,7 +1459,8 @@ class GeneralistSig(dspy.Signature):
       missing, do NOT tell the user that you can't submit — identify
       which fields are blank from the wizard_state snapshot and either
       patch them via ``update_wizard_state`` / ``set_column_roles`` /
-      ``request_user_dataset``, or ask one targeted Hebrew question to
+      ``request_user_dataset``, or ask one targeted question (in
+      ``reply_language``) to
       fill the single biggest gap, then submit on the next turn. Never
       tell the user, in Hebrew or any other language, that you lack a
       submit tool — submission is always reachable once the wizard fields
@@ -1175,6 +1472,19 @@ class GeneralistSig(dspy.Signature):
       do NOT report it as submitted. A run is submitted ONLY when
       ``submit_job_run_post`` returns a successful result in your
       trajectory this turn.
+    * Grid search vs single run: the two submit tools are mutually
+      exclusive — only the one matching ``job_type`` is exposed. The
+      default ``job_type`` (``"run"``) uses a single model pair
+      (``model_config`` + ``reflection_model_config``) and unlocks
+      ``submit_job_run_post``. Set ``job_type`` to ``"grid_search"`` via
+      update_wizard_state to sweep several models: a grid run needs model
+      LISTS (``generation_models`` + ``reflection_models``, or the
+      ``use_all_*`` flags) instead of the single configs, and unlocks
+      ``submit_grid_search_grid_search_post`` instead. Only propose a grid
+      search when the user asks to compare/sweep models.
+    * Run privacy: runs are private by default. Set ``is_private`` to false
+      only when the user explicitly asks to publish in the authenticated
+      on-premise Explorer corpus.
     * Dataset handoff for submit: never inline ``dataset`` rows into the
       submit tool arguments. The wizard stages the parsed rows on the
       backend after upload and surfaces a ``staged_dataset_id`` in the
@@ -1195,6 +1505,30 @@ class GeneralistSig(dspy.Signature):
       in the snapshot the code isn't authored yet: call
       ``request_code_authoring`` and stop. Never re-type code from an
       earlier failed submit; the authored snapshot is the only source.
+
+    Permanent memory — ``memory_context`` is what you know about this user
+    across every past conversation, woken at turn start: raw memories as
+    ``#i date text`` lines and compressed summary nodes as ``#lo-hi text``
+    lines, oldest first. It outlives sessions, compactions, and model
+    changes. Rules:
+    * Record a memory with ``memory_note`` (one line, at most 280
+      characters, in English) whenever something with lasting effect
+      happens: a run is submitted and how it turned out, the user states a
+      preference or a fact about their data / domain / goals, a decision is
+      made, a diagnosis explains a failure. Do not note greetings,
+      transient chit-chat, or anything the memory already contains.
+    * When a tool result (or ``memory_context``) carries a
+      ``compression_request``, honor it before ending the turn: write the
+      one line it asks for — keep what has lasting effect, drop what does
+      not, invent nothing — and call ``memory_nap`` with the exact block id
+      it names. At most one compression per turn.
+    * Memory maintenance is invisible: never mention noting, compressing,
+      or the memory system to the user unless they ask about it.
+    * When the user references something not in ``memory_context``, search
+      before saying you don't know: ``memory_recall(pattern=…)`` scans
+      every memory ever recorded, and ``memory_zoom(block="lo-hi")`` opens
+      a summary node from the context into its two halves, down to raw
+      memories.
 
     CRITICAL — never fabricate tool results:
     * If ``submit_job_run_post`` (or any other tool) is NOT in your
@@ -1231,9 +1565,19 @@ class GeneralistSig(dspy.Signature):
     """
 
     wizard_state: str = dspy.InputField(desc="JSON snapshot of the current wizard state.")
+    memory_context: str = dspy.InputField(
+        desc="Your permanent memory, woken for this turn: #i date text entries and "
+        "#lo-hi summary nodes, oldest first, plus any pending compression request."
+    )
     chat_history: str = dspy.InputField(desc="Prior {role, content} turns as JSON.")
-    user_message: str = dspy.InputField(desc="The user's latest Hebrew message.")
-    assistant_message: str = dspy.OutputField(desc="Hebrew reply to the user summarizing what you did and what's next.")
+    reply_language: str = dspy.InputField(
+        desc="Language every user-facing string you write must be in (e.g. 'Hebrew', 'French'). "
+        "Applies to assistant_message, status lines, and tool prompt arguments."
+    )
+    user_message: str = dspy.InputField(desc="The user's latest message.")
+    assistant_message: str = dspy.OutputField(
+        desc="Reply to the user, written in reply_language, summarizing what you did and what's next."
+    )
 
 
 class GeneralistStatusProvider(StatusMessageProvider):
@@ -1320,12 +1664,14 @@ async def _drive_generalist_agent(
     *,
     mcp_url: str,
     wizard_state: WizardState,
+    memory_context: str,
     chat_history: list[dict],
     user_message: str,
     trust_mode: TrustMode,
     registry: ApprovalRegistry,
     emit: Callable[[dict], None],
     lm: Any,
+    reply_language: str,
     auth_header: str | None = None,
 ) -> str:
     """Open the MCP session, run the ReAct loop, and return the final assistant message.
@@ -1337,12 +1683,17 @@ async def _drive_generalist_agent(
     Args:
         mcp_url: HTTP endpoint of the target MCP server.
         wizard_state: Snapshot of wizard state used to phase tool exposure.
+        memory_context: The caller's woken permanent-memory document, fed to
+            the Signature's ``memory_context`` input.
         chat_history: Prior chat turns as ``{role, content}`` dicts.
         user_message: The user's latest message.
         trust_mode: Caller's trust level for tool gating.
         registry: Approval registry used for tool gating.
         emit: Thread-safe SSE event emitter.
         lm: Language model bound to the ReAct program.
+        reply_language: English name of the language the agent replies in
+            (e.g. ``"Hebrew"``), fed to the Signature's ``reply_language``
+            input.
         auth_header: Verbatim ``Authorization`` header forwarded to the MCP
             session so tool calls hit the agent-tagged routes as the same
             user that opened the SSE stream.
@@ -1354,6 +1705,7 @@ async def _drive_generalist_agent(
         listing = await session.list_tools()
         allowed_names = tools_for(wizard_state)
         staged_id = wizard_state.get("staged_dataset_id") or None
+        source_id = wizard_state.get("source_dataset_id") or None
         # The MCP session is bound to THIS loop. ``streamify`` will dispatch
         # tool calls from a worker thread (asyncify), so the wrapper has
         # to marshal each call back here via run_coroutine_threadsafe.
@@ -1369,6 +1721,7 @@ async def _drive_generalist_agent(
                 emit=emit,
                 outer_loop=outer_loop,
                 staged_dataset_id=staged_id,
+                source_dataset_id=source_id,
                 wizard_state=wizard_state,
                 authoring_flag=authoring_flag,
             )
@@ -1390,7 +1743,19 @@ async def _drive_generalist_agent(
                 },
             }
         )
-        react = REACT_CLASS(GeneralistSig, tools=dspy_tools, max_iters=8)
+        # RetryingReActV2, not the stock class: the default generalist model is
+        # minimax-class, which occasionally breaks the turn protocol and raises
+        # AdapterParseError — the retrying loop resamples the turn instead of
+        # failing the whole chat reply.
+        # A final ``submit`` issued in parallel with a read tool cannot see that
+        # tool's result. Serial calls guarantee the result enters ReAct history
+        # before the model writes the user-facing answer.
+        react = RetryingReActV2(
+            GeneralistSig,
+            tools=dspy_tools,
+            max_iters=8,
+            serial_tool_calls=True,
+        )
         # The user's ``assistant_message`` rides a ``submit`` tool call on ReActV2
         # or a separate ``extract`` predictor on classic ReAct; ``ReactReplyStream``
         # wires the right listeners and decodes whichever shape into reply deltas.
@@ -1409,7 +1774,9 @@ async def _drive_generalist_agent(
 
         inputs = {
             "wizard_state": json.dumps(wizard_state, ensure_ascii=False),
+            "memory_context": memory_context,
             "chat_history": json.dumps(chat_history, ensure_ascii=False),
+            "reply_language": reply_language,
             "user_message": user_message,
         }
         reply_text = ""
@@ -1437,11 +1804,14 @@ async def run_generalist_agent(
     wizard_state: WizardState,
     chat_history: list[dict],
     user_message: str,
+    memory_context: str = "",
     trust_mode: TrustMode = "ask",
     mcp_url: str | None = None,
     model_config: ModelConfig | None = None,
     approval_registry: ApprovalRegistry | None = None,
     auth_header: str | None = None,
+    locale: str | None = None,
+    usage_sink: list | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Stream generalist-agent events for one user turn.
 
@@ -1462,7 +1832,9 @@ async def run_generalist_agent(
     Args:
         wizard_state: Snapshot of the wizard the agent is driving.
         chat_history: Prior chat turns as ``{role, content}`` dicts.
-        user_message: The user's latest Hebrew message.
+        user_message: The user's latest message.
+        memory_context: The caller's woken permanent-memory document
+            (empty when persistence is off — the field simply reads blank).
         trust_mode: Trust level controlling which tool calls require approval.
         mcp_url: Optional override for the MCP server URL.
         model_config: Optional override for the language model configuration.
@@ -1471,6 +1843,12 @@ async def run_generalist_agent(
             Forwarded to the MCP session so the agent's tool calls
             authenticate against ``get_authenticated_user`` on the same
             FastAPI app — without it every agent-tagged route returns 401.
+        locale: UI locale code of the client (e.g. ``he``, ``fr-CA``).
+            Resolved via :func:`_reply_language`; unknown or missing falls
+            back to Hebrew.
+        usage_sink: Optional list the built LM is appended to, so the caller
+            can meter the turn's token usage on any exit path — including a
+            client disconnect where the ``done`` event never fires.
 
     Yields:
         SSE event dicts of shape ``{"event": str, "data": dict}``.
@@ -1482,10 +1860,28 @@ async def run_generalist_agent(
     registry = approval_registry or get_approval_registry()
     model_name = model_config.name if model_config else settings.generalist_agent_model
     try:
-        lm = build_language_model(model_config) if model_config else _build_generalist_lm()
+        if model_config:
+            # A caller-chosen model runs through the same pipeline as the
+            # default: platform base_url unless the config carries its own,
+            # the reasoning-model knobs, and no response cache.
+            override = model_config.model_copy(
+                update={
+                    "base_url": model_config.base_url
+                    or settings.generalist_agent_base_url
+                    or settings.openai_api_base
+                    or None
+                }
+            )
+            override = apply_model_reasoning_config(override)
+            _apply_interactive_timeout(override)
+            lm = build_language_model(override, disable_cache=True)
+        else:
+            lm = _build_generalist_lm()
     except ServiceError as exc:
         yield {"event": "error", "data": {"error": str(exc)}}
         return
+    if usage_sink is not None:
+        usage_sink.append(lm)
 
     # The approval wrapper is called from a worker thread by DSPy, so we
     # need a thread-safe hop back to this coroutine's event loop to emit
@@ -1498,12 +1894,14 @@ async def run_generalist_agent(
         _drive_generalist_agent(
             mcp_url=url,
             wizard_state=wizard_state,
+            memory_context=memory_context,
             chat_history=chat_history,
             user_message=user_message,
             trust_mode=trust_mode,
             registry=registry,
             emit=emit,
             lm=lm,
+            reply_language=_reply_language(locale),
             auth_header=auth_header,
         )
     )
@@ -1518,10 +1916,19 @@ async def run_generalist_agent(
             if drive_task in done and out_queue.empty():
                 break
         reply = await drive_task
-        yield {"event": "done", "data": {"assistant_message": reply, "model": model_name}}
+        yield {
+            "event": "done",
+            "data": {
+                "assistant_message": reply,
+                "model": model_name,
+                # The concrete model behind an auto-routed turn (None when the
+                # request named one explicitly); the reply footer reveals it.
+                "served_model": served_model_from(lm),
+            },
+        }
     except asyncio.CancelledError:
         drive_task.cancel()
         raise
     except Exception as exc:
         logger.exception("generalist agent failed")
-        yield {"event": "error", "data": {"error": _format_agent_error(exc)}}
+        yield {"event": "error", "data": _agent_error_payload(exc)}

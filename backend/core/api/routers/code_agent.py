@@ -8,16 +8,19 @@ interactively — not part of the dev integration surface.
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from collections.abc import AsyncIterator
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
 from ...service_gateway.agents.code import run_code_agent
+from ...service_gateway.agents.code_interview import interview_turn_stream
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
-from ._helpers import sse_from_events
+from ..model_router import route_menu_model
+from ._helpers import sse_from_events, stream_with_llm_observation
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +86,100 @@ class CodeAgentRequest(BaseModel):
             "when no edits have happened yet."
         ),
     )
+    prior_workflow: dict | None = Field(
+        default=None,
+        description=(
+            "The workflow graph currently on the canvas (WorkflowSpec wire "
+            "shape). Non-None switches both modes to their graph-aware "
+            "paths: seed drafts the full DAG, chat gets graph tools."
+        ),
+    )
+    initial_workflow: dict | None = Field(
+        default=None,
+        description="The original graph from the very first version, for revert support.",
+    )
+    locale: str | None = Field(
+        default=None,
+        description=(
+            "UI locale code of the client (e.g. 'he', 'en', 'fr-CA'). Sets "
+            "the language of the agent's replies and edit rationales; "
+            "unknown or missing falls back to Hebrew."
+        ),
+    )
+    interview_brief: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Directives confirmed at the end of the Signature & Metric "
+            "interview. The seed authors honor every directive; empty when "
+            "no interview happened."
+        ),
+    )
+    model: str | None = Field(
+        default=None,
+        description=(
+            "LiteLLM id of the catalog model that authors the code (the "
+            "composer's model menu). Absent routes automatically (balanced "
+            "tier); the sentinel 'auto:intelligent' routes to a frontier-"
+            "quality model."
+        ),
+    )
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = Field(
+        default=None,
+        description=(
+            "Explicit reasoning-effort level for the chosen model; absent "
+            "keeps the model's default."
+        ),
+    )
+
+
+class CodeInterviewRequest(BaseModel):
+    """Input for one streamed Signature & Metric interview turn.
+
+    Stateless like the tagger interview: the client owns the transcript and
+    re-sends it on every turn. The dataset context mirrors
+    :class:`CodeAgentRequest` (columns + roles + a small sample, never the
+    full dataset).
+    """
+
+    dataset_columns: list[str] = Field(..., min_length=1, description="All column names in the dataset.")
+    column_roles: dict[str, str] = Field(..., description="Column → 'input'|'output'|'ignore'.")
+    column_kinds: dict[str, str] = Field(
+        default_factory=dict,
+        description="Input column → 'text'|'image'.",
+    )
+    sample_rows: list[dict] = Field(default_factory=list, description="Up to 5 sample rows.")
+    turns: list[ChatTurn] = Field(
+        default_factory=list,
+        max_length=40,
+        description="Prior {role, content} interview turns, oldest first.",
+    )
+    job_model: str = Field(
+        default="",
+        description="LiteLLM id of the model the optimized program will run on; empty when not chosen yet.",
+    )
+    locale: str | None = Field(
+        default=None,
+        description=(
+            "UI locale code of the client (e.g. 'he', 'en', 'fr-CA'). Sets "
+            "the interview's language; unknown or missing falls back to Hebrew."
+        ),
+    )
+    model: str | None = Field(
+        default=None,
+        description=(
+            "LiteLLM id of the catalog model conducting the interview (the "
+            "composer's model menu). Absent routes automatically (balanced "
+            "tier); the sentinel 'auto:intelligent' routes to a frontier-"
+            "quality model."
+        ),
+    )
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = Field(
+        default=None,
+        description=(
+            "Explicit reasoning-effort level for the chosen model; absent "
+            "keeps the model's default."
+        ),
+    )
 
 
 class EditCodeRequest(BaseModel):
@@ -138,8 +235,13 @@ class RequestCodeAuthoringResponse(BaseModel):
     goal: str
 
 
-def create_code_agent_router() -> APIRouter:
+def create_code_agent_router(*, job_store=None) -> APIRouter:
     """Mount the ``POST /optimizations/ai-generate-code`` SSE endpoint.
+
+    Args:
+        job_store: Optional job-store whose engine backs BYOK resolution and
+            per-turn usage telemetry. When ``None``, turns stream without
+            persistence.
 
     Returns:
         A configured :class:`APIRouter` with the code-agent endpoints attached.
@@ -157,12 +259,18 @@ def create_code_agent_router() -> APIRouter:
 
         * ``signature_patch`` / ``metric_patch`` — ``{"chunk": "<token>"}``
           (seed mode only)
-        * ``reasoning_patch`` — ``{"chunk": "<token>"}`` (both modes)
+        * ``reasoning_patch`` — ``{"chunk": "<token>", "source": "<stream>"}``
+          (both modes; ``source`` separates the parallel seed authors:
+          ``signature`` / ``metric`` / ``workflow`` / ``agent``)
         * ``tool_start`` — ``{"id", "tool", "reason"}`` (chat mode)
         * ``signature_replace`` / ``metric_replace`` — ``{"code"}``
+        * ``workflow_replace`` — ``{"workflow", "changed_node_id"}``
+          (workflow mode: seed snapshot + one per graph tool op)
         * ``tool_end`` — ``{"id", "tool", "status"}``
         * ``message_patch`` — ``{"chunk": "<token>"}`` (chat mode reply stream)
-        * ``done`` — ``{"signature_code", "metric_code", "assistant_message"}``
+        * ``done`` — ``{"signature_code", "metric_code", "assistant_message",
+          "model", "served_model"}`` (workflow mode carries ``workflow`` +
+          ``workflow_valid`` instead of ``signature_code``)
         * ``error`` — ``{"error": "<message>"}``
 
         Args:
@@ -172,7 +280,8 @@ def create_code_agent_router() -> APIRouter:
         Returns:
             A :class:`StreamingResponse` of Server-Sent Events.
         """
-
+        model, lm_extra_body = route_menu_model(req.model)
+        usage_sink: list = []
         source = run_code_agent(
             dataset_columns=req.dataset_columns,
             column_roles=req.column_roles,
@@ -186,9 +295,94 @@ def create_code_agent_router() -> APIRouter:
             prior_metric_validation=req.prior_metric_validation,
             initial_signature=req.initial_signature,
             initial_metric=req.initial_metric,
+            prior_workflow=req.prior_workflow,
+            initial_workflow=req.initial_workflow,
+            interview_brief=req.interview_brief,
+            locale=req.locale,
+            model=model,
+            reasoning_effort=req.reasoning_effort,
+            lm_extra_body=lm_extra_body,
+            usage_sink=usage_sink,
+        )
+        metered = stream_with_llm_observation(
+            source,
+            job_store=job_store,
+            username=current_user.username,
+            description="Code authoring",
+            usage_sink=usage_sink,
         )
         return StreamingResponse(
-            sse_from_events(source),
+            sse_from_events(metered),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @router.post(
+        "/optimizations/code-interview",
+        summary="Stream one Signature & Metric interview turn",
+    )
+    async def code_interview(req: CodeInterviewRequest, current_user: AuthenticatedUserDep) -> StreamingResponse:
+        """Stream one interview turn as SSE, mirroring the tagger interview.
+
+        Event types:
+
+        * ``reasoning_patch`` — ``{"chunk": "<token>"}`` (provider thinking)
+        * ``message_patch`` — ``{"chunk": "<token>"}`` (reply stream)
+        * ``message_end`` — ``{}`` (the reply is fully streamed; options and
+          brief are still generating)
+        * ``turn_hint`` — ``{"final": bool}`` (the streamed ``done`` field
+          settled; the client picks the matching placeholder)
+        * ``message_reset`` — ``{}`` (a failed attempt is being retried; the
+          client drops any partial reply streamed so far)
+        * ``interview_done`` — ``{"message", "options", "brief", "done",
+          "model"}`` (terminal; ``options`` is a list of ``{label,
+          description}`` picks, ``brief`` is empty until ``done``)
+        * ``error`` — ``{"error": "<message>"}``
+
+        Args:
+            req: Dataset context, the client-owned transcript, and locale.
+            current_user: The authenticated caller (required; gates LLM spend).
+
+        Returns:
+            A :class:`StreamingResponse` of Server-Sent Events.
+        """
+        model, lm_extra_body = route_menu_model(req.model)
+        usage_sink: list = []
+
+        async def source() -> AsyncIterator[dict]:
+            """Relay engine events, translating failures into an error event."""
+            try:
+                async for event in interview_turn_stream(
+                    dataset_columns=req.dataset_columns,
+                    column_roles=req.column_roles,
+                    column_kinds=req.column_kinds,
+                    sample_rows=req.sample_rows[:5],
+                    job_model=req.job_model,
+                    turns=[t.model_dump() for t in req.turns],
+                    locale=req.locale,
+                    model=model,
+                    reasoning_effort=req.reasoning_effort,
+                    lm_extra_body=lm_extra_body,
+                    usage_sink=usage_sink,
+                ):
+                    yield event
+            except Exception:
+                logger.exception("code interview stream failed")
+                yield {"event": "error", "data": {"code": "submit.code.interview.llm_failed"}}
+
+        metered = stream_with_llm_observation(
+            source(),
+            job_store=job_store,
+            username=current_user.username,
+            description="Code interview",
+            usage_sink=usage_sink,
+        )
+        return StreamingResponse(
+            sse_from_events(metered),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -226,7 +420,8 @@ def create_code_agent_router() -> APIRouter:
         final_metric = req.current_metric
         assistant_message = ""
 
-        async for event in run_code_agent(
+        usage_sink: list = []
+        source = run_code_agent(
             dataset_columns=req.dataset_columns,
             column_roles=req.column_roles,
             column_kinds=req.column_kinds,
@@ -235,6 +430,14 @@ def create_code_agent_router() -> APIRouter:
             chat_history=[],
             prior_signature=req.current_signature,
             prior_metric=req.current_metric,
+            usage_sink=usage_sink,
+        )
+        async for event in stream_with_llm_observation(
+            source,
+            job_store=job_store,
+            username=current_user.username,
+            description="Code authoring",
+            usage_sink=usage_sink,
         ):
             name = event["event"]
             data = event["data"]

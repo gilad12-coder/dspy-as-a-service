@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Sparkles, XCircle } from "lucide-react";
+import { CircleNotch, Sparkle, XCircle } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
 import { Button } from "@/shared/ui/primitives/button";
 import { autoResizeTextarea } from "@/shared/ui/agent";
 import { formatOutput } from "@/shared/lib";
-import { getServeInfo, serveProgram } from "@/shared/lib/api";
+import { formatMsg } from "@/shared/lib/messages";
+import { getPairServeInfo, getServeInfo, servePairProgram, serveProgram } from "@/shared/lib/api";
 import type { AgentToolCall } from "@/shared/ui/agent/types";
 import type { ServeInfoResponse, ServeResponse } from "@/shared/types/api";
 
@@ -50,6 +51,11 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
         ? args.id
         : "";
 
+  // When the agent used the grid-search trigger (request_user_pair_inference)
+  // the args carry a pair_index; the card then serves that single pair instead
+  // of the whole program. One card handles both modes.
+  const pairIndex = typeof args.pair_index === "number" ? args.pair_index : null;
+
   const initialResult = getInitialResult(call);
   const initialInputs = inputsFromArgs(args);
 
@@ -70,7 +76,11 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
   React.useEffect(() => {
     if (!optimizationId) return;
     let cancelled = false;
-    getServeInfo(optimizationId)
+    const load =
+      pairIndex == null
+        ? getServeInfo(optimizationId)
+        : getPairServeInfo(optimizationId, pairIndex);
+    load
       .then((data) => {
         if (cancelled) return;
         setInfo(data);
@@ -82,7 +92,7 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
     return () => {
       cancelled = true;
     };
-  }, [optimizationId]);
+  }, [optimizationId, pairIndex]);
 
   const fields = info?.input_fields ?? Object.keys(initialInputs);
 
@@ -101,7 +111,10 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
       setRunning(true);
       setRunError(null);
       try {
-        const response = await serveProgram(optimizationId, values);
+        const response =
+          pairIndex == null
+            ? await serveProgram(optimizationId, values)
+            : await servePairProgram(optimizationId, pairIndex, values);
         setResult(response);
         setSubmittedInputs(values);
         for (const f of fields) {
@@ -117,7 +130,7 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
         setRunning(false);
       }
     },
-    [collectValues, disabled, fields, optimizationId, running],
+    [collectValues, disabled, fields, optimizationId, pairIndex, running],
   );
 
   const outputFields =
@@ -128,16 +141,25 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
         : [];
 
   return (
-    <div className="w-full" dir="rtl">
+    <div className="w-full">
       <div className="rounded-2xl border border-[#C8A882]/40 bg-gradient-to-br from-[#FAF8F5] to-[#F5EFE6] shadow-[0_4px_16px_rgba(61,46,34,0.06)] overflow-hidden">
         <div className="px-4 pt-3.5 pb-2.5 border-b border-[#C8A882]/25 bg-white/40">
           <div className="flex items-start gap-2.5">
             <span className="shrink-0 size-7 rounded-full inline-flex items-center justify-center bg-[#C8A882]/25 text-[#3D2E22]">
-              <Sparkles className="size-3.5" aria-hidden="true" />
+              <Sparkle className="size-3.5" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="text-[0.8125rem] font-semibold text-[#3D2E22] leading-tight">
-                {msg("auto.features.agent.panel.lib.tool.meta.literal.70")}
+              <div className="flex items-center gap-2">
+                <div className="text-[0.8125rem] font-semibold text-[#3D2E22] leading-tight">
+                  {msg("auto.features.agent.panel.lib.tool.meta.literal.70")}
+                </div>
+                {pairIndex != null && (
+                  <span className="inline-flex shrink-0 items-center rounded-full bg-[#3D2E22]/8 px-2 py-0.5 text-[0.625rem] font-medium text-[#3D2E22]">
+                    {formatMsg("auto.features.agent.panel.components.inferenceformcard.pair", {
+                      p1: pairIndex,
+                    })}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -146,7 +168,7 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
         <div className="px-4 py-4">
           {!info && !infoError && (
             <div className="text-[0.75rem] text-[#6B5B4A] flex items-center justify-center gap-1.5 py-3">
-              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              <CircleNotch className="size-3.5 animate-spin" aria-hidden="true" />
               {msg("auto.features.agent.panel.components.inferenceformcard.literal.8")}
             </div>
           )}
@@ -170,7 +192,7 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
             <div className="space-y-3 mb-4">
               <div className="flex justify-start">
                 <div
-                  className="max-w-[80%] rounded-2xl rounded-br-sm bg-[#3D2E22] text-[#FAF8F5] px-4 py-3 text-sm shadow-sm"
+                  className="max-w-[92%] rounded-2xl rounded-br-sm bg-[#3D2E22] px-4 py-3 text-sm text-[#FAF8F5] shadow-sm sm:max-w-[80%]"
                   dir="ltr"
                 >
                   {fields.map((k, i, arr) => (
@@ -213,18 +235,18 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
 
           {fields.length > 0 && (
             <form onSubmit={handleSubmit}>
-              <div
-                className={`flex gap-2 ${fields.length > 1 ? "items-center" : "items-start"}`}
-              >
+              <div className={`flex gap-2 ${fields.length > 1 ? "items-center" : "items-start"}`}>
                 <Button
                   type="submit"
                   size="icon"
-                  className="shrink-0 rounded-full !size-[42px]"
+                  className="shrink-0 rounded-full !size-[44px]"
                   disabled={running || disabled || !optimizationId}
-                  aria-label={msg("auto.features.agent.panel.components.inferenceformcard.literal.2")}
+                  aria-label={msg(
+                    "auto.features.agent.panel.components.inferenceformcard.literal.2",
+                  )}
                 >
                   {running ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <CircleNotch className="size-4 animate-spin" />
                   ) : (
                     <svg viewBox="0 0 24 24" fill="currentColor" className="size-4">
                       <path
@@ -279,7 +301,7 @@ export function InferenceFormCard({ call, disabled }: InferenceFormCardProps) {
                         }}
                         rows={1}
                         disabled={running || disabled}
-                        className="block w-full bg-muted/20 rounded-2xl border border-[#DDD4C8] px-4 py-[11px] text-sm font-mono leading-[20px] outline-none ring-0 shadow-none resize-none overflow-hidden h-[42px] max-h-[120px] focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus:border-[#C8A882] transition-colors placeholder:text-muted-foreground/40 disabled:opacity-60"
+                        className="block h-[44px] max-h-[120px] w-full resize-none overflow-hidden rounded-2xl border border-[#DDD4C8] bg-muted/20 px-4 py-[11px] text-sm font-mono leading-[20px] shadow-none outline-none ring-0 transition-colors placeholder:text-muted-foreground/40 focus:border-[#C8A882] focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:opacity-60"
                       />
                     </div>
                   ))}

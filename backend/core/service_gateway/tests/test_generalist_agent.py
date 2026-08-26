@@ -6,9 +6,13 @@ import asyncio
 from typing import cast
 
 import dspy
+import litellm
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
-from core.service_gateway.agents.code import _SubmitArgExtractor
+from core.service_gateway.agents import generalist as generalist_module
+from core.service_gateway.agents.code import _agent_error_payload, _SubmitArgExtractor
 from core.service_gateway.agents.generalist import (
     ApprovalRegistry,
     GeneralistSig,
@@ -19,6 +23,7 @@ from core.service_gateway.agents.generalist import (
     tools_for,
     validate_wizard_patch_order,
 )
+from core.storage.models import Base
 
 
 def test_empty_state_hides_dataset_and_submit_tools() -> None:
@@ -29,6 +34,11 @@ def test_empty_state_hides_dataset_and_submit_tools() -> None:
     assert "submit_job_run_post" not in allowed
     assert "submit_grid_search_grid_search_post" not in allowed
     assert "list_models_for_agent" in allowed
+
+
+def test_comparison_tool_is_not_exposed() -> None:
+    """Keep cross-optimization comparison out of every agent state."""
+    assert "compare_jobs_optimizations_compare_post" not in tools_for(WizardState())
 
 
 def test_dataset_ready_unlocks_diagnostics_but_not_code_without_name() -> None:
@@ -69,6 +79,68 @@ def test_full_readiness_unlocks_submit() -> None:
     # Grid search is intentionally NOT exposed to the agent; users reach
     # it through the wizard UI directly. See generalist._READY_TO_SUBMIT_TOOLS.
     assert "submit_grid_search_grid_search_post" not in allowed
+
+
+def test_workflow_ready_unlocks_submit() -> None:
+    """A workflow run readies on an authored graph + metric, not a Signature."""
+    base = {
+        "job_name": "Graph run",
+        "dataset_ready": True,
+        "columns_configured": True,
+        "module_name": "workflow",
+        "metric_code": "def metric(gold, pred, trace, pred_name, pred_trace): return 1.0",
+        "model_configured": True,
+        "reflection_model_config": {"name": "openai/gpt-4o-mini"},
+    }
+    # No graph (or an empty one) is not an authored program — submit stays locked
+    # even though there is no Signature to satisfy the single-module gate.
+    assert "submit_job_run_post" not in tools_for(cast(WizardState, base))
+    assert "submit_job_run_post" not in tools_for(
+        cast(WizardState, {**base, "workflow": {"nodes": [], "edges": []}})
+    )
+    ready = {**base, "workflow": {"nodes": [{"id": "input"}, {"id": "out"}], "edges": []}}
+    assert "submit_job_run_post" in tools_for(cast(WizardState, ready))
+
+
+def test_grid_job_type_swaps_submit_tool() -> None:
+    """A grid run exposes the grid submit tool and hides the single-run one."""
+    base = {
+        "job_name": "Sweep",
+        "dataset_ready": True,
+        "columns_configured": True,
+        "signature_code": "class S(dspy.Signature): ...",
+        "metric_code": "def metric(gold, pred, trace, pred_name, pred_trace): return 1.0",
+        "job_type": "grid_search",
+        "use_all_generation_models": True,
+        "use_all_reflection_models": True,
+    }
+    allowed = tools_for(cast(WizardState, base))
+    # Exactly one submit surface, matching job_type — never both (the state
+    # that made the model oscillate between two submit tools).
+    assert "submit_grid_search_grid_search_post" in allowed
+    assert "submit_job_run_post" not in allowed
+
+
+def test_grid_requires_generation_and_reflection_model_lists() -> None:
+    """Grid submit stays locked until both model lists (or use_all flags) are set."""
+    base = {
+        "job_name": "Sweep",
+        "dataset_ready": True,
+        "columns_configured": True,
+        "signature_code": "class S(dspy.Signature): ...",
+        "metric_code": "def metric(gold, pred, trace, pred_name, pred_trace): return 1.0",
+        "job_type": "grid_search",
+    }
+    assert "submit_grid_search_grid_search_post" not in tools_for(cast(WizardState, base))
+    # A generation list alone is not enough for GEPA (it reflects on a second).
+    gen_only = {**base, "generation_models": [{"name": "openai/gpt-4o-mini"}]}
+    assert "submit_grid_search_grid_search_post" not in tools_for(cast(WizardState, gen_only))
+    both = {
+        **base,
+        "generation_models": [{"name": "openai/gpt-4o-mini"}],
+        "reflection_models": [{"name": "openai/gpt-4o"}],
+    }
+    assert "submit_grid_search_grid_search_post" in tools_for(cast(WizardState, both))
 
 
 def test_gepa_without_reflection_model_keeps_submit_locked() -> None:
@@ -324,6 +396,26 @@ def test_always_tools_include_discovery_and_post_submit() -> None:
     assert "rename_job_optimizations" in allowed
 
 
+def test_read_only_reach_tools_always_available() -> None:
+    """Tagging-session reads are always-on and never gate."""
+    allowed = tools_for(WizardState())
+    assert "list_tagging_sessions_for_agent" in allowed
+    assert _needs_approval("list_tagging_sessions_for_agent", "ask") is False
+
+
+def test_dataset_library_tools_always_available() -> None:
+    """The saved-dataset library read + by-reference picker are always exposed."""
+    allowed = tools_for(WizardState())
+    assert "list_datasets_for_agent" in allowed
+    assert "request_user_dataset_from_library" in allowed
+
+
+def test_pair_inference_trigger_always_available() -> None:
+    """The grid-search pair inference trigger is always exposed and never gates."""
+    assert "request_user_pair_inference" in tools_for(WizardState())
+    assert _needs_approval("request_user_pair_inference", "ask") is False
+
+
 def test_yolo_never_gates() -> None:
     """Yolo trust-mode never gates any tool."""
     for name in ("delete_job_optimizations", "submit_job_run_post", "rename_job_optimizations"):
@@ -493,6 +585,138 @@ async def test_submit_without_snapshot_code_leaves_agent_args() -> None:
     await tool.func._async_body(signature_code="agent_sig", metric_code="agent_metric")
     assert seen["signature_code"] == "agent_sig"
     assert seen["metric_code"] == "agent_metric"
+
+
+@pytest.mark.asyncio
+async def test_submit_injects_wizard_description() -> None:
+    """Submit carries the wizard's job_description — stripped and clipped to 280."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        wizard_state=cast(WizardState, {"job_description": "  " + "x" * 300 + "  "}),
+    )
+    await tool.func._async_body()
+    assert seen["description"] == "x" * 280
+
+
+@pytest.mark.asyncio
+async def test_submit_keeps_agent_supplied_description() -> None:
+    """An agent-supplied description wins over the wizard snapshot's."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        wizard_state=cast(WizardState, {"job_description": "from the wizard"}),
+    )
+    await tool.func._async_body(description="from the agent")
+    assert seen["description"] == "from the agent"
+
+
+@pytest.mark.asyncio
+async def test_submit_injects_source_dataset_id() -> None:
+    """A library-dataset run injects source_dataset_id when no dataset is supplied."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        source_dataset_id="lib_42",
+        wizard_state=cast(WizardState, {"source_dataset_id": "lib_42"}),
+    )
+    await tool.func._async_body()
+    assert seen["source_dataset_id"] == "lib_42"
+
+
+@pytest.mark.asyncio
+async def test_submit_staged_dataset_wins_over_source() -> None:
+    """Staged and library ids are mutually exclusive: staged injects, source does not."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        staged_dataset_id="ds_1",
+        source_dataset_id="lib_1",
+        wizard_state=cast(WizardState, {}),
+    )
+    await tool.func._async_body()
+    assert seen["staged_dataset_id"] == "ds_1"
+    assert "source_dataset_id" not in seen
+
+
+@pytest.mark.asyncio
+async def test_submit_injects_workflow_graph_over_signature() -> None:
+    """A workflow submit ships the authored graph and drops signature_code."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    graph = {"nodes": [{"id": "input"}, {"id": "out"}], "edges": []}
+    wizard_state = cast(
+        WizardState,
+        {
+            "module_name": "workflow",
+            "workflow": graph,
+            "metric_code": "def good(gold, pred, trace, pred_name, pred_trace): return 1.0",
+            "staged_dataset_id": "ds_9",
+        },
+    )
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        staged_dataset_id="ds_9",
+        wizard_state=wizard_state,
+    )
+    # The agent leaves a stale Signature in its args; the workflow snapshot wins.
+    await tool.func._async_body(signature_code="class Leftover(dspy.Signature): ...")
+    assert seen["module_name"] == "workflow"
+    assert seen["workflow"] == graph
+    assert "signature_code" not in seen
+    assert seen["metric_code"] == "def good(gold, pred, trace, pred_name, pred_trace): return 1.0"
+    assert seen["staged_dataset_id"] == "ds_9"
+
+
+@pytest.mark.asyncio
+async def test_submit_defaults_to_private() -> None:
+    """Submit forces ``is_private`` to private when the snapshot never set it."""
+    tool, seen = _make_recording_tool("submit_job_run_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        wizard_state=cast(WizardState, {}),
+    )
+    await tool.func._async_body()
+    assert seen["is_private"] is True
+
+
+@pytest.mark.asyncio
+async def test_submit_respects_explicit_public() -> None:
+    """A snapshot ``is_private=False`` (user asked for public) reaches submit."""
+    tool, seen = _make_recording_tool("submit_grid_search_grid_search_post")
+    _wrap_tool_with_approval(
+        tool,
+        trust_mode="yolo",
+        registry=ApprovalRegistry(),
+        emit=lambda _e: None,
+        outer_loop=asyncio.get_running_loop(),
+        wizard_state=cast(WizardState, {"is_private": False}),
+    )
+    await tool.func._async_body()
+    assert seen["is_private"] is False
 
 
 @pytest.mark.asyncio
@@ -670,3 +894,93 @@ def test_system_prompt_forbids_submit_in_authoring_turn() -> None:
     prompt = GeneralistSig.__doc__ or ""
     assert "NEVER call ``submit_job_run_post`` in the SAME turn as" in prompt
     assert "request_code_authoring" in prompt
+
+
+def _approval_engine():
+    """In-memory shared-across-threads SQLite engine with the ORM schema."""
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    return engine
+
+
+def test_resolve_or_persist_without_engine_rejects_unknown_id() -> None:
+    """Store-less registries keep the old contract: unknown id is unresolved."""
+    registry = ApprovalRegistry()
+    assert registry.resolve_or_persist("nope", True) is False
+
+
+@pytest.mark.asyncio
+async def test_confirm_on_another_replica_reaches_waiting_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A decision persisted by one replica resolves another replica's wait loop."""
+    monkeypatch.setattr(generalist_module, "_DURABLE_POLL_SECONDS", 0.01)
+    engine = _approval_engine()
+    streaming = ApprovalRegistry()
+    streaming.bind_engine(engine)
+    confirming = ApprovalRegistry()
+    confirming.bind_engine(engine)
+
+    fut = streaming.register("call-cross")
+    # The confirming replica holds no future for this id — it must persist.
+    assert confirming.resolve_or_persist("call-cross", True) is True
+    assert await streaming.wait_for_decision("call-cross", fut) is True
+    # The decision row is consumed on delivery.
+    assert streaming._take_durable("call-cross") is None
+
+
+@pytest.mark.asyncio
+async def test_wait_for_decision_expires_as_declined(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A confirm that never arrives expires the wait as a decline, not a hang."""
+    monkeypatch.setattr(generalist_module, "APPROVAL_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(generalist_module, "_DURABLE_POLL_SECONDS", 0.01)
+    registry = ApprovalRegistry()
+    fut = registry.register("call-lost")
+    assert await registry.wait_for_decision("call-lost", fut) is False
+
+
+@pytest.mark.asyncio
+async def test_local_resolve_still_wins_instantly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The in-process fast path resolves without touching the durable store."""
+    registry = ApprovalRegistry()
+    fut = registry.register("call-local")
+    task = asyncio.create_task(registry.wait_for_decision("call-local", fut))
+    await asyncio.sleep(0)
+    assert registry.resolve_or_persist("call-local", False) is True
+    assert await task is False
+
+
+def test_agent_error_payload_flags_litellm_context_overflow() -> None:
+    """litellm's typed context-window error carries the machine code."""
+    exc = litellm.ContextWindowExceededError(
+        "The prompt exceeds the model limit", model="gpt-4o", llm_provider="openai"
+    )
+    payload = _agent_error_payload(exc)
+    assert payload["code"] == "context_too_long"
+    assert payload["error"]
+
+
+def test_agent_error_payload_flags_provider_overflow_message() -> None:
+    """An untyped provider 400 mentioning context length is classified too."""
+    exc = RuntimeError(
+        "BadRequestError: This model's maximum context length is 128000 tokens, "
+        "however you requested 191694 tokens"
+    )
+    assert _agent_error_payload(exc)["code"] == "context_too_long"
+
+
+def test_agent_error_payload_walks_groups_and_causes() -> None:
+    """The classifier sees through exception groups and __cause__ chains."""
+    inner = ValueError("prompt is too long: 250000 tokens > 200000 maximum")
+    wrapper = RuntimeError("agent turn failed")
+    wrapper.__cause__ = inner
+    group = BaseExceptionGroup("unhandled errors in a TaskGroup", [wrapper])
+    assert _agent_error_payload(group)["code"] == "context_too_long"
+
+
+def test_agent_error_payload_plain_error_has_no_code() -> None:
+    """Unclassified failures keep the text-only payload."""
+    payload = _agent_error_payload(RuntimeError("boom"))
+    assert payload == {"error": "RuntimeError: boom"}

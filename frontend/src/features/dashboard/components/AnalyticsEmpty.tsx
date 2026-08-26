@@ -1,7 +1,7 @@
 "use client";
 
-import { BarChart3, Database, AlertCircle, RefreshCw } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ChartBar, Database, WarningCircle } from "@/shared/ui/icons";
+import type { Icon } from "@/shared/ui/icons";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { FadeIn } from "@/shared/ui/motion";
 import { TERMS } from "@/shared/lib/terms";
@@ -21,22 +21,24 @@ export function AnalyticsEmpty({
   const configs: Record<
     NonNullable<AnalyticsEmptyProps["variant"]>,
     {
-      icon: LucideIcon;
+      icon: Icon;
       title: string;
-      description: string;
-      action?: { label: string; onClick: () => void; icon?: LucideIcon };
+      description?: string;
+      action?: {
+        label: string;
+        onClick?: () => void;
+        href?: string;
+        icon?: Icon;
+        iconOnly?: boolean;
+      };
     }
   > = {
     "no-data": {
       icon: Database,
       title: msg("auto.features.dashboard.components.analyticsempty.literal.1"),
-      description: formatMsg("auto.features.dashboard.components.analyticsempty.template.1", {
-        p1: TERMS.dataset,
-        p2: TERMS.optimization,
-      }),
     },
     "no-results": {
-      icon: BarChart3,
+      icon: ChartBar,
       title: msg("auto.features.dashboard.components.analyticsempty.literal.2"),
       description: formatMsg("auto.features.dashboard.components.analyticsempty.template.2", {
         p1: TERMS.optimizationPlural,
@@ -49,30 +51,32 @@ export function AnalyticsEmpty({
         : undefined,
     },
     "loading-error": {
-      icon: AlertCircle,
+      icon: WarningCircle,
       title: msg("auto.features.dashboard.components.analyticsempty.literal.3"),
       description: msg("auto.features.dashboard.components.analyticsempty.literal.4"),
       action: onRetry
         ? {
             label: msg("auto.features.dashboard.components.analyticsempty.2"),
             onClick: onRetry,
-            icon: RefreshCw,
+            iconOnly: true,
           }
         : undefined,
     },
   };
 
   const config = configs[variant];
+  const isNoData = variant === "no-data";
 
   return (
     <FadeIn>
       <EmptyState
-        variant="list"
+        variant={isNoData ? "page" : "list"}
         icon={config.icon}
+        iconWrap={isNoData ? "tile" : "none"}
         title={config.title}
         description={config.description}
         action={config.action}
-        className="min-h-[40vh] justify-center"
+        className={isNoData ? undefined : "min-h-[40vh] justify-center"}
       />
     </FadeIn>
   );

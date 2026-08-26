@@ -97,21 +97,6 @@ def test_profile_missing_column_mapping_returns_422(datasets_client: TestClient)
     assert resp.status_code == 422
 
 
-def test_profile_flags_too_small_warning(datasets_client: TestClient) -> None:
-    """Tiny datasets surface the ``too_small`` warning code."""
-    payload = {
-        "dataset": [{"q": f"q{i}", "a": "yes"} for i in range(5)],
-        "column_mapping": {"inputs": {"question": "q"}, "outputs": {"answer": "a"}},
-        "seed": 1,
-    }
-
-    resp = datasets_client.post("/datasets/profile", json=payload)
-
-    assert resp.status_code == 200
-    warning_codes = {w["code"] for w in resp.json()["profile"]["warnings"]}
-    assert "too_small" in warning_codes
-
-
 def test_profile_omitted_seed_is_still_populated(datasets_client: TestClient) -> None:
     """A missing ``seed`` is still echoed back as a populated integer."""
     payload = {

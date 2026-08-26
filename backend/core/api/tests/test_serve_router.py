@@ -9,12 +9,22 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
+from ...byok.vault import ProviderKeyVault
+from ...config import settings
 from ...i18n_keys import I18nKey
 from ...models import ProgramArtifact
+from ...storage.models import (
+    Base,
+    ByokProviderKeyModel,
+)
 
 # noinspection PyProtectedMember
 from ..routers import _helpers
@@ -672,11 +682,105 @@ def test_serve_chat_confirm_returns_404_for_unknown_call_id(
     assert resp.json()["code"] == I18nKey.AGENT_APPROVAL_UNKNOWN_CALL_ID.value
 
 
+class _UsageLm:
+    """History-carrying LM double matching the ``usage_by_model_from_history`` contract."""
+
+    def __init__(self) -> None:
+        """Seed one history entry with a token usage block."""
+        self.history = [{"usage": {"prompt_tokens": 120_000, "completion_tokens": 30_000}}]
+        self.model = "openrouter/test/unpriced"
+
+
+@pytest.fixture
+def metered_store(serve_store: _FakeJobStore) -> _FakeJobStore:
+    """Back the fake store with a real SQLite engine carrying BYOK keys.
+
+    Seeds a servable run job (``ok``) and a grid job (``grid1``) so every
+    LLM-invoking serve route can be exercised against the same store.
+
+    Args:
+        serve_store: Base fake store to attach the engine to.
+
+    Returns:
+        The store with ``engine`` set and both jobs seeded.
+    """
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            ByokProviderKeyModel.__table__,
+        ],
+    )
+    serve_store.engine = engine
+    _seed_run_job(serve_store, "ok")
+    serve_store.seed_raw("grid1", job=make_grid_job("grid1", pair_index=0))
+    # noinspection PyProtectedMember
+    _helpers._program_cache["grid1_pair_0"] = MagicMock(return_value=_FakePrediction())
+    return serve_store
+
+
+@pytest.fixture
+def metered_client(metered_store: _FakeJobStore) -> TestClient:
+    """Build a ``TestClient`` exposing the serve router over the metered store.
+
+    Args:
+        metered_store: Engine-backed fake job store.
+
+    Returns:
+        A ``TestClient`` over a minimal FastAPI app.
+    """
+    app = FastAPI()
+    app.include_router(create_serve_router(job_store=metered_store))
+    _wire_http_handler(app)
+    bypass_auth(app)
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_serve_program_resolves_stored_custom_byok_connection(
+    metered_client: TestClient,
+    metered_store: _FakeJobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Interactive inference uses the caller's verified custom endpoint and key."""
+    monkeypatch.setattr(
+        settings,
+        "byok_vault_key",
+        SecretStr(Fernet.generate_key().decode("utf-8")),
+    )
+    response = SimpleNamespace(status_code=200, is_success=True)
+    with patch("core.byok.vault.httpx.get", return_value=response):
+        ProviderKeyVault(engine=metered_store.engine).save_key(
+            "alice",
+            "custom",
+            "private-secret",
+            api_base="https://inference.example/v1",
+        )
+    metered_store.update_job(
+        "ok",
+        payload_overview={
+            "model_name": "openai/private-chat",
+            "model_settings": {
+                "name": "openai/private-chat",
+                "token_source": "byok",
+                "byok_provider": "custom",
+            },
+        },
+    )
+    builder = MagicMock(return_value=_UsageLm())
+
+    with patch("core.api.routers.serve.build_language_model", builder), _PATCH_DSPY_CTX:
+        resp = metered_client.post("/serve/ok", json={"inputs": {"question": "hi"}})
+
+    assert resp.status_code == 200
+    resolved = builder.call_args.args[0]
+    assert resolved.name == "openai/private-chat"
+    assert resolved.base_url == "https://inference.example/v1"
+    assert resolved.extra["api_key"] == "private-secret"
+
+
 def test_coerce_sample_value_keeps_clean_values_and_drops_unusable() -> None:
     """Short single-line strings and numbers are inlined; junk is dropped."""
-    assert _coerce_sample_value("What is the capital of Australia?") == (
-        "What is the capital of Australia?"
-    )
+    assert _coerce_sample_value("What is the capital of Australia?") == ("What is the capital of Australia?")
     assert _coerce_sample_value(42) == "42"
     assert _coerce_sample_value("  spaced  ") == "spaced"
     assert _coerce_sample_value("line1\nline2") is None

@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { Users } from "lucide-react";
+import { Fragment, type ReactNode } from "react";
+import { Users } from "@/shared/ui/icons";
 import { AnimatedNumber } from "@/shared/ui/motion";
 import type { DashboardStats } from "../lib/get-dashboard-stats";
 import { msg } from "@/shared/lib/messages";
@@ -8,7 +8,7 @@ type DashboardHeaderProps = {
   stats: DashboardStats;
 };
 
-type StatCardProps = {
+type StatCellProps = {
   label: string;
   value: number;
   accent?: "default" | "warning" | "success" | "danger";
@@ -16,36 +16,36 @@ type StatCardProps = {
   icon?: ReactNode;
 };
 
-const ACCENT_TEXT: Record<NonNullable<StatCardProps["accent"]>, string> = {
+const ACCENT_TEXT: Record<NonNullable<StatCellProps["accent"]>, string> = {
   default: "text-foreground",
   warning: "text-[var(--warning)]",
   success: "text-emerald-600",
   danger: "text-red-600",
 };
 
-const ACCENT_DOT: Record<NonNullable<StatCardProps["accent"]>, string> = {
+const ACCENT_DOT: Record<NonNullable<StatCellProps["accent"]>, string> = {
   default: "bg-foreground/25",
   warning: "bg-[var(--warning)]",
   success: "bg-emerald-500",
   danger: "bg-red-500",
 };
 
-function StatCard({ label, value, accent = "default", pulse = false, icon }: StatCardProps) {
+function StatCell({ label, value, accent = "default", pulse = false, icon }: StatCellProps) {
   return (
-    <div className="group/stat relative flex min-w-0 flex-[1_1_13rem] flex-col gap-5 rounded-2xl border border-border/40 bg-card/60 p-6 transition-colors duration-300 hover:border-border/70 sm:p-7 xl:flex-[1_1_9rem]">
-      <div className="flex items-center gap-2">
+    <div className="group/stat flex min-w-0 flex-1 flex-col gap-3 px-4 py-4 sm:gap-3.5 sm:px-5 sm:py-5">
+      <div className="flex min-w-0 items-center gap-2">
         {icon ?? (
           <span
-            className={`size-1.5 rounded-full ${ACCENT_DOT[accent]} ${pulse ? "animate-pulse" : ""}`}
+            className={`size-1.5 shrink-0 rounded-full ${ACCENT_DOT[accent]} ${pulse ? "animate-pulse" : ""}`}
             aria-hidden
           />
         )}
-        <p className="text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+        <p className="truncate text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
           {label}
         </p>
       </div>
       <p
-        className={`text-[2.75rem] sm:text-[3.25rem] font-bold leading-[0.9] tracking-tight tabular-nums ${ACCENT_TEXT[accent]}`}
+        className={`text-2xl sm:text-[2rem] font-bold leading-none tracking-tight tabular-nums ${ACCENT_TEXT[accent]}`}
       >
         <AnimatedNumber value={value} />
       </p>
@@ -54,42 +54,48 @@ function StatCard({ label, value, accent = "default", pulse = false, icon }: Sta
 }
 
 export function DashboardHeader({ stats }: DashboardHeaderProps) {
+  if (!stats) return null;
+
+  const cells: StatCellProps[] = [
+    {
+      label: msg("auto.features.dashboard.components.dashboardheader.3"),
+      value: stats.total,
+    },
+    {
+      label: msg("auto.features.dashboard.components.dashboardheader.4"),
+      value: stats.running,
+      accent: stats.running > 0 ? "warning" : "default",
+      pulse: stats.running > 0,
+    },
+    {
+      label: msg("auto.features.dashboard.components.dashboardheader.6"),
+      value: stats.success,
+      accent: stats.success > 0 ? "success" : "default",
+    },
+    {
+      label: msg("auto.features.dashboard.components.dashboardheader.7"),
+      value: stats.failed,
+      accent: stats.failed > 0 ? "danger" : "default",
+    },
+  ];
+  if (stats.shared > 0) {
+    cells.push({
+      label: msg("dashboard.stat.shared"),
+      value: stats.shared,
+      icon: <Users className="size-3.5 shrink-0 text-muted-foreground/60" aria-hidden />,
+    });
+  }
+
   return (
-    <>
-      {stats && (
-        <div
-          className="flex flex-wrap gap-3 sm:gap-4"
-          data-tutorial="dashboard-kpis"
-        >
-          <StatCard
-            label={msg("auto.features.dashboard.components.dashboardheader.3")}
-            value={stats.total}
-          />
-          <StatCard
-            label={msg("auto.features.dashboard.components.dashboardheader.4")}
-            value={stats.running}
-            accent={stats.running > 0 ? "warning" : "default"}
-            pulse={stats.running > 0}
-          />
-          <StatCard
-            label={msg("auto.features.dashboard.components.dashboardheader.6")}
-            value={stats.success}
-            accent={stats.success > 0 ? "success" : "default"}
-          />
-          <StatCard
-            label={msg("auto.features.dashboard.components.dashboardheader.7")}
-            value={stats.failed}
-            accent={stats.failed > 0 ? "danger" : "default"}
-          />
-          {stats.shared > 0 && (
-            <StatCard
-              label={msg("dashboard.stat.shared")}
-              value={stats.shared}
-              icon={<Users className="size-3.5 text-muted-foreground/60" aria-hidden />}
-            />
+    <div className="grid grid-cols-2 items-stretch sm:flex" data-tutorial="dashboard-kpis">
+      {cells.map((cell, i) => (
+        <Fragment key={cell.label}>
+          {i > 0 && (
+            <div aria-hidden className="my-4 hidden w-px shrink-0 bg-[#DDD4C8]/50 sm:block" />
           )}
-        </div>
-      )}
-    </>
+          <StatCell {...cell} />
+        </Fragment>
+      ))}
+    </div>
   );
 }

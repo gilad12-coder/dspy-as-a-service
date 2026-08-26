@@ -9,30 +9,11 @@ override it on final submission.
 
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from .common import ColumnMapping, SplitCounts, SplitFractions
-
-
-class ProfileWarningCode(StrEnum):
-    """Machine-readable codes for profiler warnings surfaced to the UI."""
-
-    too_small = "too_small"
-    class_imbalance = "class_imbalance"
-    rare_class = "rare_class"
-    duplicates = "duplicates"
-    missing_target = "missing_target"
-
-
-class ProfileWarning(BaseModel):
-    """Single profiler finding that the user should see before submitting."""
-
-    code: ProfileWarningCode
-    message: str = Field(description="Human-readable Hebrew message for the submit wizard.")
-    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class TargetColumnProfile(BaseModel):
@@ -80,7 +61,6 @@ class DatasetProfile(BaseModel):
         ),
     )
     duplicate_count: int = Field(default=0, ge=0)
-    warnings: list[ProfileWarning] = Field(default_factory=list)
 
 
 class SplitPlan(BaseModel):

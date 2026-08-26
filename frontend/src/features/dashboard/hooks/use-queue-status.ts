@@ -14,8 +14,20 @@ export function useQueueStatus(): QueueStatusResponse | null {
         .catch(() => {});
     };
     load();
-    const interval = setInterval(load, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    // Pause polling in background tabs and refresh immediately on return
+    // (mirrors the visibility-gated ticking in LiveElapsed).
+    const tick = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    const interval = setInterval(tick, POLL_INTERVAL_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   return queueStatus;

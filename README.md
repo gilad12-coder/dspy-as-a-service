@@ -1,350 +1,94 @@
-# Skynet
+<p align="center">
+  <img src="docs/assets/skynet-wordmark.gif" width="480" alt="SKYNET" />
+</p>
 
-DSPy prompt optimization as a service. Submit datasets + signature/metric code, run GEPA optimizations, serve optimized programs — all through a web UI or REST API.
+**A private, Hebrew-first platform for building, optimizing, and serving LLM programs on your own infrastructure.**
 
-## Quick Start
+This edition tracks the public Skynet product surface while replacing hosted SaaS concerns with an on-prem architecture: PostgreSQL-only state, administrator-managed identities, ADFS/OIDC, local observability, organization-managed models, and provider-agnostic BYOK. It contains no Stripe, credit ledger, billing, or licensing enforcement.
 
-### 1. Prerequisites
+## Product surface
 
-- Python 3.10+ (3.11 recommended)
-- Node.js 18+ and npm
-- PostgreSQL 14+
-- An LLM API key (OpenAI, Anthropic, etc.)
+- Guided optimization runs, GEPA checkpoints, grid search, live progress, result inspection, serving, and export.
+- Dataset library, spreadsheet editing, named-user sharing, cloning, and AI-assisted tagging.
+- Generalist and code agents, workflow canvas, model discovery, and saved provider connections.
+- Authenticated Explorer with a deployment-wide public corpus. Every run starts private and appears there only after its owner explicitly publishes it.
+- Hebrew-only RTL UI.
+- ADFS/OIDC primary login plus a passwordless local username fallback. Administrators create, promote, demote, quota, and delete local users in the UI.
+- PostgreSQL-backed queues, leases, telemetry, audit context, quotas, and application state. Redis is not required.
 
-### 2. Clone and Setup
+## Local deployment
 
-```bash
-git clone https://github.com/hexdrift/skynet.git
-cd skynet
-```
-
-### 3. Database
-
-```bash
-# Create the database
-createdb skynet
-
-# (Optional) Create a test database for running tests
-createdb skynet_test
-```
-
-### 4. Backend
+Prerequisites: Docker Compose, or Python 3.12 + Node 22 + PostgreSQL 16 for native development.
 
 ```bash
-cd backend
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
 
-# Create environment
-python -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-
-# Configure
-cp .env.example .env
-# Edit .env — set at minimum:
-#   OPENAI_API_KEY=sk-...
-#   REMOTE_DB_URL=postgresql://youruser@localhost:5432/skynet
-
-# Start
-python main.py
-```
-
-Backend runs at http://localhost:8000.
-
-### 5. Frontend
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Configure
-cp .env.example .env.local
-# Edit .env.local — defaults work for local development
-
-# Start
-npm run dev
-```
-
-Frontend runs at http://localhost:3001.
-
-### 6. Open the App
-
-Navigate to http://localhost:3001. If authentication is enabled you'll see a login page, otherwise you'll land directly on the dashboard.
-
----
-
-## Project Structure
-
-```
-skynet/
-├── backend/                    Python API + worker
-│   ├── main.py                 Entry point
-│   ├── .env.example            Configuration template
-│   ├── Dockerfile
-│   ├── docker-compose.yml      API + PostgreSQL
-│   ├── pyproject.toml
-│   ├── core/
-│   │   ├── api/                FastAPI routes
-│   │   ├── storage/            PostgreSQL persistence
-│   │   ├── worker/             Background job processing
-│   │   ├── registry/           Module & optimizer resolution
-│   │   ├── service_gateway/    DSPy orchestration pipeline
-│   │   ├── notifications/      Internal comms (Rocket.Chat, Slack, etc.)
-│   │   └── models.py           Pydantic models
-│   ├── tests/
-│   │   ├── test_llm_integration.py   34 real-API tests
-│   │   ├── test_load.py              9 load/stress tests
-│   │   └── locustfile.py             Sustained load dashboard
-│   └── usage_guide/            Notebooks + API client examples
-└── frontend/                   Next.js + shadcn/ui
-    ├── .env.example            Configuration template
-    ├── package.json
-    └── src/
-        ├── app/                Pages (dashboard, submit wizard, job detail)
-        ├── components/         UI components
-        └── lib/                API client, types, auth
-```
-
----
-
-## Configuration
-
-### Backend (`backend/.env`)
-
-```bash
-# ── Required ──
-OPENAI_API_KEY=sk-your-key          # Or any LiteLLM-supported provider
-REMOTE_DB_URL=postgresql://user@localhost:5432/skynet
-
-# ── Server ──
-API_HOST=0.0.0.0
-API_PORT=8000
-LOG_LEVEL=INFO
-
-# ── CORS ──
-# Comma-separated allowed origins (defaults to localhost:3000,3001)
-ALLOWED_ORIGINS=http://localhost:3001,https://yourdomain.com
-
-# ── Worker ──
-WORKER_CONCURRENCY=2                # Parallel optimization jobs
-WORKER_POLL_INTERVAL=2.0            # Queue poll interval (seconds)
-WORKER_STALE_THRESHOLD=600          # Health check threshold (seconds)
-
-# ── Notifications (optional) ──
-# COMMS_WEBHOOK_URL=https://chat.yourcompany.com/hooks/webhook-id
-# COMMS_CHANNEL=#skynet-notifications
-# FRONTEND_URL=https://skynet.yourcompany.com
-```
-
-### Frontend (`frontend/.env.local`)
-
-```bash
-# ── API ──
-NEXT_PUBLIC_API_URL=http://localhost:8000
-
-# ── Auth (NextAuth) ──
-AUTH_SECRET=generate-with-openssl-rand-base64-32
-
-# ── ADFS Login (optional — uncomment to enable) ──
-# AUTH_ADFS_ISSUER=https://adfs.yourcompany.com/adfs
-# AUTH_ADFS_CLIENT_ID=your-client-id
-# AUTH_ADFS_CLIENT_SECRET=your-client-secret
-
-# ── Dev Login (active when ADFS is not configured) ──
-# Login with any username and password "skynet"
-# Set DEV_AUTH=false to disable login entirely
-```
-
----
-
-## Authentication
-
-### Development Mode (default)
-
-When ADFS is not configured, a local credentials login is active:
-- **Username**: any value (becomes your display name)
-- **Password**: `skynet`
-
-### ADFS (Production)
-
-1. On your ADFS server, register a new Web Application (OpenID Connect)
-2. Set redirect URI: `https://your-app/api/auth/callback/adfs`
-3. Enable scopes: `openid`, `profile`, `email`
-4. Copy Client ID and Secret to `frontend/.env.local`
-
-When authenticated, the username auto-fills in the submit form from the ADFS session.
-
-### No Authentication
-
-Set `DEV_AUTH=false` in `frontend/.env.local` (with ADFS env vars unset) to disable login entirely.
-
----
-
-## Notifications
-
-Skynet sends Hebrew notifications to your internal messaging platform when jobs are submitted or completed.
-
-### Setup
-
-1. Create an incoming webhook in your messaging platform (Rocket.Chat, Slack, Teams, etc.)
-2. Set `COMMS_WEBHOOK_URL` in `backend/.env`
-3. Optionally set `COMMS_CHANNEL` and `FRONTEND_URL`
-
-### Messages
-
-| Event | Message |
-|-------|---------|
-| Job submitted | 🚀 אופטימיזציה חדשה — user, optimizer, model, [link to monitor] |
-| Job succeeded | ✅ אופטימיזציה הושלמה — user, scores, [link to results] |
-| Job failed | ❌ אופטימיזציה נכשלה — user, error, [link to details] |
-| Job cancelled | ⚠️ אופטימיזציה בוטלה — user, [link to details] |
-
-When `COMMS_WEBHOOK_URL` is not set, notifications are silently skipped.
-
-### Adapting to Your Platform
-
-Edit `backend/core/notifications/comms.py` — the `send_message()` function sends a JSON payload to the webhook URL. Adjust the payload format for your platform:
-
-```python
-# Rocket.Chat / Slack:  {"text": "...", "channel": "#room"}
-# Teams:                {"text": "..."}
-# Custom:               adapt as needed
-```
-
----
-
-## Serving Optimized Programs
-
-After a successful optimization, you can run inference on the optimized program:
-
-```bash
-# Check what fields the program expects
-curl http://localhost:8000/serve/{optimization_id}/info
-
-# Run inference
-curl -X POST http://localhost:8000/serve/{optimization_id} \
-  -H 'Content-Type: application/json' \
-  -d '{"inputs": {"question": "What is 7+3?"}}'
-```
-
-The frontend provides a built-in playground on the job detail page — fill in the input fields and click "הרץ תוכנית".
-
----
-
-## Supported Optimization Configurations
-
-| Module | Optimizer | Job Type | Notes |
-|--------|-----------|----------|-------|
-| predict | gepa | run | Requires `reflection_model_config` and 5-arg metric |
-| cot | gepa | run | Same as above with CoT |
-| predict | gepa | grid_search | GEPA grid search over model pairs |
-| cot | gepa | grid_search | GEPA grid search with CoT |
-
-### Model Config Options
-
-| Field | Description |
-|-------|-------------|
-| `name` | Model identifier (e.g., `gpt-4o-mini`, `o3-mini`, `claude-sonnet-4-20250514`) |
-| `base_url` | Custom endpoint (Azure, vLLM, local LLMs) |
-| `temperature` | 0.0–2.0 |
-| `max_tokens` | Max output tokens |
-| `top_p` | Nucleus sampling |
-| `extra.api_key` | Per-request API key (not stored in DB) |
-| `extra.reasoning_effort` | For o-series models: `low`, `medium`, `high` |
-
----
-
-## Docker
-
-```bash
+# Set the same BACKEND_AUTH_SECRET in both files, then:
 cd backend
 docker compose up --build
 ```
 
-This starts the API + PostgreSQL. The frontend must be deployed separately (Vercel, Docker, etc.).
+Open `http://localhost:3001`. With no SSO variables configured, only usernames created by an administrator can enter. Seed the first administrator with `ADMIN_USERNAMES` in `backend/.env`; use the same normalized username in `AUTH_ADMINS` if desired.
 
----
-
-## Testing
-
-### Backend Integration Tests (real API calls)
+Native development remains available:
 
 ```bash
-cd backend
-
-# Start the server first
-python main.py &
-
-# Run all 34 integration tests (requires OPENAI_API_KEY)
-python -m pytest tests/test_llm_integration.py -v
-
-# Run load tests (9 tests)
-python -m pytest tests/test_load.py -v
-
-# Sustained load testing dashboard
-locust -f tests/locustfile.py --host=http://localhost:8000
+just install
+just backend    # FastAPI on :8000
+just frontend   # Next.js on :3001
 ```
 
-### Frontend
+The API reference is at `http://localhost:8000/reference`.
+
+## Architecture
+
+```text
+frontend/   Next.js 16, React 19, Hebrew RTL UI, NextAuth OIDC/local login
+backend/    FastAPI, SQLAlchemy, DSPy, GEPA, embedded Postgres-lease worker
+postgres/   users, jobs, datasets, sharing, BYOK metadata, telemetry, queue leases
+deploy/     OpenShift/Kubernetes Helm chart and optional Postgres-only LiteLLM proxy
+```
+
+Horizontal backend replicas safely share work through PostgreSQL `SELECT ... FOR UPDATE SKIP LOCKED` claims and renewable leases. Crashed work is reclaimed after lease expiry. Resource admission delays new claims when a container approaches its memory limit.
+
+## Identity and authorization
+
+- Configure ADFS or another OIDC provider with `AUTH_SSO_*` variables.
+- Valid SSO users are auto-provisioned. Username normalization makes an ADFS identity and a matching local username the same account, with one data set, role, and quota.
+- Local login has no password. It succeeds only for an active username already created by an administrator.
+- Environment usernames/groups remain external admin grants; UI role changes are stored in PostgreSQL.
+- Deleting a user hard-deletes all owned data, grants, preferences, quota overrides, and BYOK secrets. A later valid SSO login creates a fresh account.
+
+## Data and sharing
+
+- Private is the default for optimization runs.
+- Owners may explicitly publish a run to the authenticated deployment-wide Explorer corpus.
+- Named-user sharing is supported for optimizations, datasets, and tagging sessions.
+- Anonymous and anyone-with-link access are disabled.
+- The only administrator-set consumption limit is a per-user unified storage allowance; the default is 250 MiB.
+
+## Models and BYOK
+
+Operators may configure central OpenAI-compatible model endpoints. Users can also save arbitrary provider/model schemas and encrypted secrets. BYOK is passed through to the selected provider without a provider allowlist, credit charge, or markup. Set `BYOK_VAULT_KEY` before allowing users to save keys.
+
+## Deployment
+
+- Docker Compose: `backend/docker-compose.yml`
+- OpenShift/Kubernetes: `deploy/helm/skynet`
+- Air-gapped build notes: `backend/AIRGAP.html`
+
+The Helm chart enables TLS redirects, NetworkPolicies, HPAs, PodDisruptionBudgets, Prometheus scraping, a migration Job, and optional PgBouncer. It supports either bundled PostgreSQL or an external PostgreSQL service.
+
+## Verification
 
 ```bash
-cd frontend
-npm run build    # Type check + build
+cd backend && uv run pytest core tests/unit -q
+cd frontend && npm run typecheck && npm run lint && npm test
+python scripts/generate_i18n.py --check
+helm lint deploy/helm/skynet
 ```
 
----
+## License
 
-## API Reference
-
-### Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/run` | Submit optimization run |
-| `POST` | `/grid-search` | Submit grid search |
-| `GET` | `/optimizations` | List optimizations (filterable, paginated) |
-| `GET` | `/optimizations/{id}` | Full optimization detail |
-| `GET` | `/optimizations/{id}/summary` | Dashboard-friendly summary |
-| `GET` | `/optimizations/{id}/logs` | Optimization logs (filterable by level) |
-| `GET` | `/optimizations/{id}/payload` | Original submission payload |
-| `GET` | `/optimizations/{id}/artifact` | Download optimized program |
-| `GET` | `/optimizations/{id}/grid-result` | Grid search results |
-| `GET` | `/optimizations/{id}/stream` | SSE real-time updates |
-| `POST` | `/optimizations/{id}/cancel` | Cancel active optimization |
-| `DELETE` | `/optimizations/{id}` | Delete terminal optimization |
-| `POST` | `/optimizations/{id}/clone` | Clone an optimization |
-| `POST` | `/optimizations/{id}/retry` | Retry a failed or cancelled optimization |
-| `GET` | `/serve/{id}/info` | Program signature info |
-| `POST` | `/serve/{id}` | Run inference on optimized program |
-| `GET` | `/health` | Health check |
-| `GET` | `/queue` | Queue status |
-
-### Error Format
-
-All errors return:
-```json
-{"error": "<type>", "detail": "Human-readable message"}
-```
-
----
-
-## Extensibility
-
-Register custom modules and optimizers in `main.py`:
-
-```python
-from core import ServiceRegistry, create_app
-
-registry = ServiceRegistry()
-registry.register_module("my_module", my_module_factory)
-registry.register_optimizer("my_optimizer", my_optimizer_factory)
-
-app = create_app(registry=registry)
-```
-
----
-
-## Client Usage Guide
-
-See [`backend/usage_guide/index.html`](backend/usage_guide/index.html) for notebook examples and API client classes.
+[AGPL-3.0](LICENSE).

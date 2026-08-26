@@ -2,16 +2,9 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import {
-  FilterX,
-  Globe,
-  Loader2,
-  SlidersHorizontal,
-  User,
-  Users,
-  X,
-} from "lucide-react";
+import { CircleNotch, FadersHorizontal, FunnelX, Globe, User, Users, X } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import type { ExploreCorpus } from "../hooks/use-semantic-search";
 import { SearchSuggestions } from "./SearchSuggestions";
@@ -57,8 +50,8 @@ const TYPING_DEBOUNCE_MS = 250;
 
 /**
  * The page's center of gravity. A segmented corpus toggle sits on top so the
- * user can pick where to search (their own jobs, runs shared with them, or
- * other users' public ones), and the rounded input surface below carries the
+ * user can pick owned, explicitly shared, or deployment-published runs, and
+ * the rounded input surface below carries the
  * free-text query and
  * filters affordance. Keyboard: pressing "/" anywhere focuses the input;
  * Enter fires the search immediately.
@@ -95,8 +88,7 @@ export function SearchBar({
   // The suggestions dropdown only competes for attention on a blank field;
   // once the user starts arrowing through results (activeResultIndex >= 0) it
   // yields so the two affordances never overlap.
-  const activeResultId =
-    activeResultIndex >= 0 ? `explore-result-${activeResultIndex}` : undefined;
+  const activeResultId = activeResultIndex >= 0 ? `explore-result-${activeResultIndex}` : undefined;
   const suggestOpen =
     focused &&
     draft.trim().length === 0 &&
@@ -150,22 +142,18 @@ export function SearchBar({
   }, []);
 
   return (
-    <div dir="rtl" data-tutorial="explore-search" className="mx-auto flex w-full max-w-3xl flex-col gap-2.5">
+    <div data-tutorial="explore-search" className="mx-auto flex w-full max-w-3xl flex-col gap-2.5">
       <div className="flex items-center justify-center">
-        <CorpusToggle
-          value={corpus}
-          onChange={onCorpusChange}
-          signedIn={signedIn}
-        />
+        <CorpusToggle value={corpus} onChange={onCorpusChange} signedIn={signedIn} />
       </div>
       <div
-        className={`group relative flex items-center gap-1 rounded-2xl border border-border bg-background ps-4 pe-1 py-1.5 transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-foreground/40 focus-within:shadow-[0_2px_24px_-12px_oklch(0.25_0.04_45/.18)] ${
+        className={`group relative flex min-h-[44px] items-center gap-1 rounded-2xl border border-border bg-background ps-4 pe-1 py-0 transition-[border-color,box-shadow] duration-150 ease-out focus-within:border-foreground/40 focus-within:shadow-[0_2px_24px_-12px_oklch(0.25_0.04_45/.18)] lg:py-1.5 ${
           isActive ? "border-foreground/25" : ""
         }`}
       >
         <input
           ref={inputRef}
-          dir="auto"
+          dir={inputDir}
           type="text"
           inputMode="search"
           autoComplete="off"
@@ -190,14 +178,14 @@ export function SearchBar({
           aria-controls="explore-results"
           aria-activedescendant={activeResultId}
           style={{ textAlign: inputDir === "rtl" ? "right" : "left" }}
-          className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[15px] tracking-tight text-foreground placeholder:text-foreground/40 focus:outline-none"
+          className="h-[44px] min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[15px] tracking-tight text-foreground placeholder:text-foreground/40 focus:outline-none lg:h-auto"
         />
         {loading && (
           <span
             className="inline-flex size-8 shrink-0 items-center justify-center"
             aria-hidden="true"
           >
-            <Loader2 className="size-4 animate-spin text-foreground/40" />
+            <CircleNotch className="size-4 animate-spin text-foreground/40" />
           </span>
         )}
         {draft.length > 0 && (
@@ -205,7 +193,7 @@ export function SearchBar({
             type="button"
             onClick={clearAll}
             aria-label={msg("explore.search.clear")}
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] cursor-pointer hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+            className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:size-8"
           >
             <X className="size-4" aria-hidden="true" />
           </button>
@@ -216,9 +204,9 @@ export function SearchBar({
               type="button"
               onClick={onClearFilters}
               aria-label={msg("explore.filters.reset")}
-              className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] cursor-pointer hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+              className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:size-9"
             >
-              <FilterX className="size-[1.05rem]" aria-hidden="true" />
+              <FunnelX className="size-[1.05rem]" aria-hidden="true" />
             </button>
           </TooltipButton>
         )}
@@ -226,9 +214,9 @@ export function SearchBar({
           type="button"
           onClick={onOpenFilters}
           aria-label={msg("explore.filters.button")}
-          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-foreground/70 transition-[background-color,color] cursor-pointer hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+          className="inline-flex h-[44px] min-w-[44px] shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2.5 text-[13px] text-foreground/70 transition-[background-color,color] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:h-9 lg:min-w-0"
         >
-          <SlidersHorizontal className="size-[1.125rem]" aria-hidden="true" />
+          <FadersHorizontal className="size-[1.125rem]" aria-hidden="true" />
           {filtersCount > 0 && (
             <span
               dir="ltr"
@@ -247,21 +235,17 @@ export function SearchBar({
           />
         )}
       </div>
-      <div className="mx-1 flex items-center justify-end gap-3 text-[12px] text-foreground/55">
-        <span className="hidden text-[11px] text-foreground/40 md:inline">
-          {msg("explore.search.kbd_hint")}
-        </span>
-      </div>
     </div>
   );
 }
 
 /**
  * Walk the typed text and return "rtl" or "ltr" based on the first strong
- * directional character. Defaults to "rtl" when the value is empty so the
- * Hebrew placeholder renders correctly. More reliable than `dir="auto"`,
- * which falls back to the parent direction inconsistently across browsers
- * when the input is empty or starts with whitespace/punctuation.
+ * directional character. Falls back to the active locale's direction when the
+ * value is empty, so the placeholder and caret sit on the locale's start edge
+ * (right for Hebrew, left for English). More reliable than `dir="auto"`, which
+ * resolves the parent direction inconsistently across browsers when the input
+ * is empty or starts with whitespace/punctuation.
  */
 function detectInputDir(text: string): "rtl" | "ltr" {
   for (const ch of text) {
@@ -285,7 +269,7 @@ function detectInputDir(text: string): "rtl" | "ltr" {
       return "ltr";
     }
   }
-  return "rtl";
+  return getActiveDir();
 }
 
 function CorpusToggle({
@@ -330,7 +314,7 @@ function CorpusToggle({
     <div
       role="radiogroup"
       aria-label={msg("explore.corpus.aria")}
-      className="relative inline-flex items-center rounded-full border border-border/80 bg-muted/40 p-0.5"
+      className="relative flex w-full items-center rounded-full border border-border/80 bg-muted/40 p-0.5 sm:w-auto"
     >
       {segments.map((seg) => {
         const active = seg.value === value;
@@ -348,12 +332,12 @@ function CorpusToggle({
                 if (disabled) return;
                 if (!active) onChange(seg.value);
               }}
-              className={`relative inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 ${
+              className={`relative inline-flex min-h-[44px] min-w-0 flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-[11.5px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 sm:flex-none sm:gap-1.5 sm:px-3.5 sm:text-[12.5px] lg:min-h-0 ${
                 active
                   ? "text-foreground"
                   : disabled
-                  ? "cursor-not-allowed text-foreground/30"
-                  : "cursor-pointer text-foreground/60 hover:text-foreground"
+                    ? "cursor-not-allowed text-foreground/30"
+                    : "cursor-pointer text-foreground/60 hover:text-foreground"
               }`}
             >
               {active && (
@@ -366,7 +350,7 @@ function CorpusToggle({
               )}
               <span className="relative z-10 inline-flex items-center gap-1.5">
                 <Icon className="size-3.5" aria-hidden="true" />
-                <span>{seg.label}</span>
+                <span className="truncate">{seg.label}</span>
               </span>
             </button>
           </TooltipButton>

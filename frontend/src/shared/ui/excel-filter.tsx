@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUp, ArrowDown, ArrowUpDown, Filter, Search, RotateCcw } from "lucide-react";
+import { ArrowUp, ArrowDown, ArrowsDownUp, Funnel, MagnifyingGlass, ArrowCounterClockwise } from "@/shared/ui/icons";
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 export type SortDir = "asc" | "desc";
 export type Filters = Record<string, Set<string>>;
@@ -157,7 +158,7 @@ export function ColumnHeader<K extends string>({
               <ArrowDown className="size-3" />
             )
           ) : (
-            <ArrowUpDown className="size-3" />
+            <ArrowsDownUp className="size-3" />
           )}
         </button>
         {hasFilter ? (
@@ -171,7 +172,7 @@ export function ColumnHeader<K extends string>({
             }}
             aria-label={formatMsg("shared.excel_filter.filter_column", { label })}
           >
-            <Filter className="size-3" />
+            <Funnel className="size-3" />
           </button>
         ) : null}
       </div>
@@ -226,13 +227,19 @@ function FilterDropdown({
   const updatePos = useCallback(() => {
     if (!anchorRef?.current) return;
     const rect = anchorRef.current.getBoundingClientRect();
-    const dropdownW = 260;
     const gap = 4;
+    const margin = 8;
+    // Measure the real rendered width (set in CSS: w-full capped by max-w) —
+    // a hard-coded guess that under-shoots the actual box lets the clamp leave
+    // the right edge (Apply row) spilling off-screen. The element is already
+    // laid out under visibility:hidden when this first runs, so offsetWidth is
+    // truthful; fall back to the max only if it somehow measures 0.
+    const dropdownW = ref.current?.offsetWidth || 320;
     const top = rect.bottom + gap;
     const availH = Math.max(150, window.innerHeight - top - gap);
     // Center dropdown on the icon, then clamp within viewport
     const idealLeft = rect.left + rect.width / 2 - dropdownW / 2;
-    const left = Math.max(4, Math.min(idealLeft, window.innerWidth - dropdownW - 4));
+    const left = Math.max(margin, Math.min(idealLeft, window.innerWidth - dropdownW - margin));
     setPos({ top, left, availH });
   }, [anchorRef]);
 
@@ -305,7 +312,11 @@ function FilterDropdown({
   const dropdown = (
     <div
       ref={ref}
-      className="fixed z-[9999] max-w-[min(90vw,320px)] w-full rounded-[22px] border border-border/70 bg-popover/95 p-2 shadow-[var(--shadow-card)] backdrop-blur-xl"
+      // A modal Radix dialog puts pointer-events:none on <body>; this portal
+      // mounts on body, so it must re-enable its own pointer events, and the
+      // modal-safe marker keeps the dialog from dismissing on clicks here.
+      data-modal-safe-portal=""
+      className="pointer-events-auto fixed z-[9999] max-w-[min(90vw,320px)] w-full rounded-[22px] border border-border/70 bg-popover/95 p-2 shadow-[var(--shadow-card)] backdrop-blur-xl"
       style={
         pos
           ? { top: pos.top, left: pos.left, minWidth: "clamp(180px, 25vw, 260px)" }
@@ -315,16 +326,16 @@ function FilterDropdown({
     >
       <div className="relative mb-1.5">
         <div className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground">
-          <Search className="size-3" />
+          <MagnifyingGlass className="size-3" />
         </div>
         <Input
           ref={searchRef}
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="h-7 text-[0.6875rem] py-1.5 pe-7 ps-2 text-right"
+          className="h-7 text-[0.6875rem] py-1.5 pe-7 ps-2 text-start"
           placeholder={msg("shared.excel_filter.search_placeholder")}
-          dir="rtl"
+          dir={getActiveDir()}
         />
       </div>
 
@@ -459,8 +470,27 @@ export function ResetColumnsButton({
       className="inline-flex items-center gap-1 text-[0.625rem] text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer underline underline-offset-2 decoration-muted-foreground/30 hover:decoration-foreground/40"
       title={msg("shared.excel_filter.reset_width_title")}
     >
-      <RotateCcw className="size-3" />
+      <ArrowCounterClockwise className="size-3" />
       <span>{msg("shared.excel_filter.reset_width_label")}</span>
+    </button>
+  );
+}
+
+export function ResetFiltersButton({
+  filters,
+}: {
+  filters: { activeCount: number; clearAll: () => void };
+}) {
+  if (filters.activeCount === 0) return null;
+  return (
+    <button
+      type="button"
+      onClick={filters.clearAll}
+      className="inline-flex items-center gap-1 text-[0.625rem] text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer underline underline-offset-2 decoration-muted-foreground/30 hover:decoration-foreground/40"
+      title={msg("shared.excel_filter.reset_filters_title")}
+    >
+      <ArrowCounterClockwise className="size-3" />
+      <span>{msg("shared.excel_filter.reset_filters_label")}</span>
     </button>
   );
 }

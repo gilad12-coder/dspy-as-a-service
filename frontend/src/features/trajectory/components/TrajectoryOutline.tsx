@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { Trophy } from "lucide-react";
+import { Trophy } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { CandidateMetrics, RejectedMetrics } from "../lib/types";
@@ -41,7 +41,7 @@ function TrajectoryOutlineImpl({
   const generations = [...byGeneration.entries()].sort((a, b) => a[0] - b[0]);
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-4">
       <div className="space-y-3">
         {generations.map(([gen, items]) => (
           <div key={gen} className="space-y-1">

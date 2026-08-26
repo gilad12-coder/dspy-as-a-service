@@ -81,7 +81,7 @@ def test_format_react_outputs_skips_none_fields() -> None:
     pred = SimpleNamespace(answer="hi", note=None)
     out = _format_react_outputs(pred, ["answer", "note"])
     assert "note" not in out
-    assert "answer: hi" == out
+    assert out == "answer: hi"
 
 
 @pytest.mark.asyncio

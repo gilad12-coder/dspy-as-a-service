@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Clipboard, Pencil } from "lucide-react";
+import { Check, Clipboard, PencilSimple } from "@/shared/ui/icons";
 
 import { cn } from "@/shared/lib/utils";
 import { msg } from "@/shared/lib/messages";
@@ -65,7 +65,7 @@ export function UserBubble({ content, onEdit, editable = true }: UserBubbleProps
               className="p-1.5 rounded-lg hover:bg-muted/60 cursor-pointer"
               aria-label={msg("shared.agent.edit_and_resend")}
             >
-              <Pencil className="size-3 text-muted-foreground" />
+              <PencilSimple className="size-3 text-muted-foreground" />
             </button>
           </TooltipButton>
         )}
@@ -126,7 +126,7 @@ export function UserBubbleEditor({
           <button
             type="button"
             onClick={onCancel}
-            className="text-[0.6875rem] text-muted-foreground hover:text-foreground px-3 py-1 rounded-lg hover:bg-muted transition-colors cursor-pointer"
+            className="text-[0.75rem] font-medium text-foreground/80 hover:text-foreground bg-white border border-[#DDD4C8] hover:bg-muted px-3.5 py-1.5 rounded-full transition-all duration-150 cursor-pointer active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D2E22]/25 focus-visible:ring-offset-1"
           >
             {msg("shared.agent.cancel")}
           </button>
@@ -134,7 +134,7 @@ export function UserBubbleEditor({
             type="button"
             onClick={onSubmit}
             disabled={!value.trim() || disabled}
-            className="text-[0.6875rem] text-white bg-[#3D2E22] hover:bg-[#3D2E22]/90 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1 rounded-lg transition-colors cursor-pointer"
+            className="text-[0.75rem] font-medium text-white bg-[#3D2E22] hover:bg-[#3D2E22]/90 px-4 py-1.5 rounded-full transition-all duration-150 cursor-pointer active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D2E22]/40 focus-visible:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
           >
             {msg("shared.agent.send")}
           </button>

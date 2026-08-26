@@ -25,7 +25,7 @@ def _patch_delivery(monkeypatch, fake_mail, resolver=lambda username: username):
         fake_mail: The ``FakeMail`` recording deliveries.
         resolver: ``resolve_email`` stand-in; defaults to the identity so the
             recorded ``to`` equals the username. Return ``None`` to simulate
-            an address that cannot be resolved yet (SSO pending).
+            a legacy non-email identity.
     """
     monkeypatch.setattr(notifier_module, "send_mail", fake_mail.send_mail)
     monkeypatch.setattr(notifier_module, "resolve_email", resolver)
@@ -71,7 +71,7 @@ def test_job_started_is_minimal_title_and_link(monkeypatch: pytest.MonkeyPatch, 
 
 
 def test_job_started_skips_when_email_unresolved(monkeypatch: pytest.MonkeyPatch, fake_mail: FakeMail) -> None:
-    """With no resolvable address (SSO pending) nothing is sent."""
+    """A legacy non-email account identity is skipped."""
     _patch_delivery(monkeypatch, fake_mail, resolver=lambda username: None)
 
     notify_job_started(
@@ -81,6 +81,42 @@ def test_job_started_skips_when_email_unresolved(monkeypatch: pytest.MonkeyPatch
         optimizer_name="GEPA",
         module_name="MyModule",
     )
+
+    assert fake_mail.call_count == 0
+
+
+def test_job_started_skips_when_job_emails_are_disabled(monkeypatch: pytest.MonkeyPatch, fake_mail: FakeMail) -> None:
+    """An owner who disabled job updates receives no lifecycle email."""
+    _patch_delivery(monkeypatch, fake_mail)
+    monkeypatch.setattr(
+        notifier_module,
+        "notification_category_enabled",
+        lambda username, category: category != "job_updates",
+    )
+
+    notify_job_started(
+        optimization_id="abc123",
+        username="alice",
+        optimization_type="run",
+        optimizer_name="GEPA",
+        module_name="MyModule",
+    )
+
+    assert fake_mail.call_count == 0
+
+
+def test_share_invite_skips_when_sharing_emails_are_disabled(
+    monkeypatch: pytest.MonkeyPatch, fake_mail: FakeMail
+) -> None:
+    """A grantee who disabled sharing updates receives no invite email."""
+    _patch_delivery(monkeypatch, fake_mail)
+    monkeypatch.setattr(
+        notifier_module,
+        "notification_category_enabled",
+        lambda username, category: category != "sharing_updates",
+    )
+
+    notify_share_invite(optimization_id="abc123", grantee="bob", inviter="alice", role="viewer")
 
     assert fake_mail.call_count == 0
 
@@ -159,7 +195,7 @@ def test_share_invite_emails_grantee_with_role_and_link(monkeypatch: pytest.Monk
 
 
 def test_share_invite_skips_when_email_unresolved(monkeypatch: pytest.MonkeyPatch, fake_mail: FakeMail) -> None:
-    """No resolvable address (SSO pending) means no invite mail is sent."""
+    """A legacy non-email account identity receives no invite email."""
     _patch_delivery(monkeypatch, fake_mail, resolver=lambda username: None)
 
     notify_share_invite(optimization_id="abc123", grantee="bob", inviter="alice", role="viewer")

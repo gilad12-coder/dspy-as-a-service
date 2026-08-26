@@ -22,6 +22,16 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "agent.approval.unknown_call_id": "No pending approval for the given call_id.",
     "agent.status.tool_end": "Tool finished.",
     "agent.status.tool_start": "Agent invoking tool…",
+    "agent_memory.bad_pattern": "The recall pattern is not a usable regular expression. Simplify or escape it.",
+    "agent_memory.block_beyond_log": "Block {block} is beyond the memory: it holds {count} memories.",
+    "agent_memory.invalid_block": "'{block}' is not a block id. Copy an id printed by the memory context, like 16-31.",
+    "agent_memory.note_empty": "Empty. A memory is one line of text.",
+    "agent_memory.note_multiline": "A memory is one line: merge the lines, or note them separately.",
+    "agent_memory.note_too_long": "Too long: {length} characters, limit {limit}. Compress it further.",
+    "agent_memory.setting_out_of_range": "{name} must be between {min} and {max}.",
+    "agent_memory.wrong_block": "Wrong block: {block}. Blocks are compressed in order; the next is {next_block}.",
+    "accounts.invalid_credentials": "That username is not approved for local login.",
+    "accounts.invalid_username": "Enter a valid username without whitespace.",
     "admin.forbidden": "Admin privileges are required for this operation.",
     "admin.invalid_username": "Username must not be blank.",
     "admin.quota_save_failed": "Failed to save quota override.",
@@ -29,6 +39,12 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "auth.invalid_token": "Authentication token is invalid or expired.",
     "auth.missing_token": "Authentication token is required.",
     "auth.not_configured": "Backend authentication is not configured.",
+    "byok.not_configured": "The BYOK key vault is not configured on this deployment, so provider keys can't be saved.",
+    "byok.unknown_provider": "Unknown provider '{provider}'.",
+    "byok.empty_secret": "A provider key can't be empty.",
+    "byok.key_not_found": "No saved key for provider '{provider}'.",
+    "byok.key_undecryptable": "The stored key for '{provider}' can't be decrypted; re-enter it.",
+    "byok.missing_connection": "No saved key for {provider}. Add a connection in Settings → Providers to run with your own key.",
     "code_agent.upstream_failed": "Code agent failed: {error}",
     "dataset.column_roles_invalid": "Invalid role values (must be 'input', 'output', or 'ignore'): {bad}",
     "dataset.column_roles_need_input": "At least one column must have role 'input'.",
@@ -37,12 +53,7 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "dataset.library.forbidden": "You don't have permission to perform this action on this dataset.",
     "dataset.library.not_found": "Dataset not found in your library.",
     "dataset.library.too_large": "Dataset is too large to save to your library (limit is {max_mb}MB compressed).",
-    "dataset.profile.class_imbalance": "Class imbalance in '{column_name}' (ratio {ratio}:1). Add more examples for the underrepresented classes.",
-    "dataset.profile.duplicates": "Detected {duplicate_count} duplicate rows by input columns. Duplicates can leak the same examples into both train and test splits.",
     "dataset.profile.empty": "Dataset must contain at least one row.",
-    "dataset.profile.missing_target": "{missing} rows have a missing value in target column '{column_name}'. Remove or fill them before running.",
-    "dataset.profile.rare_class": "Column '{column_name}' contains rare classes ({rare_classes}); some may be absent from the val/test splits.",
-    "dataset.profile.too_small": "Dataset has only {row_count} examples — too few to estimate a real improvement. Add more examples for stable scores.",
     "dataset.sample_unknown": "Unknown dataset sample '{sample_id}'. Call GET /datasets/samples for the list of valid ids.",
     "dataset.share.cannot_grant_self": "You cannot invite yourself to a dataset you already own.",
     "dataset.share.cannot_modify_self": "You cannot change or remove your own access.",
@@ -115,7 +126,6 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "optimization.pause_not_pausable": "An optimization can be paused only after its first checkpoint is saved — try again in a moment.",
     "optimization.pair_not_rerunnable": "Cannot re-run a pair while the optimization is in state '{status}'.",
     "optimization.pair_not_resumable": "This pair has no saved checkpoint to resume — restart it instead.",
-    "quota.reached": "Per-user limit of {quota} optimizations reached. Delete old optimizations to create new ones.",
     "serve.chat_not_react": "Live chat is available only for ReAct-module optimizations.",
     "serve.chat_requires_live_mcp": "Live chat requires a live-MCP tool source; this run used a dataset snapshot.",
     "serve.missing_inputs": "Missing required input fields: {missing}. Expected: {input_fields}",
@@ -128,11 +138,18 @@ ENGLISH_MESSAGES: dict[str, str] = {
     "share.invalid_role": "Invalid share role '{role}'. Allowed roles: {allowed}.",
     "share.member_not_found": "No member grant for '{username}' on this optimization.",
     "share.not_found": "Shared optimization not found or the link was revoked.",
+    "submission.capacity_reached": "Skynet is at capacity right now. Please try again shortly.",
     "submission.module_resolve_failed": "Module load failed: {error}",
     "submission.staged_dataset_not_found": "staged_dataset_id '{staged_dataset_id}' not found for this user — re-upload the dataset and retry.",
     "submission.validation_failed": "Payload validation failed. Check the optimizer, module, and column mapping.",
     "submission.vision_required": "Dataset contains image columns ({fields}) but the selected model ('{model}') does not support image inputs. Pick a vision-capable model.",
     "submit.no_models_available": "No models available in the catalog — configure a provider API key first.",
+    "transcription.failed": "Transcription failed on every configured provider.",
+    "transcription.too_large": "Audio clip exceeds the {max_mb}MB transcription limit.",
+    "transcription.unconfigured": (
+        "No transcription provider configured. Set SONIOX_API_KEY, "
+        "ELEVENLABS_API_KEY, or OPENAI_API_KEY."
+    ),
     "user.storage.quota_exceeded": "Storage quota exceeded ({used_mb}MB of {quota_mb}MB used). Free up space and try again.",
     "wizard.column_roles_not_object": "column_roles must be an object.",
     "wizard.field_must_be_list": "{field} must be a list.",
@@ -161,13 +178,15 @@ ENGLISH_MESSAGES: dict[str, str] = {
         "path like 'dspy.teleprompt.GEPA'."
     ),
     "wizard.module_unknown": (
-        "'{name}' is not a recognized DSPy module. Use the aliases 'predict' or "
-        "'cot', or a fully qualified dotted path like 'dspy.Predict'."
+        "'{name}' is not a recognized DSPy module. Use the aliases 'predict', "
+        "'cot', 'flex', or 'workflow', or a fully qualified dotted path like "
+        "'dspy.Predict'."
     ),
     "wizard.split_fractions_negative": "split_fractions must be non-negative.",
     "wizard.split_fractions_not_number": "split_fractions values must be numbers: {error}",
     "wizard.split_fractions_not_object": "split_fractions must be an object with train/val/test keys.",
     "wizard.split_fractions_sum": "split_fractions must sum to 1.0, got {total}",
+    "workflow.validation_failed": "Workflow validation failed: {error}",
 }
 
 

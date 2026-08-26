@@ -1,4 +1,4 @@
-"""Cross-optimization read routes: list, counts, sidebar, compare. [MIXED]
+"""Cross-optimization read routes: list, counts, and sidebar. [MIXED]
 
 Public dev surface (in ``_SCALAR_PUBLIC_PATHS``):
 - ``GET /optimizations`` — list jobs.
@@ -7,7 +7,6 @@ Internal (dashboard plumbing, hidden from public docs):
 - ``GET /optimizations/counts`` — sidebar badge totals.
 - ``GET /optimizations/sidebar`` — left-rail listing for the dashboard.
 - ``GET /optimizations/shared-with-me`` — runs others shared with the caller.
-- ``POST /optimizations/compare`` — multi-job comparison view.
 """
 
 from __future__ import annotations
@@ -18,8 +17,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from ....constants import (
-    OPTIMIZATION_TYPE_GRID_SEARCH,
-    OPTIMIZATION_TYPE_RUN,
     PAYLOAD_OVERVIEW_MODEL_NAME,
     PAYLOAD_OVERVIEW_MODULE_NAME,
     PAYLOAD_OVERVIEW_NAME,
@@ -33,18 +30,12 @@ from ....models import (
     PaginatedJobsResponse,
 )
 from ...auth import AuthenticatedUser, get_authenticated_user, is_admin
-from ...converters import parse_overview, parse_timestamp, status_to_job_status
+from ...converters import parse_overview, parse_timestamp
 from ...errors import DomainError
 from ...response_limits import AGENT_DEFAULT_LIST, AGENT_MAX_LIST, clamp_limit
-from .._helpers import build_summary, grant_roles_for, is_resumable, job_owner
+from .._helpers import build_summary, grant_roles_for, resumable_id_flags
 from ..constants import VALID_OPTIMIZATION_TYPES, VALID_STATUSES
-from .schemas import (
-    CompareJobSnapshot,
-    CompareJobsRequest,
-    CompareJobsResponse,
-    SidebarJobItem,
-    SidebarJobsResponse,
-)
+from .schemas import SidebarJobItem, SidebarJobsResponse
 
 logger = logging.getLogger(__name__)
 
@@ -190,8 +181,9 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
                 offset=offset,
             )
         items = [build_summary(job_data) for job_data in rows]
-        for summary, job_data in zip(items, rows, strict=True):
-            summary.resumable = is_resumable(job_store, job_data)
+        resumable_ids = resumable_id_flags(job_store, rows)
+        for summary in items:
+            summary.resumable = summary.optimization_id in resumable_ids
         if use_shared:
             caller_norm = current_user.username.strip().lower()
             roles = grant_roles_for(job_store, [s.optimization_id for s in items], caller_norm)
@@ -238,6 +230,21 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
         )
         if use_shared:
             caller = current_user.username
+            # Single GROUP BY round trip when the store supports it; the
+            # per-status fan-out (7 COUNT queries) remains as the fallback for
+            # stores that don't.
+            if hasattr(job_store, "count_jobs_by_status_visible_to"):
+                buckets = job_store.count_jobs_by_status_visible_to(caller)
+                return OptimizationCountsResponse(
+                    total=sum(buckets.values()),
+                    pending=buckets.get("pending", 0),
+                    validating=buckets.get("validating", 0),
+                    running=buckets.get("running", 0),
+                    success=buckets.get("success", 0),
+                    failed=buckets.get("failed", 0),
+                    cancelled=buckets.get("cancelled", 0),
+                    shared=job_store.count_jobs_shared_with(caller),
+                )
             return OptimizationCountsResponse(
                 total=job_store.count_jobs_visible_to(caller),
                 pending=job_store.count_jobs_visible_to(caller, status="pending"),
@@ -249,6 +256,17 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
                 shared=job_store.count_jobs_shared_with(caller),
             )
         scoped_username = _scope_username(current_user, username)
+        if hasattr(job_store, "count_jobs_by_status"):
+            buckets = job_store.count_jobs_by_status(username=scoped_username)
+            return OptimizationCountsResponse(
+                total=sum(buckets.values()),
+                pending=buckets.get("pending", 0),
+                validating=buckets.get("validating", 0),
+                running=buckets.get("running", 0),
+                success=buckets.get("success", 0),
+                failed=buckets.get("failed", 0),
+                cancelled=buckets.get("cancelled", 0),
+            )
         total = job_store.count_jobs(username=scoped_username)
         return OptimizationCountsResponse(
             total=total,
@@ -294,6 +312,7 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
         scoped_username = _scope_username(current_user, username)
         total = job_store.count_jobs(username=scoped_username)
         rows = job_store.list_jobs(username=scoped_username, limit=limit, offset=offset)
+        resumable_ids = resumable_id_flags(job_store, rows)
         items = []
         for row in rows:
             overview = parse_overview(row)
@@ -310,7 +329,7 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
                     pinned=bool(overview.get("pinned", False)),
                     optimization_type=overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE),
                     total_pairs=overview.get(PAYLOAD_OVERVIEW_TOTAL_PAIRS),
-                    resumable=is_resumable(job_store, row),
+                    resumable=row["optimization_id"] in resumable_ids,
                 )
             )
         return SidebarJobsResponse(items=items, total=total)
@@ -351,6 +370,7 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
         total = job_store.count_jobs_shared_with(username)
         rows = job_store.list_jobs_shared_with(username, limit=limit, offset=offset)
         roles = grant_roles_for(job_store, [row["optimization_id"] for row in rows], username)
+        resumable_ids = resumable_id_flags(job_store, rows)
         items = []
         for row in rows:
             overview = parse_overview(row)
@@ -367,107 +387,8 @@ def register_listing_routes(router: APIRouter, *, job_store) -> None:
                     pinned=bool(overview.get("pinned", False)),
                     optimization_type=overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE),
                     total_pairs=overview.get(PAYLOAD_OVERVIEW_TOTAL_PAIRS),
-                    resumable=is_resumable(job_store, row),
+                    resumable=row["optimization_id"] in resumable_ids,
                     role=roles.get(row["optimization_id"]),
                 )
             )
         return SidebarJobsResponse(items=items, total=total)
-
-    @router.post(
-        "/optimizations/compare",
-        response_model=CompareJobsResponse,
-        summary="Compare 2–5 optimizations side-by-side",
-        tags=["agent"],
-    )
-    def compare_jobs(req: CompareJobsRequest, current_user: AuthenticatedUserDep) -> CompareJobsResponse:
-        """Return a compact side-by-side comparison of 2-5 optimizations.
-
-        Reads each optimization's overview and metrics. Duplicate ids are
-        deduplicated. Missing ids — and ids the caller doesn't own (when not
-        an admin) — are returned under ``missing_optimization_ids`` rather
-        than raising 404 or 403.
-
-        Args:
-            req: The compare request body listing 2-5 optimization ids.
-            current_user: Authenticated caller resolved from the bearer token.
-
-        Returns:
-            A ``CompareJobsResponse`` carrying snapshots, differing fields,
-            and missing ids.
-        """
-        snapshots: list[CompareJobSnapshot] = []
-        missing: list[str] = []
-        seen: set[str] = set()
-        admin = is_admin(current_user)
-
-        for oid in req.optimization_ids:
-            if oid in seen:
-                continue
-            seen.add(oid)
-            try:
-                job_data = job_store.get_job(oid)
-            except KeyError:
-                missing.append(oid)
-                continue
-            if not admin:
-                owner = job_owner(job_data)
-                if owner is None or owner != current_user.username:
-                    missing.append(oid)
-                    continue
-
-            overview = parse_overview(job_data)
-            status = status_to_job_status(job_data.get("status", "pending"))
-            optimization_type = overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE, OPTIMIZATION_TYPE_RUN)
-
-            baseline: float | None = None
-            optimized_metric: float | None = None
-            result_data = job_data.get("result")
-            if isinstance(result_data, dict):
-                if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
-                    best_pair = result_data.get("best_pair")
-                    if isinstance(best_pair, dict):
-                        baseline = best_pair.get("baseline_test_metric")
-                        optimized_metric = best_pair.get("optimized_test_metric")
-                else:
-                    baseline = result_data.get("baseline_test_metric")
-                    optimized_metric = result_data.get("optimized_test_metric")
-
-            improvement = None
-            if baseline is not None and optimized_metric is not None:
-                improvement = round(optimized_metric - baseline, 6)
-
-            snapshots.append(
-                CompareJobSnapshot(
-                    optimization_id=oid,
-                    status=status.value,
-                    name=overview.get(PAYLOAD_OVERVIEW_NAME),
-                    optimization_type=optimization_type,
-                    module_name=overview.get(PAYLOAD_OVERVIEW_MODULE_NAME),
-                    optimizer_name=overview.get(PAYLOAD_OVERVIEW_OPTIMIZER_NAME),
-                    model_name=overview.get(PAYLOAD_OVERVIEW_MODEL_NAME),
-                    dataset_rows=overview.get("dataset_rows"),
-                    baseline_test_metric=baseline,
-                    optimized_test_metric=optimized_metric,
-                    metric_improvement=improvement,
-                )
-            )
-
-        differing_fields: list[str] = []
-        if len(snapshots) >= 2:
-            candidate_fields = [
-                "module_name",
-                "optimizer_name",
-                "model_name",
-                "optimization_type",
-                "dataset_rows",
-            ]
-            for field in candidate_fields:
-                values = {getattr(s, field) for s in snapshots}
-                if len(values) > 1:
-                    differing_fields.append(field)
-
-        return CompareJobsResponse(
-            jobs=snapshots,
-            differing_fields=differing_fields,
-            missing_optimization_ids=missing,
-        )

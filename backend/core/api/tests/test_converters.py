@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from ...constants import TQDM_REMAINING_KEY
+from ...constants import COMPOSITION_WORKFLOW, PAYLOAD_OVERVIEW_COMPOSITION, TQDM_REMAINING_KEY
 from ...models import OptimizationStatus
 from ..converters import (
     compute_elapsed,
@@ -269,6 +269,18 @@ def test_overview_to_base_fields_passes_through_model_name() -> None:
     """``model_name`` is propagated unchanged."""
     fields = overview_to_base_fields({"model_name": "gpt-4o-mini"})
     assert fields["model_name"] == "gpt-4o-mini"
+
+
+def test_overview_to_base_fields_passes_through_composition() -> None:
+    """``composition`` is propagated when present in the overview."""
+    fields = overview_to_base_fields({PAYLOAD_OVERVIEW_COMPOSITION: COMPOSITION_WORKFLOW})
+    assert fields["composition"] == COMPOSITION_WORKFLOW
+
+
+def test_overview_to_base_fields_composition_defaults_to_none() -> None:
+    """``composition`` is ``None`` for legacy rows submitted before the field existed."""
+    fields = overview_to_base_fields({})
+    assert fields["composition"] is None
 
 
 def test_overview_to_base_fields_module_kwargs_defaults_to_empty_dict() -> None:

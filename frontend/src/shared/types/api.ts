@@ -19,10 +19,13 @@ export type ProfileKind = "categorical" | "numeric" | "freeform";
 
 export interface ModelConfig {
   name: string;
+  /** Credential source for this model. Older saved configs default to managed. */
+  token_source?: "managed" | "byok";
+  /** Vault provider slug when a BYOK model comes from a custom connection. */
+  byok_provider?: string | null;
   base_url?: string | null;
   temperature?: number | null;
   max_tokens?: number | null;
-  top_p?: number | null;
   // `api_key` is the only well-known extra; the wizard reads/writes it
   // (`features/submit/hooks/use-submit-wizard.ts`). Other keys flow through
   // unchanged.
@@ -59,13 +62,125 @@ export interface SplitCounts {
   test: number;
 }
 
+// ---------------------------------------------------------------------------
+// Workflow graph wire model — mirrors backend `core/models/workflow.py`.
+// A workflow run (`module_name === "workflow"`) carries this spec instead of a
+// top-level `signature_code`; per-node signatures live inside the nodes.
+
+export interface WorkflowNodePosition {
+  x: number;
+  y: number;
+}
+
+export interface WorkflowFieldSpec {
+  name: string;
+  // Python type expression ("str", "list[str]", ...). Opaque server-side;
+  // the canvas uses it for port coloring.
+  annotation?: string;
+  description?: string | null;
+}
+
+interface WorkflowNodeSpecBase {
+  id: string;
+  name?: string | null;
+  position?: WorkflowNodePosition | null;
+}
+
+export interface WorkflowInputNodeSpec extends WorkflowNodeSpecBase {
+  kind: "input";
+  fields: WorkflowFieldSpec[];
+}
+
+export interface WorkflowOutputNodeSpec extends WorkflowNodeSpecBase {
+  kind: "output";
+  fields: WorkflowFieldSpec[];
+}
+
+export interface WorkflowSignatureNodeSpec extends WorkflowNodeSpecBase {
+  kind: "signature";
+  module_name: "predict" | "cot" | "react" | "flex";
+  signature_code: string;
+  /**
+   * React and flex nodes only: which tools out of the run-level tool_source the
+   * node may call. Null means the full roster on a react node, and no tools at
+   * all on a flex node — a Flex is a complete module without them, so it opts in
+   * by naming the tools it wants.
+   */
+  tool_filter?: string[] | null;
+}
+
+export interface WorkflowTransformNodeSpec extends WorkflowNodeSpecBase {
+  kind: "transform";
+  transform_code: string;
+  input_fields: WorkflowFieldSpec[];
+  output_fields: WorkflowFieldSpec[];
+}
+
+export interface WorkflowMcpNodeSpec extends WorkflowNodeSpecBase {
+  kind: "mcp";
+  tool_name: string;
+  input_fields: WorkflowFieldSpec[];
+  output_field: WorkflowFieldSpec;
+}
+
+export type WorkflowNodeSpec =
+  | WorkflowInputNodeSpec
+  | WorkflowOutputNodeSpec
+  | WorkflowSignatureNodeSpec
+  | WorkflowTransformNodeSpec
+  | WorkflowMcpNodeSpec;
+
+export interface WorkflowEdgeSpec {
+  source: string;
+  source_port: string;
+  target: string;
+  target_port: string;
+}
+
+export interface WorkflowSpec {
+  nodes: WorkflowNodeSpec[];
+  edges: WorkflowEdgeSpec[];
+}
+
+// One node's execution record from a workflow inference or dry run.
+export interface WorkflowNodeTrace {
+  node_id: string;
+  kind: string;
+  name: string;
+  inputs: Record<string, unknown>;
+  outputs?: Record<string, unknown> | null;
+  elapsed_ms: number;
+  error?: string | null;
+}
+
+export interface WorkflowDryRunRequest {
+  workflow: WorkflowSpec;
+  inputs: Record<string, unknown>;
+  model_config: ModelConfig;
+  tool_source?: ToolSource | null;
+}
+
+// A node failure is an expected, renderable outcome (200): `error` and
+// `failed_node_id` are set and `outputs` is null.
+export interface WorkflowDryRunResponse {
+  outputs?: Record<string, unknown> | null;
+  node_traces: WorkflowNodeTrace[];
+  model_used: string;
+  error?: string | null;
+  failed_node_id?: string | null;
+}
+
 interface OptimizationRequestBase {
   name?: string | null;
   description?: string | null;
   username: string;
   module_name: string;
   module_kwargs?: Record<string, unknown>;
-  signature_code: string;
+  // Required for every module except "workflow", whose per-node signatures
+  // live inside the workflow spec instead.
+  signature_code?: string;
+  // Workflow graph spec — required iff `module_name === "workflow"`.
+  workflow?: WorkflowSpec;
   // Optional at the base level (grid-search shares this shape); the run path
   // requires it, react included — react is scored by the same standard metric.
   metric_code?: string;
@@ -89,6 +204,12 @@ interface OptimizationRequestBase {
   shuffle?: boolean;
   seed?: number | null;
   is_private?: boolean;
+  // Where model credentials are resolved: deployment-managed or the user's
+  // encrypted provider connection.
+  token_source?: "managed" | "byok";
+  // Optional GEPA validation target, expressed as a percentage (0–100). The
+  // optimizer stops searching when its best validation candidate reaches it.
+  target_score?: number;
 }
 
 export interface RunRequest extends OptimizationRequestBase {
@@ -102,8 +223,6 @@ export interface RunRequest extends OptimizationRequestBase {
 export interface GridSearchRequest extends OptimizationRequestBase {
   generation_models: ModelConfig[];
   reflection_models: ModelConfig[];
-  use_all_available_generation_models?: boolean;
-  use_all_available_reflection_models?: boolean;
 }
 
 export interface OptimizationSubmissionResponse {
@@ -168,8 +287,6 @@ export interface OptimizationSummaryResponse {
   optimized_test_metric?: number | null;
   metric_improvement?: number | null;
   best_pair_label?: string | null;
-  task_fingerprint?: string | null;
-  compare_fingerprint?: string | null;
   summary_text?: string | null;
   /** Caller's share role when this run was reached via a member grant; null/absent for owned runs. */
   role?: "viewer" | "editor" | "owner" | null;
@@ -230,6 +347,16 @@ export interface ReactOverlay {
   tool_severities?: Record<string, string>;
 }
 
+// The optimized surface of a single workflow node, keyed under its component
+// path (`n_<node_id>`) in `ProgramArtifact.optimized_nodes`. A signature node
+// carries `optimized_prompt` (and, for react nodes, a `react_overlay`); a flex
+// node carries its rewritten `optimized_src`. Mirrors backend NodeArtifact.
+export interface NodeArtifact {
+  optimized_prompt?: OptimizedPredictor | null;
+  react_overlay?: ReactOverlay | null;
+  optimized_src?: string | null;
+}
+
 export interface ProgramArtifact {
   path?: string | null;
   program_state_json?: Record<string, unknown> | null;
@@ -237,6 +364,24 @@ export interface ProgramArtifact {
   metadata?: Record<string, unknown>;
   optimized_prompt?: OptimizedPredictor;
   react_overlay?: ReactOverlay | null;
+  /**
+   * GEPA-rewritten module source for a dspy.Flex program — the optimized Python
+   * that runs in the serve sandbox. Absent for non-Flex artifacts, whose
+   * optimization lands in the prompt rather than the code.
+   */
+  optimized_module_src?: string | null;
+  /**
+   * GEPA-rewritten source per Flex submodule, keyed by its component path (a
+   * workflow's flex node is `n_<node_id>`). Empty unless the program nests Flex
+   * modules rather than being one itself.
+   */
+  optimized_component_srcs?: Record<string, string>;
+  /**
+   * Per-node optimized surface for a workflow program, keyed by component path
+   * (`n_<node_id>`): each node's prompt, react overlay, or rewritten code. Empty
+   * for scalar (single-module) programs.
+   */
+  optimized_nodes?: Record<string, NodeArtifact>;
 }
 
 export interface EvalExampleResult {
@@ -245,6 +390,8 @@ export interface EvalExampleResult {
   score: number;
   pass: boolean;
   error?: string | null;
+  // Named scores the metric logged via log_metrics while scoring this row.
+  logged_metrics?: Record<string, number>;
 }
 
 export interface LMStageStats {
@@ -274,6 +421,8 @@ export interface PairResult {
   error?: string | null;
   baseline_test_results?: EvalExampleResult[];
   optimized_test_results?: EvalExampleResult[];
+  baseline_logged_metrics?: Record<string, number>;
+  optimized_logged_metrics?: Record<string, number>;
 }
 
 export interface RunResult {
@@ -295,6 +444,10 @@ export interface RunResult {
   run_log?: OptimizationLogEntry[];
   baseline_test_results?: EvalExampleResult[];
   optimized_test_results?: EvalExampleResult[];
+  // log_metrics aggregates: each name macro-averaged over the test rows that
+  // logged it, for the baseline and optimized evaluations respectively.
+  baseline_logged_metrics?: Record<string, number>;
+  optimized_logged_metrics?: Record<string, number>;
 }
 
 export interface GridSearchResult {
@@ -395,17 +548,25 @@ export interface ServeResponse {
   input_fields: string[];
   output_fields: string[];
   model_used: string;
+  // Per-node execution trace, present only for workflow runs.
+  node_traces?: WorkflowNodeTrace[] | null;
 }
 
 export interface CatalogModel {
   value: string;
   label: string;
   provider: string;
+  /** Vault provider slug to persist when this model came from a custom BYOK connection. */
+  byok_provider?: string | null;
   data_center?: string | null;
   supports_thinking: boolean;
   supports_vision: boolean;
   available: boolean;
   max_input_tokens?: number | null;
+  // Provider per-token costs (USD) from LiteLLM; null/absent when unpriced, so
+  // the estimate falls back to a default rate rather than treating it as free.
+  input_cost_per_token?: number | null;
+  output_cost_per_token?: number | null;
 }
 
 export interface CatalogProvider {
@@ -420,25 +581,6 @@ export interface CatalogProvider {
 export interface ModelCatalogResponse {
   providers: CatalogProvider[];
   models: CatalogModel[];
-}
-
-export interface DiscoverModelsResponse {
-  models: string[];
-  base_url: string;
-  error?: string | null;
-}
-
-export type ProfileWarningCode =
-  | "too_small"
-  | "class_imbalance"
-  | "rare_class"
-  | "duplicates"
-  | "missing_target";
-
-export interface ProfileWarning {
-  code: ProfileWarningCode;
-  message: string;
-  details: Record<string, unknown>;
 }
 
 export interface TargetColumnProfile {
@@ -462,7 +604,6 @@ export interface DatasetProfile {
   targets: TargetColumnProfile[];
   inputs: InputColumnProfile[];
   duplicate_count: number;
-  warnings: ProfileWarning[];
 }
 
 export interface SplitPlan {

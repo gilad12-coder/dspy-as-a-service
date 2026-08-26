@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -54,6 +55,92 @@ class ApiTokenModel(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class AgentApprovalModel(Base):
+    """Cross-replica handoff for a generalist-agent tool approval decision.
+
+    The SSE stream awaiting an approval and the confirm POST resolving it can
+    land on different backend replicas; the in-process future only works when
+    they share a process. A confirm that finds no local future writes its
+    decision here, and the awaiting replica's poll loop picks it up (and
+    deletes the row). Rows are short-lived — consumed within seconds, purged
+    opportunistically after the approval timeout.
+    """
+
+    __tablename__ = "agent_approvals"
+
+    call_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    approved: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class UserModel(Base):
+    """A normalized identity shared by ADFS and local username login."""
+
+    __tablename__ = "users"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    local_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    adfs_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NotificationPreferenceModel(Base):
+    """Per-identity preferences for optional product notification emails.
+
+    The row is separate from :class:`UserModel` because OAuth identities own
+    jobs and shares without a local password-account row. Missing rows preserve
+    the historical default: both notification categories are enabled.
+    """
+
+    __tablename__ = "notification_preferences"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    job_updates_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sharing_updates_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class ByokProviderKeyModel(Base):
+    """Store one encrypted user-supplied model connection."""
+
+    __tablename__ = "byok_provider_keys"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    api_base: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, nullable=False, default=dict)
+    secret_ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    last4: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unverified", server_default="unverified"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("ix_byok_provider_keys_username_provider", "username", "provider"),
+    )
+
+
 class SearchQueryLogModel(Base):
     """Anonymous log of public-corpus search queries, powering trending searches.
 
@@ -80,6 +167,66 @@ class SearchQueryLogModel(Base):
         nullable=False,
         default=lambda: datetime.now(UTC),
         index=True,
+    )
+
+
+class TelemetryEventModel(Base):
+    """Append-only product-telemetry event — how the app is actually used.
+
+    One row per captured interaction (a page view, a labelled click, a named
+    flow event). The browser SDK batches events to ``POST /telemetry/events``
+    and they land here, queryable beside the rest of the product data. An
+    operator may additionally export accepted events to PostHog with a one-way
+    account hash and without creating a person profile.
+
+    Identity is split deliberately. ``username`` is the *server-trusted* caller
+    derived from the request's auth token (never from the request body), so it
+    is set only when the batch was sent authenticated; the client can't forge
+    another user's identity onto an event. ``anonymous_id`` is an opaque,
+    per-browser id the SDK generates (no email, no name), letting pre-login and
+    logged-out activity be funnel-counted without profiling a person.
+    ``session_id`` scopes a single browsing session. No IP address is stored,
+    and ``properties`` is contractually PII-free (the SDK only emits structural
+    descriptors), so aggregates can be computed without holding personal data.
+
+    ``occurred_at`` is the client-reported event time (best-effort, clock-skewed);
+    ``received_at`` is the authoritative server insert time the read endpoints
+    order and bucket on.
+    """
+
+    __tablename__ = "telemetry_events"
+
+    # BigInteger on Postgres (BIGSERIAL); INTEGER on SQLite so its rowid
+    # autoincrement kicks in for the create_all-based test stores.
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    event_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        index=True,
+    )
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    anonymous_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    locale: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    app_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    properties: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, default=dict)
+    context: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, default=dict)
+
+    # Top-events-over-time and per-user activity are the two read shapes; each
+    # filters on its leading column and orders by recency, so a composite beats
+    # two standalone indexes. The bare received_at index above still serves the
+    # global time-series (all events, no name/user filter).
+    __table_args__ = (
+        Index("ix_telemetry_events_name_received", "event_name", "received_at"),
+        Index("ix_telemetry_events_user_received", "username", "received_at"),
     )
 
 
@@ -171,6 +318,10 @@ class JobModel(Base):
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON_STORE, nullable=True)
     username: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     optimization_type: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # "single" vs "workflow" — orthogonal to optimization_type. Hoisted from the
+    # payload overview at submit so a run's shape is a first-class indexed column
+    # rather than a JSON probe against module_name. NULL on legacy/child rows.
+    composition: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     code_version: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     claimed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -193,9 +344,21 @@ class JobModel(Base):
     accumulated_runtime_seconds: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.0, server_default="0"
     )
+    # Distributed grid search: a (generation, reflection) pair fanned out as
+    # its own claimable row points at its grid parent here and carries its
+    # global pair index. NULL for every user-visible job — child rows are
+    # scheduling internals, hidden from listings and deleted with the parent
+    # via the cascading self-FK.
+    parent_optimization_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("jobs.optimization_id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    pair_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         Index("ix_jobs_status_created_at", "status", "created_at"),
+        # "my optimizations, newest first" — the dominant list/sidebar query —
+        # becomes a single backward index range scan instead of filter + sort.
+        Index("ix_jobs_username_created_at", "username", "created_at"),
         Index("ix_jobs_lease_expires_at", "lease_expires_at"),
         # Lookup index for idempotency dedup; the corresponding PG-only
         # uniqueness guard (partial on idempotency_key IS NOT NULL) lives in
@@ -300,35 +463,6 @@ class GridPairResultModel(Base):
     )
 
 
-class UserQuotaOverrideModel(Base):
-    """SQLAlchemy model for live per-user quota overrides."""
-
-    __tablename__ = "user_quota_overrides"
-
-    username: Mapped[str] = mapped_column(String(255), primary_key=True)
-    quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-
-class UserQuotaAuditModel(Base):
-    """SQLAlchemy model for quota administration audit events."""
-
-    __tablename__ = "user_quota_audit_events"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    actor: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    target_username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    action: Mapped[str] = mapped_column(String(32), nullable=False)
-    old_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    new_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
-
-
 class UserStorageQuotaOverrideModel(Base):
     """SQLAlchemy model for per-user storage-budget overrides.
 
@@ -360,7 +494,9 @@ class JobEmbeddingModel(Base):
 
     Metadata (``optimization_type``, ``winning_model``, ``winning_rank``)
     is denormalized from ``jobs`` so the search can filter and rerank
-    without an extra join per-candidate.
+    without an extra join per-candidate. ``updated_at`` advances on every
+    refresh so dashboard caches can detect resumed jobs without replacing the
+    row.
     """
 
     __tablename__ = "job_embeddings"
@@ -373,13 +509,16 @@ class JobEmbeddingModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
     embedding_summary: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     embedding_code: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     embedding_schema: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     is_recommendable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false", index=True
     )
-    is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false", index=True)
+    is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true", index=True)
     baseline_metric: Mapped[float | None] = mapped_column(Float, nullable=True)
     optimized_metric: Mapped[float | None] = mapped_column(Float, nullable=True)
     summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -503,6 +642,114 @@ class AgentStagedDatasetModel(Base):
     )
 
     __table_args__ = (Index("ix_agent_staged_datasets_user_created", "username", "created_at"),)
+
+
+class AgentMemoryModel(Base):
+    """One memory in a user's permanent agent memory log (OptMem port).
+
+    The log is append-only: ``seq`` is a dense 0-based counter per user, and
+    position IS identity — summary blocks in
+    :class:`AgentMemorySummaryModel` address ranges of these rows by ``seq``
+    alone, so rows are never updated or deleted.
+    """
+
+    __tablename__ = "agent_memories"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    content: Mapped[str] = mapped_column(String(280), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class AgentMemorySummaryModel(Base):
+    """Agent-authored summary of one aligned power-of-two block of memories.
+
+    Block ``(block_size, block_index)`` covers memories
+    ``[block_index * block_size, (block_index + 1) * block_size)`` and is the
+    compression of its two halves. Each level is a dense prefix — blocks are
+    built strictly in order — so a per-level row count says exactly how far
+    that level got. Rows are a rebuildable cache over the log, never a source
+    of truth.
+    """
+
+    __tablename__ = "agent_memory_summaries"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    block_size: Mapped[int] = mapped_column(Integer, primary_key=True)
+    block_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    content: Mapped[str] = mapped_column(String(280), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class AgentMemorySettingsModel(Base):
+    """Per-user overrides for the agent-memory size knobs (OptMem config).
+
+    One row per user who changed anything; a NULL column (or no row at all)
+    means that knob follows the tool default in
+    :mod:`core.api.agent_memory` — mirroring OptMem's config file, where a
+    commented-out line means "follow the tool". Values are validated against
+    the knob bounds at write time, so reads trust the row.
+    """
+
+    __tablename__ = "agent_memory_settings"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    wake_lines: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entry_chars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recall_chars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class TaggingSessionModel(Base):
+    """Persisted text-labeling (tagger) session — one row per saved session.
+
+    Mirrors the in-memory ``useTagger`` hook so a user can resume annotating
+    across refreshes and devices, the way optimizations persist. ``config``,
+    ``columns`` and ``data`` are captured once when annotating begins and are
+    immutable thereafter; ``annotations``, ``current_index`` and ``phase`` (with
+    the denormalized ``tagged_count``) advance as rows are labeled and are the
+    only columns the autosave PUT rewrites, so the large ``data`` TOAST is not
+    re-written on every keystroke. ``row_count``/``tagged_count`` are
+    denormalized so the sidebar list never loads the heavy JSON columns.
+    Ownership is by ``username`` (compared in application code, not a DB FK).
+    """
+
+    __tablename__ = "tagging_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    phase: Mapped[str] = mapped_column(String(20), nullable=False, default="annotating")
+    config: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, nullable=False, default=dict)
+    columns: Mapped[list[str]] = mapped_column(JSON_STORE, nullable=False, default=list)
+    data: Mapped[list[dict[str, Any]]] = mapped_column(JSON_STORE, nullable=False, default=list)
+    annotations: Mapped[dict[str, Any]] = mapped_column(JSON_STORE, nullable=False, default=dict)
+    # AI co-tagging state (assist mode, interview, rubric, predictions with
+    # provenance/confidence, review rounds, auto-tag job bookkeeping). NULL for
+    # plain manual sessions; ``annotations`` stays the single source of truth
+    # for final labels regardless of who produced them.
+    assist: Mapped[dict[str, Any] | None] = mapped_column(JSON_STORE, nullable=True, default=None)
+    current_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tagged_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("ix_tagging_sessions_user_updated", "username", "updated_at"),
+        Index("ix_tagging_sessions_user_pinned", "username", "pinned"),
+    )
 
 
 class DatasetModel(Base):
@@ -632,3 +879,68 @@ class DatasetShareGrantModel(Base):
     # The composite PK leads with dataset_id, so "list everything shared with
     # this user" (filtering on grantee_username alone) could not use it.
     __table_args__ = (Index("ix_dataset_share_grants_grantee", "grantee_username"),)
+
+
+class TaggingSessionShareLinkModel(Base):
+    """Per-session sharing config keyed by a public link token.
+
+    Mirrors :class:`DatasetShareLinkModel` for saved tagger sessions: the
+    ``token`` is the unguessable capability embedded in the public
+    ``/tagger/share/<token>`` URL, stored in plaintext because it IS the public
+    identifier, not a credential hash. The active (``revoked_at IS NULL``) row
+    per session holds the config; ``general_access`` and ``general_role`` carry
+    the same semantics as the dataset variant. The ``session_id`` foreign key
+    cascades, so deleting a session removes its link rows automatically.
+    """
+
+    __tablename__ = "tagging_session_share_links"
+
+    token: Mapped[str] = mapped_column(String(48), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tagging_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    general_access: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="restricted", server_default="restricted"
+    )
+    general_role: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="viewer", server_default="viewer"
+    )
+
+
+class TaggingSessionShareGrantModel(Base):
+    """A single per-user access grant on a shared tagger session.
+
+    Mirrors :class:`DatasetShareGrantModel`: each row invites one
+    ``grantee_username`` to a session with a tier ``role`` (``'viewer'`` /
+    ``'editor'`` / ``'owner'``). The pair ``(session_id, grantee_username)`` is
+    the primary key, so re-inviting a user replaces their grant. The
+    ``session_id`` foreign key cascades, removing grants when the session is
+    deleted.
+    """
+
+    __tablename__ = "tagging_session_share_grants"
+
+    session_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("tagging_sessions.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    grantee_username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    # The composite PK leads with session_id, so "list everything shared with
+    # this user" (filtering on grantee_username alone) could not use it.
+    __table_args__ = (Index("ix_tagging_session_share_grants_grantee", "grantee_username"),)

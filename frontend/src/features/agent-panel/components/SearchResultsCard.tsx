@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Sparkles, Type } from "lucide-react";
+import { Sparkle, TextT } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import type { AgentToolCall } from "@/shared/ui/agent/types";
@@ -88,7 +88,7 @@ export function SearchResultsCard({ call }: SearchResultsCardProps) {
 
 function SearchTypeChip({ kind }: { kind: "semantic" | "lexical" }) {
   const isSemantic = kind === "semantic";
-  const Icon = isSemantic ? Sparkles : Type;
+  const Icon = isSemantic ? Sparkle : TextT;
   const label = isSemantic
     ? msg("auto.features.agent.panel.components.searchresultscard.type_semantic")
     : msg("auto.features.agent.panel.components.searchresultscard.type_lexical");
@@ -97,7 +97,7 @@ function SearchTypeChip({ kind }: { kind: "semantic" | "lexical" }) {
       className="inline-flex items-center gap-1 rounded-full border border-foreground/12 bg-foreground/[0.04] px-2 py-0.5 text-[10.5px] font-medium leading-none text-foreground/65"
       title={label}
     >
-      <Icon className="size-2.5" strokeWidth={2} aria-hidden="true" />
+      <Icon className="size-2.5" aria-hidden="true" />
       <span>{label}</span>
     </span>
   );

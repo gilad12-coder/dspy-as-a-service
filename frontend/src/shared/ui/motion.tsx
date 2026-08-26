@@ -2,6 +2,7 @@
 
 import { motion, useReducedMotion, type HTMLMotionProps } from "framer-motion";
 import * as React from "react";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
 export const FadeIn = React.memo(function FadeIn({
   children,
@@ -238,7 +239,8 @@ export const AnimatedNumber = React.memo(function AnimatedNumber({
     };
   }, [value, duration, decimals, shouldReduceMotion]);
 
-  const formatted = decimals > 0 ? displayed.toFixed(decimals) : displayed.toLocaleString("he-IL");
+  const formatted =
+    decimals > 0 ? displayed.toFixed(decimals) : displayed.toLocaleString(getActiveIntlLocale());
   return (
     <span ref={ref} className={className}>
       {prefix}

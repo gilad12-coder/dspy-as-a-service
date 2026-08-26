@@ -8,6 +8,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .common import ColumnMapping, ModelConfig, OptimizationStatus, OptimizationType, SplitFractions
+from .serve import WorkflowNodeTrace
+from .workflow import WORKFLOW_MODULE_NAME, WorkflowSpec, workflow_tool_users
 
 
 # Where a react run sources its tool roster: a live MCP endpoint or a snapshot
@@ -42,13 +44,31 @@ class _OptimizationRequestBase(BaseModel):
     )
     module_name: str
     module_kwargs: dict[str, Any] = Field(default_factory=dict)
-    signature_code: str
+    signature_code: str | None = Field(
+        default=None,
+        description=(
+            "The single dspy.Signature the module wraps. Required for every module except "
+            "'workflow', whose per-node signatures live inside the workflow spec instead."
+        ),
+    )
+    workflow: WorkflowSpec | None = Field(
+        default=None,
+        description=(
+            "Workflow graph spec. Required when module_name is 'workflow', forbidden otherwise. "
+            "The graph's input-anchor fields are the run's input ports (covered by "
+            "column_mapping.inputs) and its output-anchor fields are the final outputs the "
+            "metric scores (covered by column_mapping.outputs)."
+        ),
+    )
     metric_code: str | None = None
     optimizer_name: str
     optimizer_kwargs: dict[str, Any] = Field(default_factory=dict)
     compile_kwargs: dict[str, Any] = Field(default_factory=dict)
+    # max_length matches the staging cap (StageDatasetForAgentRequest) — an
+    # uncapped inline list lets a single submit balloon the shared API process.
     dataset: list[dict[str, Any]] | None = Field(
         default=None,
+        max_length=200_000,
         description=(
             "Inline dataset rows. Optional when ``staged_dataset_id`` is provided — the server then loads the rows "
             "from the staged copy. Exactly one of ``dataset`` or ``staged_dataset_id`` must be present."
@@ -83,10 +103,29 @@ class _OptimizationRequestBase(BaseModel):
     seed: int | None = None
     dataset_filename: str | None = Field(default=None, description="Original dataset file name.")
     is_private: bool = Field(
-        default=False,
-        description="When true, the optimization is excluded from the public explore page.",
+        default=True,
+        description=(
+            "When true, the run stays private. False explicitly publishes it to the "
+            "authenticated on-premise Explorer corpus."
+        ),
     )
-
+    token_source: Literal["managed", "byok"] = Field(
+        default="managed",
+        description=(
+            "Credential source for model calls: 'managed' uses an operator-configured connection; "
+            "'byok' uses the authenticated user's encrypted provider connection."
+        ),
+    )
+    target_score: float | None = Field(
+        default=None,
+        gt=0,
+        le=100,
+        description=(
+            "Optional validation score target, expressed as a percentage. GEPA stops searching "
+            "when its best validation candidate reaches this score; the existing metric-call "
+            "budget remains a safety ceiling."
+        ),
+    )
     @model_validator(mode="after")
     def _ensure_dataset(self) -> _OptimizationRequestBase:
         """Require exactly one dataset source: inline rows, a staged id, or a library id.
@@ -105,6 +144,31 @@ class _OptimizationRequestBase(BaseModel):
             raise ValueError(
                 "Dataset must contain at least one row, or staged_dataset_id / source_dataset_id must be provided."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _ensure_module_shape(self) -> _OptimizationRequestBase:
+        """Pair ``module_name`` with the matching program definition.
+
+        Workflow runs carry their signatures per node inside ``workflow``;
+        every other module wraps exactly one top-level ``signature_code``.
+
+        Returns:
+            The validated request instance.
+
+        Raises:
+            ValueError: When a workflow run lacks ``workflow``, a non-workflow
+                run lacks ``signature_code``, or ``workflow`` is supplied for a
+                non-workflow module.
+        """
+        if self.module_name.lower() == WORKFLOW_MODULE_NAME:
+            if self.workflow is None:
+                raise ValueError("workflow is required when module_name is 'workflow'.")
+        else:
+            if self.workflow is not None:
+                raise ValueError("workflow is only valid when module_name is 'workflow'.")
+            if not self.signature_code:
+                raise ValueError("signature_code is required.")
         return self
 
 
@@ -133,6 +197,27 @@ class RunRequest(_OptimizationRequestBase):
         """
         if self.metric_code is None:
             raise ValueError("metric_code is required.")
+        return self
+
+    @model_validator(mode="after")
+    def _require_tool_source_for_workflow_tools(self) -> RunRequest:
+        """Require a run-level tool roster when the graph contains tool-using nodes.
+
+        Workflow react, flex and mcp nodes resolve their tools from the run's
+        single ``tool_source`` (optionally narrowed per node), mirroring how
+        a top-level react run sources its roster.
+
+        Returns:
+            The validated request instance.
+
+        Raises:
+            ValueError: When the workflow has tool-using nodes but no
+                ``tool_source`` is supplied.
+        """
+        if self.workflow is not None and self.tool_source is None:
+            tool_users = workflow_tool_users(self.workflow)
+            if tool_users:
+                raise ValueError(f"tool_source is required — these workflow nodes use tools: {tool_users}.")
         return self
 
 
@@ -173,6 +258,8 @@ class GridSearchRequest(_OptimizationRequestBase):
                 when ``reflection_models`` is empty and
                 ``use_all_available_reflection_models`` is false.
         """
+        if self.module_name.lower() == WORKFLOW_MODULE_NAME:
+            raise ValueError("Grid search does not support workflow modules yet — submit via /run.")
         if self.metric_code is None:
             raise ValueError("metric_code is required.")
         if not self.use_all_available_generation_models and not self.generation_models:
@@ -180,6 +267,48 @@ class GridSearchRequest(_OptimizationRequestBase):
         if not self.use_all_available_reflection_models and not self.reflection_models:
             raise ValueError("At least one reflection model is required.")
         return self
+
+
+class WorkflowDryRunRequest(BaseModel):
+    """Request payload for POST /workflows/dry-run — one unoptimized test execution."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    workflow: WorkflowSpec
+    inputs: dict[str, Any] = Field(description="Values for the workflow's input-anchor fields.")
+    model_settings: ModelConfig = Field(alias="model_config")
+    tool_source: ToolSource | None = None
+
+    @model_validator(mode="after")
+    def _require_tool_source_for_tools(self) -> WorkflowDryRunRequest:
+        """Require a tool roster when the graph contains tool-using nodes.
+
+        Returns:
+            The validated request instance.
+
+        Raises:
+            ValueError: When tool-using nodes exist but no ``tool_source``.
+        """
+        if self.tool_source is None:
+            tool_users = workflow_tool_users(self.workflow)
+            if tool_users:
+                raise ValueError(f"tool_source is required — these workflow nodes use tools: {tool_users}.")
+        return self
+
+
+class WorkflowDryRunResponse(BaseModel):
+    """Result of a workflow dry run.
+
+    A node failure is an expected outcome the canvas renders, not an HTTP
+    error: the response carries the failing node id, the error, and every
+    trace collected up to (and including) the failure.
+    """
+
+    outputs: dict[str, Any] | None = None
+    node_traces: list[WorkflowNodeTrace] = Field(default_factory=list)
+    model_used: str
+    error: str | None = None
+    failed_node_id: str | None = None
 
 
 class OptimizationSubmissionResponse(BaseModel):

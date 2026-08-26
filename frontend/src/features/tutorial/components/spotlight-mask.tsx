@@ -1,39 +1,64 @@
 "use client";
 
-import { motion } from "framer-motion";
-import * as React from "react";
+import { motion, useReducedMotion } from "framer-motion";
 
 interface SpotlightMaskProps {
   targetRect: DOMRect | null;
   padding?: number;
   borderRadius?: number;
+  isTransitioning?: boolean;
 }
 
-const spring = { type: "spring", stiffness: 400, damping: 35, mass: 0.8 } as const;
+export function SpotlightMask({
+  targetRect,
+  padding = 8,
+  borderRadius = 12,
+  isTransitioning = false,
+}: SpotlightMaskProps) {
+  const prefersReducedMotion = useReducedMotion();
 
-export function SpotlightMask({ targetRect, padding = 8, borderRadius = 12 }: SpotlightMaskProps) {
   if (!targetRect) {
     return (
-      <svg className="absolute inset-0 w-full h-full pointer-events-auto">
-        <rect x="0" y="0" width="100%" height="100%" fill="rgba(28,22,18,0.50)" />
-      </svg>
+      <motion.svg
+        aria-hidden="true"
+        className="pointer-events-auto absolute inset-0 h-full w-full"
+        initial={prefersReducedMotion ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.18 }}
+      >
+        <rect x="0" y="0" width="100%" height="100%" fill="rgba(28,22,18,0.56)" />
+      </motion.svg>
     );
   }
 
-  const x = targetRect.x - padding;
-  const y = targetRect.y - padding;
-  const w = targetRect.width + padding * 2;
-  const h = targetRect.height + padding * 2;
+  const edge = 8;
+  const x = Math.max(edge, targetRect.x - padding);
+  const y = Math.max(edge, targetRect.y - padding);
+  const right = Math.min(window.innerWidth - edge, targetRect.right + padding);
+  const bottom = Math.min(window.innerHeight - edge, targetRect.bottom + padding);
+  const w = Math.max(1, right - x);
+  const h = Math.max(1, bottom - y);
+  const transition = {
+    duration: prefersReducedMotion ? 0 : 0.22,
+    ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
+  };
 
   return (
-    <svg className="absolute inset-0 w-full h-full pointer-events-auto">
+    <motion.svg
+      aria-hidden="true"
+      className="pointer-events-auto absolute inset-0 h-full w-full"
+      data-tutorial-spotlight="true"
+      initial={prefersReducedMotion ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: prefersReducedMotion ? 0 : 0.18 }}
+    >
       <defs>
         <mask id="tutorial-spotlight-mask">
           <rect x="0" y="0" width="100%" height="100%" fill="white" />
           <motion.rect
-            animate={{ x, y, width: w, height: h }}
-            transition={spring}
-            rx={borderRadius}
+            animate={{ x, y, width: w, height: h, rx: borderRadius }}
+            initial={false}
+            transition={transition}
             fill="black"
           />
         </mask>
@@ -44,31 +69,50 @@ export function SpotlightMask({ targetRect, padding = 8, borderRadius = 12 }: Sp
         y="0"
         width="100%"
         height="100%"
-        fill="rgba(28,22,18,0.50)"
+        fill="rgba(28,22,18,0.56)"
         mask="url(#tutorial-spotlight-mask)"
       />
 
       <motion.rect
-        animate={{ x, y, width: w, height: h }}
-        transition={spring}
-        rx={borderRadius}
+        animate={{ x, y, width: w, height: h, rx: borderRadius, opacity: isTransitioning ? 0 : 1 }}
+        initial={false}
+        transition={transition}
         fill="none"
-        stroke="rgba(229,221,212,0.35)"
-        strokeWidth="1.5"
+        stroke="rgba(200,168,130,0.95)"
+        strokeWidth="2"
+        vectorEffect="non-scaling-stroke"
       />
 
       <motion.rect
-        animate={{ x, y, width: w, height: h, opacity: [0.3, 0.5, 0.3] }}
-        transition={{
-          ...spring,
-          opacity: { duration: 2.5, repeat: Infinity, ease: "easeInOut" },
+        animate={{
+          x: x + 2,
+          y: y + 2,
+          width: Math.max(1, w - 4),
+          height: Math.max(1, h - 4),
+          rx: Math.max(0, borderRadius - 2),
+          opacity: isTransitioning ? 0 : 1,
         }}
-        rx={borderRadius}
+        initial={false}
+        transition={transition}
         fill="none"
-        stroke="rgba(229,221,212,0.2)"
-        strokeWidth="3"
-        filter="blur(4px)"
+        stroke="rgba(250,248,245,0.72)"
+        strokeWidth="1"
+        vectorEffect="non-scaling-stroke"
       />
-    </svg>
+
+      <motion.rect
+        x="0"
+        y="0"
+        width="100%"
+        height="100%"
+        fill="rgba(28,22,18,0.56)"
+        initial={false}
+        animate={{ opacity: isTransitioning ? 1 : 0 }}
+        transition={{
+          duration: prefersReducedMotion ? 0 : isTransitioning ? 0.14 : 0.2,
+          ease: [0.22, 1, 0.36, 1],
+        }}
+      />
+    </motion.svg>
   );
 }

@@ -237,15 +237,21 @@ def get_authenticated_user(
         raise DomainError("auth.missing_token", status=401)
     token = authorization.removeprefix("Bearer ").strip()
     if is_api_token(token):
-        return _authenticate_api_token(request, token)
-    if settings.backend_auth_secret is None:
-        raise DomainError("auth.not_configured", status=500)
-    payload = _verify_hs256(token, settings.backend_auth_secret.get_secret_value())
-    username = str(payload.get("name") or payload.get("email") or payload.get("sub") or "").strip().lower()
-    if not username:
-        raise DomainError("auth.invalid_token", status=401)
-    role = str(payload.get("role") or "user").strip().lower()
-    return AuthenticatedUser(username=username, role=role, groups=_normalise_groups(payload.get("groups")))
+        user = _authenticate_api_token(request, token)
+    else:
+        if settings.backend_auth_secret is None:
+            raise DomainError("auth.not_configured", status=500)
+        payload = _verify_hs256(token, settings.backend_auth_secret.get_secret_value())
+        username = str(payload.get("name") or payload.get("email") or payload.get("sub") or "").strip().lower()
+        if not username:
+            raise DomainError("auth.invalid_token", status=401)
+        role = str(payload.get("role") or "user").strip().lower()
+        user = AuthenticatedUser(
+            username=username,
+            role=role,
+            groups=_normalise_groups(payload.get("groups")),
+        )
+    return user
 
 
 def is_admin(user: AuthenticatedUser) -> bool:

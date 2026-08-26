@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CaretLeft, CaretRight } from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 
@@ -46,7 +46,7 @@ export function IndexPager({
           className="inline-flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
           aria-label={prevLabel}
         >
-          <ChevronLeft className="size-4" />
+          <CaretLeft className="size-4" />
         </button>
       </TooltipButton>
       <span className="font-mono tabular-nums px-1.5 min-w-[2.25rem] text-center text-foreground/80 select-none">
@@ -60,7 +60,7 @@ export function IndexPager({
           className="inline-flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
           aria-label={nextLabel}
         >
-          <ChevronRight className="size-4" />
+          <CaretRight className="size-4" />
         </button>
       </TooltipButton>
     </div>

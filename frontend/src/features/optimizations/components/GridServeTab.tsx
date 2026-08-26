@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Crown, Gauge, Trash2, Trophy } from "lucide-react";
+import { Crown, Gauge, Trash, Trophy } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { msg } from "@/shared/lib/messages";
 
@@ -31,8 +31,8 @@ import { computePairScores } from "../lib/pair-scores";
 function shortEffort(value: string | null | undefined): string | null {
   if (!value) return null;
   const v = value.toLowerCase();
-  if (v === "minimal") return "min";
-  if (v === "medium") return "med";
+  if (v === "minimal") return msg("optimizations.reasoning_effort.short.min");
+  if (v === "medium") return msg("optimizations.reasoning_effort.short.med");
   return v;
 }
 
@@ -212,6 +212,14 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
     if (!isStale()) setServeLoading(false);
   };
 
+  const handleStopServe = () => {
+    streamReqIdRef.current += 1;
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    setServeLoading(false);
+    setStreamingRun(null);
+  };
+
   const handleClearHistory = () => {
     setRunHistory([]);
     setServeError(null);
@@ -234,7 +242,7 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
   return (
     <div className="space-y-4">
       <FadeIn>
-        <p className="text-sm text-muted-foreground" dir="rtl">
+        <p className="text-sm text-muted-foreground">
           {msg("auto.features.optimizations.components.gridservetab.3")}
         </p>
       </FadeIn>
@@ -279,10 +287,7 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
                       {pairLabel(p)}
                     </span>
                   </div>
-                  <div
-                    className="flex items-center gap-2 text-[10px] tabular-nums text-muted-foreground"
-                    dir="rtl"
-                  >
+                  <div className="flex items-center gap-2 text-[10px] tabular-nums text-muted-foreground">
                     <span className={cn("flex items-center gap-1", isQuality && "text-[#3D2E22]")}>
                       <Trophy className="size-2.5" />
                       {s ? `${Math.round(s.quality * 100)}%` : "—"}
@@ -321,13 +326,13 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8"
+                    className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                     onClick={handleClearHistory}
                     aria-label={msg(
                       "auto.features.optimizations.components.gridservetab.literal.1",
                     )}
                   >
-                    <Trash2 className="size-4" />
+                    <Trash className="size-4" />
                   </Button>
                 </TooltipButton>
               </div>
@@ -345,7 +350,7 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
             textareaRefs={textareaRefs}
             chatScrollRef={chatScrollRef}
             handleServe={handleServe}
-            demos={selected?.program_artifact?.optimized_prompt?.demos ?? []}
+            handleStopServe={handleStopServe}
           />
 
           <Card>
@@ -363,14 +368,17 @@ export function GridServeTab({ job }: { job: OptimizationStatusResponse }) {
                     {msg("auto.features.optimizations.components.gridservetab.8")}
                   </HelpTip>
                 </p>
-                <div className="rounded-lg bg-muted/40 p-2.5 pe-8 relative group" dir="ltr">
+                <div
+                  className="group relative rounded-lg bg-muted/40 p-2.5 pe-11 sm:pe-8"
+                  dir="ltr"
+                >
                   <code className="text-xs font-mono break-all">
                     {msg("auto.features.optimizations.components.gridservetab.9")}
                     {endpoint}
                   </code>
                   <CopyButton
                     text={endpoint}
-                    className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100"
+                    className="absolute end-1 top-1 opacity-100 sm:end-1.5 sm:top-1.5 sm:opacity-0 sm:group-hover:opacity-100"
                   />
                 </div>
               </div>

@@ -30,7 +30,7 @@ from sqlalchemy import create_engine, text
 from core.config import settings
 
 SERVER = os.environ.get("SKYNET_SERVER", "http://localhost:8000")
-_DB_URL = os.environ.get("DATABASE_URL", "postgresql://giladmorad@localhost:5432/skynet")
+_DB_URL = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/skynet")
 
 
 def _b64url(raw: bytes) -> str:

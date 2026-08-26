@@ -1,0 +1,40 @@
+# LiteLLM proxy — the managed-inference gateway for Skynet.
+#
+# Fronts a centrally managed OpenRouter account: when LITELLM_PROXY_URL points
+# the backend here, managed runs route through this proxy. BYOK runs never reach
+# this proxy — the run-path
+# bridge stamps the user's own key onto the request, which sends it straight to
+# the provider (see backend/core/byok/bridge.py).
+
+model_list:
+  # Wildcard pass-through: any model the OpenRouter master key can reach is
+  # callable as "openrouter/<model>". The backend already emits provider-prefixed
+  # model strings, so no per-model entries are needed here.
+  - model_name: "*"
+    litellm_params:
+      model: "openrouter/*"
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+litellm_settings:
+  drop_params: true
+  # Retry fast transient upstream failures (429/5xx) at the proxy instead of
+  # passing every one straight through to the turn/run. Kept low: the backend
+  # retries too, and slow failures are bounded by the client-side timeouts.
+  num_retries: 2
+  # Hard per-request ceiling matching the backend's job-scale LM timeout
+  # (LM_REQUEST_TIMEOUT, 600s) so a stalled provider can't pin a proxy worker
+  # longer than any client would wait. Interactive turns time out client-side
+  # far earlier (AGENT_REQUEST_TIMEOUT, 120s).
+  request_timeout: 600
+  # Loads custom_callbacks.py, whose import patches streamed chunks to keep the
+  # concrete model OpenRouter's Auto Router served (the backend's per-turn
+  # "Auto · <model>" reveal). The callback object itself is a no-op.
+  callbacks: custom_callbacks.proxy_handler_instance
+general_settings:
+  # The backend presents a gateway key, never this master key.
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # PostgreSQL backs the gateway's own keys and operational state.
+  database_url: os.environ/LITELLM_DATABASE_URL
+  # Bound in-flight provider work per proxy replica for resource protection.
+  global_max_parallel_requests: 64

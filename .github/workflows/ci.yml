@@ -1,0 +1,124 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: backend · ruff + core tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install dependencies (runtime + dev)
+        run: uv sync --extra dev --frozen
+      - name: Ruff lint
+        run: uv run ruff check .
+      # The credential-free `core/` tier runs without Postgres, an LLM, or a live
+      # server; the `tests/` integration tier (DB + paid LLM) is a separate,
+      # nightly concern and is intentionally not gated here.
+      - name: Core test suite
+        run: uv run pytest core/ -q
+      - name: Load-test release-gate unit tests
+        run: uv run pytest tests/unit/test_load_test_slo.py -q
+      # requirements.txt is the pip install path's copy of uv.lock. When only
+      # one moves, the image silently ships a dependency set CI never tested.
+      # Compare pins only so the hand-written header may differ.
+      - name: requirements.txt in sync with uv.lock
+        run: |
+          uv export --no-emit-project --no-hashes --no-header -o /tmp/req-expected.txt >/dev/null
+          if ! diff -u <(grep -vE '^\s*#|^\s*$' requirements.txt) \
+                       <(grep -vE '^\s*#|^\s*$' /tmp/req-expected.txt); then
+            echo "::error::requirements.txt is out of sync with uv.lock. Regenerate: uv export --no-emit-project --no-hashes --no-header -o requirements.txt (then restore the header block)"
+            exit 1
+          fi
+
+  # Everything above installs through uv. The Dockerfile's other path
+  # (PKG_MANAGER=pip) installs compiled requirements with --no-deps, so pip does
+  # not re-resolve or notice an omitted runtime package. Build both DSPy lines
+  # and import modules that pull the third-party surface.
+  # The stable line matters most here: its compile is not reproducible on
+  # demand, so the requirements-sync guard cannot cover it and this is its only
+  # gate.
+  docker-pip-path:
+    name: docker · pip path (${{ matrix.dspy_line }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dspy_line: [preview, stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (PKG_MANAGER=pip)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          build-args: |
+            PKG_MANAGER=pip
+            DSPY_LINE=${{ matrix.dspy_line }}
+          load: true
+          tags: skynet-backend:pip-${{ matrix.dspy_line }}
+          cache-from: type=gha,scope=pip-${{ matrix.dspy_line }}
+          cache-to: type=gha,mode=max,scope=pip-${{ matrix.dspy_line }}
+      # --no-deps installs the file verbatim. pip check is the first gate that
+      # validates the installed wheels' dependency metadata.
+      # Both lines pin gepa 0.1.4 over dspy's hard gepa[dspy] requirement on
+      # purpose (for GEPA PxN batched sampling; see the requirements headers) —
+      # ==0.0.27 on the stable line (dspy 3.2.1), ==0.1.1 on the preview line
+      # (dspy 3.3.0). Those two mismatch lines are filtered; everything else pip
+      # check emits is a real defect.
+      - name: Dependency set is complete and self-consistent
+        run: |
+          out=$(docker run --rm skynet-backend:pip-${{ matrix.dspy_line }} pip check 2>&1 || true)
+          echo "$out"
+          if echo "$out" | grep -vE 'has requirement gepa\[dspy\]==0\.(0\.27|1\.1)' | grep -qE 'requires|has requirement'; then
+            echo "::error::pip check found real dependency problems in the ${{ matrix.dspy_line }} pip-path image"
+            exit 1
+          fi
+      # Importing the modules that pull the third-party surface also catches a
+      # missing package, and covers anything pip metadata does not describe.
+      # main/worker_main are deliberately excluded: they build the app at import
+      # time and open a real Postgres connection, which this job has no business
+      # standing up.
+      - name: Import smoke test
+        run: |
+          docker run --rm skynet-backend:pip-${{ matrix.dspy_line }} python -c "
+          import core.api.app
+          import core.byok.vault
+          import core.worker.subprocess_runner
+          import core.service_gateway.optimization
+          print('pip-path image imports OK')
+          "
+
+  frontend:
+    name: frontend · typecheck + lint + unit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22: the unit runner uses --experimental-strip-types (Node >= 22.6).
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm run test:unit

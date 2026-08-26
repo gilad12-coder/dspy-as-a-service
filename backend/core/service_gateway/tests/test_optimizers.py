@@ -8,11 +8,14 @@ from unittest.mock import MagicMock, patch
 
 import dspy
 import pytest
+from gepa.strategies.proposal_sampling import PxNSampling
 
+from core.config import settings
 from core.exceptions import ServiceError
 from core.models import ModelConfig
 from core.service_gateway.optimization.data import DatasetSplits
 from core.service_gateway.optimization.optimizers import (
+    TargetScoreStopper,
     _callable_accepts_metric,
     _compile_accepts_valset,
     _extract_factory_targets,
@@ -381,6 +384,74 @@ def test_instantiate_optimizer_does_not_override_metric_if_already_in_kwargs() -
     assert captured["metric"] is custom_metric
 
 
+def test_instantiate_optimizer_injects_gepa_num_threads_default() -> None:
+    """GEPA gets the configured parallel-eval default when no ``num_threads`` is supplied."""
+    captured: dict = {}
+
+    class _GepaFactory:
+        def __init__(self, num_threads: Any = None, **kw: Any) -> None:
+            captured["num_threads"] = num_threads
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=fake_language_model(),
+    )
+
+    assert captured["num_threads"] == settings.gepa_eval_num_threads
+
+
+def test_instantiate_optimizer_keeps_user_supplied_gepa_num_threads() -> None:
+    """An explicit ``num_threads`` in optimizer_kwargs beats the injected default."""
+    captured: dict = {}
+
+    class _GepaFactory:
+        def __init__(self, num_threads: Any = None, **kw: Any) -> None:
+            captured["num_threads"] = num_threads
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={"num_threads": 3},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=fake_language_model(),
+    )
+
+    assert captured["num_threads"] == 3
+
+
+def test_instantiate_optimizer_does_not_inject_num_threads_for_non_gepa() -> None:
+    """Non-GEPA factories never receive an unrequested ``num_threads`` kwarg."""
+    captured: dict = {}
+
+    class _PlainFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_PlainFactory,
+        optimizer_name="my_opt",
+        optimizer_kwargs={},
+        metric=_dummy_metric,
+        reflection_model=None,
+    )
+
+    assert "num_threads" not in captured
+
+
 def test_instantiate_optimizer_gepa_requires_reflection_model_or_raises() -> None:
     """The gepa factory raises ``ServiceError`` when no reflection model is provided."""
     class _GepaFactory:
@@ -443,6 +514,200 @@ def test_instantiate_optimizer_gepa_sets_auto_light_default() -> None:
         )
 
     assert captured["auto"] == "light"
+
+
+def test_instantiate_optimizer_gepa_injects_target_score_stopper() -> None:
+    """A percentage target becomes GEPA's native validation stop callback."""
+    captured: dict[str, Any] = {}
+    state: dict[str, Any] = {}
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+        target_score=85,
+        stop_state=state,
+    )
+
+    stopper = captured["gepa_kwargs"]["stop_callbacks"][0]
+    assert isinstance(stopper, TargetScoreStopper)
+    assert stopper.threshold == pytest.approx(0.85)
+    assert state["target_score_stopper"] is stopper
+
+
+def test_instantiate_optimizer_gepa_no_sampling_strategy_by_default() -> None:
+    """The classic p=n=1 defaults inject no ``sampling_strategy`` — GEPA keeps its own."""
+    captured: dict[str, Any] = {}
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+    )
+
+    assert "sampling_strategy" not in captured.get("gepa_kwargs", {})
+
+
+def test_instantiate_optimizer_gepa_injects_pxn_sampling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Raising the PxN settings above 1 injects a ``PxNSampling(p, n)`` strategy."""
+    monkeypatch.setattr(settings, "gepa_pxn_parents", 2)
+    monkeypatch.setattr(settings, "gepa_pxn_proposals", 3)
+    captured: dict[str, Any] = {}
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+    )
+
+    strategy = captured["gepa_kwargs"]["sampling_strategy"]
+    assert isinstance(strategy, PxNSampling)
+    assert (strategy.p, strategy.n) == (2, 3)
+
+
+def test_instantiate_optimizer_gepa_submission_sampling_strategy_wins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A submission-supplied ``sampling_strategy`` is never overwritten by the PxN default."""
+    monkeypatch.setattr(settings, "gepa_pxn_parents", 4)
+    monkeypatch.setattr(settings, "gepa_pxn_proposals", 4)
+    captured: dict[str, Any] = {}
+    supplied = PxNSampling(1, 1)
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={"gepa_kwargs": {"sampling_strategy": supplied}},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+    )
+
+    assert captured["gepa_kwargs"]["sampling_strategy"] is supplied
+
+
+def test_instantiate_optimizer_gepa_submission_pxn_overrides_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Submission pxn kwargs beat the server defaults and never reach the factory."""
+    monkeypatch.setattr(settings, "gepa_pxn_parents", 1)
+    monkeypatch.setattr(settings, "gepa_pxn_proposals", 1)
+    captured: dict[str, Any] = {}
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={"pxn_parents": 4, "pxn_proposals": 2},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+    )
+
+    strategy = captured["gepa_kwargs"]["sampling_strategy"]
+    assert isinstance(strategy, PxNSampling)
+    assert (strategy.p, strategy.n) == (4, 2)
+    assert "pxn_parents" not in captured
+    assert "pxn_proposals" not in captured
+
+
+def test_instantiate_optimizer_gepa_submission_pxn_ones_disable_sampling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit 1x1 opts out of PxN even when the server defaults are higher."""
+    monkeypatch.setattr(settings, "gepa_pxn_parents", 4)
+    monkeypatch.setattr(settings, "gepa_pxn_proposals", 4)
+    captured: dict[str, Any] = {}
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            captured.update(kw)
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    instantiate_optimizer(
+        factory=_GepaFactory,
+        optimizer_name="gepa",
+        optimizer_kwargs={"pxn_parents": 1, "pxn_proposals": 1},
+        metric=_dummy_metric,
+        reflection_model=None,
+        reflection_lm=object(),
+    )
+
+    assert "sampling_strategy" not in captured.get("gepa_kwargs", {})
+    assert "pxn_parents" not in captured
+
+
+@pytest.mark.parametrize("bad", [0, 17, -1, True, 2.5, "4", None])
+def test_instantiate_optimizer_gepa_rejects_out_of_range_pxn(bad: Any) -> None:
+    """Non-integer or out-of-bounds pxn values fail loudly, except None (a no-op)."""
+
+    class _GepaFactory:
+        def __init__(self, **kw: Any) -> None:
+            return None
+
+        def compile(self, *a: Any, **kw: Any) -> None:
+            return None
+
+    def _run() -> None:
+        instantiate_optimizer(
+            factory=_GepaFactory,
+            optimizer_name="gepa",
+            optimizer_kwargs={"pxn_parents": bad},
+            metric=_dummy_metric,
+            reflection_model=None,
+            reflection_lm=object(),
+        )
+
+    if bad is None:
+        _run()
+        return
+    with pytest.raises(ServiceError, match="pxn_parents"):
+        _run()
 
 
 class _FakeEvalResult:

@@ -1,11 +1,24 @@
 "use client";
 
 import * as React from "react";
-import { Settings, Copy, Trash2, Plus, Thermometer, Coins, Eye, Brain } from "lucide-react";
+import {
+  Gear,
+  Copy,
+  Trash,
+  Plus,
+  Thermometer,
+  TextT,
+  Eye,
+  Brain,
+  Info,
+  Key,
+} from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
 import type { CatalogModel, ModelConfig } from "@/shared/types/api";
 import { msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 
 interface ModelChipProps {
   config: ModelConfig;
@@ -20,6 +33,10 @@ interface ModelChipProps {
   onCopyFrom?: () => void;
   /** Catalog used to resolve a model's vision capability for the badge. */
   catalogModels?: CatalogModel[];
+  /** Placeholder when no model is set; overrides the required/not-configured copy. */
+  emptyLabel?: string;
+  /** Explanation shown when hovering or focusing the model card. */
+  tooltip?: string | null;
   className?: string;
 }
 
@@ -49,6 +66,22 @@ function ReasoningPill({ value }: { value: string | null | undefined }) {
   );
 }
 
+function TokenSourcePill({ source }: { source: ModelConfig["token_source"] }) {
+  // Keep this to a compact echo; the dialog owns the explanation and provider management.
+  if (source !== "byok") return null;
+  const label = msg("model_source.byok");
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-0.5 rounded bg-muted/50 px-1 py-0.5 text-[9px] font-semibold text-muted-foreground/80"
+      title={label}
+      dir="auto"
+    >
+      <Key className="size-2.5" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
 export function ModelChip({
   config,
   roleLabel,
@@ -59,16 +92,77 @@ export function ModelChip({
   copyFromLabel,
   onCopyFrom,
   catalogModels,
+  emptyLabel,
+  tooltip,
   className,
 }: ModelChipProps) {
   const effort = config.extra?.reasoning_effort as string | undefined;
   const name =
     config.name ||
+    emptyLabel ||
     (required ? msg("shared.model_chip.choose_model") : msg("shared.model_chip.not_configured"));
   const isEmpty = !config.name;
   const supportsVision = !!catalogModels?.find((m) => m.value === config.name)?.supports_vision;
 
-  return (
+  const content = (
+    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      {roleLabel && (
+        <span className="text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
+          {roleLabel}
+        </span>
+      )}
+      <span
+        className={cn(
+          "truncate text-sm",
+          isEmpty ? "text-muted-foreground" : "text-foreground font-mono font-medium",
+        )}
+        // Placeholder text is localized, so it follows the active direction;
+        // a concrete model id is always Latin and stays LTR.
+        dir={isEmpty ? getActiveDir() : "ltr"}
+      >
+        {isEmpty ? name : (name.split("/").pop() ?? name)}
+      </span>
+      {/* A config that carries only a model id (e.g. the tagger's tagging
+            model) renders no parameter row at all — a fabricated temperature
+            would read as a setting the surface doesn't actually have. */}
+      {!isEmpty &&
+        (config.temperature != null ||
+          config.max_tokens ||
+          effort ||
+          supportsVision ||
+          config.token_source) && (
+          <div
+            className="flex items-center gap-2.5 text-[0.625rem] text-muted-foreground"
+            dir="ltr"
+          >
+            {config.temperature != null && (
+              <span className="inline-flex items-center gap-0.5">
+                <Thermometer className="size-2.5" />
+                {config.temperature.toFixed(1)}
+              </span>
+            )}
+            {config.max_tokens && (
+              <span className="inline-flex items-center gap-0.5">
+                <TextT className="size-2.5" aria-hidden="true" />
+                {config.max_tokens}
+              </span>
+            )}
+            {effort && <ReasoningPill value={effort} />}
+            <TokenSourcePill source={config.token_source} />
+            {supportsVision && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded-sm bg-primary/10 px-1 py-px text-primary"
+                title={msg("shared.model_chip.vision_badge")}
+              >
+                <Eye className="size-2.5" />
+              </span>
+            )}
+          </div>
+        )}
+    </div>
+  );
+
+  const card = (
     <div
       className={cn(
         "group relative flex items-center gap-2.5 rounded-lg border px-3 py-2 cursor-pointer",
@@ -80,48 +174,20 @@ export function ModelChip({
       )}
       onClick={onClick}
     >
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        {roleLabel && (
-          <span className="text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
-            {roleLabel}
-          </span>
-        )}
-        <span
-          className={cn(
-            "truncate text-sm",
-            isEmpty ? "text-muted-foreground" : "text-foreground font-mono font-medium",
-          )}
-          dir={isEmpty ? "rtl" : "ltr"}
-        >
-          {isEmpty ? name : (name.split("/").pop() ?? name)}
-        </span>
-        {!isEmpty && (
-          <div
-            className="flex items-center gap-2.5 text-[0.625rem] text-muted-foreground"
-            dir="ltr"
+      {tooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{content}</TooltipTrigger>
+          <TooltipContent
+            side="top"
+            className="max-w-80 text-center leading-relaxed"
+            dir={getActiveDir()}
           >
-            <span className="inline-flex items-center gap-0.5">
-              <Thermometer className="size-2.5" />
-              {config.temperature?.toFixed(1) ?? "0.7"}
-            </span>
-            {config.max_tokens && (
-              <span className="inline-flex items-center gap-0.5">
-                <Coins className="size-2.5" />
-                {config.max_tokens}
-              </span>
-            )}
-            {effort && <ReasoningPill value={effort} />}
-            {supportsVision && (
-              <span
-                className="inline-flex items-center gap-0.5 rounded-sm bg-primary/10 px-1 py-px text-primary"
-                title={msg("shared.model_chip.vision_badge")}
-              >
-                <Eye className="size-2.5" />
-              </span>
-            )}
-          </div>
-        )}
-      </div>
+            {tooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        content
+      )}
 
       {isEmpty && copyFromLabel && onCopyFrom && (
         <button
@@ -138,6 +204,23 @@ export function ModelChip({
       )}
 
       <div className="flex shrink-0 items-center gap-1">
+        {tooltip && (
+          <TooltipButton
+            tooltip={tooltip}
+            side="top"
+            dir={getActiveDir()}
+            contentClassName="max-w-80 text-center leading-relaxed"
+          >
+            <button
+              type="button"
+              aria-label={tooltip}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-md p-1 text-muted-foreground/60 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+            >
+              <Info className="size-3.5" aria-hidden="true" />
+            </button>
+          </TooltipButton>
+        )}
         {onClone && !isEmpty && (
           <TooltipButton tooltip={msg("shared.model_chip.clone")} side="top">
             <button
@@ -162,14 +245,16 @@ export function ModelChip({
               }}
               className="rounded-md p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all cursor-pointer"
             >
-              <Trash2 className="size-3" />
+              <Trash className="size-3" />
             </button>
           </TooltipButton>
         )}
-        <Settings className="size-3.5 text-muted-foreground/60 group-hover:text-foreground/70 transition-colors" />
+        <Gear className="size-3.5 text-muted-foreground/60 group-hover:text-foreground/70 transition-colors" />
       </div>
     </div>
   );
+
+  return card;
 }
 
 interface AddModelButtonProps {

@@ -1,109 +1,147 @@
+import { createHmac, randomUUID } from "crypto";
 import NextAuth from "next-auth";
 import type { Provider } from "next-auth/providers";
 import Credentials from "next-auth/providers/credentials";
-import { createHmac, randomUUID } from "crypto";
-import { msg } from "@/shared/lib/messages";
-
-/**
- * Authentication configuration.
- *
- * Production (ADFS / any OIDC):
- *   Set AUTH_SSO_ISSUER, AUTH_SSO_CLIENT_ID, AUTH_SSO_CLIENT_SECRET.
- *   Users are auto-redirected to ADFS — no local form.
- *
- * Development (default when ADFS is not configured):
- *   Simple username login — no password.
- *
- * Optional env vars:
- *   AUTH_SSO_SCOPE        — OIDC scopes (default: "openid profile email groups")
- *   AUTH_ADMIN_GROUPS     — comma-separated IdP groups that grant admin access
- *   AUTH_ADMINS           — break-glass comma-separated admin usernames
- *   AUTH_GROUP_CLAIM      — profile claim containing groups (default: "groups")
- *   BACKEND_AUTH_SECRET   — shared secret for backend API bearer tokens
- *   NODE_EXTRA_CA_CERTS   — path to CA bundle .pem for self-signed certs
- */
 
 const issuer = process.env.AUTH_SSO_ISSUER;
 const clientId = process.env.AUTH_SSO_CLIENT_ID;
 const clientSecret = process.env.AUTH_SSO_CLIENT_SECRET;
-const adfsConfigured = !!issuer && !!clientId && !!clientSecret;
-const devAdminFallback = adfsConfigured ? "" : "admin";
-
-// Deploy manifests (Helm values, docker-compose) ship AUTH_ADMINS="" as an
-// explicit empty string, so `??` would never reach the fallback — an empty
-// var must be treated as unset for the dev-admin fallback to apply.
-function envOrFallback(value: string | undefined, fallback: string) {
-  return value && value.trim() ? value : fallback;
-}
-
-const ADMIN_LIST = new Set(
-  envOrFallback(process.env.AUTH_ADMINS, devAdminFallback)
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean),
-);
-const ADMIN_GROUPS = new Set(
-  envOrFallback(process.env.AUTH_ADMIN_GROUPS, "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean),
-);
-
+const adfsConfigured = Boolean(issuer && clientId && clientSecret);
 const scope = process.env.AUTH_SSO_SCOPE ?? "openid profile email groups";
 const groupClaim = process.env.AUTH_GROUP_CLAIM ?? "groups";
+const usernameClaim = process.env.AUTH_USERNAME_CLAIM?.trim();
 const backendAuthSecret = process.env.BACKEND_AUTH_SECRET ?? process.env.AUTH_SECRET;
-const backendTokenTtlSeconds = Number.parseInt(process.env.BACKEND_AUTH_TOKEN_TTL_SECONDS ?? "900", 10);
+const backendTokenTtlSeconds = Number.parseInt(
+  process.env.BACKEND_AUTH_TOKEN_TTL_SECONDS ?? "900",
+  10,
+);
+const backendBaseUrl =
+  process.env.BACKEND_INTERNAL_URL ??
+  process.env.API_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:8000";
 
-const providers: Provider[] = [];
+function envSet(value: string | undefined): Set<string> {
+  return new Set(
+    (value ?? "")
+      .split(",")
+      .map((entry) => entry.trim().toLocaleLowerCase())
+      .filter(Boolean),
+  );
+}
+
+const ADMIN_LIST = envSet(process.env.AUTH_ADMINS);
+const ADMIN_GROUPS = envSet(process.env.AUTH_ADMIN_GROUPS);
+
+type BackendAccount = {
+  username: string;
+  display_name: string;
+  role: "admin" | "user";
+};
+
+type AuthUser = {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  username?: string;
+  displayName?: string;
+  groups?: string[];
+  role?: "admin" | "user";
+  externalAdmin?: boolean;
+};
 
 function readClaim(profile: Record<string, unknown>, path: string): unknown {
-  return path.split(".").reduce<unknown>((acc, part) => {
-    if (!acc || typeof acc !== "object" || Array.isArray(acc)) return undefined;
-    return (acc as Record<string, unknown>)[part];
+  return path.split(".").reduce<unknown>((value, part) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    return (value as Record<string, unknown>)[part];
   }, profile);
 }
 
 function normalizeStringList(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String).map((s) => s.trim()).filter(Boolean);
-  if (typeof value === "string") {
+  if (Array.isArray(value)) {
     return value
-      .split(",")
-      .map((s) => s.trim())
+      .map(String)
+      .map((entry) => entry.trim())
       .filter(Boolean);
   }
-  return [];
+  if (typeof value !== "string") return [];
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeUsername(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLocaleLowerCase() : "";
+}
+
+function profileUsername(profile: Record<string, unknown>): string {
+  const configured = usernameClaim ? readClaim(profile, usernameClaim) : undefined;
+  return normalizeUsername(
+    configured ??
+      profile.name ??
+      profile.unique_name ??
+      profile.upn ??
+      profile.preferred_username ??
+      profile.email ??
+      profile.sub,
+  );
 }
 
 function profileGroups(profile: Record<string, unknown>): string[] {
   return normalizeStringList(readClaim(profile, groupClaim));
 }
 
-function isAdmin(identifier: string, groups: string[]) {
-  if (ADMIN_LIST.has(identifier.toLowerCase())) return true;
-  return groups.some((group) => ADMIN_GROUPS.has(group.toLowerCase()));
+function isExternalAdmin(username: string, groups: string[]): boolean {
+  if (ADMIN_LIST.has(username)) return true;
+  return groups.some((group) => ADMIN_GROUPS.has(group.toLocaleLowerCase()));
 }
 
-function base64url(value: Buffer | string) {
+async function resolveBackendAccount(
+  path: "/auth/local/login" | "/auth/sso/provision",
+  body: Record<string, unknown>,
+): Promise<BackendAccount | null> {
+  if (!backendAuthSecret) return null;
+  try {
+    const response = await fetch(`${backendBaseUrl}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Auth": backendAuthSecret,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as BackendAccount;
+  } catch {
+    return null;
+  }
+}
+
+function base64url(value: Buffer | string): string {
   return Buffer.from(value).toString("base64url");
 }
 
-function signBackendToken(token: { name?: unknown; email?: unknown; role?: unknown; groups?: unknown }) {
+function signBackendToken(token: {
+  username?: unknown;
+  email?: unknown;
+  role?: unknown;
+  groups?: unknown;
+}): string | undefined {
   if (!backendAuthSecret) return undefined;
-  const name = typeof token.name === "string" ? token.name : undefined;
-  const email = typeof token.email === "string" ? token.email : undefined;
-  const subject = name || email;
-  if (!subject) return undefined;
+  const username = normalizeUsername(token.username);
+  if (!username) return undefined;
   const now = Math.floor(Date.now() / 1000);
-  const groups = normalizeStringList(token.groups);
   const header = { alg: "HS256", typ: "JWT" };
   const payload = {
     aud: "skynet-backend",
     iss: "skynet-frontend",
-    sub: subject,
-    name,
-    email,
-    role: typeof token.role === "string" ? token.role : "user",
-    groups,
+    sub: username,
+    name: username,
+    email: typeof token.email === "string" ? token.email : undefined,
+    role: token.role === "admin" ? "admin" : "user",
+    groups: normalizeStringList(token.groups),
     iat: now,
     exp: now + Math.max(60, backendTokenTtlSeconds || 900),
     jti: randomUUID(),
@@ -116,6 +154,8 @@ function signBackendToken(token: { name?: unknown; email?: unknown; role?: unkno
   return `${encodedHeader}.${encodedPayload}.${signature}`;
 }
 
+const providers: Provider[] = [];
+
 if (adfsConfigured) {
   providers.push({
     id: "adfs",
@@ -125,52 +165,53 @@ if (adfsConfigured) {
     clientId,
     clientSecret,
     authorization: { params: { scope } },
-    profile(profile) {
-      const groups = profileGroups(profile as Record<string, unknown>);
-      const identifier = String(
-        profile.name ??
-          profile.unique_name ??
-          profile.upn ??
-          profile.preferred_username ??
-          profile.email ??
-          profile.sub ??
-          "",
-      ).toLowerCase();
+    profile(rawProfile) {
+      const profile = rawProfile as Record<string, unknown>;
+      const username = profileUsername(profile);
+      const groups = profileGroups(profile);
+      const displayName = String(profile.display_name ?? profile.name ?? username);
       return {
-        id: profile.sub,
-        name:
-          profile.name ??
-          profile.unique_name ??
-          profile.upn ??
-          profile.preferred_username ??
-          profile.sub,
-        email: profile.email ?? profile.upn ?? profile.preferred_username,
+        id: username,
+        name: username,
+        email:
+          typeof profile.email === "string"
+            ? profile.email
+            : typeof profile.upn === "string"
+              ? profile.upn
+              : null,
+        username,
+        displayName,
         groups,
-        role: isAdmin(identifier, groups) ? "admin" : "user",
+        role: isExternalAdmin(username, groups) ? "admin" : "user",
+        externalAdmin: isExternalAdmin(username, groups),
       };
     },
   });
-} else {
-  providers.push(
-    Credentials({
-      name: "Dev Login",
-      credentials: {
-        username: { label: msg("auto.auth.literal.1"), type: "text" },
-      },
-      async authorize(credentials) {
-        const username = (credentials?.username as string)?.trim();
-        if (!username) return null;
-        return {
-          id: username,
-          name: username,
-          email: `${username}@skynet.local`,
-          groups: [],
-          role: isAdmin(username, []) ? "admin" : "user",
-        };
-      },
-    }),
-  );
 }
+
+providers.push(
+  Credentials({
+    id: "local",
+    name: "Local username",
+    credentials: {
+      username: { label: "Username", type: "text" },
+    },
+    async authorize(credentials) {
+      const username = normalizeUsername(credentials?.username);
+      if (!username) return null;
+      const account = await resolveBackendAccount("/auth/local/login", { username });
+      if (!account) return null;
+      return {
+        id: account.username,
+        name: account.username,
+        username: account.username,
+        displayName: account.display_name,
+        groups: [],
+        role: account.role,
+      };
+    },
+  }),
+);
 
 export const { handlers, auth } = NextAuth({
   providers,
@@ -178,21 +219,43 @@ export const { handlers, auth } = NextAuth({
   pages: { signIn: "/login" },
   callbacks: {
     authorized({ auth: session }) {
-      return !!session?.user;
+      return Boolean(session?.user);
+    },
+    async signIn({ user, account }) {
+      if (account?.provider !== "adfs") return true;
+      const resolved = user as AuthUser;
+      const username = normalizeUsername(resolved.username ?? resolved.id ?? resolved.name);
+      if (!username) return false;
+      const provisioned = await resolveBackendAccount("/auth/sso/provision", {
+        username,
+        display_name: resolved.displayName ?? resolved.name ?? username,
+        external_admin: resolved.externalAdmin === true,
+      });
+      if (!provisioned) return false;
+      resolved.id = provisioned.username;
+      resolved.name = provisioned.username;
+      resolved.username = provisioned.username;
+      resolved.displayName = provisioned.display_name;
+      resolved.role =
+        resolved.externalAdmin || provisioned.role === "admin" ? "admin" : "user";
+      return true;
     },
     jwt({ token, user }) {
       if (user) {
-        token.name = user.name ?? token.name;
-        token.email = user.email ?? token.email;
-        token.groups = user.groups ?? [];
-        token.role = user.role ?? "user";
+        const resolved = user as AuthUser;
+        token.username = normalizeUsername(resolved.username ?? resolved.id ?? resolved.name);
+        token.name = String(token.username ?? "");
+        token.email = resolved.email ?? token.email;
+        token.groups = resolved.groups ?? [];
+        token.role = resolved.role === "admin" ? "admin" : "user";
       }
       return token;
     },
     session({ session, token }) {
-      if (typeof token.name === "string") session.user.name = token.name;
+      const username = normalizeUsername(token.username ?? token.name);
+      session.user.name = username;
       if (typeof token.email === "string") session.user.email = token.email;
-      session.user.role = token.role ?? "user";
+      session.user.role = token.role === "admin" ? "admin" : "user";
       session.user.groups = normalizeStringList(token.groups);
       session.backendAccessToken = signBackendToken(token);
       return session;

@@ -952,6 +952,7 @@ export PIP_INDEX_URL=https://artifactory.example.com/api/pypi/pypi-remote/simple
 set DEBIAN_MIRROR=https://artifactory.example.com/debian-remote
 set PIP_INDEX_URL=https://artifactory.example.com/api/pypi/pypi-remote/simple</span></pre>
   <p><code>REGISTRY_PREFIX</code> prefixes the <code>pgvector/pgvector:pg16</code> image and the backend base image; <code>DEBIAN_MIRROR</code> / <code>PIP_INDEX_URL</code> feed the backend build. The image installs from <code>uv.lock</code> via <code>uv</code> by default — the <em>Installer · uv</em> selection.<span data-pkg="pip"> To build the pip path instead, add <code>PKG_MANAGER: pip</code> under <code>services.api.build.args</code> in <code>docker-compose.yml</code>; the compose file does not forward it by default.</span></p>
+  <p>The dspy 3.3 image (the <code>uv</code> path and the <code>PKG_MANAGER: pip</code> / <code>DSPY_LINE: preview</code> line) bakes in a Deno runtime and a warm <code>npm:pyodide</code> cache so the <em>Flex</em> module can execute its generated Python in a WASM sandbox at serve time. Behind an air-gap, point its two extra build-args at internal mirrors so the build fetches nothing public: <code>DENO_DOWNLOAD_BASE</code> at a mirror of the Deno GitHub release zips (default <code>https://github.com/denoland/deno/releases/download</code>) and <code>NPM_CONFIG_REGISTRY</code> at your npm proxy (for the ~14&nbsp;MB <code>pyodide</code> package). The <code>DSPY_LINE: stable</code> image omits Flex and needs neither.</p>
 
   <h3>3 · Bring it up</h3>
 <pre>docker compose up --build</pre>

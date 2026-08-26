@@ -1,111 +1,161 @@
 "use client";
 
 import * as React from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { X, GraduationCap } from "lucide-react";
+import { useReducedMotion } from "framer-motion";
+import { Popover as PopoverPrimitive } from "radix-ui";
+import { Compass, Database, Lightning, TrendUp } from "@/shared/ui/icons";
 import { useTutorialContext } from "./tutorial-provider";
-import { msg } from "@/shared/lib/messages";
+import type { TutorialTrack } from "../lib/steps";
+import { getLoadedTrack, loadStepsModule } from "../lib/steps-loader";
+import { formatMsg, msg } from "@/shared/lib/messages";
 
+/** How long each track is — filled in once the lazy steps module resolves. */
+type TrackSize = { steps: number; minutes: number };
+
+const ITEM_CLS =
+  "flex min-h-14 w-full items-start gap-2.5 px-4 py-2.5 text-xs text-foreground hover:bg-muted/40 cursor-pointer transition-colors";
+const ICON_CLS = "mt-0.5 size-4 shrink-0 text-muted-foreground/60";
+const META_CLS =
+  "ms-auto shrink-0 whitespace-nowrap font-mono text-[0.625rem] text-muted-foreground/60";
+
+const TRACKS = [
+  {
+    id: "quick",
+    icon: Lightning,
+    nameKey: "tutorial.track.quick.name",
+    descKey: "tutorial.track.quick.desc",
+  },
+  {
+    id: "data",
+    icon: Database,
+    nameKey: "tutorial.track.data.name",
+    descKey: "tutorial.track.data.desc",
+  },
+  {
+    id: "results",
+    icon: TrendUp,
+    nameKey: "tutorial.track.results.name",
+    descKey: "tutorial.track.results.desc",
+  },
+  {
+    id: "workspace",
+    icon: Compass,
+    nameKey: "tutorial.track.workspace.name",
+    descKey: "tutorial.track.workspace.desc",
+  },
+] as const satisfies ReadonlyArray<{
+  id: TutorialTrack;
+  icon: typeof Lightning;
+  nameKey: Parameters<typeof msg>[0];
+  descKey: Parameters<typeof msg>[0];
+}>;
+
+/**
+ * The tutorial's workflow chooser — the popover half of the header button,
+ * which supplies the `Popover.Root` and trigger around it.
+ */
 export function TutorialMenu() {
-  const { state, startTrack, closeMenu } = useTutorialContext();
-  const startBtnRef = React.useRef<HTMLButtonElement | null>(null);
-  const dialogRef = React.useRef<HTMLDivElement | null>(null);
-  const titleId = React.useId();
+  const { startTrack } = useTutorialContext();
+  const prefersReducedMotion = useReducedMotion();
+  const [sizes, setSizes] = React.useState<Partial<Record<TutorialTrack, TrackSize>>>({});
 
-  React.useEffect(() => {
-    if (!state.isMenuOpen) return;
-    startBtnRef.current?.focus();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeMenu();
+  const startAfterMenuCloses = React.useCallback(
+    (track: TutorialTrack) => {
+      if (prefersReducedMotion) {
+        startTrack(track);
         return;
       }
-      // Trap focus inside the dialog. Without this, Tab walks out into
-      // the page chrome behind the modal backdrop.
-      if (e.key !== "Tab") return;
-      const root = dialogRef.current;
-      if (!root) return;
-      const focusables = root.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
-      if (focusables.length === 0) return;
-      const first = focusables[0]!;
-      const last = focusables[focusables.length - 1]!;
-      const active = document.activeElement;
-      if (e.shiftKey && active === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && active === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
+      window.setTimeout(() => startTrack(track), 140);
+    },
+    [prefersReducedMotion, startTrack],
+  );
 
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [state.isMenuOpen, closeMenu]);
+  // Content mounts only while the popover is open, so this runs on open. The
+  // step definitions are lazily imported; until they land the items render
+  // without their duration rather than blocking on it.
+  React.useEffect(() => {
+    let cancelled = false;
+    void loadStepsModule().then(() => {
+      if (cancelled) return;
+      const next: Partial<Record<TutorialTrack, TrackSize>> = {};
+      for (const track of TRACKS) {
+        const definition = getLoadedTrack(track.id);
+        if (definition) {
+          next[track.id] = {
+            steps: definition.stepCount,
+            minutes: definition.estimatedMinutes,
+          };
+        }
+      }
+      setSizes(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
-    <AnimatePresence>
-      {state.isMenuOpen && (
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-          dir="rtl"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={titleId}
-        >
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="absolute inset-0 bg-[#1C1612]/50 backdrop-blur-sm"
-            onClick={closeMenu}
-            aria-hidden="true"
+    <PopoverPrimitive.Portal>
+      <PopoverPrimitive.Content
+        align="end"
+        side="bottom"
+        sideOffset={6}
+        className="z-50 w-[min(calc(100vw-24px),360px)] max-w-none origin-[var(--radix-popover-content-transform-origin)] rounded-2xl border border-border/40 bg-card py-1.5 shadow-[0_4px_24px_rgba(28,22,18,0.1)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 motion-reduce:animate-none"
+      >
+        <p className="px-4 pb-1.5 pt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
+          {msg("tutorial.menu.subtitle")}
+        </p>
+        <div role="separator" className="mx-3 mb-1 h-px bg-border/40" />
+        {TRACKS.map(({ id, icon: Icon, nameKey, descKey }) => (
+          <TrackItem
+            key={id}
+            track={id}
+            Icon={Icon}
+            label={msg(nameKey)}
+            description={msg(descKey)}
+            size={sizes[id]}
+            onStart={startAfterMenuCloses}
           />
+        ))}
+      </PopoverPrimitive.Content>
+    </PopoverPrimitive.Portal>
+  );
+}
 
-          <motion.div
-            ref={dialogRef}
-            initial={{ opacity: 0, scale: 0.96, y: 12 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 12 }}
-            transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
-            className="relative w-full max-w-xs rounded-2xl border border-[#E5DDD4] bg-gradient-to-b from-[#FAF8F5] to-[#F5F1EC] shadow-[0_16px_48px_rgba(28,22,18,0.18)] overflow-hidden"
-          >
-            <button
-              type="button"
-              onClick={closeMenu}
-              className="close-button absolute top-4 end-4 z-10"
-              aria-label={msg("auto.features.tutorial.components.tutorial.menu.literal.1")}
-            >
-              <X />
-            </button>
-
-            <div className="flex flex-col items-center px-6 pt-7 pb-6 text-center">
-              <div className="size-12 rounded-xl bg-[#F0EBE4] flex items-center justify-center mb-4">
-                <GraduationCap className="size-6 text-[#8C7A6B]" />
-              </div>
-              <h2 id={titleId} className="text-lg font-bold text-[#3D2E22] mb-1">
-                {msg("auto.features.tutorial.components.tutorial.menu.1")}
-              </h2>
-              <p className="text-xs text-[#8C7A6B] leading-relaxed mb-5">
-                {msg("auto.features.tutorial.components.tutorial.menu.2")}
-              </p>
-              <button
-                ref={startBtnRef}
-                type="button"
-                onClick={() => startTrack("deep-dive")}
-                className="w-full px-5 py-2.5 rounded-xl text-sm font-semibold bg-[#3D2E22] text-[#FAF8F5] hover:bg-[#2C2018] transition-colors cursor-pointer"
-              >
-                {msg("auto.features.tutorial.components.tutorial.menu.3")}
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
+/** One track in the chooser: what it is called and how long it runs. */
+function TrackItem({
+  track,
+  Icon,
+  label,
+  description,
+  size,
+  onStart,
+}: {
+  track: TutorialTrack;
+  Icon: typeof Lightning;
+  label: string;
+  description: string;
+  size?: TrackSize;
+  onStart: (track: TutorialTrack) => void;
+}) {
+  return (
+    <PopoverPrimitive.Close asChild>
+      <button type="button" onClick={() => onStart(track)} className={ITEM_CLS}>
+        <Icon className={ICON_CLS} />
+        <span className="min-w-0 flex-1 text-start">
+          <span className="flex items-center gap-2">
+            <span className="font-medium">{label}</span>
+            {size && (
+              <span className={META_CLS}>
+                {formatMsg("tutorial.menu.meta", { p1: size.steps, p2: size.minutes })}
+              </span>
+            )}
+          </span>
+          <span className="mt-0.5 block text-[0.6875rem] leading-snug text-muted-foreground">
+            {description}
+          </span>
+        </span>
+      </button>
+    </PopoverPrimitive.Close>
   );
 }

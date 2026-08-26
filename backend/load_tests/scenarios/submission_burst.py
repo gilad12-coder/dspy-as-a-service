@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import httpx
 
@@ -153,6 +153,7 @@ async def run(config: BurstConfig) -> ScenarioResult:
         idempotency invariant counts so the reporter surfaces them.
     """
     db_inspector.truncate_test_users(config.usernames)
+    db_inspector.fund_test_users(config.usernames)
 
     specs = _round_robin_specs(
         api_base_url=config.api_base_url,

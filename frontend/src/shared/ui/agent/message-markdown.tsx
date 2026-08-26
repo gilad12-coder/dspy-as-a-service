@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Clipboard, Play } from "lucide-react";
+import { Check, Clipboard, Play } from "@/shared/ui/icons";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 

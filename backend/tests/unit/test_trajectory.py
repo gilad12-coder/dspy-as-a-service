@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import os
 import pickle
 import tempfile
+from pathlib import Path
+from typing import Any
 
 import cloudpickle
-import pytest
-
 import dspy
+import pytest
 from gepa.proposer.base import CandidateProposal
 from gepa.proposer.reflective_mutation.reflective_mutation import (
     ReflectiveMutationProposer,
@@ -295,8 +295,8 @@ class TestLoadState:
     def test_loads_cloudpickle_payload(self) -> None:
         """Files written via ``cloudpickle.dump`` are decoded into the state dict."""
         with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "gepa_state.bin")
-            with open(path, "wb") as fh:
+            path = Path(tmp) / "gepa_state.bin"
+            with path.open("wb") as fh:
                 cloudpickle.dump(_minimal_state(), fh)
             loaded = _load_state(path)
             assert isinstance(loaded, dict)
@@ -305,8 +305,8 @@ class TestLoadState:
     def test_loads_stdlib_pickle_payload(self) -> None:
         """Stdlib pickle is the fallback when cloudpickle.loads fails."""
         with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "gepa_state.bin")
-            with open(path, "wb") as fh:
+            path = Path(tmp) / "gepa_state.bin"
+            with path.open("wb") as fh:
                 pickle.dump(_minimal_state(), fh)
             loaded = _load_state(path)
             assert isinstance(loaded, dict)
@@ -314,8 +314,8 @@ class TestLoadState:
     def test_truncated_file_returns_none(self) -> None:
         """Mid-write race produces a non-deserialisable file → ``None`` (no raise)."""
         with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "gepa_state.bin")
-            with open(path, "wb") as fh:
+            path = Path(tmp) / "gepa_state.bin"
+            with path.open("wb") as fh:
                 fh.write(b"not-a-pickle")
             assert _load_state(path) is None
 
@@ -331,7 +331,7 @@ class TestGepaLogDir:
         """GEPA gets a real temporary directory that exists during the block."""
         with gepa_log_dir("gepa") as log_dir:
             assert log_dir is not None
-            assert os.path.isdir(log_dir)
+            assert Path(log_dir).is_dir()
 
     def test_returns_none_for_other_optimizers(self) -> None:
         """No tempdir is allocated for optimizers that don't use ``log_dir``."""
@@ -343,7 +343,7 @@ class TestGepaLogDir:
         with gepa_log_dir("gepa") as log_dir:
             assert log_dir is not None
             captured = log_dir
-        assert not os.path.exists(captured)
+        assert not Path(captured).exists()
 
 
 class TestTrajectoryWatchNoop:
@@ -352,16 +352,19 @@ class TestTrajectoryWatchNoop:
     def test_skips_when_log_dir_none(self) -> None:
         """Non-GEPA optimizers pass ``None`` log_dir; the watcher must not start."""
         events: list[tuple] = []
-        callback = lambda event, metrics: events.append((event, metrics))
+
+        def callback(event, metrics):
+            """Record each forwarded ``(event, metrics)`` pair."""
+            events.append((event, metrics))
+
         with trajectory_watch(None, callback):
             pass
         assert events == []
 
     def test_skips_when_callback_none(self) -> None:
         """Runs without a progress callback have nothing to forward to."""
-        with tempfile.TemporaryDirectory() as tmp:
-            with trajectory_watch(tmp, None):
-                pass
+        with tempfile.TemporaryDirectory() as tmp, trajectory_watch(tmp, None):
+            pass
 
 
 class TestSerializeValsetRows:
@@ -581,7 +584,7 @@ class TestMinibatchRecorder:
             raising,
         )
         result = recorder(ex, dspy.Prediction(answer="x"))
-        assert getattr(result, "score") == 1.0
+        assert result.score == 1.0
 
     def test_forwards_extra_args_and_kwargs_to_metric(self) -> None:
         """GEPA passes ``trace``/``pred_name``/``pred_trace`` — they must reach the metric."""
@@ -666,7 +669,10 @@ class TestMaybeWrapMinibatchRecorder:
 
     def test_returns_raw_metric_when_callback_missing(self) -> None:
         """Without a progress callback there's nowhere to send events, so skip wrapping."""
-        metric = lambda *_, **__: 0.0
+        def metric(*_, **__):
+            """Constant stub metric; its value is irrelevant to this test."""
+            return 0.0
+
         wrapped = maybe_wrap_minibatch_recorder(
             metric,
             [dspy.Example(q="a").with_inputs("q")],
@@ -821,7 +827,7 @@ class TestResumeBaseline:
     @staticmethod
     def _dump_state(run_dir: str, state: dict) -> None:
         """Write ``state`` to ``<run_dir>/gepa_state.bin`` as GEPA would."""
-        with open(os.path.join(run_dir, GEPA_STATE_FILENAME), "wb") as fh:
+        with (Path(run_dir) / GEPA_STATE_FILENAME).open("wb") as fh:
             cloudpickle.dump(state, fh)
 
     def test_no_state_file_is_a_noop(self) -> None:

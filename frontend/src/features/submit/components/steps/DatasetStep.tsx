@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Image as ImageIcon, Library, Type as TypeIcon, Upload } from "lucide-react";
+import { Image as ImageIcon, Books, TextT as TypeIcon, UploadSimple } from "@/shared/ui/icons";
 import {
   Card,
   CardContent,
@@ -50,22 +50,23 @@ export function DatasetStep({ w }: { w: SubmitWizardContext }) {
       className=" border-border/50 bg-card/80 backdrop-blur-xl shadow-lg"
       data-tutorial="wizard-step-2"
     >
-      <CardHeader>
+      <CardHeader className="px-4 sm:px-6">
         <CardTitle className="text-lg">{TERMS.dataset}</CardTitle>
         <CardDescription>
           {msg("auto.features.submit.components.steps.datasetstep.1")}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-5 px-4 sm:px-6">
         <label
+          data-tutorial="dataset-upload"
           className={cn(
-            "border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all duration-300 block group",
+            "group block cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all duration-300 sm:p-10",
             parsedDataset
               ? "border-primary/40 bg-primary/5"
               : "hover:border-primary/50 hover:bg-muted/30",
           )}
         >
-          <Upload className="h-10 w-10 mx-auto mb-3 text-muted-foreground group-hover:text-primary/70 transition-colors duration-300" />
+          <UploadSimple className="h-10 w-10 mx-auto mb-3 text-muted-foreground group-hover:text-primary/70 transition-colors duration-300" />
           <p
             className="text-sm font-medium truncate max-w-full px-4"
             title={datasetFileName ?? undefined}
@@ -99,9 +100,9 @@ export function DatasetStep({ w }: { w: SubmitWizardContext }) {
           type="button"
           variant="outline"
           onClick={() => setPickerOpen(true)}
-          className="w-full justify-center gap-2"
+          className="min-h-[44px] w-full justify-center gap-2 lg:min-h-0"
         >
-          <Library className="size-4" />
+          <Books className="size-4" />
           {msg("submit.dataset.library_pick")}
         </Button>
 
@@ -125,7 +126,10 @@ export function DatasetStep({ w }: { w: SubmitWizardContext }) {
                   const kind = columnKinds[col] ?? "text";
                   const wasAutoImage = autoDetectedKinds.get(col) === "image";
                   return (
-                    <div key={col} className="flex items-center justify-between gap-2">
+                    <div
+                      key={col}
+                      className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between"
+                    >
                       <div className="flex min-w-0 flex-1 items-center gap-2">
                         <span className="text-xs sm:text-sm font-mono truncate" dir="ltr">
                           {col}
@@ -140,7 +144,7 @@ export function DatasetStep({ w }: { w: SubmitWizardContext }) {
                               }))
                             }
                             className={cn(
-                              "shrink-0 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[0.625rem] font-medium transition-colors cursor-pointer",
+                              "inline-flex min-h-[44px] shrink-0 cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-[0.625rem] font-medium transition-colors sm:px-1.5 sm:py-0.5 lg:min-h-0",
                               kind === "image"
                                 ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
                                 : "border-border/60 bg-muted/40 text-muted-foreground hover:border-primary/30 hover:text-foreground",
@@ -186,13 +190,14 @@ export function DatasetStep({ w }: { w: SubmitWizardContext }) {
                         // (100% - 8px)/3 wide and steps by (100% - 2px)/3. The pill must
                         // match that stride or it drifts further off per segment.
                         const pillLeft =
-                          activeIdx >= 0
-                            ? `calc(2px + ${activeIdx} * (100% - 2px) / 3)`
-                            : "2px";
+                          activeIdx >= 0 ? `calc(2px + ${activeIdx} * (100% - 2px) / 3)` : "2px";
                         return (
                           <div
-                            className="relative inline-grid grid-cols-3 shrink-0 rounded-lg bg-muted p-0.5 gap-0.5"
-                            dir="rtl"
+                            // Arbitrary column syntax on purpose: the literal
+                            // `grid-cols-3` class is force-stacked to one column
+                            // by the global mobile rule in globals.css, which
+                            // would break the sliding pill's horizontal math.
+                            className="relative inline-grid w-full shrink-0 [grid-template-columns:repeat(3,minmax(0,1fr))] gap-0.5 rounded-lg bg-muted p-0.5 sm:w-auto"
                           >
                             <div
                               className="absolute top-0.5 bottom-0.5 rounded-md bg-stone-500/15 shadow-sm transition-[inset-inline-start] duration-100 ease-out"
@@ -207,7 +212,7 @@ export function DatasetStep({ w }: { w: SubmitWizardContext }) {
                                 type="button"
                                 onClick={() => setColumnRoles((prev) => ({ ...prev, [col]: val }))}
                                 className={cn(
-                                  "relative z-10 rounded-md px-3 py-1 text-xs font-medium text-center transition-colors duration-100 cursor-pointer",
+                                  "relative z-10 min-h-[44px] cursor-pointer rounded-md px-2 py-1 text-center text-xs font-medium transition-colors duration-100 sm:px-3 lg:min-h-0",
                                   columnRoles[col] === val
                                     ? "text-stone-600"
                                     : "text-muted-foreground hover:text-foreground",

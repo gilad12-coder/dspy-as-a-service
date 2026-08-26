@@ -57,6 +57,14 @@ def test_module_name_alias_accepted(wizard_client: TestClient) -> None:
     assert resp.json()["wizard_state"]["module_name"] == "predict"
 
 
+def test_is_private_accepted_and_echoed(wizard_client: TestClient) -> None:
+    """The privacy toggle round-trips so the agent can make a run public."""
+    resp = wizard_client.post("/wizard/update", json={"is_private": False})
+
+    assert resp.status_code == 200
+    assert resp.json()["wizard_state"]["is_private"] is False
+
+
 def test_module_name_unknown_rejected(wizard_client: TestClient) -> None:
     """An unknown module name produces 422 and surfaces the value in detail."""
     resp = wizard_client.post(

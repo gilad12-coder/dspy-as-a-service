@@ -45,6 +45,7 @@ from ...constants import (
 )
 from ...exceptions import ServiceError
 from ...models import (
+    WORKFLOW_MODULE_NAME,
     GridSearchRequest,
     GridSearchResponse,
     LMActivity,
@@ -55,6 +56,7 @@ from ...models import (
     SplitCounts,
 )
 from ...models.artifacts import ProgramArtifact, ReactOverlay
+from ...models.results import ModelTokenUsage
 from ...registry import (
     ResolverError,
     ServiceRegistry,
@@ -63,7 +65,13 @@ from ...registry import (
     resolve_optimizer_factory,
 )
 from ...worker.log_handler import set_current_pair_index
-from ..language_models import apply_model_reasoning_config, build_language_model
+from ..language_models import (
+    apply_model_reasoning_config,
+    build_language_model,
+    lm_call_count,
+    total_tokens_from_history,
+    usage_by_model_from_history,
+)
 from ..react_compat import REACT_CLASS
 from ..safe_exec import validate_metric_code, validate_signature_code
 from .artifacts import persist_program
@@ -76,6 +84,7 @@ from .data import (
     split_examples,
 )
 from .llm_error import enrich_error_message
+from .logged_scores import aggregate_logged_metrics
 from .optimizers import (
     compile_program,
     evaluate_on_test,
@@ -107,8 +116,55 @@ from .validators import (
     require_mapping_columns_in_dataset,
     require_mapping_matches_signature,
 )
+from .workflow import build_workflow_program, validate_workflow
 
 logger = logging.getLogger(__name__)
+
+
+def _usage_by_model_rows(*language_models: object) -> list[ModelTokenUsage]:
+    """Build a result's per-model usage rows from the run's LM histories.
+
+    Wraps :func:`usage_by_model_from_history`, turning its ``model → (input,
+    output)`` breakdown into :class:`ModelTokenUsage` observability rows.
+    Returns an empty list when usage
+    is untracked (e.g. mocked LMs), mirroring the ``total_tokens`` companion.
+
+    Args:
+        *language_models: The run's LMs — generation and, when present, reflection.
+
+    Returns:
+        One row per distinct model that recorded usage.
+    """
+    breakdown = usage_by_model_from_history(*language_models)
+    if not breakdown:
+        return []
+    return [
+        ModelTokenUsage(model=model, input_tokens=in_out[0], output_tokens=in_out[1])
+        for model, in_out in breakdown.items()
+    ]
+
+
+def _merge_usage_rows(rows: list[ModelTokenUsage]) -> list[ModelTokenUsage]:
+    """Fold per-model usage rows from several runs into one row per model.
+
+    Used to sum a grid search's pairs into a single per-model breakdown the
+    worker charges the whole grid from.
+
+    Args:
+        rows: Per-model usage rows across all pairs (models may repeat).
+
+    Returns:
+        One :class:`ModelTokenUsage` per distinct model, token counts summed.
+    """
+    merged: dict[str, list[int]] = {}
+    for row in rows:
+        accumulator = merged.setdefault(row.model, [0, 0])
+        accumulator[0] += row.input_tokens
+        accumulator[1] += row.output_tokens
+    return [
+        ModelTokenUsage(model=model, input_tokens=in_out[0], output_tokens=in_out[1])
+        for model, in_out in merged.items()
+    ]
 
 
 def _resolve_max_metric_calls(optimizer_kwargs: dict[str, Any]) -> int:
@@ -163,6 +219,26 @@ def _require_metric_compatible_with_optimizer(optimizer_name: str, param_names: 
         )
 
 
+def _validate_target_score(target_score: float | None, optimizer_name: str, val_fraction: float) -> None:
+    """Validate that a target score can use GEPA's validation stopper.
+
+    Args:
+        target_score: Optional UI percentage target.
+        optimizer_name: Registered optimizer name from the submission.
+        val_fraction: Validation split fraction selected for the run.
+
+    Raises:
+        ServiceError: When a target is requested for a non-GEPA optimizer or
+            when no validation split is available to score it.
+    """
+    if target_score is None:
+        return
+    if optimizer_name.lower() != OPTIMIZER_NAME_GEPA:
+        raise ServiceError("target_score is only supported for GEPA optimization.")
+    if val_fraction <= 0:
+        raise ServiceError("target_score requires a non-empty validation split.")
+
+
 def _tool_to_snapshot_spec(tool: Any) -> dict[str, Any]:
     """Serialize a ``dspy.Tool`` into a dataset-snapshot spec.
 
@@ -188,9 +264,7 @@ def _tool_to_snapshot_spec(tool: Any) -> dict[str, Any]:
     return spec
 
 
-def _react_prediction_outputs(
-    prediction: Any, output_fields: Iterable[str]
-) -> dict[str, Any]:
+def _react_prediction_outputs(prediction: Any, output_fields: Iterable[str]) -> dict[str, Any]:
     """Pull a react rollout's per-field answer off its ``Prediction``.
 
     Mirrors the on-demand ``evaluate-examples`` endpoint's extraction
@@ -268,6 +342,9 @@ class _GridPairContext:
     splits: Any
     artifact_id: str | None
     progress_callback: Callable[[str, dict[str, Any]], None] | None
+    # Per-pair token budget from the Max Cost Ceiling: the job-wide cap split
+    # evenly across pairs (pairs run concurrently with independent LM histories),
+    # so the grid's aggregate spend never exceeds the user's cap. 0 = no ceiling.
     # Worker-owned base dir for resumable grids; each pair writes its GEPA state
     # and (on success) ``result.json`` under ``<base>/pair_<i>``. None = ephemeral.
     gepa_log_dir_base: str | None = None
@@ -373,13 +450,20 @@ def _run_grid_pair(
         reflection_lm = build_language_model(ref_cfg) if ref_cfg is not None else None
         gen_timing = GenLMTimingCallback(language_model)
         refl_timing = ReflectionLMTimingCallback(reflection_lm) if reflection_lm is not None else None
-        callbacks: list[Any] = [gen_timing]
+        # Only the timing callbacks carry per-stage state (set_stage/_current_stage),
+        # so track_stage must be splatted with these alone. The cost-ceiling callback
+        # is a plain on_lm_end listener and would raise AttributeError inside track_stage.
+        timing_callbacks: list[Any] = [gen_timing]
         if refl_timing is not None:
-            callbacks.append(refl_timing)
+            timing_callbacks.append(refl_timing)
+        callbacks: list[Any] = list(timing_callbacks)
+        # Hard-stop this pair at its share of the Max Cost Ceiling so the grid's
+        # concurrent pairs can't collectively overrun the user's job-wide cap.
 
-        with dspy.context(lm=language_model, callbacks=callbacks), gepa_log_dir(
-            ctx.payload.optimizer_name, pair_dir
-        ) as trajectory_log_dir:
+        with (
+            dspy.context(lm=language_model, callbacks=callbacks),
+            gepa_log_dir(ctx.payload.optimizer_name, pair_dir) as trajectory_log_dir,
+        ):
             trajectory_callback: Callable[[str, dict[str, Any]], None] | None = (
                 functools.partial(_tag_candidate_event, ctx.progress_callback, i)
                 if ctx.progress_callback is not None
@@ -392,6 +476,7 @@ def _run_grid_pair(
                 trajectory_callback,
                 ctx.payload.module_name,
             )
+            stop_state: dict[str, Any] = {}
             optimizer = instantiate_optimizer(
                 ctx.optimizer_factory,
                 ctx.payload.optimizer_name,
@@ -400,11 +485,13 @@ def _run_grid_pair(
                 ref_cfg,
                 reflection_lm=reflection_lm,
                 log_dir=trajectory_log_dir,
+                target_score=ctx.payload.target_score,
+                stop_state=stop_state,
             )
             baseline = None
             baseline_test_results: list[dict] = []
             if ctx.splits.test:
-                with track_stage(STAGE_BASELINE, *callbacks):
+                with track_stage(STAGE_BASELINE, *timing_callbacks):
                     baseline, baseline_test_results = evaluate_on_test(
                         program,
                         ctx.splits.test,
@@ -422,7 +509,7 @@ def _run_grid_pair(
 
             with (
                 capture_tqdm(ctx.progress_callback),
-                track_stage(STAGE_TRAINING, *callbacks),
+                track_stage(STAGE_TRAINING, *timing_callbacks),
                 capture_proposal_prompts(ctx.payload.optimizer_name),
                 trajectory_watch(trajectory_log_dir, trajectory_callback),
             ):
@@ -437,7 +524,7 @@ def _run_grid_pair(
             optimized = None
             optimized_test_results: list[dict] = []
             if ctx.splits.test:
-                with track_stage(STAGE_EVALUATION, *callbacks):
+                with track_stage(STAGE_EVALUATION, *timing_callbacks):
                     optimized, optimized_test_results = evaluate_on_test(
                         compiled,
                         ctx.splits.test,
@@ -472,7 +559,7 @@ def _run_grid_pair(
             improvement = optimized - baseline
 
         pair_runtime = (datetime.now(UTC) - pair_start).total_seconds()
-        pair_lm_calls = len(language_model.history) if hasattr(language_model, "history") else None
+        pair_lm_calls = lm_call_count(language_model)
         _, pair_avg_ms = gen_timing.summary()
         pair_lm_activity = _build_lm_activity(gen_timing, refl_timing)
         result = PairResult(
@@ -484,13 +571,30 @@ def _run_grid_pair(
             baseline_test_metric=baseline,
             optimized_test_metric=optimized,
             metric_improvement=improvement,
+            target_score=ctx.payload.target_score,
+            target_score_reached=(
+                bool(getattr(stop_state.get("target_score_stopper"), "reached", False))
+                if ctx.payload.target_score is not None
+                else None
+            ),
+            stop_reason=(
+                "target_score"
+                if bool(getattr(stop_state.get("target_score_stopper"), "reached", False))
+                else "metric_call_budget"
+            )
+            if ctx.payload.target_score is not None
+            else None,
             runtime_seconds=round(pair_runtime, 2),
             num_lm_calls=pair_lm_calls,
+            total_tokens=total_tokens_from_history(language_model, reflection_lm),
+            usage_by_model=_usage_by_model_rows(language_model, reflection_lm),
             avg_response_time_ms=pair_avg_ms,
             lm_activity=pair_lm_activity,
             program_artifact=program_artifact,
             baseline_test_results=baseline_test_results,
             optimized_test_results=optimized_test_results,
+            baseline_logged_metrics=aggregate_logged_metrics(baseline_test_results),
+            optimized_logged_metrics=aggregate_logged_metrics(optimized_test_results),
         )
         with ctx.results_lock:
             ctx.completed += 1
@@ -529,7 +633,7 @@ def _run_grid_pair(
     except Exception as exc:
         pair_runtime = (datetime.now(UTC) - pair_start).total_seconds()
         # DSPy reports a generic "Execution cancelled" when an LM call fails;
-        # recover the real cause (billing, auth, rate limit) it only logged.
+        # recover the provider-side cause it only logged.
         error_msg = enrich_error_message(str(exc))
         result = PairResult(
             pair_index=i,
@@ -621,14 +725,32 @@ class DspyService:
             len(payload.dataset),
         )
 
-        signature_cls = load_signature_from_code(payload.signature_code)
-        signature_inputs, signature_outputs = extract_signature_fields(signature_cls)
-        logger.info(
-            "Loaded signature %s with inputs=%s outputs=%s",
-            signature_cls.__name__,
-            signature_inputs,
-            signature_outputs,
-        )
+        workflow_mode = payload.module_name.lower() == WORKFLOW_MODULE_NAME
+        if workflow_mode:
+            signature_cls = None
+            signature_inputs = payload.workflow.input_field_names()
+            signature_outputs = payload.workflow.output_field_names()
+            program, _workflow_tool_hashes = build_workflow_program(
+                payload.workflow,
+                tool_source=payload.tool_source,
+                dataset=payload.dataset,
+            )
+            logger.info(
+                "Built workflow program: nodes=%d edges=%d inputs=%s outputs=%s",
+                len(payload.workflow.nodes),
+                len(payload.workflow.edges),
+                signature_inputs,
+                signature_outputs,
+            )
+        else:
+            signature_cls = load_signature_from_code(payload.signature_code)
+            signature_inputs, signature_outputs = extract_signature_fields(signature_cls)
+            logger.info(
+                "Loaded signature %s with inputs=%s outputs=%s",
+                signature_cls.__name__,
+                signature_inputs,
+                signature_outputs,
+            )
         require_mapping_matches_signature(payload.column_mapping, signature_inputs, signature_outputs)
         if payload.module_name.lower() == "react":
             return self._run_react(
@@ -639,21 +761,22 @@ class DspyService:
                 progress_callback=progress_callback,
                 gepa_log_dir_path=gepa_log_dir_path,
             )
-        module_factory, auto_signature = self._get_module_factory(payload.module_name)
-        module_kwargs = dict(payload.module_kwargs)
-        if auto_signature or "signature" not in module_kwargs:
-            module_kwargs["signature"] = signature_cls
-        program = module_factory(**module_kwargs)
-        # Breadcrumb for the dspy.* escape hatch: a non-aliased path gets
-        # auto_signature=False and trusts a user-supplied signature, so an
-        # opaque constructor error is otherwise indistinguishable from an
-        # aliased-module failure in job_logs.
-        logger.info(
-            "Instantiated module %s (auto_signature=%s signature_injected=%s)",
-            payload.module_name,
-            auto_signature,
-            "signature" in module_kwargs,
-        )
+        if not workflow_mode:
+            module_factory, auto_signature = self._get_module_factory(payload.module_name)
+            module_kwargs = dict(payload.module_kwargs)
+            if auto_signature or "signature" not in module_kwargs:
+                module_kwargs["signature"] = signature_cls
+            program = module_factory(**module_kwargs)
+            # Breadcrumb for the dspy.* escape hatch: a non-aliased path gets
+            # auto_signature=False and trusts a user-supplied signature, so an
+            # opaque constructor error is otherwise indistinguishable from an
+            # aliased-module failure in job_logs.
+            logger.info(
+                "Instantiated module %s (auto_signature=%s signature_injected=%s)",
+                payload.module_name,
+                auto_signature,
+                "signature" in module_kwargs,
+            )
 
         metric = load_metric_from_code(payload.metric_code)
         metric_identifier = getattr(metric, "__name__", "inline_metric")
@@ -678,7 +801,7 @@ class DspyService:
         examples = rows_to_examples(
             payload.dataset,
             payload.column_mapping,
-            image_input_fields=image_input_field_names(signature_cls),
+            image_input_fields=image_input_field_names(signature_cls) if signature_cls is not None else frozenset(),
         )
         logger.info("Converted dataset to %d DSPy examples", len(examples))
 
@@ -707,9 +830,13 @@ class DspyService:
 
         gen_timing = GenLMTimingCallback(language_model)
         refl_timing = ReflectionLMTimingCallback(reflection_lm) if reflection_lm is not None else None
-        callbacks: list[Any] = [gen_timing]
+        # Only the timing callbacks carry per-stage state (set_stage/_current_stage),
+        # so track_stage must be splatted with these alone. The cost-ceiling callback
+        # is a plain on_lm_end listener and would raise AttributeError inside track_stage.
+        timing_callbacks: list[Any] = [gen_timing]
         if refl_timing is not None:
-            callbacks.append(refl_timing)
+            timing_callbacks.append(refl_timing)
+        callbacks: list[Any] = list(timing_callbacks)
         with gepa_log_dir(payload.optimizer_name, gepa_log_dir_path) as trajectory_log_dir:
             training_metric = maybe_wrap_minibatch_recorder(
                 metric,
@@ -718,6 +845,7 @@ class DspyService:
                 progress_callback,
                 payload.module_name,
             )
+            stop_state: dict[str, Any] = {}
             optimizer = instantiate_optimizer(
                 optimizer_factory,
                 payload.optimizer_name,
@@ -726,21 +854,21 @@ class DspyService:
                 payload.reflection_model_settings,
                 reflection_lm=reflection_lm,
                 log_dir=trajectory_log_dir,
+                target_score=payload.target_score,
+                stop_state=stop_state,
             )
             with dspy.context(lm=language_model, callbacks=callbacks):
                 baseline_test_metric = None
                 baseline_test_results: list[dict] = []
                 if splits.test:
-                    with track_stage(STAGE_BASELINE, *callbacks):
+                    with track_stage(STAGE_BASELINE, *timing_callbacks):
                         baseline_test_metric, baseline_test_results = evaluate_on_test(
                             program,
                             splits.test,
                             metric,
                             collect_per_example=True,
                         )
-                    logger.info(
-                        "%s baseline test metric: %s", payload.module_name, baseline_test_metric
-                    )
+                    logger.info("%s baseline test metric: %s", payload.module_name, baseline_test_metric)
                     if progress_callback and baseline_test_metric is not None:
                         progress_callback(
                             PROGRESS_BASELINE,
@@ -761,7 +889,7 @@ class DspyService:
                 )
                 with (
                     capture_tqdm(progress_callback),
-                    track_stage(STAGE_TRAINING, *callbacks),
+                    track_stage(STAGE_TRAINING, *timing_callbacks),
                     capture_proposal_prompts(payload.optimizer_name),
                     trajectory_watch(trajectory_log_dir, progress_callback),
                 ):
@@ -777,7 +905,7 @@ class DspyService:
                 optimized_test_metric = None
                 optimized_test_results: list[dict] = []
                 if splits.test:
-                    with track_stage(STAGE_EVALUATION, *callbacks):
+                    with track_stage(STAGE_EVALUATION, *timing_callbacks):
                         optimized_test_metric, optimized_test_results = evaluate_on_test(
                             compiled_program,
                             splits.test,
@@ -827,15 +955,24 @@ class DspyService:
             META_MODULE_KWARGS: payload.module_kwargs,
             META_MODEL_IDENTIFIER: payload.model_settings.normalized_identifier(),
         }
+        if payload.target_score is not None:
+            target_reached = bool(getattr(stop_state.get("target_score_stopper"), "reached", False))
+            optimization_metadata.update(
+                {
+                    "target_score": payload.target_score,
+                    "target_score_reached": target_reached,
+                    "stop_reason": "target_score" if target_reached else "metric_call_budget",
+                }
+            )
 
         metric_improvement = None
         if baseline_test_metric is not None and optimized_test_metric is not None:
             metric_improvement = optimized_test_metric - baseline_test_metric
 
         runtime_seconds = (datetime.now(UTC) - run_start).total_seconds()
-        # num_lm_calls comes from LM history (preserves counting for mocked LMs);
+        # num_lm_calls prefers the metered aggregate (history stays for mocked LMs);
         # avg is wall-clock time spent inside the generation LM only, via the callback.
-        num_lm_calls = len(language_model.history) if hasattr(language_model, "history") else None
+        num_lm_calls = lm_call_count(language_model)
         _, avg_response_time_ms = gen_timing.summary()
         lm_activity = _build_lm_activity(gen_timing, refl_timing)
         response = RunResponse(
@@ -852,10 +989,14 @@ class DspyService:
             program_artifact=program_artifact,
             runtime_seconds=runtime_seconds,
             num_lm_calls=num_lm_calls,
+            total_tokens=total_tokens_from_history(language_model, reflection_lm),
+            usage_by_model=_usage_by_model_rows(language_model, reflection_lm),
             avg_response_time_ms=avg_response_time_ms,
             lm_activity=lm_activity,
             baseline_test_results=baseline_test_results,
             optimized_test_results=optimized_test_results,
+            baseline_logged_metrics=aggregate_logged_metrics(baseline_test_results),
+            optimized_logged_metrics=aggregate_logged_metrics(optimized_test_results),
         )
 
         logger.info(
@@ -947,27 +1088,27 @@ class DspyService:
         # student model gets a safe max_tokens floor + extras automatically;
         # without it a bare minimax ModelConfig truncates into malformed
         # tool_calls (a dspy ToolCalls ValidationError) during the react loop.
-        student_lm = build_language_model(
-            apply_model_reasoning_config(payload.model_settings)
-        )
+        student_lm = build_language_model(apply_model_reasoning_config(payload.model_settings))
         reflection_lm = (
-            build_language_model(
-                apply_model_reasoning_config(payload.reflection_model_settings)
-            )
+            build_language_model(apply_model_reasoning_config(payload.reflection_model_settings))
             if payload.reflection_model_settings is not None
             else student_lm
         )
         max_metric_calls = _resolve_max_metric_calls(payload.optimizer_kwargs)
+        # Same parallel-eval default the scalar GEPA path gets via
+        # build_optimizer; the react adapter's own default is sequential.
+        num_threads = int(payload.optimizer_kwargs.get("num_threads") or app_settings.gepa_eval_num_threads)
         seed = payload.seed if payload.seed is not None else (self.default_seed or 0)
 
         gen_timing = GenLMTimingCallback(student_lm)
+        react_callbacks: list[Any] = [gen_timing]
         # Mirror the scalar run's trajectory wiring so react gets the same
         # candidate tree: GEPA persists state into trajectory_log_dir,
         # trajectory_watch streams candidate/rejected events, capture_proposal_prompts
         # records rejected proposal prompts, and capture_tqdm drives the live bar.
         with (
             gepa_log_dir(payload.optimizer_name, gepa_log_dir_path) as trajectory_log_dir,
-            dspy.context(lm=student_lm, callbacks=[gen_timing]),
+            dspy.context(lm=student_lm, callbacks=react_callbacks),
             capture_tqdm(progress_callback),
             capture_proposal_prompts(payload.optimizer_name),
             trajectory_watch(trajectory_log_dir, progress_callback),
@@ -993,7 +1134,9 @@ class DspyService:
                 student_lm=student_lm,
                 reflection_lm=reflection_lm,
                 max_metric_calls=max_metric_calls,
+                target_score=payload.target_score,
                 seed=seed,
+                num_threads=num_threads,
                 run_dir=trajectory_log_dir,
                 progress_callback=progress_callback,
                 timing_callbacks=(gen_timing,),
@@ -1020,9 +1163,7 @@ class DspyService:
             # is scored on the held-out test set.
             progress_callback(PROGRESS_OPTIMIZED, {DETAIL_OPTIMIZED: optimized_scalar})
 
-        split_counts = SplitCounts(
-            train=len(splits.train), val=len(splits.val), test=len(splits.test)
-        )
+        split_counts = SplitCounts(train=len(splits.train), val=len(splits.val), test=len(splits.test))
         details: dict[str, Any] = {
             DETAIL_TRAIN: split_counts.train,
             DETAIL_VAL: split_counts.val,
@@ -1038,9 +1179,18 @@ class DspyService:
             META_MODEL_IDENTIFIER: payload.model_settings.normalized_identifier(),
             "max_metric_calls": max_metric_calls,
         }
+        if payload.target_score is not None:
+            target_reached = bool(result.get("target_score_reached"))
+            optimization_metadata.update(
+                {
+                    "target_score": payload.target_score,
+                    "target_score_reached": target_reached,
+                    "stop_reason": "target_score" if target_reached else "metric_call_budget",
+                }
+            )
 
         runtime_seconds = (datetime.now(UTC) - run_start).total_seconds()
-        num_lm_calls = len(student_lm.history) if hasattr(student_lm, "history") else None
+        num_lm_calls = lm_call_count(student_lm)
         _, avg_response_time_ms = gen_timing.summary()
 
         # Map per-example scalars into the standard EvalExampleResult shape so the
@@ -1097,6 +1247,8 @@ class DspyService:
             program_artifact=program_artifact,
             runtime_seconds=runtime_seconds,
             num_lm_calls=num_lm_calls,
+            total_tokens=total_tokens_from_history(student_lm, reflection_lm),
+            usage_by_model=_usage_by_model_rows(student_lm, reflection_lm),
             avg_response_time_ms=avg_response_time_ms,
             # Generation-stage activity: student rollouts are bucketed into
             # baseline/training/evaluation via the timing_callbacks passed into
@@ -1142,9 +1294,7 @@ class DspyService:
             The persisted :class:`ProgramArtifact` with ``react_overlay`` set,
             or ``None`` when persistence produced no artifact.
         """
-        program = REACT_CLASS(
-            signature_cls, tools=tools, max_iters=overlay["max_iters"]
-        )
+        program = REACT_CLASS(signature_cls, tools=tools, max_iters=overlay["max_iters"])
         program.load_state(program_state)
         artifact = persist_program(program, artifact_id)
         if artifact is None:
@@ -1162,20 +1312,12 @@ class DspyService:
             elif tool_source.kind == "dataset_snapshot":
                 # Persist the resolved roster as snapshot specs so serve can
                 # rebuild the tool surface without the original dataset.
-                source_meta["tool_snapshot"] = [
-                    _tool_to_snapshot_spec(tool) for tool in tools
-                ]
+                source_meta["tool_snapshot"] = [_tool_to_snapshot_spec(tool) for tool in tools]
         tool_names = overlay.get("tool_names")
-        tool_severities = {
-            tool.name: severity
-            for tool in tools
-            if (severity := tool_severity(tool)) is not None
-        }
+        tool_severities = {tool.name: severity for tool in tools if (severity := tool_severity(tool)) is not None}
         artifact.react_overlay = ReactOverlay(
             tool_descriptions=dict(overlay["tool_descriptions"]),
-            tool_arg_descriptions={
-                name: dict(args) for name, args in overlay["tool_arg_descriptions"].items()
-            },
+            tool_arg_descriptions={name: dict(args) for name, args in overlay["tool_arg_descriptions"].items()},
             tool_schema_hashes=dict(overlay["tool_schema_hashes"]),
             max_iters=int(overlay["max_iters"]),
             tool_source=source_meta,
@@ -1192,6 +1334,8 @@ class DspyService:
         progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
         gepa_log_dir_path: str | None = None,
         completed_pairs: dict[int, dict[str, Any]] | None = None,
+        pair_index_base: int = 0,
+        total_pairs_override: int | None = None,
     ) -> GridSearchResponse:
         """Run one optimization per (generation_model, reflection_model) pair and return all results.
 
@@ -1202,6 +1346,14 @@ class DspyService:
         On resume, ``completed_pairs`` (``pair_index`` → stored ``PairResult``) are
         kept as-is and skipped, and ``gepa_log_dir_path`` is the worker-owned base
         dir whose ``pair_<i>`` subdirs seed each in-flight pair's GEPA checkpoint.
+
+        A distributed grid runs each pair in its own job child: the child holds
+        a single-pair payload but must report GLOBAL indices so its events and
+        checkpoints line up with the parent grid the user watches.
+        ``pair_index_base`` offsets every pair index (events, log tagging, pair
+        dirs, ``PairResult.pair_index``, resume keys) and ``total_pairs_override``
+        is the parent's real pair count for event display; both default to the
+        identity for the classic all-pairs-in-one-child path.
 
         Args:
             payload: The validated grid-search request to execute.
@@ -1215,9 +1367,10 @@ class DspyService:
         grid_start = datetime.now(UTC)
         pairs = [(gen_cfg, ref_cfg) for gen_cfg in payload.generation_models for ref_cfg in payload.reflection_models]
         total_pairs = len(pairs)
+        display_total = total_pairs_override if total_pairs_override is not None else total_pairs
         logger.info(
             "Starting grid search: %d pairs, module=%s optimizer=%s",
-            total_pairs,
+            display_total,
             payload.module_name,
             payload.optimizer_name,
         )
@@ -1254,14 +1407,17 @@ class DspyService:
             val=len(splits.val),
             test=len(splits.test),
         )
-        if progress_callback:
+        # A distributed grid's children all compute identical splits (same
+        # payload + seed); only the child owning global pair 0 emits the
+        # splits/valset events so the parent's stream carries them once.
+        if progress_callback and pair_index_base == 0:
             progress_callback(
                 PROGRESS_SPLITS_READY,
                 {
                     DETAIL_TRAIN: split_counts.train,
                     DETAIL_VAL: split_counts.val,
                     DETAIL_TEST: split_counts.test,
-                    "total_pairs": total_pairs,
+                    "total_pairs": display_total,
                 },
             )
             emit_valset_event(splits.val, progress_callback)
@@ -1269,14 +1425,19 @@ class DspyService:
         pair_results: list[PairResult] = [None] * total_pairs  # type: ignore[list-item]
         completed = completed_pairs or {}
         # Resume: keep already-finished pairs verbatim so they are neither re-run
-        # nor lost, and run only the rest.
+        # nor lost, and run only the rest. Stored keys are GLOBAL indices.
         for idx, stored in completed.items():
-            if 0 <= idx < total_pairs:
-                pair_results[idx] = PairResult.model_validate(stored)
-        pending = [(i, gen_cfg, ref_cfg) for i, (gen_cfg, ref_cfg) in enumerate(pairs) if i not in completed]
+            local = idx - pair_index_base
+            if 0 <= local < total_pairs:
+                pair_results[local] = PairResult.model_validate(stored)
+        pending = [
+            (i, gen_cfg, ref_cfg)
+            for i, (gen_cfg, ref_cfg) in enumerate(pairs)
+            if (pair_index_base + i) not in completed
+        ]
 
         grid_ctx = _GridPairContext(
-            total_pairs=total_pairs,
+            total_pairs=display_total,
             module_factory=module_factory,
             module_kwargs=module_kwargs,
             payload=payload,
@@ -1297,10 +1458,12 @@ class DspyService:
             )
 
         if pending:
-            max_workers = min(len(pending), 4)
+            max_workers = min(len(pending), app_settings.grid_pair_max_workers)
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Workers receive the GLOBAL index (events, log tags, pair dirs,
+                # PairResult.pair_index); the futures map keeps the local slot.
                 futures = {
-                    executor.submit(_run_grid_pair, grid_ctx, i, gen_cfg, ref_cfg): i
+                    executor.submit(_run_grid_pair, grid_ctx, pair_index_base + i, gen_cfg, ref_cfg): i
                     for i, gen_cfg, ref_cfg in pending
                 }
                 for future in as_completed(futures):
@@ -1309,7 +1472,10 @@ class DspyService:
 
         successful = [p for p in pair_results if p.error is None and p.optimized_test_metric is not None]
         best_pair = (
-            max(successful, key=lambda p: p.optimized_test_metric if p.optimized_test_metric is not None else float("-inf"))
+            max(
+                successful,
+                key=lambda p: p.optimized_test_metric if p.optimized_test_metric is not None else float("-inf"),
+            )
             if successful
             else None
         )
@@ -1317,6 +1483,9 @@ class DspyService:
         grid_runtime = (datetime.now(UTC) - grid_start).total_seconds()
         completed_count = len([p for p in pair_results if p.error is None])
         failed_count = len([p for p in pair_results if p.error is not None])
+        pair_token_counts = [p.total_tokens for p in pair_results if p.total_tokens is not None]
+        grid_total_tokens = sum(pair_token_counts) if pair_token_counts else None
+        grid_usage_by_model = _merge_usage_rows([row for p in pair_results for row in p.usage_by_model])
 
         logger.info(
             "Grid search finished: %d/%d completed, %d failed, best=%s (%.1fs total)",
@@ -1338,6 +1507,8 @@ class DspyService:
             pair_results=pair_results,
             best_pair=best_pair,
             runtime_seconds=round(grid_runtime, 2),
+            total_tokens=grid_total_tokens,
+            usage_by_model=grid_usage_by_model,
         )
 
     def validate_grid_search_payload(self, payload: GridSearchRequest) -> None:
@@ -1359,6 +1530,7 @@ class DspyService:
         require_mapping_columns_in_dataset(payload.column_mapping, payload.dataset)
         metric_info = validate_metric_code(payload.metric_code)
         _require_metric_compatible_with_optimizer(payload.optimizer_name, metric_info.param_names)
+        _validate_target_score(payload.target_score, payload.optimizer_name, payload.split_fractions.val)
         self._get_module_factory(payload.module_name)
         optimizer_factory = self._get_optimizer_factory(payload.optimizer_name)
         validate_optimizer_signature(optimizer_factory, payload.optimizer_name)
@@ -1388,16 +1560,26 @@ class DspyService:
             payload.optimizer_name,
             len(payload.dataset),
         )
+        _validate_target_score(payload.target_score, payload.optimizer_name, payload.split_fractions.val)
 
-        intro = validate_signature_code(payload.signature_code)
-        require_mapping_matches_signature(payload.column_mapping, intro.input_fields, intro.output_fields)
-        require_mapping_columns_in_dataset(payload.column_mapping, payload.dataset)
-        if payload.module_name.lower() == "react":
-            self._validate_react_payload(payload)
-        else:
+        if payload.module_name.lower() == WORKFLOW_MODULE_NAME:
+            introspection = validate_workflow(payload.workflow)
+            require_mapping_matches_signature(
+                payload.column_mapping, introspection.input_fields, introspection.output_fields
+            )
+            require_mapping_columns_in_dataset(payload.column_mapping, payload.dataset)
             metric_info = validate_metric_code(payload.metric_code)
             _require_metric_compatible_with_optimizer(payload.optimizer_name, metric_info.param_names)
-        self._get_module_factory(payload.module_name)
+        else:
+            intro = validate_signature_code(payload.signature_code)
+            require_mapping_matches_signature(payload.column_mapping, intro.input_fields, intro.output_fields)
+            require_mapping_columns_in_dataset(payload.column_mapping, payload.dataset)
+            if payload.module_name.lower() == "react":
+                self._validate_react_payload(payload)
+            else:
+                metric_info = validate_metric_code(payload.metric_code)
+                _require_metric_compatible_with_optimizer(payload.optimizer_name, metric_info.param_names)
+            self._get_module_factory(payload.module_name)
         optimizer_factory = self._get_optimizer_factory(payload.optimizer_name)
         validate_optimizer_signature(optimizer_factory, payload.optimizer_name)
         validate_optimizer_kwargs(optimizer_factory, payload.optimizer_kwargs, payload.optimizer_name)
@@ -1423,9 +1605,7 @@ class DspyService:
         if payload.metric_code is None:
             raise ServiceError("react runs require metric_code.")
         metric_info = validate_metric_code(payload.metric_code)
-        _require_metric_compatible_with_optimizer(
-            payload.optimizer_name, metric_info.param_names
-        )
+        _require_metric_compatible_with_optimizer(payload.optimizer_name, metric_info.param_names)
 
     def _get_module_factory(self, name: str) -> tuple[Callable[..., Any], bool]:
         """Resolve a module factory by name from registry or built-in resolver.

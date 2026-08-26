@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@/shared/lib/utils";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 export interface ChartTableColumn<T> {
   key: Extract<keyof T, string>;
@@ -44,7 +45,7 @@ export function ChartTable<T>({
   const clickable = onRowClick != null;
   return (
     <div className="h-full max-h-full overflow-auto rounded-lg border border-border">
-      <table className="w-full border-collapse text-sm" dir="rtl">
+      <table className="w-full border-collapse text-sm" dir={getActiveDir()}>
         <thead className="sticky top-0 bg-muted text-xs">
           <tr>
             {columns.map((c) => (

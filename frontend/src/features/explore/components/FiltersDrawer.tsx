@@ -2,16 +2,19 @@
 
 import * as React from "react";
 import {
-  Calendar,
+  CalendarBlank,
   Check,
-  Component,
   Cpu,
-  Layers,
-  Search,
+  Cube,
+  MagnifyingGlass,
+  Stack,
   Target,
   X,
-} from "lucide-react";
+} from "@/shared/ui/icons";
+import { modelDisplayName } from "@/shared/lib/formatters";
 import { msg, formatMsg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
 import {
   Sheet,
   SheetContent,
@@ -19,7 +22,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/shared/ui/primitives/sheet";
-import { SkynetDatePicker } from "./SkynetDatePicker";
+import { SkynetDatePicker } from "@/shared/ui/skynet-date-picker";
 
 interface FiltersDrawerProps {
   open: boolean;
@@ -92,15 +95,23 @@ export function FiltersDrawer({
     selectedModules.length +
     (dateFrom ? 1 : 0) +
     (dateTo ? 1 : 0);
+  const isRtl = getActiveDir() === "rtl";
+  // Phones get a bottom sheet capped below the top edge; desktop keeps the
+  // side drawer on the reading-end edge.
+  const isPhone = useIsPhone();
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        side="right"
+        side={isPhone ? "bottom" : isRtl ? "left" : "right"}
         showCloseButton={false}
-        className="w-full !max-w-md gap-0 border-border bg-background p-0"
+        className={
+          isPhone
+            ? "max-h-[85dvh] w-full gap-0 rounded-t-2xl border-border bg-background p-0 pb-[env(safe-area-inset-bottom)]"
+            : "w-full !max-w-md gap-0 border-border bg-background p-0"
+        }
       >
-        <div dir="rtl" className="flex h-full flex-col">
+        <div className="flex h-full min-h-0 flex-col">
           <SheetHeader className="flex-row items-start justify-between gap-3 border-b border-border/60 px-6 py-5">
             <div className="flex flex-col gap-1.5">
               <SheetTitle className="text-[17px] font-medium tracking-tight text-foreground">
@@ -114,7 +125,7 @@ export function FiltersDrawer({
               type="button"
               onClick={() => onOpenChange(false)}
               aria-label={msg("explore.filters.close")}
-              className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] cursor-pointer hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45"
+              className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-foreground/55 transition-[background-color,color] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:size-9"
             >
               <X className="size-4" aria-hidden="true" />
             </button>
@@ -128,12 +139,10 @@ export function FiltersDrawer({
               <div className="flex flex-col gap-7">
                 <SearchableChipSection
                   title={msg("explore.filters.section.modules")}
-                  icon={Component}
+                  icon={Cube}
                   options={moduleOptions}
                   selected={selectedModules}
-                  onToggle={(v) =>
-                    onChangeModules(toggleValue(selectedModules, v))
-                  }
+                  onToggle={(v) => onChangeModules(toggleValue(selectedModules, v))}
                   dir="auto"
                 />
 
@@ -143,6 +152,7 @@ export function FiltersDrawer({
                   options={modelOptions}
                   selected={selectedModels}
                   onToggle={(v) => onChangeModels(toggleValue(selectedModels, v))}
+                  labels={Object.fromEntries(modelOptions.map((m) => [m, modelDisplayName(m)]))}
                   dir="ltr"
                 />
 
@@ -151,9 +161,7 @@ export function FiltersDrawer({
                   icon={Target}
                   options={optimizerOptions}
                   selected={selectedOptimizers}
-                  onToggle={(v) =>
-                    onChangeOptimizers(toggleValue(selectedOptimizers, v))
-                  }
+                  onToggle={(v) => onChangeOptimizers(toggleValue(selectedOptimizers, v))}
                   dir="ltr"
                 />
               </div>
@@ -161,25 +169,21 @@ export function FiltersDrawer({
               <div className="flex flex-col gap-7">
                 <FilterSection
                   title={msg("explore.filters.section.types")}
-                  icon={Layers}
+                  icon={Stack}
                   selectedCount={selectedTypes.length}
                 >
                   <ChipGroup
                     options={TYPE_VALUES.map((t) => t.value)}
-                    labels={Object.fromEntries(
-                      TYPE_VALUES.map((t) => [t.value, msg(t.labelKey)]),
-                    )}
+                    labels={Object.fromEntries(TYPE_VALUES.map((t) => [t.value, msg(t.labelKey)]))}
                     selected={selectedTypes}
-                    onToggle={(v) =>
-                      onChangeTypes(toggleValue(selectedTypes, v))
-                    }
-                    dir="rtl"
+                    onToggle={(v) => onChangeTypes(toggleValue(selectedTypes, v))}
+                    dir="auto"
                   />
                 </FilterSection>
 
                 <FilterSection
                   title={msg("explore.filters.section.date")}
-                  icon={Calendar}
+                  icon={CalendarBlank}
                   selectedCount={(dateFrom ? 1 : 0) + (dateTo ? 1 : 0)}
                 >
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -225,15 +229,12 @@ export function FiltersDrawer({
 }
 
 function toggleValue(current: string[], value: string): string[] {
-  return current.includes(value)
-    ? current.filter((v) => v !== value)
-    : [...current, value];
+  return current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
 }
 
 type IconComponent = React.ComponentType<{
   className?: string;
   "aria-hidden"?: boolean | "true";
-  strokeWidth?: number;
 }>;
 
 function FilterSection({
@@ -262,7 +263,6 @@ function FilterSection({
                 active ? "text-foreground/70" : "text-foreground/45"
               }`}
               aria-hidden="true"
-              strokeWidth={1.75}
             />
           )}
           <span>{title}</span>
@@ -297,6 +297,7 @@ function SearchableChipSection({
   options,
   selected,
   onToggle,
+  labels,
   dir,
 }: {
   title: string;
@@ -304,6 +305,7 @@ function SearchableChipSection({
   options: string[];
   selected: string[];
   onToggle: (value: string) => void;
+  labels?: Record<string, string>;
   dir: "ltr" | "rtl" | "auto";
 }) {
   const [query, setQuery] = React.useState("");
@@ -344,6 +346,7 @@ function SearchableChipSection({
           options={ordered}
           selected={selected}
           onToggle={onToggle}
+          labels={labels}
           dir={dir}
         />
       )}
@@ -362,7 +365,7 @@ function SectionSearchInput({
 }) {
   return (
     <div className="relative">
-      <Search
+      <MagnifyingGlass
         className="pointer-events-none absolute end-2.5 top-1/2 size-3.5 -translate-y-1/2 text-foreground/40"
         aria-hidden="true"
       />
@@ -398,9 +401,7 @@ function ChipGroup({
 }) {
   if (options.length === 0) {
     return (
-      <p className="text-[12.5px] text-foreground/45">
-        {msg("explore.filters.empty_section")}
-      </p>
+      <p className="text-[12.5px] text-foreground/45">{msg("explore.filters.empty_section")}</p>
     );
   }
   return (
@@ -412,6 +413,9 @@ function ChipGroup({
           <SelectableChip
             key={value}
             label={label}
+            // Trimmed labels (e.g. bare model names) keep the full value
+            // reachable on hover — providers can collide on the short name.
+            title={label === value ? undefined : value}
             active={active}
             dir={dir}
             onClick={() => onToggle(value)}
@@ -424,11 +428,13 @@ function ChipGroup({
 
 function SelectableChip({
   label,
+  title,
   active,
   dir,
   onClick,
 }: {
   label: string;
+  title?: string;
   active: boolean;
   dir: "ltr" | "rtl" | "auto";
   onClick: () => void;
@@ -438,20 +444,15 @@ function SelectableChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      title={title}
       dir={dir}
-      className={`group inline-flex max-w-full items-center gap-1 rounded-full border px-3 py-1.5 text-[12.5px] transition-[background-color,border-color,color] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 ${
+      className={`group inline-flex min-h-[44px] max-w-full cursor-pointer items-center gap-1 rounded-full border px-3 py-1.5 text-[12.5px] transition-[background-color,border-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:min-h-0 ${
         active
           ? "border-foreground/40 bg-foreground/[0.06] text-foreground"
           : "border-border bg-background text-foreground/70 hover:border-foreground/30 hover:text-foreground"
       }`}
     >
-      {active && (
-        <Check
-          className="size-3 shrink-0 text-foreground/70"
-          aria-hidden="true"
-          strokeWidth={2.25}
-        />
-      )}
+      {active && <Check className="size-3 shrink-0 text-foreground/70" aria-hidden="true" />}
       <span className="min-w-0 truncate tabular-nums">{label}</span>
     </button>
   );

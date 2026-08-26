@@ -1,6 +1,6 @@
 import type { PairResult } from "@/shared/types/api";
 
-export interface PairScores {
+interface PairScores {
   pair_index: number;
   quality: number;
   speed: number | null;

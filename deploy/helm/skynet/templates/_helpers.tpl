@@ -226,12 +226,25 @@ imagePullSecrets:
 {{- end -}}
 
 {{/*
-Default in-cluster API URL the frontend uses to reach the backend.
-Overridable via .Values.frontend.env.API_URL.
+Browser-reachable API URL injected by the frontend. An explicit value wins;
+otherwise an explicit OpenShift backend Route host is used. The localhost
+fallback keeps chart defaults renderable for development but must be replaced
+in production.
 */}}
 {{- define "skynet.frontend.apiUrl" -}}
 {{- if .Values.frontend.env.API_URL -}}
 {{- .Values.frontend.env.API_URL -}}
+{{- else if and .Values.openshift.routes.enabled .Values.openshift.routes.backend.host -}}
+{{- if .Values.openshift.routes.backend.tls.enabled -}}https{{- else -}}http{{- end -}}://{{ .Values.openshift.routes.backend.host }}
+{{- else -}}
+http://localhost:8000
+{{- end -}}
+{{- end -}}
+
+{{/* Server-only backend address for NextAuth provisioning calls. */}}
+{{- define "skynet.frontend.internalApiUrl" -}}
+{{- if .Values.frontend.env.BACKEND_INTERNAL_URL -}}
+{{- .Values.frontend.env.BACKEND_INTERNAL_URL -}}
 {{- else -}}
 {{- printf "http://%s:%d" (include "skynet.backend.fullname" .) (int .Values.backend.service.port) -}}
 {{- end -}}

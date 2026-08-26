@@ -28,11 +28,11 @@
     U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: "Inter Variable";
+  font-family: "Geist Variable";
   font-style: normal;
   font-display: swap;
   font-weight: 100 900;
-  src: url(/fonts/inter-latin-wght-normal.woff2) format("woff2-variations");
+  src: url(/fonts/geist-latin-wght-normal.woff2) format("woff2-variations");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
     U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
@@ -83,6 +83,26 @@
   100% {
     opacity: 0;
     transform: translateY(16px) scale(0.7);
+  }
+}
+/* Horizontal twin of cascadeDownHyper. Authored LTR; RTL flips via a
+   scale-x mirror on the container, which reverses this motion too. */
+@keyframes cascadeRightHyper {
+  0% {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: translateX(4px) scale(1.15);
+  }
+  60% {
+    opacity: 0.8;
+    transform: translateX(8px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(16px) scale(0.7);
   }
 }
 
@@ -279,6 +299,14 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Restore the pointer cursor on interactive buttons — the CSS reset leaves
+     them at the default arrow. Disabled buttons opt out, and because this lives
+     in @layer base a `cursor-*` utility still overrides it where a specific
+     button wants a different cursor. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
   /* Placeholder text direction follows its own language, not the
      inherited document direction. Combined with dir="auto" on the
      input itself this also positions the placeholder on the correct
@@ -287,6 +315,17 @@
   textarea::placeholder {
     unicode-bidi: plaintext;
     text-align: start;
+  }
+  /* Text and placeholder start side follows the element's dir.
+     With dir="auto" (default on Input) Hebrew starts on the right,
+     English on the left. Explicit dir="ltr" + text-left overrides
+     for email/code fields. */
+  input,
+  textarea {
+    text-align: start;
+  }
+  textarea {
+    unicode-bidi: plaintext;
   }
 }
 
@@ -297,7 +336,10 @@
 }
 
 html {
-  direction: rtl;
+  /* Direction follows the locale via the <html dir> attribute the layout sets
+     (ltr for English, rtl for Hebrew). Do NOT hardcode `direction` here — a CSS
+     rule overrides the dir attribute (a presentational hint), which forced RTL
+     onto body-portaled content (dialogs, sheets) even in the English locale. */
   text-size-adjust: 100%;
   /* The documentElement is the app scroller; keep its gutter during Radix scroll locks. */
   overflow-y: auto;
@@ -311,19 +353,40 @@ body {
   overflow-x: hidden; /* Prevent decorative orbs and wide content from causing horizontal scroll */
 }
 
+/* Per-locale UI font, keyed off <html lang>. Geist (Latin + Cyrillic) and Heebo
+   (Hebrew) cover most locales; scripts Geist can't draw get a script-matched
+   variable face prepended, with Geist kept after it so embedded English/code in
+   a non-Latin UI still renders in Geist. Switching the locale switches the font
+   automatically — no JS. Latin/Cyrillic locales (incl. ru, uk) use the base. */
+:root {
+  --font-ui: "Geist Variable", "Heebo Variable", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+html[lang="ar"] {
+  --font-ui: "Noto Sans Arabic Variable", "Geist Variable", system-ui, sans-serif;
+}
+html[lang="fa"] {
+  --font-ui: "Vazirmatn Variable", "Geist Variable", system-ui, sans-serif;
+}
+html[lang="hi"] {
+  --font-ui: "Noto Sans Devanagari Variable", "Geist Variable", system-ui, sans-serif;
+}
+html[lang="ja"] {
+  --font-ui: "Noto Sans JP Variable", "Geist Variable", system-ui, sans-serif;
+}
+html[lang="ko"] {
+  --font-ui: "Noto Sans KR Variable", "Geist Variable", system-ui, sans-serif;
+}
+html[lang="zh-Hans"],
+html[lang="yue"] {
+  --font-ui: "Noto Sans SC Variable", "Geist Variable", system-ui, sans-serif;
+}
+
 body {
   min-height: 100vh;
   color: var(--text-1);
   background: var(--bg);
-  font-family:
-    "Heebo Variable",
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    Arial,
-    sans-serif;
+  font-family: var(--font-ui);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -333,17 +396,13 @@ body {
 h1,
 h2,
 h3 {
-  font-family: "Inter Variable", "Heebo Variable", system-ui, sans-serif;
+  font-family: var(--font-ui);
   font-weight: 700;
 }
 
 /* Toast overrides — portaled outside the React tree */
 .Toastify__toast {
-  font-family:
-    "Heebo Variable",
-    system-ui,
-    -apple-system,
-    sans-serif !important;
+  font-family: var(--font-ui) !important;
   background: var(--card) !important;
   color: var(--foreground) !important;
   border: 1px solid var(--border) !important;
@@ -462,6 +521,30 @@ h3 {
     pointer-events: none;
     flex-shrink: 0;
   }
+
+  @media (max-width: 767px), (any-pointer: coarse) {
+    .close-button {
+      --close-btn-size: 44px !important;
+    }
+  }
+}
+
+[data-settings-text-buttons] [data-slot="button"]:not([data-size^="icon"]) {
+  @apply h-8 gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground shadow-xs;
+}
+[data-settings-text-buttons] [data-slot="button"]:not([data-size^="icon"]):has(> svg) {
+  @apply px-2.5;
+}
+[data-settings-text-buttons] [data-slot="button"]:not([data-size^="icon"]):hover {
+  @apply bg-accent text-accent-foreground;
+}
+[data-settings-text-buttons]
+  [data-slot="button"][data-variant="destructive"]:not([data-size^="icon"]) {
+  @apply border-destructive/30 text-destructive;
+}
+[data-settings-text-buttons]
+  [data-slot="button"][data-variant="destructive"]:not([data-size^="icon"]):hover {
+  @apply bg-destructive/10 text-destructive;
 }
 
 /* Code font */
@@ -492,6 +575,11 @@ table tbody tr td:not(:last-child):hover {
 
 /* Concepts guide: tables are informational, not copyable. */
 table.guide-table tbody tr td:hover {
+  text-decoration: none !important;
+}
+
+/* Tables without click-to-copy cells: no copy-hint underline. */
+table.no-copy-underline tbody tr td:hover {
   text-decoration: none !important;
 }
 
@@ -563,6 +651,43 @@ main {
   animation: fadeIn var(--duration-base) ease-out;
   /* Keep the same protection for routes that constrain <main> into the scroller. */
   scrollbar-gutter: stable;
+}
+
+/* The desktop sidebar is position:fixed (a locked rail), so it's out of flow and
+   reserves no width. <main> reserves it here via the width the Sidebar publishes
+   to --app-sidebar-width on each collapse. Scoped to .app-main so the bare login/
+   share routes (which render no sidebar) are unaffected. */
+@media (min-width: 768px) {
+  .app-main {
+    margin-inline-start: var(--app-sidebar-width, min(240px, 40vw, 92vw));
+  }
+  /* When the rail is collapsed to its 64px icon strip, let the page box grow
+     into the freed space instead of staying capped at 7xl and leaving a dead
+     margin. The capped width would pin content to ~80rem centered and hide
+     the gain of the collapse — removing the cap lets the container span the
+     wider <main> while its fluid padding still keeps gutters. The 1440+ clamp
+     below would also cap it at 85vw, so the collapsed override lifts that cap. */
+  html[data-sidebar-collapsed] .app-main .mx-auto.max-w-7xl {
+    max-width: none;
+  }
+}
+
+/* Collapse/expand snap: when the Sidebar commits the discrete icon-rail toggle it
+   arms html[data-sidebar-snapping], gliding the rail's own width and <main>'s
+   reserved margin together over one matched transition instead of jumping in a
+   single frame. Continuous drags clear the flag so the rail tracks the cursor
+   1:1 (no transition). Honour reduced-motion — the snap stays instant there. */
+@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
+  html[data-sidebar-snapping] .app-sidebar-rail {
+    transition: width 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  html[data-sidebar-snapping] .app-main {
+    transition: margin-inline-start 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  html[data-sidebar-snapping][data-sidebar-collapsed] .app-main .mx-auto.max-w-7xl,
+  html[data-sidebar-snapping]:not([data-sidebar-collapsed]) .app-main .mx-auto.max-w-7xl {
+    transition: max-width 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
 }
 
 /* Radix popovers (Select, Dialog, DropdownMenu) lock scroll via
@@ -999,12 +1124,20 @@ header {
 }
 
 /* Touch device optimizations */
-@media (hover: none) and (pointer: coarse) {
-  /* Touch-friendly tap targets — only on actual touch devices,
-     not desktop users in narrow split-screen windows */
+@media (any-pointer: coarse) {
+  /* Keep touch targets usable on tablets and hybrid devices even when a
+     mouse is also connected or the viewport crosses a desktop breakpoint. */
   button,
   a,
-  [role="button"] {
+  [role="button"],
+  [role="tab"],
+  [role="radio"],
+  [role="switch"],
+  [role="combobox"],
+  [role="slider"],
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  textarea,
+  select {
     min-height: 44px;
     min-width: 44px;
   }
@@ -1013,6 +1146,13 @@ header {
   [data-slot="card"]:hover {
     transform: none;
     box-shadow: var(--shadow-card);
+  }
+
+  /* Hover-revealed controls (copy buttons, chip actions, message actions)
+     have no hover to trigger them on touch devices — without this they
+     occupy space but can never be seen or tapped. Keep them visible. */
+  [class*="group-hover:opacity-100"] {
+    opacity: 1;
   }
 
   button[data-slot="button"][data-variant="default"]:hover {
@@ -1030,6 +1170,12 @@ header {
     transform: scale(0.97);
     transition-duration: 100ms;
   }
+}
+
+/* Keyboard path for hover-revealed controls: tabbing onto one reveals it,
+   matching what hover shows pointer users. */
+[class*="group-hover:opacity-100"]:focus-visible {
+  opacity: 1;
 }
 
 /* ════════════════════════════════════════════
@@ -1365,4 +1511,51 @@ table {
 [data-lite] [class*="backdrop-saturate"] {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* Workflow canvas — React Flow state styling. Base edge styles are inline
+   (per-edge, set in deriveEdges); hover/selected need !important to win
+   over those inline values. */
+.react-flow__edge-path {
+  transition:
+    stroke 120ms ease,
+    stroke-width 120ms ease;
+}
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: #6e5843 !important;
+}
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #3d2e22 !important;
+  stroke-width: 2.5 !important;
+}
+.react-flow__handle {
+  transition:
+    box-shadow 120ms ease,
+    background-color 120ms ease;
+}
+.react-flow__handle:hover,
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto {
+  box-shadow: 0 0 0 3px rgba(200, 168, 130, 0.45);
+}
+.react-flow__selection {
+  background: rgba(200, 168, 130, 0.08) !important;
+  border: 1px dashed #c8a882 !important;
+}
+
+/* Node cards scale in on mount — new nodes, pastes, and agent rewrites all
+   announce themselves. Animates the inner card, not the React Flow wrapper,
+   whose transform carries the node's canvas position. */
+@keyframes wf-node-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.wf-node-enter {
+  animation: wf-node-enter 0.18s ease-out;
 }

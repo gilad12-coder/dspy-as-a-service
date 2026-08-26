@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Copy, Globe, Loader2, Lock, User, UserPlus, Users, X } from "lucide-react";
+import { CircleNotch, Globe, Lock, User, UserPlus, Users, X } from "@/shared/ui/icons";
 import { toast } from "react-toastify";
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -26,33 +26,24 @@ import { SettingsRow } from "@/shared/ui/settings-row";
 import {
   addShareMember,
   getSharing,
-  putSharing,
   removeShareMember,
   searchUsers,
   setOptimizationVisibility,
   transferOwnership,
   updateShareMember,
-  type GeneralAccess,
-  type LinkRole,
   type MemberRole,
   type ShareRole,
   type SharingState,
 } from "@/shared/lib/api";
 import { msg } from "@/shared/lib/messages";
+import { track, TelemetryEvent } from "@/shared/lib/telemetry";
+import { sessionIdentity } from "@/shared/lib/session-identity";
 
 const ROLE_OPTIONS: MemberRole[] = ["viewer", "editor"];
 
 // Sentinel value for the per-member role dropdown's "transfer ownership" item
 // (not a real role — selecting it opens the transfer confirmation instead).
 const TRANSFER_VALUE = "__transfer__";
-
-// Split the confirm copy around the {name} token so the target username can
-// render emphasized (matching the delete dialog) instead of as plain inline
-// text. The username goes in a <bdi> below so its directionality stays
-// isolated inside the Hebrew sentence — the same protection formatTemplate's
-// FSI/PDI wrapping would have provided.
-const [TRANSFER_BODY_BEFORE, TRANSFER_BODY_AFTER] =
-  msg("share.transfer.confirm_body").split("{name}");
 
 /** Localised label for a member tier role. */
 function roleLabel(role: ShareRole): string {
@@ -75,76 +66,64 @@ function roleDesc(role: ShareRole): string {
  * per-member role) and a General-access section (Restricted vs Anyone-with-link),
  * plus a copy-link row. Different purpose, same components.
  */
-export function ShareDialog({ optimizationId }: { optimizationId: string }) {
+export function ShareDialog({
+  optimizationId,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
+}: {
+  optimizationId: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}) {
   const { data: session } = useSession();
-  const me = (session?.user?.name ?? "").trim().toLowerCase();
-  const [open, setOpen] = useState(false);
+  const me = sessionIdentity(session);
+  // Open state is uncontrolled by default (the built-in trigger drives it), but a
+  // parent can drive it — the sidebar row menu opens this same dialog without
+  // rendering the trigger (hideTrigger). Every existing setOpen() call still works
+  // and now also notifies a controlling parent.
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
   const [state, setState] = useState<SharingState | null>(null);
-  const [savingAccess, setSavingAccess] = useState(false);
   const [savingVisibility, setSavingVisibility] = useState(false);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
   const [transferring, setTransferring] = useState(false);
+  // Split the confirm copy around the {name} token so the target username can
+  // render emphasized (matching the delete dialog) instead of as plain inline
+  // text. The username goes in a <bdi> below so its directionality stays
+  // isolated inside the Hebrew sentence — the same protection formatTemplate's
+  // FSI/PDI wrapping would have provided. Resolved per-render (not at module
+  // scope) so it can't capture a raw key before the message shim has loaded.
+  const [transferBodyBefore, transferBodyAfter] = msg("share.transfer.confirm_body").split(
+    "{name}",
+  );
 
   // Only the current owner may hand ownership off (admins manage via other
   // tools); a member never sees the option. ``state.owner`` is the structural
   // owner, ``me`` the signed-in caller.
   const isOwner = !!state?.owner && state.owner.toLowerCase() === me;
 
-  const shareUrl =
-    state?.token && typeof window !== "undefined"
-      ? `${window.location.origin}/share/${state.token}`
-      : null;
-
   // Owner (if present) plus every invited member — drives the header count.
   const accessCount = state ? (state.owner ? 1 : 0) + state.members.length : 0;
 
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (next && state === null) {
+  const handleOpenChange = (next: boolean) => setOpen(next);
+
+  // Lazy-load the sharing state the first time the dialog opens — whether by the
+  // built-in trigger or a controlling parent. An effect catches both; the trigger's
+  // click handler alone would miss the externally-driven open.
+  useEffect(() => {
+    if (open && state === null) {
       getSharing(optimizationId)
         .then(setState)
         .catch((err) => toast.error(err instanceof Error ? err.message : msg("share.error")));
     }
-  };
-
-  const handleAccessChange = async (value: GeneralAccess) => {
-    setSavingAccess(true);
-    try {
-      setState(await putSharing(optimizationId, { general_access: value }));
-      toast.success(msg("share.access_updated"));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
-    } finally {
-      setSavingAccess(false);
-    }
-  };
-
-  // Explore-corpus visibility — distinct from the link's general_access below.
-  const handleVisibilityChange = async (isPrivate: boolean) => {
-    setSavingVisibility(true);
-    try {
-      setState(await setOptimizationVisibility(optimizationId, isPrivate));
-      toast.success(isPrivate ? msg("share.visibility.now_private") : msg("share.visibility.now_public"));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
-    } finally {
-      setSavingVisibility(false);
-    }
-  };
-
-  // The tier an "anyone with the link" link grants signed-in visitors. Anonymous
-  // visitors stay read-only regardless, so this never elevates a bare URL.
-  const handleLinkRoleChange = async (role: LinkRole) => {
-    setSavingAccess(true);
-    try {
-      setState(await putSharing(optimizationId, { general_access: "anyone", general_role: role }));
-      toast.success(msg("share.access_updated"));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
-    } finally {
-      setSavingAccess(false);
-    }
-  };
+  }, [open, state, optimizationId]);
 
   const handleRoleChange = async (username: string, role: MemberRole) => {
     try {
@@ -152,6 +131,20 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
       toast.success(msg("share.member_updated"));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
+    }
+  };
+
+  const handleVisibilityChange = async (isPrivate: boolean) => {
+    setSavingVisibility(true);
+    try {
+      setState(await setOptimizationVisibility(optimizationId, isPrivate));
+      toast.success(
+        isPrivate ? msg("share.visibility.now_private") : msg("share.visibility.now_public"),
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : msg("share.save_failed"));
+    } finally {
+      setSavingVisibility(false);
     }
   };
 
@@ -194,47 +187,42 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
 
   const handleInvite = async (username: string, role: MemberRole) => {
     setState(await addShareMember(optimizationId, { username, role }));
+    track(TelemetryEvent.ShareCreated, { kind: "optimization", mode: "member", role });
     toast.success(msg("share.member_added"));
-  };
-
-  const handleCopy = () => {
-    if (!shareUrl) return;
-    navigator.clipboard
-      .writeText(shareUrl)
-      .then(() => toast.success(msg("share.link_copied")))
-      .catch(() => toast.error(msg("clipboard.copy_failed")));
   };
 
   return (
     <>
-      <TooltipButton tooltip={msg("share.button")}>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          onClick={() => handleOpenChange(true)}
-          aria-label={msg("share.button")}
-        >
-          <Users className="size-4" />
-        </Button>
-      </TooltipButton>
+      {!hideTrigger && (
+        <TooltipButton tooltip={msg("share.button")}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
+            onClick={() => handleOpenChange(true)}
+            aria-label={msg("share.button")}
+          >
+            <Users className="size-4" />
+          </Button>
+        </TooltipButton>
+      )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent
-          className="w-[min(32rem,92vw)] max-w-[min(32rem,92vw)] sm:max-w-lg p-0 overflow-hidden"
+          className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-lg overflow-hidden p-0"
           aria-describedby={undefined}
         >
           {/* Flex column so the people list is the only scroller — invite stays
               pinned at the top and access/link controls pinned at the bottom no
               matter how many members are granted. */}
-          <div className="flex max-h-[85vh] flex-col">
+          <div className="flex max-h-[calc(100dvh-1rem)] flex-col sm:max-h-[85dvh]">
             <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/40">
               <DialogTitle>{msg("share.dialog_title")}</DialogTitle>
             </DialogHeader>
 
             {state === null ? (
               <div className="flex items-center justify-center gap-2 px-6 py-10 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
                 {msg("share.loading")}
               </div>
             ) : (
@@ -326,7 +314,7 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
                         >
                           <SelectTrigger
                             size="sm"
-                            className="min-w-[120px]"
+                            className="min-h-[44px] min-w-[120px] sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
                             aria-label={msg("share.role.change_aria")}
                           >
                             <SelectValue />
@@ -348,7 +336,7 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            className="text-muted-foreground hover:text-destructive"
+                            className="size-[44px] text-muted-foreground hover:text-destructive sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
                             onClick={() => handleRemove(member.username)}
                             aria-label={msg("share.remove_member_aria")}
                           >
@@ -360,10 +348,7 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
                   )}
                 </div>
 
-                <div className="shrink-0 space-y-3 border-t border-border/40 px-6 py-4">
-                  {/* Explore-corpus visibility — a separate axis from the
-                      link's general access: this controls public discovery in
-                      /explore, not who can open the share link. */}
+                <div className="shrink-0 border-t border-border/40 px-6 py-4">
                   <SettingsRow
                     icon={state.is_private ? Lock : Globe}
                     label={msg("share.visibility.label")}
@@ -375,10 +360,10 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
                   >
                     <Select
                       value={state.is_private ? "private" : "public"}
-                      onValueChange={(next) => handleVisibilityChange(next === "private")}
+                      onValueChange={(next) => void handleVisibilityChange(next === "private")}
                       disabled={savingVisibility}
                     >
-                      <SelectTrigger size="sm" className="min-w-[120px]">
+                      <SelectTrigger size="sm" className="min-h-[44px] min-w-[120px] sm:min-h-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -387,83 +372,8 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
                       </SelectContent>
                     </Select>
                   </SettingsRow>
-
-                  <SettingsRow
-                    icon={state.general_access === "anyone" ? Globe : Lock}
-                    label={msg("share.general_access")}
-                    description={
-                      state.general_access === "restricted"
-                        ? msg("share.general_access.restricted_desc")
-                        : undefined
-                    }
-                  >
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <Select
-                        value={state.general_access}
-                        onValueChange={(next) => handleAccessChange(next as GeneralAccess)}
-                        disabled={savingAccess}
-                      >
-                        <SelectTrigger size="sm" className="min-w-[140px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="restricted">
-                            {msg("share.general_access.restricted")}
-                          </SelectItem>
-                          <SelectItem value="anyone">
-                            {msg("share.general_access.anyone")}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {state.general_access === "anyone" && (
-                        // Drive-style: pick the tier the link grants (caps at editor).
-                        <Select
-                          value={state.general_role}
-                          onValueChange={(next) => handleLinkRoleChange(next as LinkRole)}
-                          disabled={savingAccess}
-                        >
-                          <SelectTrigger
-                            size="sm"
-                            className="min-w-[104px]"
-                            aria-label={msg("share.role.change_aria")}
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="viewer">{roleLabel("viewer")}</SelectItem>
-                            <SelectItem value="editor">{roleLabel("editor")}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                  </SettingsRow>
-
-                  {shareUrl && state.general_access === "anyone" && (
-                    // Only an "anyone with the link" link grants access by URL;
-                    // in Restricted mode the link is useless to non-members, so
-                    // showing it is misleading.
-                    <div
-                      dir="ltr"
-                      className="flex items-center gap-1 rounded-md border border-input bg-background ps-3 pe-1 transition-[color,box-shadow,border-color] duration-120 ease-[cubic-bezier(0.2,0.8,0.2,1)] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
-                    >
-                      <code className="min-w-0 flex-1 truncate py-2 font-mono text-[0.6875rem] text-muted-foreground">
-                        {shareUrl}
-                      </code>
-                      <div aria-hidden className="h-5 w-px shrink-0 bg-border/70" />
-                      <TooltipButton tooltip={msg("share.copy_link")}>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={handleCopy}
-                          aria-label={msg("share.copy_link")}
-                          className="size-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0"
-                        >
-                          <Copy className="size-3.5" />
-                        </Button>
-                      </TooltipButton>
-                    </div>
-                  )}
                 </div>
+
               </>
             )}
           </div>
@@ -481,11 +391,9 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
             title={msg("share.transfer.confirm_title")}
             description={
               <>
-                {TRANSFER_BODY_BEFORE}
-                <bdi className="font-mono font-medium text-foreground">
-                  {transferTarget}
-                </bdi>
-                {TRANSFER_BODY_AFTER}
+                {transferBodyBefore}
+                <bdi className="font-mono font-medium text-foreground">{transferTarget}</bdi>
+                {transferBodyAfter}
               </>
             }
           />
@@ -494,17 +402,17 @@ export function ShareDialog({ optimizationId }: { optimizationId: string }) {
               variant="outline"
               onClick={() => setTransferTarget(null)}
               disabled={transferring}
-              className="w-full justify-center"
+              className="min-h-[44px] w-full justify-center sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
             >
               {msg("share.transfer.cancel")}
             </Button>
             <Button
               onClick={handleTransfer}
               disabled={transferring}
-              className="w-full justify-center shadow-xs"
+              className="min-h-[44px] w-full justify-center shadow-xs sm:min-h-0 [@media(hover:none)_and_(pointer:coarse)]:min-h-[44px]"
             >
               {transferring ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 msg("share.transfer.confirm_cta")
               )}
@@ -621,7 +529,7 @@ function InvitePeople({
             aria-label={msg("share.invite_label")}
             disabled={inviting}
             dir="ltr"
-            className="h-8 flex-1 rounded-none border-0 bg-transparent px-0 text-xs shadow-none backdrop-blur-none focus-visible:border-transparent focus-visible:ring-0"
+            className="h-[44px] min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 text-xs shadow-none backdrop-blur-none focus-visible:border-transparent focus-visible:ring-0 sm:h-8 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
           />
           <div aria-hidden className="h-5 w-px shrink-0 bg-border/70" />
           <Select
@@ -630,7 +538,7 @@ function InvitePeople({
           >
             <SelectTrigger
               size="sm"
-              className="h-7 gap-1 rounded-md border-0 bg-transparent px-2 text-xs shadow-none hover:border-transparent hover:bg-accent/55 hover:shadow-none focus-visible:border-transparent focus-visible:bg-accent/55 focus-visible:ring-0 data-[state=open]:border-transparent data-[state=open]:bg-accent/60 data-[state=open]:shadow-none"
+              className="h-[44px] gap-1 rounded-md border-0 bg-transparent px-2 text-xs shadow-none hover:border-transparent hover:bg-accent/55 hover:shadow-none focus-visible:border-transparent focus-visible:bg-accent/55 focus-visible:ring-0 data-[state=open]:border-transparent data-[state=open]:bg-accent/60 data-[state=open]:shadow-none sm:h-7 [@media(hover:none)_and_(pointer:coarse)]:h-[44px]"
               aria-label={msg("share.role.change_aria")}
             >
               <SelectValue />
@@ -642,9 +550,7 @@ function InvitePeople({
                 </SelectItem>
               ))}
               {canTransfer && (
-                <SelectItem value={TRANSFER_VALUE}>
-                  {msg("share.transfer.action")}
-                </SelectItem>
+                <SelectItem value={TRANSFER_VALUE}>{msg("share.transfer.action")}</SelectItem>
               )}
             </SelectContent>
           </Select>
@@ -655,10 +561,10 @@ function InvitePeople({
               onClick={() => void submit(query)}
               disabled={inviting || query.trim().length === 0}
               aria-label={msg("share.invite")}
-              className="size-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0"
+              className="size-[44px] shrink-0 text-muted-foreground hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-0 sm:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
             >
               {inviting ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 <UserPlus className="size-4" />
               )}
@@ -669,7 +575,7 @@ function InvitePeople({
           <div className="absolute inset-x-0 top-full z-30 mt-2 max-h-48 overflow-y-auto rounded-md border border-border/70 bg-popover shadow-lg">
             {searching ? (
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
-                <Loader2 className="size-3.5 animate-spin" />
+                <CircleNotch className="size-3.5 animate-spin" />
                 {msg("share.searching")}
               </div>
             ) : results.length === 0 ? (
@@ -687,7 +593,7 @@ function InvitePeople({
                         e.preventDefault();
                         void submit(name);
                       }}
-                      className="flex w-full items-center px-3 py-1.5 text-start font-mono text-xs hover:bg-accent/60"
+                      className="flex min-h-[44px] w-full items-center px-3 py-1.5 text-start font-mono text-xs hover:bg-accent/60"
                     >
                       {name}
                     </button>

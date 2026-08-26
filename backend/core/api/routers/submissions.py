@@ -9,6 +9,7 @@ Both endpoints are part of the public dev surface and are listed in
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Annotated, cast
@@ -17,11 +18,20 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
+from ...byok import (
+    ProviderKeyVault,
+    byok_provider_for_litellm,
+    provider_slug_for_model,
+)
+from ...config import settings
 from ...constants import (
+    COMPOSITION_SINGLE,
+    COMPOSITION_WORKFLOW,
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
     PAYLOAD_OVERVIEW_COLUMN_MAPPING,
     PAYLOAD_OVERVIEW_COMPILE_KWARGS,
+    PAYLOAD_OVERVIEW_COMPOSITION,
     PAYLOAD_OVERVIEW_DATASET_FILENAME,
     PAYLOAD_OVERVIEW_DATASET_ROWS,
     PAYLOAD_OVERVIEW_DESCRIPTION,
@@ -44,8 +54,14 @@ from ...constants import (
     PAYLOAD_OVERVIEW_SPLIT_FRACTIONS,
     PAYLOAD_OVERVIEW_TASK_FINGERPRINT,
     PAYLOAD_OVERVIEW_TASK_MODEL,
+    PAYLOAD_OVERVIEW_TOKEN_SOURCE,
+    PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL,
+    PAYLOAD_OVERVIEW_TOOL_SOURCE,
     PAYLOAD_OVERVIEW_TOTAL_PAIRS,
     PAYLOAD_OVERVIEW_USERNAME,
+    PAYLOAD_OVERVIEW_WORKFLOW,
+    TOKEN_SOURCE_BYOK,
+    TOKEN_SOURCE_MANAGED,
 )
 from ...i18n import t
 from ...i18n_keys import I18nKey
@@ -57,6 +73,7 @@ from ...models import (
 )
 from ...models.common import ModelConfig, OptimizationType
 from ...models.submissions import _OptimizationRequestBase
+from ...models.workflow import WORKFLOW_MODULE_NAME
 from ...notifications import notify_job_started
 from ...registry import RegistryError
 from ...service_gateway import ServiceError
@@ -85,6 +102,29 @@ IdempotencyKeyHeader = Annotated[
         max_length=128,
     ),
 ]
+
+
+def _persist_and_signal_job(
+    job_store,
+    service,
+    optimization_id: str,
+    payload_dump: dict,
+) -> None:
+    """Persist a pending payload and optionally wake the in-process worker.
+
+    Args:
+        job_store: Shared database-backed job store.
+        service: DSPy service passed to an enabled in-process worker.
+        optimization_id: Identifier of the pending job row.
+        payload_dump: JSON-compatible request payload to persist.
+    """
+    job_store.update_job(
+        optimization_id,
+        payload=payload_dump,
+        code_version=settings.code_version,
+    )
+    if settings.worker_enabled:
+        get_worker(job_store, service=service).enqueue_job(optimization_id)
 
 
 def _existing_submission_response(job_store, optimization_id: str) -> OptimizationSubmissionResponse | None:
@@ -315,6 +355,134 @@ def _expand_catalog_grid_payload(payload: GridSearchRequest) -> None:
         payload.reflection_models = expanded
 
 
+def _request_model_configs(payload: _OptimizationRequestBase) -> list[ModelConfig]:
+    """Return every executable model config carried by a submission.
+
+    Args:
+        payload: Run or grid request.
+
+    Returns:
+        Model configs in execution order.
+    """
+    if isinstance(payload, RunRequest):
+        return [
+            config
+            for config in (
+                payload.model_settings,
+                payload.reflection_model_settings,
+                payload.task_model_settings,
+            )
+            if config is not None
+        ]
+    if isinstance(payload, GridSearchRequest):
+        return [*payload.generation_models, *payload.reflection_models]
+    return []
+
+
+def _normalize_model_token_sources(
+    payload: _OptimizationRequestBase,
+) -> tuple[list[ModelConfig], dict[str, str]]:
+    """Resolve legacy job-level sources into explicit per-model sources.
+
+    Args:
+        payload: Run or grid request to normalize in place.
+
+    Returns:
+        The model configs and their normalized model-to-connection map.
+
+    Raises:
+        DomainError: 400 when one model id is assigned conflicting sources.
+    """
+    configs = _request_model_configs(payload)
+    sources: dict[str, str] = {}
+    for config in configs:
+        source = config.token_source or payload.token_source
+        config.token_source = source
+        config.base_url = None
+        for field in ("api_key", "api_base", "base_url"):
+            config.extra.pop(field, None)
+        if source == TOKEN_SOURCE_MANAGED:
+            config.byok_provider = None
+        model = config.normalized_identifier()
+        existing = sources.get(model)
+        if existing is not None and existing != source:
+            raise DomainError("submission.validation_failed", status=400)
+        sources[model] = source
+    payload.token_source = (
+        TOKEN_SOURCE_BYOK
+        if sources and all(source == TOKEN_SOURCE_BYOK for source in sources.values())
+        else TOKEN_SOURCE_MANAGED
+    )
+    return configs, sources
+
+
+def _enforce_byok_connections(job_store, username: str, model_configs: list[ModelConfig]) -> None:
+    """Refuse BYOK models without a verified saved provider connection.
+
+    In BYOK mode every model authenticates with the user's own provider key,
+    resolved from the encrypt-at-rest vault at run time. If the account saved no
+    connection for a model's provider, the run would have nothing to authenticate
+    with, so reject it at submit with a clear, translated error rather than
+    letting the job fail mid-run. Organization-managed runs are exempt. Models
+    with no ``provider/`` prefix are skipped — there is no
+    provider to resolve a key for. A no-op when the store exposes no SQL engine.
+
+    Args:
+        job_store: Job-store instance whose ORM engine backs the vault tables.
+        username: Account attempting the submission.
+        model_configs: Executable configs with normalized per-model sources.
+
+    Raises:
+        DomainError: 400 ``byok.missing_connection`` listing the providers
+            the account has no saved connection for.
+    """
+    engine = getattr(job_store, "engine", None)
+    if engine is None or not username:
+        return
+    vault = ProviderKeyVault(engine=engine)
+    # A model id carries a LiteLLM prefix (``gemini``, ``together_ai``) but the
+    # key is saved under the vault slug (``google``, ``together``); bridge the two
+    # exactly as the run path does so the gate sees the same connections it will.
+    providers: set[str] = set()
+    for config in model_configs:
+        if config.token_source != TOKEN_SOURCE_BYOK:
+            continue
+        provider = (config.byok_provider or "").strip()
+        if not provider:
+            prefix = provider_slug_for_model(config.normalized_identifier())
+            if prefix is not None:
+                provider = byok_provider_for_litellm(prefix)
+        if provider:
+            providers.add(provider)
+    missing = sorted(provider for provider in providers if not vault.has_connection(username, provider))
+    if missing:
+        raise DomainError("byok.missing_connection", status=400, provider=", ".join(missing))
+
+
+def _scrubbed_tool_source(tool_source) -> dict | None:
+    """Return the overview-safe projection of a tool source.
+
+    Persists only what serve-time reconstruction needs (``kind``,
+    ``mcp_url``, ``tool_filter``) — never ``mcp_auth_header``, which is a
+    secret; serve re-sources live MCP rosters with no auth header, matching
+    the react overlay behavior.
+
+    Args:
+        tool_source: The submitted ``ToolSource``, or ``None``.
+
+    Returns:
+        The scrubbed dict, or ``None`` when no tool source was supplied.
+    """
+    if tool_source is None:
+        return None
+    scrubbed: dict = {"kind": tool_source.kind}
+    if tool_source.mcp_url is not None:
+        scrubbed["mcp_url"] = tool_source.mcp_url
+    if tool_source.tool_filter is not None:
+        scrubbed["tool_filter"] = list(tool_source.tool_filter)
+    return scrubbed
+
+
 def create_submissions_router(*, service, job_store) -> APIRouter:
     """Build the submissions router.
 
@@ -388,30 +556,48 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             logger.warning("Payload validation failed: %s", exc)
             raise DomainError("submission.validation_failed", status=400) from exc
 
-        _enforce_vision_capability(
-            signature_code=payload.signature_code,
-            candidate_models=[payload.model_settings],
-        )
+        # Workflow runs have no top-level signature; per-node image fields are
+        # rejected by the workflow deep-validation pass instead.
+        if payload.signature_code is not None:
+            _enforce_vision_capability(
+                signature_code=payload.signature_code,
+                candidate_models=[payload.model_settings],
+            )
 
-        enforce_storage_quota(
-            job_store,
-            payload.username,
-            incoming_bytes=json_byte_size(payload.model_dump(mode="json", by_alias=True)),
-        )
+        _run_model_configs, _token_sources_by_model = _normalize_model_token_sources(payload)
+        _enforce_byok_connections(job_store, payload.username, _run_model_configs)
 
         optimization_id = str(uuid4())
-        task_fingerprint = compute_task_fingerprint(payload.signature_code, payload.metric_code, payload.dataset)
+        # Workflow runs fingerprint the whole graph spec in place of the
+        # single signature source — same identity semantics, different carrier.
+        program_source = payload.signature_code or json.dumps(
+            payload.workflow.model_dump() if payload.workflow else None,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        task_fingerprint = compute_task_fingerprint(program_source, payload.metric_code, payload.dataset)
         # Derive the default seed from the task fingerprint (not the optimization id)
-        # so submissions of the same task share train/val/test splits — a prerequisite
-        # for the compare flow to line up per-row test results across deduplicated runs.
+        # so repeated submissions of the same task retain reproducible data splits.
         if payload.seed is None:
             payload.seed = stable_seed(task_fingerprint)
 
+        # Single serialization, reused by the quota gate here and the submit
+        # persist below — the dump copies the whole dataset, so building it
+        # twice doubled the request's transient footprint. Taken only after
+        # the last payload mutations (cost-ceiling cap, seed) so the counted
+        # bytes are exactly the persisted bytes.
+        payload_dump = payload.model_dump(mode="json", by_alias=True)
+        enforce_storage_quota(job_store, payload.username, incoming_bytes=json_byte_size(payload_dump))
+
+        composition = (
+            COMPOSITION_WORKFLOW if payload.module_name.lower() == WORKFLOW_MODULE_NAME else COMPOSITION_SINGLE
+        )
         job_store.create_job(optimization_id, username=payload.username, idempotency_key=normalized_key)
         job_store.set_payload_overview(
             optimization_id,
             {
                 PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE: OPTIMIZATION_TYPE_RUN,
+                PAYLOAD_OVERVIEW_COMPOSITION: composition,
                 PAYLOAD_OVERVIEW_NAME: payload.name,
                 PAYLOAD_OVERVIEW_DESCRIPTION: payload.description,
                 PAYLOAD_OVERVIEW_USERNAME: payload.username,
@@ -438,14 +624,17 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 PAYLOAD_OVERVIEW_OPTIMIZER_KWARGS: dict(payload.optimizer_kwargs),
                 PAYLOAD_OVERVIEW_COMPILE_KWARGS: dict(payload.compile_kwargs),
                 PAYLOAD_OVERVIEW_TASK_FINGERPRINT: task_fingerprint,
+                PAYLOAD_OVERVIEW_TOKEN_SOURCE: payload.token_source,
+                PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL: _token_sources_by_model,
                 PAYLOAD_OVERVIEW_IS_PRIVATE: payload.is_private,
                 PAYLOAD_OVERVIEW_SOURCE_DATASET_ID: source_dataset_id,
+                PAYLOAD_OVERVIEW_WORKFLOW: payload.workflow.model_dump() if payload.workflow else None,
+                PAYLOAD_OVERVIEW_TOOL_SOURCE: _scrubbed_tool_source(payload.tool_source),
             },
         )
         _evict_staged_dataset(job_store, staged_id, payload.username)
 
-        current_worker = get_worker(job_store, service=service)
-        current_worker.submit_job(optimization_id, payload)
+        _persist_and_signal_job(job_store, service, optimization_id, payload_dump)
 
         logger.info(
             "Enqueued job %s for module=%s optimizer=%s",
@@ -541,11 +730,8 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
             candidate_models=list(payload.generation_models),
         )
 
-        enforce_storage_quota(
-            job_store,
-            payload.username,
-            incoming_bytes=json_byte_size(payload.model_dump(mode="json", by_alias=True)),
-        )
+        _grid_model_configs, _token_sources_by_model = _normalize_model_token_sources(payload)
+        _enforce_byok_connections(job_store, payload.username, _grid_model_configs)
 
         optimization_id = str(uuid4())
         if payload.seed is None:
@@ -554,11 +740,18 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
 
         task_fingerprint = compute_task_fingerprint(payload.signature_code, payload.metric_code, payload.dataset)
 
+        # Same single-serialization pattern as /run — see the note there.
+        payload_dump = payload.model_dump(mode="json", by_alias=True)
+        enforce_storage_quota(job_store, payload.username, incoming_bytes=json_byte_size(payload_dump))
+
         job_store.create_job(optimization_id, username=payload.username, idempotency_key=normalized_key)
         job_store.set_payload_overview(
             optimization_id,
             {
                 PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE: OPTIMIZATION_TYPE_GRID_SEARCH,
+                # A grid search sweeps model pairs over a single module — the request
+                # model rejects workflows — so its composition is always "single".
+                PAYLOAD_OVERVIEW_COMPOSITION: COMPOSITION_SINGLE,
                 PAYLOAD_OVERVIEW_NAME: payload.name,
                 PAYLOAD_OVERVIEW_DESCRIPTION: payload.description,
                 PAYLOAD_OVERVIEW_USERNAME: payload.username,
@@ -578,14 +771,15 @@ def create_submissions_router(*, service, job_store) -> APIRouter:
                 PAYLOAD_OVERVIEW_GENERATION_MODELS: [m.model_dump() for m in payload.generation_models],
                 PAYLOAD_OVERVIEW_REFLECTION_MODELS: [m.model_dump() for m in payload.reflection_models],
                 PAYLOAD_OVERVIEW_TASK_FINGERPRINT: task_fingerprint,
+                PAYLOAD_OVERVIEW_TOKEN_SOURCE: payload.token_source,
+                PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL: _token_sources_by_model,
                 PAYLOAD_OVERVIEW_IS_PRIVATE: payload.is_private,
                 PAYLOAD_OVERVIEW_SOURCE_DATASET_ID: source_dataset_id,
             },
         )
         _evict_staged_dataset(job_store, staged_id, payload.username)
 
-        current_worker = get_worker(job_store, service=service)
-        current_worker.submit_job(optimization_id, payload)
+        _persist_and_signal_job(job_store, service, optimization_id, payload_dump)
 
         logger.info(
             "Enqueued grid search %s: %d pairs, module=%s optimizer=%s",

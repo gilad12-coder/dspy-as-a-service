@@ -51,6 +51,7 @@ class RetryingPredict(dspy.Predict):
         signature,
         *,
         parse_retries: int = PARSE_RETRY_ATTEMPTS,
+        serial_tool_calls: bool = False,
         callbacks=None,
         **config,
     ):
@@ -59,11 +60,14 @@ class RetryingPredict(dspy.Predict):
         Args:
             signature: The ReActV2 inner-loop signature to predict against.
             parse_retries: Extra resample attempts after the first failure.
+            serial_tool_calls: Disable parallel tool calls on normal loop turns
+                so a terminal submit cannot race a sibling tool result.
             callbacks: Forwarded to ``dspy.Predict``.
             **config: Default LM kwargs forwarded to ``dspy.Predict``.
         """
         super().__init__(signature, callbacks=callbacks, **config)
         self._parse_retries = parse_retries
+        self._serial_tool_calls = serial_tool_calls
 
     def forward(self, **kwargs):
         """Predict one turn, resampling on parse failure before re-raising.
@@ -85,8 +89,10 @@ class RetryingPredict(dspy.Predict):
             call_kwargs = (
                 kwargs if attempt == 0 else self._with_resample_id(kwargs, attempt)
             )
+            call_kwargs = self._with_tool_call_policy(call_kwargs)
             try:
-                return super().forward(**call_kwargs)
+                prediction = super().forward(**call_kwargs)
+                return self._without_racing_submit(prediction)
             except (AdapterParseError, ValueError) as err:
                 last_err = err
                 logger.warning(
@@ -96,6 +102,58 @@ class RetryingPredict(dspy.Predict):
                     err,
                 )
         raise last_err  # type: ignore[misc]
+
+    def _without_racing_submit(self, prediction: dspy.Prediction) -> dspy.Prediction:
+        """Drop a terminal submit that raced another tool in the same turn.
+
+        ReActV2 ends the loop as soon as it executes a submit. If a provider
+        returns submit beside a read tool, that reply was authored before the
+        read result existed and cannot answer the user's question. Keeping only
+        the non-submit calls lets ReAct execute them, append their results to
+        history, and ask the model for the real final answer on the next turn.
+
+        Args:
+            prediction: Parsed inner-loop prediction from DSPy.
+
+        Returns:
+            The prediction unchanged unless serial execution is enabled and it
+            contains both submit and non-submit calls.
+        """
+        if not self._serial_tool_calls:
+            return prediction
+        envelope = getattr(prediction, "tool_calls", None)
+        calls = getattr(envelope, "tool_calls", None)
+        if not isinstance(calls, list):
+            return prediction
+        has_submit = any(getattr(call, "name", None) == "submit" for call in calls)
+        non_submit = [call for call in calls if getattr(call, "name", None) != "submit"]
+        if not has_submit or not non_submit:
+            return prediction
+        prediction.tool_calls = envelope.model_copy(update={"tool_calls": non_submit})
+        return prediction
+
+    def _with_tool_call_policy(self, kwargs: dict) -> dict:
+        """Apply serial execution to normal turns without touching forced submit.
+
+        DSPy's forced-submit fallback pins ``tool_choice`` to ``submit``. Some
+        providers reject that option when ``parallel_tool_calls`` is also sent,
+        so the serial flag is added only to ordinary ReAct loop calls.
+
+        Args:
+            kwargs: Predictor inputs and optional per-call LM config.
+
+        Returns:
+            The original kwargs unless serial execution is enabled; otherwise
+            a shallow copy whose normal-turn config disables parallel calls.
+        """
+        if not self._serial_tool_calls:
+            return kwargs
+        config = dict(kwargs.get("config") or {})
+        if "tool_choice" in config:
+            config.pop("parallel_tool_calls", None)
+        else:
+            config["parallel_tool_calls"] = False
+        return {**kwargs, "config": config}
 
     def _with_resample_id(self, kwargs: dict, attempt: int) -> dict:
         """Return ``kwargs`` with a per-attempt ``rollout_id`` to bust the cache.
@@ -131,6 +189,7 @@ class RetryingReActV2(REACT_CLASS):
         max_iters: int = 20,
         *,
         parse_retries: int = PARSE_RETRY_ATTEMPTS,
+        serial_tool_calls: bool = False,
     ):
         """Build a stock ReAct program then swap its inner predictor for a retrying one.
 
@@ -143,10 +202,14 @@ class RetryingReActV2(REACT_CLASS):
             tools: Tool roster, as for the base ReAct program.
             max_iters: Loop budget, as for the base ReAct program.
             parse_retries: Extra resample attempts per inner-predict call.
+            serial_tool_calls: Disable parallel tool calls on normal loop
+                turns while preserving the forced-submit compatibility path.
         """
         super().__init__(signature, tools, max_iters=max_iters)
         self.react = RetryingPredict(
-            self.react.signature, parse_retries=parse_retries
+            self.react.signature,
+            parse_retries=parse_retries,
+            serial_tool_calls=serial_tool_calls,
         )
 
 

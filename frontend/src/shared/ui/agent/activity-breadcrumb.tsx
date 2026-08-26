@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Loader2 } from "lucide-react";
+import { Check, CircleNotch } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
 
 import { cn } from "@/shared/lib/utils";
@@ -83,14 +83,14 @@ function StepNode({ state }: { state: StepState }) {
   if (state === "done") {
     return (
       <span className="inline-flex size-[18px] items-center justify-center rounded-full bg-[#3D2E22] text-white transition-colors">
-        <Check className="size-2.5" strokeWidth={3.5} />
+        <Check className="size-2.5" />
       </span>
     );
   }
   if (state === "active") {
     return (
       <span className="inline-flex size-[18px] items-center justify-center rounded-full bg-[#3D2E22] text-white shadow-[0_0_0_3px_rgba(61,46,34,0.12)] transition-colors motion-reduce:shadow-none">
-        <Loader2 className="size-2.5 animate-spin motion-reduce:animate-none" strokeWidth={3} />
+        <CircleNotch className="size-2.5 animate-spin motion-reduce:animate-none" />
       </span>
     );
   }

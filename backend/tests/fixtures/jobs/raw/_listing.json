@@ -43,8 +43,7 @@
         },
         "max_tokens": 20000,
         "name": "openai/gpt-5.4-nano",
-        "temperature": 1.0,
-        "top_p": null
+        "temperature": 1.0
       },
       "module_kwargs": {},
       "module_name": "cot",
@@ -74,7 +73,7 @@
       "status": "success",
       "task_model_name": null,
       "total_pairs": null,
-      "username": "gilad"
+      "username": "demo"
     },
     {
       "archived": false,
@@ -119,8 +118,7 @@
         },
         "max_tokens": 20000,
         "name": "openai/gpt-5.4-nano",
-        "temperature": 1.0,
-        "top_p": null
+        "temperature": 1.0
       },
       "module_kwargs": {},
       "module_name": "cot",
@@ -150,7 +148,7 @@
       "status": "success",
       "task_model_name": null,
       "total_pairs": null,
-      "username": "gilad"
+      "username": "demo"
     }
   ],
   "limit": 100,

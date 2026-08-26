@@ -13,6 +13,7 @@ Internal (dashboard plumbing, hidden from public docs):
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -87,6 +88,46 @@ def _set_terminal_if_active(job_store, optimization_id: str, expected: tuple[str
     return cas(optimization_id, expected, **fields)
 
 
+def _cancel_grid_pair_children(job_store: Any, worker: Any, parent_optimization_id: str) -> None:
+    """Propagate a cancelled distributed grid to its pair-child rows.
+
+    Pending children flip terminal instantly (so no worker ever claims
+    them); running children get the same CAS the parent got and their worker
+    notices on its next store-cancel poll. Terminal children are left alone.
+    A child whose CAS loses the race (it just finished) is fine — the
+    finalizer sees the parent already ``cancelled`` and stands down.
+
+    Args:
+        job_store: The active job store.
+        worker: The in-process worker (for same-pod cancel events), or None.
+        parent_optimization_id: The cancelled grid parent.
+    """
+    getter = getattr(job_store, "get_grid_pair_children", None)
+    if not callable(getter):
+        return
+    try:
+        children = getter(parent_optimization_id)
+    except Exception:
+        logger.exception("Cancel fan-out failed for grid %s", parent_optimization_id)
+        return
+    now = datetime.now(UTC).isoformat()
+    for child in children:
+        if child.get("status") in ("success", "failed", "cancelled"):
+            continue
+        child_id = child["optimization_id"]
+        with contextlib.suppress(Exception):
+            if worker:
+                worker.cancel_job(child_id)
+            _set_terminal_if_active(
+                job_store,
+                child_id,
+                ("pending", "validating", "running"),
+                status="cancelled",
+                message=CANCELLATION_REASON,
+                completed_at=now,
+            )
+
+
 def register_lifecycle_routes(
     router: APIRouter,
     *,
@@ -153,6 +194,7 @@ def register_lifecycle_routes(
             # pre-check above; reflect the row's actual status.
             current = status_to_job_status(job_store.get_job(optimization_id).get("status", "pending"))
             raise DomainError("optimization.already_terminal", status=409, params={"status": current.value})
+        _cancel_grid_pair_children(job_store, worker, optimization_id)
         logger.info("Optimization %s (%s) cancelled", optimization_id, status.value)
         return JobCancelResponse(optimization_id=optimization_id, status="cancelled")
 
@@ -284,6 +326,7 @@ def register_lifecycle_routes(
                         message=CANCELLATION_REASON,
                         completed_at=now,
                     )
+                    _cancel_grid_pair_children(job_store, worker, optimization_id)
                 except Exception as exc:
                     logger.exception("Bulk cancel failed for %s", optimization_id)
                     skipped.append(
@@ -576,6 +619,46 @@ def register_lifecycle_routes(
         by_index = {pr.get("pair_index"): pr for pr in pair_results if isinstance(pr, dict)}
         if pair_index not in by_index:
             raise DomainError("grid_search.pair_position_missing", status=404, params={"pair_index": pair_index})
+
+        # Distributed grid: the pair lives in its own child row — re-queue
+        # THAT row (its checkpoints are keyed by the child id + global pair
+        # index) and flip the parent back to ``running`` so the finalizer's
+        # CAS can land when the pair finishes. The parent's stored pair-result
+        # archive row for this index is dropped so the fresh outcome replaces
+        # it at re-assembly.
+        children_getter = getattr(job_store, "get_grid_pair_children", None)
+        pair_children = {
+            int(c.get("pair_index") or 0): c for c in (children_getter(optimization_id) if children_getter else [])
+        }
+        if pair_children:
+            child = pair_children.get(pair_index)
+            if child is None:
+                raise DomainError("grid_search.pair_position_missing", status=404, params={"pair_index": pair_index})
+            child_id = child["optimization_id"]
+            if resume:
+                checkpoint = job_store.get_gepa_checkpoint(child_id, pair_index)
+                if checkpoint is None:
+                    raise DomainError("optimization.pair_not_resumable", status=409)
+            else:
+                job_store.delete_gepa_checkpoint(child_id, pair_index)
+                job_store.delete_grid_pair_results(child_id)
+            job_store.delete_grid_pair_result(optimization_id, pair_index)
+            job_store.update_job(
+                optimization_id,
+                status="running",
+                completed_at=None,
+                message=f"Re-running pair {pair_index}",
+            )
+            if job_store.requeue_for_resume(child_id, bump_attempts=False) is None:
+                raise DomainError("optimization.not_found", status=404)
+            logger.info(
+                "Re-running distributed grid pair %s of %s via child %s (resume=%s)",
+                pair_index,
+                optimization_id,
+                child_id,
+                resume,
+            )
+            return JobCancelResponse(optimization_id=optimization_id, status=OptimizationStatus.running.value)
 
         if resume:
             getter = getattr(job_store, "get_gepa_checkpoint", None)

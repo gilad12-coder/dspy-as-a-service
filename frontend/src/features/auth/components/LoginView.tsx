@@ -1,87 +1,78 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { signIn, getProviders } from "next-auth/react";
+import { getProviders, signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import { Loader2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowLeft, CircleNotch } from "@/shared/ui/icons";
+import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { Button } from "@/shared/ui/primitives/button";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
 import { Input } from "@/shared/ui/primitives/input";
 import { Label } from "@/shared/ui/primitives/label";
-import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { msg } from "@/shared/lib/messages";
 import { LoginHalo } from "./LoginHalo";
 
 const ENTER_EASE = [0.16, 1, 0.3, 1] as const;
 
-/**
- * Resolve where to send the user after login. next-auth's middleware appends a
- * ``callbackUrl`` query param when it bounces an unauthenticated request (e.g. a
- * ``/share/<token>`` link) to /login; honor it so the recipient lands back on
- * the page they came for. Only same-origin internal paths are accepted, so a
- * crafted ``callbackUrl`` can't turn login into an open redirect. Falls back to
- * the dashboard.
- */
 function postLoginTarget(): string {
   if (typeof window === "undefined") return "/";
-  const cb = new URLSearchParams(window.location.search).get("callbackUrl");
-  if (!cb) return "/";
+  const callback = new URLSearchParams(window.location.search).get("callbackUrl");
+  if (!callback) return "/";
   try {
-    const url = new URL(cb, window.location.origin);
+    const url = new URL(callback, window.location.origin);
     if (url.origin === window.location.origin) return url.pathname + url.search + url.hash;
   } catch {
-    // Malformed callbackUrl — ignore and use the default.
+    return "/";
   }
   return "/";
 }
 
-/**
- * Oversized SKYNET wordmark shared by every login state, so the SSO redirect
- * moment and the dev form read as the same place. It fills the column width and
- * morphs continuously as an ambient "alive" signal.
- */
 function LoginHeader() {
   return (
     <div className="w-[min(90vw,520px)]">
-      <AnimatedWordmark fluid autoMorph morphSpeed={250} />
+      <AnimatedWordmark fluid autoMorph autoMorphDuration={10000} morphSpeed={250} />
     </div>
   );
 }
 
+type LoginMode = "loading" | "sso" | "sso-error" | "local";
+
 export function LoginView() {
   const router = useRouter();
+  const [mode, setMode] = useState<LoginMode>("loading");
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [mode, setMode] = useState<"loading" | "sso" | "dev">("loading");
 
   useEffect(() => {
-    // If the providers endpoint errors (network blip, mis-deployed
-    // [...nextauth] route), fall back to the dev form instead of leaving the
-    // page on the loading spinner forever.
+    const params = new URLSearchParams(window.location.search);
+    const localRequested = params.get("local") === "1";
+    const authError = params.has("error");
     void getProviders()
       .then((providers) => {
-        if (providers?.adfs) {
-          setMode("sso");
-          void signIn("adfs", { callbackUrl: postLoginTarget() });
-        } else {
-          setMode("dev");
+        if (localRequested || !providers?.adfs) {
+          setMode("local");
+          return;
         }
+        if (authError) {
+          setMode("sso-error");
+          return;
+        }
+        setMode("sso");
+        void signIn("adfs", { callbackUrl: postLoginTarget() });
       })
-      .catch((err) => {
-        console.warn("LoginView: getProviders failed", err);
-        setMode("dev");
-      });
+      .catch(() => setMode("local"));
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username.trim()) return;
+  const handleLocalLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const normalized = username.trim();
+    if (!normalized) return;
     setError("");
     setLoading(true);
-    const result = await signIn("credentials", {
-      username: username.trim(),
+    const result = await signIn("local", {
+      username: normalized,
       redirect: false,
     });
     setLoading(false);
@@ -89,14 +80,14 @@ export function LoginView() {
       setError(msg("auth.login.error"));
       return;
     }
-    // Soft-nav so we don't hard-reload and double-fetch the dashboard the way
-    // `window.location.href = "/"` did. Honor the post-login target so a
-    // recipient bounced here from a /share/<token> link lands back on it.
     router.push(postLoginTarget());
     router.refresh();
   };
 
-  const isWorking = mode === "loading" || mode === "sso";
+  const showLocalFallback = () => {
+    setError("");
+    setMode("local");
+  };
 
   return (
     <div className="relative flex min-h-dvh w-full items-center justify-center px-4 py-10">
@@ -116,32 +107,54 @@ export function LoginView() {
         transition={{ duration: 0.6, ease: ENTER_EASE }}
         className="relative z-10 w-full max-w-[420px]"
       >
-        {isWorking ? (
-          <div className="flex flex-col items-center">
-            <LoginHeader />
-            <div className="mt-9 flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              <span>{msg("auth.login.loading")}</span>
+        <div className="flex flex-col items-center">
+          <LoginHeader />
+
+          {(mode === "loading" || mode === "sso") && (
+            <div className="mt-9 flex flex-col items-center gap-4 text-sm text-muted-foreground">
+              <span className="flex items-center gap-2">
+                <CircleNotch className="size-4 animate-spin" />
+                {msg("auth.login.sso_loading")}
+              </span>
             </div>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center">
-            <LoginHeader />
+          )}
+
+          {mode === "sso-error" && (
+            <Card className="mt-9 w-full">
+              <CardContent className="space-y-4 px-6 text-center">
+                <p className="text-sm text-muted-foreground">{msg("auth.login.sso_failed")}</p>
+                <Button
+                  className="w-full"
+                  onClick={() => void signIn("adfs", { callbackUrl: postLoginTarget() })}
+                >
+                  {msg("auth.login.sso_retry")}
+                </Button>
+                <button
+                  type="button"
+                  onClick={showLocalFallback}
+                  className="inline-flex min-h-11 cursor-pointer items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {msg("auth.login.local_fallback")}
+                  <ArrowLeft className="size-4" aria-hidden="true" />
+                </button>
+              </CardContent>
+            </Card>
+          )}
+
+          {mode === "local" && (
             <Card className="mt-9 w-full">
               <CardContent className="px-6">
                 <form
-                  onSubmit={handleLogin}
+                  onSubmit={handleLocalLogin}
                   className="space-y-4"
                   aria-label={msg("auth.login.form_aria")}
                 >
-                  <div>
-                    <Label htmlFor="login-username" className="sr-only">
-                      {msg("auth.login.username")}
-                    </Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="login-username">{msg("auth.login.username")}</Label>
                     <Input
                       id="login-username"
                       value={username}
-                      onChange={(e) => setUsername(e.target.value)}
+                      onChange={(event) => setUsername(event.target.value)}
                       placeholder={msg("auth.login.username_placeholder")}
                       autoFocus
                       autoComplete="username"
@@ -150,13 +163,12 @@ export function LoginView() {
                     />
                   </div>
 
-                  <AnimatePresence>
+                  <AnimatePresence initial={false}>
                     {error && (
                       <motion.p
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.2 }}
                         className="text-center text-sm text-destructive"
                         role="alert"
                       >
@@ -169,16 +181,16 @@ export function LoginView() {
                     type="submit"
                     size="lg"
                     disabled={loading || !username.trim()}
-                    className="h-11 w-full gap-2 text-[0.9375rem] font-medium"
+                    className="h-11 w-full gap-2"
                   >
-                    {loading && <Loader2 className="size-4 animate-spin" />}
+                    {loading && <CircleNotch className="size-4 animate-spin" />}
                     {msg("auth.login.submit")}
                   </Button>
                 </form>
               </CardContent>
             </Card>
-          </div>
-        )}
+          )}
+        </div>
       </motion.div>
     </div>
   );

@@ -34,8 +34,8 @@ export function usePublicDashboard(): PublicDashboardState {
         setState({ points: data.points, loading: false, error: null });
       } catch (err) {
         if (cancelled) return;
-        setState((s) => ({
-          ...s,
+        setState((current) => ({
+          ...current,
           loading: false,
           error: err instanceof Error ? err.message : "load failed",
         }));
@@ -50,27 +50,18 @@ export function usePublicDashboard(): PublicDashboardState {
     };
 
     const onVisibility = () => {
-      if (typeof document === "undefined") return;
-      if (document.visibilityState !== "visible") return;
-      // Refresh only when we've drifted at least one full interval since the
-      // last successful load — the epsilon absorbs sub-second jitter so a
-      // visibility flip 29.9s after a tick doesn't immediately retrigger.
+      if (typeof document === "undefined" || document.visibilityState !== "visible") return;
       const elapsed = Date.now() - lastTickRef.current;
       if (elapsed >= POLL_INTERVAL_MS - POLL_CATCHUP_EPSILON_MS) tick();
     };
 
     void load();
     const timer = setInterval(tick, POLL_INTERVAL_MS);
-    if (typeof document !== "undefined") {
-      document.addEventListener("visibilitychange", onVisibility);
-    }
-
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       cancelled = true;
       clearInterval(timer);
-      if (typeof document !== "undefined") {
-        document.removeEventListener("visibilitychange", onVisibility);
-      }
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 

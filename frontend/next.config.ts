@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  agentRules: false,
   reactStrictMode: true,
   compress: true,
   poweredByHeader: false,
@@ -27,20 +28,14 @@ const nextConfig: NextConfig = {
       source: "/robots.txt",
       headers: [{ key: "Cache-Control", value: "public, max-age=86400" }],
     },
-    ...(process.env.NODE_ENV === "production"
-      ? [
-          {
-            source: "/_next/static/(.*)",
-            headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
-          },
-        ]
-      : []),
+    // Next.js already serves content-hashed /_next/static assets with
+    // `immutable` long-lived caching; setting our own Cache-Control there is
+    // redundant and trips a build-time warning, so it's intentionally omitted.
   ],
   experimental: {
     optimizePackageImports: [
       "framer-motion",
       "react-toastify",
-      "lucide-react",
       "radix-ui",
       "@radix-ui/react-direction",
       "class-variance-authority",
@@ -48,11 +43,12 @@ const nextConfig: NextConfig = {
       "tailwind-merge",
       "recharts",
       "@fontsource-variable/heebo",
-      "@fontsource-variable/inter",
+      "@fontsource-variable/geist",
       "@fontsource-variable/jetbrains-mono",
       "@uiw/react-codemirror",
       "@codemirror/lang-python",
       "xlsx",
+      "@lobehub/icons",
     ],
   },
 };

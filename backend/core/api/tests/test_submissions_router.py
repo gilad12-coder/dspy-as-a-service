@@ -8,10 +8,16 @@ import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from ...constants import (
+    COMPOSITION_SINGLE,
+    COMPOSITION_WORKFLOW,
     OPTIMIZATION_TYPE_GRID_SEARCH,
     OPTIMIZATION_TYPE_RUN,
+    PAYLOAD_OVERVIEW_COMPOSITION,
     PAYLOAD_OVERVIEW_GENERATION_MODELS,
     PAYLOAD_OVERVIEW_IS_PRIVATE,
     PAYLOAD_OVERVIEW_MODEL_NAME,
@@ -19,12 +25,14 @@ from ...constants import (
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_OPTIMIZER_NAME,
     PAYLOAD_OVERVIEW_REFLECTION_MODELS,
+    PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL,
     PAYLOAD_OVERVIEW_TOTAL_PAIRS,
     PAYLOAD_OVERVIEW_USERNAME,
 )
 from ...i18n_keys import I18nKey
 from ...registry import RegistryError
 from ...service_gateway import ServiceError
+from ...storage.models import Base, ByokProviderKeyModel
 from ...storage.usage import StorageUsage
 from ..model_catalog import CatalogModel, ModelCatalogResponse
 from ..routers import submissions as _sub_mod
@@ -121,6 +129,18 @@ class _FakeJobStore:
         """
         self._jobs.setdefault(optimization_id, {})["overview"] = dict(overview)
 
+    def update_job(self, optimization_id: str, **kwargs: Any) -> None:
+        """Update fields on an existing fake job row.
+
+        Args:
+            optimization_id: Job id to update.
+            **kwargs: Fields to store on the row.
+
+        Raises:
+            KeyError: When the job does not exist.
+        """
+        self._jobs[optimization_id].update(kwargs)
+
     def find_job_by_idempotency_key(self, username: str, idempotency_key: str) -> str | None:
         """Return the first job id matching ``(username, idempotency_key)``.
 
@@ -159,6 +179,28 @@ class _FakeJobStore:
             "payload_overview": row.get("overview", {}),
             "username": row.get("username"),
         }
+
+    def list_jobs(self, *, status: str | None = None, username: str | None = None, **_: Any) -> list[dict]:
+        """Return stored jobs filtered by status and owner.
+
+        Args:
+            status: Exact status filter; ``None`` matches every status. Rows
+                without an explicit status count as ``pending``, matching
+                ``get_job``.
+            username: Owner filter; ``None`` matches every owner.
+            **_: Ignored extra filters (``limit``, ``with_counts``, ...).
+
+        Returns:
+            Job rows shaped like ``get_job`` output, in insertion order.
+        """
+        rows = []
+        for job_id, row in self._jobs.items():
+            if status is not None and row.get("status", "pending") != status:
+                continue
+            if username is not None and row.get("username") != username:
+                continue
+            rows.append(self.get_job(job_id))
+        return rows
 
     def created_ids(self) -> list[str]:
         """Return all job ids that were created via ``create_job``.
@@ -331,6 +373,7 @@ def _make_client(
     """
     worker = fake_background_worker()
 
+    monkeypatch.setattr(_sub_mod.settings, "worker_enabled", True)
     monkeypatch.setattr(_sub_mod, "get_worker", lambda *a, **kw: worker)
     monkeypatch.setattr(_sub_mod, "notify_job_started", lambda **_: None)
 
@@ -378,6 +421,40 @@ def test_submit_run_creates_job_in_store(monkeypatch: pytest.MonkeyPatch) -> Non
     created = store.created_ids()
     assert len(created) == 1
     assert created[0] == resp.json()["optimization_id"]
+
+
+@pytest.mark.parametrize(
+    ("path", "payload_factory"),
+    [("/run", _run_payload), ("/grid-search", _grid_payload)],
+)
+def test_submit_persists_without_starting_worker_on_api_only_pods(
+    path: str,
+    payload_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """API-only pods persist submissions without constructing a local worker.
+
+    Args:
+        path: Submission endpoint under test.
+        payload_factory: Callable producing a valid endpoint payload.
+        monkeypatch: Pytest monkeypatch fixture.
+    """
+    store = _FakeJobStore()
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+    monkeypatch.setattr(_sub_mod.settings, "worker_enabled", False)
+
+    def _unexpected_worker(*_args: Any, **_kwargs: Any) -> None:
+        """Fail if an API-only submission tries to construct a worker."""
+        pytest.fail("API-only submissions must not construct a worker")
+
+    monkeypatch.setattr(_sub_mod, "get_worker", _unexpected_worker)
+
+    resp = client.post(path, json=payload_factory())
+
+    assert resp.status_code == 201
+    row = store._jobs[resp.json()["optimization_id"]]
+    assert row["payload"]["username"] == "alice"
+    assert row["code_version"] == _sub_mod.settings.code_version
 
 
 def test_submit_run_echoes_name_and_authenticated_username(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -621,6 +698,7 @@ def test_submit_run_overview_contains_expected_keys(monkeypatch: pytest.MonkeyPa
     overview = store._jobs[opt_id]["overview"]
 
     assert overview[PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE] == OPTIMIZATION_TYPE_RUN
+    assert overview[PAYLOAD_OVERVIEW_COMPOSITION] == COMPOSITION_SINGLE
     assert overview[PAYLOAD_OVERVIEW_USERNAME] == "alice"
     assert overview[PAYLOAD_OVERVIEW_MODULE_NAME] == "predict"
     assert overview[PAYLOAD_OVERVIEW_OPTIMIZER_NAME] == "gepa"
@@ -646,6 +724,7 @@ def test_submit_grid_search_overview_contains_total_pairs(monkeypatch: pytest.Mo
     overview = store._jobs[opt_id]["overview"]
 
     assert overview[PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE] == OPTIMIZATION_TYPE_GRID_SEARCH
+    assert overview[PAYLOAD_OVERVIEW_COMPOSITION] == COMPOSITION_SINGLE
     assert overview[PAYLOAD_OVERVIEW_TOTAL_PAIRS] == 2
     assert overview[PAYLOAD_OVERVIEW_IS_PRIVATE] is True
 
@@ -843,8 +922,7 @@ def _vision_catalog(*, vision_models: list[str], text_only_models: list[str] | N
         A ``ModelCatalogResponse`` mixing the two groups.
     """
     models: list[CatalogModel] = [
-        CatalogModel(value=v, label=v, provider="openai", available=True, supports_vision=True)
-        for v in vision_models
+        CatalogModel(value=v, label=v, provider="openai", available=True, supports_vision=True) for v in vision_models
     ]
     models.extend(
         CatalogModel(value=v, label=v, provider="openai", available=True, supports_vision=False)
@@ -970,6 +1048,126 @@ def test_submit_grid_search_accepts_image_signature_when_all_models_support_visi
     assert resp.status_code == 201
 
 
+def _byok_engine() -> Any:
+    """Build a StaticPool in-memory engine with the BYOK schema."""
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    return engine
+
+
+def test_submit_run_byok_frontier_model_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A BYOK run on a frontier model is never locked (own key), and persists the mode."""
+    engine = _byok_engine()
+    with Session(engine) as session:
+        session.add(
+            ByokProviderKeyModel(
+                username="alice",
+                provider="openai",
+                secret_ciphertext=b"ciphertext",
+                last4="4o20",
+                status="verified",
+            )
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    payload = {**_run_payload(), "model_settings": {"name": "openai/gpt-4o"}, "token_source": "byok"}
+    resp = client.post("/run", json=payload)
+
+    assert resp.status_code == 201
+    row = store._jobs[store.created_ids()[0]]
+    overview = row["overview"]
+    assert overview["token_source"] == "byok"
+    assert overview[PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL] == {"openai/gpt-4o": "byok"}
+    assert row["payload"]["model_config"]["token_source"] == "byok"
+
+
+def test_submit_run_supports_mixed_per_model_sources_and_strips_inline_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each run model keeps its own source while credentials come only from the vault."""
+    engine = _byok_engine()
+    with Session(engine) as session:
+        session.add(
+            ByokProviderKeyModel(
+                username="alice",
+                provider="custom",
+                secret_ciphertext=b"ciphertext",
+                last4="abcd",
+                status="verified",
+            )
+        )
+        session.commit()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+    payload = {
+        **_run_payload(),
+        "token_source": "managed",
+        "model_settings": {
+            "name": "openai/private-chat",
+            "token_source": "byok",
+            "byok_provider": "custom",
+            "base_url": "https://inline.example/v1",
+            "extra": {
+                "api_key": "inline-secret",
+                "base_url": "https://other-inline.example/v1",
+                "reasoning_effort": "medium",
+            },
+        },
+        "reflection_model_settings": {
+            "name": "openrouter/anthropic/claude-3.5-haiku",
+            "token_source": "managed",
+        },
+    }
+
+    resp = client.post("/run", json=payload)
+
+    assert resp.status_code == 201
+    row = store._jobs[store.created_ids()[0]]
+    assert row["overview"]["token_source"] == "managed"
+    assert row["overview"][PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL] == {
+        "openai/private-chat": "byok",
+        "openrouter/anthropic/claude-3.5-haiku": "managed",
+    }
+    stored = row["payload"]["model_config"]
+    assert stored["token_source"] == "byok"
+    assert stored["byok_provider"] == "custom"
+    assert stored["base_url"] is None
+    assert stored["extra"] == {"reasoning_effort": "medium"}
+
+
+def test_submit_run_byok_without_connection_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A BYOK run is refused at submit when the account saved no key for the provider."""
+    engine = _byok_engine()
+    store = _FakeJobStore()
+    store.engine = engine
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    payload = {**_run_payload(), "model_settings": {"name": "openai/gpt-4o"}, "token_source": "byok"}
+    resp = client.post("/run", json=payload)
+
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "byok.missing_connection"
+    assert store.created_ids() == []
+
+
+def test_submit_run_defaults_token_source_to_managed_in_overview(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An omitted token_source defaults to managed and is persisted on the overview."""
+    store = _FakeJobStore()
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_run_payload())
+
+    assert resp.status_code == 201
+    overview = store._jobs[store.created_ids()[0]]["overview"]
+    assert overview["token_source"] == "managed"
+
+
 def test_submit_run_idempotent_retry_returns_same_optimization_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1031,3 +1229,48 @@ def test_submit_grid_search_idempotent_retry_returns_same_optimization_id(
     assert second.status_code == 201
     assert first.json()["optimization_id"] == second.json()["optimization_id"]
     assert len(store.created_ids()) == 1
+
+
+def _workflow_run_payload() -> dict:
+    """Build a minimal valid workflow run payload (no top-level signature).
+
+    Returns:
+        A dict matching the run submission schema with a workflow graph.
+    """
+    payload = _run_payload()
+    payload.pop("signature_code")
+    payload["module_name"] = "workflow"
+    payload["workflow"] = {
+        "nodes": [
+            {"id": "inp", "kind": "input", "fields": [{"name": "q"}]},
+            {
+                "id": "step",
+                "kind": "signature",
+                "signature_code": (
+                    "class Sig(dspy.Signature):\n    q: str = dspy.InputField()\n    a: str = dspy.OutputField()\n"
+                ),
+            },
+            {"id": "out", "kind": "output", "fields": [{"name": "a"}]},
+        ],
+        "edges": [
+            {"source": "inp", "source_port": "q", "target": "step", "target_port": "q"},
+            {"source": "step", "source_port": "a", "target": "out", "target_port": "a"},
+        ],
+    }
+    return payload
+
+
+def test_submit_workflow_run_returns_201_and_persists_spec(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A workflow submission succeeds without signature_code and stores the graph on the overview."""
+    store = _FakeJobStore()
+    client = _make_client(_FakeService(), store, monkeypatch=monkeypatch)
+
+    resp = client.post("/run", json=_workflow_run_payload())
+
+    assert resp.status_code == 201
+    opt_id = resp.json()["optimization_id"]
+    overview = store._jobs[opt_id]["overview"]
+    assert overview["module_name"] == "workflow"
+    assert overview[PAYLOAD_OVERVIEW_COMPOSITION] == COMPOSITION_WORKFLOW
+    assert overview["workflow"]["nodes"][1]["kind"] == "signature"
+    assert overview["signature_code"] is None

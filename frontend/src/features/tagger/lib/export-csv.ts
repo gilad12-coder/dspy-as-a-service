@@ -1,6 +1,7 @@
-import type { DataRow, Annotation, TaggerConfig } from "./types";
+import { exportTable } from "@/shared/lib/export-table";
+import type { AnnotationProvenance, DataRow, Annotation, TaggerConfig } from "./types";
 
-type ExportFormat = "csv" | "json" | "xlsx" | "xls";
+export type ExportFormat = "csv" | "json" | "xlsx" | "feather" | "parquet";
 
 /** Column the annotation is written under, keyed by tagging mode. */
 function annotationColumn(config: TaggerConfig): string {
@@ -11,15 +12,19 @@ function annotationColumn(config: TaggerConfig): string {
       : "extracted_text";
 }
 
+const PROVENANCE_COL = "label_source";
+
 function buildRows(
   data: DataRow[],
   columns: string[],
   annotations: Record<string, Annotation>,
   config: TaggerConfig,
+  provenance?: Record<string, AnnotationProvenance>,
 ): { allCols: string[]; rows: Array<Record<string, string>> } {
   const annotCol = annotationColumn(config);
 
-  const allCols = [...columns, annotCol];
+  const withProvenance = provenance !== undefined && Object.keys(provenance).length > 0;
+  const allCols = withProvenance ? [...columns, annotCol, PROVENANCE_COL] : [...columns, annotCol];
   const rows: Array<Record<string, string>> = [];
 
   for (const item of data) {
@@ -35,9 +40,14 @@ function buildRows(
       const cats = config.categories ?? [];
       annStr = ann.map((catId) => cats.find((c) => c.id === catId)?.label ?? catId).join("; ");
     } else if (typeof ann === "string") {
-      annStr = ann;
+      // Free-text annotations are stored raw while typing (a trim there would
+      // eat the trailing space mid-word); tidy the edges only at export.
+      annStr = ann.trim();
     }
     row[annotCol] = annStr;
+    if (withProvenance) {
+      row[PROVENANCE_COL] = annStr ? (provenance[String(item.id)] ?? "human") : "";
+    }
     rows.push(row);
   }
 
@@ -80,7 +90,6 @@ async function exportExcel(
   allCols: string[],
   rows: Array<Record<string, string>>,
   filename: string,
-  bookType: "xlsx" | "xlml",
 ) {
   // Lazy-load xlsx (~900KB) so it stays out of the initial tagger-route
   // chunk — only pulled in when an Excel export is actually requested.
@@ -88,12 +97,13 @@ async function exportExcel(
   const ws = XLSX.utils.json_to_sheet(rows, { header: allCols });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Annotations");
-  const buf = XLSX.write(wb, { type: "array", bookType });
-  const mime =
-    bookType === "xlsx"
-      ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      : "application/vnd.ms-excel";
-  download(new Blob([buf], { type: mime }), filename);
+  const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+  download(
+    new Blob([buf], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    filename,
+  );
 }
 
 /**
@@ -107,15 +117,19 @@ export function buildLibraryRows(
   columns: string[],
   annotations: Record<string, Annotation>,
   config: TaggerConfig,
+  provenance?: Record<string, AnnotationProvenance>,
 ): {
   rows: Array<Record<string, string>>;
   columnOrder: string[];
   columnRoles: Record<string, "input" | "output" | "ignore">;
 } {
-  const { allCols, rows } = buildRows(data, columns, annotations, config);
+  const { allCols, rows } = buildRows(data, columns, annotations, config, provenance);
   const annotCol = annotationColumn(config);
   const columnRoles: Record<string, "input" | "output" | "ignore"> = {};
-  for (const col of allCols) columnRoles[col] = col === annotCol ? "output" : "input";
+  for (const col of allCols) {
+    columnRoles[col] =
+      col === annotCol ? "output" : col === PROVENANCE_COL ? "ignore" : "input";
+  }
   return { rows, columnOrder: allCols, columnRoles };
 }
 
@@ -125,9 +139,11 @@ export async function exportAnnotations(
   annotations: Record<string, Annotation>,
   config: TaggerConfig,
   format: ExportFormat,
+  provenance?: Record<string, AnnotationProvenance>,
 ) {
-  const { allCols, rows } = buildRows(data, columns, annotations, config);
-  const base = `tagging_${config.mode}_${new Date().toISOString().slice(0, 10)}`;
+  const { allCols, rows } = buildRows(data, columns, annotations, config, provenance);
+  const stem = `tagging_${config.mode}`;
+  const base = `${stem}_${new Date().toISOString().slice(0, 10)}`;
 
   switch (format) {
     case "csv":
@@ -137,10 +153,13 @@ export async function exportAnnotations(
       exportJSON(rows, `${base}.json`);
       break;
     case "xlsx":
-      await exportExcel(allCols, rows, `${base}.xlsx`, "xlsx");
+      await exportExcel(allCols, rows, `${base}.xlsx`);
       break;
-    case "xls":
-      await exportExcel(allCols, rows, `${base}.xls`, "xlml");
+    case "feather":
+    case "parquet":
+      // Columnar formats reuse the shared writer; it stamps the date onto the
+      // stem itself, so pass the undated stem to avoid a doubled date.
+      await exportTable({ columns: allCols, rows, filename: stem }, format);
       break;
   }
 }

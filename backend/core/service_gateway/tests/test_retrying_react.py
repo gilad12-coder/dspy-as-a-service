@@ -102,6 +102,99 @@ def test_caller_config_preserved(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen_configs[1]["rollout_id"] != seen_configs[0].get("rollout_id")
 
 
+def test_serial_calls_disable_parallelism_except_for_forced_submit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A serial ReAct turn cannot submit before its sibling tool result exists."""
+    pred = RetryingPredict(_Sig, parse_retries=0, serial_tool_calls=True)
+    seen_configs: list[dict] = []
+
+    def capture_config(self: dspy.Predict, **kwargs: object) -> dspy.Prediction:
+        """Record the LM config applied to each inner-loop call."""
+        seen_configs.append(dict(kwargs.get("config") or {}))
+        return dspy.Prediction(answer="ok")
+
+    monkeypatch.setattr(dspy.Predict, "forward", capture_config)
+
+    pred.forward(question="count")
+    pred.forward(
+        question="summarize",
+        config={"tool_choice": {"type": "function", "function": {"name": "submit"}}},
+    )
+
+    assert seen_configs[0]["parallel_tool_calls"] is False
+    assert "parallel_tool_calls" not in seen_configs[1]
+
+
+def test_serial_calls_drop_submit_when_it_races_a_read_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A mixed read-plus-submit prediction continues the loop with the read."""
+    pred = RetryingPredict(_Sig, parse_retries=0, serial_tool_calls=True)
+
+    def mixed_calls(self: dspy.Predict, **kwargs: object) -> dspy.Prediction:
+        """Return the malformed parallel shape observed in production."""
+        return dspy.Prediction(
+            tool_calls=dspy.ToolCalls(
+                tool_calls=[
+                    {"name": "count", "args": {}},
+                    {"name": "submit", "args": {"answer": "Checking now."}},
+                ]
+            )
+        )
+
+    monkeypatch.setattr(dspy.Predict, "forward", mixed_calls)
+
+    out = pred.forward(question="How many?")
+
+    assert [call.name for call in out.tool_calls.tool_calls] == ["count"]
+
+
+def test_serial_react_waits_for_tool_result_before_submit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The next model turn sees the read result and supplies the final answer."""
+    program = RetryingReActV2(
+        _Sig,
+        tools=[_alpha_tool()],
+        max_iters=2,
+        parse_retries=0,
+        serial_tool_calls=True,
+    )
+    predictions = iter(
+        [
+            dspy.Prediction(
+                tool_calls=dspy.ToolCalls(
+                    tool_calls=[
+                        {"name": "alpha", "args": {"x": 3}},
+                        {"name": "submit", "args": {"answer": "Checking now."}},
+                    ]
+                )
+            ),
+            dspy.Prediction(
+                tool_calls=dspy.ToolCalls(
+                    tool_calls=[
+                        {"name": "submit", "args": {"answer": "The count is 3."}},
+                    ]
+                )
+            ),
+        ]
+    )
+    seen_history: list[str] = []
+
+    def scripted_turn(self: dspy.Predict, **kwargs: object) -> dspy.Prediction:
+        """Return the production failure shape, then a result-aware submit."""
+        seen_history.append(str(kwargs.get("history")))
+        return next(predictions)
+
+    monkeypatch.setattr(dspy.Predict, "forward", scripted_turn)
+
+    out = program(question="How many?")
+
+    assert out.answer == "The count is 3."
+    assert "3" in seen_history[1]
+
+
 def test_subclass_swaps_inner_predict_only() -> None:
     """``RetryingReActV2`` re-homes ``react`` onto a retrying Predict, same signature."""
     program = RetryingReActV2(_Sig, tools=[_alpha_tool()], max_iters=2)

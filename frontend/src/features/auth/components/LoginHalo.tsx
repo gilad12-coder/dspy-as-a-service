@@ -2,12 +2,14 @@
 
 import { memo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { dirForLocale } from "@/shared/lib/locale";
+import { getActiveLocale } from "@/shared/lib/runtime-locale";
+import { msg } from "@/shared/lib/messages";
 import { HALO_CARDS, type HaloCard } from "../login-samples";
 
 const EASE_OUT_EXPO = [0.16, 1, 0.3, 1] as const;
 
-// The subset that also frames the login on small portrait screens. Derived once
-// at module load so the component body stays a plain render.
+// The subset that also frames the login on small portrait screens.
 const MOBILE_HALO_CARDS = HALO_CARDS.filter((card) => card.mobilePos);
 
 /**
@@ -22,12 +24,16 @@ function HaloChip({
   card,
   i,
   pos,
+  title,
+  dir,
   wrapperClassName,
   reduce,
 }: {
   card: HaloCard;
   i: number;
   pos: HaloCard["pos"];
+  title: string;
+  dir: "rtl" | "ltr";
   wrapperClassName: string;
   reduce: boolean | null;
 }) {
@@ -44,13 +50,11 @@ function HaloChip({
         initial={reduce ? { opacity: 1 } : { opacity: 0, scale: 0.9, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={
-          reduce
-            ? { duration: 0 }
-            : { duration: 0.7, delay: 0.15 + i * 0.03, ease: EASE_OUT_EXPO }
+          reduce ? { duration: 0 } : { duration: 0.7, delay: 0.15 + i * 0.03, ease: EASE_OUT_EXPO }
         }
       >
         <motion.div
-          dir="rtl"
+          dir={dir}
           className="flex w-max max-w-[14rem] items-center rounded-xl border border-border/50 bg-card px-3 py-2 shadow-[0_8px_24px_-14px_rgba(28,22,18,0.28)]"
           animate={
             reduce
@@ -66,17 +70,25 @@ function HaloChip({
               ? { duration: 0 }
               : {
                   y: { duration: dur, repeat: Infinity, ease: "easeInOut", delay: fdelay },
-                  x: { duration: dur * 1.5, repeat: Infinity, ease: "easeInOut", delay: fdelay * 0.6 },
-                  rotate: { duration: dur * 1.25, repeat: Infinity, ease: "easeInOut", delay: fdelay },
+                  x: {
+                    duration: dur * 1.5,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: fdelay * 0.6,
+                  },
+                  rotate: {
+                    duration: dur * 1.25,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: fdelay,
+                  },
                 }
           }
           whileHover={
             reduce ? undefined : { scale: 1.1, transition: { duration: 0.35, ease: EASE_OUT_EXPO } }
           }
         >
-          <span className="truncate text-[0.72rem] font-medium text-foreground/85">
-            {card.title}
-          </span>
+          <span className="truncate text-[0.72rem] font-medium text-foreground/85">{title}</span>
         </motion.div>
       </motion.div>
     </div>
@@ -101,6 +113,7 @@ function HaloChip({
  */
 function LoginHaloImpl() {
   const reduce = useReducedMotion();
+  const dir = dirForLocale(getActiveLocale());
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
@@ -110,6 +123,8 @@ function LoginHaloImpl() {
           card={card}
           i={i}
           pos={card.pos}
+          title={msg(card.key)}
+          dir={dir}
           wrapperClassName="absolute hidden md:[@media(min-height:640px)]:block"
           reduce={reduce}
         />
@@ -120,6 +135,8 @@ function LoginHaloImpl() {
           card={card}
           i={i}
           pos={card.mobilePos!}
+          title={msg(card.key)}
+          dir={dir}
           wrapperClassName="absolute md:hidden landscape:hidden"
           reduce={reduce}
         />

@@ -17,8 +17,9 @@ Two distinct modes share this module:
   call so the UI can render a tool-call card and swap the code atomically.
 
 The agent runs on whatever LiteLLM-compatible model is configured via
-``settings.code_agent_model`` (default: ``openrouter/minimax/minimax-m3``). Users can
-point it at an internal gateway via ``CODE_AGENT_BASE_URL``.
+``settings.code_agent_model`` (default: ``openrouter/openrouter/auto-beta``,
+OpenRouter's Auto Router). Users can point it at an internal gateway via
+``CODE_AGENT_BASE_URL``.
 """
 
 from __future__ import annotations
@@ -33,14 +34,21 @@ from typing import Any
 
 import dspy
 import jiter
+from pydantic import ValidationError
 
 from ...config import settings
 from ...exceptions import ServiceError
-from ...models import ModelConfig
-from ..language_models import build_language_model
-from ..react_compat import REACT_CLASS, react_uses_submit
+from ...models import ModelConfig, WorkflowSpec
+from ..language_models import (
+    apply_model_reasoning_config,
+    apply_reasoning_effort,
+    build_language_model,
+    served_model_from,
+)
+from ..react_compat import REACT_CLASS, native_tool_calling_active, react_uses_submit
 from ..safe_exec import validate_metric_code, validate_signature_code
 from .constants import REASONING_FIELD
+from .parse_salvage import strip_adapter_debris
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +76,57 @@ def _format_agent_error(exc: BaseException) -> str:
     if "Cannot connect to host" in text or "nodename nor servname" in text:
         return "Can't reach the model provider. Check your network and try again."
     return f"{name}: {text}" if name not in text else text
+
+
+# Provider phrasings for a prompt that overflowed the model's context window;
+# matched case-insensitively across the exception chain because the overflow
+# often surfaces as a plain provider 400 rather than litellm's typed error.
+_CONTEXT_OVERFLOW_PATTERNS = (
+    "context window",
+    "context length",
+    "context_length_exceeded",
+    "prompt is too long",
+    "input is too long",
+    "too many tokens",
+    "maximum prompt length",
+)
+
+
+def _agent_error_payload(exc: BaseException) -> dict[str, str]:
+    """Build the ``error`` SSE event data for an agent failure.
+
+    Alongside the human-readable text, attaches a stable machine ``code`` the
+    frontend maps to a localized message. Currently classified:
+    ``context_too_long`` — the turn overflowed the model's context window
+    (litellm's ``ContextWindowExceededError`` or an equivalent provider
+    message anywhere in the exception chain).
+
+    Args:
+        exc: The exception (possibly a ``BaseExceptionGroup``) raised by the agent.
+
+    Returns:
+        Event data with ``error`` text and, when classified, a ``code``.
+    """
+    payload = {"error": _format_agent_error(exc)}
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    while stack:
+        leaf = stack.pop()
+        if id(leaf) in seen:
+            continue
+        seen.add(id(leaf))
+        text = str(leaf).lower()
+        if type(leaf).__name__ == "ContextWindowExceededError" or any(
+            pattern in text for pattern in _CONTEXT_OVERFLOW_PATTERNS
+        ):
+            payload["code"] = "context_too_long"
+            break
+        if isinstance(leaf, BaseExceptionGroup):
+            stack.extend(leaf.exceptions)
+        stack.extend(
+            linked for linked in (leaf.__cause__, leaf.__context__) if linked is not None
+        )
+    return payload
 
 
 def _validate_signature_code(code: str) -> str:
@@ -104,6 +163,69 @@ def _validate_metric_code(code: str) -> str:
     except Exception as exc:
         return f"metric error: {exc}"
     return ""
+
+
+def _strip_json_fences(text: str) -> str:
+    """Remove a wrapping markdown code fence from model-emitted JSON, if present.
+
+    Args:
+        text: Raw model output that should be a JSON object.
+
+    Returns:
+        The inner JSON text with any ```json fence removed.
+    """
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.split("\n", 1)[1] if "\n" in stripped else ""
+        if stripped.rstrip().endswith("```"):
+            stripped = stripped.rstrip()[:-3]
+    return stripped.strip()
+
+
+def _validate_workflow_dict(spec_dict: dict) -> str:
+    """Validate a workflow spec dict structurally plus per-node signature code.
+
+    Runs the same exec-free ``WorkflowSpec`` pass submit runs, then
+    smoke-tests every signature node's code in the safe-exec subprocess
+    (memoized, so repeated checks of unchanged nodes are free).
+
+    Args:
+        spec_dict: The candidate workflow graph as a plain dict.
+
+    Returns:
+        An empty string when the graph validates, otherwise a short error
+        message naming the offending node where possible.
+    """
+    try:
+        spec = WorkflowSpec.model_validate(spec_dict)
+    except ValidationError as exc:
+        first = exc.errors()[0] if exc.errors() else {}
+        return str(first.get("msg", exc)).removeprefix("Value error, ")
+    for node in spec.nodes:
+        if node.kind == "signature":
+            err = _validate_signature_code(node.signature_code)
+            if err:
+                return f"Node '{node.id}': {err}"
+    return ""
+
+
+def _parse_workflow_json(text: str) -> tuple[dict | None, str]:
+    """Parse model-emitted workflow JSON into a dict.
+
+    Args:
+        text: Raw model output expected to contain the graph JSON.
+
+    Returns:
+        ``(spec_dict, "")`` on success or ``(None, error)`` when the text is
+        not a JSON object.
+    """
+    try:
+        parsed = json.loads(_strip_json_fences(text))
+    except (json.JSONDecodeError, ValueError) as exc:
+        return None, f"workflow JSON does not parse: {exc}"
+    if not isinstance(parsed, dict):
+        return None, "workflow JSON must be a single object with 'nodes' and 'edges'."
+    return parsed, ""
 
 
 class GenerateSignatureCode(dspy.Signature):
@@ -217,6 +339,13 @@ class GenerateSignatureCode(dspy.Signature):
             "appear as URLs or base64 data URIs."
         ),
     )
+    authoring_brief: str = dspy.InputField(
+        desc=(
+            "Directives distilled from an interview with the dataset owner. "
+            "Every directive MUST be honored in the docstring and field "
+            "descs; empty when no interview happened."
+        ),
+    )
 
     signature_code: str = dspy.OutputField(
         desc=(
@@ -292,8 +421,27 @@ class GenerateMetricCode(dspy.Signature):
     * **Structured JSON** — parse and compare field-by-field.
 
     If the signature has MULTIPLE output fields, compute a per-field
-    sub-score, average into the final score, AND include every field's
-    verdict in the feedback so GEPA sees which component failed.
+    sub-score, average into the final score, log each sub-score via
+    ``log_metrics`` (below), AND include every field's verdict in the
+    feedback so GEPA sees which component failed.
+
+    ## Named component scores — log_metrics
+
+    A global ``log_metrics(**scores)`` is available inside the metric
+    (no import needed). It reports the components hiding behind the
+    single scalar — each name is averaged across the test set and shown
+    on the run result next to the overall score:
+
+        ``log_metrics(precision=p, recall=r, f1=f1)``
+
+    * Log whenever the scalar is a composite: precision / recall / F1
+      for classification, per-field sub-scores on multi-output
+      signatures, partial-credit components.
+    * Use a FIXED, small set of snake_case names (at most 20 distinct
+      names); values must be finite numbers. Never derive a name from
+      example content.
+    * ``log_metrics`` only reports — it never changes the score you
+      return.
 
     ## Keep it concise
 
@@ -366,6 +514,13 @@ class GenerateMetricCode(dspy.Signature):
             "Image cells appear as URLs or base64 data URIs."
         ),
     )
+    authoring_brief: str = dspy.InputField(
+        desc=(
+            "Directives distilled from an interview with the dataset owner. "
+            "Every directive about scoring, strictness or feedback MUST be "
+            "honored; empty when no interview happened."
+        ),
+    )
 
     metric_code: str = dspy.OutputField(
         desc=(
@@ -380,14 +535,51 @@ class GenerateMetricCode(dspy.Signature):
     )
 
 
-class GenerateSeedMessage(dspy.Signature):
-    """Write a short Hebrew chat reply describing what was generated.
+_LOCALE_LANGUAGE_NAMES = {
+    "ar": "Arabic",
+    "de": "German",
+    "en": "English",
+    "es": "Spanish",
+    "fa": "Persian",
+    "fr": "French",
+    "he": "Hebrew",
+    "hi": "Hindi",
+    "it": "Italian",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "tr": "Turkish",
+    "uk": "Ukrainian",
+    "yue": "Cantonese",
+    "zh": "Chinese",
+}
 
-    Respond in one or two short, friendly Hebrew sentences explaining what
-    the Signature and Metric actually do, grounded in the code just
-    produced. No code, no markdown, no English. Addressed to a
-    non-technical user. Keep the terms ``Signature`` and ``Metric`` in
-    English (they are product terms); everything else must be Hebrew.
+
+def _reply_language(locale: str | None) -> str:
+    """Resolve a UI locale code to the language name the agent replies in.
+
+    Args:
+        locale: UI locale code sent by the client (e.g. ``he``, ``en-GB``,
+            ``zh-Hans``), or None when the client sent none.
+
+    Returns:
+        An English language name (e.g. ``"Hebrew"``). Unknown or missing
+        locales fall back to Hebrew, the product's base language.
+    """
+    primary = (locale or "").split("-", 1)[0].strip().lower()
+    return _LOCALE_LANGUAGE_NAMES.get(primary, "Hebrew")
+
+
+class GenerateSeedMessage(dspy.Signature):
+    """Write a short chat reply describing what was generated.
+
+    Respond in one or two short, friendly sentences — written in the
+    language named by ``reply_language`` — explaining what the Signature
+    and Metric actually do, grounded in the code just produced. No code,
+    no markdown. Addressed to a non-technical user. Keep the terms
+    ``Signature`` and ``Metric`` in English (they are product terms);
+    everything else must be in the reply language.
     """
 
     dataset_columns: list[str] = dspy.InputField(desc="Every column name in the dataset.")
@@ -402,13 +594,145 @@ class GenerateSeedMessage(dspy.Signature):
     )
     signature_code: str = dspy.InputField(desc="The Signature code just produced.")
     metric_code: str = dspy.InputField(desc="The metric code just produced.")
+    reply_language: str = dspy.InputField(
+        desc="Language to write the reply in (the product UI language).",
+    )
 
     assistant_message: str = dspy.OutputField(
         desc=(
-            "One or two short Hebrew sentences for the user. No code, no "
-            "markdown, no English (except the product terms ``Signature`` "
-            "and ``Metric``, which stay in English)."
+            "One or two short sentences for the user, written in "
+            "reply_language. No code, no markdown; only the product terms "
+            "``Signature`` and ``Metric`` stay in English."
         ),
+    )
+
+
+_WORKFLOW_JSON_SCHEMA_DOC = """
+    The workflow JSON has this exact shape:
+
+    {"nodes": [...], "edges": [...]}
+
+    Node kinds (discriminated by "kind"):
+    * {"id": "input", "kind": "input", "fields": [{"name": "<field>"}]}
+      — EXACTLY ONE. Its fields are the dataset's input columns.
+    * {"id": "output", "kind": "output", "fields": [{"name": "<field>"}]}
+      — EXACTLY ONE. Its fields are the dataset's output columns.
+    * {"id": "<id>", "kind": "signature", "module_name": "predict"|"cot",
+       "signature_code": "<full dspy.Signature class source>"}
+      — an LLM step. The class's InputField/OutputField names are its ports.
+    * {"id": "<id>", "kind": "transform", "transform_code":
+       "def transform(<inputs>): return {<outputs>}",
+       "input_fields": [{"name": ...}], "output_fields": [{"name": ...}]}
+      — a pure-Python reshaping step. The function's parameter names MUST
+      equal input_fields exactly; it must return a dict with exactly the
+      output_fields keys.
+
+    Edges: {"source": "<node id>", "source_port": "<output field>",
+            "target": "<node id>", "target_port": "<input field>"}.
+
+    Hard rules:
+    * Node ids and field names: Python identifiers (letters/digits/_).
+    * Every input port of every node must be fed by exactly one edge.
+    * Every output-anchor field must be fed.
+    * The graph must be acyclic and every node on a path input → output.
+    * NEVER emit "mcp" tool nodes — the user wires tools manually.
+    * Only ``dspy`` is importable inside signature_code / transform_code.
+"""
+
+
+class GenerateWorkflowGraph(dspy.Signature):
+    """Design a multi-step DSPy workflow graph for the dataset's task.
+
+    Decide the pipeline shape from the data: a single signature node is
+    correct for simple input→output tasks; use two or three signature
+    steps (draft → refine, extract → compose, ...) only when decomposition
+    plausibly improves quality; add a transform node only when outputs
+    genuinely need Python reshaping between steps. Prefer the simplest
+    graph that fits the task — never pad the graph to look sophisticated.
+
+    Every signature node's code follows the same craft rules as a
+    standalone Signature: the class docstring is the step's task
+    instruction, ``desc=`` on each field is that field's hint, and the
+    final step's OutputFields must produce the dataset's output columns
+    with EXACTLY those (sanitized) names.
+    """
+
+    __doc__ = (__doc__ or "") + _WORKFLOW_JSON_SCHEMA_DOC
+
+    dataset_columns: list[str] = dspy.InputField(desc="Every column name in the dataset.")
+    column_roles: str = dspy.InputField(
+        desc="JSON object mapping column name → 'input' | 'output' | 'ignore'.",
+    )
+    column_kinds: str = dspy.InputField(
+        desc="JSON object mapping input-column name → 'text' | 'image'.",
+    )
+    sample_rows: str = dspy.InputField(
+        desc="JSON array of up to 5 representative rows from the dataset.",
+    )
+    authoring_brief: str = dspy.InputField(
+        desc=(
+            "Directives distilled from an interview with the dataset owner. "
+            "Every directive MUST be honored across the graph's steps; "
+            "empty when no interview happened."
+        ),
+    )
+
+    workflow_json: str = dspy.OutputField(
+        desc=(
+            "The complete workflow graph as a single JSON object "
+            '({"nodes": [...], "edges": [...]}). RAW JSON only — no '
+            "markdown fences, no commentary."
+        ),
+    )
+
+
+class GenerateWorkflowSeedMessage(dspy.Signature):
+    """Write a short chat reply describing the drafted workflow.
+
+    Respond in one to three short, friendly sentences — written in the
+    language named by ``reply_language`` — explaining the pipeline that
+    was just drafted: name what each step does and what the Metric scores,
+    grounded in the actual graph. No code, no markdown. Keep the terms
+    ``Signature``, ``Metric`` and ``Workflow`` in English (product terms);
+    everything else must be in the reply language.
+    """
+
+    workflow_json: str = dspy.InputField(desc="The workflow graph JSON just produced.")
+    metric_code: str = dspy.InputField(desc="The metric code just produced.")
+    reply_language: str = dspy.InputField(
+        desc="Language to write the reply in (the product UI language).",
+    )
+
+    assistant_message: str = dspy.OutputField(
+        desc=(
+            "One to three short sentences for the user, written in "
+            "reply_language. No code, no markdown; only the product terms "
+            "Signature, Metric and Workflow stay in English."
+        ),
+    )
+
+
+class FixWorkflowGraph(dspy.Signature):
+    """Repair a workflow graph JSON that failed validation.
+
+    You are given a workflow graph that does NOT pass validation, together
+    with the exact validator error. Return the corrected full JSON with the
+    SAME intent — make the smallest change that resolves the error (fix an
+    id, add a missing edge, rename a port, fix a signature class). Output
+    ONLY the raw JSON: no markdown fences, no commentary.
+    """
+
+    __doc__ = (__doc__ or "") + _WORKFLOW_JSON_SCHEMA_DOC
+
+    broken_workflow_json: str = dspy.InputField(desc="The current graph JSON that failed validation.")
+    validation_error: str = dspy.InputField(desc="The validator's error message to resolve.")
+    dataset_columns: list[str] = dspy.InputField(desc="Every column name in the dataset.")
+    column_roles: str = dspy.InputField(
+        desc="JSON object mapping column name → 'input' | 'output' | 'ignore'.",
+    )
+
+    fixed_workflow_json: str = dspy.OutputField(
+        desc="The corrected full workflow JSON. No markdown fences, no prose.",
     )
 
 
@@ -505,11 +829,12 @@ class CodeAssistant(dspy.Signature):
 
     ## Reply format
 
-    Reply in Hebrew by default — the product UI is Hebrew. Switch to the
-    user's language ONLY if their latest message is clearly in another
-    language. Keep product terms like ``Signature``, ``Metric``,
-    ``InputField``, ``OutputField`` in English; prose around them is
-    Hebrew. Plain prose. No markdown headings, no bullet lists, no code
+    Write the reply in the language named by ``reply_language`` — that is
+    the product's configured UI language. Switch to the user's language
+    ONLY if their latest message is clearly in another language. Keep
+    product terms like ``Signature``, ``Metric``, ``InputField``,
+    ``OutputField`` in English; the prose around them follows the reply
+    language. Plain prose. No markdown headings, no bullet lists, no code
     fences. 2-5 sentences for explanations, 1-2 for confirmations.
 
     When you DO edit, pass the COMPLETE replacement file body — not a
@@ -568,6 +893,12 @@ class CodeAssistant(dspy.Signature):
     chat_history: str = dspy.InputField(
         desc="Prior conversation turns as a JSON list of {role, content} objects.",
     )
+    reply_language: str = dspy.InputField(
+        desc=(
+            "Language for user-facing prose (the product UI language). "
+            "Both ``reply`` and every tool ``reason`` are written in it."
+        ),
+    )
     user_message: str = dspy.InputField(desc="The user's latest message.")
 
     reply: str = dspy.OutputField(
@@ -575,12 +906,110 @@ class CodeAssistant(dspy.Signature):
             "Reply to the user. For questions/explanations, ground it in "
             "the literal current_signature / current_metric code — name "
             "the fields and quote the comparison. 2-5 sentences. For "
-            "edit confirmations, 1-2 sentences. Hebrew by default (the "
-            "product UI is Hebrew); mirror the user's language only if "
-            "their message is clearly in another language. Keep product "
-            "terms (Signature, Metric, InputField, OutputField, Python "
-            "identifiers) in English. Plain prose, no markdown, no code "
-            "fences."
+            "edit confirmations, 1-2 sentences. Written in reply_language; "
+            "mirror the user's language only if their message is clearly "
+            "in another language. Keep product terms (Signature, Metric, "
+            "InputField, OutputField, Python identifiers) in English. "
+            "Plain prose, no markdown, no code fences."
+        ),
+    )
+
+
+class WorkflowAssistant(dspy.Signature):
+    """Chat assistant attached to a visual DSPy workflow-graph editor.
+
+    The user is building a multi-step pipeline on a canvas: an input node,
+    signature (LLM) steps, optional Python transform steps, optional tool
+    nodes, and an output node, wired by edges. One end-to-end Metric
+    scores the final output.
+
+    ## Your tools
+
+    * ``add_node(reason, node_json)`` — add a signature/transform node.
+    * ``update_node(reason, node_id, node_json)`` — replace a node's spec
+      (same id, same kind; anchors may only change their fields).
+    * ``remove_node(reason, node_id)`` — delete a non-anchor node and its edges.
+    * ``connect(reason, source, source_port, target, target_port)`` — add an edge.
+    * ``disconnect(reason, source, source_port, target, target_port)`` — remove an edge.
+    * ``edit_metric(reason, new_code)`` — REWRITE the end-to-end metric.
+    * ``finish`` — end the turn and answer in ``reply``.
+
+    ## Rule 1: Default to ``finish``. Editing is the exception.
+
+    Use tools ONLY when the user's latest message directly instructs a
+    CHANGE to the graph or the metric. For questions, explanations,
+    critique, or small talk, call ``finish`` and answer in ``reply``.
+
+    ## Rule 2: Leave the graph VALID before finishing.
+
+    After your edits, every input port must be fed, every output-anchor
+    field must be fed, and the graph must stay acyclic and connected.
+    Tool observations report the remaining structural issues after each
+    edit — resolve ALL of them (usually by adding the right edges) before
+    calling ``finish``. A typical "add a step between A and B" needs:
+    disconnect A→B, add_node, connect A→new, connect new→B.
+
+    ## Rule 3: Ground every reply in the actual graph.
+
+    Reference nodes by their ids, name the fields, and describe what each
+    step literally does per its signature_code. To revert, rebuild the
+    graph from ``initial_workflow`` using the tools.
+
+    ## Reply format
+
+    Write the reply in the language named by ``reply_language`` — that is
+    the product's configured UI language. Switch to the user's language
+    ONLY if their latest message is clearly in another language. Keep
+    product terms (Signature, Metric, Workflow, node ids, field names) in
+    English. Plain prose, no markdown, no code fences. 2-5 sentences for
+    explanations, 1-2 for edit confirmations.
+    """
+
+    __doc__ = (__doc__ or "") + _WORKFLOW_JSON_SCHEMA_DOC
+
+    dataset_columns: list[str] = dspy.InputField(desc="Every column name in the dataset.")
+    column_roles: str = dspy.InputField(
+        desc="JSON object mapping column name → 'input' | 'output' | 'ignore'.",
+    )
+    sample_rows: str = dspy.InputField(
+        desc="JSON array of up to 5 representative rows from the dataset.",
+    )
+    current_workflow: str = dspy.InputField(
+        desc="The workflow graph currently on the canvas, as JSON. Reference its node ids in your reply.",
+    )
+    current_metric: str = dspy.InputField(
+        desc="The end-to-end metric function currently in the editor.",
+    )
+    current_workflow_validation: str = dspy.InputField(
+        desc=(
+            "Latest validator output for current_workflow. 'OK' means the "
+            "graph is structurally valid. Non-empty error text means it is "
+            "broken — if the user asks for changes, fix these too."
+        ),
+    )
+    initial_workflow: str = dspy.InputField(
+        desc=(
+            "The ORIGINAL graph JSON before any edits this conversation. "
+            "Rebuild from it (via the tools) when the user asks to revert."
+        ),
+    )
+    chat_history: str = dspy.InputField(
+        desc="Prior conversation turns as a JSON list of {role, content} objects.",
+    )
+    reply_language: str = dspy.InputField(
+        desc=(
+            "Language for user-facing prose (the product UI language). "
+            "Both ``reply`` and every tool ``reason`` are written in it."
+        ),
+    )
+    user_message: str = dspy.InputField(desc="The user's latest message.")
+
+    reply: str = dspy.OutputField(
+        desc=(
+            "Reply to the user, grounded in the literal graph — name node "
+            "ids and fields. Written in reply_language; mirror the user's "
+            "language only if clearly different. Product terms stay in "
+            "English. Plain prose, no markdown. 2-5 sentences."
         ),
     )
 
@@ -588,11 +1017,14 @@ class CodeAssistant(dspy.Signature):
 def _extract_reasoning_token(chunk: object) -> str | None:
     """Pull a thinking/reasoning token from a raw LiteLLM streaming chunk.
 
-    Handles both conventions in the wild:
+    Handles the conventions in the wild:
       - LiteLLM-normalized: ``delta.reasoning_content`` (string). Emitted by
         Fireworks, DeepSeek, OpenAI o-series, and most reasoning providers.
-      - Native MiniMax with ``reasoning_split=true``: ``delta.reasoning_details``
-        (list of ``{"text": "..."}`` blocks).
+      - OpenRouter passthrough: ``delta.reasoning`` (string) on responses that
+        skip LiteLLM's normalization (direct/BYOK OpenRouter calls).
+      - Detail blocks: ``delta.reasoning_details`` — MiniMax ``reasoning_split``
+        and OpenRouter both use it; blocks carry ``text`` (``reasoning.text``)
+        or ``summary`` (``reasoning.summary``, OpenAI-style summarized CoT).
 
     Args:
         chunk: A streaming chunk object from LiteLLM.
@@ -609,11 +1041,17 @@ def _extract_reasoning_token(chunk: object) -> str | None:
     content = getattr(delta, "reasoning_content", None)
     if isinstance(content, str) and content:
         return content
+    plain = getattr(delta, "reasoning", None)
+    if isinstance(plain, str) and plain:
+        return plain
     details = getattr(delta, "reasoning_details", None)
     if isinstance(details, list) and details:
         parts: list[str] = []
         for block in details:
-            text = block.get("text") if isinstance(block, dict) else getattr(block, "text", None)
+            if isinstance(block, dict):
+                text = block.get("text") or block.get("summary")
+            else:
+                text = getattr(block, "text", None) or getattr(block, "summary", None)
             if isinstance(text, str) and text:
                 parts.append(text)
         if parts:
@@ -640,23 +1078,27 @@ class _SubmitArgExtractor:
     loop iteration starts with a clean accumulator.
     """
 
-    def __init__(self, target_arg: str):
+    def __init__(self, target_arg: str, *, exclusive_submit: bool = False):
         """Bind the extractor to a specific submit argument name.
 
         Args:
             target_arg: Name of the ``submit`` arg to extract — e.g.
                 ``assistant_message`` for the generalist agent or
                 ``reply`` for the code agent.
+            exclusive_submit: Buffer until the field ends and suppress the
+                reply when submit appeared beside a non-submit tool.
         """
         self._target_arg = target_arg
+        self._exclusive_submit = exclusive_submit
         self._buffer = ""
         self._emitted_chars = 0
 
-    def feed(self, chunk: str) -> str | None:
+    def feed(self, chunk: str, *, final: bool = False) -> str | None:
         """Append a chunk and return the newly streamed slice of the target arg.
 
         Args:
             chunk: Latest streaming chunk from the ``tool_calls`` listener.
+            final: Whether this is the field's terminal chunk.
 
         Returns:
             The new characters of ``args[target_arg]`` since the last
@@ -666,6 +1108,8 @@ class _SubmitArgExtractor:
         if not chunk:
             return None
         self._buffer += chunk
+        if self._exclusive_submit and not final:
+            return None
         try:
             parsed = jiter.from_json(
                 self._buffer.encode("utf-8"),
@@ -677,6 +1121,10 @@ class _SubmitArgExtractor:
             return None
         tool_calls = parsed.get("tool_calls")
         if not isinstance(tool_calls, list):
+            return None
+        if self._exclusive_submit and any(
+            isinstance(call, dict) and call.get("name") != "submit" for call in tool_calls
+        ):
             return None
         for call in tool_calls:
             if not isinstance(call, dict) or call.get("name") != "submit":
@@ -693,6 +1141,68 @@ class _SubmitArgExtractor:
             self._emitted_chars = len(value)
             return delta
         return None
+
+    def reset(self) -> None:
+        """Drop accumulated state between ReAct loop iterations."""
+        self._buffer = ""
+        self._emitted_chars = 0
+
+
+class _NativeSubmitArgExtractor:
+    """Recover token-level streaming of a submit argument under native function calling.
+
+    Sibling of :class:`_SubmitArgExtractor` for the native path. When native
+    function calling is active the provider streams the ``submit`` tool's
+    arguments directly — raw JSON of the shape ``{<arg>: "..."}`` — without
+    DSPy's ``{"tool_calls": [{"name": ..., "args": ...}]}`` text envelope. The
+    incremental-emit machinery is identical; only the JSON shape differs, so
+    this navigates ``parsed[target_arg]`` rather than the nested envelope.
+
+    One instance per agent turn; call ``reset`` between loop iterations.
+    """
+
+    def __init__(self, target_arg: str):
+        """Bind the extractor to a specific submit argument name.
+
+        Args:
+            target_arg: Name of the ``submit`` arg to extract — e.g. ``reply``
+                for the code agent or ``assistant_message`` for the generalist.
+        """
+        self._target_arg = target_arg
+        self._buffer = ""
+        self._emitted_chars = 0
+
+    def feed(self, chunk: str) -> str | None:
+        """Append a chunk and return the newly streamed slice of the target arg.
+
+        Args:
+            chunk: Latest fragment of the submit call's ``arguments`` JSON.
+
+        Returns:
+            The new characters of ``parsed[target_arg]`` since the last
+            successful feed, or ``None`` when the partial JSON has not yet
+            exposed any additional content for the target arg.
+        """
+        if not chunk:
+            return None
+        self._buffer += chunk
+        try:
+            parsed = jiter.from_json(
+                self._buffer.encode("utf-8"),
+                partial_mode="trailing-strings",
+            )
+        except ValueError:
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        value = parsed.get(self._target_arg)
+        if not isinstance(value, str):
+            return None
+        if len(value) <= self._emitted_chars:
+            return None
+        delta = value[self._emitted_chars :]
+        self._emitted_chars = len(value)
+        return delta
 
     def reset(self) -> None:
         """Drop accumulated state between ReAct loop iterations."""
@@ -761,6 +1271,124 @@ class ReasoningStreamListener(dspy.streaming.StreamListener):
         return
 
 
+class NativeToolCallStreamListener(dspy.streaming.StreamListener):
+    """StreamListener that harvests a native ``submit`` tool call's arguments.
+
+    When native function calling is active, ReActV2's inner predict emits its
+    tool calls through the provider API rather than as text in the ``tool_calls``
+    field, so DSPy's built-in listener — which reads only ``delta.content`` —
+    never sees them. This subclass reads the raw ``delta.tool_calls`` deltas,
+    tracks the call index whose function name is ``submit``, and re-emits that
+    call's streaming ``arguments`` JSON as synthetic ``StreamResponse`` events
+    on the ``tool_calls`` field. It emits on the same field name the text path
+    uses so the reply bridge routes both paths identically; the arguments there
+    are the bare ``{<arg>: ...}`` object that :class:`_NativeSubmitArgExtractor`
+    decodes. Parallel non-submit tool calls stream on other indices and are
+    ignored — they execute, they are not the reply.
+
+    ``allow_reuse=True`` is required because the inner predict fires once per
+    ReAct loop iteration; per-turn index tracking is reset when a turn's
+    ``finish_reason`` arrives.
+    """
+
+    def __init__(self, predict: dspy.Predict, allow_reuse: bool = True):
+        """Bind the listener to a specific Predict and mark the tool_calls field.
+
+        Args:
+            predict: The :class:`dspy.Predict` (ReAct's inner loop predictor)
+                whose native tool-call deltas should be intercepted.
+            allow_reuse: Whether the listener can fire more than once (required
+                for ReAct's inner predict, which fires per loop iteration).
+        """
+        super().__init__(
+            signature_field_name="tool_calls",
+            predict=predict,
+            allow_reuse=allow_reuse,
+        )
+        self.predict_name = "tool_calls"
+        self._submit_index: int | None = None
+        self._pending: dict[int, str] = {}
+
+    def _consume_tool_calls(self, tool_calls: list) -> str | None:
+        """Pull the submit call's newest ``arguments`` fragment from a delta's tool calls.
+
+        Args:
+            tool_calls: The ``delta.tool_calls`` list from one streaming chunk —
+                objects carrying ``index``, ``function.name`` and streaming
+                ``function.arguments`` fragments.
+
+        Returns:
+            The concatenated new ``arguments`` text for the submit call in this
+            delta, or ``None`` when the delta contributes nothing to it. Args
+            arriving before the submit index is known are buffered per index and
+            flushed once that index reveals the ``submit`` name.
+        """
+        out: list[str] = []
+        for call in tool_calls:
+            index = getattr(call, "index", None)
+            function = getattr(call, "function", None)
+            name = getattr(function, "name", None) if function is not None else None
+            args = getattr(function, "arguments", None) if function is not None else None
+            if name == "submit":
+                self._submit_index = index
+                buffered = self._pending.pop(index, "")
+                if buffered:
+                    out.append(buffered)
+            if args:
+                if index == self._submit_index:
+                    out.append(args)
+                elif self._submit_index is None and index is not None:
+                    self._pending[index] = self._pending.get(index, "") + args
+        return "".join(out) if out else None
+
+    def receive(self, chunk: object) -> dspy.streaming.StreamResponse | None:
+        """Extract the submit call's argument delta from a LiteLLM chunk.
+
+        Args:
+            chunk: A raw LiteLLM streaming chunk.
+
+        Returns:
+            A synthetic :class:`dspy.streaming.StreamResponse` on the
+            ``tool_calls`` field carrying the submit call's newest ``arguments``
+            text, marked ``is_last_chunk`` when the turn's ``finish_reason``
+            arrives (so the reply bridge resets between loop iterations), or
+            ``None`` when the chunk carries nothing for the submit call.
+        """
+        try:
+            choice = chunk.choices[0]
+        except (AttributeError, IndexError, TypeError):
+            return None
+        delta = getattr(choice, "delta", None)
+        tool_calls = getattr(delta, "tool_calls", None) if delta is not None else None
+        emitted = self._consume_tool_calls(tool_calls) if tool_calls else None
+        if getattr(choice, "finish_reason", None):
+            terminal = dspy.streaming.StreamResponse(
+                predict_name=self.predict_name,
+                signature_field_name="tool_calls",
+                chunk=emitted or "",
+                is_last_chunk=True,
+            )
+            self._submit_index = None
+            self._pending = {}
+            return terminal
+        if emitted:
+            return dspy.streaming.StreamResponse(
+                predict_name=self.predict_name,
+                signature_field_name="tool_calls",
+                chunk=emitted,
+                is_last_chunk=False,
+            )
+        return None
+
+    def finalize(self) -> None:
+        """No-op — the reply's terminal chunk rides the turn's finish_reason.
+
+        Kept explicit so the listener satisfies the streamer's aggregator
+        protocol alongside peers that emit a final summary.
+        """
+        return
+
+
 class ReactReplyStream:
     """Bridge the V2-vs-classic difference in how a ReAct program streams its reply.
 
@@ -782,19 +1410,36 @@ class ReactReplyStream:
         self._program = program
         self._reply_field = reply_field
         self._uses_submit = react_uses_submit(program)
+        self._native = self._uses_submit and native_tool_calling_active()
         self._stream_field = "tool_calls" if self._uses_submit else reply_field
-        self._extractor = _SubmitArgExtractor(reply_field) if self._uses_submit else None
+        if not self._uses_submit:
+            self._extractor = None
+        elif self._native:
+            self._extractor = _NativeSubmitArgExtractor(reply_field)
+        else:
+            self._extractor = _SubmitArgExtractor(
+                reply_field,
+                exclusive_submit=bool(getattr(self._program.react, "_serial_tool_calls", False)),
+            )
 
     def listeners(self) -> list[dspy.streaming.StreamListener]:
         """Return the reply + reasoning stream listeners for this program.
 
         Returns:
-            On ReActV2: a ``tool_calls`` listener bound to the reused inner
-            predictor. On classic ReAct: a listener that auto-resolves the reply
-            field onto the ``extract`` predictor (the only one declaring it).
-            Both carry the same reasoning listener on the loop predictor.
+            On ReActV2 with native function calling: a
+            :class:`NativeToolCallStreamListener` reading the provider's
+            ``tool_calls`` deltas. On ReActV2 with the text protocol: a built-in
+            ``tool_calls`` listener bound to the reused inner predictor. On
+            classic ReAct: a listener that auto-resolves the reply field onto the
+            ``extract`` predictor (the only one declaring it). All carry the same
+            reasoning listener on the loop predictor.
         """
-        if self._uses_submit:
+        if self._native:
+            reply_listener: dspy.streaming.StreamListener = NativeToolCallStreamListener(
+                predict=self._program.react,
+                allow_reuse=True,
+            )
+        elif self._uses_submit:
             reply_listener = dspy.streaming.StreamListener(
                 signature_field_name="tool_calls",
                 predict=self._program.react,
@@ -826,15 +1471,34 @@ class ReactReplyStream:
         if chunk.signature_field_name != self._stream_field:
             return None
         if self._extractor is not None:
-            delta = self._extractor.feed(chunk.chunk)
+            if isinstance(self._extractor, _SubmitArgExtractor):
+                delta = self._extractor.feed(
+                    chunk.chunk,
+                    final=chunk.is_last_chunk,
+                )
+            else:
+                delta = self._extractor.feed(chunk.chunk)
             if chunk.is_last_chunk:
                 self._extractor.reset()
             return delta
         return chunk.chunk or None
 
 
-def _build_agent_lm() -> dspy.LM:
+def _build_agent_lm(
+    model_name_override: str | None = None,
+    reasoning_effort: str | None = None,
+    lm_extra_body: dict[str, Any] | None = None,
+) -> dspy.LM:
     """Construct the LM used by the code agent from global settings.
+
+    Args:
+        model_name_override: Optional LiteLLM id chosen by the caller (the
+            interview composer's model menu); ``None`` runs the configured
+            code-agent model.
+        reasoning_effort: Explicit effort level for the chosen model; ``None``
+            keeps the model's default.
+        lm_extra_body: Extra request-body fields merged into the provider
+            call (the auto router's plugin dial rides here).
 
     Reasoning knobs we send, by provider:
 
@@ -851,7 +1515,7 @@ def _build_agent_lm() -> dspy.LM:
     Returns:
         A configured :class:`dspy.LM` instance for the code agent.
     """
-    model_name = settings.code_agent_model
+    model_name = model_name_override or settings.code_agent_model
     lower = model_name.lower()
     extra: dict = {}
     is_native_minimax = lower.startswith("minimax/") or (
@@ -859,12 +1523,26 @@ def _build_agent_lm() -> dspy.LM:
     )
     if is_native_minimax:
         extra["extra_body"] = {"reasoning_split": True}
+    if lm_extra_body:
+        extra["extra_body"] = {**extra.get("extra_body", {}), **lm_extra_body}
     config = ModelConfig(
         name=model_name,
-        base_url=settings.code_agent_base_url or None,
-        max_tokens=4000,
+        base_url=settings.code_agent_base_url or settings.openai_api_base or None,
+        # Reasoning models spend their thinking tokens against this same
+        # budget, and on real datasets the seed's reasoning alone can run
+        # thousands of tokens; keep enough headroom that code is never cut
+        # off mid-artifact (a truncation costs a repair LLM call plus two
+        # more multi-second subprocess validations).
+        max_tokens=16000,
         extra=extra,
     )
+    config = apply_reasoning_effort(config, reasoning_effort)
+    # A caller-chosen model can be anything in the catalog — run it through
+    # the generic reasoning-model knobs (mandatory temperature/effort for
+    # OpenAI reasoning models); the configured default keeps its hand-tuned
+    # MiniMax setup untouched.
+    if model_name_override:
+        config = apply_model_reasoning_config(config)
     return build_language_model(config, disable_cache=True)
 
 
@@ -876,13 +1554,17 @@ async def _pump_seed_stream(
     *,
     queue: asyncio.Queue[dict | None],
     results: dict[str, str],
+    reasoning_source: str,
 ) -> None:
     """Drive one streamify program and fan its tokens out to the shared SSE queue.
 
     Forwards provider reasoning tokens as ``reasoning_patch`` events and the
     target field's own tokens as ``event_name`` (``signature_patch`` or
     ``metric_patch``). On the final ``dspy.Prediction`` the completed text
-    is written to ``results[field]`` for the orchestrator to consume.
+    is written to ``results[field]`` for the orchestrator to consume; when
+    the stream ends without a terminal Prediction (provider truncation),
+    the concatenated streamed tokens are used instead so the artifact isn't
+    silently empty.
 
     Args:
         program: The streamify-wrapped predictor to invoke.
@@ -891,15 +1573,27 @@ async def _pump_seed_stream(
         event_name: Outbound SSE event name for ``field`` tokens.
         queue: Shared SSE queue receiving the events.
         results: Mutable result map; the final value of ``field`` is written here.
+        reasoning_source: Stream label stamped on each ``reasoning_patch`` so
+            the UI can keep parallel seeds' reasoning apart (the signature and
+            metric authors run concurrently on one multiplexed queue).
     """
+    streamed: list[str] = []
     async for chunk in program(**inputs):
         if isinstance(chunk, dspy.streaming.StreamResponse):
             if chunk.signature_field_name == REASONING_FIELD:
-                await queue.put({"event": "reasoning_patch", "data": {"chunk": chunk.chunk}})
+                await queue.put(
+                    {
+                        "event": "reasoning_patch",
+                        "data": {"chunk": chunk.chunk, "source": reasoning_source},
+                    }
+                )
             elif chunk.signature_field_name == field:
+                streamed.append(chunk.chunk)
                 await queue.put({"event": event_name, "data": {"chunk": chunk.chunk}})
         elif isinstance(chunk, dspy.Prediction):
             results[field] = getattr(chunk, field, "") or ""
+    if not results[field] and streamed:
+        results[field] = "".join(streamed)
 
 
 def _run_code_fixer(
@@ -979,6 +1673,7 @@ async def _validate_and_repair_artifact(
         A ``(code, error)`` tuple — the best source produced and the final
         validator error (empty string once valid).
     """
+    code = strip_adapter_debris(code)
     error = await asyncio.to_thread(validator, code)
     attempts = 0
     while error and attempts < max_attempts:
@@ -1011,6 +1706,8 @@ async def _run_seed(
     column_roles_json: str,
     column_kinds_json: str,
     sample_rows_json: str,
+    authoring_brief: str,
+    reply_language: str,
     queue: asyncio.Queue[dict | None],
 ) -> dict[str, Any]:
     """Run the non-agentic seed: Signature + metric in parallel, then intro.
@@ -1027,6 +1724,9 @@ async def _run_seed(
         column_roles_json: JSON string mapping column → role.
         column_kinds_json: JSON string mapping input column → kind (text/image).
         sample_rows_json: JSON-encoded list of representative sample rows.
+        authoring_brief: Interview directives both authors must honor; empty
+            when no interview happened.
+        reply_language: Language name the intro message is written in.
         queue: SSE event queue to push token events onto.
 
     Returns:
@@ -1060,6 +1760,7 @@ async def _run_seed(
         "column_roles": column_roles_json,
         "column_kinds": column_kinds_json,
         "sample_rows": sample_rows_json,
+        "authoring_brief": authoring_brief,
     }
     results: dict[str, Any] = {"signature_code": "", "metric_code": "", "assistant_message": ""}
 
@@ -1073,48 +1774,58 @@ async def _run_seed(
     )
 
     with dspy.context(lm=lm):
-        await asyncio.gather(
-            _pump_seed_stream(
+        # Two independent lanes: each artifact validates (and repairs) the
+        # moment its OWN stream finishes, so the usually-faster signature's
+        # multi-second subprocess validation overlaps the metric's remaining
+        # stream instead of waiting for it. The seed predictors stream raw,
+        # unvalidated code — without this pass a stray brace or bad
+        # identifier surfaces only as a 400 at submit.
+        async def _signature_lane() -> tuple[str, str]:
+            """Stream the signature, then validate/repair it immediately."""
+            await _pump_seed_stream(
                 sig_program,
                 shared_inputs,
                 "signature_code",
                 "signature_patch",
                 queue=queue,
                 results=results,
-            ),
-            _pump_seed_stream(
+                reasoning_source="signature",
+            )
+            return await _validate_and_repair_artifact(
+                lm=lm,
+                artifact_kind="signature",
+                code=results["signature_code"],
+                validator=_validate_signature_code,
+                dataset_columns=dataset_columns,
+                column_roles_json=column_roles_json,
+                queue=queue,
+                replace_event="signature_replace",
+            )
+
+        async def _metric_lane() -> tuple[str, str]:
+            """Stream the metric, then validate/repair it immediately."""
+            await _pump_seed_stream(
                 met_program,
                 shared_inputs,
                 "metric_code",
                 "metric_patch",
                 queue=queue,
                 results=results,
-            ),
-        )
+                reasoning_source="metric",
+            )
+            return await _validate_and_repair_artifact(
+                lm=lm,
+                artifact_kind="metric",
+                code=results["metric_code"],
+                validator=_validate_metric_code,
+                dataset_columns=dataset_columns,
+                column_roles_json=column_roles_json,
+                queue=queue,
+                replace_event="metric_replace",
+            )
 
-        # The seed predictors stream raw, unvalidated code. Validate (and
-        # repair) both artifacts here so the editor + the wizard receive
-        # code that already passes the same check submit runs — otherwise a
-        # stray brace or bad identifier surfaces only as a 400 at submit.
-        sig_code, sig_err = await _validate_and_repair_artifact(
-            lm=lm,
-            artifact_kind="signature",
-            code=results["signature_code"],
-            validator=_validate_signature_code,
-            dataset_columns=dataset_columns,
-            column_roles_json=column_roles_json,
-            queue=queue,
-            replace_event="signature_replace",
-        )
-        met_code, met_err = await _validate_and_repair_artifact(
-            lm=lm,
-            artifact_kind="metric",
-            code=results["metric_code"],
-            validator=_validate_metric_code,
-            dataset_columns=dataset_columns,
-            column_roles_json=column_roles_json,
-            queue=queue,
-            replace_event="metric_replace",
+        (sig_code, sig_err), (met_code, met_err) = await asyncio.gather(
+            _signature_lane(), _metric_lane()
         )
         results["signature_code"] = sig_code
         results["metric_code"] = met_code
@@ -1135,6 +1846,7 @@ async def _run_seed(
             sample_rows=sample_rows_json,
             signature_code=results["signature_code"],
             metric_code=results["metric_code"],
+            reply_language=reply_language,
         ):
             if isinstance(chunk, dspy.streaming.StreamResponse):
                 if chunk.signature_field_name == "assistant_message":
@@ -1231,11 +1943,11 @@ class _CodeEditSession:
         the edit is rejected and the observation returns the error message
         so you can fix the code and try again in the next iteration.
 
-        ``reason`` must be HEBREW prose (≤10 words); product terms like
+        ``reason`` must be prose in the reply language — the ``reply_language`` input (≤10 words); product terms like
         Signature/Metric may stay in English.
 
         Args:
-            reason: Short Hebrew rationale for the edit.
+            reason: Short rationale for the edit, in the reply language.
             new_code: Complete replacement Signature class body.
 
         Returns:
@@ -1261,6 +1973,10 @@ class _CodeEditSession:
                 "turn. STOP editing; call finish and summarize the change "
                 "in reply."
             )
+        # Tool args can carry the same malformed trailing field marker the
+        # seed path strips; unstripped it fails validation and burns a ReAct
+        # iteration on an otherwise-valid edit.
+        new_code = strip_adapter_debris(new_code)
         if new_code.strip() == self._slots["signature_code"].strip():
             self._emit(
                 {
@@ -1309,12 +2025,12 @@ class _CodeEditSession:
         the edit is rejected and the observation returns the error message
         so you can fix the code and try again in the next iteration.
 
-        ``reason`` must be HEBREW prose (≤10 words); product terms like
+        ``reason`` must be prose in the reply language — the ``reply_language`` input (≤10 words); product terms like
         Signature/Metric may stay in English. ``new_code`` must return
         ``dspy.Prediction(score=..., feedback=...)``.
 
         Args:
-            reason: Short Hebrew rationale for the edit.
+            reason: Short rationale for the edit, in the reply language.
             new_code: Complete replacement metric function body.
 
         Returns:
@@ -1340,6 +2056,8 @@ class _CodeEditSession:
                 "turn. STOP editing; call finish and summarize the change "
                 "in reply."
             )
+        # Same trailing-marker strip as edit_signature — see the note there.
+        new_code = strip_adapter_debris(new_code)
         if new_code.strip() == self._slots["metric_code"].strip():
             self._emit(
                 {
@@ -1376,6 +2094,390 @@ class _CodeEditSession:
         )
 
 
+class _WorkflowEditSession:
+    """Per-turn state for the ReAct workflow-graph tools.
+
+    Holds the mutable graph dict + metric source, applies each op with
+    local checks (id uniqueness, anchors immutable, cycle prevention,
+    single-producer ports), and emits a full ``workflow_replace`` snapshot
+    after every successful mutation so the canvas re-renders atomically.
+    Transient invalid states (an added node not yet wired) are allowed;
+    each observation reports the remaining structural issues so the agent
+    wires everything up before finishing.
+    """
+
+    # A restructure legitimately needs several ops (disconnect + add +
+    # 2 connects); cap the turn well above that so ReAct can't run away.
+    MAX_EDITS = 10
+
+    def __init__(
+        self,
+        *,
+        workflow: dict,
+        metric_code: str,
+        emit: Callable[[dict], None],
+    ) -> None:
+        """Initialize the session with the current graph and a thread-safe emitter.
+
+        Args:
+            workflow: The workflow spec currently on the canvas, as a dict.
+            metric_code: Current end-to-end metric source.
+            emit: Callback used to publish SSE events thread-safely.
+        """
+        self._workflow = json.loads(json.dumps(workflow))
+        self._metric_code = metric_code
+        self._edits = 0
+        self._metric_edits = 0
+        self._emit = emit
+
+    @property
+    def workflow(self) -> dict:
+        """Return the live graph dict (updated after each successful edit).
+
+        Returns:
+            The current workflow spec as a plain dict.
+        """
+        return self._workflow
+
+    @property
+    def metric_code(self) -> str:
+        """Return the live metric source.
+
+        Returns:
+            The current metric function source as a string.
+        """
+        return self._metric_code
+
+    def _issues_summary(self) -> str:
+        """Summarize the graph's remaining structural issues for observations.
+
+        Returns:
+            ``"graph is valid"`` or ``"remaining issues: <error>"``.
+        """
+        err = _validate_workflow_dict(self._workflow)
+        return "graph is valid" if not err else f"remaining issues: {err}"
+
+    def _node(self, node_id: str) -> dict | None:
+        """Return the node dict with the given id, or None.
+
+        Args:
+            node_id: The node id to look up.
+        """
+        return next((n for n in self._workflow["nodes"] if n.get("id") == node_id), None)
+
+    def _tool_result(self, call_id: str, tool: str, *, ok: bool, message: str, changed: str | None = None) -> str:
+        """Emit the tool lifecycle events and return the observation string.
+
+        Args:
+            call_id: Correlation id shared by tool_start/tool_end.
+            tool: Tool name for the events.
+            ok: Whether the op applied.
+            message: Observation text for the agent.
+            changed: Node id to pulse on the canvas (successful ops only).
+
+        Returns:
+            The observation string, unchanged.
+        """
+        if ok:
+            self._edits += 1
+            self._emit(
+                {
+                    "event": "workflow_replace",
+                    "data": {"workflow": self._workflow, "changed_node_id": changed},
+                }
+            )
+        self._emit({"event": "tool_end", "data": {"id": call_id, "tool": tool, "status": "ok" if ok else "error"}})
+        return message
+
+    def _start(self, tool: str, reason: str) -> tuple[str, str | None]:
+        """Emit tool_start and enforce the per-turn edit budget.
+
+        Args:
+            tool: Tool name for the event.
+            reason: Model-provided rationale.
+
+        Returns:
+            ``(call_id, rejection)`` — rejection is a ready observation when
+            the budget is exhausted, else None.
+        """
+        call_id = uuid.uuid4().hex[:8]
+        self._emit({"event": "tool_start", "data": {"id": call_id, "tool": tool, "reason": reason or ""}})
+        if self._edits >= self.MAX_EDITS:
+            return call_id, (
+                "Edit rejected — too many graph edits this turn. STOP editing; call finish and explain in reply."
+            )
+        return call_id, None
+
+    def add_node(self, reason: str, node_json: str) -> str:
+        """Add a signature or transform node to the graph.
+
+        ``node_json`` is ONE node object per the workflow schema (kind
+        'signature' or 'transform' only — never anchors or 'mcp'). The node
+        starts unwired: follow up with ``connect`` calls for every input
+        port and for whatever consumes its outputs, before ``finish``.
+
+        ``reason`` must be prose in the reply language — the ``reply_language`` input (≤10 words); product terms may stay
+        in English.
+
+        Args:
+            reason: Short rationale for the edit, in the reply language.
+            node_json: The complete node object as JSON.
+
+        Returns:
+            An observation string: confirmation plus remaining structural
+            issues on success, or a rejection message.
+        """
+        call_id, rejection = self._start("add_node", reason)
+        if rejection:
+            return self._tool_result(call_id, "add_node", ok=False, message=rejection)
+        try:
+            node = json.loads(_strip_json_fences(node_json))
+        except (json.JSONDecodeError, ValueError) as exc:
+            return self._tool_result(call_id, "add_node", ok=False, message=f"Edit rejected — node_json does not parse: {exc}")
+        if not isinstance(node, dict) or node.get("kind") not in ("signature", "transform"):
+            return self._tool_result(
+                call_id,
+                "add_node",
+                ok=False,
+                message="Edit rejected — node_json must be one node object with kind 'signature' or 'transform'.",
+            )
+        node_id = str(node.get("id", ""))
+        if not node_id or self._node(node_id) is not None:
+            return self._tool_result(
+                call_id, "add_node", ok=False, message=f"Edit rejected — node id '{node_id}' is missing or already taken."
+            )
+        if node["kind"] == "signature":
+            err = _validate_signature_code(str(node.get("signature_code", "")))
+            if err:
+                return self._tool_result(
+                    call_id, "add_node", ok=False, message=f"Edit rejected — signature_code is invalid: {err}"
+                )
+        self._workflow["nodes"].append(node)
+        return self._tool_result(
+            call_id,
+            "add_node",
+            ok=True,
+            changed=node_id,
+            message=f"Node '{node_id}' added ({self._issues_summary()}). Wire its ports with connect before finish.",
+        )
+
+    def update_node(self, reason: str, node_id: str, node_json: str) -> str:
+        """Replace an existing node's spec (same id, same kind).
+
+        Use for editing a signature node's code, a transform's code/fields,
+        or an anchor's field list. The id and kind must not change.
+
+        ``reason`` must be prose in the reply language — the ``reply_language`` input (≤10 words).
+
+        Args:
+            reason: Short rationale for the edit, in the reply language.
+            node_id: Id of the node to replace.
+            node_json: The complete replacement node object as JSON.
+
+        Returns:
+            An observation string: confirmation plus remaining structural
+            issues on success, or a rejection message.
+        """
+        call_id, rejection = self._start("update_node", reason)
+        if rejection:
+            return self._tool_result(call_id, "update_node", ok=False, message=rejection)
+        existing = self._node(node_id)
+        if existing is None:
+            return self._tool_result(call_id, "update_node", ok=False, message=f"Edit rejected — no node with id '{node_id}'.")
+        try:
+            node = json.loads(_strip_json_fences(node_json))
+        except (json.JSONDecodeError, ValueError) as exc:
+            return self._tool_result(
+                call_id, "update_node", ok=False, message=f"Edit rejected — node_json does not parse: {exc}"
+            )
+        if not isinstance(node, dict) or node.get("id") != node_id or node.get("kind") != existing.get("kind"):
+            return self._tool_result(
+                call_id,
+                "update_node",
+                ok=False,
+                message="Edit rejected — the replacement must keep the same id and kind.",
+            )
+        if node.get("kind") == "signature":
+            err = _validate_signature_code(str(node.get("signature_code", "")))
+            if err:
+                return self._tool_result(
+                    call_id, "update_node", ok=False, message=f"Edit rejected — signature_code is invalid: {err}"
+                )
+        self._workflow["nodes"] = [node if n.get("id") == node_id else n for n in self._workflow["nodes"]]
+        return self._tool_result(
+            call_id,
+            "update_node",
+            ok=True,
+            changed=node_id,
+            message=f"Node '{node_id}' updated ({self._issues_summary()}).",
+        )
+
+    def remove_node(self, reason: str, node_id: str) -> str:
+        """Delete a non-anchor node and every edge touching it.
+
+        ``reason`` must be prose in the reply language — the ``reply_language`` input (≤10 words).
+
+        Args:
+            reason: Short rationale for the edit, in the reply language.
+            node_id: Id of the node to delete.
+
+        Returns:
+            An observation string: confirmation plus remaining structural
+            issues on success, or a rejection message.
+        """
+        call_id, rejection = self._start("remove_node", reason)
+        if rejection:
+            return self._tool_result(call_id, "remove_node", ok=False, message=rejection)
+        node = self._node(node_id)
+        if node is None:
+            return self._tool_result(call_id, "remove_node", ok=False, message=f"Edit rejected — no node with id '{node_id}'.")
+        if node.get("kind") in ("input", "output"):
+            return self._tool_result(
+                call_id, "remove_node", ok=False, message="Edit rejected — the input/output anchors cannot be removed."
+            )
+        self._workflow["nodes"] = [n for n in self._workflow["nodes"] if n.get("id") != node_id]
+        self._workflow["edges"] = [
+            e for e in self._workflow["edges"] if e.get("source") != node_id and e.get("target") != node_id
+        ]
+        return self._tool_result(
+            call_id,
+            "remove_node",
+            ok=True,
+            changed=None,
+            message=f"Node '{node_id}' and its edges removed ({self._issues_summary()}).",
+        )
+
+    def connect(self, reason: str, source: str, source_port: str, target: str, target_port: str) -> str:
+        """Add an edge from a node's output port to another node's input port.
+
+        The target port must not already be fed, and the edge must not
+        close a cycle. ``reason`` must be prose in the reply language — the ``reply_language`` input (≤10 words).
+
+        Args:
+            reason: Short rationale for the edit, in the reply language.
+            source: Source node id.
+            source_port: Output field name on the source node.
+            target: Target node id.
+            target_port: Input field name on the target node.
+
+        Returns:
+            An observation string: confirmation plus remaining structural
+            issues on success, or a rejection message.
+        """
+        call_id, rejection = self._start("connect", reason)
+        if rejection:
+            return self._tool_result(call_id, "connect", ok=False, message=rejection)
+        if self._node(source) is None or self._node(target) is None:
+            return self._tool_result(call_id, "connect", ok=False, message="Edit rejected — unknown source or target node id.")
+        if source == target:
+            return self._tool_result(call_id, "connect", ok=False, message="Edit rejected — a node cannot feed itself.")
+        for e in self._workflow["edges"]:
+            if e.get("target") == target and e.get("target_port") == target_port:
+                return self._tool_result(
+                    call_id,
+                    "connect",
+                    ok=False,
+                    message=(
+                        f"Edit rejected — port '{target_port}' on '{target}' is already fed "
+                        f"(by {e.get('source')}.{e.get('source_port')}). Disconnect it first."
+                    ),
+                )
+        # Cycle iff source is already reachable from target.
+        adjacency: dict[str, list[str]] = {}
+        for e in self._workflow["edges"]:
+            adjacency.setdefault(str(e.get("source")), []).append(str(e.get("target")))
+        stack, seen = [target], set()
+        while stack:
+            cur = stack.pop()
+            if cur == source:
+                return self._tool_result(call_id, "connect", ok=False, message="Edit rejected — that edge would close a cycle.")
+            if cur in seen:
+                continue
+            seen.add(cur)
+            stack.extend(adjacency.get(cur, []))
+        self._workflow["edges"].append(
+            {"source": source, "source_port": source_port, "target": target, "target_port": target_port}
+        )
+        return self._tool_result(
+            call_id,
+            "connect",
+            ok=True,
+            changed=target,
+            message=f"Connected {source}.{source_port} → {target}.{target_port} ({self._issues_summary()}).",
+        )
+
+    def disconnect(self, reason: str, source: str, source_port: str, target: str, target_port: str) -> str:
+        """Remove the edge between the given ports.
+
+        ``reason`` must be prose in the reply language — the ``reply_language`` input (≤10 words).
+
+        Args:
+            reason: Short rationale for the edit, in the reply language.
+            source: Source node id.
+            source_port: Output field name on the source node.
+            target: Target node id.
+            target_port: Input field name on the target node.
+
+        Returns:
+            An observation string: confirmation plus remaining structural
+            issues on success, or a rejection message.
+        """
+        call_id, rejection = self._start("disconnect", reason)
+        if rejection:
+            return self._tool_result(call_id, "disconnect", ok=False, message=rejection)
+        before = len(self._workflow["edges"])
+        self._workflow["edges"] = [
+            e
+            for e in self._workflow["edges"]
+            if not (
+                e.get("source") == source
+                and e.get("source_port") == source_port
+                and e.get("target") == target
+                and e.get("target_port") == target_port
+            )
+        ]
+        if len(self._workflow["edges"]) == before:
+            return self._tool_result(call_id, "disconnect", ok=False, message="Edit rejected — no such edge.")
+        return self._tool_result(
+            call_id,
+            "disconnect",
+            ok=True,
+            changed=target,
+            message=f"Disconnected {source}.{source_port} → {target}.{target_port} ({self._issues_summary()}).",
+        )
+
+    def edit_metric(self, reason: str, new_code: str) -> str:
+        """Replace the end-to-end metric function.
+
+        The new code is validated before it's applied; a failed validation
+        rejects the edit and returns the error so you can retry. ``reason``
+        must be prose in the reply language — the ``reply_language`` input (≤10 words). ``new_code`` must return
+        ``dspy.Prediction(score=..., feedback=...)``.
+
+        Args:
+            reason: Short rationale for the edit, in the reply language.
+            new_code: Complete replacement metric function body.
+
+        Returns:
+            An observation string: confirmation on success or a rejection
+            message on validation failure.
+        """
+        call_id = uuid.uuid4().hex[:8]
+        self._emit({"event": "tool_start", "data": {"id": call_id, "tool": "edit_metric", "reason": reason or ""}})
+        if self._metric_edits >= 1:
+            self._emit({"event": "tool_end", "data": {"id": call_id, "tool": "edit_metric", "status": "error"}})
+            return "Edit rejected — metric was already replaced this turn. Call finish."
+        err = _validate_metric_code(new_code)
+        if err:
+            self._emit({"event": "tool_end", "data": {"id": call_id, "tool": "edit_metric", "status": "error"}})
+            return f"Edit rejected — new_code is invalid: {err}. Fix the error and call edit_metric again."
+        self._metric_code = new_code
+        self._metric_edits += 1
+        self._emit({"event": "metric_replace", "data": {"code": new_code}})
+        self._emit({"event": "tool_end", "data": {"id": call_id, "tool": "edit_metric", "status": "ok"}})
+        return "Metric replaced and validated. Do NOT edit the metric again this turn."
+
+
 async def _run_agent(
     *,
     lm: dspy.LM,
@@ -1391,6 +2493,7 @@ async def _run_agent(
     prior_metric_validation: str,
     initial_signature: str,
     initial_metric: str,
+    reply_language: str,
     queue: asyncio.Queue[dict | None],
 ) -> dict[str, str]:
     """Run a ReAct agent with ``edit_signature`` + ``edit_metric`` tools.
@@ -1420,6 +2523,7 @@ async def _run_agent(
         prior_metric_validation: Latest validator output for the metric.
         initial_signature: Original signature source before any edits this conversation.
         initial_metric: Original metric source before any edits this conversation.
+        reply_language: Language name for the reply and tool rationales.
         queue: SSE event queue receiving lifecycle and token events.
 
     Returns:
@@ -1434,15 +2538,16 @@ async def _run_agent(
         emit=emit,
     )
 
-    # Keep max_iters tight. A normal turn is: (1) think → (2) edit_* OR
-    # submit. A validator-driven retry may need one more iteration if the
-    # first edit fails validation: (1) edit fails → (2) edit succeeds →
-    # submit carries reply. max_iters=3 covers the worst case without
-    # room to run away.
+    # Keep max_iters bounded. A normal turn is: (1) think → (2) edit_* OR
+    # submit. The worst legitimate case edits both artifacts with one
+    # validator-driven retry each (edit fails → edit succeeds, twice) plus
+    # the submit that carries the reply — max_iters=5 covers that without
+    # room to run away (the per-artifact success guards reject any further
+    # edits).
     react = REACT_CLASS(
         CodeAssistant,
         tools=[session.edit_signature, session.edit_metric],
-        max_iters=3,
+        max_iters=5,
     )
     # The user's ``reply`` rides a ``submit`` tool call on ReActV2 or a separate
     # ``extract`` predictor on classic ReAct; ``ReactReplyStream`` wires the right
@@ -1466,6 +2571,7 @@ async def _run_agent(
         "initial_signature": initial_signature or prior_signature,
         "initial_metric": initial_metric or prior_metric,
         "chat_history": chat_history_json,
+        "reply_language": reply_language,
         "user_message": user_message,
     }
 
@@ -1474,7 +2580,12 @@ async def _run_agent(
         async for chunk in program(**inputs):
             if isinstance(chunk, dspy.streaming.StreamResponse):
                 if chunk.signature_field_name == REASONING_FIELD:
-                    await queue.put({"event": "reasoning_patch", "data": {"chunk": chunk.chunk}})
+                    await queue.put(
+                        {
+                            "event": "reasoning_patch",
+                            "data": {"chunk": chunk.chunk, "source": "agent"},
+                        }
+                    )
                 else:
                     delta = reply_stream.reply_delta(chunk)
                     if delta:
@@ -1492,15 +2603,288 @@ async def _run_agent(
     }
 
 
+async def _run_workflow_seed(
+    *,
+    lm: dspy.LM,
+    dataset_columns: list[str],
+    column_roles_json: str,
+    column_kinds_json: str,
+    sample_rows_json: str,
+    authoring_brief: str,
+    reply_language: str,
+    queue: asyncio.Queue[dict | None],
+) -> dict[str, Any]:
+    """Run the workflow seed: draft the full graph + the metric, then intro.
+
+    The graph and metric generate in parallel. Metric tokens stream as
+    ``metric_patch`` (same as the classic seed); the graph is emitted as a
+    single ``workflow_replace`` snapshot once it parses and validates —
+    with up to two LLM repair attempts against the exact validator error.
+
+    Args:
+        lm: The language model to drive the seed predictors.
+        dataset_columns: All dataset column names.
+        column_roles_json: JSON string mapping column → role.
+        column_kinds_json: JSON string mapping input column → kind.
+        sample_rows_json: JSON-encoded list of representative sample rows.
+        authoring_brief: Interview directives both authors must honor; empty
+            when no interview happened.
+        reply_language: Language name the intro message is written in.
+        queue: SSE event queue to push token events onto.
+
+    Returns:
+        Mapping with keys ``workflow`` (dict), ``metric_code``,
+        ``assistant_message``, ``workflow_valid`` / ``metric_valid`` flags,
+        and an optional ``validation_error``.
+    """
+    graph_predict = dspy.Predict(GenerateWorkflowGraph)
+    graph_program = dspy.streamify(
+        graph_predict,
+        stream_listeners=[ReasoningStreamListener(predict=graph_predict)],
+        async_streaming=True,
+    )
+    met_predict = dspy.Predict(GenerateMetricCode)
+    met_program = dspy.streamify(
+        met_predict,
+        stream_listeners=[
+            dspy.streaming.StreamListener(signature_field_name="metric_code"),
+            ReasoningStreamListener(predict=met_predict),
+        ],
+        async_streaming=True,
+    )
+
+    shared_inputs = {
+        "dataset_columns": dataset_columns,
+        "column_roles": column_roles_json,
+        "column_kinds": column_kinds_json,
+        "sample_rows": sample_rows_json,
+        "authoring_brief": authoring_brief,
+    }
+    results: dict[str, Any] = {"workflow": None, "metric_code": "", "assistant_message": ""}
+
+    async def _pump_graph() -> None:
+        """Stream the graph predictor, forwarding reasoning and capturing the JSON."""
+        async for chunk in graph_program(**shared_inputs):
+            if isinstance(chunk, dspy.streaming.StreamResponse):
+                if chunk.signature_field_name == REASONING_FIELD:
+                    await queue.put(
+                        {
+                            "event": "reasoning_patch",
+                            "data": {"chunk": chunk.chunk, "source": "workflow"},
+                        }
+                    )
+            elif isinstance(chunk, dspy.Prediction):
+                results["workflow_json"] = getattr(chunk, "workflow_json", "") or ""
+
+    with dspy.context(lm=lm):
+        # Two independent lanes (mirrors the classic seed): the graph and the
+        # metric each parse/validate/repair as soon as their OWN stream ends,
+        # so neither waits on the slower author before starting its checks.
+        async def _graph_lane() -> str:
+            """Stream the graph author, then parse/validate/repair its JSON."""
+            await _pump_graph()
+            raw_json = str(results.pop("workflow_json", "") or "")
+            spec_dict, error = _parse_workflow_json(raw_json)
+            if spec_dict is not None:
+                error = await asyncio.to_thread(_validate_workflow_dict, spec_dict)
+            fixer = dspy.Predict(FixWorkflowGraph)
+            for _attempt in range(2):
+                if not error:
+                    break
+                pred = await asyncio.to_thread(
+                    fixer,
+                    broken_workflow_json=raw_json if spec_dict is None else json.dumps(spec_dict, ensure_ascii=False),
+                    validation_error=error,
+                    dataset_columns=dataset_columns,
+                    column_roles=column_roles_json,
+                )
+                raw_json = getattr(pred, "fixed_workflow_json", "") or ""
+                spec_dict, error = _parse_workflow_json(raw_json)
+                if spec_dict is not None:
+                    error = await asyncio.to_thread(_validate_workflow_dict, spec_dict)
+
+            if spec_dict is not None:
+                results["workflow"] = spec_dict
+                await queue.put(
+                    {"event": "workflow_replace", "data": {"workflow": spec_dict, "changed_node_id": None}}
+                )
+            results["workflow_valid"] = not error
+            return error
+
+        async def _metric_lane() -> tuple[str, str]:
+            """Stream the metric, then validate/repair it immediately."""
+            await _pump_seed_stream(
+                met_program,
+                shared_inputs,
+                "metric_code",
+                "metric_patch",
+                queue=queue,
+                results=results,
+                reasoning_source="metric",
+            )
+            return await _validate_and_repair_artifact(
+                lm=lm,
+                artifact_kind="metric",
+                code=results["metric_code"],
+                validator=_validate_metric_code,
+                dataset_columns=dataset_columns,
+                column_roles_json=column_roles_json,
+                queue=queue,
+                replace_event="metric_replace",
+            )
+
+        error, (met_code, met_err) = await asyncio.gather(_graph_lane(), _metric_lane())
+        results["metric_code"] = met_code
+        results["metric_valid"] = not met_err
+        if error or met_err:
+            parts = []
+            if error:
+                parts.append(f"Workflow: {error}")
+            if met_err:
+                parts.append(f"Metric: {met_err}")
+            results["validation_error"] = " | ".join(parts)
+
+        msg_predict = dspy.Predict(GenerateWorkflowSeedMessage)
+        msg_program = dspy.streamify(
+            msg_predict,
+            stream_listeners=[dspy.streaming.StreamListener(signature_field_name="assistant_message")],
+            async_streaming=True,
+        )
+        async for chunk in msg_program(
+            workflow_json=json.dumps(results["workflow"] or {}, ensure_ascii=False),
+            metric_code=results["metric_code"],
+            reply_language=reply_language,
+        ):
+            if isinstance(chunk, dspy.streaming.StreamResponse):
+                if chunk.signature_field_name == "assistant_message":
+                    await queue.put({"event": "message_patch", "data": {"chunk": chunk.chunk}})
+            elif isinstance(chunk, dspy.Prediction):
+                results["assistant_message"] = getattr(chunk, "assistant_message", "") or ""
+
+    return results
+
+
+async def _run_workflow_agent(
+    *,
+    lm: dspy.LM,
+    dataset_columns: list[str],
+    column_roles_json: str,
+    sample_rows_json: str,
+    user_message: str,
+    chat_history_json: str,
+    prior_workflow: dict,
+    prior_metric: str,
+    initial_workflow: dict | None,
+    reply_language: str,
+    queue: asyncio.Queue[dict | None],
+) -> dict[str, Any]:
+    """Run a ReAct agent with graph tools over the canvas workflow.
+
+    Mirrors :func:`_run_agent`, swapping the signature/metric pair for a
+    :class:`_WorkflowEditSession` whose tools mutate the graph dict and
+    emit ``workflow_replace`` snapshots (plus ``metric_replace`` for the
+    shared metric tool).
+
+    Args:
+        lm: Language model bound to the ReAct loop.
+        dataset_columns: All dataset column names.
+        column_roles_json: JSON string mapping column → role.
+        sample_rows_json: JSON-encoded list of representative sample rows.
+        user_message: The user's latest message driving the turn.
+        chat_history_json: JSON-encoded prior chat turns.
+        prior_workflow: Graph spec currently on the canvas.
+        prior_metric: Metric source as currently shown in the editor.
+        initial_workflow: Original graph before any edits this conversation.
+        reply_language: Language name for the reply and tool rationales.
+        queue: SSE event queue receiving lifecycle and token events.
+
+    Returns:
+        Mapping with keys ``workflow`` (dict), ``metric_code``, and
+        ``assistant_message`` reflecting post-turn state.
+    """
+    loop = asyncio.get_running_loop()
+    emit: Callable[[dict], None] = partial(_emit_to_code_queue, loop, queue)
+    session = _WorkflowEditSession(workflow=prior_workflow, metric_code=prior_metric, emit=emit)
+
+    workflow_validation = await asyncio.to_thread(_validate_workflow_dict, prior_workflow)
+
+    # A graph restructure is several ops (disconnect + add + reconnects),
+    # each its own ReAct iteration; 8 covers a two-step insert with a
+    # validation retry without room to run away.
+    react = REACT_CLASS(
+        WorkflowAssistant,
+        tools=[
+            session.add_node,
+            session.update_node,
+            session.remove_node,
+            session.connect,
+            session.disconnect,
+            session.edit_metric,
+        ],
+        max_iters=8,
+    )
+    reply_stream = ReactReplyStream(react, "reply")
+    program = dspy.streamify(
+        react,
+        stream_listeners=reply_stream.listeners(),
+        async_streaming=True,
+    )
+
+    inputs = {
+        "dataset_columns": dataset_columns,
+        "column_roles": column_roles_json,
+        "sample_rows": sample_rows_json,
+        "current_workflow": json.dumps(prior_workflow, ensure_ascii=False),
+        "current_metric": prior_metric,
+        "current_workflow_validation": workflow_validation or "OK",
+        "initial_workflow": json.dumps(initial_workflow or prior_workflow, ensure_ascii=False),
+        "chat_history": chat_history_json,
+        "reply_language": reply_language,
+        "user_message": user_message,
+    }
+
+    reply_text = ""
+    with dspy.context(lm=lm):
+        async for chunk in program(**inputs):
+            if isinstance(chunk, dspy.streaming.StreamResponse):
+                if chunk.signature_field_name == REASONING_FIELD:
+                    await queue.put(
+                        {
+                            "event": "reasoning_patch",
+                            "data": {"chunk": chunk.chunk, "source": "agent"},
+                        }
+                    )
+                else:
+                    delta = reply_stream.reply_delta(chunk)
+                    if delta:
+                        reply_text += delta
+                        await queue.put({"event": "message_patch", "data": {"chunk": delta}})
+            elif isinstance(chunk, dspy.Prediction):
+                final = getattr(chunk, "reply", "") or ""
+                if final and final != reply_text:
+                    reply_text = final
+
+    final_error = await asyncio.to_thread(_validate_workflow_dict, session.workflow)
+    return {
+        "workflow": session.workflow,
+        "workflow_valid": not final_error,
+        **({"validation_error": f"Workflow: {final_error}"} if final_error else {}),
+        "metric_code": session.metric_code,
+        "assistant_message": reply_text,
+    }
+
+
 async def _run_code_agent_orchestration(
     *,
     is_seed: bool,
     lm: dspy.LM,
+    model_name: str,
     queue: asyncio.Queue[dict | None],
     dataset_columns: list[str],
     column_roles_json: str,
     column_kinds_json: str,
     sample_rows_json: str,
+    authoring_brief: str,
     user_message: str,
     chat_history_json: str,
     prior_signature: str,
@@ -1509,23 +2893,30 @@ async def _run_code_agent_orchestration(
     prior_metric_validation: str,
     initial_signature: str,
     initial_metric: str,
+    prior_workflow: dict | None,
+    initial_workflow: dict | None,
+    reply_language: str,
 ) -> None:
     """Run the seed or chat path and push the terminal envelope into ``queue``.
 
     Dispatches to :func:`_run_seed` when ``is_seed`` is true (the user sent
     no message and we need to generate the initial Signature + metric) and
-    to :func:`_run_agent` otherwise. Emits exactly one terminal event
-    (``done`` on success, ``error`` on failure) followed by the ``None``
-    sentinel that unblocks the outer consumer.
+    to :func:`_run_agent` otherwise; a non-None ``prior_workflow`` routes
+    both modes to their graph-aware counterparts instead. Emits exactly one
+    terminal event (``done`` on success, ``error`` on failure) followed by
+    the ``None`` sentinel that unblocks the outer consumer.
 
     Args:
         is_seed: True to run the seed path; False to run the chat agent.
         lm: Language model bound to the chosen runner.
+        model_name: Catalog model id requested for this turn.
         queue: SSE event queue.
         dataset_columns: All dataset column names.
         column_roles_json: JSON string mapping column → role.
         column_kinds_json: JSON string mapping input column → kind.
         sample_rows_json: JSON-encoded list of sample rows.
+        authoring_brief: Interview directives the seed authors must honor;
+            empty when no interview happened (seed paths only).
         user_message: User's latest message (empty in seed mode).
         chat_history_json: JSON-encoded prior chat turns.
         prior_signature: Current Signature source in the editor.
@@ -1534,15 +2925,43 @@ async def _run_code_agent_orchestration(
         prior_metric_validation: Latest metric validator output.
         initial_signature: Original signature source for revert support.
         initial_metric: Original metric source for revert support.
+        reply_language: Language name for all user-facing agent text.
     """
     try:
-        if is_seed:
+        if is_seed and prior_workflow is not None:
+            results = await _run_workflow_seed(
+                lm=lm,
+                dataset_columns=dataset_columns,
+                column_roles_json=column_roles_json,
+                column_kinds_json=column_kinds_json,
+                sample_rows_json=sample_rows_json,
+                authoring_brief=authoring_brief,
+                reply_language=reply_language,
+                queue=queue,
+            )
+        elif prior_workflow is not None:
+            results = await _run_workflow_agent(
+                lm=lm,
+                dataset_columns=dataset_columns,
+                column_roles_json=column_roles_json,
+                sample_rows_json=sample_rows_json,
+                user_message=user_message,
+                chat_history_json=chat_history_json,
+                prior_workflow=prior_workflow,
+                prior_metric=prior_metric,
+                initial_workflow=initial_workflow,
+                reply_language=reply_language,
+                queue=queue,
+            )
+        elif is_seed:
             results = await _run_seed(
                 lm=lm,
                 dataset_columns=dataset_columns,
                 column_roles_json=column_roles_json,
                 column_kinds_json=column_kinds_json,
                 sample_rows_json=sample_rows_json,
+                authoring_brief=authoring_brief,
+                reply_language=reply_language,
                 queue=queue,
             )
         else:
@@ -1560,14 +2979,16 @@ async def _run_code_agent_orchestration(
                 prior_metric_validation=prior_metric_validation,
                 initial_signature=initial_signature,
                 initial_metric=initial_metric,
+                reply_language=reply_language,
                 queue=queue,
             )
         payload = dict(results)
-        payload.setdefault("model", settings.code_agent_model)
+        payload.setdefault("model", model_name)
+        payload["served_model"] = served_model_from(lm)
         await queue.put({"event": "done", "data": payload})
     except Exception as exc:
         logger.exception("Code agent failed")
-        await queue.put({"event": "error", "data": {"error": _format_agent_error(exc)}})
+        await queue.put({"event": "error", "data": _agent_error_payload(exc)})
     finally:
         await queue.put(None)
 
@@ -1586,6 +3007,14 @@ async def run_code_agent(
     prior_metric_validation: str = "",
     initial_signature: str = "",
     initial_metric: str = "",
+    prior_workflow: dict | None = None,
+    initial_workflow: dict | None = None,
+    interview_brief: list[str] | None = None,
+    locale: str | None = None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
+    lm_extra_body: dict[str, Any] | None = None,
+    usage_sink: list | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Stream code-agent events to the UI.
 
@@ -1593,6 +3022,15 @@ async def run_code_agent(
     generation). When set → chat path (ReAct with two tools). Both paths
     share the same ``done`` / ``error`` envelope and the same
     ``reasoning_patch`` event for reasoning-capable providers.
+
+    A non-None ``prior_workflow`` switches both modes to their graph-aware
+    counterparts: the seed drafts a full workflow graph (emitted as one
+    ``workflow_replace`` snapshot) and the chat agent gets graph tools
+    (``add_node``/``update_node``/``remove_node``/``connect``/``disconnect``
+    plus the shared ``edit_metric``), each successful op emitting a fresh
+    ``workflow_replace`` — ``{"workflow", "changed_node_id"}`` — so the
+    canvas re-renders atomically. The ``done`` payload then carries
+    ``workflow`` + ``workflow_valid`` instead of ``signature_code``.
 
     Events:
 
@@ -1603,9 +3041,9 @@ async def run_code_agent(
       replacement when a tool runs.
     * ``tool_end`` — ``{id, tool, status}``, after the tool returns.
     * ``message_patch`` — chat-mode reply token stream.
-    * ``done`` — ``{signature_code, metric_code, assistant_message}``; the
-      seed path additionally carries ``signature_valid`` / ``metric_valid``
-      booleans and an optional ``validation_error``.
+    * ``done`` — ``{signature_code, metric_code, assistant_message, model,
+      served_model}``; the seed path additionally carries ``signature_valid`` /
+      ``metric_valid`` booleans and an optional ``validation_error``.
     * ``error`` — ``{error}``.
 
     Args:
@@ -1621,15 +3059,36 @@ async def run_code_agent(
         prior_metric_validation: Latest metric validator output.
         initial_signature: Original signature source for revert support.
         initial_metric: Original metric source for revert support.
+        prior_workflow: Workflow graph currently on the canvas; non-None
+            switches to the graph-aware seed/chat paths.
+        initial_workflow: Original graph for revert support.
+        interview_brief: Directives from the Signature & Metric interview;
+            honored by the seed authors (seed paths only).
+        locale: UI locale code of the client; sets the language of every
+            user-facing agent string (replies, intro messages, tool
+            rationales). Unknown or missing falls back to Hebrew.
+        model: LiteLLM id of the model that authors the code, resolved from
+            the composer's model menu. ``None`` runs the server default
+            (``settings.code_agent_model``).
+        reasoning_effort: Explicit reasoning-effort level for ``model``;
+            ``None`` keeps the model's default.
+        lm_extra_body: Provider ``extra_body`` (e.g. the auto-router plugin
+            dial) merged into the LM's request payload.
+        usage_sink: Optional list the built LM is appended to, so the caller
+            can meter the turn's token usage on any exit path.
 
     Yields:
         SSE event dicts of shape ``{"event": str, "data": dict}``.
     """
-    lm = _build_agent_lm()
+    lm = _build_agent_lm(model, reasoning_effort, lm_extra_body)
+    model_name = model or settings.code_agent_model
+    if usage_sink is not None:
+        usage_sink.append(lm)
     column_roles_json = json.dumps(column_roles, ensure_ascii=False)
     column_kinds_json = json.dumps(column_kinds or {}, ensure_ascii=False)
     sample_rows_json = json.dumps(sample_rows[:5], ensure_ascii=False, default=str)
     chat_history_json = json.dumps(chat_history or [], ensure_ascii=False)
+    authoring_brief = "\n".join(f"- {d.strip()}" for d in (interview_brief or []) if d.strip())
     is_seed = not user_message.strip()
 
     queue: asyncio.Queue[dict | None] = asyncio.Queue()
@@ -1638,11 +3097,13 @@ async def run_code_agent(
         _run_code_agent_orchestration(
             is_seed=is_seed,
             lm=lm,
+            model_name=model_name,
             queue=queue,
             dataset_columns=dataset_columns,
             column_roles_json=column_roles_json,
             column_kinds_json=column_kinds_json,
             sample_rows_json=sample_rows_json,
+            authoring_brief=authoring_brief,
             user_message=user_message,
             chat_history_json=chat_history_json,
             prior_signature=prior_signature,
@@ -1651,6 +3112,9 @@ async def run_code_agent(
             prior_metric_validation=prior_metric_validation,
             initial_signature=initial_signature,
             initial_metric=initial_metric,
+            prior_workflow=prior_workflow,
+            initial_workflow=initial_workflow,
+            reply_language=_reply_language(locale),
         )
     )
     try:

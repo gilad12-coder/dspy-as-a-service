@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { MessageSquare, RotateCcw, XCircle } from "lucide-react";
+import { ChatText, CircleNotch, XCircle } from "@/shared/ui/icons";
 
 import { AgentThread } from "@/shared/ui/agent/agent-thread";
 import { ChatTranscript } from "@/shared/ui/agent/chat-transcript";
 import { Composer } from "@/shared/ui/agent/composer";
 import type { AgentThinking, AgentToolCall } from "@/shared/ui/agent/types";
 import { EmptyState } from "@/shared/ui/empty-state";
+import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { msg } from "@/shared/lib/messages";
 
 import { ApprovalCard, ToolCallRow, TrustToggle, useTrustMode } from "@/features/agent-panel";
@@ -51,7 +52,7 @@ export function ReactServeChat({ optimizationId }: ReactServeChatProps) {
 
   const emptyState = (
     <EmptyState
-      icon={MessageSquare}
+      icon={ChatText}
       iconWrap="circle"
       variant="compact"
       title={msg("optimizations.react.chat_empty_title")}
@@ -83,30 +84,34 @@ export function ReactServeChat({ optimizationId }: ReactServeChatProps) {
           editAndResend={agent.editAndResend}
           thinking={thinking}
           renderToolCall={renderToolCall}
+          toolCallsBeforeContent
           animatePairs
           trailing={() => (
             <>
+              {streaming && agent.statusLabel && !agent.pendingApproval && (
+                <div
+                  className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <CircleNotch className="size-3 animate-spin" aria-hidden="true" />
+                  <span dir="auto">{agent.statusLabel}</span>
+                </div>
+              )}
               {agent.pendingApproval && (
                 <ApprovalCard payload={agent.pendingApproval} onResolve={agent.confirmApproval} />
               )}
               {agent.error && (
-                <div className="rounded-lg bg-[#FCEFEB]/60 border border-[#9B2C1F]/20 px-2.5 py-2 text-xs text-[#7A1E13] space-y-1.5">
-                  <div className="flex items-start gap-1.5">
-                    <XCircle className="size-3 shrink-0 mt-0.5 text-[#9B2C1F]" />
-                    <span className="flex-1 break-words min-w-0" dir="auto">
-                      {agent.error}
-                    </span>
-                  </div>
-                  <div className="flex gap-1.5 ps-4">
-                    <button
-                      type="button"
-                      onClick={agent.retry}
-                      className="inline-flex items-center gap-1 text-[0.6875rem] text-[#7A1E13] bg-[#9B2C1F]/10 hover:bg-[#9B2C1F]/20 px-2 py-0.5 rounded cursor-pointer transition-colors"
-                    >
-                      <RotateCcw className="size-3" />
-                      {msg("optimizations.react.chat_retry")}
-                    </button>
-                  </div>
+                <div className="flex items-start gap-1.5 rounded-lg border border-[#9B2C1F]/20 bg-[#FCEFEB]/60 px-2.5 py-2 text-xs text-[#7A1E13]">
+                  <XCircle className="mt-0.5 size-3 shrink-0 text-[#9B2C1F]" />
+                  <span className="min-w-0 flex-1 break-words" dir="auto">
+                    {agent.error}
+                  </span>
+                  <RetryIconButton
+                    label={msg("optimizations.react.chat_retry")}
+                    onClick={agent.retry}
+                    className="size-[44px] border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13] sm:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
+                  />
                 </div>
               )}
             </>
@@ -123,6 +128,7 @@ export function ReactServeChat({ optimizationId }: ReactServeChatProps) {
         streaming={streaming}
         sendAriaLabel={msg("optimizations.react.chat_send_aria")}
         stopAriaLabel={msg("optimizations.react.chat_stop_aria")}
+        layout="inline"
       />
     </div>
   );

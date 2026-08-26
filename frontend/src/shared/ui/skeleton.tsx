@@ -5,7 +5,7 @@ import "react-loading-skeleton/dist/skeleton.css";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import type { ReactNode } from "react";
 
-export { Skeleton, SkeletonTheme };
+export { Skeleton };
 
 const BASE_COLOR = "#ebe4d8";
 const HIGHLIGHT_COLOR = "#f7f1e6";

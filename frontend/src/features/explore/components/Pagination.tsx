@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CaretLeft, CaretRight } from "@/shared/ui/icons";
 import { msg, formatMsg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 interface PaginationProps {
   page: number;
@@ -15,29 +16,24 @@ interface PaginationProps {
  * Bottom-of-results pager: numbered pages + prev/next, centered.
  * Hidden entirely when all results fit on a single page.
  */
-export function Pagination({
-  page,
-  size,
-  total,
-  onPageChange,
-}: PaginationProps) {
+export function Pagination({ page, size, total, onPageChange }: PaginationProps) {
   const totalPages = Math.max(1, Math.ceil(total / size));
   const pages = React.useMemo(() => pageList(page, totalPages), [page, totalPages]);
+
+  const rtl = getActiveDir() === "rtl";
+  const PrevIcon = rtl ? CaretRight : CaretLeft;
+  const NextIcon = rtl ? CaretLeft : CaretRight;
 
   if (totalPages <= 1) return null;
 
   return (
-    <div dir="rtl" className="flex flex-wrap items-center justify-center gap-4 pt-2">
+    <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
       <nav
         aria-label={msg("explore.page.indicator")}
         className="flex flex-wrap items-center justify-center gap-1"
       >
-        <PageNavButton
-          disabled={page <= 1}
-          onClick={() => onPageChange(page - 1)}
-          aria="prev"
-        >
-          <ChevronRight className="size-4" aria-hidden="true" />
+        <PageNavButton disabled={page <= 1} onClick={() => onPageChange(page - 1)} aria="prev">
+          <PrevIcon className="size-4" aria-hidden="true" />
           <span>{msg("explore.page.prev")}</span>
         </PageNavButton>
         {pages.map((entry, idx) =>
@@ -64,7 +60,7 @@ export function Pagination({
           aria="next"
         >
           <span>{msg("explore.page.next")}</span>
-          <ChevronLeft className="size-4" aria-hidden="true" />
+          <NextIcon className="size-4" aria-hidden="true" />
         </PageNavButton>
       </nav>
     </div>
@@ -86,7 +82,7 @@ function PageNumber({
       onClick={onClick}
       aria-label={formatMsg("explore.page.jump", { page: value })}
       aria-current={active ? "page" : undefined}
-      className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-[12.5px] tabular-nums transition-[background-color,color] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 ${
+      className={`inline-flex size-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-lg px-2 text-[12.5px] tabular-nums transition-[background-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:size-auto lg:h-8 lg:min-w-8 ${
         active
           ? "bg-foreground text-background"
           : "text-foreground/65 hover:bg-accent hover:text-foreground"
@@ -114,7 +110,7 @@ function PageNavButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={msg(aria === "prev" ? "explore.page.prev" : "explore.page.next")}
-      className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[12.5px] text-foreground/65 transition-[background-color,color,opacity] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-foreground/65 enabled:cursor-pointer"
+      className="inline-flex h-[44px] items-center gap-1 rounded-lg px-2.5 text-[12.5px] text-foreground/65 transition-[background-color,color,opacity] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-foreground/65 enabled:cursor-pointer lg:h-8"
     >
       {children}
     </button>

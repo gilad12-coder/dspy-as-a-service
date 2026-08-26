@@ -4,14 +4,19 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Menu, LogOut, GraduationCap, Lightbulb, Feather, Sparkles } from "lucide-react";
-import { useSession, signOut } from "next-auth/react";
-import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
-import { useTutorialContext, ConceptsGuide, registerTutorialHook } from "@/features/tutorial";
+import { Popover as PopoverPrimitive } from "radix-ui";
+import { List, GraduationCap, Lightbulb, Feather } from "@/shared/ui/icons";
+import { ConceptsGuide, registerTutorialHook, TutorialMenu } from "@/features/tutorial";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/primitives/tooltip";
-import { TooltipButton } from "@/shared/ui/tooltip-button";
+import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
+import { GlobalSearch } from "@/shared/layout/global-search";
+import { useLocale } from "@/shared/providers";
+import { dirForLocale } from "@/shared/lib/locale";
 import { msg } from "@/shared/lib/messages";
 import { JobsStreamProvider } from "@/shared/hooks/use-jobs-stream";
+import { PageContainer } from "@/shared/layout/page-container";
+import { MobileShell } from "@/shared/layout/mobile-shell";
+import { useIsPhone } from "@/shared/hooks/use-device-class";
 import { useUserPrefs, LiteModeHint } from "@/features/settings";
 import {
   GeneralistPanel,
@@ -28,13 +33,16 @@ const DESKTOP_BP = "(min-width: 768px)";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { locale } = useLocale();
+  const dir = dirForLocale(locale);
+  const isPhone = useIsPhone();
 
   // Shared-optimization pages render bare — no sidebar, agent panel, or other
   // app chrome — to keep the focus on the shared item. The recipient is still
   // authenticated (the route is login-gated like the rest of the app).
   if (pathname.startsWith("/share/")) {
     return (
-      <main className="min-h-screen" dir="rtl">
+      <main className="min-h-screen" dir={dir}>
         {children}
       </main>
     );
@@ -42,11 +50,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (pathname === "/login") {
     return (
-      <main className="min-h-screen" dir="rtl">
+      <main className="min-h-screen" dir={dir}>
         {children}
       </main>
     );
   }
+
+  // Phones get the view-first shell (bottom tabs, no sidebar); see mobile-shell.tsx.
+  if (isPhone) return <MobileShell>{children}</MobileShell>;
 
   return <ShellChrome>{children}</ShellChrome>;
 }
@@ -55,10 +66,11 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [conceptsOpen, setConceptsOpen] = React.useState(false);
   const [isDesktop, setIsDesktop] = React.useState(false);
-  const { data: session } = useSession();
   const pathname = usePathname();
+  const { locale } = useLocale();
+  const dir = dirForLocale(locale);
+  const isRtl = dir === "rtl";
   const { prefs, setPref } = useUserPrefs();
-  const { startDeepDive } = useTutorialContext();
   const generalistEnabled = isGeneralistAgentEnabled();
   const progressRef = React.useRef<HTMLDivElement>(null);
 
@@ -121,7 +133,7 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="sticky top-0 z-30 flex items-center justify-between bg-background/60 backdrop-blur-2xl backdrop-saturate-[1.8] px-4 py-2.5 border-b border-border/40 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)]"
+        className="fixed inset-x-0 top-0 z-30 flex h-[var(--header-height)] items-center justify-between border-b border-border/40 bg-background/60 px-2 py-0 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)] backdrop-blur-2xl backdrop-saturate-[1.8] sm:px-4"
         dir="ltr"
         style={{
           borderImage:
@@ -129,12 +141,14 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
         }}
       >
         <div className="flex items-center gap-1.5 cursor-default">
+          {/* The morphing wordmark anchors the header at sm+; below sm it collapses
+              to a plain SKYNET wordmark where the full SVG would crowd the row. */}
           <div className="hidden sm:block">
-            <AnimatedWordmark size={16} autoMorph morphSpeed={250} />
+            <AnimatedWordmark size={16} autoMorph autoMorphDuration={10000} morphSpeed={250} />
           </div>
           <span
             className="sm:hidden text-sm font-bold tracking-[0.14em] uppercase text-foreground cursor-default"
-            style={{ fontFamily: '"Inter Variable", system-ui, sans-serif' }}
+            style={{ fontFamily: "var(--font-ui)" }}
           >
             SKYNET
           </span>
@@ -151,93 +165,71 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
                   {msg("app.shell.lite.badge")}
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" dir="rtl">
+              <TooltipContent side="bottom" dir={dir}>
                 {msg("app.shell.lite.tooltip")}
               </TooltipContent>
             </Tooltip>
           )}
-          {prefs.advancedMode && (
+        </div>
+
+        <div className="flex flex-1 justify-center px-2">
+          <GlobalSearch />
+        </div>
+
+        <div className="flex items-center gap-1.5" dir={dir}>
+          {/* Tutorials are grouped by workflow so this button opens a replayable
+              guide chooser rather than starting one long product tour. */}
+          <PopoverPrimitive.Root>
             <Tooltip>
               <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => setPref("advancedMode", false)}
-                  className="inline-flex items-center gap-1 rounded-full border border-border bg-accent/60 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-accent hover:text-foreground cursor-pointer"
-                  aria-label={msg("app.shell.advanced.exit_aria")}
-                >
-                  <Sparkles className="size-3" aria-hidden="true" />
-                  {msg("app.shell.advanced.badge")}
-                </button>
+                <PopoverPrimitive.Trigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex size-[44px] cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-all duration-200 hover:bg-accent/80 hover:text-foreground active:scale-95 lg:size-8"
+                    aria-label={msg("app.shell.tour_aria")}
+                  >
+                    <GraduationCap className="size-4" />
+                  </button>
+                </PopoverPrimitive.Trigger>
               </TooltipTrigger>
-              <TooltipContent side="bottom" dir="rtl">
-                {msg("app.shell.advanced.tooltip")}
+              <TooltipContent side="bottom" dir={dir}>
+                {msg("app.shell.tour_tooltip")}
               </TooltipContent>
             </Tooltip>
-          )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={startDeepDive}
-                className="rounded-lg p-1.5 hover:bg-accent/80 active:scale-95 transition-all duration-200 cursor-pointer text-muted-foreground hover:text-foreground inline-flex items-center justify-center"
-                aria-label={msg("app.shell.tour_aria")}
-              >
-                <GraduationCap className="size-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" dir="rtl">
-              {msg("app.shell.tour_tooltip")}
-            </TooltipContent>
-          </Tooltip>
+            <TutorialMenu />
+          </PopoverPrimitive.Root>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 onClick={() => setConceptsOpen(true)}
-                className="rounded-lg p-1.5 hover:bg-accent/80 active:scale-95 transition-all duration-200 cursor-pointer text-muted-foreground hover:text-foreground inline-flex items-center justify-center"
+                className="inline-flex size-[44px] cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-all duration-200 hover:bg-accent/80 hover:text-foreground active:scale-95 lg:size-8"
                 aria-label={msg("app.shell.concepts_aria")}
               >
                 <Lightbulb className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" dir="rtl">
+            <TooltipContent side="bottom" dir={dir}>
               {msg("app.shell.concepts_tooltip")}
             </TooltipContent>
           </Tooltip>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          {session?.user && (
-            <>
-              <span className="hidden sm:inline text-xs font-semibold text-foreground">
-                {session.user.name ?? session.user.email}
-              </span>
-              <TooltipButton tooltip={msg("app.shell.logout")} side="bottom">
-                <button
-                  type="button"
-                  onClick={() => signOut({ callbackUrl: "/login" })}
-                  className="rounded-lg p-2 hover:bg-accent/80 active:scale-95 transition-all duration-200 cursor-pointer hidden sm:block"
-                  aria-label={msg("app.shell.logout")}
-                >
-                  <LogOut className="size-4" />
-                </button>
-              </TooltipButton>
-            </>
-          )}
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="rounded-lg p-2 hover:bg-accent/80 active:scale-95 transition-all duration-200 md:hidden"
+            className="inline-flex size-[44px] items-center justify-center rounded-lg transition-all duration-200 hover:bg-accent/80 active:scale-95 md:hidden"
             aria-label={msg("app.shell.menu")}
             aria-expanded={sidebarOpen}
             aria-controls={SIDEBAR_ID}
           >
-            <Menu className="size-5" />
+            <List className="size-5" />
           </button>
         </div>
       </motion.header>
 
-      <div className="flex flex-1" dir="ltr">
+      {/* The header is position:fixed, so it's out of flow — reserve its height
+          here so content starts below it. The fixed sidebar inside this row is
+          unaffected by the padding and stays pinned at top:var(--header-height). */}
+      <div className="flex flex-1 pt-[var(--header-height)]" dir={dir}>
         <button
           type="button"
           aria-label={msg("app.shell.menu_close")}
@@ -247,18 +239,23 @@ function ShellChrome({ children }: { children: React.ReactNode }) {
           aria-hidden={!sidebarOpen}
         />
 
-        <main className="flex-1 overflow-auto min-w-0 page-gradient grid-pattern" dir="rtl">
-          <div
-            className="relative z-[1] mx-auto max-w-7xl py-6 md:py-8"
-            style={{ paddingInline: "clamp(1rem, 5vw - 0.5rem, 2rem)" }}
-          >
-            {children}
-          </div>
+        <main className="app-main flex-1 overflow-auto min-w-0 page-gradient grid-pattern">
+          {/* The tagger picks its own container per phase (full-width working
+              surface vs the capped session chooser), so its routes render bare
+              and wrap themselves in PageContainer — nesting it inside the
+              shell's box would double the inline padding. */}
+          {pathname.startsWith("/tagger") ? children : <PageContainer>{children}</PageContainer>}
         </main>
 
+        {/* The sidebar lives after <main> in source order (content-first for
+            assistive tech) but renders at the inline-start edge — right in
+            Hebrew/RTL, left in English/LTR. On md+ it's position:fixed below the
+            header: a locked rail that never scrolls with the page, with <main>
+            reserving its width via the --app-sidebar-width inline margin. Below md
+            it's an off-canvas drawer pinned to that same inline-start edge. */}
         <div
           id={SIDEBAR_ID}
-          className={`fixed inset-y-0 right-0 z-50 transform transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] md:sticky md:inset-auto md:top-[var(--header-height)] md:self-start md:h-[calc(100dvh-var(--header-height))] md:z-10 md:translate-x-0 md:shadow-none ${sidebarOpen ? "translate-x-0" : "translate-x-full"}`}
+          className={`fixed inset-y-0 ${isRtl ? "right-0" : "left-0"} z-50 transform transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] md:top-[var(--header-height)] md:z-10 md:translate-x-0 md:shadow-none ${sidebarOpen ? "translate-x-0" : isRtl ? "translate-x-full" : "-translate-x-full"}`}
           aria-hidden={sidebarHidden ? true : undefined}
         >
           <Sidebar />

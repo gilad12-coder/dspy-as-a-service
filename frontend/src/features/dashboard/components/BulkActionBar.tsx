@@ -1,30 +1,23 @@
 import { AnimatePresence, motion } from "framer-motion";
 import * as React from "react";
-import { ArrowLeftRight, Trash2, X } from "lucide-react";
+import { Trash, X } from "@/shared/ui/icons";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { TERMS } from "@/shared/lib/terms";
-import { formatMsg, msg } from "@/shared/lib/messages";
+import { msg } from "@/shared/lib/messages";
 
 type BulkActionBarProps = {
   canDelete: boolean;
   selectedCount: number;
-  compareEligibleCount: number;
-  canCompare: boolean;
   onClear: () => void;
-  onCompare: () => void;
   onRequestBulkDelete: () => void;
 };
 
 export function BulkActionBar({
   canDelete,
   selectedCount,
-  compareEligibleCount,
-  canCompare,
   onClear,
-  onCompare,
   onRequestBulkDelete,
 }: BulkActionBarProps) {
-  const skipped = selectedCount - compareEligibleCount;
   return (
     <AnimatePresence>
       {selectedCount > 0 && (
@@ -39,7 +32,6 @@ export function BulkActionBar({
             mass: 0.8,
           }}
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
-          dir="rtl"
           data-tutorial="bulk-action-bar"
         >
           <div className="flex max-w-[92vw] flex-wrap items-center justify-center gap-1 rounded-full border border-border/60 bg-background/95 backdrop-blur-xl px-3 py-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.18)]">
@@ -70,7 +62,7 @@ export function BulkActionBar({
                 className="close-button"
                 style={
                   {
-                    "--close-btn-size": "32px",
+                    "--close-btn-size": "44px",
                     "--close-btn-radius": "9999px",
                     "--close-btn-icon": "16px",
                   } as React.CSSProperties
@@ -78,30 +70,6 @@ export function BulkActionBar({
                 aria-label={msg("auto.features.dashboard.components.bulkactionbar.literal.1")}
               >
                 <X />
-              </button>
-            </TooltipButton>
-            <TooltipButton
-              tooltip={
-                canCompare
-                  ? skipped > 0
-                    ? formatMsg("auto.features.dashboard.components.bulkactionbar.template.1", {
-                        p1: skipped,
-                      })
-                    : msg("auto.features.dashboard.components.bulkactionbar.literal.3")
-                  : msg("auto.features.dashboard.components.bulkactionbar.literal.4")
-              }
-              side="top"
-              delayDuration={150}
-            >
-              <button
-                type="button"
-                onClick={onCompare}
-                disabled={!canCompare}
-                className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-                aria-label={msg("auto.features.dashboard.components.bulkactionbar.literal.2")}
-                data-tutorial="compare-button"
-              >
-                <ArrowLeftRight className="size-4" />
               </button>
             </TooltipButton>
             {canDelete && (
@@ -113,10 +81,10 @@ export function BulkActionBar({
                 <button
                   type="button"
                   onClick={onRequestBulkDelete}
-                  className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive active:scale-95 transition-all cursor-pointer"
+                  className="flex size-[44px] cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-all hover:bg-destructive/10 hover:text-destructive active:scale-95 lg:size-8"
                   aria-label={msg("auto.features.dashboard.components.bulkactionbar.literal.5")}
                 >
-                  <Trash2 className="size-4" />
+                  <Trash className="size-4" />
                 </button>
               </TooltipButton>
             )}

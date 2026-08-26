@@ -1,9 +1,10 @@
-"""Dynamic model catalog powered by LiteLLM's ``model_cost`` registry.
+"""Build the central and user-scoped model catalogs.
 
 LiteLLM ships ``model_prices_and_context_window.json`` — ~2600 models with
 metadata (provider, mode, context window, ``supports_reasoning``, etc.).
-We filter to chat-mode models, de-duplicate dated variants, and mark which
-providers have active API keys via ``litellm.get_valid_models()``.
+We filter to chat-mode models, de-duplicate dated variants, and expose models
+reachable through operator-configured providers or an internal OpenAI-
+compatible gateway. BYOK adds bundled shortcuts plus arbitrary user endpoints.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ import litellm
 from pydantic import BaseModel, Field
 
 from ..config import settings
+from ..provider_registry import BYOK_CATALOG_PREFIXES
+from .errors import DomainError
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +44,14 @@ class CatalogModel(BaseModel):
     label: str = Field(
         ...,
         description=(
-            "Display-only label (provider prefix stripped). Never use as a "
-            "model_name; use ``value`` instead."
+            "Display-only label (provider prefix stripped). Never use as a model_name; use ``value`` instead."
         ),
     )
     provider: str = Field(..., description="Provider slug for grouping (e.g. 'openai').")
+    byok_provider: str | None = Field(
+        default=None,
+        description="Stored-connection slug to persist for a custom BYOK model.",
+    )
     data_center: str | None = Field(
         default=None,
         description=(
@@ -61,6 +67,17 @@ class CatalogModel(BaseModel):
     )
     available: bool = Field(default=False, description="True if backend has an API key for this model.")
     max_input_tokens: int | None = Field(default=None, description="Context window size.")
+    input_cost_per_token: float | None = Field(
+        default=None,
+        description=(
+            "Provider input (prompt) cost per token in USD, from LiteLLM's price "
+            "table. None when unpriced. Kept as informational provider metadata."
+        ),
+    )
+    output_cost_per_token: float | None = Field(
+        default=None,
+        description="Provider output (completion) cost per token in USD, or None when unpriced.",
+    )
 
 
 class CatalogProvider(BaseModel):
@@ -151,7 +168,7 @@ _PROVIDER_META: dict[str, tuple[str, list[_DataCenter]]] = {
         ],
     ),
     "xai": (
-        "xAI (Grok)",
+        "SpaceXAI (Grok)",
         [
             _DataCenter(
                 base_url="https://api.x.ai/v1",
@@ -232,55 +249,55 @@ _PROVIDER_META: dict[str, tuple[str, list[_DataCenter]]] = {
 
 _ON_PREM_DC_LABEL = "On-prem gateway"
 
+# Every provider remains dormant unless its key or internal endpoint is
+# configured. This lets operators choose a central provider without rebuilding.
+_PLATFORM_PROVIDERS: frozenset[str] = frozenset(_PROVIDER_META)
+
 _DATE_SUFFIX_RE = re.compile(r"-\d{4}-\d{2}-\d{2}$")
+
+# LiteLLM provider prefixes offered for bring-your-own-key. The BYOK catalog
+# lists these providers' registry models regardless of platform API keys, since
+# a BYOK run authenticates with the user's own key. Sourced from the canonical
+# ``core.provider_registry`` — a stdlib-only leaf also shared by the vault.
+_BYOK_CATALOG_PROVIDERS: frozenset[str] = BYOK_CATALOG_PREFIXES
 
 
 def _on_prem_base_url() -> str | None:
     """Return the configured internal OpenAI-compatible gateway URL, if any.
 
-    Prefers ``code_agent_base_url`` (the submit-wizard agent gateway) and
-    falls back to ``embeddings_base_url`` since on-prem deployments commonly
-    point both at the same internal gateway family.
+    Uses the deployment-wide OpenAI-compatible base URL.
 
     Returns:
-        The configured internal base URL, or ``None`` when neither
-        ``CODE_AGENT_BASE_URL`` nor ``EMBEDDINGS_BASE_URL`` is set.
+        The configured internal base URL, or ``None`` when unset.
     """
-    return (
-        settings.code_agent_base_url.strip()
-        or settings.embeddings_base_url.strip()
-        or None
-    )
+    return (settings.openai_api_base or "").strip() or None
 
 
 def _provider_data_centers(provider_slug: str) -> list[_DataCenter]:
     """Return the data centers for ``provider_slug`` including the on-prem one.
 
-    The configured on-prem gateway is OpenAI-compatible, so it is surfaced as
-    an extra data center on the ``openai`` provider (its native ``/models``
-    shape matches). All other providers return their static endpoint list
-    unchanged.
+    The configured on-prem gateway is OpenAI-compatible, so it replaces the
+    public OpenAI endpoint. This prevents an internal key from being sent to a
+    public host during catalog discovery. Other providers keep their endpoints.
 
     Args:
         provider_slug: LiteLLM provider key (e.g. ``"openai"``).
 
     Returns:
-        The provider's data centers, with the on-prem gateway appended when
-        configured and applicable to this provider.
+        The provider's configured data centers.
     """
-    centers = list(_PROVIDER_META[provider_slug][1])
     if provider_slug == "openai":
         on_prem = _on_prem_base_url()
         if on_prem:
-            centers.append(
+            return [
                 _DataCenter(
                     label=_ON_PREM_DC_LABEL,
                     base_url=on_prem,
                     models_url=f"{on_prem.rstrip('/')}/models",
                     env_var="OPENAI_API_KEY",
                 )
-            )
-    return centers
+            ]
+    return list(_PROVIDER_META[provider_slug][1])
 
 
 def _make_label(model_id: str) -> str:
@@ -294,6 +311,21 @@ def _make_label(model_id: str) -> str:
     """
     name = model_id.split("/", 1)[-1] if "/" in model_id else model_id
     return name
+
+
+def _positive_cost(meta: dict, key: str) -> float | None:
+    """Return a positive per-token cost (USD) from a LiteLLM meta block, or None.
+
+    Args:
+        meta: A ``litellm.model_cost`` entry.
+        key: ``"input_cost_per_token"`` or ``"output_cost_per_token"``.
+
+    Returns:
+        The cost as a float when present and positive, else ``None`` so the client
+        falls back to a default rate rather than treating the model as free.
+    """
+    value = meta.get(key)
+    return float(value) if isinstance(value, (int, float)) and value > 0 else None
 
 
 def _probe_prefixed_id(provider_slug: str, model_id: str) -> str:
@@ -472,7 +504,7 @@ def _probe_all_providers() -> dict[tuple[str, str | None], dict[str, dict] | Non
     results: dict[tuple[str, str | None], dict[str, dict] | None] = {}
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {}
-        for slug in _PROVIDER_META:
+        for slug in _PLATFORM_PROVIDERS:
             for dc in _provider_data_centers(slug):
                 futures[executor.submit(_probe_deployed_models, slug, dc)] = (slug, dc.label)
         for fut in as_completed(futures):
@@ -520,7 +552,7 @@ def get_catalog() -> ModelCatalogResponse:
 
         provider_slug: str = meta.get("litellm_provider", "unknown")
 
-        if provider_slug not in _PROVIDER_META:
+        if provider_slug not in _PLATFORM_PROVIDERS:
             continue
 
         base_name = _DATE_SUFFIX_RE.sub("", model_id)
@@ -537,11 +569,7 @@ def get_catalog() -> ModelCatalogResponse:
         # Probe responses use the provider's native ID shape (e.g.
         # ``accounts/fireworks/models/...``), not the ``fireworks_ai/...``
         # catalog prefix — match against the un-prefixed form.
-        canonical_id = (
-            model_id.split("/", 1)[1]
-            if model_id.startswith(f"{provider_slug}/")
-            else model_id
-        )
+        canonical_id = model_id.split("/", 1)[1] if model_id.startswith(f"{provider_slug}/") else model_id
 
         provider_label = _PROVIDER_META[provider_slug][0]
         for dc in _provider_data_centers(provider_slug):
@@ -576,6 +604,8 @@ def get_catalog() -> ModelCatalogResponse:
                     supports_vision=bool(meta.get("supports_vision")),
                     available=available,
                     max_input_tokens=meta.get("max_input_tokens"),
+                    input_cost_per_token=_positive_cost(meta, "input_cost_per_token"),
+                    output_cost_per_token=_positive_cost(meta, "output_cost_per_token"),
                 )
             )
 
@@ -632,11 +662,7 @@ def get_catalog() -> ModelCatalogResponse:
 
     available_dcs = {(m.provider, m.data_center) for m in models}
     providers = sorted(
-        (
-            p
-            for p in seen_providers.values()
-            if (p.slug, p.data_center) in available_dcs or not p.env_var
-        ),
+        (p for p in seen_providers.values() if (p.slug, p.data_center) in available_dcs or not p.env_var),
         key=lambda p: (not p.has_env_key, p.slug, p.data_center or ""),
     )
 
@@ -659,23 +685,26 @@ def _refresh_catalog_in_background() -> None:
     refresh threads.
     """
     global _cached_response, _cached_at_monotonic, _refresh_in_flight
+    fresh: ModelCatalogResponse | None = None
     try:
         fresh = get_catalog()
     except Exception:
         logger.exception("Model catalog background refresh failed; keeping previous snapshot")
-        return
     finally:
-        # Clear the flag regardless so the next stale read can re-trigger.
-        pass
-    with _cache_lock:
-        _cached_response = fresh
-        _cached_at_monotonic = time.monotonic()
-        _refresh_in_flight = False
-    logger.info(
-        "Model catalog refreshed in background: %d providers, %d models",
-        len(fresh.providers),
-        len(fresh.models),
-    )
+        # Clearing in finally (not just the success path) is the point: a failed
+        # refresh must still release the guard, or it wedges True and no future
+        # stale read can ever re-trigger a refresh for the process's lifetime.
+        with _cache_lock:
+            if fresh is not None:
+                _cached_response = fresh
+                _cached_at_monotonic = time.monotonic()
+            _refresh_in_flight = False
+    if fresh is not None:
+        logger.info(
+            "Model catalog refreshed in background: %d providers, %d models",
+            len(fresh.providers),
+            len(fresh.models),
+        )
 
 
 def _kick_background_refresh() -> None:
@@ -712,11 +741,7 @@ def get_catalog_cached() -> ModelCatalogResponse:
     global _cached_response, _cached_at_monotonic
     ttl = float(settings.model_catalog_ttl_seconds)
     now = time.monotonic()
-    fresh = (
-        ttl > 0.0
-        and _cached_response is not None
-        and (now - _cached_at_monotonic) < ttl
-    )
+    fresh = ttl > 0.0 and _cached_response is not None and (now - _cached_at_monotonic) < ttl
     if fresh:
         return _cached_response  # type: ignore[return-value]
     if _cached_response is not None:
@@ -753,3 +778,103 @@ def prewarm_catalog() -> None:
     _kick_background_refresh()
 
 
+def get_byok_catalog() -> ModelCatalogResponse:
+    """Build the bring-your-own-key model catalog from LiteLLM's registry.
+
+    Unlike :func:`get_catalog`, availability is not gated on a platform API key:
+    every chat model of a BYOK-offered provider is listed and marked available,
+    because a BYOK run pays with the user's own key, not the platform's. The
+    client narrows this to the providers the signed-in user has actually
+    connected. There is no live network probe — purely the bundled
+    ``litellm.model_cost`` registry — so the build is cheap and deterministic.
+
+    Returns:
+        A :class:`ModelCatalogResponse` of every BYOK-offered provider's chat
+        models, each ``available=True``, grouped by provider.
+    """
+    cost: dict[str, dict] = litellm.model_cost
+    seen_providers: dict[str, CatalogProvider] = {}
+    models: list[CatalogModel] = []
+    base_names_seen: set[str] = set()
+
+    for model_id, meta in cost.items():
+        if meta.get("mode") != "chat":
+            continue
+        provider_slug: str = meta.get("litellm_provider", "unknown")
+        if provider_slug not in _BYOK_CATALOG_PROVIDERS:
+            continue
+
+        base_name = _DATE_SUFFIX_RE.sub("", model_id)
+        if base_name != model_id and base_name in cost:
+            continue
+        if base_name in base_names_seen:
+            continue
+        base_names_seen.add(base_name)
+
+        # dspy.LM rejects un-prefixed IDs — always emit ``provider/model``.
+        prefixed_id = model_id if "/" in model_id else f"{provider_slug}/{model_id}"
+
+        if provider_slug not in seen_providers:
+            seen_providers[provider_slug] = CatalogProvider(
+                slug=provider_slug,
+                label=_PROVIDER_META[provider_slug][0],
+                data_center=None,
+                env_var=None,
+                default_base_url=None,
+                has_env_key=False,
+            )
+
+        models.append(
+            CatalogModel(
+                value=prefixed_id,
+                label=_make_label(model_id),
+                provider=provider_slug,
+                data_center=None,
+                supports_thinking=bool(meta.get("supports_reasoning")),
+                supports_vision=bool(meta.get("supports_vision")),
+                available=True,
+                max_input_tokens=meta.get("max_input_tokens"),
+                input_cost_per_token=_positive_cost(meta, "input_cost_per_token"),
+                output_cost_per_token=_positive_cost(meta, "output_cost_per_token"),
+            )
+        )
+
+    models.sort(key=lambda m: (m.provider, m.value))
+    providers = sorted(seen_providers.values(), key=lambda p: p.slug)
+    return ModelCatalogResponse(providers=providers, models=models)
+
+
+_byok_cached: ModelCatalogResponse | None = None
+
+
+def get_byok_catalog_cached() -> ModelCatalogResponse:
+    """Return the BYOK catalog, built once per process.
+
+    The bundled registry is static for a process's lifetime, so a single lazy
+    build (no TTL, no background refresh) is enough — unlike the platform catalog
+    whose availability depends on live provider probes.
+
+    Returns:
+        The cached BYOK :class:`ModelCatalogResponse`.
+    """
+    global _byok_cached
+    if _byok_cached is None:
+        _byok_cached = get_byok_catalog()
+    return _byok_cached
+
+
+def require_known_model(model: str | None) -> None:
+    """Reject a model id that is not in the curated catalog.
+
+    Guards every endpoint that lets the client pick an organization-managed
+    model so arbitrary endpoints cannot bypass the configured catalog.
+
+    Args:
+        model: LiteLLM model id; empty/None passes (the server default runs).
+
+    Raises:
+        DomainError: 422 when the id is not a catalog model.
+    """
+    name = str(model or "").strip()
+    if name and all(entry.value != name for entry in get_catalog_cached().models):
+        raise DomainError("models.unknown_model", status=422)

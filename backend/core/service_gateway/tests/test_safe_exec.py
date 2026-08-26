@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from core.exceptions import ServiceError
+from core.service_gateway import safe_exec
 from core.service_gateway.safe_exec import (
     MetricIntrospection,
     MetricProbeResult,
@@ -226,3 +227,27 @@ class TestProbeMetricOnSample:
 
         assert probe.result_kind == "numeric"
         assert probe.error is None
+
+
+class TestBoundedCachePut:
+    """The validation memo dicts stay bounded in the long-lived API process."""
+
+    def test_evicts_oldest_at_cap(self) -> None:
+        """Insertion past the cap drops the oldest key, never the newest."""
+        cache: dict[str, int] = {}
+        for i in range(safe_exec._VALIDATION_CACHE_MAX_ENTRIES + 10):
+            safe_exec._bounded_cache_put(cache, f"code-{i}", i)
+
+        assert len(cache) == safe_exec._VALIDATION_CACHE_MAX_ENTRIES
+        assert "code-0" not in cache
+        assert f"code-{safe_exec._VALIDATION_CACHE_MAX_ENTRIES + 9}" in cache
+
+    def test_rewriting_existing_key_does_not_evict(self) -> None:
+        """Updating a present key at the cap must not shrink the cache."""
+        cache: dict[str, int] = {}
+        for i in range(safe_exec._VALIDATION_CACHE_MAX_ENTRIES):
+            safe_exec._bounded_cache_put(cache, f"code-{i}", i)
+        safe_exec._bounded_cache_put(cache, "code-0", 999)
+
+        assert len(cache) == safe_exec._VALIDATION_CACHE_MAX_ENTRIES
+        assert cache["code-0"] == 999

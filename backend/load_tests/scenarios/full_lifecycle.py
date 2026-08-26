@@ -146,6 +146,7 @@ async def run(config: LifecycleConfig) -> ScenarioResult:
         wall-clock seconds (not just HTTP round-trip).
     """
     db_inspector.truncate_test_users(config.usernames)
+    db_inspector.fund_test_users(config.usernames)
 
     metrics = ScenarioMetrics("full_lifecycle")
     submit_failures = 0
@@ -198,9 +199,7 @@ async def run(config: LifecycleConfig) -> ScenarioResult:
     result.extras["submit_failures"] = submit_failures
     submit_sorted = sorted(submit_latencies_ms)
     if submit_sorted:
-        result.extras["submit_only_p50_ms"] = round(
-            submit_sorted[len(submit_sorted) // 2], 1
-        )
+        result.extras["submit_only_p50_ms"] = round(submit_sorted[len(submit_sorted) // 2], 1)
         result.extras["submit_only_p95_ms"] = round(
             submit_sorted[min(len(submit_sorted) - 1, int(len(submit_sorted) * 0.95))],
             1,

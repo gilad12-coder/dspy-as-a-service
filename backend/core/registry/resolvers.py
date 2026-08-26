@@ -45,6 +45,9 @@ MODULE_ALIASES: Mapping[str, ModuleAlias] = MappingProxyType(
             ),
             auto_signature=True,
         ),
+        # Flex is dspy 3.3+ only; on the stable line ``dspy.Flex`` is absent
+        # and this alias resolves to a ResolverError at submission time.
+        "flex": ModuleAlias(("dspy.Flex",), auto_signature=True),
     }
 )
 

@@ -17,6 +17,7 @@ extraction rules.
 
 from __future__ import annotations
 
+import gc
 import logging
 import os
 import signal
@@ -46,22 +47,20 @@ except ImportError:  # Optional dep: tests/CI can run without the Scalar docs UI
     get_scalar_api_reference = None  # type: ignore[assignment]
 
 from ..config import settings
+from ..error_reporting import capture_exception
 from ..exceptions import AppError
 from ..models import HEALTH_STATUS_OK, HealthResponse, QueueStatusResponse
+from ..notifications import configure_notification_preferences
 from ..registry import ServiceRegistry
-from ..registry.resolvers import (
-    MODULE_ALIASES,
-    OPTIMIZER_ALIASES,
-    resolve_module_factory,
-    resolve_optimizer_factory,
-)
 from ..service_gateway import DspyService
 from ..service_gateway.embedding_pipeline import (
     backfill_missing_conversation_embeddings,
-    backfill_missing_embeddings,
     purge_orphan_conversation_embeddings,
     purge_orphan_embeddings,
+    start_embedding_index_sweeper,
 )
+from ..service_gateway.language_models import install_openrouter_served_model_patch
+from ..service_gateway.service_builder import wire_registry_aliases
 from ..storage import get_job_store
 from ..worker.engine import BackgroundWorker, get_worker
 from .directory_client import build_directory_client
@@ -80,10 +79,14 @@ from .observability import (
     start_staged_dataset_sweeper,
     start_stale_conversation_sweeper,
 )
+from .routers.accounts import create_accounts_router
 from .routers.admin import create_admin_router
+from .routers.admin_accounts import create_admin_accounts_router
 from .routers.agent_history import create_agent_history_router
+from .routers.agent_memory import create_agent_memory_router
 from .routers.analytics import create_analytics_router
 from .routers.api_tokens import create_api_tokens_router
+from .routers.byok import create_byok_router
 from .routers.code_agent import create_code_agent_router
 from .routers.code_validation import create_code_validation_router
 from .routers.dashboard import create_dashboard_router
@@ -91,15 +94,24 @@ from .routers.dataset_library import create_dataset_library_router
 from .routers.dataset_share import create_dataset_share_router
 from .routers.datasets import create_datasets_router
 from .routers.generalist_agent import create_generalist_agent_router
+from .routers.mcp_probe import create_mcp_probe_router
 from .routers.models import create_models_router
+from .routers.notification_preferences import create_notification_preferences_router
 from .routers.optimizations import create_optimizations_router
 from .routers.optimizations_meta import create_optimizations_meta_router
 from .routers.registry import create_registry_router
 from .routers.serve import create_serve_router
 from .routers.share import create_share_router
 from .routers.submissions import create_submissions_router
+from .routers.tagger_assist import create_tagger_assist_router
+from .routers.tagging_session_share import create_tagging_session_share_router
+from .routers.tagging_sessions import create_tagging_session_router
+from .routers.telemetry import create_telemetry_router
+from .routers.transcription import create_transcription_router
 from .routers.usage import create_usage_router
+from .routers.user_preferences import create_user_preferences_router
 from .routers.wizard import create_wizard_router
+from .routers.workflows import create_workflows_router
 
 logger = logging.getLogger(__name__)
 
@@ -663,30 +675,27 @@ def create_app(
     Returns:
         The fully wired :class:`FastAPI` application.
     """
+    install_openrouter_served_model_patch()
     registry = registry or ServiceRegistry()
     # Mirror the alias-backed factories from the resolver into the registry
     # so ``get_registry_snapshot`` reflects the actually-supported names
-    # rather than empty lists. Skipped on names already registered so a
-    # pre-built ``registry`` (tests, custom deployments) wins.
-    for _alias in OPTIMIZER_ALIASES:
-        if _alias not in registry.optimizers:
-            registry.register_optimizer(_alias, resolve_optimizer_factory(_alias))
-    for _alias in MODULE_ALIASES:
-        if _alias not in registry.modules:
-            _factory, _ = resolve_module_factory(_alias)
-            registry.register_module(_alias, _factory)
+    # rather than empty lists (shared with the standalone worker entrypoint,
+    # which needs identical wiring).
+    wire_registry_aliases(registry)
     service = service or DspyService(
         registry,
         **(service_kwargs or {}),
     )
 
     job_store = get_job_store()
+    configure_notification_preferences(job_store.engine)
 
     worker: BackgroundWorker | None = None
     queue_metrics_refresher = None
     orphan_sweeper = None
     stale_conversation_sweeper = None
     staged_dataset_sweeper = None
+    embedding_sweeper = None
     loop_lag_monitor = None
 
     @asynccontextmanager
@@ -705,6 +714,7 @@ def create_app(
             queue_metrics_refresher, \
             staged_dataset_sweeper, \
             stale_conversation_sweeper, \
+            embedding_sweeper, \
             worker
         # Reclaim jobs whose worker lease has expired. Under multi-pod scaling
         # this only fails rows whose ``lease_expires_at`` is in the past — a
@@ -716,8 +726,15 @@ def create_app(
         # any pod can claim a pending row via ``claim_next_job`` on its next
         # tick, but we still pass the IDs as a same-pod hint so a fresh restart
         # resumes work without waiting a full poll interval.
-        pending_ids = job_store.recover_pending_jobs()
-        worker = get_worker(job_store, service=service, pending_optimization_ids=pending_ids)
+        pending_ids = []
+        if settings.worker_enabled:
+            pending_ids = job_store.recover_pending_jobs()
+            worker = get_worker(job_store, service=service, pending_optimization_ids=pending_ids)
+        else:
+            # Split deployment: this pod serves the API only; job execution
+            # runs in dedicated worker replicas (worker_main.py) so request
+            # traffic and job memory can't sink each other.
+            logger.info("In-process worker disabled (WORKER_ENABLED=0); expecting external worker replicas")
         queue_metrics_refresher = start_queue_metrics_refresher(job_store)
         # Without a periodic sweeper, a pod that dies mid-job leaves its
         # leases ticking down with no peer scanning for them — the row is
@@ -731,7 +748,8 @@ def create_app(
             logger.info("Event-loop lag monitor enabled (threshold %.0fms)", settings.event_loop_lag_threshold_ms)
         if pending_ids:
             logger.info("Re-queued %d pending jobs from previous run (local hint)", len(pending_ids))
-        logger.info("Background worker started")
+        if worker is not None:
+            logger.info("Background worker started")
 
         # Probe every provider's /v1/models endpoint in a background thread
         # so the catalog is hot by the time the first agent turn arrives.
@@ -739,27 +757,20 @@ def create_app(
         # ~15-20s for the cold-cache parallel probe to settle.
         prewarm_catalog()
 
-        # Embedding maintenance below is idempotent but redundantly expensive
+        # Embedding orphan cleanup is idempotent but redundantly expensive
         # across a rolling deploy. The advisory lock makes one replica the
-        # leader so the work runs once per restart, not once per pod. Peers
-        # skip the block and trust the leader's writes (visible in the
-        # shared DB before they begin serving traffic).
+        # leader so the cleanup runs once per restart, not once per pod.
+        # Continuous missing/stale-row repair runs below on every replica and
+        # uses its own advisory lock so it survives leader restarts.
         engine = getattr(job_store, "engine", None)
         with advisory_lock(engine, STARTUP_WORK_LOCK_KEY) as is_startup_leader:
             if is_startup_leader and settings.embeddings_enabled:
-                # The explore search vector is embedded on a daemon thread
-                # when a job succeeds; a crashed thread (LLM creds, API blip)
-                # leaves the row missing forever and the job silently drops
-                # out of search. A startup backfill drains the gap; the orphan
-                # purge cleans up rows whose job was deleted before the
-                # cascade into job_embeddings completed.
+                # The periodic sweeper owns embedding retries; this startup
+                # pass only removes rows whose source job was deleted.
                 try:
                     purge_orphan_embeddings(job_store)
-                    queued = backfill_missing_embeddings(job_store)
-                    if queued:
-                        logger.info("Embedding backfill queued for %d job(s)", queued)
                 except Exception as exc:
-                    logger.warning("Embedding backfill scan failed: %s", exc)
+                    logger.warning("Embedding orphan cleanup failed: %s", exc)
                 if engine is not None:
                     try:
                         purge_orphan_conversation_embeddings(engine)
@@ -776,6 +787,9 @@ def create_app(
             else:
                 logger.info("Embedding maintenance skipped — peer replica is leader")
 
+        if settings.embeddings_enabled:
+            embedding_sweeper = start_embedding_index_sweeper(job_store)
+
         # SIGTERM handler can only be registered on the main interpreter
         # thread. ``threading.current_thread()`` lets us detect when the
         # lifespan is running inside a worker thread (e.g. uvicorn reload).
@@ -787,6 +801,16 @@ def create_app(
                 signal.SIGTERM,
                 partial(_graceful_shutdown_handler, worker, original_handler),
             )
+
+        # The worker forks a child process per optimization job, and CPython's
+        # GC writes to every tracked object's header during collection —
+        # dirtying copy-on-write pages in the parent AND all live children.
+        # Freezing the fully-initialized startup heap moves it to the
+        # permanent generation neither side ever scans, keeping the
+        # import-heavy base (dspy/litellm, ~hundreds of MB) physically shared
+        # across every fork instead of duplicated per job.
+        gc.collect()
+        gc.freeze()
 
         try:
             yield
@@ -804,6 +828,8 @@ def create_app(
                 stale_conversation_sweeper.stop()
             if staged_dataset_sweeper:
                 staged_dataset_sweeper.stop()
+            if embedding_sweeper:
+                embedding_sweeper.stop()
             if loop_lag_monitor:
                 loop_lag_monitor.stop()
 
@@ -978,6 +1004,36 @@ def create_app(
             media_type="application/problem+json",
         )
 
+    def _cors_headers_for(request: Request) -> dict[str, str]:
+        """Return the CORS headers ``CORSMiddleware`` would add for this request.
+
+        Mirrors the middleware config above (specific-origin echo with
+        credentials, or a literal ``*`` when the allowlist is open) so the
+        generic 500 handler — which runs outside CORSMiddleware — can re-attach
+        them. Returns an empty dict for same-origin / non-CORS requests (no
+        ``Origin`` header) and for disallowed origins, matching the middleware's
+        "stay silent" behavior so error responses never widen access.
+
+        Args:
+            request: The incoming HTTP request.
+
+        Returns:
+            The CORS response headers to merge onto the error response.
+        """
+        origin = request.headers.get("origin")
+        if not origin:
+            return {}
+        allowed = settings.cors_origins_list
+        if "*" in allowed:
+            return {"Access-Control-Allow-Origin": "*"}
+        if origin in allowed:
+            return {
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Credentials": "true",
+                "Vary": "Origin",
+            }
+        return {}
+
     @app.exception_handler(AppError)
     async def _app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         """Serialize ``AppError`` instances to the RFC 9457 problem envelope.
@@ -1057,6 +1113,7 @@ def create_app(
         Returns:
             A 500 :class:`JSONResponse` with a generic ``internal_error`` envelope.
         """
+        capture_exception(exc)
         logger.error(
             "Unhandled exception in %s %s: %s",
             request.method,
@@ -1070,6 +1127,15 @@ def create_app(
             error_type="internal_error",
             detail="An internal server error occurred. Please contact support.",
             title="Internal server error",
+            # Starlette runs the generic-Exception handler in its outermost
+            # ServerErrorMiddleware, above CORSMiddleware, so this 500 never
+            # passes back through CORS. Without the allow-origin header a browser
+            # reports the error as a CORS/network failure ("Failed to fetch") —
+            # i.e. a real backend 500 masquerades as "can't reach the server".
+            # Re-attach the headers CORSMiddleware would have added so the actual
+            # error surfaces to cross-origin callers. Other handlers (AppError,
+            # HTTPException, validation) run inside CORSMiddleware and don't need this.
+            headers=_cors_headers_for(request),
         )
 
     worker_stale_threshold = float(os.getenv("WORKER_STALE_THRESHOLD", "600"))
@@ -1087,26 +1153,31 @@ def create_app(
             A :class:`HealthResponse` snapshot of the registered assets.
 
         Raises:
-            DomainError: 503 when workers are dead or stuck longer than
+            DomainError: 503 when the in-process worker is enabled and its
+                threads are dead or stuck longer than
                 ``WORKER_STALE_THRESHOLD`` seconds (default 600).
         """
-        if worker is None or not worker.threads_alive():
-            logger.error("Health check failed: worker threads are not alive")
-            raise DomainError("health.workers_dead", status=503)
+        # An API-only pod (WORKER_ENABLED=0) has no in-process worker by
+        # design — job-execution health belongs to the worker service — so
+        # the thread probes only run where a worker is supposed to exist.
+        if settings.worker_enabled:
+            if worker is None or not worker.threads_alive():
+                logger.error("Health check failed: worker threads are not alive")
+                raise DomainError("health.workers_dead", status=503)
 
-        stale_seconds = worker.seconds_since_last_activity()
-        if stale_seconds is not None and stale_seconds > worker_stale_threshold:
-            stack_dump = worker.dump_thread_stacks()
-            logger.error(
-                "Health check failed: workers stuck for %.0fs. Thread stacks:\n%s",
-                stale_seconds,
-                stack_dump,
-            )
-            raise DomainError(
-                "health.workers_stuck",
-                status=503,
-                seconds=f"{stale_seconds:.0f}",
-            )
+            stale_seconds = worker.seconds_since_last_activity()
+            if stale_seconds is not None and stale_seconds > worker_stale_threshold:
+                stack_dump = worker.dump_thread_stacks()
+                logger.error(
+                    "Health check failed: workers stuck for %.0fs. Thread stacks:\n%s",
+                    stale_seconds,
+                    stack_dump,
+                )
+                raise DomainError(
+                    "health.workers_stuck",
+                    status=503,
+                    seconds=f"{stale_seconds:.0f}",
+                )
 
         snapshot = registry.snapshot()
         logger.debug("Health check requested; registered assets: %s", snapshot)
@@ -1128,14 +1199,41 @@ def create_app(
         summary="Current worker queue depth and health",
     )
     def get_queue_status() -> QueueStatusResponse:
-        """Return pending/active job counts and worker-thread health.
+        """Return pending/active job counts and worker health.
 
-        All counts are zero before the lifespan context starts.
+        All counts are zero before the lifespan context starts. On an
+        API-only pod (``WORKER_ENABLED=0``) the counts come from the shared
+        store and ``workers_alive`` reflects queue liveness instead of local
+        threads.
 
         Returns:
             A :class:`QueueStatusResponse` describing the current worker queue.
         """
         if worker is None:
+            if not settings.worker_enabled:
+                # Job execution lives in the worker service, whose threads
+                # this process can't see. The user-relevant failure is "work
+                # is waiting and nobody claims it", so liveness is inferred
+                # from pending-queue staleness in the shared store — a false
+                # "workers offline" banner on every dashboard would be worse
+                # than the ~stale-threshold detection delay.
+                pending_jobs = 0
+                active_jobs = 0
+                stalled = False
+                get_metrics = getattr(job_store, "get_queue_metrics", None)
+                if get_metrics is not None:
+                    pending_jobs, queue_age_seconds = get_metrics()
+                    stalled = pending_jobs > 0 and queue_age_seconds > worker_stale_threshold
+                count_by_status = getattr(job_store, "count_jobs_by_status", None)
+                if count_by_status is not None:
+                    counts = count_by_status()
+                    active_jobs = int(counts.get("running", 0)) + int(counts.get("validating", 0))
+                return QueueStatusResponse(
+                    pending_jobs=pending_jobs,
+                    active_jobs=active_jobs,
+                    worker_threads=0,
+                    workers_alive=not stalled,
+                )
             return QueueStatusResponse(
                 pending_jobs=0,
                 active_jobs=0,
@@ -1160,17 +1258,33 @@ def create_app(
         create_admin_router(job_store=job_store, directory_client=build_directory_client()),
         tags=["Admin"],
     )
+    app.include_router(create_admin_accounts_router(job_store=job_store), tags=["Admin"])
     app.include_router(create_registry_router(registry=registry), tags=["Registry"])
     app.include_router(create_code_validation_router(), tags=["Code Validation"])
-    app.include_router(create_code_agent_router(), tags=["Code Validation"])
+    app.include_router(create_mcp_probe_router(), tags=["Code Validation"])
+    app.include_router(create_transcription_router(), tags=["Transcription"])
+    app.include_router(create_code_agent_router(job_store=job_store), tags=["Code Validation"])
     app.include_router(create_generalist_agent_router(job_store=job_store), tags=["Optimizations"])
+    app.include_router(create_agent_memory_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_agent_history_router(job_store=job_store), tags=["Optimizations"])
     app.include_router(create_api_tokens_router(job_store=job_store), tags=["Settings"])
+    app.include_router(create_byok_router(job_store=job_store), tags=["Settings"])
+    app.include_router(create_accounts_router(job_store=job_store), tags=["Auth"])
+    app.include_router(create_notification_preferences_router(job_store=job_store), tags=["Settings"])
     app.include_router(create_datasets_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_dataset_library_router(job_store=job_store), tags=["Datasets"])
     app.include_router(create_dataset_share_router(job_store=job_store), tags=["Datasets"])
+    app.include_router(create_tagging_session_router(job_store=job_store), tags=["Optimizations"])
+    app.include_router(create_tagging_session_share_router(job_store=job_store), tags=["Optimizations"])
+    app.include_router(
+        create_tagger_assist_router(job_store=job_store, get_worker_ref=lambda: worker),
+        tags=["Optimizations"],
+    )
     app.include_router(create_usage_router(job_store=job_store), tags=["Settings"])
+    app.include_router(create_user_preferences_router(), tags=["Settings"])
+    app.include_router(create_telemetry_router(job_store=job_store), tags=["Telemetry"])
     app.include_router(create_wizard_router(), tags=["Wizard"])
+    app.include_router(create_workflows_router(job_store=job_store), tags=["Workflows"])
     app.include_router(
         create_submissions_router(service=service, job_store=job_store),
         tags=["Optimizations"],

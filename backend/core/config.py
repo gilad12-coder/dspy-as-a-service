@@ -6,7 +6,6 @@ validates environment variables at startup and provides typed access.
 
 from __future__ import annotations
 
-import json
 import subprocess
 from functools import cached_property
 from pathlib import Path
@@ -18,16 +17,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _ENV_FILE = Path(__file__).parent.parent / ".env"
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Both agents (submit-wizard code agent + Cmd/Ctrl+J generalist) default
-# to this one model id, so a single swap covers both; override per agent
-# via CODE_AGENT_MODEL / GENERALIST_AGENT_MODEL.
-#
-# TODO: On-prem / air-gap — set this to whatever LiteLLM identifier your
-# internal gateway exposes (e.g. "openai/<model>") and point
-# CODE_AGENT_BASE_URL / GENERALIST_AGENT_BASE_URL at the gateway via env.
-# The shipped default is OpenRouter-hosted MiniMax M3.
-# Requires OPENROUTER_API_KEY in the env.
-DEFAULT_AGENT_MODEL_ID = "openrouter/minimax/minimax-m3"
+# Operators should override this alias with the model id exposed by their
+# internal gateway. The placeholder cannot silently target a public provider.
+DEFAULT_AGENT_MODEL_ID = "openai/on-prem-default"
 
 
 class Settings(BaseSettings):
@@ -48,18 +40,105 @@ class Settings(BaseSettings):
     remote_db_url: SecretStr | None = Field(default=None, description="PostgreSQL connection string for remote storage")
 
     openai_api_key: SecretStr | None = Field(default=None, description="OpenAI API key for model access")
-    anthropic_api_key: SecretStr | None = Field(default=None, description="Anthropic API key for Claude models")
-    fireworks_ai_api_key: SecretStr | None = Field(
+    openai_api_base: str | None = Field(
         default=None,
         description=(
-            "Fireworks API key. LiteLLM reads it from the env for serving; the "
-            "training-ground grounding scorer reads it here to call the echo "
-            "completions endpoint directly."
+            "Base URL of the OpenAI-compatible LLM gateway (LiteLLM reads the same "
+            "env var for serving)."
         ),
     )
-
+    groq_api_key: SecretStr | None = Field(
+        default=None,
+        description="Optional operator-managed Groq key for centrally configured models.",
+    )
+    anthropic_api_key: SecretStr | None = Field(default=None, description="Anthropic API key for Claude models")
+    transcription_base_url: str = Field(
+        default="",
+        alias="TRANSCRIPTION_BASE_URL",
+        description=(
+            "OpenAI-compatible speech-to-text API base inside the private network. "
+            "Unset disables dictation and its UI."
+        ),
+    )
+    transcription_api_key: SecretStr | None = Field(
+        default=None,
+        alias="TRANSCRIPTION_API_KEY",
+        description="Optional bearer token for the configured transcription endpoint.",
+    )
+    smtp_host: str | None = Field(
+        default=None,
+        alias="SMTP_HOST",
+        description="Optional internal SMTP relay for operational notifications.",
+    )
+    smtp_port: int = Field(default=587, alias="SMTP_PORT", description="SMTP relay port.")
+    smtp_username: str | None = Field(
+        default=None,
+        alias="SMTP_USERNAME",
+        description="Optional SMTP authentication username.",
+    )
+    smtp_password: SecretStr | None = Field(
+        default=None,
+        alias="SMTP_PASSWORD",
+        description="Optional SMTP authentication password.",
+    )
+    smtp_from: str | None = Field(
+        default=None,
+        alias="SMTP_FROM",
+        description="Notification sender address; falls back to SMTP_USERNAME.",
+    )
+    smtp_starttls: bool = Field(
+        default=True,
+        alias="SMTP_STARTTLS",
+        description="Upgrade the SMTP connection with STARTTLS.",
+    )
+    transcription_model: str = Field(
+        default="whisper-large-v3-turbo",
+        alias="TRANSCRIPTION_MODEL",
+        description="Model identifier sent to the OpenAI-compatible transcription endpoint.",
+    )
+    byok_vault_key: SecretStr | None = Field(
+        default=None,
+        alias="BYOK_VAULT_KEY",
+        description="Fernet key (urlsafe base64, 32 bytes) that encrypts stored BYOK provider secrets at rest. Unset disables saving keys (the vault degrades to read-only); reads of already-stored masked metadata still work.",
+    )
+    litellm_proxy_url: str | None = Field(
+        default=None,
+        alias="LITELLM_PROXY_URL",
+        description="Base URL of the self-hosted LiteLLM proxy that fronts managed inference (e.g. https://proxy.internal/v1). Unset (the default) routes managed runs directly to providers via process env keys; set it to flow all managed traffic through the metered gateway. BYOK runs always bypass the proxy and reach their provider directly.",
+    )
+    litellm_proxy_api_key: SecretStr | None = Field(
+        default=None,
+        alias="LITELLM_PROXY_API_KEY",
+        description="Virtual key the backend presents to the LiteLLM proxy for managed runs. Only consulted when LITELLM_PROXY_URL is set.",
+    )
+    openrouter_api_key: SecretStr | None = Field(
+        default=None,
+        alias="OPENROUTER_API_KEY",
+        description="Optional operator-managed OpenRouter key for centrally configured models.",
+    )
+    worker_enabled: bool = Field(
+        default=True,
+        alias="WORKER_ENABLED",
+        description=(
+            "Start the in-process job worker alongside the API. Set false on "
+            "API-only pods when job execution runs in dedicated worker "
+            "replicas (worker_main.py)."
+        ),
+    )
     worker_threads: int = Field(
         default=4, ge=1, le=32, description="Number of concurrent worker threads", alias="WORKER_CONCURRENCY"
+    )
+    job_admission_max_memory_fraction: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Container memory usage fraction above which idle workers defer "
+            "claiming new jobs (running jobs are unaffected); the job waits in "
+            "the Postgres queue instead of OOM-killing the pod. 0 disables; "
+            "also inert where no cgroup limit is readable (e.g. bare-metal dev)."
+        ),
+        alias="JOB_ADMISSION_MAX_MEMORY_FRACTION",
     )
     worker_poll_interval: float = Field(
         default=1.0, ge=0.1, le=60.0, description="Seconds between queue polling cycles"
@@ -115,6 +194,29 @@ class Settings(BaseSettings):
         ),
         alias="EVENT_LOOP_LAG_MONITOR",
     )
+    telemetry_enabled: bool = Field(
+        default=True,
+        description=(
+            "Accept first-party product-telemetry events at POST /telemetry/events. "
+            "When off, ingestion is a silent no-op (events are dropped, never "
+            "stored) — an ops kill switch for incident response or write-volume "
+            "control. The read endpoints are unaffected."
+        ),
+        alias="TELEMETRY_ENABLED",
+    )
+    posthog_project_api_key: SecretStr | None = Field(
+        default=None,
+        alias="POSTHOG_PROJECT_API_KEY",
+        description=(
+            "PostHog project key for privacy-preserving export of accepted first-party telemetry. "
+            "Unset keeps analytics entirely in Postgres."
+        ),
+    )
+    posthog_host: str = Field(
+        default="https://eu.i.posthog.com",
+        alias="POSTHOG_HOST",
+        description="PostHog event-ingestion origin; defaults to the EU cloud endpoint.",
+    )
     event_loop_lag_threshold_ms: float = Field(
         default=100.0,
         ge=10.0,
@@ -156,6 +258,18 @@ class Settings(BaseSettings):
         ),
         alias="LM_REQUEST_TIMEOUT",
     )
+    agent_request_timeout_seconds: float = Field(
+        default=120.0,
+        ge=1.0,
+        le=600.0,
+        description=(
+            "Per-request LM timeout (seconds) for interactive agent turns (chat). "
+            "Separate from lm_request_timeout_seconds, which is sized for batch "
+            "optimization runs — a stalled provider should fail a chat turn in "
+            "minutes, not tens of minutes."
+        ),
+        alias="AGENT_REQUEST_TIMEOUT",
+    )
     job_stall_timeout_seconds: float = Field(
         default=1800.0,
         ge=0.0,
@@ -168,6 +282,99 @@ class Settings(BaseSettings):
             "with margin, so a hung call times out first; 0 disables the watchdog."
         ),
         alias="JOB_STALL_TIMEOUT",
+    )
+    gepa_eval_num_threads: int = Field(
+        default=8,
+        ge=1,
+        le=64,
+        description=(
+            "Eval/rollout thread count injected into GEPA when the submission "
+            "doesn't set num_threads. GEPA's own default is sequential "
+            "candidate evaluation, and runs are LM-latency-bound, so parallel "
+            "eval cuts wall-clock roughly linearly. An explicit user-supplied "
+            "num_threads always wins; job_lm_max_concurrency bounds the "
+            "multiplied total either way."
+        ),
+        alias="GEPA_EVAL_NUM_THREADS",
+    )
+    gepa_pxn_parents: int = Field(
+        default=1,
+        ge=1,
+        le=16,
+        description=(
+            "GEPA PxN batched sampling — parent count (p). Each reflective "
+            "iteration mutates p distinct parent candidates, drawing "
+            "gepa_pxn_proposals (n) proposals from each, and evaluates all p*n "
+            "as one batch. The default of 1 reproduces GEPA's classic "
+            "single-mutation sampling; raising p (or n) above 1 switches GEPA to "
+            "PxNSampling(p, n) — better wall-clock and generalization at higher "
+            "LM cost, bounded per job by job_lm_max_concurrency. A submission "
+            "that supplies its own gepa_kwargs.sampling_strategy always wins."
+        ),
+        alias="GEPA_PXN_PARENTS",
+    )
+    gepa_pxn_proposals: int = Field(
+        default=1,
+        ge=1,
+        le=16,
+        description=(
+            "GEPA PxN batched sampling — proposals per parent (n); see "
+            "gepa_pxn_parents. Raising n (or p) above 1 activates "
+            "PxNSampling(p, n). Defaults to 1 (classic single-mutation GEPA)."
+        ),
+        alias="GEPA_PXN_PROPOSALS",
+    )
+    react_native_tool_calling: bool = Field(
+        default=False,
+        description=(
+            "Route ReActV2 tool calls through the provider's native "
+            "function-calling API instead of DSPy's text tool protocol. When "
+            "on, the process installs a global ChatAdapter with "
+            "use_native_function_calling=True; tools ride the provider's "
+            "tools= parameter and turns come back as structured tool_calls "
+            "(provider-default parallel calling included). The adapter is a "
+            "no-op for signatures without a ToolCalls field, so only ReAct "
+            "programs are affected. Off (default) keeps the text tool protocol "
+            "that every model — including the flaky MiniMax student — parses "
+            "reliably; only enable it for a deployment whose models all "
+            "support native function calling."
+        ),
+        alias="REACT_NATIVE_TOOL_CALLING",
+    )
+    job_lm_max_concurrency: int = Field(
+        default=16,
+        ge=0,
+        le=256,
+        description=(
+            "Per-job-child ceiling on concurrent LM calls. Grid pair threads "
+            "times GEPA eval threads multiply, and a user can pass any "
+            "num_threads in optimizer kwargs; this gate keeps one job from "
+            "spraying the provider with enough parallel calls to trip rate "
+            "limits and fail the run. 0 disables the gate."
+        ),
+        alias="JOB_LM_MAX_CONCURRENCY",
+    )
+    grid_pair_max_workers: int = Field(
+        default=4,
+        ge=1,
+        le=16,
+        description=(
+            "Concurrent (generation, reflection) pairs per grid-search job "
+            "child. Total LM concurrency in the child is still capped by "
+            "job_lm_max_concurrency regardless of this value."
+        ),
+        alias="GRID_PAIR_MAX_WORKERS",
+    )
+    grid_distributed_pairs: bool = Field(
+        default=True,
+        description=(
+            "Fan a multi-pair grid search out as one claimable job row per "
+            "pair so pairs spread across the whole worker fleet instead of "
+            "sharing one child process. Off = classic all-pairs-in-one-child "
+            "execution; flipping the flag never re-shapes a grid already in "
+            "flight."
+        ),
+        alias="GRID_DISTRIBUTED_PAIRS",
     )
     job_run_start_method: Literal["fork", "spawn", "forkserver"] = Field(
         default="fork", description="Multiprocessing start method for job execution"
@@ -246,7 +453,10 @@ class Settings(BaseSettings):
         ),
     )
     program_cache_max_entries: int = Field(
-        default=128,
+        # 32 (was 128): each entry is a full deserialized program (MBs), the
+        # cache lives in the fork-parent API process, and beta traffic serves
+        # far fewer distinct programs than 32 at a time.
+        default=32,
         ge=1,
         description=(
             "Maximum number of compiled DSPy programs held in the in-process "
@@ -265,17 +475,92 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
 
+    alert_webhook_url: str = Field(
+        default="",
+        alias="ALERT_WEBHOOK_URL",
+        description=(
+            "Incoming chat webhook (Slack-compatible {\"text\": …} payload; also "
+            "accepted by Mattermost and Google Chat) that receives operational "
+            "alerts — unhandled 500s, a dead worker, and code paths that call "
+            "send_alert() directly. Unset (the default) disables outbound "
+            "alerting: records still reach the logs, they just aren't forwarded."
+        ),
+    )
+    alert_min_level: str = Field(
+        default="ERROR",
+        alias="ALERT_MIN_LEVEL",
+        description=(
+            "Minimum log level forwarded to ALERT_WEBHOOK_URL by the log handler "
+            "(DEBUG/INFO/WARNING/ERROR/CRITICAL). Effective only at or above "
+            "LOG_LEVEL, which gates the root logger first. Direct send_alert() "
+            "calls ignore this threshold."
+        ),
+    )
+    alert_environment: str = Field(
+        default="",
+        alias="ALERT_ENVIRONMENT",
+        description=(
+            "Short label prefixed to every alert (e.g. 'prod', 'staging') so a "
+            "shared channel can attribute an alert to its source. Empty omits "
+            "the prefix."
+        ),
+    )
+    alert_throttle_seconds: float = Field(
+        default=300.0,
+        ge=0.0,
+        alias="ALERT_THROTTLE_SECONDS",
+        description=(
+            "Cooldown during which an identical alert (same level, title and "
+            "body) is forwarded at most once, so an error loop can't flood the "
+            "webhook. 0 disables throttling."
+        ),
+    )
+
+    log_ship_url: str = Field(
+        default="",
+        alias="LOG_SHIP_URL",
+        description=(
+            "HTTP ingest endpoint that receives a JSON copy of every log record "
+            "the root logger admits (e.g. Better Stack's https://in.logs.betterstack.com "
+            "or a Vector http_server source), so logs outlive the platform's own "
+            "retention. Unset (the default) disables shipping; logs still go to stdout."
+        ),
+    )
+    log_ship_token: SecretStr | None = Field(
+        default=None,
+        alias="LOG_SHIP_TOKEN",
+        description=(
+            "Bearer token sent with each LOG_SHIP_URL batch (Better Stack source "
+            "token). Unset sends no Authorization header."
+        ),
+    )
+
+    @field_validator("alert_min_level")
+    @classmethod
+    def _validate_alert_min_level(cls, v: str) -> str:
+        """Normalise ALERT_MIN_LEVEL to a canonical upper-case logging level name.
+
+        Args:
+            v: Raw ALERT_MIN_LEVEL value from the environment.
+
+        Returns:
+            The upper-cased level name.
+
+        Raises:
+            ValueError: When the value is not a standard logging level name.
+        """
+        name = v.strip().upper()
+        if name not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError("ALERT_MIN_LEVEL must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL")
+        return name
+
     code_agent_model: str = Field(
         default=DEFAULT_AGENT_MODEL_ID,
         description=(
             "LiteLLM model id used by the submit-wizard code agent. "
-            "Defaults to DEFAULT_AGENT_MODEL_ID (OpenRouter-hosted MiniMax M3); "
-            "override via CODE_AGENT_MODEL for on-prem deployments."
+            "Defaults to the inert on-prem alias; override via CODE_AGENT_MODEL."
         ),
     )
-    # TODO: On-prem / air-gap — set CODE_AGENT_BASE_URL to your internal
-    # OpenAI-compatible gateway (e.g. https://llm.your-company.com/v1) so the
-    # agent stops trying to reach api.fireworks.ai.
     code_agent_base_url: str = Field(
         default="",
         description="Optional custom base URL for the code agent LM (e.g. internal OpenAI-compatible gateway)",
@@ -293,23 +578,30 @@ class Settings(BaseSettings):
         default=DEFAULT_AGENT_MODEL_ID,
         description=(
             "LiteLLM model id used by the generalist agent (Cmd/Ctrl+J "
-            "panel). Defaults to DEFAULT_AGENT_MODEL_ID (OpenRouter-hosted "
-            "MiniMax M3); the shipped default emits <think> reasoning that "
-            "streams visibly to the chat UI."
+            "panel). Defaults to the inert on-prem alias; override via "
+            "GENERALIST_AGENT_MODEL."
         ),
     )
-    # TODO: On-prem / air-gap — set GENERALIST_AGENT_BASE_URL to your internal
-    # OpenAI-compatible gateway. The default empty string lets LiteLLM choose
-    # the public OpenRouter endpoint, which an air-gapped host cannot reach.
     generalist_agent_base_url: str = Field(
         default="",
         description="Optional custom base URL for the generalist agent LM (e.g. internal OpenAI-compatible gateway)",
     )
 
-    # TODO: On-prem / air-gap — point this at an internal OpenAI-compatible
-    # embeddings endpoint (usually the same gateway family as CODE_AGENT_BASE_URL).
-    # The backend sends POST {base_url}/embeddings with {model, input}; no model
-    # weights are bundled in this repo.
+    tagger_assist_model: str = Field(
+        default="",
+        description=(
+            "LiteLLM model id used by the tagger's AI co-tagging assist "
+            "(interview, calibration predictions, auto-tagging). Empty falls "
+            "back to generalist_agent_model."
+        ),
+    )
+    tagger_assist_base_url: str = Field(
+        default="",
+        description=(
+            "Optional custom base URL for the tagging-assist LM. Empty falls "
+            "back to generalist_agent_base_url."
+        ),
+    )
     embeddings_base_url: str = Field(
         default="",
         description="Internal OpenAI-compatible embedding API base URL, e.g. https://llm.internal/v1",
@@ -352,6 +644,26 @@ class Settings(BaseSettings):
             "LiteLLM model id used to summarise a finished job before embedding. "
             "Falls back to code_agent_model when empty."
         ),
+    )
+    embedding_index_sweep_interval_seconds: float = Field(
+        default=60.0,
+        ge=5.0,
+        le=3600.0,
+        description=(
+            "Seconds between bounded repair passes for missing or stale Explore "
+            "embeddings."
+        ),
+        alias="EMBEDDING_INDEX_SWEEP_INTERVAL",
+    )
+    embedding_index_sweep_batch_size: int = Field(
+        default=25,
+        ge=1,
+        le=500,
+        description=(
+            "Maximum number of successful jobs re-indexed during one Explore "
+            "embedding repair pass."
+        ),
+        alias="EMBEDDING_INDEX_SWEEP_BATCH_SIZE",
     )
     search_backend: Literal["lexical", "bm25", "semantic"] = Field(
         default="lexical",
@@ -431,7 +743,6 @@ class Settings(BaseSettings):
         self.search_bm25_enabled = self.search_backend == "bm25"
         return self
 
-    max_jobs_per_user: int = Field(default=100, ge=1, description="Default per-user job cap")
     backend_auth_secret: SecretStr | None = Field(
         default=None,
         description="Shared HS256 secret used by the frontend to sign backend API tokens",
@@ -444,56 +755,6 @@ class Settings(BaseSettings):
         default="",
         description="Comma-separated IdP groups that grant backend admin access",
     )
-    quota_overrides_json: str = Field(
-        default="{}",
-        description='Per-user quota overrides as JSON, e.g. \'{"power_user": 500, "researcher": null}\'',
-        alias="QUOTA_OVERRIDES",
-    )
-
-    @field_validator("quota_overrides_json")
-    @classmethod
-    def _validate_quota_overrides_json(cls, v: str) -> str:
-        """Validate that QUOTA_OVERRIDES is a JSON object of {username: int|null}.
-
-        Args:
-            v: Raw env value (a JSON string).
-
-        Returns:
-            The validated JSON string with lowercase keys, normalised to ``"{}"``
-            when blank. Lower-casing here keeps the wire-level representation
-            stable across reads of ``quota_overrides_json`` and makes lookups
-            in ``get_user_quota`` cheap.
-
-        Raises:
-            ValueError: When the JSON is malformed, not an object, or contains
-                values that are not ``int`` or ``null``.
-        """
-        if not v.strip():
-            return "{}"
-        try:
-            parsed = json.loads(v)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"QUOTA_OVERRIDES is not valid JSON: {exc}") from exc
-        # Pydantic field_validator surfaces only ValueError as a ValidationError,
-        # so keep the type-check failures as ValueError despite TRY004 preferring
-        # TypeError for type errors.
-        if not isinstance(parsed, dict):
-            raise ValueError(  # noqa: TRY004
-                "QUOTA_OVERRIDES must be a JSON object mapping usernames to int|null"
-            )
-        normalised: dict[str, int | None] = {}
-        for key, value in parsed.items():
-            if not isinstance(key, str):
-                raise ValueError(  # noqa: TRY004
-                    f"QUOTA_OVERRIDES keys must be strings, got {type(key).__name__}"
-                )
-            # bool is an int subclass, so reject it explicitly to avoid silently
-            # treating ``true``/``false`` as quota 1/0.
-            if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
-                raise ValueError(f"QUOTA_OVERRIDES['{key}'] must be int or null, got {type(value).__name__}")
-            normalised[key.strip().lower()] = value
-        return json.dumps(normalised)
-
     @model_validator(mode="after")
     def _derive_generalist_mcp_url(self) -> Settings:
         """Fill an unset generalist MCP URL from the server's own HOST/PORT.
@@ -502,13 +763,16 @@ class Settings(BaseSettings):
         port whenever the API runs on a non-default PORT, surfacing a raw network
         error instead of a config diagnostic. Deriving the default keeps the
         agent pointed at this app's own ``/mcp`` mount; a bind-all ``0.0.0.0``
-        host is dialled as ``localhost``.
+        host is dialled as ``127.0.0.1`` — the IPv4 literal, not ``localhost``,
+        because some container runtimes (e.g. Railway) resolve ``localhost`` to
+        ``::1`` while Uvicorn listens on IPv4 only, turning the self-dial into
+        a raw ``ConnectError``.
 
         Returns:
             The settings instance with ``generalist_agent_mcp_url`` populated.
         """
         if not self.generalist_agent_mcp_url:
-            host = "localhost" if self.host in ("0.0.0.0", "") else self.host
+            host = "127.0.0.1" if self.host in ("0.0.0.0", "") else self.host
             self.generalist_agent_mcp_url = f"http://{host}:{self.port}/mcp/"
         return self
 
@@ -527,15 +791,10 @@ class Settings(BaseSettings):
         """Return admin IdP groups as a lowercase frozenset."""
         return frozenset(s.strip().lower() for s in self.admin_groups.split(",") if s.strip())
 
-    @cached_property
-    def quota_overrides(self) -> dict[str, int | None]:
-        """Return parsed quota overrides keyed by lowercase username.
-
-        Cached because every job-submission goes through ``get_user_quota`` and
-        re-parsing JSON on each call is wasteful; the validator already
-        normalises the JSON to lowercase keys.
-        """
-        return json.loads(self.quota_overrides_json)
+    @property
+    def is_byok_vault_configured(self) -> bool:
+        """Return whether a BYOK vault key is present (saving provider keys enabled)."""
+        return self.byok_vault_key is not None
 
     @cached_property
     def code_version(self) -> str:
@@ -575,26 +834,6 @@ class Settings(BaseSettings):
                 "into the image (Dockerfile passes GIT_SHA build arg).",
             )
         return "unknown"
-
-    def get_user_quota(self, username: str) -> int | None:
-        """Return the effective job quota for a user.
-
-        Users with a ``null`` override receive ``None`` (unlimited). Per-user
-        overrides in ``quota_overrides_json`` take precedence over
-        ``max_jobs_per_user``. Lookup is case-insensitive to match how override
-        keys are stored.
-
-        Args:
-            username: The username to look up.
-
-        Returns:
-            Maximum number of allowed jobs, or ``None`` for unlimited access.
-        """
-        normalised = (username or "").strip().lower()
-        if normalised in self.quota_overrides:
-            return self.quota_overrides[normalised]
-        return self.max_jobs_per_user
-
 
 settings = Settings()
 

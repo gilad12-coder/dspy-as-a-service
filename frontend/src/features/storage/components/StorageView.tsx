@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, HardDrive } from "lucide-react";
+import { CaretLeft, CaretRight, HardDrive } from "@/shared/ui/icons";
 import { getStorageUsage, type StorageUsageResponse } from "@/shared/lib/api";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { formatStorageSize } from "@/shared/lib/formatters";
 import { formatMsg, msg, type MessageKey } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { StorageCategoryDrawer } from "./StorageCategoryDrawer";
 import { StorageSkeleton } from "./StorageSkeleton";
 
@@ -29,6 +30,8 @@ export function StorageView() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
   const [openCategory, setOpenCategory] = React.useState<string | null>(null);
+
+  const OpenIcon = getActiveDir() === "rtl" ? CaretLeft : CaretRight;
 
   const refreshUsage = React.useCallback(() => {
     getStorageUsage()
@@ -66,7 +69,7 @@ export function StorageView() {
 
   if (error || !usage) {
     return (
-      <div dir="rtl" className="pb-16">
+      <div className="pb-16">
         <div className="mt-8">
           <EmptyState icon={HardDrive} title={msg("storage.page.error")} />
         </div>
@@ -80,7 +83,7 @@ export function StorageView() {
   const free = Math.max(0, quota - used);
 
   return (
-    <div dir="rtl" className="pb-16">
+    <div className="pb-16">
       <section className="mt-8">
         <div className="flex items-baseline justify-between gap-3">
           <p className="text-foreground">
@@ -118,7 +121,10 @@ export function StorageView() {
               const pct = used > 0 ? Math.max(2, (bytes / used) * 100) : 0;
               const bar = (
                 <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-[#E5DDD4]/60">
-                  <div className="h-full rounded-full bg-[#3D2E22]/30" style={{ width: `${pct}%` }} />
+                  <div
+                    className="h-full rounded-full bg-[#3D2E22]/30"
+                    style={{ width: `${pct}%` }}
+                  />
                 </div>
               );
 
@@ -128,17 +134,19 @@ export function StorageView() {
                     type="button"
                     onClick={() => setOpenCategory(key)}
                     aria-label={formatMsg("storage.category.open", { category: label })}
-                    className="group w-full cursor-pointer rounded-lg px-2 py-2 text-start transition-colors duration-150 hover:bg-muted/40"
+                    className="group min-h-12 w-full cursor-pointer rounded-lg px-2 py-2 text-start transition-colors duration-150 hover:bg-muted/40"
                   >
                     <div className="flex items-baseline justify-between gap-2 text-sm">
                       <span className="flex items-center gap-1.5 text-foreground">
                         {label}
-                        <ChevronLeft
+                        <OpenIcon
                           className="size-3.5 text-muted-foreground/60 transition-transform duration-150 group-hover:-translate-x-0.5"
                           aria-hidden="true"
                         />
                       </span>
-                      <span className="tabular-nums text-muted-foreground">{formatStorageSize(bytes)}</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {formatStorageSize(bytes)}
+                      </span>
                     </div>
                     {bar}
                   </button>

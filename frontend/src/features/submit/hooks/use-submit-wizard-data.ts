@@ -34,7 +34,10 @@ export function useRecentModelConfigs() {
   useEffect(() => {
     try {
       const stored = localStorage.getItem(RECENT_KEY);
-      if (stored) setRecentConfigs(JSON.parse(stored));
+      if (stored) {
+        const parsed = JSON.parse(stored) as ModelConfig[];
+        setRecentConfigs(parsed.map((config) => ({ ...config, token_source: "byok" })));
+      }
     } catch {
       // Private-mode Safari / disabled storage / corrupt JSON — keep [].
     }
@@ -42,12 +45,18 @@ export function useRecentModelConfigs() {
 
   const saveToRecent = useCallback((config: ModelConfig) => {
     if (!config.name) return;
-    // Strip api_key before persisting — recents go to localStorage and the
-    // key must never live on disk. The wizard repopulates a fresh key per
-    // submission anyway.
-    const { api_key: _omit, ...safeExtra } = config.extra ?? {};
+    // Legacy inline connection fields are never persisted; BYOK references
+    // the encrypted Settings → Providers vault by slug instead.
+    const {
+      api_key: _ApiKey,
+      api_base: _ApiBase,
+      base_url: _ExtraBaseUrl,
+      ...safeExtra
+    } = config.extra ?? {};
+    const { base_url: _baseUrl, ...safeFields } = config;
     const safeConfig: ModelConfig = {
-      ...config,
+      ...safeFields,
+      token_source: "byok",
       extra: Object.keys(safeExtra).length > 0 ? safeExtra : undefined,
     };
     setRecentConfigs((prev) => {

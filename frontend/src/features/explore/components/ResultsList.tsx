@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUp, ArrowDown } from "@/shared/ui/icons";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import type { SearchResult } from "@/shared/lib/api";
 import type { SearchType } from "../hooks/use-semantic-search";
@@ -37,7 +37,7 @@ export function ResultsList({
 }: ResultsListProps) {
   const tokens = React.useMemo(() => tokenize(highlight), [highlight]);
   return (
-    <ul id="explore-results" dir="rtl" className="divide-y divide-border/55">
+    <ul id="explore-results" className="divide-y divide-border/55">
       {results.map((row, index) => (
         <li key={row.optimization_id}>
           <ResultRow

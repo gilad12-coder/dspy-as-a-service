@@ -21,7 +21,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header
@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
+from ...models import ModelConfig
 from ...service_gateway.agents.generalist import (
     TrustMode,
     WizardState,
@@ -37,9 +38,12 @@ from ...service_gateway.agents.generalist import (
 )
 from ...service_gateway.embedding_pipeline import queue_conversation_embed
 from ...storage.models import AgentConversationModel, AgentMessageModel
+from ..agent_memory import wake_document
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
-from ._helpers import sse_from_events
+from ..model_catalog import require_known_model
+from ..model_router import resolve_auto_tier, route_auto_model
+from ._helpers import sse_from_events, stream_with_llm_observation
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +62,7 @@ class ChatTurn(BaseModel):
 class GeneralistAgentRequest(BaseModel):
     """Input for a single generalist-agent turn."""
 
-    user_message: str = Field(..., description="The user's latest Hebrew message.")
+    user_message: str = Field(..., description="The user's latest message.")
     chat_history: list[ChatTurn] = Field(default_factory=list, description="Prior {role, content} turns.")
     wizard_state: dict = Field(
         default_factory=dict,
@@ -77,6 +81,37 @@ class GeneralistAgentRequest(BaseModel):
             "Optional id of an existing thread to append to. When absent the "
             "server creates a new conversation and emits its id via the "
             "``conversation_meta`` SSE event before any other event."
+        ),
+    )
+    regenerate: bool = Field(
+        default=False,
+        description=(
+            "Replace the existing conversation's final user/assistant turn "
+            "instead of appending a duplicate turn."
+        ),
+    )
+    locale: str | None = Field(
+        default=None,
+        description=(
+            "UI locale code of the client (e.g. 'he', 'en', 'fr-CA'). Sets "
+            "the language of the agent's replies; unknown or missing falls "
+            "back to Hebrew."
+        ),
+    )
+    model: str | None = Field(
+        default=None,
+        description=(
+            "LiteLLM id of the catalog model to run this turn on (the "
+            "composer's model menu). Absent routes automatically per turn "
+            "(balanced tier); the sentinel 'auto:intelligent' routes to a "
+            "frontier model on every turn."
+        ),
+    )
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = Field(
+        default=None,
+        description=(
+            "Explicit reasoning-effort level for the chosen model; absent "
+            "keeps the model's default."
         ),
     )
 
@@ -179,6 +214,38 @@ def _persist_user_turn(job_store, conversation_id: str, content: str) -> None:
                 created_at=datetime.now(UTC),
             )
         )
+        session.commit()
+
+
+def _discard_latest_turn(job_store, conversation_id: str) -> None:
+    """Delete the final persisted user turn and every response after it.
+
+    The regenerate UI replaces the latest assistant response in memory. Remove
+    the matching persisted suffix before saving its replacement so reopening
+    the conversation does not reveal duplicate copies of the same turn. A
+    user-only suffix is also removed, which covers retrying a failed stream
+    before an assistant row was written.
+
+    Args:
+        job_store: Job-store instance whose engine backs the DB session.
+        conversation_id: Conversation whose latest turn should be replaced.
+    """
+    with Session(job_store.engine) as session:
+        latest_user = (
+            session.query(AgentMessageModel)
+            .filter(
+                AgentMessageModel.conversation_id == conversation_id,
+                AgentMessageModel.role == "user",
+            )
+            .order_by(AgentMessageModel.id.desc())
+            .first()
+        )
+        if latest_user is None:
+            return
+        session.query(AgentMessageModel).filter(
+            AgentMessageModel.conversation_id == conversation_id,
+            AgentMessageModel.id >= latest_user.id,
+        ).delete(synchronize_session=False)
         session.commit()
 
 
@@ -287,6 +354,7 @@ async def _wrap_with_persistence(
     tool_calls: dict[str, dict[str, Any]] = {}
     tool_order: list[str] = []
     model_used: str | None = None
+    served_model_used: str | None = None
     allowed_tools: list[str] | None = None
     tool_schema_hashes: dict[str, str] | None = None
     wizard_state_after: dict[str, Any] = dict(wizard_state_before) if wizard_state_before else {}
@@ -317,7 +385,7 @@ async def _wrap_with_persistence(
                 wizard_state_after=wizard_state_after or None,
                 allowed_tools=allowed_tools,
                 tool_schema_hashes=tool_schema_hashes,
-                router_metadata=None,
+                router_metadata={"served_model": served_model_used} if served_model_used else None,
             )
         except Exception:
             logger.exception("Failed to persist assistant turn")
@@ -369,6 +437,8 @@ async def _wrap_with_persistence(
                 content = final_text if isinstance(final_text, str) and final_text else "".join(assistant_buf)
                 raw_model = data.get("model")
                 model_used = raw_model if isinstance(raw_model, str) and raw_model else None
+                raw_served = data.get("served_model")
+                served_model_used = raw_served if isinstance(raw_served, str) and raw_served else None
                 await _do_persist(content)
             yield event
     finally:
@@ -415,6 +485,13 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
         A configured :class:`APIRouter` with the generalist-agent endpoints attached.
     """
     router = APIRouter()
+
+    # The shared DB engine backs cross-replica approval handoff: a confirm
+    # that lands on a replica that doesn't hold the stream's in-process future
+    # persists the decision for the owning replica's poll loop.
+    engine = getattr(job_store, "engine", None) if job_store is not None else None
+    if engine is not None:
+        get_approval_registry().bind_engine(engine)
 
     @router.post(
         "/optimizations/generalist-agent",
@@ -463,6 +540,8 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
                 return None, None
             try:
                 cid, ttl = _ensure_conversation(job_store, req.conversation_id, current_user.username, req.user_message)
+                if req.regenerate:
+                    _discard_latest_turn(job_store, cid)
                 _persist_user_turn(job_store, cid, req.user_message)
             except DomainError:
                 raise
@@ -471,18 +550,60 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
                 return None, None
             return cid, ttl
 
+        def _wake_memory() -> str:
+            """Render the caller's permanent-memory context off the event loop.
+
+            Memory must never break a chat turn: with no ``job_store`` the
+            context is simply blank, and any render failure is logged and
+            swallowed the same way persistence failures are.
+
+            Returns:
+                The wake document, or ``""`` when unavailable.
+            """
+            if job_store is None:
+                return ""
+            try:
+                with Session(job_store.engine) as session:
+                    return wake_document(session, current_user.username)
+            except Exception:
+                logger.exception("Failed to wake agent memory")
+                return ""
+
         conversation_id, title = await asyncio.to_thread(_setup_turn)
+        memory_context = await asyncio.to_thread(_wake_memory)
 
         wizard_state: WizardState = {**req.wizard_state}  # type: ignore[typeddict-item]
+        requested_model, auto_tier = resolve_auto_tier(req.model)
+        require_known_model(requested_model)
+        model_config = (
+            ModelConfig(
+                name=requested_model,
+                extra=({"reasoning_effort": req.reasoning_effort} if req.reasoning_effort else {}),
+            )
+            if requested_model
+            else route_auto_model(auto_tier or "balanced", conversation_id)
+        )
+        usage_sink: list = []
         source = run_generalist_agent(
             wizard_state=wizard_state,
             chat_history=[t.model_dump() for t in req.chat_history],
             user_message=req.user_message,
+            memory_context=memory_context,
             trust_mode=req.trust_mode,
             auth_header=authorization,
+            locale=req.locale,
+            model_config=model_config,
+            usage_sink=usage_sink,
+        )
+        metered = stream_with_llm_observation(
+            source,
+            job_store=job_store,
+            username=current_user.username,
+            description="Agent chat",
+            usage_sink=usage_sink,
         )
         wrapped = _wrap_with_persistence(
-            source,
+            metered,
             job_store=job_store,
             conversation_id=conversation_id,
             title=title,
@@ -514,11 +635,12 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
             A :class:`ConfirmApprovalResponse` with ``resolved=True`` on success.
 
         Raises:
-            DomainError: 404 when the call id is unknown or already resolved —
-                the client should treat that as a race and surface it as a UI
-                warning.
+            DomainError: 404 when the call id is unknown locally and no durable
+                store is bound (store-less deployments) — the client surfaces
+                it as a UI warning. With a store, an unmatched confirm is
+                persisted for the replica that owns the stream to pick up.
         """
-        resolved = get_approval_registry().resolve(req.call_id, req.approved)
+        resolved = get_approval_registry().resolve_or_persist(req.call_id, req.approved)
         if not resolved:
             raise DomainError("agent.approval.unknown_call_id", status=404)
         return ConfirmApprovalResponse(resolved=True)

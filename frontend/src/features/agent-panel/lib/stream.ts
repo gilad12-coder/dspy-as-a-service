@@ -12,7 +12,9 @@ import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { readServerSentEvents } from "@/shared/lib/sse";
 import { fetchWithAuthRetry } from "@/shared/lib/api";
 
-const API = getRuntimeEnv().apiUrl;
+// Resolve lazily — a module-load const races the injected window.__SKYNET_ENV__
+// and freezes the build-time localhost fallback. See shared/lib/api.ts.
+const apiBase = () => getRuntimeEnv().apiUrl;
 
 export interface GeneralistAgentRequest {
   user_message: string;
@@ -20,6 +22,12 @@ export interface GeneralistAgentRequest {
   wizard_state: WizardState;
   trust_mode: TrustMode;
   conversation_id?: string | null;
+  regenerate?: boolean;
+  locale?: string;
+  /** LiteLLM id of the catalog model to run the turn on; absent = default. */
+  model?: string;
+  /** Reasoning-effort level for the chosen model; absent = its default. */
+  reasoning_effort?: string;
 }
 
 export interface ConversationMetaPayload {
@@ -36,8 +44,12 @@ export interface GeneralistAgentHandlers {
   onApprovalResolved?: (ev: ApprovalResolvedPayload) => void;
   onMessagePatch?: (chunk: string) => void;
   onConversationMeta?: (ev: ConversationMetaPayload) => void;
-  onDone: (result: { assistant_message: string; model: string | null }) => void;
-  onError: (message: string) => void;
+  onDone: (result: {
+    assistant_message: string;
+    model: string | null;
+    served_model: string | null;
+  }) => void;
+  onError: (message: string, code?: string) => void;
   signal?: AbortSignal;
 }
 
@@ -48,7 +60,7 @@ export async function streamGeneralistAgent(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetchWithAuthRetry(`${API}/optimizations/generalist-agent`, {
+    res = await fetchWithAuthRetry(`${apiBase()}/optimizations/generalist-agent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -125,15 +137,18 @@ export async function streamGeneralistAgent(
         break;
       case "done": {
         const rawModel = data.model;
+        const rawServed = data.served_model;
         handlers.onDone({
           assistant_message: String(data.assistant_message ?? ""),
           model: typeof rawModel === "string" && rawModel.length > 0 ? rawModel : null,
+          served_model: typeof rawServed === "string" && rawServed.length > 0 ? rawServed : null,
         });
         break;
       }
       case "error":
         handlers.onError(
           String(data.error ?? msg("auto.features.agent.panel.lib.stream.literal.2")),
+          typeof data.code === "string" ? data.code : undefined,
         );
         break;
     }
@@ -156,7 +171,7 @@ export async function confirmGeneralistApproval(
 ): Promise<boolean> {
   let res: Response;
   try {
-    res = await fetchWithAuthRetry(`${API}/optimizations/generalist-agent/confirm`, {
+    res = await fetchWithAuthRetry(`${apiBase()}/optimizations/generalist-agent/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ call_id: callId, approved }),

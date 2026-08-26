@@ -1,24 +1,22 @@
-# Skynet — Docker Compose with PostgreSQL
-# Usage:
-#   cp .env.example .env
-#   docker compose up --build
-#
-# Air-gap operators: set REGISTRY_PREFIX (and DEBIAN_MIRROR / PIP_INDEX_URL
-# for the API build) so nothing pulls from public registries. See
-# AIRGAP.html.
+# Self-contained on-prem development deployment: PostgreSQL + API/worker + UI.
+# Run from backend/: docker compose up --build
 
 services:
   db:
-    image: ${REGISTRY_PREFIX:-docker.io}/pgvector/pgvector:pg16
-    container_name: skynet-db
+    image: ${REGISTRY_PREFIX:-docker.io}/postgres:16-alpine
     environment:
       POSTGRES_DB: skynet
       POSTGRES_USER: skynet
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in backend/.env}
     ports:
       - "5432:5432"
     volumes:
       - skynet-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skynet -d skynet"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     restart: unless-stopped
 
   api:
@@ -30,28 +28,54 @@ services:
         DEBIAN_MIRROR: ${DEBIAN_MIRROR-}
         PIP_INDEX_URL: ${PIP_INDEX_URL-}
         GIT_SHA: ${GIT_SHA:-unknown}
-    container_name: skynet-api
     ports:
       - "8000:8000"
-    environment:
-      - REMOTE_DB_URL=postgresql://skynet:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@db:5432/skynet
-      - WORKER_CONCURRENCY=4
-      - WORKER_POLL_INTERVAL=2.0
-      - LOG_LEVEL=INFO
     env_file:
       - path: .env
-        required: false
+        required: true
+    environment:
+      REMOTE_DB_URL: postgresql://skynet:${POSTGRES_PASSWORD}@db:5432/skynet
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-2.0}
+      LOG_FORMAT: json
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
     restart: unless-stopped
     deploy:
       resources:
         limits:
           memory: 4G
 
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SITE_URL: ${FRONTEND_URL:-http://localhost:3001}
+    ports:
+      - "3001:3001"
+    env_file:
+      - path: ../frontend/.env.local
+        required: true
+    environment:
+      API_URL: ${FRONTEND_API_URL:-http://localhost:8000}
+      BACKEND_INTERNAL_URL: http://api:8000
+      AUTH_URL: ${FRONTEND_URL:-http://localhost:3001}
+      TRANSCRIPTION_ENABLED: ${TRANSCRIPTION_ENABLED:-false}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
 volumes:
   skynet-pgdata:
-
-networks:
-  default:
-    driver: bridge

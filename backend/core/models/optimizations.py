@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from .artifacts import ProgramArtifact
-from .common import ColumnMapping, OptimizationStatus, OptimizationType, SplitFractions
+from .common import ColumnMapping, Composition, OptimizationStatus, OptimizationType, SplitFractions
 from .results import GridSearchResponse, RunResponse
 from .telemetry import JobLogEntry, ProgressEvent
 
@@ -33,6 +33,9 @@ class _JobResponseBase(BaseModel):
 
     username: str | None = None
     module_name: str | None = None
+    # "single" (one atomic module) vs "workflow" (a DAG of module nodes). Derived
+    # at submit from module_name; null on rows submitted before this field existed.
+    composition: Composition | None = None
     module_kwargs: dict[str, Any] = Field(default_factory=dict)
     optimizer_name: str | None = None
     column_mapping: ColumnMapping | None = None
@@ -85,21 +88,6 @@ class _JobResponseBase(BaseModel):
     reflection_models: list[Any] | None = Field(
         default=None, description="Grid-search reflection model list; null for single runs."
     )
-
-    # Stable hash of (signature_code, metric_code, dataset_content).
-    # Two optimizations with the same fingerprint share the same task definition,
-    # but they may still evaluate on different test splits if their seeds,
-    # shuffle flags, or split fractions differ — use ``compare_fingerprint`` to
-    # gate row-by-row comparison. ``None`` on optimizations submitted before
-    # this field was introduced.
-    task_fingerprint: str | None = None
-
-    # Stable hash of (task_fingerprint, effective_seed, shuffle, split_fractions).
-    # Two optimizations with the same compare_fingerprint evaluate on byte-identical
-    # train/val/test splits and are safe to compare row-by-row. Derived at read
-    # time so legacy jobs whose stored seed is ``None`` are gated by the same
-    # ``stable_seed(optimization_id)`` fallback the split endpoints use.
-    compare_fingerprint: str | None = None
 
     @field_validator("column_mapping", mode="before")
     @classmethod

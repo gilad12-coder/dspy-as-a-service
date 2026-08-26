@@ -73,9 +73,9 @@ generationModelPlural:
   direction: Model identifiers remain LTR in UI.
 
 reflectionModel:
-  en: reflection model
-  he: מודל רפלקציה
-  note: GEPA reflection-step model.
+  en: feedback model
+  he: מודל משוב
+  note: GEPA reflection-step model — user-facing term is "feedback model".
   direction: Model identifiers remain LTR in UI.
 
 candidate:

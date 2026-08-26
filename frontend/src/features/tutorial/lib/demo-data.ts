@@ -2,7 +2,7 @@
  * Tutorial Demo Simulation
  *
  * Provides a fake optimization that progresses through all pipeline stages
- * over ~11 seconds, producing realistic GEPA logs and scores.
+ * inside the tutorial's short run budget, producing realistic GEPA logs and scores.
  * Used when the tutorial navigates to /optimizations/tutorial-demo.
  */
 
@@ -12,10 +12,8 @@ import type {
   OptimizationLogEntry,
   PairResult,
   GridSearchResult,
-  EvalExampleResult,
-  OptimizationDatasetResponse,
-  DatasetRow,
   PaginatedJobsResponse,
+  OptimizationPayloadResponse,
   OptimizationSummaryResponse,
 } from "@/shared/types/api";
 import type {
@@ -26,12 +24,44 @@ import type {
 import { layoutTrajectory, type CandidateMetrics } from "@/features/trajectory";
 import { TERMS } from "@/shared/lib/terms";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
+import { TUTORIAL_DEMO_RUN_MS } from "./tutorial-timing";
 
 export const DEMO_OPTIMIZATION_ID = "a7e3b291-4d2f-4f8c-b142-9d5e6f8a1c3b";
 export const DEMO_GRID_OPTIMIZATION_ID = "c3f9d215-8a47-4e6b-a1d3-7b2f9c58e4a1";
 
+export const DEMO_SIGNATURE_CODE = `class EmailClassifier(dspy.Signature):
+    """Classify an email into a category: spam, important, or promotional."""
+
+    # inputs
+    email_text: str = dspy.InputField(desc="The email content to classify")
+
+    # outputs
+    category: str = dspy.OutputField(desc="One of: spam, important, promotional")
+`;
+
+export const DEMO_METRIC_CODE = `def metric(example: dspy.Example, prediction: dspy.Prediction, trace: bool = None) -> float:
+    return float(example.category.strip().lower() == prediction.category.strip().lower())
+`;
+
+export function buildDemoOptimizationPayload(): OptimizationPayloadResponse {
+  return {
+    optimization_id: DEMO_OPTIMIZATION_ID,
+    optimization_type: "run",
+    payload: {
+      signature_code: DEMO_SIGNATURE_CODE,
+      metric_code: DEMO_METRIC_CODE,
+    },
+  };
+}
+
 function ts(start: Date, offsetMs: number): string {
-  return new Date(start.getTime() + offsetMs).toISOString();
+  const narrativeDurationMs = 10_500;
+  const compressedOffsetMs = Math.min(
+    TUTORIAL_DEMO_RUN_MS,
+    Math.round((offsetMs / narrativeDurationMs) * TUTORIAL_DEMO_RUN_MS),
+  );
+  return new Date(start.getTime() + compressedOffsetMs).toISOString();
 }
 
 function fmtElapsed(seconds: number): string {
@@ -60,6 +90,18 @@ const CANDIDATE_PLAN: ReadonlyArray<{ parent: string | null; generation: number 
   { parent: "6", generation: 3 },
 ];
 
+// Validation ids used for per-example donut outlines (green/red).
+const VAL_EXAMPLE_IDS = ["val-0", "val-1", "val-2", "val-3", "val-4", "val-5", "val-6", "val-7"];
+
+function perExampleForCandidate(idx: number): Array<{ id: string; score: number }> {
+  const targetScore = (TRIAL_SCORES[idx] ?? 0) / 100;
+  const passes = Math.max(1, Math.min(7, Math.round(targetScore * 8)));
+  return VAL_EXAMPLE_IDS.map((id, i) => ({
+    id,
+    score: i < passes ? 1 : 0,
+  }));
+}
+
 // Eventual layout extent for the demo's full 10-candidate tree. The
 // trajectory tree opens framed to these dims so the dd-trajectory step
 // shows the whole graph from the first frame instead of zooming-in on the
@@ -71,7 +113,7 @@ const DEMO_TRAJECTORY_FULL_LAYOUT = (() => {
     parents_extra: [],
     generation: plan.generation,
     score: (TRIAL_SCORES[idx] ?? 0) / 100,
-    per_example: [],
+    per_example: perExampleForCandidate(idx),
     prompt: {},
     discovered_at_evals: 0,
     iteration: idx,
@@ -95,6 +137,7 @@ function candidateEvent(start: Date, idx: number, offsetMs: number): ProgressEve
       score: (TRIAL_SCORES[idx] ?? 0) / 100,
       parent_id: plan.parent,
       iteration: idx,
+      per_example: perExampleForCandidate(idx),
     },
   };
 }
@@ -568,6 +611,28 @@ function buildDone(start: Date): OptimizationStatusResponse {
           training: { calls: 12, avg_response_time_ms: 5240 },
         },
       },
+      program_artifact: {
+        program_state_json: {
+          "predict.signature.instructions":
+            "Classify each email as spam, important, or promotional. Use the message's intent, urgency, and requested action; do not classify from isolated keywords alone.",
+        },
+        optimized_prompt: {
+          predictor_name: "EmailClassifier",
+          signature_name: "EmailClassifier",
+          instructions:
+            "Classify each email as spam, important, or promotional. Use the message's intent, urgency, and requested action; do not classify from isolated keywords alone.",
+          input_fields: ["email_text"],
+          output_fields: ["category"],
+          demos: [
+            {
+              inputs: { email_text: "Your quarterly report is ready for review" },
+              outputs: { category: "important" },
+            },
+          ],
+          formatted_prompt:
+            "Classify each email as spam, important, or promotional.\n\nInput: {email_text}\nOutput: {category}",
+        },
+      },
     },
   };
 }
@@ -584,13 +649,18 @@ export interface DemoCallbacks {
  * Returns a cleanup function that cancels all pending timers.
  *
  * Timeline:
- *   0.2s  — validating
- *   1.0s  — splitting
- *   1.75s — baseline evaluation
- *   2.5s+ — optimizing (trials appear every ~275ms)
- *   5.25s — done (success)
+ *   0.1s  — validating
+ *   0.3s  — splitting
+ *   0.55s — baseline evaluation
+ *   0.72s — optimizing (trials appear every 70ms)
+ *   1.5s  — done (success)
  */
-const DEMO_SIMULATION_DURATION_MS = 5250;
+const DEMO_SIMULATION_DURATION_MS = TUTORIAL_DEMO_RUN_MS;
+const DEMO_VALIDATING_AT_MS = 100;
+const DEMO_SPLITTING_AT_MS = 300;
+const DEMO_BASELINE_AT_MS = 550;
+const DEMO_OPTIMIZING_AT_MS = 720;
+const DEMO_TRIAL_STAGGER_MS = 70;
 
 /** Once the simulation finishes, revisits skip straight to done. */
 let _simulationCompleted = false;
@@ -663,15 +733,20 @@ export function startDemoSimulation(
     setTimeout(() => {
       setLoading(false);
       set(buildValidating(start));
-    }, 200),
+    }, DEMO_VALIDATING_AT_MS),
   );
 
-  timers.push(setTimeout(() => set(buildSplitting(start)), 1000));
+  timers.push(setTimeout(() => set(buildSplitting(start)), DEMO_SPLITTING_AT_MS));
 
-  timers.push(setTimeout(() => set(buildBaseline(start)), 1750));
+  timers.push(setTimeout(() => set(buildBaseline(start)), DEMO_BASELINE_AT_MS));
 
   for (let i = 0; i < NUM_TRIALS; i++) {
-    timers.push(setTimeout(() => set(buildOptimizing(start, i + 1)), 2500 + i * 275));
+    timers.push(
+      setTimeout(
+        () => set(buildOptimizing(start, i + 1)),
+        DEMO_OPTIMIZING_AT_MS + i * DEMO_TRIAL_STAGGER_MS,
+      ),
+    );
   }
 
   timers.push(
@@ -690,7 +765,7 @@ function daysAgo(n: number): string {
   return d.toISOString();
 }
 
-const DEMO_JOBS: OptimizationSummaryResponse[] = [
+const DEMO_JOBS: OptimizationSummaryResponse[] = perLocale(() => [
   {
     optimization_id: "demo-001",
     optimization_type: "run",
@@ -865,7 +940,7 @@ const DEMO_JOBS: OptimizationSummaryResponse[] = [
     metric_improvement: 0.18,
     username: "demo",
   },
-];
+]);
 
 function toAnalyticsJob(j: OptimizationSummaryResponse): DashboardAnalyticsJob {
   return {
@@ -884,14 +959,14 @@ function toAnalyticsJob(j: OptimizationSummaryResponse): DashboardAnalyticsJob {
   };
 }
 
-export const DEMO_DASHBOARD_JOBS: PaginatedJobsResponse = {
+export const DEMO_DASHBOARD_JOBS: PaginatedJobsResponse = perLocale(() => ({
   items: DEMO_JOBS,
   total: DEMO_JOBS.length,
   limit: 20,
   offset: 0,
-};
+}));
 
-export const DEMO_DASHBOARD_ANALYTICS: DashboardAnalytics = {
+export const DEMO_DASHBOARD_ANALYTICS: DashboardAnalytics = perLocale(() => ({
   filtered_total: DEMO_JOBS.length,
   status_counts: { success: 7, failed: 1, running: 1 },
   optimizer_counts: { GEPA: 5, MIPROv2: 2, BootstrapFewShot: 2 },
@@ -953,139 +1028,9 @@ export const DEMO_DASHBOARD_ANALYTICS: DashboardAnalytics = {
     "claude-haiku-4",
     "gemini-2.0-pro",
   ],
-};
+}));
 
-/**
- * Demo compare data — three completed runs on the same task. IDs are
- * well-known so the /compare page can recognize and render them
- * without a backend fetch.
- */
-export const DEMO_COMPARE_IDS = ["tutorial-compare-a", "tutorial-compare-b", "tutorial-compare-c"];
-
-const COMPARE_TASK_NAME = msg("auto.features.tutorial.lib.demo.data.literal.16");
-const COMPARE_FINGERPRINT = "tutorial-fingerprint-email-classifier";
-
-function compareInstructions(variant: "a" | "b" | "c"): string {
-  if (variant === "a") {
-    return `Classify the email into exactly one category: spam, important, or promotional.
-
-Use these signals:
-- Promotional language ("free", "% off", "limited time") → promotional
-- Personal or work content (meetings, reports, requests) → important
-- Unsolicited offers with suspicious sender behavior → spam
-
-Respond with only the category label, lowercase, no punctuation.`;
-  }
-  if (variant === "b") {
-    return `Read the email_text and decide whether it is spam, important, or promotional.
-Return the single best-fit category.`;
-  }
-  return `Given email_text, output category as one of {spam, important, promotional}.
-Think step-by-step about the intent of the message before answering.`;
-}
-
-function compareDemos(variant: "a" | "b" | "c") {
-  const shared = [
-    {
-      inputs: { email_text: "Your quarterly report is ready for review" },
-      outputs: { category: "important" },
-    },
-    {
-      inputs: { email_text: "50% off all items this weekend only" },
-      outputs: { category: "promotional" },
-    },
-  ];
-  if (variant === "a") {
-    return [
-      ...shared,
-      {
-        inputs: { email_text: "Click here to win $1000 now!" },
-        outputs: { category: "spam" },
-      },
-    ];
-  }
-  if (variant === "b") {
-    return shared;
-  }
-  return [
-    shared[0]!,
-    {
-      inputs: { email_text: "Meeting moved to 3pm tomorrow" },
-      outputs: { category: "important" },
-    },
-  ];
-}
-
-function buildCompareJob(opts: {
-  id: string;
-  name: string;
-  description: string;
-  modelName: string;
-  moduleName: string;
-  baseline: number;
-  optimized: number;
-  runtimeSeconds: number;
-  numLmCalls: number;
-  variant: "a" | "b" | "c";
-}): OptimizationStatusResponse {
-  const elapsed = opts.runtimeSeconds;
-  const improvement = opts.optimized - opts.baseline;
-  const prompt = {
-    predictor_name: "EmailClassifier",
-    signature_name: "EmailClassifier",
-    instructions: compareInstructions(opts.variant),
-    input_fields: ["email_text"],
-    output_fields: ["category"],
-    demos: compareDemos(opts.variant),
-    formatted_prompt: "",
-  };
-  return {
-    optimization_id: opts.id,
-    optimization_type: "run",
-    status: "success",
-    name: opts.name,
-    description: opts.description,
-    username: "demo",
-    created_at: daysAgo(4),
-    started_at: daysAgo(4),
-    completed_at: daysAgo(4),
-    elapsed_seconds: elapsed,
-    elapsed: fmtElapsed(elapsed),
-    module_name: opts.moduleName,
-    module_kwargs: {},
-    optimizer_name: "GEPA",
-    optimizer_kwargs: { auto: "light" },
-    compile_kwargs: {},
-    model_name: opts.modelName,
-    dataset_rows: 200,
-    column_mapping: { inputs: { email_text: "str" }, outputs: { category: "str" } },
-    split_fractions: { train: 0.6, val: 0.2, test: 0.2 },
-    shuffle: true,
-    seed: 42,
-    baseline_test_metric: opts.baseline,
-    optimized_test_metric: opts.optimized,
-    metric_improvement: improvement,
-    task_fingerprint: COMPARE_FINGERPRINT,
-    progress_events: [],
-    logs: [],
-    latest_metrics: {},
-    progress_count: 0,
-    log_count: 0,
-    result: {
-      module_name: opts.moduleName,
-      optimizer_name: "GEPA",
-      baseline_test_metric: opts.baseline,
-      optimized_test_metric: opts.optimized,
-      metric_improvement: improvement,
-      runtime_seconds: elapsed,
-      num_lm_calls: opts.numLmCalls,
-      split_counts: { train: 120, val: 40, test: 40 },
-      program_artifact: { optimized_prompt: prompt },
-    },
-  };
-}
-
-const GRID_TASK_NAME = msg("auto.features.tutorial.lib.demo.data.literal.17");
+const gridTaskName = () => msg("auto.features.tutorial.lib.demo.data.literal.17");
 
 function gridInstructions(variant: 0 | 1 | 2 | 3): string {
   if (variant === 0) {
@@ -1277,7 +1222,7 @@ export function buildGridDemoJob(): OptimizationStatusResponse {
     optimization_id: DEMO_GRID_OPTIMIZATION_ID,
     optimization_type: "grid_search",
     status: "success",
-    name: GRID_TASK_NAME,
+    name: gridTaskName(),
     description: formatMsg("auto.features.tutorial.lib.demo.data.template.3", {
       p1: TERMS.modelPlural,
       p2: TERMS.pairPlural,
@@ -1316,145 +1261,7 @@ export function buildGridDemoJob(): OptimizationStatusResponse {
   };
 }
 
-export const DEMO_COMPARE_JOBS: OptimizationStatusResponse[] = [
-  buildCompareJob({
-    id: DEMO_COMPARE_IDS[0]!,
-    name: `${COMPARE_TASK_NAME} · gpt-4o-mini`,
-    description: formatMsg("auto.features.tutorial.lib.demo.data.template.4", { p1: TERMS.model }),
-    modelName: "gpt-4o-mini",
-    moduleName: "ChainOfThought",
-    baseline: 0.62,
-    optimized: 0.84,
-    runtimeSeconds: 165,
-    numLmCalls: 148,
-    variant: "a",
-  }),
-  buildCompareJob({
-    id: DEMO_COMPARE_IDS[1]!,
-    name: `${COMPARE_TASK_NAME} · gpt-4o`,
-    description: formatMsg("auto.features.tutorial.lib.demo.data.template.5", { p1: TERMS.model }),
-    modelName: "gpt-4o",
-    moduleName: "ChainOfThought",
-    baseline: 0.62,
-    optimized: 0.79,
-    runtimeSeconds: 272,
-    numLmCalls: 156,
-    variant: "b",
-  }),
-  buildCompareJob({
-    id: DEMO_COMPARE_IDS[2]!,
-    name: `${COMPARE_TASK_NAME} · Predict`,
-    description: msg("auto.features.tutorial.lib.demo.data.literal.18"),
-    modelName: "gpt-4o-mini",
-    moduleName: "Predict",
-    baseline: 0.62,
-    optimized: 0.71,
-    runtimeSeconds: 110,
-    numLmCalls: 92,
-    variant: "c",
-  }),
-];
-
-/**
- * Per-example test-set outputs for the three compare runs.
- * Designed so A=6/8 (0.75), B=6/8 (0.75), C=5/8 (0.625) — close to
- * the overall optimized scores in DEMO_COMPARE_JOBS — with a mix of
- * agreements and principled disagreements so the "hide agreements"
- * filter has something meaningful to hide.
- */
-const COMPARE_EXAMPLE_ROWS: Array<{
-  email_text: string;
-  category: "spam" | "important" | "promotional";
-}> = [
-  { email_text: "Your quarterly report is ready for review", category: "important" },
-  { email_text: "50% off all items this weekend only", category: "promotional" },
-  { email_text: "Meeting moved to 3pm tomorrow", category: "important" },
-  { email_text: "Click here to win $1000 now!", category: "spam" },
-  { email_text: "Payroll update: new pay period starts Monday", category: "important" },
-  { email_text: "Limited time: free shipping on orders over $50", category: "promotional" },
-  { email_text: "Reminder: your subscription renews tomorrow", category: "promotional" },
-  {
-    email_text: "Urgent: verify your account to avoid suspension",
-    category: "spam",
-  },
-];
-
-const COMPARE_PASS_MATRIX: Record<"a" | "b" | "c", boolean[]> = {
-  a: [true, true, true, false, true, true, false, true],
-  b: [true, true, false, true, true, true, true, false],
-  c: [true, true, false, true, false, true, true, false],
-};
-
-const COMPARE_PRED_MATRIX: Record<"a" | "b" | "c", string[]> = {
-  a: [
-    "important",
-    "promotional",
-    "important",
-    "promotional",
-    "important",
-    "promotional",
-    "important",
-    "spam",
-  ],
-  b: [
-    "important",
-    "promotional",
-    "promotional",
-    "spam",
-    "important",
-    "promotional",
-    "promotional",
-    "promotional",
-  ],
-  c: [
-    "important",
-    "promotional",
-    "spam",
-    "spam",
-    "promotional",
-    "promotional",
-    "promotional",
-    "important",
-  ],
-};
-
-function buildCompareExamples(variant: "a" | "b" | "c"): EvalExampleResult[] {
-  const passes = COMPARE_PASS_MATRIX[variant];
-  const preds = COMPARE_PRED_MATRIX[variant];
-  return COMPARE_EXAMPLE_ROWS.map((_, i) => ({
-    index: i,
-    outputs: { category: preds[i]! },
-    score: passes[i]! ? 1 : 0,
-    pass: passes[i]!,
-  }));
-}
-
-export const DEMO_COMPARE_EXAMPLES: Record<string, EvalExampleResult[]> = {
-  [DEMO_COMPARE_IDS[0]!]: buildCompareExamples("a"),
-  [DEMO_COMPARE_IDS[1]!]: buildCompareExamples("b"),
-  [DEMO_COMPARE_IDS[2]!]: buildCompareExamples("c"),
-};
-
-const COMPARE_DATASET_ROWS: DatasetRow[] = COMPARE_EXAMPLE_ROWS.map((r, i) => ({
-  index: i,
-  row: { email_text: r.email_text, category: r.category },
-}));
-
-export const DEMO_COMPARE_DATASET: OptimizationDatasetResponse = {
-  total_rows: COMPARE_DATASET_ROWS.length,
-  splits: {
-    train: [],
-    val: [],
-    test: COMPARE_DATASET_ROWS,
-  },
-  column_mapping: {
-    inputs: { email_text: "email_text" },
-    outputs: { category: "category" },
-  },
-  split_counts: { train: 0, val: 0, test: COMPARE_DATASET_ROWS.length },
-};
-
-const EXPLORE_TASKS = [
+const EXPLORE_TASKS: string[] = perLocale(() => [
   msg("auto.features.tutorial.lib.demo.data.literal.1"),
   msg("auto.features.tutorial.lib.demo.data.literal.9"),
   msg("auto.features.tutorial.lib.demo.data.literal.12"),
@@ -1463,7 +1270,7 @@ const EXPLORE_TASKS = [
   msg("auto.features.tutorial.lib.demo.data.literal.33"),
   msg("auto.features.tutorial.lib.demo.data.literal.14"),
   msg("auto.features.tutorial.lib.demo.data.literal.34"),
-];
+]);
 
 // Maps each of the 32 grid cells to one of the 8 task indices above so
 // neighbouring cells share themes — the resulting scatter has visible
@@ -1524,12 +1331,105 @@ function buildExploreDemoPoints(): PublicDashboardPoint[] {
       module_name: "Predict",
       optimizer_name: EXPLORE_OPTIMIZERS[optimizerIdx] ?? null,
       created_at: new Date(now - daysAgo * 86400_000).toISOString(),
-      siblings: [],
-      task_fingerprint: null,
-      compare_fingerprint: null,
     });
   }
   return points;
 }
 
-export const DEMO_EXPLORE_POINTS: PublicDashboardPoint[] = buildExploreDemoPoints();
+export const DEMO_EXPLORE_POINTS: PublicDashboardPoint[] = perLocale(buildExploreDemoPoints);
+
+/**
+ * Cached “real” data layer.
+ *
+ * The synthetic demo payloads above are already shaped like live backend
+ * responses (same types, same fields, same score distributions) so the
+ * tutorial renders pixel-identical to the app. To avoid re-running a real
+ * optimization or hitting the API on every tour loop, the resolved payloads
+ * are cached in localStorage with a TTL and read-through on next run —
+ * instant while still reflecting the user’s actual recent jobs when a
+ * backend fetch succeeds.
+ */
+const TUTORIAL_CACHE_PREFIX = "skynet.tutorial.cache.v2";
+const TUTORIAL_CACHE_TTL_MS = 1000 * 60 * 60 * 6; // 6h
+
+interface CacheEntry<T> {
+  v: T;
+  ts: number;
+}
+
+function readTutorialCache<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(`${TUTORIAL_CACHE_PREFIX}.${key}`);
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as CacheEntry<T>;
+    if (!entry || typeof entry.ts !== "number" || Date.now() - entry.ts > TUTORIAL_CACHE_TTL_MS) {
+      window.localStorage.removeItem(`${TUTORIAL_CACHE_PREFIX}.${key}`);
+      return null;
+    }
+    return entry.v;
+  } catch {
+    return null;
+  }
+}
+
+function writeTutorialCache<T>(key: string, value: T): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      `${TUTORIAL_CACHE_PREFIX}.${key}`,
+      JSON.stringify({ v: value, ts: Date.now() } satisfies CacheEntry<T>),
+    );
+  } catch {
+    /* quota — ignore */
+  }
+}
+
+export function getCachedDemoDashboardJobs(): PaginatedJobsResponse {
+  // perLocale proxies for arrays serialize as objects via JSON.stringify (target is {}),
+  // so build a real plain PaginatedJobsResponse via Array.from to keep items as a true array.
+  const v = DEMO_DASHBOARD_JOBS;
+  const plain: PaginatedJobsResponse = {
+    items: Array.from(v.items as unknown as Iterable<OptimizationSummaryResponse>),
+    total: v.total,
+    limit: v.limit,
+    offset: v.offset,
+  };
+  try {
+    writeTutorialCache("dashboard-jobs", plain);
+  } catch {}
+  const cached = readTutorialCache<PaginatedJobsResponse>("dashboard-jobs");
+  if (cached && Array.isArray((cached as unknown as { items: unknown }).items)) return cached;
+  return plain;
+}
+
+export function getCachedDemoDashboardAnalytics(): DashboardAnalytics {
+  const v = DEMO_DASHBOARD_ANALYTICS;
+  try {
+    writeTutorialCache("dashboard-analytics", JSON.parse(JSON.stringify(v)) as DashboardAnalytics);
+  } catch {}
+  const cached = readTutorialCache<DashboardAnalytics>("dashboard-analytics");
+  if (cached && typeof cached === "object" && cached !== null) return cached;
+  return v;
+}
+
+export function getCachedDemoExplorePoints(): PublicDashboardPoint[] {
+  const v = DEMO_EXPLORE_POINTS;
+  const plain = Array.from(v as unknown as Iterable<PublicDashboardPoint>);
+  try {
+    writeTutorialCache("explore-points", plain);
+  } catch {}
+  const cached = readTutorialCache<PublicDashboardPoint[]>("explore-points");
+  if (cached && Array.isArray(cached)) return cached;
+  return plain;
+}
+
+export function primeTutorialCacheFromLiveData(opts?: {
+  jobs?: PaginatedJobsResponse;
+  analytics?: DashboardAnalytics;
+  explorePoints?: PublicDashboardPoint[];
+}): void {
+  if (opts?.jobs) writeTutorialCache("dashboard-jobs", opts.jobs);
+  if (opts?.analytics) writeTutorialCache("dashboard-analytics", opts.analytics);
+  if (opts?.explorePoints) writeTutorialCache("explore-points", opts.explorePoints);
+}

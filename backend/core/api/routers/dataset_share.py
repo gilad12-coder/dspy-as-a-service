@@ -1,27 +1,22 @@
-"""Google-Drive-style sharing for personal-library datasets.
+"""Named, authenticated sharing for personal-library datasets.
 
 The dataset twin of :mod:`core.api.routers.share`, minus the optimization-only
-concerns (no inference, no model-secret scrubbing, no Explore-corpus
-visibility). Owner-gated management endpoints plus the access-gated public read:
+concerns (no inference, no model-secret scrubbing, no Explorer publication).
+Owner-gated management endpoints plus an access-gated named-member read:
 
 * ``GET    /datasets/library/{id}/sharing`` — current sharing config (owner).
-* ``PUT    /datasets/library/{id}/sharing`` — set the general-access policy.
+* ``PUT    /datasets/library/{id}/sharing`` — mint or update a restricted link.
 * ``POST   /datasets/library/{id}/sharing/members`` — add/replace a member grant.
 * ``PATCH  /datasets/library/{id}/sharing/members/{username}`` — change a role.
 * ``DELETE /datasets/library/{id}/sharing/members/{username}`` — remove a grant.
 * ``POST   /datasets/library/{id}/sharing/transfer`` — reassign ownership to an
   existing member (the previous owner is demoted to an editor).
-* ``GET    /datasets/share/{token}`` — **access-gated** composite read of one
-  dataset (viewer+ for an invited member or an ``anyone`` link); requires a
-  signed-in caller.
-* ``POST   /datasets/share/{token}/claim`` — redeem an ``anyone`` link, recording
-  a link membership so the dataset lists in the caller's library.
+* ``GET    /datasets/share/{token}`` — composite read for a named member.
+* ``POST   /datasets/share/{token}/claim`` — resolve the restricted link.
 
-Two sharing modes coexist per :mod:`core.api.dataset_access`: the active link's
-``general_access`` (``restricted`` vs ``anyone``) and ``general_role`` combine
-with per-user member grants; effective access is the highest the rules allow.
-The invite people-picker reuses the shared ``GET /users/search`` autocomplete
-the optimization sharing router already mounts.
+The token alone grants nothing; the caller must own the dataset, be an
+administrator, or hold a named member grant. The invite people-picker reuses
+the shared ``GET /users/search`` autocomplete.
 """
 
 from __future__ import annotations
@@ -49,7 +44,6 @@ from ..dataset_access import (
 )
 from ..errors import DomainError
 from ..sharing_access import (
-    GENERAL_ACCESS_ANYONE,
     GENERAL_ACCESS_RESTRICTED,
     LINK_GRANT_MARKER,
     LINK_ROLES,
@@ -59,7 +53,7 @@ from ..sharing_access import (
 
 AuthenticatedUserDep = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
 
-_GENERAL_ACCESS_VALUES = (GENERAL_ACCESS_RESTRICTED, GENERAL_ACCESS_ANYONE)
+_GENERAL_ACCESS_VALUES = (GENERAL_ACCESS_RESTRICTED,)
 _LINK_ROLE_VALUES = tuple(sorted(LINK_ROLES))
 
 
@@ -203,18 +197,12 @@ def create_dataset_share_router(*, job_store) -> APIRouter:
             session.add(link)
         return link
 
-    def _sync_link_memberships(session: Session, dataset_id: str, link: DatasetShareLinkModel) -> None:
-        """Reconcile link-derived memberships with the link's current policy.
-
-        Drive-style live propagation: an ``anyone`` link re-points every link
-        membership at its current tier; a ``restricted`` link (turning the link
-        off) deletes them, revoking access and dropping the dataset from those
-        users' libraries. Named invites are never touched. Caller commits.
+    def _delete_link_memberships(session: Session, dataset_id: str) -> None:
+        """Delete legacy link-derived memberships without touching named grants.
 
         Args:
             session: Open DB session.
             dataset_id: Dataset whose link memberships are reconciled.
-            link: The just-updated active link row.
         """
         markers = session.scalars(
             select(DatasetShareGrantModel).where(
@@ -222,12 +210,8 @@ def create_dataset_share_router(*, job_store) -> APIRouter:
                 DatasetShareGrantModel.created_by == LINK_GRANT_MARKER,
             )
         )
-        if link.general_access == GENERAL_ACCESS_ANYONE and link.general_role in MEMBER_ROLES:
-            for grant in markers:
-                grant.role = link.general_role
-        else:
-            for grant in markers:
-                session.delete(grant)
+        for grant in markers:
+            session.delete(grant)
 
     @router.get(
         "/datasets/library/{dataset_id}/sharing",
@@ -255,16 +239,15 @@ def create_dataset_share_router(*, job_store) -> APIRouter:
     @router.put(
         "/datasets/library/{dataset_id}/sharing",
         response_model=DatasetSharingState,
-        summary="Set the general-access policy (restricted vs anyone-with-link)",
+        summary="Mint or update a restricted named-share link",
     )
     def put_sharing(
         dataset_id: str, req: PutDatasetSharingRequest, current_user: AuthenticatedUserDep
     ) -> DatasetSharingState:
-        """Set the link's general-access policy and tier, minting a link if needed.
+        """Mint a restricted link or update its compatibility metadata.
 
-        ``general_role`` is the tier an ``anyone`` link grants a signed-in
-        visitor (``viewer``/``editor``); omit it to leave the current tier
-        unchanged.
+        Only ``restricted`` is accepted. ``general_role`` never grants access
+        without a matching named member row.
 
         Args:
             dataset_id: Dataset to update.
@@ -293,7 +276,7 @@ def create_dataset_share_router(*, job_store) -> APIRouter:
             link.general_access = req.general_access
             if req.general_role is not None:
                 link.general_role = req.general_role
-            _sync_link_memberships(session, dataset_id, link)
+            _delete_link_memberships(session, dataset_id)
             session.commit()
             return _sharing_state(session, dataset_id, owner)
 
@@ -532,17 +515,12 @@ def create_dataset_share_router(*, job_store) -> APIRouter:
     @router.post(
         "/datasets/share/{token}/claim",
         response_model=ClaimDatasetResponse,
-        summary="Redeem a share link: record a link membership and return the dataset",
+        summary="Resolve a restricted dataset link for a named member",
     )
     def claim_shared_dataset(token: str, current_user: AuthenticatedUserDep) -> ClaimDatasetResponse:
-        """Redeem a share link, joining the caller to it, then point them at it.
+        """Resolve a restricted link for its owner, an admin, or a named member.
 
-        Opening an ``anyone`` link records a link membership for the signed-in
-        caller at the link's current tier, so the dataset lists in their library
-        and the normal library routes resolve them to that tier. The membership
-        tracks the link (not frozen): a later tier change or restriction syncs or
-        removes it. A ``restricted`` link grants nothing — the caller must be the
-        owner or a named invitee, else 404.
+        Opening the link never creates access or a membership row.
 
         Args:
             token: The public share token from the URL.
@@ -564,27 +542,6 @@ def create_dataset_share_router(*, job_store) -> APIRouter:
             dataset_id = link.dataset_id
             if store.get_dataset(dataset_id) is None:
                 raise DomainError("dataset.share.not_found", status=404)
-            if (
-                role != ShareRole.owner
-                and link.general_access == GENERAL_ACCESS_ANYONE
-                and link.general_role in MEMBER_ROLES
-            ):
-                username = current_user.username.strip().lower()
-                existing = get_grant(session, dataset_id, username)
-                if existing is None:
-                    session.add(
-                        DatasetShareGrantModel(
-                            dataset_id=dataset_id,
-                            grantee_username=username,
-                            role=link.general_role,
-                            created_by=LINK_GRANT_MARKER,
-                            created_at=datetime.now(UTC),
-                        )
-                    )
-                    session.commit()
-                elif existing.created_by == LINK_GRANT_MARKER and existing.role != link.general_role:
-                    existing.role = link.general_role
-                    session.commit()
         return ClaimDatasetResponse(dataset_id=dataset_id, role=str(role))
 
     return router

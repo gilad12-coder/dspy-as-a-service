@@ -22,10 +22,11 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 import dspy
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
+from ....byok import ProviderKeyVault, resolve_byok_model_config
 from ....config import settings
 from ....constants import (
     OPTIMIZATION_TYPE_GRID_SEARCH,
@@ -36,6 +37,8 @@ from ....constants import (
     PAYLOAD_OVERVIEW_MODULE_NAME,
     PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE,
     PAYLOAD_OVERVIEW_SIGNATURE_CODE,
+    PAYLOAD_OVERVIEW_WORKFLOW,
+    TOKEN_SOURCE_BYOK,
 )
 from ....models import (
     ColumnMapping,
@@ -68,7 +71,6 @@ from .._helpers import (
     _materialize_program,
     _program_cache,
     build_summary,
-    compute_compare_fingerprint,
     grid_resumable_pairs,
     is_pausable,
     is_resumable,
@@ -153,7 +155,7 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
     """
 
     # ``response_model`` is kept for the OpenAPI schema, but the handler
-    # returns ``JSONResponse`` directly so it can emit a 304 path and attach
+    # returns a ``Response`` directly so it can emit a 304 path and attach
     # ETag / Cache-Control headers. FastAPI skips response_model validation
     # whenever the handler returns a Response instance, so the model class is
     # documentation-only here — every code path still constructs an
@@ -163,7 +165,7 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         response_model=OptimizationStatusResponse,
         summary="Full optimization detail with logs, progress, metrics, and result",
     )
-    def get_job(optimization_id: str, request: Request, current_user: AuthenticatedUserDep) -> JSONResponse:
+    def get_job(optimization_id: str, request: Request, current_user: AuthenticatedUserDep) -> Response:
         """Return full optimization detail with logs, progress, metrics, and result.
 
         Supports conditional GET via ``If-None-Match`` / ``ETag`` (304 when
@@ -181,16 +183,21 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
             current_user: Authenticated caller resolved from the bearer token.
 
         Returns:
-            A :class:`fastapi.responses.JSONResponse` whose body is a
-            serialized :class:`OptimizationStatusResponse` (or a bare 304
-            with no body when ``If-None-Match`` matches the current ETag).
+            A JSON :class:`fastapi.Response` whose body is a serialized
+            :class:`OptimizationStatusResponse` (or a bare 304 with no body
+            when ``If-None-Match`` matches the current ETag).
 
         Raises:
             DomainError: 404 when the optimization id is unknown or
                 inaccessible to the caller.
         """
 
-        job_data, role = load_job_with_role(job_store, optimization_id, current_user)
+        # ``include_payload=False``: this is the endpoint an active-run client
+        # re-polls every 1-2s, and nothing in the response reads the raw
+        # payload (the training dataset) — deferring it skips a multi-MB JSONB
+        # read per poll. Ownership still resolves via ``payload_overview``,
+        # which is denormalized alongside the payload (see _reassign_job_owner).
+        job_data, role = load_job_with_role(job_store, optimization_id, current_user, include_payload=False)
         # Null for the owner's own view (implicitly owner); the grant tier when a
         # member reached this run via sharing, so the UI can gate actions.
         effective_role = None if role == ShareRole.owner else str(role)
@@ -288,7 +295,6 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
             elapsed_seconds=elapsed_secs,
             estimated_remaining=est_remaining,
             **overview_to_base_fields(overview),
-            compare_fingerprint=compute_compare_fingerprint(optimization_id, overview),
             message=job_data.get("message"),
             stored_bytes=job_data.get("stored_bytes", 0),
             latest_metrics=latest_metrics,
@@ -320,8 +326,12 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         else:
             headers["Cache-Control"] = "private, max-age=1"
 
-        return JSONResponse(
-            content=response_data.model_dump(mode="json"),
+        # Single pydantic→JSON pass; ``JSONResponse(model_dump(...))`` would
+        # serialize the (potentially multi-MB, all-logs-and-progress) body
+        # twice — once to a dict tree and once through json.dumps.
+        return Response(
+            content=response_data.model_dump_json(),
+            media_type="application/json",
             headers=headers,
         )
 
@@ -482,10 +492,9 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         metric_code = payload.get("metric_code", "")
         if not metric_code:
             raise DomainError("optimization.no_metric_code", status=400)
-        # exec() isolation gap: runs user code in the API process. Same Phase B
-        # story as ``/probe-models`` — evaluate-examples calls the metric once
-        # per requested row, so ``safe_exec.probe_metric_on_sample`` would
-        # spawn a subprocess per row. The payload here was already validated
+        # exec() isolation gap: runs user code in the API process. evaluate-examples
+        # calls the metric once per requested row, so ``safe_exec.probe_metric_on_sample``
+        # would spawn a subprocess per row. The payload here was already validated
         # through the subprocess boundary when the job was submitted.
         metric = load_metric_from_code(metric_code)
 
@@ -503,6 +512,18 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
             else:
                 raise DomainError("optimization.no_model_config", status=400)
 
+        if model_config.token_source == TOKEN_SOURCE_BYOK:
+            engine = getattr(job_store, "engine", None)
+            if engine is None:
+                raise DomainError("byok.missing_connection", status=400, provider="")
+            try:
+                model_config = resolve_byok_model_config(
+                    model_config,
+                    username=current_user.username,
+                    vault=ProviderKeyVault(engine=engine),
+                )
+            except ValueError as exc:
+                raise DomainError("byok.missing_connection", status=400, provider=str(exc)) from exc
         lm = build_language_model(model_config)
 
         if program_type == "baseline":
@@ -710,24 +731,29 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         "/optimizations/{optimization_id}/program-export",
         summary="Download a self-contained, runnable export of the compiled DSPy program",
     )
-    def export_job_program(optimization_id: str, current_user: AuthenticatedUserDep) -> StreamingResponse:
+    def export_job_program(
+        optimization_id: str,
+        current_user: AuthenticatedUserDep,
+        pair_index: Annotated[int | None, Query(ge=0)] = None,
+    ) -> StreamingResponse:
         """Stream a zip that reconstructs and runs the program with plain ``dspy``.
 
         Unlike ``/serve`` (which runs the program on the platform's key), this
         packages the persisted state JSON, the signature source, the module
         recipe, and a standalone loader so the caller owns and runs the program
-        themselves — no platform endpoint required. Single-run only, matching
-        ``/artifact``; grid searches 404 here.
+        themselves — no platform endpoint required. Grid searches export the
+        requested pair, or their winning pair when ``pair_index`` is omitted.
 
         Args:
             optimization_id: Optimization id whose program should be exported.
             current_user: Authenticated caller resolved from the bearer token.
+            pair_index: Optional grid-search pair to export instead of the winner.
 
         Returns:
             A ``StreamingResponse`` carrying the zip as a file attachment.
 
         Raises:
-            DomainError: 404 (unknown / inaccessible / grid), 409 (not success,
+            DomainError: 404 (unknown / inaccessible / pair), 409 (not success,
                 or no reconstructable program), 500 (corrupt result).
         """
 
@@ -735,9 +761,6 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
 
         overview = parse_overview(job_data)
         optimization_type = overview.get(PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE, OPTIMIZATION_TYPE_RUN)
-
-        if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
-            raise DomainError("grid_search.artifact_per_pair_redirect", status=404)
 
         status = status_to_job_status(job_data.get("status", "pending"))
 
@@ -754,26 +777,58 @@ def register_detail_routes(router: APIRouter, *, job_store) -> None:
         result_data = job_data.get("result")
         if not (result_data and isinstance(result_data, dict)):
             raise DomainError("optimization.no_artifact_generic", status=409)
-        try:
-            result = RunResponse.model_validate(result_data)
-        except ValidationError:
-            logger.warning("Optimization %s has corrupted result data", optimization_id)
-            raise DomainError("optimization.corrupt_result", status=500) from None
+        export_overview = overview
+        export_pair_index: int | None = None
+        if optimization_type == OPTIMIZATION_TYPE_GRID_SEARCH:
+            try:
+                grid_result = GridSearchResponse.model_validate(result_data)
+            except ValidationError:
+                logger.warning("Grid search %s has corrupted result data", optimization_id)
+                raise DomainError("grid_search.corrupt_result", status=500) from None
+            pair = grid_result.best_pair
+            if pair_index is not None:
+                pair = next((item for item in grid_result.pair_results if item.pair_index == pair_index), None)
+                if pair is None:
+                    raise DomainError(
+                        "grid_search.pair_position_missing",
+                        status=404,
+                        pair_index=pair_index,
+                    )
+            if pair is None:
+                raise DomainError("grid_search.no_best_pair", status=409)
+            artifact = pair.program_artifact
+            export_pair_index = pair.pair_index
+            export_overview = {**overview, PAYLOAD_OVERVIEW_MODEL_NAME: pair.generation_model}
+            if artifact is None or artifact.program_state_json is None:
+                raise DomainError(
+                    "grid_search.pair_no_artifact",
+                    status=409,
+                    pair_index=pair.pair_index,
+                )
+        else:
+            try:
+                result = RunResponse.model_validate(result_data)
+            except ValidationError:
+                logger.warning("Optimization %s has corrupted result data", optimization_id)
+                raise DomainError("optimization.corrupt_result", status=500) from None
+            artifact = result.program_artifact
 
-        artifact = result.program_artifact
         # The export reconstructs from state JSON; a legacy pickle-only artifact
         # carries no signature_code and isn't portably rebuildable, so it's 409.
         if artifact is None or artifact.program_state_json is None:
             raise DomainError("optimization.no_artifact_generic", status=409)
-        if not overview.get(PAYLOAD_OVERVIEW_SIGNATURE_CODE):
+        # A workflow run carries no top-level signature: its program definition
+        # is the persisted graph, and each node's signature travels inside it.
+        if not (overview.get(PAYLOAD_OVERVIEW_SIGNATURE_CODE) or overview.get(PAYLOAD_OVERVIEW_WORKFLOW)):
             raise DomainError("optimization.no_signature_code_for_reload", status=409)
 
         zip_bytes = build_program_export_zip(
             optimization_id=optimization_id,
             artifact=artifact,
-            overview=overview,
+            overview=export_overview,
         )
-        filename = f"dspy_program_{optimization_id[:8]}.zip"
+        pair_suffix = f"_pair_{export_pair_index}" if export_pair_index is not None else ""
+        filename = f"dspy_program_{optimization_id[:8]}{pair_suffix}.zip"
         return StreamingResponse(
             iter([zip_bytes]),
             media_type="application/zip",

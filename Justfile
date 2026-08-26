@@ -39,7 +39,7 @@ test-integration:
 
 # Frontend type check via build
 test-frontend:
-    cd frontend && npm run build
+    cd frontend && npm run test:unit && npm run build
 
 test: test-unit test-frontend
 

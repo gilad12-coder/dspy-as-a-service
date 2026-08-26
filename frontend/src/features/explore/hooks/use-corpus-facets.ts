@@ -17,11 +17,8 @@ function sortFacets(facets: CorpusFacets): CorpusFacets {
 
 /**
  * Distinct filter options (models / optimizers / modules) for the active
- * corpus tab, so each tab offers exactly the chips it can filter to — a model
- * private to "mine" never shows under "public". Refetches when the corpus or
- * signed-in user changes; signed-out "mine"/"shared" have nothing to fetch and
- * resolve to empty. Sorted with the same `localeCompare` the public-points
- * fallback uses so option order stays stable across tabs.
+ * private corpus tab. Refetches when the corpus or signed-in user changes;
+ * signed-out callers resolve to empty.
  */
 export function useCorpusFacets(
   corpus: ExploreCorpus,

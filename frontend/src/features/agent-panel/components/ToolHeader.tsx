@@ -1,27 +1,30 @@
 "use client";
 
 import * as React from "react";
-import { Wrench } from "lucide-react";
+import { Wrench } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 
 import { cn } from "@/shared/lib/utils";
 
 import { TOOL_META, getToolTitle, type ApprovalSeverity } from "../lib/tool-meta";
 
-const SEVERITY: Record<ApprovalSeverity, { color: string; label: string | null }> = {
-  destructive: {
-    color: "#9B2C1F",
-    label: msg("auto.features.agent.panel.components.toolscarousel.literal.11"),
-  },
-  warning: {
-    color: "#A85A1A",
-    label: msg("auto.features.agent.panel.components.toolscarousel.literal.16"),
-  },
-  info: {
-    color: "#3D2E22",
-    label: msg("auto.features.agent.panel.components.toolscarousel.literal.12"),
-  },
-};
+const SEVERITY: Record<ApprovalSeverity, { color: string; label: string | null }> = perLocale(
+  () => ({
+    destructive: {
+      color: "#9B2C1F",
+      label: msg("auto.features.agent.panel.components.toolscarousel.literal.11"),
+    },
+    warning: {
+      color: "#A85A1A",
+      label: msg("auto.features.agent.panel.components.toolscarousel.literal.16"),
+    },
+    info: {
+      color: "#3D2E22",
+      label: msg("auto.features.agent.panel.components.toolscarousel.literal.12"),
+    },
+  }),
+);
 
 interface ToolHeaderProps {
   /** Tool key — resolves the icon, friendly title and severity from metadata. */
@@ -70,7 +73,7 @@ export function ToolHeader({ toolKey, severity, trailing, className }: ToolHeade
           color: accent,
         }}
       >
-        <Icon className="size-4" strokeWidth={1.75} aria-hidden="true" />
+        <Icon className="size-4" aria-hidden="true" />
       </span>
       <div className="min-w-0 flex-1">
         <div className="text-[0.8125rem] font-medium leading-tight truncate">

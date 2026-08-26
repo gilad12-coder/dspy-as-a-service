@@ -28,6 +28,11 @@ PAYLOAD_OVERVIEW_MODULE_KWARGS = "module_kwargs"
 # Stored so the load path can reconstruct the optimized program from a
 # state-only JSON artifact (no pickle deserialization required).
 PAYLOAD_OVERVIEW_SIGNATURE_CODE = "signature_code"
+# Workflow runs: the full graph spec (the workflow-mode analogue of
+# signature_code) and a scrubbed tool_source ({kind, mcp_url, tool_filter} —
+# never the auth header), both needed to rebuild the program shell at serve.
+PAYLOAD_OVERVIEW_WORKFLOW = "workflow"
+PAYLOAD_OVERVIEW_TOOL_SOURCE = "tool_source"
 PAYLOAD_OVERVIEW_OPTIMIZER_NAME = "optimizer_name"
 PAYLOAD_OVERVIEW_MODEL_NAME = "model_name"
 PAYLOAD_OVERVIEW_MODEL_SETTINGS = "model_settings"
@@ -42,6 +47,10 @@ PAYLOAD_OVERVIEW_SEED = "seed"
 PAYLOAD_OVERVIEW_OPTIMIZER_KWARGS = "optimizer_kwargs"
 PAYLOAD_OVERVIEW_COMPILE_KWARGS = "compile_kwargs"
 PAYLOAD_OVERVIEW_TASK_FINGERPRINT = "task_fingerprint"
+# Whether a model uses the organization connection or the user's own key.
+PAYLOAD_OVERVIEW_TOKEN_SOURCE = "token_source"
+# Per-model connection sources for mixed organization/BYOK runs.
+PAYLOAD_OVERVIEW_TOKEN_SOURCES_BY_MODEL = "token_sources_by_model"
 PAYLOAD_OVERVIEW_IS_PRIVATE = "is_private"
 # Id of the personal-library dataset a run was submitted from, when the submit
 # was by-reference. Persisted so the optimization detail surfaces a live link
@@ -88,6 +97,22 @@ STRUCTURAL_PROGRESS_EVENTS = frozenset(
 PAYLOAD_OVERVIEW_OPTIMIZATION_TYPE = "optimization_type"
 OPTIMIZATION_TYPE_RUN = "run"
 OPTIMIZATION_TYPE_GRID_SEARCH = "grid_search"
+
+# Composition classifier — orthogonal to optimization_type. Distinguishes a run
+# over a single atomic DSPy module from one over a workflow (a DAG of module
+# nodes). Derived at submit time from ``module_name == WORKFLOW_MODULE_NAME`` and
+# hoisted to the indexed ``jobs.composition`` column so it is queryable without
+# parsing JSON or string-matching the module name.
+PAYLOAD_OVERVIEW_COMPOSITION = "composition"
+COMPOSITION_SINGLE = "single"
+COMPOSITION_WORKFLOW = "workflow"
+# Tagger bulk auto-tag jobs: claimed by the same worker fleet but run in the
+# worker thread (no subprocess) — see core.worker.tagging_job.
+OPTIMIZATION_TYPE_TAGGING = "tagging_autotag"
+
+# Token source modes: organization-managed or the user's provider connection.
+TOKEN_SOURCE_MANAGED = "managed"
+TOKEN_SOURCE_BYOK = "byok"
 
 PAYLOAD_OVERVIEW_TOTAL_PAIRS = "total_pairs"
 PAYLOAD_OVERVIEW_GENERATION_MODELS = "generation_models"

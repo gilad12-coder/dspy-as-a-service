@@ -1,17 +1,59 @@
 "use client";
 
 import * as React from "react";
+import { registerTutorialHook } from "@/features/tutorial";
 
 interface SettingsModalContextValue {
   open: boolean;
   setOpen: (open: boolean) => void;
+  /** Tab to jump to on the next open, or null to keep the last/default tab. */
+  targetTab: string | null;
+  /** Open the modal focused on a specific tab. */
+  openTo: (tab: string) => void;
+  /** Consume the pending target tab so it doesn't re-apply on the next manual open. */
+  clearTarget: () => void;
 }
 
 const SettingsModalContext = React.createContext<SettingsModalContextValue | null>(null);
 
 export function SettingsModalProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
-  const value = React.useMemo(() => ({ open, setOpen }), [open]);
+  const [targetTab, setTargetTab] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const url = new URL(window.location.href);
+    const requestedTab = url.searchParams.get("settings");
+    if (!requestedTab) return;
+    setTargetTab(requestedTab);
+    setOpen(true);
+    url.searchParams.delete("settings");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, []);
+
+  const openTo = React.useCallback((tab: string) => {
+    setTargetTab(tab);
+    setOpen(true);
+  }, []);
+
+  React.useEffect(
+    () =>
+      registerTutorialHook("setSettingsTab", (tab) => {
+        if (tab === null) setOpen(false);
+        else openTo(tab);
+      }),
+    [openTo],
+  );
+
+  const clearTarget = React.useCallback(() => setTargetTab(null), []);
+
+  const value = React.useMemo(
+    () => ({ open, setOpen, targetTab, openTo, clearTarget }),
+    [open, targetTab, openTo, clearTarget],
+  );
   return <SettingsModalContext.Provider value={value}>{children}</SettingsModalContext.Provider>;
 }
 

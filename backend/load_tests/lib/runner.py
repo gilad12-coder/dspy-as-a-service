@@ -103,11 +103,17 @@ async def run_load(
     try:
         tasks: list[asyncio.Task[None]] = []
         if isinstance(specs, list):
-            for spec in specs:
-                tasks.append(asyncio.create_task(_execute(real_client, metrics, sem, spec, on_response)))
+            tasks.extend(
+                asyncio.create_task(_execute(real_client, metrics, sem, spec, on_response))
+                for spec in specs
+            )
         else:
-            async for spec in specs:
-                tasks.append(asyncio.create_task(_execute(real_client, metrics, sem, spec, on_response)))
+            tasks.extend(
+                [
+                    asyncio.create_task(_execute(real_client, metrics, sem, spec, on_response))
+                    async for spec in specs
+                ]
+            )
         if tasks:
             await asyncio.gather(*tasks)
     finally:

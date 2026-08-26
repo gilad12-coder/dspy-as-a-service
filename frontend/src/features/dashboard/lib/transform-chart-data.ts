@@ -3,6 +3,7 @@ import { getStatusLabel } from "@/shared/constants/job-status";
 import { TERMS } from "@/shared/lib/terms";
 import { STATUS_COLORS } from "../constants";
 import { msg } from "@/shared/lib/messages";
+import { getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 
 export type ChartData = {
   status: Array<{ key: string; name: string; value: number; fill: string }>;
@@ -163,7 +164,7 @@ export function transformChartData(analyticsData: DashboardAnalytics | null): Ch
   const efficiencyJobIds = analyticsData.efficiency.map((j) => j.optimization_id);
 
   const timelineData = analyticsData.timeline.map((t) => ({
-    name: new Date(t.date).toLocaleDateString("he-IL", {
+    name: new Date(t.date).toLocaleDateString(getActiveIntlLocale(), {
       day: "numeric",
       month: "short",
     }),

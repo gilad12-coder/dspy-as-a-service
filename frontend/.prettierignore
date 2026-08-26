@@ -7,7 +7,6 @@ out
 build
 dist
 coverage
-.impeccable.md
 package-lock.json
 *.min.js
 *.min.css

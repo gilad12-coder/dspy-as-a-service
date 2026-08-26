@@ -1,4 +1,4 @@
-"""Access-control foundation for Google-Drive-style optimization sharing.
+"""Access-control foundation for named optimization sharing.
 
 Defines the effective-role vocabulary, the helpers that read and write the
 per-optimization sharing config (the active share-link row plus its member
@@ -6,18 +6,11 @@ grants), and :func:`resolve_share_access` — the single resolver every
 share-scoped route consults to turn a ``(token, user)`` pair into an effective
 role (or ``None`` for no access).
 
-Two sharing modes coexist on one optimization:
-
-* The active link selects a policy: ``general_access`` is ``restricted`` (owner
-  + invited members only) or ``anyone`` (any signed-in user holding the link
-  has access), and ``general_role`` is the tier an ``anyone`` link grants such a
-  visitor (``viewer`` or ``editor``). Access is login-gated, so an ``anyone``
-  link never grants past the editor tier and a bare URL grants nothing on its
-  own.
-* Member grants invite specific users at a tier role (``viewer`` or ``editor``)
-  regardless of the link policy. Ownership is never granted — an optimization
-  has one owner (its creator), reassigned only by outright transfer — so
-  ``owner`` is not a member-grant role.
+An active opaque link can address one optimization, but the link alone grants
+nothing. The authenticated caller must be the owner, an administrator, or a
+named member with a ``viewer`` or ``editor`` grant. Ownership is reassigned only
+by outright transfer, so ``owner`` is not a member-grant role. Deployment-wide
+Explorer publication is a separate, authenticated read surface.
 
 A caller's effective role is the highest any rule grants. The resolver is
 intentionally pure to ``(session, token, user)``: it reads the job owner
@@ -59,26 +52,19 @@ class ShareRole(StrEnum):
 
 # General-access policy stored on the active share-link row.
 GENERAL_ACCESS_RESTRICTED = "restricted"
-GENERAL_ACCESS_ANYONE = "anyone"
 
 # Roles a member grant may carry. ``owner`` is excluded — an optimization has
 # exactly one owner (its creator), reassigned by outright transfer rather than
 # granted (see the ``/sharing/transfer`` route).
 MEMBER_ROLES: frozenset[str] = frozenset({ShareRole.viewer, ShareRole.editor})
 
-# Tiers an ``anyone`` link may grant a signed-in visitor. Ownership is never
-# transferred by link, so ``owner`` is excluded (mirrors Google Drive, whose
-# link sharing tops out at Editor).
+# Roles retained in the sharing API schema for named-link compatibility.
+# They do not grant access without a matching named member row.
 LINK_ROLES: frozenset[str] = frozenset({ShareRole.viewer, ShareRole.editor})
 
-# Sentinel stored in a grant's ``created_by`` to mark a *link-derived* membership
-# (someone who reached the run through an ``anyone`` link) as opposed to a named
-# invite. These rows exist only to (a) list the run in the member's table and
-# (b) carry the link's current tier; they are kept in sync with the link and
-# deleted when the link is restricted/revoked, so link access tracks the link the
-# way Google Drive does — unlike a named invite, which is authoritative and
-# untouched by link changes. Double-underscored so it can never collide with a
-# real username.
+# Earlier hosted builds marked link-derived grants with this sentinel. On-prem
+# sharing never creates them and deletes any such row encountered during an
+# update. Double underscores prevent collision with a real username.
 LINK_GRANT_MARKER = "__link__"
 
 # Loosest-to-tightest privilege ordering, used to compare an effective role
@@ -280,18 +266,10 @@ def resolve_share_access(
 ) -> ShareRole | None:
     """Resolve the effective role a caller has on a shared optimization.
 
-    The caller gets the *highest* tier any applicable rule grants (Google
-    Drive's "best of your accesses" semantics), assembled from:
-
-    1. The active (non-revoked) link by ``token``; an unknown/revoked token
-       grants nothing (``None``).
-    2. The job owner / admin / invited member's resolved role (via
-       :func:`resolve_effective_role`).
-    3. Under an ``'anyone'`` link: the link's ``general_role`` (``viewer`` or
-       ``editor``). Access is login-gated, so there is no anonymous floor — a
-       bare URL never resolves to access on its own.
-
-    With no applicable rule the caller gets ``None`` (404).
+    The active token identifies the optimization but grants no access by
+    itself. The caller must resolve as its owner, an administrator, or a named
+    member via :func:`resolve_effective_role`. With no applicable named rule the
+    caller gets ``None`` (404).
 
     Args:
         session: Open DB session backing the jobs and share tables.
@@ -306,15 +284,4 @@ def resolve_share_access(
     if link is None:
         return None
 
-    candidates: list[ShareRole] = []
-    resolved = resolve_effective_role(session, link.optimization_id, user)
-    if resolved is not None:
-        candidates.append(resolved)
-
-    if link.general_access == GENERAL_ACCESS_ANYONE:
-        link_role = link.general_role if link.general_role in LINK_ROLES else ShareRole.viewer
-        candidates.append(ShareRole(link_role))
-
-    if not candidates:
-        return None
-    return max(candidates, key=role_rank)
+    return resolve_effective_role(session, link.optimization_id, user)

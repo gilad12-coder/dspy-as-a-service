@@ -23,7 +23,7 @@ export interface SearchQueryState {
   /** ISO date (YYYY-MM-DD), inclusive. */
   dateFrom: string | null;
   dateTo: string | null;
-  /** Which corpus to search: the user's own jobs, runs shared with them, or other users' public jobs. */
+  /** Which corpus to search: owned, explicitly shared, or published on-premise runs. */
   corpus: ExploreCorpus;
   /**
    * Result ordering. Resolved to a concrete value (never "auto"): with a
@@ -150,10 +150,6 @@ export function useSemanticSearch(opts: UseSemanticSearchOptions): {
   const searchParams = useSearchParams();
   const sessionUser = opts.sessionUser;
   const sessionReady = opts.sessionReady;
-  // Fresh-open default: a signed-in user lands on their own runs ("mine"); an
-  // anonymous visitor lands on the public archive (the only corpus open to
-  // them). Resolved purely from the URL, so every bare ``/explore`` open — the
-  // sidebar link carries no query — resets to this.
   const defaultCorpus: ExploreCorpus = sessionUser ? "mine" : "public";
 
   const query = React.useMemo<SearchQueryState>(
@@ -230,9 +226,8 @@ export function useSemanticSearch(opts: UseSemanticSearchOptions): {
         updateUrl((p) => {
           if (corpus === defaultCorpus) p.delete("corpus");
           else p.set("corpus", corpus);
-          // Each tab has its own filter options (a model private to "mine"
-          // can't be filtered in "public"), so selections never carry across
-          // tabs — drop them all on switch and let the tab start clean.
+          // Each private corpus has its own filter options, so selections do
+          // not carry across tabs.
           for (const key of [
             "models",
             "optimizers",
@@ -308,9 +303,7 @@ export function useSemanticSearch(opts: UseSemanticSearchOptions): {
   React.useEffect(() => {
     const active = hasAnyFilter(query);
     setResponse((prev) => ({ ...prev, loading: true, error: null, isActive: active }));
-    // Hold in the loading state until next-auth resolves the session: firing
-    // now would fetch the public corpus before we know the user is signed in,
-    // flashing other users' runs before the "mine" default settles.
+    // Hold until NextAuth resolves so every request carries a private scope.
     if (!sessionReady) return;
     const controller = new AbortController();
 
@@ -362,8 +355,6 @@ export function useSemanticSearch(opts: UseSemanticSearchOptions): {
         if (query.corpus === "public") {
           await runSearch({});
         } else if (!sessionUser) {
-          // Both "mine" and "shared" are session-scoped: nothing to show when
-          // signed out.
           runSignedOut();
         } else if (query.corpus === "shared") {
           await runSearch({ shared_with_username: sessionUser });

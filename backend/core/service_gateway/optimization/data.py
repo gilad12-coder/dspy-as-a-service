@@ -24,6 +24,7 @@ import dspy
 
 from ...exceptions import ServiceError
 from ...models import ColumnMapping, SplitFractions
+from .logged_scores import log_metrics
 
 
 @dataclass
@@ -336,7 +337,10 @@ def load_metric_from_code(code: str) -> Callable[..., Any]:
         ServiceError: When the code has a syntax error or defines no callable.
     """
 
-    namespace: dict[str, Any] = {"dspy": dspy}
+    # log_metrics: the named-score side channel (see logged_scores.py) —
+    # metric code calls it to surface precision/recall-style components
+    # alongside the single scalar the optimizer consumes.
+    namespace: dict[str, Any] = {"dspy": dspy, "log_metrics": log_metrics}
     try:
         # exec: user-supplied metric code. Same security boundary as
         # load_signature_from_code — isolated when called from
@@ -353,12 +357,54 @@ def load_metric_from_code(code: str) -> Callable[..., Any]:
         raise ServiceError(f"metric_code has a syntax error: {exc}") from exc
     metric = namespace.get("metric")
     if not callable(metric):
-        callables = [obj for obj in namespace.values() if callable(obj)]
+        # The injected log_metrics helper is itself callable — exclude it so a
+        # metric under any other name still satisfies the single-callable
+        # fallback.
+        callables = [obj for obj in namespace.values() if callable(obj) and obj is not log_metrics]
         if len(callables) == 1:
             metric = callables[0]
     if not callable(metric):
         raise ServiceError("metric_code must define a callable named 'metric'.")
     return metric
+
+
+def load_transform_from_code(code: str) -> Callable[..., Any]:
+    """Execute user-provided code and return the transform callable it defines.
+
+    Transforms are the non-LLM steps of a workflow graph: plain functions
+    taking the node's input ports as keyword arguments and returning a dict
+    keyed by the node's declared output ports. Same trust boundary as
+    :func:`load_metric_from_code` — isolated behind the per-job subprocess
+    for optimization runs, exec'd in-process on validation paths.
+
+    Args:
+        code: User-authored transform source code.
+
+    Returns:
+        The transform callable extracted from the namespace.
+
+    Raises:
+        ServiceError: When the code has a syntax error or defines no callable.
+    """
+
+    namespace: dict[str, Any] = {"dspy": dspy}
+    try:
+        # dont_inherit=True for the same reason as load_signature_from_code:
+        # keep this module's PEP 563 future-import from stringizing the
+        # user function's annotations.
+        exec(compile(code, "<transform_code>", "exec", dont_inherit=True), namespace)
+    except SyntaxError as exc:
+        raise ServiceError(f"transform_code has a syntax error: {exc}") from exc
+    transform = namespace.get("transform")
+    if not callable(transform):
+        callables = [
+            obj for obj in namespace.values() if callable(obj) and not isinstance(obj, type) and obj is not dspy
+        ]
+        if len(callables) == 1:
+            transform = callables[0]
+    if not callable(transform):
+        raise ServiceError("transform_code must define a callable named 'transform'.")
+    return transform
 
 
 def split_examples(

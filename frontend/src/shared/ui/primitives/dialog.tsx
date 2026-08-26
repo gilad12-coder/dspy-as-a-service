@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { XIcon } from "lucide-react";
+import { X } from "@/shared/ui/icons";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { cn } from "@/shared/lib/utils";
@@ -12,16 +12,8 @@ function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>)
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
 
-function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
-  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
-}
-
 function DialogPortal({ ...props }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
-}
-
-function DialogClose({ ...props }: React.ComponentProps<typeof DialogPrimitive.Close>) {
-  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
 function DialogOverlay({
@@ -45,6 +37,7 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
@@ -59,6 +52,17 @@ function DialogContent({
           className,
         )}
         style={{ zIndex: 50, top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}
+        // Non-Radix portals (e.g. the excel-filter dropdown) mount on
+        // document.body, so Radix sees clicks inside them as "outside" and
+        // would dismiss the dialog. Portals marked modal-safe opt out.
+        onInteractOutside={(event) => {
+          const target = event.target as Element | null;
+          if (target?.closest?.("[data-modal-safe-portal]")) {
+            event.preventDefault();
+            return;
+          }
+          onInteractOutside?.(event);
+        }}
         {...props}
       >
         {children}
@@ -67,7 +71,7 @@ function DialogContent({
             data-slot="dialog-close"
             className="close-button absolute top-4 end-4"
           >
-            <XIcon />
+            <X />
             <span className="sr-only">{msg("shared.dialog.close")}</span>
           </DialogPrimitive.Close>
         )}
@@ -80,7 +84,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 text-center sm:text-right", className)}
+      className={cn("flex flex-col gap-2 text-center sm:text-start", className)}
       {...props}
     />
   );
@@ -135,7 +139,6 @@ function DialogDescription({
 
 export {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -143,5 +146,4 @@ export {
   DialogOverlay,
   DialogPortal,
   DialogTitle,
-  DialogTrigger,
 };

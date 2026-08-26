@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CaretLeft, CaretRight } from "@/shared/ui/icons";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
 
 import { cn } from "@/shared/lib/utils";
 
@@ -73,6 +74,7 @@ export function Carousel<T>({
   className,
 }: CarouselProps<T>) {
   const count = items.length;
+  const isRtl = getActiveDir() === "rtl";
   // Open on the first flagged slide so compare mode lands on a change, not slide 1.
   const [idx, setIdx] = React.useState(() => jumpIndices?.[0] ?? 0);
   const [dir, setDir] = React.useState<1 | -1>(-1);
@@ -88,24 +90,30 @@ export function Carousel<T>({
   const go = React.useCallback(
     (next: number) => {
       const clamped = Math.max(0, Math.min(count - 1, next));
-      setDir(clamped > clampedIdx ? -1 : 1);
+      // Forward slides enter from the inline-end edge — leftward in RTL, rightward
+      // in LTR — so the animation's x-sign tracks the active direction.
+      const forward = clamped > clampedIdx;
+      setDir(forward === isRtl ? -1 : 1);
       setIdx(clamped);
     },
-    [clampedIdx, count],
+    [clampedIdx, count, isRtl],
   );
 
   const onKey = React.useCallback(
     (e: React.KeyboardEvent) => {
-      // In RTL context, ArrowLeft = forward (next), ArrowRight = backward (prev).
-      if (e.key === "ArrowLeft") {
+      // The arrow pointing toward the inline-end edge advances: ArrowLeft in RTL,
+      // ArrowRight in LTR.
+      const forwardKey = isRtl ? "ArrowLeft" : "ArrowRight";
+      const backKey = isRtl ? "ArrowRight" : "ArrowLeft";
+      if (e.key === forwardKey) {
         e.preventDefault();
         go(clampedIdx + 1);
-      } else if (e.key === "ArrowRight") {
+      } else if (e.key === backKey) {
         e.preventDefault();
         go(clampedIdx - 1);
       }
     },
-    [go, clampedIdx],
+    [go, clampedIdx, isRtl],
   );
 
   const active = items[clampedIdx];
@@ -119,7 +127,7 @@ export function Carousel<T>({
         framed && "overflow-hidden border border-[#DDD4C8]/40 bg-background/80",
         className,
       )}
-      dir="rtl"
+      dir={isRtl ? "rtl" : "ltr"}
       role="region"
       aria-label={ariaLabel}
       tabIndex={0}
@@ -136,7 +144,9 @@ export function Carousel<T>({
         ) : (
           <span aria-hidden="true" />
         )}
-        <span className="font-mono tabular-nums text-[0.625rem] text-muted-foreground/70">
+        {/* Kept LTR: the slash is bidi-neutral, so an RTL run reorders the pair
+            and "1 / 5" reads as "5 / 1". */}
+        <span dir="ltr" className="font-mono tabular-nums text-[0.625rem] text-muted-foreground/70">
           {clampedIdx + 1} / {count}
         </span>
       </div>
@@ -194,28 +204,32 @@ export function Carousel<T>({
               aria-current={isActive ? "true" : undefined}
               // Tone paints status; width (1.5 → 2.5 → 4) carries the active and
               // flagged cues so the strip never leans on colour alone.
-              style={tone ? { backgroundColor: tone } : undefined}
               className={cn(
-                "h-1.5 rounded-full transition-all duration-200 cursor-pointer",
+                "group/dot relative inline-flex size-[44px] items-center justify-center rounded-full cursor-pointer md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D2E22]/40 focus-visible:ring-offset-1",
-                isActive
-                  ? cn("w-4", !tone && "bg-[#3D2E22]/70")
-                  : tone
-                    ? "w-2.5 opacity-70 hover:opacity-100"
-                    : "w-1.5 bg-[#3D2E22]/20 hover:bg-[#3D2E22]/40",
               )}
-            />
+            >
+              <span
+                aria-hidden="true"
+                style={tone ? { backgroundColor: tone } : undefined}
+                className={cn(
+                  "h-1.5 rounded-full transition-all duration-200",
+                  isActive
+                    ? cn("w-4", !tone && "bg-[#3D2E22]/70")
+                    : tone
+                      ? "w-2.5 opacity-70 group-hover/dot:opacity-100"
+                      : "w-1.5 bg-[#3D2E22]/20 group-hover/dot:bg-[#3D2E22]/40",
+                )}
+              />
+            </button>
           );
         })}
       </div>
 
       <div
-        className={cn(
-          "mt-2.5 flex items-center justify-between gap-2",
-          framed && "px-2.5 pb-2.5",
-        )}
+        className={cn("mt-2.5 flex items-center justify-between gap-2", framed && "px-2.5 pb-2.5")}
       >
-        {/* Prev: visually on the RIGHT in RTL (rightmost = flex start). */}
+        {/* Prev sits at the inline-start edge — right in RTL, left in LTR. */}
         <CarouselNav
           direction="prev"
           disabled={clampedIdx === 0}
@@ -240,9 +254,11 @@ function CarouselNav({
   disabled: boolean;
   onClick: () => void;
 }) {
-  // In RTL reading flow: "prev" = step backwards = rightward chevron;
-  // "next" = step forwards = leftward chevron.
-  const Icon = direction === "prev" ? ChevronRight : ChevronLeft;
+  // "prev" points back toward the inline-start edge, "next" toward inline-end:
+  // rightward/leftward chevrons in RTL, mirrored in LTR.
+  const isRtl = getActiveDir() === "rtl";
+  const Icon =
+    direction === "prev" ? (isRtl ? CaretRight : CaretLeft) : isRtl ? CaretLeft : CaretRight;
   const label =
     direction === "prev"
       ? msg("auto.features.agent.panel.components.toolscarousel.literal.14")
@@ -254,7 +270,7 @@ function CarouselNav({
       disabled={disabled}
       aria-label={label}
       className={cn(
-        "inline-flex size-7 items-center justify-center rounded-full",
+        "inline-flex size-[44px] items-center justify-center rounded-full md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]",
         "border border-border/50 bg-background/85",
         "transition-all duration-150 cursor-pointer",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D2E22]/40 focus-visible:ring-offset-1",

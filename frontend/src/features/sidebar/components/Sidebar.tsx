@@ -1,28 +1,29 @@
 "use client";
 
 import * as React from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { Popover as PopoverPrimitive } from "radix-ui";
 import {
-  LayoutDashboard,
-  Send,
-  Tags,
-  Trash2,
-  MoreHorizontal,
-  Share,
-  Pencil,
-  Pin,
-  Loader2,
-  Grid2x2,
-  ChevronLeft,
+  SquaresFour,
+  PaperPlaneTilt,
+  Trash,
+  DotsThree,
+  ShareNetwork,
+  PencilSimple,
+  PushPin,
+  CircleNotch,
+  GridFour,
+  CaretLeft,
   Compass,
-  CopyPlus,
+  Copy,
   Database,
-  RotateCcw,
+  ArrowCounterClockwise,
   Play,
-} from "lucide-react";
+  User,
+  Users,
+} from "@/shared/ui/icons";
 import { SidebarMoreSkeleton } from "./SidebarMoreSkeleton";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";
@@ -49,31 +50,69 @@ import { useJobsStream } from "@/shared/hooks/use-jobs-stream";
 import { toast } from "react-toastify";
 import { useSession } from "next-auth/react";
 import { groupJobsByRecency } from "@/features/sidebar";
-import { SettingsTrigger, useUserPrefs } from "@/features/settings";
+import { AccountMenu } from "@/shared/layout/account-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
+import { ShareDialog } from "@/features/optimizations";
 import { StorageMeter } from "@/features/storage";
 import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
+import { sessionIdentity } from "@/shared/lib/session-identity";
+import { recentResumableId } from "@/shared/lib/recent-session";
 import { TERMS } from "@/shared/lib/terms";
+import { sentenceCase } from "@/shared/lib/formatters";
 import { EmptyState } from "@/shared/ui/empty-state";
+import {
+  COMPACT_POPOVER_ICON_CLASS,
+  COMPACT_POPOVER_ITEM_CLASS,
+  COMPACT_POPOVER_PANEL_CLASS,
+} from "@/shared/ui/compact-popover-menu";
 
-const NAV_ITEMS = [
-  {
-    href: "/",
-    label: msg("auto.features.sidebar.components.sidebar.literal.1"),
-    icon: LayoutDashboard,
-  },
-  { href: "/tagger", label: msg("auto.features.sidebar.components.sidebar.literal.2"), icon: Tags },
-  { href: "/submit", label: TERMS.notificationNewOpt, icon: Send },
-  { href: "/explore", label: msg("sidebar.nav.explore"), icon: Compass },
-  { href: "/datasets", label: msg("sidebar.nav.datasets"), icon: Database },
-] as const;
+const NAV_ITEMS = perLocale(
+  () =>
+    [
+      {
+        href: "/",
+        label: msg("auto.features.sidebar.components.sidebar.literal.1"),
+        icon: SquaresFour,
+      },
+      // One entry covers the whole Data hub: the dataset library and the
+      // labeling-session chooser are tabs of the same surface, so both route
+      // prefixes light it up.
+      {
+        href: "/datasets",
+        label: msg("sidebar.nav.data"),
+        icon: Database,
+        match: ["/datasets", "/tagger"],
+      },
+      // The glossary term is lowercase for mid-sentence use; nav items are
+      // sentence-cased ("Explore", "Data"), so this one matches.
+      { href: "/submit", label: sentenceCase(TERMS.notificationNewOpt), icon: PaperPlaneTilt },
+      { href: "/explore", label: msg("sidebar.nav.explore"), icon: Compass },
+    ] as const,
+);
 
 const PAGE_SIZE = 20;
 
 const SIDEBAR_MIN_WIDTH = 210;
 const SIDEBAR_MAX_WIDTH = 420;
-const SIDEBAR_DEFAULT_WIDTH = SIDEBAR_MIN_WIDTH;
+const SIDEBAR_DEFAULT_WIDTH = 240;
+// Icon-rail width when collapsed: just enough to center a nav icon (and the
+// account avatar / storage icon) with comfortable padding.
+const SIDEBAR_COLLAPSED_WIDTH = 64;
+// Drag-to-collapse hysteresis. While expanded, the rail shrinks with the cursor
+// and rests at its min; only pulling the grip in past COLLAPSE_AT (well under
+// the min) snaps it shut. While collapsed, pushing the grip back out past
+// EXPAND_AT re-expands it. The gap between the two thresholds means a jittery
+// hand near the edge can't rapidly toggle the state — that gap is what a single
+// threshold lacked, so it flickered between the icon rail and the min width.
+const SIDEBAR_COLLAPSE_AT = 150;
+const SIDEBAR_EXPAND_AT = 196;
 const SIDEBAR_WIDTH_STORAGE_KEY = "skynet.sidebar.width";
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "skynet.sidebar.collapsed";
+const DESKTOP_MQ = "(min-width: 768px)";
 
+/** Clamp a candidate sidebar width to the resizable range, rounded to a whole px. */
 function clampSidebarWidth(n: number): number {
   return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(n)));
 }
@@ -86,8 +125,9 @@ export function Sidebar() {
   const parsedPair = activePairParam != null ? parseInt(activePairParam, 10) : NaN;
   const activePairIndex = Number.isFinite(parsedPair) ? parsedPair : null;
   const { data: session } = useSession();
-  const sessionUser = session?.user?.name ?? "";
+  const sessionUser = sessionIdentity(session);
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
+  const isRtl = getActiveDir() === "rtl";
 
   const [tab, setTab] = React.useState<"mine" | "shared">("mine");
   // ``tab`` is the *requested* tab; ``renderedTab`` trails it and only flips
@@ -101,18 +141,36 @@ export function Sidebar() {
   const [activeCount, setActiveCount] = React.useState(0);
   const [loadedAll, setLoadedAll] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
-  const [width, setWidth] = React.useState<number>(SIDEBAR_DEFAULT_WIDTH);
+  const [width, setWidth] = React.useState(SIDEBAR_DEFAULT_WIDTH);
+  const [collapsed, setCollapsed] = React.useState(false);
+  // Arms the collapse/expand width glide for the discrete snap only; continuous
+  // resize drags leave it false so the rail tracks the cursor 1:1.
+  const [snapping, setSnapping] = React.useState(false);
+  const [isDesktop, setIsDesktop] = React.useState(true);
+  // Collapse is a desktop-only affordance: the mobile drawer always shows the
+  // full rail, so gate the icon-rail on the breakpoint.
+  const isCollapsed = collapsed && isDesktop;
+  const effectiveWidth = isCollapsed ? SIDEBAR_COLLAPSED_WIDTH : width;
+  // Collapsed tooltips read toward the content area: right in LTR, left in RTL.
+  const tooltipSide = isRtl ? "left" : "right";
 
-  // Hydrate the persisted width on the client only — SSR can't read
-  // localStorage, and reading it during initial render would mismatch.
+  // Width is a desktop affordance — the mobile drawer uses a viewport-capped
+  // width regardless. Hydrate the persisted width client-side (SSR can't read
+  // localStorage without risking a mismatch) and track the desktop breakpoint.
   React.useEffect(() => {
     try {
       const raw = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
       const n = raw ? Number(raw) : NaN;
       if (Number.isFinite(n)) setWidth(clampSidebarWidth(n));
+      setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "1");
     } catch {
       /* localStorage unavailable */
     }
+    const mq = window.matchMedia(DESKTOP_MQ);
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
   }, []);
 
   const persistWidth = React.useCallback((next: number) => {
@@ -125,20 +183,59 @@ export function Sidebar() {
     }
   }, []);
 
-  // Drag-resize. The sidebar is pinned to the viewport's right edge, so
-  // the dragged left edge corresponds to ``window.innerWidth - clientX``.
+  const setCollapsedPersist = React.useCallback((value: boolean) => {
+    setCollapsed((prev) => {
+      if (prev === value) return prev;
+      try {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, value ? "1" : "0");
+      } catch {
+        /* noop */
+      }
+      return value;
+    });
+  }, []);
+
+  // Drag-resize doubles as the collapse control. The rail is pinned to the
+  // inline-start edge (left in LTR, right in RTL), so the dragged inline-end
+  // edge maps to clientX in LTR and to (innerWidth - clientX) in RTL.
+  //
+  // ``persistWidth`` clamps to [min, max], so while expanded the rail tracks the
+  // cursor and simply rests at its min — pulling in further does nothing until
+  // the cursor crosses COLLAPSE_AT, which snaps to the icon rail. ``dragCollapsed``
+  // holds the drag's own collapsed flag so the hysteresis compares against where
+  // this gesture last committed, not a stale render value; that's what keeps a
+  // jittery hand from toggling on a single pixel.
   const resizingRef = React.useRef(false);
   const startResize = React.useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       resizingRef.current = true;
+      let dragCollapsed = collapsed;
       const prevUserSelect = document.body.style.userSelect;
       const prevCursor = document.body.style.cursor;
       document.body.style.userSelect = "none";
       document.body.style.cursor = "col-resize";
       const onMove = (ev: MouseEvent) => {
         if (!resizingRef.current) return;
-        persistWidth(window.innerWidth - ev.clientX);
+        const raw = isRtl ? window.innerWidth - ev.clientX : ev.clientX;
+        if (dragCollapsed) {
+          if (raw > SIDEBAR_EXPAND_AT) {
+            dragCollapsed = false;
+            // Discrete snap back to text mode — glide the width jump.
+            setSnapping(true);
+            setCollapsedPersist(false);
+            persistWidth(raw);
+          }
+        } else if (raw < SIDEBAR_COLLAPSE_AT) {
+          dragCollapsed = true;
+          // Discrete snap to the icon rail — glide the width jump.
+          setSnapping(true);
+          setCollapsedPersist(true);
+        } else {
+          // Continuous resize within range: track the cursor 1:1, no transition.
+          setSnapping(false);
+          persistWidth(raw);
+        }
       };
       const onUp = () => {
         resizingRef.current = false;
@@ -150,8 +247,9 @@ export function Sidebar() {
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [persistWidth],
+    [collapsed, isRtl, persistWidth, setCollapsedPersist],
   );
+
   // Sidebar infinite scroll: fetchData (polling + external invalidation)
   // re-requests ``max(PAGE_SIZE, loadedItemsRef.current)`` rows so a
   // background 30s refresh doesn't truncate the user's scrolled position
@@ -272,25 +370,25 @@ export function Sidebar() {
     return () => observer.disconnect();
   }, [loadedAll, loadMore, jobs.length]);
 
-  const [deleteConfirm, setDeleteConfirm] = React.useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = React.useState<{ id: string } | null>(null);
   const [deleteLoading, setDeleteLoading] = React.useState(false);
 
   const handleDelete = React.useCallback((e: React.MouseEvent, optimizationId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setDeleteConfirm(optimizationId);
+    setDeleteConfirm({ id: optimizationId });
   }, []);
 
   const confirmDelete = async () => {
-    const optimizationId = deleteConfirm;
-    if (!optimizationId) return;
+    if (!deleteConfirm) return;
+    const { id } = deleteConfirm;
     setDeleteLoading(true);
-    setJobs((prev) => prev.filter((j) => j.optimization_id !== optimizationId));
+    setJobs((prev) => prev.filter((j) => j.optimization_id !== id));
     try {
-      await deleteJob(optimizationId);
+      await deleteJob(id);
       toast.success(msg("sidebar.delete.success"));
       window.dispatchEvent(new Event("optimizations-changed"));
-      if (pathname === `/optimizations/${optimizationId}`) router.push("/");
+      if (pathname === `/optimizations/${id}`) router.push("/");
     } catch {
       toast.error(msg("sidebar.delete.failed"));
       void fetchData();
@@ -317,8 +415,8 @@ export function Sidebar() {
 
   const deleteJobInfo = React.useMemo(() => {
     if (!deleteConfirm) return null;
-    const job = jobs.find((j) => j.optimization_id === deleteConfirm);
-    if (!job) return { name: deleteConfirm, id: deleteConfirm };
+    const job = jobs.find((j) => j.optimization_id === deleteConfirm.id);
+    if (!job) return { name: deleteConfirm.id, id: deleteConfirm.id };
     const name =
       job.name ||
       [job.module_name, job.optimizer_name].filter(Boolean).join(" · ") ||
@@ -326,99 +424,140 @@ export function Sidebar() {
     return { name, id: job.optimization_id };
   }, [deleteConfirm, jobs]);
 
+  // The sidebar is position:fixed on desktop (a locked rail), so it's out of the
+  // shell's flow and can't reserve its own width. Publish the live width as a CSS
+  // var the shell's <main> consumes for its inline margin — one source of truth,
+  // updated as the rail is dragged so content and rail never overlap.
+  //
+  // ``data-sidebar-snapping`` arms the matched rail-width / main-margin glide
+  // (globals.css) for the discrete collapse/expand snap only. useLayoutEffect,
+  // not useEffect: the attribute must be on <html> *before* the browser paints
+  // the new width, or the snap paints once — unanimated — before the transition
+  // could arm, which is exactly the jump this smooths out. Cleared on the next
+  // continuous drag and when the glide's transitionend fires.
+  React.useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--app-sidebar-width", `${effectiveWidth}px`);
+    if (snapping) root.setAttribute("data-sidebar-snapping", "");
+    else root.removeAttribute("data-sidebar-snapping");
+    if (isCollapsed) root.setAttribute("data-sidebar-collapsed", "");
+    else root.removeAttribute("data-sidebar-collapsed");
+  }, [effectiveWidth, snapping, isCollapsed]);
+
   return (
     <aside
-      className="relative flex h-full shrink-0 flex-col border-l border-sidebar-border/60 bg-sidebar/80 backdrop-blur-xl overflow-hidden"
-      style={{ width: `min(${width}px, 40vw, 92vw)` }}
-      dir="rtl"
+      className="app-sidebar-rail relative flex h-full shrink-0 flex-col border-e border-sidebar-border/60 bg-sidebar/80 backdrop-blur-xl overflow-hidden"
+      style={{ width: isDesktop ? `${effectiveWidth}px` : `min(${width}px, 88vw)` }}
+      onTransitionEnd={(e) => {
+        // Disarm once the collapse/expand width glide lands so the next
+        // continuous drag tracks the cursor 1:1. Guard against transitionend
+        // bubbling up from descendant width animations (e.g. the storage bar).
+        if (e.target === e.currentTarget && e.propertyName === "width") setSnapping(false);
+      }}
       data-tutorial="sidebar-full"
     >
+      {/* Drag-to-resize grip on the rail's inline-end edge (desktop only — the
+          mobile drawer isn't resizable). Also the collapse control: dragging it
+          past the threshold snaps the rail shut, and it stays grabbable on the
+          collapsed rail's edge to drag back open. Invisible until hovered, then a
+          primary hairline; the grab math is mirrored for RTL in ``startResize``. */}
       <button
         type="button"
         onMouseDown={startResize}
         aria-label={msg("auto.features.sidebar.components.sidebar.literal.15")}
         tabIndex={-1}
-        className="absolute top-0 end-0 z-20 hidden h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/20 active:bg-primary/30 md:block"
-      />
+        className="group absolute inset-y-0 end-0 z-20 hidden w-1.5 cursor-col-resize md:block"
+      >
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-0 end-0 w-px bg-transparent transition-colors duration-150 group-hover:bg-primary/30 group-active:bg-primary/50"
+        />
+      </button>
       <div className="flex flex-col h-full">
         <nav
-          className="flex flex-col gap-1 px-3 py-3"
+          className={cn("flex flex-col gap-1 pb-3 pt-3", isCollapsed ? "px-2" : "px-3")}
           role="navigation"
           aria-label={msg("auto.features.sidebar.components.sidebar.literal.7")}
           data-tutorial="sidebar-nav"
         >
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-            const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
-            const showBadge = href === "/" && renderedTab === "mine" && activeCount > 0;
-            return (
-              <Link
-                key={href}
-                href={href}
-                {...(href === "/tagger" ? { "data-tutorial": "sidebar-tagger" } : {})}
-                className={cn(
-                  "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
-                  active
-                    ? "text-primary"
-                    : "text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground hover:translate-x-[-2px]",
-                )}
-              >
-                {active && (
-                  <motion.div
-                    layoutId="sidebar-active"
-                    className="absolute inset-0 rounded-lg bg-primary/[0.08] ring-1 ring-primary/10"
-                    style={{ borderRight: "3px solid var(--primary)" }}
-                    transition={{ type: "spring", stiffness: 350, damping: 28 }}
-                  />
-                )}
-                <span className="relative z-10 flex items-center gap-2.5 flex-1 min-w-0">
-                  <Icon
-                    className={cn(
-                      "size-4 shrink-0 transition-colors duration-200",
-                      active ? "text-primary" : "group-hover:text-sidebar-foreground",
-                    )}
-                  />
-                  <span className="truncate flex-1">{label}</span>
-                  {showBadge && (
-                    <span className="shrink-0 text-[0.625rem] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-full tabular-nums">
-                      {activeCount}
-                    </span>
-                  )}
-                </span>
-              </Link>
-            );
-          })}
+          {NAV_ITEMS.map((item) => (
+            <NavItem
+              key={item.href}
+              href={item.href}
+              label={item.label}
+              Icon={item.icon}
+              collapsed={isCollapsed}
+              tooltipSide={tooltipSide}
+              active={
+                item.href === "/"
+                  ? pathname === "/"
+                  : ("match" in item ? item.match : [item.href]).some((prefix) =>
+                      pathname.startsWith(prefix),
+                    )
+              }
+              badge={
+                item.href === "/" && renderedTab === "mine" && activeCount > 0 ? activeCount : null
+              }
+              tutorialId={item.href === "/datasets" ? "sidebar-data" : undefined}
+              resume={
+                item.href === "/submit"
+                  ? { kind: "optimization", detailBase: "/optimizations" }
+                  : undefined
+              }
+            />
+          ))}
         </nav>
 
-        <div aria-hidden="true" className="mx-3 h-px bg-sidebar-border/40" />
+        <div
+          aria-hidden="true"
+          className={cn("mx-3 h-px bg-sidebar-border/40", isCollapsed && "hidden")}
+        />
 
         <div
           role="tablist"
           aria-label={msg("sidebar.tab.aria")}
-          className="relative mx-3 mt-2.5 mb-0.5 flex rounded-lg bg-muted p-1 gap-1"
+          className={cn(
+            "relative mx-3 mt-2.5 mb-0.5 flex rounded-lg bg-muted p-1 gap-1 [&_[role=tab]]:min-h-[44px] lg:[&_[role=tab]]:min-h-0",
+            isCollapsed && "hidden",
+          )}
         >
           <div
             aria-hidden="true"
             className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-100 ease-out"
             style={{ insetInlineStart: tab === "mine" ? 4 : "calc(50% + 2px)" }}
           />
-          {(["mine", "shared"] as const).map((key) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={tab === key}
-              onClick={() => handleTabChange(key)}
-              className={cn(
-                "relative z-10 flex-1 cursor-pointer rounded-md px-2 py-1.5 text-center text-[0.6875rem] font-medium transition-colors duration-200",
-                tab === key ? "text-foreground" : "text-foreground/60 hover:text-foreground",
-              )}
-            >
-              {msg(key === "mine" ? "sidebar.tab.mine" : "sidebar.tab.shared")}
-            </button>
-          ))}
+          {(["mine", "shared"] as const).map((key) => {
+            const label = msg(key === "mine" ? "sidebar.tab.mine" : "sidebar.tab.shared");
+            const Icon = key === "mine" ? User : Users;
+            return (
+              <Tooltip key={key}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === key}
+                    aria-label={label}
+                    onClick={() => handleTabChange(key)}
+                    className={cn(
+                      "relative z-10 flex flex-1 cursor-pointer items-center justify-center rounded-md px-2 py-1.5 transition-colors duration-200",
+                      tab === key ? "text-foreground" : "text-foreground/60 hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-3.5" aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{label}</TooltipContent>
+              </Tooltip>
+            );
+          })}
         </div>
 
-        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        {/* Collapsed rail hides the run list (no icon form for a text list), but
+            the data layer keeps polling — the Dashboard nav badge count reads
+            from the same fetch — so hide rather than unmount. */}
+        <div
+          className={cn("flex-1 overflow-hidden flex flex-col min-h-0", isCollapsed && "hidden")}
+        >
           <div ref={listRef} className="flex-1 overflow-y-auto px-3 pt-2 pb-2 no-scrollbar">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
@@ -455,8 +594,8 @@ export function Sidebar() {
                 ))}
                 {loadedAll && groupedJobs.length === 0 && (
                   <EmptyState
-                    variant="list"
-                    icon={renderedTab === "shared" ? undefined : Send}
+                    icon={PaperPlaneTilt}
+                    iconWrap="tile"
                     title={msg(
                       renderedTab === "shared" ? "sidebar.shared.empty" : "sidebar.mine.empty",
                     )}
@@ -465,6 +604,7 @@ export function Sidebar() {
                         ? "sidebar.shared.empty.hint"
                         : "sidebar.mine.empty.hint",
                     )}
+                    className="px-4 py-10"
                   />
                 )}
               </motion.div>
@@ -474,16 +614,18 @@ export function Sidebar() {
                 <SidebarMoreSkeleton />
               </div>
             )}
-            {!loadedAll && (
-              <div ref={sentinelRef} aria-hidden="true" className="h-1 w-full" />
-            )}
+            {!loadedAll && <div ref={sentinelRef} aria-hidden="true" className="h-1 w-full" />}
           </div>
         </div>
 
+        {/* Collapsed rail has no scrolling list to fill the middle, so a plain
+            spacer keeps the footer pinned to the bottom. */}
+        {isCollapsed && <div className="flex-1" aria-hidden="true" />}
+
         <div className="border-t border-sidebar-border/60">
-          <StorageMeter />
-          <div className="px-3 py-2">
-            <SettingsTrigger />
+          <StorageMeter collapsed={isCollapsed} />
+          <div className={cn("py-2", isCollapsed ? "flex justify-center px-2" : "px-2")}>
+            <AccountMenu collapsed={isCollapsed} />
           </div>
         </div>
       </div>
@@ -494,20 +636,17 @@ export function Sidebar() {
           if (!open) setDeleteConfirm(null);
         }}
       >
-        <DialogContent className="max-w-md sm:max-w-md" showCloseButton={false}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>
-              {msg("auto.features.sidebar.components.sidebar.3")}
-              {TERMS.optimization}
+              {`${msg("auto.features.sidebar.components.sidebar.3")}${TERMS.optimization}`}
             </DialogTitle>
             <DialogDescription>
-              {msg("auto.features.sidebar.components.sidebar.4")}
-              {TERMS.optimization}{" "}
+              {`${msg("auto.features.sidebar.components.sidebar.4")}${TERMS.optimization}`}{" "}
               <span className="font-semibold text-foreground break-words" dir="auto">
                 {deleteJobInfo?.name}
               </span>
-              ?{" "}
-              {msg("delete.irreversible")}
+              ? {msg("delete.irreversible")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-2 gap-3">
@@ -526,7 +665,7 @@ export function Sidebar() {
               className="w-full justify-center"
             >
               {deleteLoading ? (
-                <Loader2 className="size-4 animate-spin" />
+                <CircleNotch className="size-4 animate-spin" />
               ) : (
                 msg("auto.features.sidebar.components.sidebar.literal.10")
               )}
@@ -535,6 +674,123 @@ export function Sidebar() {
         </DialogContent>
       </Dialog>
     </aside>
+  );
+}
+
+/**
+ * One primary-nav entry: an icon + label row (with an optional count badge), gold
+ * "you are here" treatment when active, and a subtle inline-start nudge on hover.
+ */
+function NavItem({
+  href,
+  label,
+  Icon,
+  active,
+  badge,
+  collapsed,
+  tooltipSide,
+  tutorialId,
+  resume,
+}: {
+  href: string;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  active: boolean;
+  badge: number | null;
+  /** Icon-only rail: hide the label and name the entry via a hover tooltip. */
+  collapsed: boolean;
+  /** Which side the collapsed tooltip opens toward (content-ward). */
+  tooltipSide: "left" | "right";
+  /** ``data-tutorial`` anchor for entries the tutorial spotlights. */
+  tutorialId?: string;
+  resume?: { kind: "tagger" | "optimization"; detailBase: string };
+}) {
+  const router = useRouter();
+  // When this entry can resume a recent session, decide at click time: if the
+  // user left one within the resume window, reopen it; otherwise fall through to
+  // the plain href (start a new session). Checked on click so the time window is
+  // measured live, not at render.
+  const onClick = resume
+    ? (e: React.MouseEvent) => {
+        // Let modifier-clicks (open-in-new-tab) fall through to the plain href.
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        const id = recentResumableId(resume.kind);
+        if (!id) return;
+        e.preventDefault();
+        router.push(`${resume.detailBase}/${id}`);
+      }
+    : undefined;
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Link
+            href={href}
+            onClick={onClick}
+            {...(tutorialId ? { "data-tutorial": tutorialId } : {})}
+            aria-label={label}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "group relative flex items-center justify-center rounded-lg p-2.5 transition-colors duration-200",
+              active
+                ? "bg-primary/[0.08] text-primary ring-1 ring-primary/10"
+                : "text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground",
+            )}
+          >
+            <Icon
+              className={cn(
+                "size-5 shrink-0 transition-colors duration-200",
+                active ? "text-primary" : "group-hover:text-sidebar-foreground",
+              )}
+            />
+            {badge != null && (
+              <span className="absolute -end-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[0.5625rem] font-bold leading-4 text-primary-foreground tabular-nums">
+                {badge}
+              </span>
+            )}
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side={tooltipSide}>{label}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      {...(tutorialId ? { "data-tutorial": tutorialId } : {})}
+      className={cn(
+        "group relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 lg:min-h-0",
+        active
+          ? "text-primary"
+          : "text-sidebar-foreground/60 hover:translate-x-[-2px] hover:bg-sidebar-accent/40 hover:text-sidebar-foreground",
+      )}
+    >
+      {active && (
+        <motion.div
+          layoutId="sidebar-active"
+          className="absolute inset-0 rounded-lg bg-primary/[0.08] ring-1 ring-primary/10"
+          style={{ borderInlineStart: "3px solid var(--primary)" }}
+          transition={{ type: "spring", stiffness: 350, damping: 28 }}
+        />
+      )}
+      <span className="relative z-10 flex items-center gap-2.5 flex-1 min-w-0">
+        <Icon
+          className={cn(
+            "size-4 shrink-0 transition-colors duration-200",
+            active ? "text-primary" : "group-hover:text-sidebar-foreground",
+          )}
+        />
+        <span className="truncate flex-1">{label}</span>
+        {badge != null && (
+          <span className="shrink-0 text-[0.625rem] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-full tabular-nums">
+            {badge}
+          </span>
+        )}
+      </span>
+    </Link>
   );
 }
 
@@ -554,19 +810,13 @@ function JobRow({
   onRefresh: () => void;
 }) {
   const router = useRouter();
-  const { prefs } = useUserPrefs();
+  const isRtl = getActiveDir() === "rtl";
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [renaming, setRenaming] = React.useState(false);
   const [renameValue, setRenameValue] = React.useState("");
-  const [menuPos, setMenuPos] = React.useState<{ top: number; left: number } | null>(null);
   const [expanded, setExpanded] = React.useState(isActive && activePair !== null);
-  const menuRef = React.useRef<HTMLDivElement>(null);
-  const btnRef = React.useRef<HTMLButtonElement>(null);
   const renameRef = React.useRef<HTMLInputElement>(null);
-  const isGridSearch =
-    prefs.advancedMode &&
-    job.optimization_type === "grid_search" &&
-    (job.total_pairs ?? 0) > 0;
+  const isGridSearch = job.optimization_type === "grid_search" && (job.total_pairs ?? 0) > 0;
   const displayName =
     job.name ||
     [job.module_name, job.optimizer_name].filter(Boolean).join(" · ") ||
@@ -578,43 +828,17 @@ function JobRow({
   // "mine" tab the caller is always owner/admin, so everything is allowed.
   const canEdit = !isShared || job.role === "editor" || job.role === "owner";
 
-  const dropdownRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e: MouseEvent | TouchEvent) => {
-      const target = e.target as Node;
-      if (menuRef.current?.contains(target)) return;
-      if (dropdownRef.current?.contains(target)) return;
-      setMenuOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setMenuOpen(false);
-        btnRef.current?.focus();
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    document.addEventListener("touchstart", handler);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handler);
-      document.removeEventListener("touchstart", handler);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [menuOpen]);
-
   React.useEffect(() => {
     if (renaming) renameRef.current?.focus();
   }, [renaming]);
 
+  const [shareOpen, setShareOpen] = React.useState(false);
+
+  // Open the same Drive-style sharing dialog the optimization page uses, instead
+  // of a bare link copy — the dialog itself offers copy plus roles and visibility.
   const handleShare = () => {
-    const url = `${window.location.origin}/optimizations/${job.optimization_id}`;
-    navigator.clipboard
-      .writeText(url)
-      .then(() => toast.success(msg("sidebar.link.copied")))
-      .catch(() => toast.error(msg("clipboard.copy_failed")));
     setMenuOpen(false);
+    setShareOpen(true);
   };
 
   const handleClone = () => {
@@ -727,10 +951,10 @@ function JobRow({
   }
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative">
       <div
         className={cn(
-          "flex items-center gap-1.5 rounded-lg px-2 py-2 text-[0.6875rem] transition-all duration-150",
+          "flex min-h-[44px] items-center gap-1.5 rounded-lg px-2 py-2 text-[0.6875rem] transition-all duration-150 lg:min-h-0",
           isActive
             ? "bg-primary/[0.07] text-foreground"
             : "text-muted-foreground hover:bg-sidebar-accent/30 hover:text-foreground",
@@ -738,7 +962,7 @@ function JobRow({
       >
         <Link
           href={`/optimizations/${job.optimization_id}`}
-          className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden"
+          className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 overflow-hidden lg:min-h-0"
         >
           <span
             className="truncate font-medium leading-tight min-w-0 block text-start flex-1"
@@ -753,11 +977,11 @@ function JobRow({
                 p1: job.total_pairs ?? "?",
               })}
             >
-              <Grid2x2 className="size-2.5" />
+              <GridFour className="size-2.5" />
               {job.total_pairs ?? "?"}
             </span>
           )}
-          {job.pinned && <Pin className="size-2.5 text-muted-foreground/60 shrink-0" />}
+          {job.pinned && <PushPin className="size-2.5 text-muted-foreground/60 shrink-0" />}
           <StatusDot status={job.status} />
         </Link>
         {isGridSearch && (
@@ -768,54 +992,169 @@ function JobRow({
               e.stopPropagation();
               setExpanded((o) => !o);
             }}
-            className="p-0.5 rounded cursor-pointer text-muted-foreground/40 hover:text-foreground transition-colors shrink-0"
+            className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/40 transition-colors hover:text-foreground lg:size-5"
             aria-label={
               expanded
                 ? msg("auto.features.sidebar.components.sidebar.literal.11")
                 : msg("auto.features.sidebar.components.sidebar.literal.12")
             }
           >
-            <ChevronLeft
+            <CaretLeft
               className={cn("size-3.5 transition-transform duration-200", expanded && "-rotate-90")}
             />
           </button>
         )}
-        {
-          <button
-            ref={btnRef}
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (!menuOpen && btnRef.current) {
-                const rect = btnRef.current.getBoundingClientRect();
-                const menuWidth = 140;
-                const menuHeightEstimate = 200;
-                const margin = 8;
-                // Right-align by default; clamp to viewport so the menu
-                // never overflows the screen edge on narrow windows.
-                const left = Math.max(
-                  margin,
-                  Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - margin),
-                );
-                const top =
-                  rect.bottom + menuHeightEstimate + margin > window.innerHeight
-                    ? Math.max(margin, rect.top - menuHeightEstimate - 4)
-                    : rect.bottom + 4;
-                setMenuPos({ top, left });
-              }
-              setMenuOpen((o) => !o);
-            }}
-            className="p-0.5 rounded cursor-pointer text-muted-foreground/40 hover:text-foreground transition-colors shrink-0"
-            aria-label={formatMsg("auto.features.sidebar.components.sidebar.template.3", {
-              p1: displayName,
-            })}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-          >
-            <MoreHorizontal className="size-3.5" />
-          </button>
-        }
+        <PopoverPrimitive.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <PopoverPrimitive.Trigger asChild>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+              className="inline-flex size-[44px] shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/40 transition-colors hover:text-foreground lg:size-5"
+              aria-label={formatMsg("auto.features.sidebar.components.sidebar.template.3", {
+                p1: displayName,
+              })}
+            >
+              <DotsThree
+                className={cn(
+                  "size-3.5 transition-colors duration-150 motion-reduce:transition-none",
+                  menuOpen && "text-foreground",
+                )}
+                aria-hidden="true"
+              />
+            </button>
+          </PopoverPrimitive.Trigger>
+          <PopoverPrimitive.Portal>
+            <PopoverPrimitive.Content
+              align="end"
+              side="bottom"
+              sideOffset={6}
+              collisionPadding={8}
+              className={COMPACT_POPOVER_PANEL_CLASS}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {!isShared && (
+                <PopoverPrimitive.Close asChild>
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    className={COMPACT_POPOVER_ITEM_CLASS}
+                  >
+                    <ShareNetwork className={COMPACT_POPOVER_ICON_CLASS} aria-hidden="true" />
+                    <span className="flex-1 text-start">
+                      {msg("auto.features.sidebar.components.sidebar.7")}
+                    </span>
+                  </button>
+                </PopoverPrimitive.Close>
+              )}
+
+              {canEdit && (
+                <PopoverPrimitive.Close asChild>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setRenameValue(job.name ?? displayName);
+                      setRenaming(true);
+                    }}
+                    className={COMPACT_POPOVER_ITEM_CLASS}
+                  >
+                    <PencilSimple className={COMPACT_POPOVER_ICON_CLASS} aria-hidden="true" />
+                    <span className="flex-1 text-start">
+                      {msg("auto.features.sidebar.components.sidebar.8")}
+                    </span>
+                  </button>
+                </PopoverPrimitive.Close>
+              )}
+
+              <PopoverPrimitive.Close asChild>
+                <button type="button" onClick={handleClone} className={COMPACT_POPOVER_ITEM_CLASS}>
+                  <Copy className={COMPACT_POPOVER_ICON_CLASS} aria-hidden="true" />
+                  <span className="flex-1 text-start">
+                    {msg("auto.features.sidebar.components.sidebar.9")}
+                  </span>
+                </button>
+              </PopoverPrimitive.Close>
+
+              {canEdit &&
+                (job.status === "failed" || job.status === "cancelled") &&
+                (job.resumable ? (
+                  <PopoverPrimitive.Close asChild>
+                    <button
+                      type="button"
+                      onClick={handleResume}
+                      className={COMPACT_POPOVER_ITEM_CLASS}
+                    >
+                      <Play
+                        className={cn(COMPACT_POPOVER_ICON_CLASS, isRtl && "-scale-x-100")}
+                        aria-hidden="true"
+                      />
+                      <span className="flex-1 text-start">{msg("sidebar.resume")}</span>
+                    </button>
+                  </PopoverPrimitive.Close>
+                ) : (
+                  <PopoverPrimitive.Close asChild>
+                    <button
+                      type="button"
+                      onClick={handleRetry}
+                      className={COMPACT_POPOVER_ITEM_CLASS}
+                    >
+                      <ArrowCounterClockwise
+                        className={COMPACT_POPOVER_ICON_CLASS}
+                        aria-hidden="true"
+                      />
+                      <span className="flex-1 text-start">{msg("sidebar.rerun")}</span>
+                    </button>
+                  </PopoverPrimitive.Close>
+                ))}
+
+              {canEdit && (
+                <>
+                  <div role="separator" className="mx-3.5 my-1 border-t border-border/40" />
+                  <PopoverPrimitive.Close asChild>
+                    <button
+                      type="button"
+                      onClick={handlePin}
+                      className={COMPACT_POPOVER_ITEM_CLASS}
+                    >
+                      <PushPin
+                        className={cn(COMPACT_POPOVER_ICON_CLASS, job.pinned && "text-foreground")}
+                        aria-hidden="true"
+                      />
+                      <span className="flex-1 text-start">
+                        {job.pinned
+                          ? msg("auto.features.sidebar.components.sidebar.literal.13")
+                          : msg("auto.features.sidebar.components.sidebar.literal.14")}
+                      </span>
+                    </button>
+                  </PopoverPrimitive.Close>
+                </>
+              )}
+
+              {!isShared && (
+                <PopoverPrimitive.Close asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      setMenuOpen(false);
+                      onDelete(e, job.optimization_id);
+                    }}
+                    className={cn(
+                      COMPACT_POPOVER_ITEM_CLASS,
+                      "text-destructive hover:bg-destructive/10 hover:text-destructive",
+                    )}
+                  >
+                    <Trash className="size-4 shrink-0" aria-hidden="true" />
+                    <span className="flex-1 text-start">
+                      {msg("auto.features.sidebar.components.sidebar.10")}
+                    </span>
+                  </button>
+                </PopoverPrimitive.Close>
+              )}
+            </PopoverPrimitive.Content>
+          </PopoverPrimitive.Portal>
+        </PopoverPrimitive.Root>
       </div>
 
       <AnimatePresence>
@@ -860,122 +1199,14 @@ function JobRow({
         )}
       </AnimatePresence>
 
-      {/* Dropdown menu — portaled to body to escape overflow clipping */}
-      {menuOpen &&
-        menuPos &&
-        createPortal(
-          <motion.div
-            ref={dropdownRef}
-            role="menu"
-            initial={{ opacity: 0, scale: 0.95, y: -4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -4 }}
-            transition={{ duration: 0.12 }}
-            className="fixed z-[9999] min-w-[140px] rounded-2xl border border-border/40 bg-card shadow-[0_4px_24px_rgba(28,22,18,0.1)] py-1.5"
-            style={{ top: menuPos.top, left: menuPos.left, right: "auto" }}
-          >
-            {!isShared && (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={handleShare}
-                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-              >
-                <Share className="size-3.5 text-muted-foreground" />
-                {msg("auto.features.sidebar.components.sidebar.7")}
-              </button>
-            )}
-
-            {canEdit && (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setRenameValue(job.name ?? displayName);
-                  setRenaming(true);
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-              >
-                <Pencil className="size-3.5 text-muted-foreground" />
-                {msg("auto.features.sidebar.components.sidebar.8")}
-              </button>
-            )}
-
-            <button
-              type="button"
-              role="menuitem"
-              onClick={handleClone}
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-            >
-              <CopyPlus className="size-3.5 text-muted-foreground" />
-              {msg("auto.features.sidebar.components.sidebar.9")}
-            </button>
-
-            {canEdit &&
-              (job.status === "failed" || job.status === "cancelled") &&
-              (job.resumable ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleResume}
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-                >
-                  <Play className="size-3.5 -scale-x-100 text-muted-foreground" />
-                  {msg("sidebar.resume")}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleRetry}
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-                >
-                  <RotateCcw className="size-3.5 text-muted-foreground" />
-                  {msg("sidebar.rerun")}
-                </button>
-              ))}
-
-            {canEdit && (
-              <>
-                <div className="h-px bg-border/20 mx-2 my-1" />
-
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handlePin}
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-foreground hover:bg-muted/40 cursor-pointer transition-colors"
-                >
-                  <Pin
-                    className={cn(
-                      "size-3.5",
-                      job.pinned ? "text-foreground" : "text-muted-foreground",
-                    )}
-                  />
-                  {job.pinned
-                    ? msg("auto.features.sidebar.components.sidebar.literal.13")
-                    : msg("auto.features.sidebar.components.sidebar.literal.14")}
-                </button>
-              </>
-            )}
-
-            {!isShared && (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={(e) => {
-                  setMenuOpen(false);
-                  onDelete(e, job.optimization_id);
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[0.6875rem] text-red-500 hover:bg-red-500/5 cursor-pointer transition-colors"
-              >
-                <Trash2 className="size-3.5" />
-                {msg("auto.features.sidebar.components.sidebar.10")}
-              </button>
-            )}
-          </motion.div>,
-          document.body,
-        )}
+      {!isShared && (
+        <ShareDialog
+          optimizationId={job.optimization_id}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          hideTrigger
+        />
+      )}
     </div>
   );
 }

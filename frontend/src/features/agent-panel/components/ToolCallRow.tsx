@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, Check, ChevronDown, Copy, RefreshCw, type LucideIcon } from "lucide-react";
+import { ArrowsClockwise, CaretDown, Warning, type Icon } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
+import { CopyGlyph, useCopyToClipboard } from "@/shared/ui/copy-button";
 
 import { cn } from "@/shared/lib/utils";
 import type { AgentToolCall } from "@/shared/ui/agent/types";
@@ -21,7 +22,7 @@ interface ToolCallRowProps {
   /** Override for the trigger title. Defaults to ``TOOL_META.title``. */
   title?: string | null;
   /** Override for the status-glyph icon (done state). Defaults to ``TOOL_META.icon``. */
-  icon?: LucideIcon;
+  icon?: Icon;
   /**
    * Replaces the default args/result body. Caller renders whatever fits the
    * tool — e.g. a diff view. Wrapped in the same container as the default
@@ -67,8 +68,17 @@ export function ToolCallRow({
 
   React.useEffect(() => {
     if (call.status !== "running") return;
-    const id = setInterval(() => setNowTs(Date.now()), 200);
-    return () => clearInterval(id);
+    // Skip ticks in background tabs and catch up on return (mirrors the
+    // visibility-gated ticking in LiveElapsed).
+    const tick = () => {
+      if (document.visibilityState === "visible") setNowTs(Date.now());
+    };
+    const id = setInterval(tick, 200);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, [call.status]);
 
   const elapsedMs =
@@ -136,7 +146,7 @@ export function ToolCallRow({
               {elapsedLabel}
             </span>
           )}
-          <ChevronDown
+          <CaretDown
             className={cn(
               "size-3.5 text-muted-foreground/50 transition-transform duration-150",
               open ? "rotate-0" : "rotate-90",
@@ -156,18 +166,17 @@ export function ToolCallRow({
             className="overflow-hidden"
           >
             <div className="px-3 pb-3 pt-1 space-y-2.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <RawName tool={call.tool} />
-                {isRetry && (
+              {isRetry && (
+                <div className="flex items-center gap-2 flex-wrap">
                   <span
                     className="inline-flex items-center gap-1 text-[0.625rem] text-muted-foreground/70"
                     title={msg("auto.features.agent.panel.components.toolcallrow.literal.2")}
                   >
-                    <RefreshCw className="size-2.5" aria-hidden="true" />
+                    <ArrowsClockwise className="size-2.5" aria-hidden="true" />
                     {msg("auto.features.agent.panel.components.toolcallrow.1")}
                   </span>
-                )}
-              </div>
+                </div>
+              )}
               {showReasonInBody && (
                 <div className="text-[0.75rem] leading-snug text-muted-foreground/85">
                   {call.reason}
@@ -222,7 +231,6 @@ function StatusGlyph({
   status: AgentToolCall["status"];
   Icon: React.ComponentType<{
     className?: string;
-    strokeWidth?: number;
     "aria-hidden"?: boolean;
   }>;
   isRetry: boolean;
@@ -251,7 +259,7 @@ function StatusGlyph({
         )}
         aria-label={msg("auto.features.agent.panel.components.toolcallrow.literal.7")}
       >
-        <AlertTriangle className="size-2.5" strokeWidth={2.5} aria-hidden />
+        <Warning className="size-2.5" aria-hidden />
       </span>
     );
   }
@@ -263,7 +271,7 @@ function StatusGlyph({
       )}
       aria-label={msg("auto.features.agent.panel.components.toolcallrow.literal.8")}
     >
-      <Icon className="size-2.5" strokeWidth={2.5} aria-hidden />
+      <Icon className="size-2.5" aria-hidden />
     </span>
   );
 }
@@ -347,21 +355,14 @@ function EmptyPlaceholder() {
 }
 
 function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = React.useState(false);
-  const copy = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    } catch {
-      // Clipboard access denied — silently ignore.
-    }
-  };
+  const { copied, copy } = useCopyToClipboard();
   return (
     <button
       type="button"
-      onClick={copy}
+      onClick={(e) => {
+        e.stopPropagation();
+        void copy(text);
+      }}
       aria-label={
         copied
           ? msg("auto.features.agent.panel.components.toolcallrow.literal.9")
@@ -373,24 +374,8 @@ function CopyButton({ text }: { text: string }) {
         "hover:bg-background hover:text-foreground transition-colors cursor-pointer",
       )}
     >
-      {copied ? (
-        <Check className="size-3" strokeWidth={2.5} aria-hidden="true" />
-      ) : (
-        <Copy className="size-3" aria-hidden="true" />
-      )}
+      <CopyGlyph copied={copied} className="size-3" />
     </button>
-  );
-}
-
-function RawName({ tool }: { tool: string }) {
-  return (
-    <div
-      className="inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[0.625rem] text-muted-foreground/70 bg-muted/40"
-      dir="ltr"
-      title={msg("auto.features.agent.panel.components.toolcallrow.literal.11")}
-    >
-      {tool}
-    </div>
   );
 }
 

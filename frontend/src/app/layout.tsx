@@ -1,11 +1,20 @@
 import type { Metadata, Viewport } from "next";
 import { preload } from "react-dom";
-import Script from "next/script";
+import { cache } from "react";
+import { headers } from "next/headers";
 import { AppShell } from "@/shared/layout/app-shell";
+import { DeviceClassProvider } from "@/shared/hooks/use-device-class";
+import { deviceClassFromRequest } from "@/shared/lib/device-class";
 import { TooltipProvider } from "@/shared/ui/primitives/tooltip";
-import { SessionProvider, ThemeProvider, ToastContainer } from "@/shared/providers";
+import {
+  LocaleProvider,
+  SessionProvider,
+  TelemetryProvider,
+  ThemeProvider,
+  ToastContainer,
+} from "@/shared/providers";
 import { SplashScreen } from "@/shared/layout/splash-screen";
-import { TutorialOverlay, TutorialMenu, TutorialProvider } from "@/features/tutorial";
+import { TutorialOverlay, TutorialProvider } from "@/features/tutorial";
 import {
   UserPrefsProvider,
   LiteModeProvider,
@@ -13,20 +22,66 @@ import {
   SettingsModal,
 } from "@/features/settings";
 import { StorageQuotaModalHost } from "@/features/storage";
+import { ByokKeysProvider } from "@/features/byok";
 import { AppSkeletonTheme } from "@/shared/ui/skeleton";
 import { msg } from "@/shared/lib/messages";
 import { getServerRuntimeEnv, serializeRuntimeEnv } from "@/shared/lib/runtime-env";
+import {
+  DEFAULT_LOCALE,
+  dirForLocale,
+  type Locale,
+} from "@/shared/lib/locale";
+import { serializeLocale, setServerLocale } from "@/shared/lib/runtime-locale";
+import {
+  serializeMessages,
+  setServerMessages,
+  type UiCatalog,
+} from "@/shared/lib/runtime-messages";
+import { buildActiveCatalog } from "@/shared/lib/messages.server";
 import { getSiteUrl } from "@/shared/lib/site-config";
+import { auth } from "@/shared/lib/auth";
 import "@fontsource-variable/heebo/index.css";
-import "@fontsource-variable/inter/index.css";
+import "@fontsource-variable/geist/index.css";
 import "@fontsource-variable/jetbrains-mono/index.css";
+// Script-matched faces for locales Geist/Heebo don't cover. Each ships
+// unicode-range subsets, so a font's glyphs download only when that script is
+// actually on screen — an English visitor never fetches the CJK/Arabic bytes.
 import "react-toastify/dist/ReactToastify.css";
 import "./globals.css";
 
+// The layout injects window.__SKYNET_ENV__ from getServerRuntimeEnv() so one
+// built image can target any backend via the pod's runtime API_URL. That shim
+// only works when the layout renders per-request: statically prerendered, it
+// freezes the build-time default (localhost:8000, since API_URL isn't set in the
+// Docker build) into every page and the browser then can't reach the backend.
+// Force dynamic rendering so the injected env reflects the live pod env.
+export const dynamic = "force-dynamic";
+
 const siteUrl = getSiteUrl();
 const siteName = "Skynet";
-const siteDescription = msg("app.meta.description");
 
+/** OpenGraph wants `language_TERRITORY`; the locale tag's hyphen maps to it. */
+function ogLocale(locale: Locale): string {
+  return locale.replace("-", "_");
+}
+
+/**
+ * Resolve the only locale shipped by the on-prem deployment.
+ */
+const resolveRequestLocale = cache(async (): Promise<Locale> => DEFAULT_LOCALE);
+
+/**
+ * Build the request's merged UI catalog once and share it across `generateMetadata`
+ * and the layout via React `cache()`. This is the single payload the client ever
+ * sees — the active locale's fallback chain, injected into the page rather than
+ * bundled with every locale.
+ */
+const resolveActiveCatalog = cache(async (): Promise<UiCatalog> => {
+  return buildActiveCatalog(await resolveRequestLocale());
+});
+
+// Render per-request so the pod's runtime API_URL is read at request time and
+// injected into window.__SKYNET_ENV__, instead of being frozen at build time.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -37,58 +92,60 @@ export const viewport: Viewport = {
   ],
 };
 
-export const metadata: Metadata = {
-  title: {
-    default: siteName,
-    template: `%s | ${siteName}`,
-  },
-  description: siteDescription,
-  icons: {
-    icon: "/favicon.svg",
-    apple: "/favicon.svg",
-  },
-  metadataBase: new URL(siteUrl),
-  alternates: {
-    canonical: "/",
-  },
-  openGraph: {
-    type: "website",
-    locale: "he_IL",
-    siteName,
-    title: siteName,
-    description: siteDescription,
-    url: siteUrl,
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: siteName,
-    description: siteDescription,
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      "max-video-preview": -1,
-      "max-image-preview": "large",
-      "max-snippet": -1,
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await resolveRequestLocale();
+  setServerLocale(locale);
+  setServerMessages(await resolveActiveCatalog());
+  const siteDescription = msg("app.meta.description");
+  return {
+    title: {
+      default: siteName,
+      template: `%s | ${siteName}`,
     },
-  },
-};
+    description: siteDescription,
+    icons: {
+      // Versioned to evict browsers' sticky favicon caches, which survive
+      // hard refreshes and kept serving the original robot-arm icon.
+      icon: "/favicon.svg?v=2",
+      apple: "/favicon.svg?v=2",
+    },
+    metadataBase: new URL(siteUrl),
+    alternates: {
+      canonical: "/",
+    },
+    openGraph: {
+      type: "website",
+      locale: ogLocale(locale),
+      siteName,
+      title: siteName,
+      description: siteDescription,
+      url: siteUrl,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: siteName,
+      description: siteDescription,
+    },
+    robots: {
+      index: false,
+      follow: false,
+      googleBot: {
+        index: false,
+        follow: false,
+        "max-video-preview": -1,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+      },
+    },
+  };
+}
 
-const jsonLd = {
-  "@context": "https://schema.org",
-  "@type": "WebApplication",
-  name: siteName,
-  description: siteDescription,
-  url: siteUrl,
-  applicationCategory: "DeveloperApplication",
-  operatingSystem: "Web",
-  inLanguage: "he",
-};
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
+  const locale = await resolveRequestLocale();
+  setServerLocale(locale);
+  const messages = await resolveActiveCatalog();
+  setServerMessages(messages);
   // Preload the above-the-fold variable subsets so the fallback→webfont swap
   // window (and its RTL line-box shift) is bounded. react-dom's preload()
   // dedupes to a single hoisted <link> per resource — a raw <link rel=preload> in
@@ -98,8 +155,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const fontPreload = { as: "font", type: "font/woff2", crossOrigin: "anonymous" } as const;
   preload("/fonts/heebo-hebrew-wght-normal.woff2", fontPreload);
   preload("/fonts/heebo-latin-wght-normal.woff2", fontPreload);
-  preload("/fonts/inter-latin-wght-normal.woff2", fontPreload);
+  preload("/fonts/geist-latin-wght-normal.woff2", fontPreload);
   const runtimeEnv = getServerRuntimeEnv();
+  // First-paint guess for the phone shell; the client re-derives it from the
+  // viewport after mount (see DeviceClassProvider).
+  const requestHeaders = await headers();
+  const deviceClass = deviceClassFromRequest(
+    requestHeaders.get("user-agent"),
+    requestHeaders.get("sec-ch-ua-mobile"),
+  );
   // dns-prefetch only helps when the API is on a different origin than the
   // document; on same-origin deploys the browser already resolved the host.
   let apiOrigin: string | null = null;
@@ -110,43 +174,71 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   } catch {
     /* malformed URL — skip the hint */
   }
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: siteName,
+    description: msg("app.meta.description"),
+    url: siteUrl,
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Web",
+    inLanguage: locale,
+  };
   // JSON.stringify does not escape `</` so a future field sourced from the
   // backend could prematurely close the surrounding <script>. Escape `<`
   // before injecting into dangerouslySetInnerHTML.
   const jsonLdSafe = JSON.stringify(jsonLd).replace(/</g, "\\u003c");
   return (
-    <html lang="he" dir="rtl" suppressHydrationWarning>
+    <html lang={locale} dir={dirForLocale(locale)} suppressHydrationWarning>
       <head>
-        <Script id="skynet-runtime-env" strategy="beforeInteractive">
-          {serializeRuntimeEnv(runtimeEnv)}
-        </Script>
+        {/* Plain <script> tags, not next/script: `beforeInteractive` with inline
+            children makes React 19 warn ("scripts inside components are never
+            executed when rendering on the client"). These run straight from the
+            server-rendered HTML during parse — exactly the pre-hydration timing
+            the shims need — and the serializers escape `<` so a value can never
+            close the tag. */}
+        <script id="skynet-locale" dangerouslySetInnerHTML={{ __html: serializeLocale(locale) }} />
+        <script
+          id="skynet-messages"
+          dangerouslySetInnerHTML={{ __html: serializeMessages(messages) }}
+        />
+        <script
+          id="skynet-runtime-env"
+          dangerouslySetInnerHTML={{ __html: serializeRuntimeEnv(runtimeEnv) }}
+        />
         {apiOrigin && <link rel="dns-prefetch" href={apiOrigin} />}
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdSafe }} />
       </head>
       <body suppressHydrationWarning>
-        <SessionProvider>
-          <UserPrefsProvider>
-            <LiteModeProvider>
-              <ThemeProvider>
-                <TooltipProvider>
-                  <AppSkeletonTheme>
-                    <SplashScreen />
-                    <TutorialProvider>
-                      <SettingsModalProvider>
-                        <AppShell>{children}</AppShell>
-                        <SettingsModal />
-                      </SettingsModalProvider>
-                      <TutorialOverlay />
-                      <TutorialMenu />
-                    </TutorialProvider>
-                  </AppSkeletonTheme>
-                </TooltipProvider>
-              </ThemeProvider>
-            </LiteModeProvider>
-          </UserPrefsProvider>
-        </SessionProvider>
-        <StorageQuotaModalHost />
-        <ToastContainer />
+        <DeviceClassProvider initial={deviceClass}>
+          <LocaleProvider initialLocale={locale}>
+            <SessionProvider session={session}>
+              <ByokKeysProvider>
+                <UserPrefsProvider>
+                    <LiteModeProvider>
+                      <ThemeProvider>
+                        <TooltipProvider>
+                          <AppSkeletonTheme>
+                            <SplashScreen />
+                            <TutorialProvider>
+                              <SettingsModalProvider>
+                                <AppShell>{children}</AppShell>
+                                <SettingsModal />
+                              </SettingsModalProvider>
+                              <TutorialOverlay />
+                            </TutorialProvider>
+                          </AppSkeletonTheme>
+                        </TooltipProvider>
+                      </ThemeProvider>
+                    </LiteModeProvider>
+                </UserPrefsProvider>
+              </ByokKeysProvider>
+            </SessionProvider>
+            <TelemetryProvider />
+            <StorageQuotaModalHost />
+            <ToastContainer />
+          </LocaleProvider>
+        </DeviceClassProvider>
       </body>
     </html>
   );

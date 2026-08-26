@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowsDownUp } from "@/shared/ui/icons";
 import { msg, formatMsg } from "@/shared/lib/messages";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
 import type { SearchSort } from "@/shared/lib/api";
@@ -28,7 +28,7 @@ export function ResultsToolbar({ total, sort, onSortChange, hasQuery }: ResultsT
       ? msg("explore.results.count.one")
       : formatMsg("explore.results.count.many", { n: total });
   return (
-    <div dir="rtl" className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-1 pb-2">
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-1 pb-2">
       <span className="min-w-0 text-[12.5px] text-foreground/55 tabular-nums">{countLabel}</span>
       <SortControl sort={sort} onChange={onSortChange} hasQuery={hasQuery} />
     </div>
@@ -72,18 +72,18 @@ function SortControl({
       aria-label={msg("explore.sort.aria")}
       className="inline-flex items-center gap-0.5 rounded-lg border border-border/70 bg-muted/30 p-0.5"
     >
-      <ArrowUpDown className="mx-1 size-3 text-foreground/35" aria-hidden="true" />
+      <ArrowsDownUp className="mx-1 size-3 text-foreground/35" aria-hidden="true" />
       {options.map((o) => {
         const active = o.value === sort;
         return (
-          <TooltipButton key={o.value} tooltip={o.tip()} side="bottom" dir="rtl">
+          <TooltipButton key={o.value} tooltip={o.tip()} side="bottom">
             <button
               type="button"
               aria-pressed={active}
               onClick={() => {
                 if (!active) onChange(o.value);
               }}
-              className={`relative rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 ${
+              className={`relative min-h-[44px] rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A882]/45 lg:min-h-0 ${
                 active
                   ? "text-foreground"
                   : "cursor-pointer text-foreground/55 hover:text-foreground"

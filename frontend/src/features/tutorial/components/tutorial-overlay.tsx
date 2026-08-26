@@ -3,25 +3,22 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useTutorialContext } from "./tutorial-provider";
-import { getTrack } from "../lib/steps";
+import { getLoadedTrack } from "../lib/steps-loader";
 import { SpotlightMask } from "./spotlight-mask";
 import { TutorialPopover } from "./tutorial-popover";
 import { AnimatedWordmark } from "@/shared/ui/animated-wordmark";
 import { isTutorialNavigating, registerTutorialHook } from "../lib/bridge";
+import { getActiveDir } from "@/shared/lib/runtime-locale";
+import type { TutorialStep } from "../lib/steps";
+import { TUTORIAL_SUBMIT_SPLASH_MS } from "../lib/tutorial-timing";
 
 export function TutorialOverlay() {
-  const {
-    state,
-    currentStep,
-    nextStep,
-    prevStep,
-    exitTutorial,
-    completeTrack,
-    toggleAutoPlay,
-  } = useTutorialContext();
+  const { state, currentStep, nextStep, prevStep, exitTutorial, completeTrack, toggleAutoPlay } =
+    useTutorialContext();
   const pathname = usePathname();
+  const prefersReducedMotion = useReducedMotion();
 
   const [targetRect, setTargetRect] = React.useState<DOMRect | null>(null);
   const [popoverPosition, setPopoverPosition] = React.useState<{
@@ -29,8 +26,13 @@ export function TutorialOverlay() {
     left: number;
     placement: "top" | "bottom" | "left" | "right";
   } | null>(null);
+  const [highlightPadding, setHighlightPadding] = React.useState(8);
+  const [highlightRadius, setHighlightRadius] = React.useState(12);
   const [showSplash, setShowSplash] = React.useState(false);
   const [stepReady, setStepReady] = React.useState(false);
+  const [isTransitioning, setIsTransitioning] = React.useState(false);
+  const [displayedStep, setDisplayedStep] = React.useState<TutorialStep | null>(null);
+  const [displayedStepIndex, setDisplayedStepIndex] = React.useState(0);
   const stepPathRef = React.useRef<string | null>(null);
   const splashTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
@@ -40,13 +42,12 @@ export function TutorialOverlay() {
   React.useEffect(() => {
     const unregisterSplash = registerTutorialHook("showTutorialSplash", () => {
       setShowSplash(true);
-      // Auto-dismiss: match real submit splash (1.5s) + buffer for navigation.
       // Track via ref so unmount or a second splash cancels the previous timer.
       if (splashTimerRef.current) clearTimeout(splashTimerRef.current);
       splashTimerRef.current = setTimeout(() => {
         splashTimerRef.current = null;
         setShowSplash(false);
-      }, 1500);
+      }, TUTORIAL_SUBMIT_SPLASH_MS);
     });
     const unregisterPush = registerTutorialHook("routerPush", (path: string) => router.push(path));
     return () => {
@@ -63,15 +64,45 @@ export function TutorialOverlay() {
   const lastRectRef = React.useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const autoPlayTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  React.useEffect(() => {
+    if (state.isVisible) return;
+    setStepReady(false);
+    setIsTransitioning(false);
+    setDisplayedStep(null);
+    setTargetRect(null);
+    setPopoverPosition(null);
+  }, [state.isVisible]);
+
+  // Fixed symmetric gap so the popover sits the same distance from the
+  // highlighted card regardless of direction — top/bottom use vertical gap,
+  // left/right use horizontal gap. Per-step offsetY is reserved only for
+  // fine-tuning (e.g. GEPA 2% nudge) and is otherwise 0.
+  const FIXED_GAP = 20;
   const calculatePosition = React.useCallback(
-    (rect: DOMRect, placement: "top" | "bottom" | "left" | "right" | "auto") => {
+    (
+      rect: DOMRect,
+      placement: "top" | "bottom" | "left" | "right" | "auto",
+      opts?: { offsetY?: number; popoverHeight?: number },
+    ) => {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const pw = Math.min(360, vw * 0.9 - 16);
-      const ph = 260;
-      const gap = 16;
+      const pw = Math.min(360, vw - 24);
+      const mobile = vw < 768;
+      const mobileHeightCap = vh * 0.5;
+      // Mobile cards scroll internally up to 50dvh. Position against that
+      // maximum—not a step's desktop height hint—so a long card never drifts
+      // back over its spotlight after the CSS cap takes effect.
+      const ph = mobile
+        ? Math.min(vh - 24, mobileHeightCap)
+        : Math.min(opts?.popoverHeight ?? 260, vh - 24);
+      const gap = mobile ? 12 : FIXED_GAP;
+      const offsetY = opts?.offsetY ?? 0;
 
-      let p = placement;
+      let p = mobile
+        ? vh - rect.bottom >= ph + gap || vh - rect.bottom >= rect.top
+          ? ("bottom" as const)
+          : ("top" as const)
+        : placement;
       if (p === "auto") {
         const spaces = [
           { p: "bottom" as const, s: vh - rect.bottom },
@@ -86,25 +117,25 @@ export function TutorialOverlay() {
         left = 0;
       switch (p) {
         case "top":
-          top = rect.top - ph - gap;
+          top = rect.top - ph - gap + offsetY;
           left = rect.left + rect.width / 2 - pw / 2;
           break;
         case "bottom":
-          top = rect.bottom + gap;
+          top = rect.bottom + gap + offsetY;
           left = rect.left + rect.width / 2 - pw / 2;
           break;
         case "left":
-          top = rect.top + rect.height / 2 - ph / 2;
+          top = rect.top + rect.height / 2 - ph / 2 + offsetY;
           left = rect.left - pw - gap;
           break;
         case "right":
-          top = rect.top + rect.height / 2 - ph / 2;
+          top = rect.top + rect.height / 2 - ph / 2 + offsetY;
           left = rect.right + gap;
           break;
       }
 
-      top = Math.max(12, Math.min(top, vh - ph - 12));
-      left = Math.max(12, Math.min(left, vw - pw - 12));
+      top = Math.max(12, Math.min(top, Math.max(12, vh - ph - 12)));
+      left = Math.max(12, Math.min(left, Math.max(12, vw - pw - 12)));
 
       return { top, left, placement: p };
     },
@@ -123,6 +154,13 @@ export function TutorialOverlay() {
 
     targetRef.current = el;
     const rect = el.getBoundingClientRect();
+    // Fixed symmetric highlight for most cards — tight per-step overrides
+    // are respected where a target is small (e.g. sidebar nav) to avoid
+    // overlapping adjacent tabs.
+    const FIXED_HIGHLIGHT_PADDING = 12;
+    const FIXED_HIGHLIGHT_RADIUS = 12;
+    setHighlightPadding(currentStep.highlightPadding ?? FIXED_HIGHLIGHT_PADDING);
+    setHighlightRadius(currentStep.highlightRadius ?? FIXED_HIGHLIGHT_RADIUS);
 
     // Skip state updates when rect hasn't meaningfully changed — avoids
     // re-renders when an observer fires but nothing moved.
@@ -139,19 +177,18 @@ export function TutorialOverlay() {
     lastRectRef.current = { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
 
     setTargetRect(rect);
-    setPopoverPosition(calculatePosition(rect, currentStep.placement || "auto"));
+    setPopoverPosition(
+      calculatePosition(rect, currentStep.placement || "auto", {
+        offsetY: currentStep.offsetY,
+        popoverHeight: currentStep.popoverHeight,
+      }),
+    );
   }, [currentStep, calculatePosition]);
 
   React.useEffect(() => {
     if (!state.isVisible || !currentStep) return;
+    setIsTransitioning(true);
     setStepReady(false);
-    // Drop the previous step's rect so the spotlight goes dark for the
-    // brief transition rather than animating from the OLD anchor across
-    // the screen — moving backward in particular looked broken because
-    // the spring kept chasing a stale target while the new step's
-    // beforeShow ran.
-    setTargetRect(null);
-    setPopoverPosition(null);
     lastRectRef.current = null;
     stepPathRef.current = null;
     targetRef.current = null;
@@ -171,11 +208,25 @@ export function TutorialOverlay() {
       // Wait for the target to mount (handles route transitions and
       // late-mounting React subtrees). Window must exceed the longest
       // beforeShow waitForElement so steps that navigate to a slow-mounting
-      // route (e.g. /compare with demo data, /optimizations/[id]) aren't
+      // route (e.g. /optimizations/[id] with demo data) aren't
       // auto-skipped while their anchor is still hydrating.
+      const isVisible = (e: Element | null) => {
+        if (!e) return false;
+        const r = (e as HTMLElement).getBoundingClientRect();
+        const style = window.getComputedStyle(e);
+        return (
+          r.width > 0 &&
+          r.height > 0 &&
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          Number(style.opacity || 1) > 0.05
+        );
+      };
+      const findVisibleTarget = () =>
+        Array.from(document.querySelectorAll(currentStep.target)).reverse().find(isVisible) ?? null;
       const el = await new Promise<Element | null>((resolve) => {
-        const found = document.querySelector(currentStep.target);
-        if (found) {
+        const found = findVisibleTarget();
+        if (found && isVisible(found)) {
           resolve(found);
           return;
         }
@@ -185,9 +236,9 @@ export function TutorialOverlay() {
             resolve(null);
             return;
           }
-          const next = document.querySelector(currentStep.target);
-          if (next || Date.now() - start > 5000) {
-            resolve(next);
+          const next = findVisibleTarget();
+          if ((next && isVisible(next)) || Date.now() - start > 5000) {
+            resolve(next && isVisible(next) ? next : null);
             return;
           }
           waitRaf = requestAnimationFrame(tick);
@@ -210,16 +261,22 @@ export function TutorialOverlay() {
         return;
       }
 
-      // Always center the target in the viewport when it fits — otherwise
-      // the spotlight reads as "off-center" whenever a step's anchor sits
-      // near the top of a tall page (most wizard / detail / compare steps).
-      // Skip centering for elements that span (or exceed) the viewport;
-      // those have no useful "centered" position. Use "instant" so the rect
-      // we measure right after is the final position — "smooth" left the
-      // spotlight chasing a moving target during the 500ms+ animation.
+      // Desktop centers compact targets. Mobile aligns them below the app
+      // header so the 50dvh tutorial card has room on one side instead of
+      // covering the spotlight. scroll-margin works for both the viewport and
+      // nested page scrollers without guessing which ancestor owns scrolling.
       const rect = el.getBoundingClientRect();
       const fitsViewport = rect.height <= window.innerHeight - 32;
-      if (fitsViewport) {
+      const mobile = window.innerWidth < 768;
+      if (mobile) {
+        const target = el as HTMLElement;
+        const previousScrollMarginTop = target.style.scrollMarginTop;
+        target.style.scrollMarginTop = "65px";
+        target.scrollIntoView({ behavior: "instant" as ScrollBehavior, block: "start" });
+        await new Promise((r) => setTimeout(r, 60));
+        target.style.scrollMarginTop = previousScrollMarginTop;
+        if (cancelled) return;
+      } else if (fitsViewport) {
         el.scrollIntoView({ behavior: "instant" as ScrollBehavior, block: "center" });
         await new Promise((r) => setTimeout(r, 60));
         if (cancelled) return;
@@ -229,7 +286,47 @@ export function TutorialOverlay() {
         if (cancelled) return;
       }
 
-      targetRef.current = el;
+      // Route, tab, and wizard transitions can leave a visible target moving
+      // for several frames. Wait for its geometry to settle instead of using a
+      // fixed delay, then reveal the spotlight at the final coordinates.
+      const settledTarget = await new Promise<Element | null>((resolve) => {
+        let previousRect: DOMRect | null = null;
+        let stableFrames = 0;
+        const startedAt = performance.now();
+        const tick = (now: number) => {
+          if (cancelled) {
+            resolve(null);
+            return;
+          }
+          const candidate = findVisibleTarget();
+          if (candidate && isVisible(candidate)) {
+            const nextRect = candidate.getBoundingClientRect();
+            if (
+              previousRect &&
+              Math.abs(previousRect.x - nextRect.x) < 0.5 &&
+              Math.abs(previousRect.y - nextRect.y) < 0.5 &&
+              Math.abs(previousRect.width - nextRect.width) < 0.5 &&
+              Math.abs(previousRect.height - nextRect.height) < 0.5
+            ) {
+              stableFrames += 1;
+            } else {
+              stableFrames = 0;
+            }
+            previousRect = nextRect;
+            if (stableFrames >= 3 || now - startedAt >= 800) {
+              resolve(candidate);
+              return;
+            }
+          } else if (now - startedAt >= 800) {
+            resolve(null);
+            return;
+          }
+          waitRaf = requestAnimationFrame(tick);
+        };
+        waitRaf = requestAnimationFrame(tick);
+      });
+      if (cancelled || !settledTarget) return;
+      targetRef.current = settledTarget;
       updatePositions();
       // Observe size changes on the target; scroll/resize cover
       // viewport-driven shifts. The 100ms rAF poll is the safety net for
@@ -238,7 +335,7 @@ export function TutorialOverlay() {
       // down. updatePositions is a no-op when the rect didn't move
       // ≥0.5px, so the poll is cheap.
       resizeObserver = new ResizeObserver(() => updatePositions());
-      resizeObserver.observe(el);
+      resizeObserver.observe(settledTarget);
       window.addEventListener("scroll", onWindowChange, { passive: true, capture: true });
       window.addEventListener("resize", onWindowChange);
       let lastTrack = 0;
@@ -252,6 +349,9 @@ export function TutorialOverlay() {
       };
       trackRaf = requestAnimationFrame(trackTick);
       stepPathRef.current = window.location.pathname;
+      setDisplayedStep(currentStep);
+      setDisplayedStepIndex(state.currentStepIndex);
+      setIsTransitioning(false);
       setStepReady(true);
     };
 
@@ -262,7 +362,9 @@ export function TutorialOverlay() {
       if (waitRaf) cancelAnimationFrame(waitRaf);
       if (trackRaf) cancelAnimationFrame(trackRaf);
       if (resizeObserver) resizeObserver.disconnect();
-      window.removeEventListener("scroll", onWindowChange, { capture: true } as EventListenerOptions);
+      window.removeEventListener("scroll", onWindowChange, {
+        capture: true,
+      } as EventListenerOptions);
       window.removeEventListener("resize", onWindowChange);
       // Best-effort per-step cleanup. Closure captures the OLD step, which
       // is what we want — clean up the step we're leaving before the next
@@ -274,6 +376,7 @@ export function TutorialOverlay() {
   }, [
     state.isVisible,
     state.lastDirection,
+    state.currentStepIndex,
     currentStep,
     updatePositions,
     nextStep,
@@ -287,7 +390,7 @@ export function TutorialOverlay() {
   React.useEffect(() => {
     if (!state.isVisible || !stepReady) return;
     if (!stepPathRef.current) return;
-    // Compare against window.location.pathname (truth) instead of pathname
+    // Check window.location.pathname (truth) instead of pathname
     // (React state from usePathname). The React value can lag behind during
     // route transitions, causing a transient mismatch with stepPathRef
     // (which init() sets from window.location.pathname). pathname stays in
@@ -308,7 +411,7 @@ export function TutorialOverlay() {
     }
 
     if (!stepReady || !state.isAutoPlaying || !currentStep) return;
-    const track = state.activeTrack ? getTrack(state.activeTrack) : null;
+    const track = state.activeTrack ? (getLoadedTrack(state.activeTrack) ?? null) : null;
     if (!track) return;
 
     const isLast = state.currentStepIndex >= track.steps.length - 1;
@@ -340,7 +443,7 @@ export function TutorialOverlay() {
     exitTutorial();
     // Always return to the dashboard so the user never lands on a page
     // still showing fake tutorial data (demo optimization, demo grid,
-    // demo compare, etc.). The dashboard clears its demo overlay via
+    // demo grid, etc.). The dashboard clears its demo overlay via
     // the `tutorial-exited` event.
     if (window.location.pathname !== "/") {
       router.push("/");
@@ -348,7 +451,7 @@ export function TutorialOverlay() {
   }, [exitTutorial, router]);
 
   React.useEffect(() => {
-    if (!state.isVisible) return;
+    if (!state.isVisible || !stepReady) return;
 
     const onKey = (e: KeyboardEvent) => {
       // Skip when the user is typing into an editable surface — otherwise
@@ -358,19 +461,19 @@ export function TutorialOverlay() {
       const tgt = e.target as HTMLElement | null;
       if (tgt) {
         const tag = tgt.tagName;
-        if (
-          tag === "INPUT" ||
-          tag === "TEXTAREA" ||
-          tag === "SELECT" ||
-          tgt.isContentEditable
-        ) {
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tgt.isContentEditable) {
           return;
         }
       }
-      if (e.key === "Enter" || e.key === "ArrowLeft") {
+      // Physical arrow keys follow reading direction: in LTR, Right advances and
+      // Left goes back; they swap in RTL. Enter always advances, Backspace retreats.
+      const rtl = getActiveDir() === "rtl";
+      const forwardKey = rtl ? "ArrowLeft" : "ArrowRight";
+      const backKey = rtl ? "ArrowRight" : "ArrowLeft";
+      if (e.key === "Enter" || e.key === forwardKey) {
         e.preventDefault();
         nextStep();
-      } else if (e.key === "ArrowRight" || e.key === "Backspace") {
+      } else if (e.key === "Backspace" || e.key === backKey) {
         e.preventDefault();
         prevStep();
       } else if (e.key === "Escape") {
@@ -381,7 +484,7 @@ export function TutorialOverlay() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state.isVisible, nextStep, prevStep, handleExit]);
+  }, [state.isVisible, stepReady, nextStep, prevStep, handleExit]);
 
   // Splash must render independently of tutorial visibility
   const splashPortal = showSplash
@@ -390,14 +493,21 @@ export function TutorialOverlay() {
           <motion.div
             className="fixed inset-0 z-[99999] flex items-center justify-center"
             style={{ backgroundColor: "#F0EBE4" }}
-            initial={{ y: "-100%" }}
+            initial={prefersReducedMotion ? false : { y: "-100%" }}
             animate={{ y: 0 }}
-            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            transition={{
+              duration: prefersReducedMotion ? 0 : 0.18,
+              ease: [0.16, 1, 0.3, 1],
+            }}
           >
             <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
+              initial={prefersReducedMotion ? false : { scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.3, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              transition={{
+                delay: prefersReducedMotion ? 0 : 0.08,
+                duration: prefersReducedMotion ? 0 : 0.18,
+                ease: [0.16, 1, 0.3, 1],
+              }}
             >
               <AnimatedWordmark size={64} autoMorph morphSpeed={120} />
             </motion.div>
@@ -410,13 +520,13 @@ export function TutorialOverlay() {
   if (!state.isVisible || !currentStep) return splashPortal;
   if (isTutorialNavigating()) return splashPortal;
 
-  const track = state.activeTrack ? getTrack(state.activeTrack) : null;
+  const track = state.activeTrack ? (getLoadedTrack(state.activeTrack) ?? null) : null;
   if (!track) return splashPortal;
 
-  const stepNumber = state.currentStepIndex + 1;
+  const stepNumber = displayedStepIndex + 1;
   const totalSteps = Math.max(track.steps.length, stepNumber);
-  const isFirst = state.currentStepIndex === 0;
-  const isLast = state.currentStepIndex === track.steps.length - 1;
+  const isFirst = displayedStepIndex === 0;
+  const isLast = displayedStepIndex === track.steps.length - 1;
 
   const handleNext = () => {
     if (isLast) completeTrack();
@@ -428,13 +538,18 @@ export function TutorialOverlay() {
       {splashPortal}
       {createPortal(
         <div className="fixed inset-0 z-[9998] pointer-events-none">
-          <SpotlightMask targetRect={targetRect} padding={8} borderRadius={12} />
+          <SpotlightMask
+            targetRect={targetRect}
+            padding={highlightPadding}
+            borderRadius={highlightRadius}
+            isTransitioning={isTransitioning}
+          />
 
           <AnimatePresence mode="wait">
-            {stepReady && popoverPosition && (
+            {stepReady && displayedStep && popoverPosition && (
               <TutorialPopover
-                key={currentStep.id}
-                step={currentStep}
+                key={displayedStep.id}
+                step={displayedStep}
                 stepNumber={stepNumber}
                 totalSteps={totalSteps}
                 position={popoverPosition}
@@ -445,6 +560,7 @@ export function TutorialOverlay() {
                 isLast={isLast}
                 isAutoPlaying={state.isAutoPlaying}
                 onToggleAutoPlay={toggleAutoPlay}
+                direction={state.lastDirection}
               />
             )}
           </AnimatePresence>

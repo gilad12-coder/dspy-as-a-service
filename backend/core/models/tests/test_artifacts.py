@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from core.models.artifacts import OptimizedDemo, OptimizedPredictor, ProgramArtifact, ReactOverlay
+from core.models.artifacts import (
+    NodeArtifact,
+    OptimizedDemo,
+    OptimizedPredictor,
+    ProgramArtifact,
+    ReactOverlay,
+)
 
 
 def test_optimized_demo_defaults_empty_dicts() -> None:
@@ -114,6 +120,47 @@ def test_program_artifact_with_pickle() -> None:
     assert art.program_pickle_base64 == "abc123=="
 
 
+def test_program_artifact_backfills_module_src_from_flex_state() -> None:
+    """A Flex artifact derives optimized_module_src from top-level program_state_json."""
+    src = "import dspy\n\n\nclass M(dspy.Module):\n    pass\n"
+    art = ProgramArtifact(program_state_json={"module_src": src, "lm": None})
+
+    assert art.optimized_module_src == src
+
+
+def test_program_artifact_backfill_ignores_non_flex_state() -> None:
+    """Predictor-keyed (non-Flex) state has no module_src, so the field stays None."""
+    art = ProgramArtifact(program_state_json={"self": {"demos": []}})
+
+    assert art.optimized_module_src is None
+    assert art.optimized_component_srcs == {}
+
+
+def test_program_artifact_backfills_component_srcs_from_nested_flex_state() -> None:
+    """A workflow's flex nodes surface keyed by their component path."""
+    src = "import dspy\n\n\nclass M(dspy.Module):\n    pass\n"
+    art = ProgramArtifact(
+        program_state_json={
+            "n_draft": {"demos": [], "signature": {}},
+            "n_refine": {"module_src": src, "lm": None},
+        }
+    )
+
+    assert art.optimized_component_srcs == {"n_refine": src}
+    # The program is a workflow, not a Flex, so the scalar stays empty.
+    assert art.optimized_module_src is None
+
+
+def test_program_artifact_explicit_module_src_survives_validation() -> None:
+    """An explicitly set optimized_module_src is not overwritten by the back-fill."""
+    art = ProgramArtifact(
+        program_state_json={"module_src": "old"},
+        optimized_module_src="explicit",
+    )
+
+    assert art.optimized_module_src == "explicit"
+
+
 def test_program_artifact_react_overlay_defaults_none() -> None:
     """A ProgramArtifact leaves ``react_overlay`` unset for non-react artifacts."""
     art = ProgramArtifact(path="/opt/artifacts/scalar")
@@ -143,3 +190,150 @@ def test_program_artifact_react_overlay_round_trip() -> None:
         "kind": "live_mcp",
         "mcp_url": "http://localhost:9000/mcp",
     }
+
+
+def test_node_artifact_defaults_all_none() -> None:
+    """A bare NodeArtifact leaves every optimized surface unset."""
+    node = NodeArtifact()
+
+    assert node.optimized_prompt is None
+    assert node.react_overlay is None
+    assert node.optimized_src is None
+
+
+def test_program_artifact_optimized_nodes_defaults_empty() -> None:
+    """A scalar artifact carries no per-node map."""
+    art = ProgramArtifact(path="/opt/artifacts/scalar")
+
+    assert art.optimized_nodes == {}
+
+
+def test_optimized_nodes_folds_in_flex_src_for_flex_only_node() -> None:
+    """A workflow's flex node surfaces its rewritten code under optimized_nodes."""
+    src = "import dspy\n\n\nclass M(dspy.Module):\n    pass\n"
+    art = ProgramArtifact(
+        program_state_json={
+            "n_draft": {"demos": [], "signature": {}},
+            "n_refine": {"module_src": src, "lm": None},
+        }
+    )
+
+    assert art.optimized_nodes["n_refine"].optimized_src == src
+    assert art.optimized_nodes["n_refine"].optimized_prompt is None
+
+
+def test_optimized_nodes_fold_preserves_existing_prompt_entry() -> None:
+    """Folding flex src attaches code to a node that already carries a prompt."""
+    prompt = OptimizedPredictor(predictor_name="n_hybrid", instructions="Do X.")
+    src = "import dspy\n\n\nclass M(dspy.Module):\n    pass\n"
+    art = ProgramArtifact(
+        program_state_json={"n_hybrid": {"module_src": src}},
+        optimized_nodes={"n_hybrid": NodeArtifact(optimized_prompt=prompt)},
+    )
+
+    node = art.optimized_nodes["n_hybrid"]
+    assert node.optimized_prompt is prompt
+    assert node.optimized_src == src
+
+
+def test_optimized_nodes_round_trip() -> None:
+    """optimized_nodes survives a model_dump / model_validate round-trip."""
+    prompt = OptimizedPredictor(predictor_name="n_summarize", instructions="Summarize.")
+    art = ProgramArtifact(optimized_nodes={"n_summarize": NodeArtifact(optimized_prompt=prompt)})
+
+    restored = ProgramArtifact.model_validate(art.model_dump())
+
+    assert restored.optimized_nodes["n_summarize"].optimized_prompt is not None
+    assert restored.optimized_nodes["n_summarize"].optimized_prompt.instructions == "Summarize."
+
+
+def test_optimized_nodes_backfills_prompt_from_state() -> None:
+    """An old workflow run surfaces a node's prompt, demos, and fields from state."""
+    art = ProgramArtifact(
+        program_state_json={
+            "n_step": {
+                "demos": [{"q": "2+2", "a": "4", "augmented": True, "_meta": 1}],
+                "signature": {
+                    "instructions": "Answer.",
+                    "fields": [
+                        {"prefix": "Q:", "description": "the question"},
+                        {"prefix": "A:", "description": "${a}"},
+                    ],
+                },
+                "lm": None,
+            }
+        }
+    )
+
+    prompt = art.optimized_nodes["n_step"].optimized_prompt
+    assert prompt is not None
+    assert prompt.predictor_name == "n_step"
+    assert prompt.instructions == "Answer."
+    # DSPy bookkeeping keys are dropped; the real field values survive.
+    assert prompt.demos == [OptimizedDemo(inputs={"q": "2+2", "a": "4"})]
+    assert "Q: the question" in prompt.formatted_prompt
+    # The ``${a}`` adapter placeholder is elided, leaving the bare prefix.
+    assert "A:" in prompt.formatted_prompt
+    assert "${a}" not in prompt.formatted_prompt
+    assert "q: 2+2" in prompt.formatted_prompt
+
+
+def test_optimized_nodes_backfill_groups_cot_predict_under_node() -> None:
+    """A cot node's ``.predict`` predictor state folds back to its node key."""
+    art = ProgramArtifact(
+        program_state_json={
+            "n_polish.predict": {"demos": [], "signature": {"instructions": "Polish.", "fields": []}}
+        }
+    )
+
+    assert set(art.optimized_nodes) == {"n_polish"}
+    prompt = art.optimized_nodes["n_polish"].optimized_prompt
+    assert prompt is not None
+    assert prompt.predictor_name == "n_polish.predict"
+    assert prompt.instructions == "Polish."
+
+
+def test_optimized_nodes_backfill_skips_flex_only_state() -> None:
+    """A flex node's code-only state yields a src entry but no prompt."""
+    src = "import dspy\n\n\nclass M(dspy.Module):\n    pass\n"
+    art = ProgramArtifact(program_state_json={"n_flex": {"module_src": src, "lm": None}})
+
+    node = art.optimized_nodes["n_flex"]
+    assert node.optimized_src == src
+    assert node.optimized_prompt is None
+
+
+def test_optimized_nodes_backfill_preserves_persist_time_prompt() -> None:
+    """A prompt extracted at write time is not overwritten by the state back-fill."""
+    persisted = OptimizedPredictor(predictor_name="n_x", instructions="Persisted.")
+    art = ProgramArtifact(
+        program_state_json={"n_x": {"signature": {"instructions": "FromState.", "fields": []}}},
+        optimized_nodes={"n_x": NodeArtifact(optimized_prompt=persisted)},
+    )
+
+    assert art.optimized_nodes["n_x"].optimized_prompt is persisted
+
+
+def test_optimized_nodes_backfill_first_predictor_per_node_wins() -> None:
+    """A react node's two predictors collapse to one prompt from the first in state."""
+    art = ProgramArtifact(
+        program_state_json={
+            "n_r.react": {"signature": {"instructions": "React step.", "fields": []}},
+            "n_r.extract": {"signature": {"instructions": "Extract step.", "fields": []}},
+        }
+    )
+
+    assert set(art.optimized_nodes) == {"n_r"}
+    assert art.optimized_nodes["n_r"].optimized_prompt.instructions == "React step."
+
+
+def test_optimized_nodes_backfill_ignores_scalar_state() -> None:
+    """Scalar predictors carry no ``n_`` prefix, so no per-node map is built."""
+    art = ProgramArtifact(
+        program_state_json={
+            "self": {"demos": [], "signature": {"instructions": "x", "fields": []}},
+            "metadata": {"dependency_versions": {}},
+        }
+    )
+
+    assert art.optimized_nodes == {}

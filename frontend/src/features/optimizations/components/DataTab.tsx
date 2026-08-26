@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { toast } from "react-toastify";
-import { Inbox, Loader2 } from "lucide-react";
+import { CircleNotch, ClockCounterClockwise, MagicWand, Tray } from "@/shared/ui/icons";
 import { Card, CardContent } from "@/shared/ui/primitives/card";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/shared/ui/primitives/table";
@@ -11,24 +12,27 @@ import {
   useColumnFilters,
   useColumnResize,
   ResetColumnsButton,
+  ResetFiltersButton,
   type SortDir,
 } from "@/shared/ui/excel-filter";
 import { DataTabSkeleton } from "./DataTabSkeleton";
+import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { FadeIn } from "@/shared/ui/motion";
 import { HelpTip } from "@/shared/ui/help-tip";
+import { TooltipButton } from "@/shared/ui/tooltip-button";
 import { msg } from "@/shared/lib/messages";
 import { tip } from "@/shared/lib/tooltips";
-import {
-  getOptimizationDataset,
-  getTestResults,
-  getPairTestResults,
-} from "@/shared/lib/api";
+import { getOptimizationDataset, getTestResults, getPairTestResults } from "@/shared/lib/api";
+import { useUserPrefs } from "@/features/settings";
 import type {
   OptimizationDatasetResponse,
   OptimizationStatusResponse,
   EvalExampleResult,
 } from "@/shared/types/api";
-import { DEMO_OPTIMIZATION_ID } from "@/features/tutorial";
+// Leaf import on purpose — the tutorial barrel deliberately does not re-export
+// the demo fixtures (see features/tutorial/index.ts).
+// eslint-disable-next-line no-restricted-imports -- deliberate leaf import; see above
+import { DEMO_OPTIMIZATION_ID } from "@/features/tutorial/lib/demo-data";
 
 type Split = "all" | "train" | "val" | "test";
 type ProgramType = "optimized" | "baseline";
@@ -85,6 +89,14 @@ export function DataTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [split, setSplit] = useState<Split>("test");
+  // Simple mode collapses the split machinery: only the scored (test) rows are
+  // shown and the four-way selector disappears — the val-vs-test distinction is
+  // an advanced-mode concept.
+  const { prefs } = useUserPrefs();
+  const advanced = prefs.advancedMode;
+  useEffect(() => {
+    if (!advanced && split !== "test") setSplit("test");
+  }, [advanced, split]);
   const [programType, setProgramType] = useState<ProgramType>("optimized");
   const [testResults, setTestResults] = useState<Record<string, Record<number, EvalExampleResult>>>(
     { optimized: {}, baseline: {} },
@@ -179,11 +191,15 @@ export function DataTab({
       });
       setTestResults({
         optimized: {
+          7: { index: 7, outputs: { category: "spam" }, score: 0.0, pass: false },
+          8: { index: 8, outputs: { category: "important" }, score: 1.0, pass: true },
           9: { index: 9, outputs: { category: "promotional" }, score: 1.0, pass: true },
-          10: { index: 10, outputs: { category: "important" }, score: 1.0, pass: true },
+          10: { index: 10, outputs: { category: "important" }, score: 0.0, pass: false },
           11: { index: 11, outputs: { category: "spam" }, score: 1.0, pass: true },
         },
         baseline: {
+          7: { index: 7, outputs: { category: "promotional" }, score: 0.0, pass: false },
+          8: { index: 8, outputs: { category: "important" }, score: 1.0, pass: true },
           9: { index: 9, outputs: { category: "spam" }, score: 0.0, pass: false },
           10: { index: 10, outputs: { category: "important" }, score: 1.0, pass: true },
           11: { index: 11, outputs: { category: "promotional" }, score: 0.0, pass: false },
@@ -249,6 +265,18 @@ export function DataTab({
 
   const currentResults = testResults[programType] ?? {};
 
+  // Named scores the metric logged per row via log_metrics — one column per
+  // name after the prediction columns. Union across rows so a name logged on
+  // only some rows still gets a column; capped so a metric that (against the
+  // contract) mints per-example names can't explode the table.
+  const loggedMetricNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const result of Object.values(currentResults)) {
+      for (const name of Object.keys(result.logged_metrics ?? {})) names.add(name);
+    }
+    return [...names].slice(0, 30);
+  }, [currentResults]);
+
   const rows = useMemo(() => {
     if (!dataset) return [];
     if (split === "all")
@@ -304,7 +332,11 @@ export function DataTab({
     <div className="space-y-4 mt-4">
       <FadeIn>
         <p className="text-sm text-muted-foreground">
-          {msg("optimizations.datatab.description")}
+          {msg(
+            advanced
+              ? "optimizations.datatab.description"
+              : "optimizations.datatab.description_simple",
+          )}
         </p>
       </FadeIn>
       {/* Test evaluation bar — shows cached results */}
@@ -312,7 +344,6 @@ export function DataTab({
         <FadeIn delay={0.2}>
           <div
             className="rounded-2xl border border-[#E5DDD4] bg-gradient-to-l from-[#FAF8F5] to-[#F5F1EC] p-4 space-y-3"
-            dir="rtl"
             data-tutorial="eval-bar"
           >
             <div className="flex items-center gap-3">
@@ -323,29 +354,62 @@ export function DataTab({
                   </HelpTip>
                 </div>
               </div>
-              <div className="relative inline-flex rounded-lg bg-[#F0EBE4] p-1 gap-1 text-[0.6875rem] shrink-0">
-                <div
-                  className="absolute top-1 bottom-1 rounded-md bg-[#3D2E22] shadow-sm transition-[inset-inline-start] duration-150 ease-out"
-                  style={{
-                    width: "calc(50% - 6px)",
-                    insetInlineStart: programType === "baseline" ? 4 : "calc(50% + 2px)",
-                  }}
-                />
-                <button
-                  onClick={() => setProgramType("baseline")}
-                  className={`relative z-10 flex items-center gap-1.5 rounded-md px-3 py-1.5 cursor-pointer transition-colors duration-150 ${programType === "baseline" ? "text-[#FAF8F5] font-semibold" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+              <div className="relative inline-flex shrink-0 gap-1 rounded-lg bg-[#F0EBE4] p-1">
+                <TooltipButton
+                  tooltip={msg("auto.features.optimizations.components.datatab.2")}
+                  side="top"
                 >
-                  {msg("auto.features.optimizations.components.datatab.2")}
-                </button>
-                <button
-                  onClick={() => setProgramType("optimized")}
-                  className={`relative z-10 flex items-center gap-1.5 rounded-md px-3 py-1.5 cursor-pointer transition-colors duration-150 ${programType === "optimized" ? "text-[#FAF8F5] font-semibold" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+                  <button
+                    type="button"
+                    onClick={() => setProgramType("baseline")}
+                    aria-label={msg("auto.features.optimizations.components.datatab.2")}
+                    aria-pressed={programType === "baseline"}
+                    className={`relative inline-flex size-[44px] cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px] ${programType === "baseline" ? "text-[#FAF8F5]" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+                  >
+                    {programType === "baseline" && (
+                      <motion.span
+                        layoutId="datatab-program-pill"
+                        className="absolute inset-0 rounded-md bg-[#3D2E22] shadow-sm"
+                        transition={{
+                          type: "tween",
+                          duration: 0.18,
+                          ease: [0.22, 1, 0.36, 1],
+                        }}
+                        aria-hidden="true"
+                      />
+                    )}
+                    <ClockCounterClockwise className="relative z-10 size-4" aria-hidden="true" />
+                  </button>
+                </TooltipButton>
+                <TooltipButton
+                  tooltip={msg("auto.features.optimizations.components.datatab.3")}
+                  side="top"
                 >
-                  {msg("auto.features.optimizations.components.datatab.3")}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setProgramType("optimized")}
+                    aria-label={msg("auto.features.optimizations.components.datatab.3")}
+                    aria-pressed={programType === "optimized"}
+                    className={`relative inline-flex size-[44px] cursor-pointer items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px] ${programType === "optimized" ? "text-[#FAF8F5]" : "text-[#8C7A6B] hover:text-[#3D2E22]"}`}
+                  >
+                    {programType === "optimized" && (
+                      <motion.span
+                        layoutId="datatab-program-pill"
+                        className="absolute inset-0 rounded-md bg-[#3D2E22] shadow-sm"
+                        transition={{
+                          type: "tween",
+                          duration: 0.18,
+                          ease: [0.22, 1, 0.36, 1],
+                        }}
+                        aria-hidden="true"
+                      />
+                    )}
+                    <MagicWand className="relative z-10 size-4" aria-hidden="true" />
+                  </button>
+                </TooltipButton>
               </div>
               {testResultsLoading && (
-                <Loader2 className="size-4 animate-spin text-[#8C7A6B] shrink-0" />
+                <CircleNotch className="size-4 animate-spin text-[#8C7A6B] shrink-0" />
               )}
             </div>
           </div>
@@ -354,44 +418,82 @@ export function DataTab({
 
       <FadeIn delay={0.3}>
         <div className="flex items-center gap-3 flex-wrap">
-          {(() => {
-            const splits: Array<[Split, string]> = [
-              ["all", msg("auto.features.optimizations.components.datatab.literal.4")],
-              ["train", msg("auto.features.optimizations.components.datatab.literal.5")],
-              ["val", msg("auto.features.optimizations.components.datatab.literal.6")],
-              ["test", msg("auto.features.optimizations.components.datatab.literal.7")],
-            ];
-            const idx = splits.findIndex(([s]) => s === split);
-            const count = splits.length;
-            return (
-              <div
-                className="relative flex w-full rounded-lg bg-muted p-1 gap-1 text-[0.6875rem]"
-                data-tutorial="split-selector"
-              >
+          {advanced &&
+            (() => {
+              const splits: Array<[Split, string]> = [
+                ["all", msg("auto.features.optimizations.components.datatab.literal.4")],
+                ["train", msg("auto.features.optimizations.components.datatab.literal.5")],
+                ["val", msg("auto.features.optimizations.components.datatab.literal.6")],
+                ["test", msg("auto.features.optimizations.components.datatab.literal.7")],
+              ];
+              const idx = splits.findIndex(([s]) => s === split);
+              const count = splits.length;
+              return (
                 <div
-                  className="absolute top-1 bottom-1 rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-150 ease-out"
-                  style={{
-                    width: `calc(${100 / count}% - 6px)`,
-                    insetInlineStart: `calc(${(idx / count) * 100}% + 4px)`,
-                  }}
-                />
-                {splits.map(([s, label]) => (
-                  <button
-                    key={s}
-                    onClick={() => setSplit(s)}
-                    className={`relative z-10 flex-1 rounded-md px-3 py-1.5 cursor-pointer text-center transition-colors duration-150 ${split === s ? "text-foreground font-semibold" : "text-foreground/50 hover:text-foreground"}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            );
-          })()}
+                  className="relative flex w-full rounded-lg bg-muted p-1 gap-1 text-[0.6875rem]"
+                  data-tutorial="split-selector"
+                >
+                  <div
+                    className="absolute top-1 bottom-1 rounded-md bg-background shadow-sm transition-[inset-inline-start] duration-150 ease-out"
+                    style={{
+                      width: `calc(${100 / count}% - 6px)`,
+                      insetInlineStart: `calc(${(idx / count) * 100}% + 4px)`,
+                    }}
+                  />
+                  {splits.map(([s, label]) => (
+                    <button
+                      key={s}
+                      onClick={() => setSplit(s)}
+                      className={`relative z-10 flex-1 rounded-md px-3 py-1.5 cursor-pointer text-center transition-colors duration-150 ${split === s ? "text-foreground font-semibold" : "text-foreground/50 hover:text-foreground"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+          <ResetFiltersButton filters={colFilters} />
           <ResetColumnsButton resize={colResize} />
-          <div className="text-[0.625rem] text-muted-foreground tabular-nums ms-auto">
+          <div className="text-[0.625rem] text-muted-foreground tabular-nums me-auto">
             {filtered.length}
             {msg("auto.features.optimizations.components.datatab.4")}
           </div>
+          <ExportTableMenu
+            iconOnly
+            disabled={filtered.length === 0}
+            getData={() => {
+              const includeEval = split === "test" && evalCount > 0;
+              const scoreLabel = msg("auto.features.optimizations.components.datatab.literal.8");
+              const columns: string[] = [
+                ...(includeEval ? [scoreLabel] : []),
+                ...inputFields,
+                ...outputFields,
+                ...(includeEval ? outputFields.map((f) => `pred_${f}`) : []),
+                ...(includeEval ? loggedMetricNames : []),
+              ];
+              const rows = filtered.map((row) => {
+                const ev = currentResults[row.index];
+                const rec: Record<string, unknown> = {};
+                if (includeEval) rec[scoreLabel] = ev ? ev.score : null;
+                for (const f of inputFields) rec[f] = formatCellValue(row.row[f]);
+                for (const f of outputFields) rec[f] = formatCellValue(row.row[f]);
+                if (includeEval) {
+                  for (const f of outputFields) {
+                    const sigField = Object.entries(dataset.column_mapping.outputs).find(
+                      ([, col]) => col === f,
+                    )?.[0];
+                    rec[`pred_${f}`] = formatCellValue(ev?.outputs[sigField ?? ""]);
+                  }
+                  for (const name of loggedMetricNames) {
+                    const value = ev?.logged_metrics?.[name];
+                    rec[name] = value != null ? Number(value.toFixed(3)) : null;
+                  }
+                }
+                return rec;
+              });
+              return { columns, rows, filename: `dataset_${split}` };
+            }}
+          />
         </div>
       </FadeIn>
 
@@ -399,7 +501,7 @@ export function DataTab({
         {filtered.length === 0 ? (
           <EmptyState
             variant="list"
-            icon={Inbox}
+            icon={Tray}
             title={msg("auto.features.optimizations.components.datatab.5")}
           />
         ) : (
@@ -470,6 +572,20 @@ export function DataTab({
                             onResize={colResize.setColumnWidth}
                           />
                         ))}
+                      {split === "test" &&
+                        evalCount > 0 &&
+                        loggedMetricNames.map((name) => (
+                          <ColumnHeader
+                            key={`lm-${name}`}
+                            label={name}
+                            sortKey={`_lm_${name}`}
+                            currentSort={sortKey}
+                            sortDir={sortDir}
+                            onSort={toggleSort}
+                            width={colResize.widths[`_lm_${name}`]}
+                            onResize={colResize.setColumnWidth}
+                          />
+                        ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -500,11 +616,23 @@ export function DataTab({
                               }
                             >
                               {ev ? (
-                                <div className="flex flex-col items-center gap-0.5">
+                                <div
+                                  className="flex flex-col items-center gap-0.5"
+                                  title={
+                                    ev.error
+                                      ? ev.error
+                                      : ev.logged_metrics
+                                        ? Object.entries(ev.logged_metrics)
+                                            .map(([k, v]) => `${k}: ${Number(v.toFixed(3))}`)
+                                            .join(" · ")
+                                        : undefined
+                                  }
+                                >
                                   <span
                                     className="text-[0.625rem] font-mono tabular-nums font-medium"
                                     style={{ color: scoreColor(ev.score) }}
                                   >
+                                    {ev.error ? "⚠ " : ""}
                                     {ev.score.toFixed(2)}
                                   </span>
                                   <div className="w-full h-1.5 rounded-full overflow-hidden bg-muted">
@@ -576,6 +704,34 @@ export function DataTab({
                                   title={formatCellValue(pred, true)}
                                 >
                                   {formatCellValue(pred)}
+                                </TableCell>
+                              );
+                            })}
+                          {split === "test" &&
+                            evalCount > 0 &&
+                            loggedMetricNames.map((name) => {
+                              const key = `_lm_${name}`;
+                              const value = ev?.logged_metrics?.[name];
+                              return (
+                                <TableCell
+                                  key={key}
+                                  className="text-xs font-mono tabular-nums truncate overflow-hidden"
+                                  style={{
+                                    ...(colResize.widths[key]
+                                      ? {
+                                          width: colResize.widths[key],
+                                          maxWidth: colResize.widths[key],
+                                        }
+                                      : {}),
+                                    // Rate-like values (0–1) reuse the score scale;
+                                    // anything else keeps neutral ink.
+                                    color:
+                                      value != null && value >= 0 && value <= 1
+                                        ? scoreColor(value)
+                                        : undefined,
+                                  }}
+                                >
+                                  {value != null ? String(Number(value.toFixed(3))) : ""}
                                 </TableCell>
                               );
                             })}

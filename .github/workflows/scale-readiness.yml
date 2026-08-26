@@ -1,0 +1,55 @@
+name: scale readiness
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+
+concurrency:
+  group: scale-readiness
+  cancel-in-progress: false
+
+jobs:
+  mixed-production-load:
+    name: 200-user mixed journey + SLO gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      LOAD_TEST_MIXED_USERS: "200"
+      LOAD_TEST_MIXED_SOAK_SECONDS: "60"
+      LOAD_TEST_MIXED_RAMP_SECONDS: "20"
+      LOAD_TEST_MIXED_SUBMIT_USERS: "48"
+      LOAD_TEST_MIXED_SSE_CONNECTIONS: "24"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install harness dependencies
+        working-directory: backend
+        run: uv sync --extra dev --frozen
+      - name: Run the production-scale release gate
+        working-directory: backend
+        run: |
+          set +e
+          uv run python -m load_tests.run_all --scenarios=mixed_realistic --no-down
+          exit_code=$?
+          mkdir -p load_tests/results
+          docker compose -p skynet-loadtest -f load_tests/docker-compose.loadtest.yml logs --no-color > load_tests/results/compose.log
+          exit "$exit_code"
+      - name: Upload metrics and container logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scale-readiness-${{ github.run_id }}
+          path: backend/load_tests/results/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Tear down the isolated stack
+        if: always()
+        working-directory: backend
+        run: docker compose -p skynet-loadtest -f load_tests/docker-compose.loadtest.yml down -v

@@ -2,30 +2,39 @@
 
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/primitives/tabs";
+import {
+  SLIDING_PILL_TABS_INDICATOR_CLASS,
+  SLIDING_PILL_TABS_LIST_CLASS,
+  SLIDING_PILL_TABS_TRIGGER_CLASS,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/shared/ui/primitives/tabs";
 import { Separator } from "@/shared/ui/primitives/separator";
 import {
   User,
   Code,
   Tag,
-  Layers,
-  Component,
+  Stack,
+  Cube,
   Target,
   FileText,
   Columns,
   Shuffle,
-  Search,
+  MagnifyingGlass,
   Database,
   Cpu,
-  Boxes,
-} from "lucide-react";
+  Gauge,
+} from "@/shared/ui/icons";
 import { cn } from "@/shared/lib/utils";
-import { msg } from "@/shared/lib/messages";
+import { formatMsg, msg } from "@/shared/lib/messages";
+import { perLocale } from "@/shared/lib/per-locale";
 import { moduleLabel } from "@/shared/lib/formatters";
 import { TERMS } from "@/shared/lib/terms";
 import { ModelChip } from "@/shared/ui/model-chip";
 import { Skeleton } from "@/shared/ui/skeleton";
-
+import { useUserPrefs } from "@/features/settings";
 import type { SubmitWizardContext } from "../../hooks/use-submit-wizard";
 
 const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m.CodeEditor), {
@@ -33,7 +42,7 @@ const CodeEditor = dynamic(() => import("@/shared/ui/code-editor").then((m) => m
   loading: () => <Skeleton height={200} borderRadius={8} />,
 });
 
-const SUMMARY_TABS = [
+const SUMMARY_TABS = perLocale(() => [
   {
     id: "general",
     label: msg("auto.features.submit.components.steps.summarystep.literal.1"),
@@ -51,35 +60,11 @@ const SUMMARY_TABS = [
     label: msg("auto.features.submit.components.steps.summarystep.literal.3"),
     icon: <Code className="size-3.5" />,
   },
-];
-
-/**
- * Read-only row shown when a grid side is set to "all available models".
- *
- * Mirrors the sentinel chip in ModelStep but without interactions — the
- * summary tab is always pointer-events-none so this just has to carry the
- * same visual language (Boxes icon, primary tint, catalog count).
- */
-function SummaryAllAvailableRow({ count }: { count: number }) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-        <Boxes className="size-4" />
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="text-sm font-medium text-foreground">
-          {msg("auto.features.submit.components.steps.summarystep.1")}
-        </span>
-        <span className="text-[0.6875rem] text-muted-foreground">
-          {count}
-          {msg("auto.features.submit.components.steps.summarystep.2")}
-        </span>
-      </div>
-    </div>
-  );
-}
+]);
 
 export function SummaryStep({ w }: { w: SubmitWizardContext }) {
+  const { prefs } = useUserPrefs();
+  const advanced = prefs.advancedMode;
   const {
     summaryTab,
     setSummaryTab,
@@ -99,16 +84,21 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
     secondModelConfig,
     generationModels,
     reflectionModels,
-    useAllGenerationModels,
-    useAllReflectionModels,
-    catalog,
     autoLevel,
     reflectionMinibatchSize,
     maxFullEvals,
+    maxMetricCalls,
     useMerge,
+    targetScore,
     signatureCode,
     metricCode,
+    isWorkflow,
+    workflowSpec,
   } = w;
+
+  // A workflow run has no single top-level signature — the graph carries the
+  // per-node code, so the code tab shows only the metric plus a graph line.
+  const displaySignatureCode = isWorkflow ? "" : signatureCode;
 
   return (
     <div className="space-y-4" data-tutorial="wizard-step-6">
@@ -132,7 +122,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
               type="button"
               onClick={() => setSummaryTab(i)}
               className={cn(
-                "relative z-10 flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs font-medium transition-colors duration-150 cursor-pointer",
+                "relative z-10 flex min-h-[44px] flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs font-medium transition-colors duration-150 lg:min-h-0",
                 summaryTab === i
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground/80",
@@ -144,7 +134,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
           ))}
         </div>
 
-        <div className="p-5">
+        <div className="p-4 sm:p-5">
           <AnimatePresence mode="wait">
             <motion.div
               key={summaryTab}
@@ -154,7 +144,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
               transition={{ duration: 0.15 }}
             >
               {summaryTab === 0 && (
-                <div className="space-y-0">
+                <div className="space-y-0 [&>div]:min-w-0 [&>div]:gap-3 [&>div>span:first-child]:min-w-0 [&>div>span:last-child]:max-w-[55%] [&>div>span:last-child]:break-words [&>div>span:last-child]:text-end">
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Tag className="size-3.5" />
@@ -165,7 +155,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                   </div>
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Layers className="size-3.5" />
+                      <Stack className="size-3.5" />
                       {msg("auto.features.submit.components.steps.summarystep.4")}
                       {TERMS.optimization}
                     </span>
@@ -177,7 +167,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                   </div>
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Component className="size-3.5" />
+                      <Cube className="size-3.5" />
                       {msg("auto.features.submit.components.steps.summarystep.5")}
                     </span>
                     <span className="text-sm font-medium font-mono" dir="ltr">
@@ -197,7 +187,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
               )}
 
               {summaryTab === 1 && (
-                <div className="space-y-4">
+                <div className="space-y-4 [&>div.flex]:min-w-0 [&>div.flex]:gap-3 [&>div.flex>span:first-child]:min-w-0 [&>div.flex>span:last-child]:max-w-[55%] [&>div.flex>span:last-child]:break-words [&>div.flex>span:last-child]:text-end">
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
                       <FileText className="size-3.5" />
@@ -267,47 +257,57 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                       </div>
                     </div>
                   )}
-                  <Separator />
-                  <div className="space-y-3">
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Layers className="size-3.5" />
-                      {msg("auto.features.submit.components.steps.summarystep.12")}
-                      {TERMS.dataset}
-                    </span>
-                    <div className="flex h-3 rounded-full overflow-hidden">
-                      <div className="bg-[#3D2E22]" style={{ width: `${split.train * 100}%` }} />
-                      <div className="bg-[#C8A882]" style={{ width: `${split.val * 100}%` }} />
-                      <div className="bg-[#8C7A6B]" style={{ width: `${split.test * 100}%` }} />
+                  {/* Split breakdown is advanced-mode machinery. */}
+                  {advanced && (
+                    <>
+                      <Separator />
+                      <div className="space-y-3">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Stack className="size-3.5" />
+                          {msg("auto.features.submit.components.steps.summarystep.12")}
+                          {TERMS.dataset}
+                        </span>
+                        <div className="flex h-3 rounded-full overflow-hidden">
+                          <div
+                            className="bg-[#3D2E22]"
+                            style={{ width: `${split.train * 100}%` }}
+                          />
+                          <div className="bg-[#C8A882]" style={{ width: `${split.val * 100}%` }} />
+                          <div className="bg-[#8C7A6B]" style={{ width: `${split.test * 100}%` }} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="inline-block w-2 h-2 rounded-full bg-[#3D2E22]" />
+                            {msg("auto.features.submit.components.steps.summarystep.13")}
+                            {split.train}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="inline-block w-2 h-2 rounded-full bg-[#C8A882]" />
+                            {msg("auto.features.submit.components.steps.summarystep.14")}
+                            {split.val}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="inline-block w-2 h-2 rounded-full bg-[#8C7A6B]" />
+                            {msg("auto.features.submit.components.steps.summarystep.15")}
+                            {split.test}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {advanced && (
+                    <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Shuffle className="size-3.5" />
+                        {msg("auto.features.submit.components.steps.summarystep.16")}
+                      </span>
+                      <span className="text-sm font-medium">
+                        {shuffle
+                          ? msg("auto.features.submit.components.steps.summarystep.literal.9")
+                          : msg("auto.features.submit.components.steps.summarystep.literal.10")}
+                      </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="inline-block w-2 h-2 rounded-full bg-[#3D2E22]" />
-                        {msg("auto.features.submit.components.steps.summarystep.13")}
-                        {split.train}
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="inline-block w-2 h-2 rounded-full bg-[#C8A882]" />
-                        {msg("auto.features.submit.components.steps.summarystep.14")}
-                        {split.val}
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="inline-block w-2 h-2 rounded-full bg-[#8C7A6B]" />
-                        {msg("auto.features.submit.components.steps.summarystep.15")}
-                        {split.test}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between py-2.5 border-b border-border/40">
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Shuffle className="size-3.5" />
-                      {msg("auto.features.submit.components.steps.summarystep.16")}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {shuffle
-                        ? msg("auto.features.submit.components.steps.summarystep.literal.9")
-                        : msg("auto.features.submit.components.steps.summarystep.literal.10")}
-                    </span>
-                  </div>
+                  )}
                 </div>
               )}
 
@@ -330,13 +330,8 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                     </div>
                   ) : (
                     (() => {
-                      const availableCount = catalog?.models.length ?? 0;
-                      const genCount = useAllGenerationModels
-                        ? availableCount
-                        : generationModels.filter((m) => m.name).length;
-                      const refCount = useAllReflectionModels
-                        ? availableCount
-                        : reflectionModels.filter((m) => m.name).length;
+                      const genCount = generationModels.filter((m) => m.name).length;
+                      const refCount = reflectionModels.filter((m) => m.name).length;
                       const totalPairs = genCount * refCount;
                       return (
                         <div className="space-y-2">
@@ -353,25 +348,21 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                             {msg("model.generation.label_plural")}
                           </span>
                           <div className="space-y-1.5">
-                            {useAllGenerationModels ? (
-                              <SummaryAllAvailableRow count={availableCount} />
-                            ) : (
-                              generationModels
-                                .filter((m) => m.name)
-                                .map((m, i) => <ModelChip key={i} config={m} onClick={() => {}} />)
-                            )}
+                            {generationModels
+                              .filter((m) => m.name)
+                              .map((m, i) => (
+                                <ModelChip key={i} config={m} onClick={() => {}} />
+                              ))}
                           </div>
                           <span className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
                             {msg("auto.features.submit.components.steps.summarystep.18")}
                           </span>
                           <div className="space-y-1.5">
-                            {useAllReflectionModels ? (
-                              <SummaryAllAvailableRow count={availableCount} />
-                            ) : (
-                              reflectionModels
-                                .filter((m) => m.name)
-                                .map((m, i) => <ModelChip key={i} config={m} onClick={() => {}} />)
-                            )}
+                            {reflectionModels
+                              .filter((m) => m.name)
+                              .map((m, i) => (
+                                <ModelChip key={i} config={m} onClick={() => {}} />
+                              ))}
                           </div>
                         </div>
                       );
@@ -381,33 +372,25 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
               )}
 
               {summaryTab === 3 && (
-                <div className="space-y-0">
+                <div className="space-y-0 [&>div]:min-w-0 [&>div]:gap-3 [&>div>span:first-child]:min-w-0 [&>div>span:last-child]:max-w-[55%] [&>div>span:last-child]:break-words [&>div>span:last-child]:text-end">
                   {isReact && (
-                    <>
-                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
-                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Boxes className="size-3.5" />
-                          {msg("submit.react.tool_source_label")}
-                        </span>
-                        <span
-                          className="text-sm font-medium font-mono truncate max-w-[60%]"
-                          dir="ltr"
-                          title={
-                            reactConfig.toolSourceKind === "live_mcp"
-                              ? reactConfig.mcpUrl
-                              : undefined
-                          }
-                        >
-                          {reactConfig.toolSourceKind === "live_mcp"
-                            ? reactConfig.mcpUrl || "live_mcp"
-                            : "dataset_snapshot"}
-                        </span>
-                      </div>
-                    </>
+                    <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Stack className="size-3.5" />
+                        {msg("submit.react.mcp_url_label")}
+                      </span>
+                      <span
+                        className="text-sm font-medium font-mono truncate max-w-[60%]"
+                        dir="ltr"
+                        title={reactConfig.mcpUrl}
+                      >
+                        {reactConfig.mcpUrl || "—"}
+                      </span>
+                    </div>
                   )}
                   <div className="flex items-center justify-between py-2.5 border-b border-border/40">
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Search className="size-3.5" />
+                      <MagnifyingGlass className="size-3.5" />
                       {msg("auto.features.submit.components.steps.summarystep.19")}
                     </span>
                     <span className="text-sm font-medium">
@@ -418,74 +401,99 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
                           : msg("auto.features.submit.components.steps.summarystep.literal.13")}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between py-2.5 border-b border-border/40">
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Database className="size-3.5" />
-                      {msg("auto.features.submit.components.steps.summarystep.20")}
-                    </span>
-                    <span className="text-sm font-medium font-mono">
-                      {reflectionMinibatchSize || "—"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between py-2.5 border-b border-border/40">
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Layers className="size-3.5" />
-                      {msg("auto.features.submit.components.steps.summarystep.21")}
-                    </span>
-                    <span className="text-sm font-medium font-mono">{maxFullEvals || "—"}</span>
-                  </div>
-                  <div className="flex items-center justify-between py-2.5 border-b border-border/40">
-                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Shuffle className="size-3.5" />
-                      {msg("auto.features.submit.components.steps.summarystep.22")}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {useMerge
-                        ? msg("auto.features.submit.components.steps.summarystep.literal.14")
-                        : msg("auto.features.submit.components.steps.summarystep.literal.15")}
-                    </span>
-                  </div>
+                  {advanced && (
+                    <>
+                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Target className="size-3.5" />
+                          {msg("auto.features.submit.components.steps.summarystep.25")}
+                        </span>
+                        <span className="text-sm font-medium font-mono" dir="ltr">
+                          {targetScore ? `${targetScore}%` : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Database className="size-3.5" />
+                          {msg("auto.features.submit.components.steps.summarystep.20")}
+                        </span>
+                        <span className="text-sm font-medium font-mono">
+                          {reflectionMinibatchSize || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Stack className="size-3.5" />
+                          {msg("auto.features.submit.components.steps.summarystep.21")}
+                        </span>
+                        <span className="text-sm font-medium font-mono">{maxFullEvals || "—"}</span>
+                      </div>
+                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Gauge className="size-3.5" />
+                          {msg("submit.metric_calls")}
+                        </span>
+                        <span className="text-sm font-medium font-mono">
+                          {maxMetricCalls || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2.5 border-b border-border/40">
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Shuffle className="size-3.5" />
+                          {msg("auto.features.submit.components.steps.summarystep.22")}
+                        </span>
+                        <span className="text-sm font-medium">
+                          {useMerge
+                            ? msg("auto.features.submit.components.steps.summarystep.literal.14")
+                            : msg("auto.features.submit.components.steps.summarystep.literal.15")}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
               {summaryTab === 4 && (
                 <Tabs
-                  defaultValue={signatureCode ? "signature" : "metric"}
+                  defaultValue={displaySignatureCode ? "signature" : "metric"}
                   dir="ltr"
                   onValueChange={setSummaryCodeTab}
                 >
-                  <TabsList className="relative inline-flex w-full rounded-lg bg-muted p-1 gap-1 border-none shadow-none h-auto">
-                    {signatureCode && metricCode && (
+                  {isWorkflow && workflowSpec && (
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      {formatMsg("workflow.summary.graph", {
+                        p1: workflowSpec.nodes.length,
+                        p2: workflowSpec.edges.length,
+                      })}
+                    </p>
+                  )}
+                  <TabsList className={SLIDING_PILL_TABS_LIST_CLASS}>
+                    {displaySignatureCode && metricCode && (
                       <div
-                        className="absolute top-1 bottom-1 w-[calc(50%-6px)] rounded-md bg-[#3D2E22] shadow-sm transition-[inset-inline-start] duration-200 ease-out"
+                        className={SLIDING_PILL_TABS_INDICATOR_CLASS}
                         style={{
+                          width: "calc(50% - 6px)",
                           insetInlineStart: summaryCodeTab === "signature" ? 4 : "calc(50% + 2px)",
                         }}
                       />
                     )}
-                    {signatureCode && (
-                      <TabsTrigger
-                        value="signature"
-                        className="relative z-10 rounded-md px-4 py-2 text-sm font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5"
-                      >
+                    {displaySignatureCode && (
+                      <TabsTrigger value="signature" className={SLIDING_PILL_TABS_TRIGGER_CLASS}>
                         {msg("auto.features.submit.components.steps.summarystep.23")}
                       </TabsTrigger>
                     )}
                     {metricCode && (
-                      <TabsTrigger
-                        value="metric"
-                        className="relative z-10 rounded-md px-4 py-2 text-sm font-medium cursor-pointer border-none shadow-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-none gap-1.5"
-                      >
+                      <TabsTrigger value="metric" className={SLIDING_PILL_TABS_TRIGGER_CLASS}>
                         {msg("auto.features.submit.components.steps.summarystep.24")}
                       </TabsTrigger>
                     )}
                   </TabsList>
-                  {signatureCode && (
+                  {displaySignatureCode && (
                     <TabsContent value="signature">
                       <CodeEditor
-                        value={signatureCode}
+                        value={displaySignatureCode}
                         onChange={() => {}}
-                        height={`${Math.min(signatureCode.split("\n").length + 1, 10) * 19.6 + 8}px`}
+                        height={`${Math.min(displaySignatureCode.split("\n").length + 1, 10) * 19.6 + 8}px`}
                         readOnly
                       />
                     </TabsContent>
@@ -506,6 +514,7 @@ export function SummaryStep({ w }: { w: SubmitWizardContext }) {
           </AnimatePresence>
         </div>
       </motion.div>
+
     </div>
   );
 }

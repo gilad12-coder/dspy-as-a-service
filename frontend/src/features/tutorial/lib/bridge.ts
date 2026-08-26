@@ -20,12 +20,7 @@
  * full type checking at both ends.
  */
 import type { ParsedDataset } from "@/shared/lib/parse-dataset";
-import type {
-  PaginatedJobsResponse,
-  OptimizationStatusResponse,
-  EvalExampleResult,
-  OptimizationDatasetResponse,
-} from "@/shared/types/api";
+import type { PaginatedJobsResponse } from "@/shared/types/api";
 import type { DashboardAnalytics, PublicDashboardPoint } from "@/shared/lib/api";
 
 /**
@@ -40,8 +35,6 @@ export interface TutorialHooks {
   setWizardStep: (step: number) => void;
   /** Switch the optimization-detail page between its tabs. */
   setDetailTab: (tab: string) => void;
-  /** Switch the /compare page between its tabs (overview / config / prompts / examples). */
-  setCompareTab: (tab: string) => void;
   /** Seed the wizard's optimizer selector. */
   setOptimizerName: (name: string) => void;
   /** Seed the wizard's parsed dataset. */
@@ -50,6 +43,19 @@ export interface TutorialHooks {
   setColumnRoles: (roles: Record<string, "input" | "output" | "ignore">) => void;
   /** Seed the wizard's dataset filename display. */
   setDatasetFileName: (name: string) => void;
+  /**
+   * Commit a module choice in the wizard's code step. Picking one is a
+   * required step for the user, so the tour has to make the same commitment:
+   * until it does, the step shows the picker and the signature and metric
+   * editors the following tour steps spotlight are not rendered at all.
+   */
+  chooseModule: (name: string) => void;
+  /** Send the code step back to the module picker, for the step that shows it. */
+  reopenModulePicker: () => void;
+  /** Keep the cost-free tutorial on the deterministic manual code surface. */
+  setCodeAssistMode: (mode: "auto" | "manual") => void;
+  /** Open or close the generation model's config dialog. */
+  setModelConfigOpen: (open: boolean) => void;
   /** Seed the wizard's signature code editor. */
   setSignatureCode: (code: string) => void;
   /** Seed the wizard's metric code editor. */
@@ -60,8 +66,6 @@ export interface TutorialHooks {
   routerPush: (path: string) => void;
   /** Inject demo jobs into the dashboard table when empty. */
   setDemoJobs: (data: PaginatedJobsResponse) => void;
-  /** Programmatically select job IDs in the dashboard table (for the compare-flow demo). */
-  setSelectedJobIds: (ids: string[]) => void;
   /** Inject demo analytics into the dashboard charts when empty. */
   setDemoAnalytics: (data: DashboardAnalytics) => void;
   /** Inject demo points into the explore scatter canvas when empty. */
@@ -74,8 +78,12 @@ export interface TutorialHooks {
     cols: string[];
     textCol: string | string[];
   }) => void;
+  /** Force the tagger view to show the setup wizard (new session). */
+  setTaggerStartingNew: (value: boolean) => void;
   /** Open or close the generalist agent panel (left-anchored aside). */
   setGeneralistPanelOpen: (open: boolean) => void;
+  /** Open a settings tab, or close the settings dialog with null. */
+  setSettingsTab: (tab: string | null) => void;
   /**
    * Open or close the navigation sidebar drawer. Below 768px the sidebar is
    * off-canvas, so steps that spotlight it must slide it in first; a no-op on
@@ -83,14 +91,16 @@ export interface TutorialHooks {
    */
   setSidebarOpen: (open: boolean) => void;
   /**
-   * Toggle the advancedMode user preference. The deep-dive tour uses this
-   * to surface advanced-only features (like /explore) without the user
-   * having to flip the setting first; the prefs page is the canonical
-   * place to revert.
+   * Open (or re-collapse) the submit wizard's advanced disclosure sections
+   * — optimization type on Basics, optimizer settings on Params. Steps that
+   * spotlight content inside a collapsed section call this first so the
+   * target exists when the spotlight lands.
    */
+  setAdvancedSectionsOpen: (open: boolean) => void;
+  /** Enable or disable the global advanced mode that gates dataset splits and GEPA tuning. */
   setAdvancedMode: (enabled: boolean) => void;
   /**
-   * Replay the demo optimization simulation. The deep-dive tour calls this
+   * Replay the demo optimization simulation. The results guide calls this
    * when reaching the trajectory step so the user sees the tree grow live
    * instead of jumping to the completed state.
    */
@@ -247,41 +257,4 @@ function makeOneShot<T>() {
       return v;
     },
   };
-}
-
-/**
- * One-shot payload for the /compare page. The tutorial seeds this
- * BEFORE navigating, and the compare page consumes it on mount in
- * place of the normal backend fetch. Cleared on a 1s delay so a
- * subsequent non-tutorial visit falls back to the live API.
- */
-const compareDemoSlot = makeOneShot<OptimizationStatusResponse[]>();
-
-export function setPendingCompareDemo(jobs: OptimizationStatusResponse[]): void {
-  compareDemoSlot.set(jobs);
-}
-
-export function consumePendingCompareDemo(): OptimizationStatusResponse[] | null {
-  return compareDemoSlot.consume();
-}
-
-/**
- * One-shot payload for the /compare page's "examples" tab. Provides
- * per-example results keyed by optimization_id and the shared dataset
- * so the PerExampleSection can render without hitting the backend
- * during the tutorial.
- */
-export interface PendingCompareExamples {
-  byJobId: Record<string, EvalExampleResult[]>;
-  dataset: OptimizationDatasetResponse;
-}
-
-const compareExamplesSlot = makeOneShot<PendingCompareExamples>();
-
-export function setPendingCompareExamples(value: PendingCompareExamples): void {
-  compareExamplesSlot.set(value);
-}
-
-export function consumePendingCompareExamples(): PendingCompareExamples | null {
-  return compareExamplesSlot.consume();
 }

@@ -6,7 +6,7 @@ import { AppSkeletonTheme, Skeleton } from "@/shared/ui/skeleton";
 export function StorageSkeleton() {
   return (
     <AppSkeletonTheme>
-      <div dir="rtl" className="pb-16">
+      <div className="pb-16">
         <div className="w-1/2">
           <Skeleton height={28} width="40%" />
           <div className="mt-2">
