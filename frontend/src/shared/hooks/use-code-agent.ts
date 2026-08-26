@@ -901,9 +901,14 @@ export function useCodeAgent(args: UseCodeAgentArgs): CodeAgentState {
   );
 
   const retry = React.useCallback(() => {
-    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    const lastUserIndex = [...messages].reverse().findIndex((m) => m.role === "user");
+    if (lastUserIndex === -1) return;
+    const index = messages.length - 1 - lastUserIndex;
+    const lastUser = messages[index];
+    const truncated = messages.slice(0, index);
+    setMessages(truncated);
     autoFixAttemptsRef.current = 0;
-    runAgent(lastUser?.content ?? "", messages);
+    runAgent(lastUser?.content ?? "", truncated);
   }, [messages, runAgent]);
 
   const goToSignatureVersion = React.useCallback(
