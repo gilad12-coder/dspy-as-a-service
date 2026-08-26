@@ -20,7 +20,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/
 import { AgentThread } from "@/shared/ui/agent/agent-thread";
 import { ChatTranscript } from "@/shared/ui/agent/chat-transcript";
 import { Composer } from "@/shared/ui/agent/composer";
-import { ComposerModelMenu } from "@/shared/ui/agent/composer-model-menu";
 import type { AgentThinking, AgentToolCall } from "@/shared/ui/agent/types";
 import { EmptyState } from "@/shared/ui/empty-state";
 import { RetryIconButton } from "@/shared/ui/retry-icon-button";
@@ -361,11 +360,6 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       typeof effectiveWizard.optimizer_name === "string"
         ? effectiveWizard.optimizer_name
         : undefined,
-    // Code authoring follows the conversation's chosen model, so picking a
-    // concrete model in the composer (instead of the auto-router default) also
-    // steers the seed — the escape hatch when the default is rate-limited.
-    model: agent.model,
-    reasoningEffort: agent.reasoningEffort,
   });
   // The agent's turn ends BEFORE its card finishes (the code agent streams
   // after the turn), so the composer locks on this signal — not ``streaming``
@@ -890,14 +884,6 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                 placeholder={msg("auto.features.agent.panel.components.generalistpanel.literal.5")}
                 streaming={activeBusy}
                 disabled={codeAuthoringActive}
-                modelMenu={
-                  <ComposerModelMenu
-                    value={agent.model}
-                    onChange={agent.setModel}
-                    effort={agent.reasoningEffort}
-                    onEffortChange={agent.setReasoningEffort}
-                  />
-                }
                 leadingControls={
                   <>
                     <input

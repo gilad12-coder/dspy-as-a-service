@@ -88,7 +88,6 @@ import { msg } from "@/shared/lib/messages";
 import { formatStorageSize } from "@/shared/lib/formatters";
 import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
 import type { CatalogModel } from "@/shared/types/api";
-import { ComposerModelMenu } from "@/shared/ui/agent";
 import { ModelChip } from "@/shared/ui/model-chip";
 import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
 import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
@@ -320,19 +319,6 @@ function AgentTab() {
 
   return (
     <div className="space-y-1">
-      <SettingsRow
-        icon={Cpu}
-        label={msg("settings.agent.default_model.label")}
-        description={msg("settings.agent.default_model.description")}
-      >
-        <ComposerModelMenu
-          value={prefs.composerModel}
-          onChange={(v) => setPref("composerModel", v)}
-          effort={prefs.composerEffort}
-          onEffortChange={(v) => setPref("composerEffort", v)}
-        />
-      </SettingsRow>
-
       {transcriptionEnabled && (
         <SettingsRow
           icon={Microphone}

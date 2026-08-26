@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { toast } from "react-toastify";
-import { readPref } from "@/features/settings";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
 
@@ -36,12 +35,6 @@ export interface GeneralistAgentState {
   error: string | null;
   pendingApproval: PendingApprovalPayload | null;
   conversationId: string | null;
-  /** LiteLLM id of the composer menu's chosen model; null runs the default. */
-  model: string | null;
-  setModel: (model: string | null) => void;
-  /** Reasoning-effort level for the chosen model; null runs its default. */
-  reasoningEffort: string | null;
-  setReasoningEffort: (effort: string | null) => void;
   send: (message: string, wizardStateOverride?: WizardState) => void;
   editAndResend: (messageIndex: number, content: string) => void;
   retry: () => void;
@@ -199,25 +192,6 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
   const runtimesRef = React.useRef(new Map<string, SessionRuntime>());
   const streamingKeysRef = React.useRef(new Set<string>());
   const queueRef = React.useRef<string[]>([]);
-
-  // Seeded from the settings-modal default; the panel is client-only
-  // (ssr:false), so the localStorage read is hydration-safe.
-  const [model, setModelState] = React.useState<string | null>(() => readPref("composerModel"));
-  // Mirrored in a ref so the streaming closures (retry, regenerate) always
-  // send the current choice without re-memoizing the run machinery.
-  const modelRef = React.useRef<string | null>(model);
-  const setModel = React.useCallback((next: string | null) => {
-    modelRef.current = next;
-    setModelState(next);
-  }, []);
-  const [reasoningEffort, setReasoningEffortState] = React.useState<string | null>(() =>
-    readPref("composerEffort"),
-  );
-  const effortRef = React.useRef<string | null>(reasoningEffort);
-  const setReasoningEffort = React.useCallback((next: string | null) => {
-    effortRef.current = next;
-    setReasoningEffortState(next);
-  }, []);
 
   // Effect ordering guarantees this snapshot is current at send time: this
   // child hook's effects run before the parent panel's, so any same-commit
@@ -396,8 +370,6 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
           conversation_id: sessionsRef.current.get(key)?.conversationId ?? null,
           regenerate: run.regenerate,
           locale: getActiveLocale(),
-          model: modelRef.current ?? undefined,
-          reasoning_effort: effortRef.current ?? undefined,
         },
         {
           signal: controller.signal,
@@ -864,10 +836,6 @@ export function useGeneralistAgent(args: UseGeneralistAgentArgs): GeneralistAgen
     error: active.error,
     pendingApproval: active.pendingApproval,
     conversationId: active.conversationId,
-    model,
-    setModel,
-    reasoningEffort,
-    setReasoningEffort,
     send,
     editAndResend,
     retry,
