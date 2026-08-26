@@ -24,12 +24,11 @@ interface ComposerProps {
   streaming?: boolean;
   sendAriaLabel?: string;
   stopAriaLabel?: string;
-  /** Optional model selector chip rendered at the inline start of the control
-   *  row, opposite the mic and send controls. */
+  /** Optional model selector chip rendered at the inline end of the control
+   *  row, immediately before the mic and send controls. */
   modelMenu?: React.ReactNode;
-  /** Optional controls docked at the inline-start of the control row (the
-   *  Codex layout: model, attach, and permissions at the start; mic and send
-   *  at the end). */
+  /** Optional controls docked at the inline start of the control row, such as
+   *  attachment and permission controls. */
   leadingControls?: React.ReactNode;
   /** Keep controls below the draft by default; model-free playgrounds can opt
    *  into a single row. */
@@ -39,11 +38,12 @@ interface ComposerProps {
 
 /**
  * The shared chat composer, laid out Codex-style: one bordered box holding a
- * borderless textarea with a control row docked under it — the model chip at
- * the inline start and the dictation mic plus circular send/stop button at the
- * inline end. While dictating, the textarea swaps for a recording strip
- * (pulsing dot, timer, cancel) and the mic becomes the finish control; the
- * transcript is appended to the draft for review, never auto-sent.
+ * borderless textarea with a control row docked under it — attachment and
+ * permission controls at the inline start, then the model chip, dictation mic,
+ * and circular send/stop button at the inline end. While dictating, the
+ * textarea swaps for a recording strip (pulsing dot, timer, cancel) and the mic
+ * becomes the finish control; the transcript is appended to the draft for
+ * review, never auto-sent.
  */
 export function Composer({
   value,
@@ -188,10 +188,17 @@ export function Composer({
           </div>
         )}
 
-        <div className={cn("flex items-center gap-1.5", inline ? "shrink-0" : "px-2 pb-2 pt-0.5")}>
-          {modelMenu}
-          {leadingControls && <div className="flex items-center gap-1">{leadingControls}</div>}
-          <div className="ms-auto flex items-center gap-1.5">
+        <div
+          className={cn(
+            "flex min-w-0 items-center gap-1.5",
+            inline ? "shrink-0" : "px-2 pb-2 pt-0.5",
+          )}
+        >
+          {leadingControls && (
+            <div className="flex min-w-0 items-center gap-1">{leadingControls}</div>
+          )}
+          <div className="ms-auto flex min-w-0 items-center justify-end gap-1.5">
+            {modelMenu}
             {showMic &&
               (dictation.state.kind === "rec" ? (
                 <TooltipButton tooltip={msg("agent.composer.record_finish")} side="top">
