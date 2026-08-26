@@ -10,7 +10,6 @@ import {
   Plus,
   Sparkle,
   MagicWand,
-  XCircle,
 } from "@/shared/ui/icons";
 import { msg } from "@/shared/lib/messages";
 
@@ -18,12 +17,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 
 import { AgentThread } from "@/shared/ui/agent/agent-thread";
+import { ChatErrorBanner } from "@/shared/ui/agent/chat-error-banner";
 import { ChatTranscript } from "@/shared/ui/agent/chat-transcript";
 import { Composer } from "@/shared/ui/agent/composer";
-import { ComposerModelMenu } from "@/shared/ui/agent/composer-model-menu";
 import type { AgentThinking, AgentToolCall } from "@/shared/ui/agent/types";
 import { EmptyState } from "@/shared/ui/empty-state";
-import { RetryIconButton } from "@/shared/ui/retry-icon-button";
 import { SubmitSplashOverlay, SUBMIT_SPLASH_HOLD_MS } from "@/shared/ui/submit-splash-overlay";
 import { cn } from "@/shared/lib/utils";
 import { formatMsg } from "@/shared/lib/messages";
@@ -361,11 +359,6 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
       typeof effectiveWizard.optimizer_name === "string"
         ? effectiveWizard.optimizer_name
         : undefined,
-    // Code authoring follows the conversation's chosen model, so picking a
-    // concrete model in the composer (instead of the auto-router default) also
-    // steers the seed — the escape hatch when the default is rate-limited.
-    model: agent.model,
-    reasoningEffort: agent.reasoningEffort,
   });
   // The agent's turn ends BEFORE its card finishes (the code agent streams
   // after the turn), so the composer locks on this signal — not ``streaming``
@@ -863,19 +856,13 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                         />
                       )}
                       {agent.error && (
-                        <div className="flex items-start gap-1.5 rounded-lg border border-[#9B2C1F]/20 bg-[#FCEFEB]/60 px-2.5 py-2 text-xs text-[#7A1E13]">
-                          <XCircle className="mt-0.5 size-3 shrink-0 text-[#9B2C1F]" />
-                          <span className="min-w-0 flex-1 break-words" dir="auto">
-                            {agent.error}
-                          </span>
-                          <RetryIconButton
-                            label={msg(
-                              "auto.features.agent.panel.components.generalistpanel.error_retry",
-                            )}
-                            onClick={agent.retry}
-                            className="size-[44px] border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13] md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
-                          />
-                        </div>
+                        <ChatErrorBanner
+                          message={agent.error}
+                          retryLabel={msg(
+                            "auto.features.agent.panel.components.generalistpanel.error_retry",
+                          )}
+                          onRetry={agent.retry}
+                        />
                       )}
                     </>
                   )}
@@ -890,14 +877,6 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                 placeholder={msg("auto.features.agent.panel.components.generalistpanel.literal.5")}
                 streaming={activeBusy}
                 disabled={codeAuthoringActive}
-                modelMenu={
-                  <ComposerModelMenu
-                    value={agent.model}
-                    onChange={agent.setModel}
-                    effort={agent.reasoningEffort}
-                    onEffortChange={agent.setReasoningEffort}
-                  />
-                }
                 leadingControls={
                   <>
                     <input
