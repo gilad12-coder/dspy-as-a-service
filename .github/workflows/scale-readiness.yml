@@ -23,9 +23,9 @@ jobs:
       LOAD_TEST_MIXED_SUBMIT_USERS: "48"
       LOAD_TEST_MIXED_SSE_CONNECTIONS: "24"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
           enable-cache: true
@@ -43,7 +43,7 @@ jobs:
           exit "$exit_code"
       - name: Upload metrics and container logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scale-readiness-${{ github.run_id }}
           path: backend/load_tests/results/
