@@ -183,11 +183,10 @@ export function JobsTab({
           )}
           <ResetFiltersButton filters={{ activeCount, clearAll: clearAllFilters }} />
           <ResetColumnsButton resize={colResize} />
-          {!isPhone && (
+          {!isPhone && filteredItems.length > 0 && (
             <ExportTableMenu
               iconOnly
               className="ms-auto"
-              disabled={filteredItems.length === 0}
               getData={() => {
                 const cols = [
                   "optimization_id",
