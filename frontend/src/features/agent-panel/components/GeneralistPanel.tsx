@@ -857,18 +857,30 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
                         />
                       )}
                       {agent.error && (
-                        <div className="flex items-start gap-1.5 rounded-lg border border-[#9B2C1F]/20 bg-[#FCEFEB]/60 px-2.5 py-2 text-xs text-[#7A1E13]">
-                          <XCircle className="mt-0.5 size-3 shrink-0 text-[#9B2C1F]" />
-                          <span className="min-w-0 flex-1 break-words" dir="auto">
-                            {agent.error}
-                          </span>
-                          <RetryIconButton
-                            label={msg(
-                              "auto.features.agent.panel.components.generalistpanel.error_retry",
-                            )}
-                            onClick={agent.retry}
-                            className="size-[44px] border-[#9B2C1F]/25 bg-transparent text-[#7A1E13] shadow-none hover:bg-[#9B2C1F]/10 hover:text-[#7A1E13] md:size-7 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
-                          />
+                        <div
+                          className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-destructive shadow-xs"
+                          role="alert"
+                        >
+                          <div className="flex items-start gap-2.5">
+                            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-destructive/10 ring-1 ring-destructive/10">
+                              <XCircle className="size-4" aria-hidden="true" />
+                            </span>
+                            <div className="flex min-w-0 flex-1 flex-col items-start gap-2.5">
+                              <p
+                                className="w-full break-words text-[0.75rem] leading-5 text-destructive/90 [overflow-wrap:anywhere]"
+                                dir="auto"
+                              >
+                                {agent.error}
+                              </p>
+                              <RetryIconButton
+                                label={msg(
+                                  "auto.features.agent.panel.components.generalistpanel.error_retry",
+                                )}
+                                onClick={agent.retry}
+                                className="ms-0 size-9 rounded-full border-destructive/20 bg-background/75 text-destructive shadow-xs hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive [@media(hover:none)_and_(pointer:coarse)]:size-[44px] [&_svg]:size-4"
+                              />
+                            </div>
+                          </div>
                         </div>
                       )}
                     </>
