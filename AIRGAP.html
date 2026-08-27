@@ -659,7 +659,7 @@
     <li><a href="#dspy-line">DSPy Version Line</a></li>
     <li><a href="#ca">Private TLS / CA Bundles</a></li>
     <li data-deploy="k8s"><a href="#smoke">Smoke Test</a></li>
-    <li><a href="#quotas">Live User Quotas</a></li>
+    <li><a href="#quotas">Live Storage Quotas &amp; Accounts</a></li>
     <li><a href="#clean">What Is Already Air-Gap Clean</a></li>
     <li><a href="#operator-responsibilities">Operator Responsibilities</a></li>
     <li><a href="#audit">Audit TODOs</a></li>
@@ -1370,8 +1370,8 @@ kubectl -n skynet create secret generic skynet-backend-secrets \
   --from-literal=OPENAI_API_KEY=<span class="s">"$INTERNAL_LLM_API_KEY"</span> \
   --from-literal=BACKEND_AUTH_SECRET=<span class="s">"$BACKEND_AUTH_SECRET"</span>
   <span class="c"># Append --from-literal=AD_LDAP_BIND_PASSWORD="$AD_LDAP_BIND_PASSWORD"</span>
-  <span class="c"># when enabling LDAP autocomplete (see "Internal LDAP / Active Directory</span>
-  <span class="c"># User Search").</span>
+  <span class="c"># when enabling the optional LDAP user search (see "Internal LDAP /</span>
+  <span class="c"># Active Directory User Search").</span>
 
 kubectl -n skynet create secret generic skynet-frontend-secrets \
   --from-literal=AUTH_SECRET=<span class="s">"$(openssl rand -base64 32)"</span> \
@@ -1397,8 +1397,8 @@ kubectl -n skynet create secret generic skynet-backend-secrets `
   --from-literal=OPENAI_API_KEY=<span class="s">"$env:INTERNAL_LLM_API_KEY"</span> `
   --from-literal=BACKEND_AUTH_SECRET=<span class="s">"$env:BACKEND_AUTH_SECRET"</span>
   <span class="c"># Append --from-literal=AD_LDAP_BIND_PASSWORD="$env:AD_LDAP_BIND_PASSWORD"</span>
-  <span class="c"># when enabling LDAP autocomplete (see "Internal LDAP / Active Directory</span>
-  <span class="c"># User Search").</span>
+  <span class="c"># when enabling the optional LDAP user search (see "Internal LDAP /</span>
+  <span class="c"># Active Directory User Search").</span>
 
 kubectl -n skynet create secret generic skynet-frontend-secrets `
   --from-literal=AUTH_SECRET=(openssl rand -base64 32) `
@@ -1471,9 +1471,9 @@ BACKEND_AUTH_SECRET</pre>
 
 <section id="ldap">
   <h2><a class="anchor" href="#ldap">§</a>Internal LDAP / Active Directory User Search</h2>
-  <p>ADFS handles <strong>sign-in</strong>. For the admin "set a quota for any network user" flow, the backend also needs to <strong>search</strong> Active Directory so admins can type a fragment and pick a real domain user from autocomplete.</p>
+  <p>ADFS handles <strong>sign-in</strong>. The backend additionally exposes an admin directory-search API (<code>GET /admin/users/search</code>) that can query Active Directory. The admin tab now manages everything through a single accounts table — admins create accounts and set storage caps by typing the exact username — so <strong>no UI consumes this endpoint any more</strong>. Configuring LDAP is optional; it only matters if you script against the API.</p>
 
-  <p>The lookup goes through <code>backend/core/api/directory_client.py</code>. When LDAP is not configured the backend uses <code>NullDirectoryClient</code>: the autocomplete combobox falls back to usernames already seen in the local job + override tables, which is enough for any user who has signed in or has an existing override. Admins can still type a brand-new username manually and save a quota for them — the field accepts free text. LDAP only adds <strong>discovery</strong> of users who have not yet touched the system.</p>
+  <p>The lookup goes through <code>backend/core/api/directory_client.py</code>. When LDAP is not configured the backend uses <code>NullDirectoryClient</code>: the endpoint falls back to usernames already seen in the local job + override tables. Nothing in the UI depends on this — the accounts table lists every known account, and its create row accepts any username as free text. LDAP only adds API-level <strong>discovery</strong> of domain users who have not yet touched the system.</p>
 
   <p>The Python client uses the <code>ldap3</code> package (already in <code>backend/pyproject.toml</code>, <code>backend/uv.lock</code>, and <code>backend/requirements.txt</code>, so it ships in the airgap install bundle without extra wheels).</p>
 
@@ -1502,7 +1502,7 @@ BACKEND_AUTH_SECRET</pre>
     </tbody>
   </table>
 
-  <p>When <strong>any</strong> of the required vars is unset, the backend silently keeps <code>NullDirectoryClient</code> and admins still see DB-backed suggestions.</p>
+  <p>When <strong>any</strong> of the required vars is unset, the backend silently keeps <code>NullDirectoryClient</code> and the search endpoint returns DB-backed suggestions only.</p>
 
   <p>Update <code>skynet-backend-secrets</code> to include the bind password (see <a href="#secrets">Required Kubernetes Secrets</a>):</p>
 <pre><span data-os="unix">kubectl -n skynet create secret generic skynet-backend-secrets \
@@ -1520,7 +1520,7 @@ BACKEND_AUTH_SECRET</pre>
   </ul>
 
   <h3>Username consistency</h3>
-  <p>Quotas, audit events, and admin lookups all key on the <strong>lowercased</strong> username string. Whatever attribute you set as <code>AD_LDAP_USERNAME_ATTR</code> should match the value the frontend stores in the session — that is the claim selected by <code>AUTH_USERNAME_CLAIM</code> (or its fallback chain <code>name</code> → <code>unique_name</code> → <code>upn</code> → <code>preferred_username</code> → <code>email</code> → <code>sub</code>). If you use <code>userPrincipalName</code> in ADFS claims, set <code>AD_LDAP_USERNAME_ATTR=userPrincipalName</code> so autocomplete returns the same string the user signs in as.</p>
+  <p>Accounts, storage quotas, and admin lookups all key on the <strong>lowercased</strong> username string. Whatever attribute you set as <code>AD_LDAP_USERNAME_ATTR</code> should match the value the frontend stores in the session — that is the claim selected by <code>AUTH_USERNAME_CLAIM</code> (or its fallback chain <code>name</code> → <code>unique_name</code> → <code>upn</code> → <code>preferred_username</code> → <code>email</code> → <code>sub</code>). If you use <code>userPrincipalName</code> in ADFS claims, set <code>AD_LDAP_USERNAME_ATTR=userPrincipalName</code> so the search API returns the same string the user signs in as.</p>
 
   <div class="callout">
     <span class="label">TODO · On-premise</span>
@@ -1555,7 +1555,7 @@ BACKEND_AUTH_SECRET</pre>
 <span class="c">REM wrote offline migration SQL: .\migration.sql</span></span></pre>
 
   <p>Under the hood this calls <code>alembic upgrade head --sql</code> against the same <code>alembic/env.py</code> the Job uses, so the offline output is byte-for-byte the DDL the cluster will run. Review <code>./migration.sql</code>, then proceed to <code>build-images</code> / <code>install</code>.</p>
-  <p>A few revisions also run a <strong>data backfill</strong> (per-row reads that branch in Python — e.g. the legacy 0-1 → 0-100 metric rescale). Those cannot be expressed as static SQL, so in the offline dump they appear as a <code>-- ... runs online only</code> marker and are executed for real by the in-cluster Job against a live connection. Their absence from <code>migration.sql</code> is expected; the schema (DDL) is still complete.</p>
+  <p>The chain is a single schema-creation revision with <strong>no data backfills</strong>, so the offline dump is the complete DDL — what you review in <code>migration.sql</code> is exactly what the in-cluster Job executes.</p>
 
   <h3>In-cluster migration Job</h3>
   <p>The Helm chart runs a pre-install/pre-upgrade Job:</p>
@@ -1575,14 +1575,14 @@ BACKEND_AUTH_SECRET</pre>
 <pre><span data-os="unix">helm upgrade --install skynet deploy/helm/skynet \
   -n skynet --create-namespace \
   -f deploy/helm/skynet/values-airgap.generated.yaml \
-  --set-json <span class="s">'migration.command=["alembic","stamp","342f7449be26"]'</span></span><span data-os="win">helm upgrade --install skynet deploy\helm\skynet ^
+  --set-json <span class="s">'migration.command=["alembic","stamp","0001_onprem"]'</span></span><span data-os="win">helm upgrade --install skynet deploy\helm\skynet ^
   -n skynet --create-namespace ^
   -f deploy\helm\skynet\values-airgap.generated.yaml ^
-  --set-json <span class="s">"migration.command=[\"alembic\",\"stamp\",\"342f7449be26\"]"</span></span></pre>
+  --set-json <span class="s">"migration.command=[\"alembic\",\"stamp\",\"0001_onprem\"]"</span></span></pre>
 
-  <p><code>342f7449be26</code> is the squashed baseline (all <code>jobs</code>, <code>job_*</code>, and quota tables). To adopt a DB that sits at that baseline, stamp it there and then upgrade through every delta: <code>alembic stamp 342f7449be26</code> followed by <code>alembic upgrade head</code>. The single current head is <code>c1d2e3f4a5b6</code>.</p>
+  <p>The migration chain is a single squashed baseline: <code>0001_onprem</code> creates the complete extension-free schema straight from the SQLAlchemy models (embedding tables are handled separately when <code>SEARCH_BACKEND=semantic</code>). It is both the baseline and the current head, so a fresh database needs only <code>alembic upgrade head</code>.</p>
 
-  <p>Only run <code>alembic stamp head</code> when <code>alembic current</code> <strong>already</strong> equals the live head <code>c1d2e3f4a5b6</code> — i.e. the schema is genuinely fully migrated. Stamping <code>head</code> tells Alembic the DB is current and silently skips every unapplied migration. The <code>job_embeddings.is_private</code> column was added in <code>a1b2c3d4e5f6</code>, roughly 22 revisions <strong>below</strong> head, so a DB that only has <code>is_private</code> is <em>not</em> at head; stamping <code>head</code> there would skip ~22 migrations and corrupt the schema. Verify the head matches the shipped image with <code>alembic heads</code> (and <code>alembic current</code> against the live DB) from <code>backend/</code> before deciding.</p>
+  <p>Only run the <code>alembic stamp 0001_onprem</code> path when the live schema genuinely matches the models — i.e. it was created outside Alembic from this same revision. Stamping tells Alembic the DB is current and skips schema creation entirely, so stamping a partial or older schema leaves it broken. When in doubt, diff the live schema against a scratch DB migrated from empty, and verify with <code>alembic heads</code> (and <code>alembic current</code> against the live DB) from <code>backend/</code> before deciding.</p>
 
   <p>After a baseline stamp, revert <code>migration.command</code> to <code>["alembic", "upgrade", "head"]</code> for the next upgrade.</p>
 
@@ -1705,7 +1705,7 @@ helm upgrade --install skynet deploy\helm\skynet ^
     <li>The rendered backend <code>NetworkPolicy</code> egress is <strong>not</strong> <code>0.0.0.0/0</code> — every egress slot lists an exact internal CIDR.</li>
     <li>Backend logs do <strong>not</strong> contain <code>Embedding API is not configured</code> (confirms the <code>EMBEDDINGS_*</code> keys took).</li>
     <li>An authenticated admin API call returns <code>200</code> (confirms <code>BACKEND_AUTH_SECRET</code> matches across both Secrets).</li>
-    <li><code>alembic current</code> against the live DB equals the head <code>c1d2e3f4a5b6</code>.</li>
+    <li><code>alembic current</code> against the live DB equals the head <code>0001_onprem</code>.</li>
     <li>No pod attempts DNS resolution for any public host.</li>
   </ul>
 </section>
@@ -1720,10 +1720,11 @@ helm upgrade --install skynet deploy\helm\skynet ^
     <tbody>
       <tr><td><code>CODE_AGENT_BASE_URL</code></td><td><code>CODE_AGENT_MODEL</code></td></tr>
       <tr><td><code>GENERALIST_AGENT_BASE_URL</code></td><td><code>GENERALIST_AGENT_MODEL</code></td></tr>
+      <tr><td><code>TAGGER_ASSIST_BASE_URL</code> (optional)</td><td><code>TAGGER_ASSIST_MODEL</code> (optional)</td></tr>
       <tr><td><code>EMBEDDINGS_BASE_URL</code></td><td><code>EMBEDDINGS_MODEL</code></td></tr>
     </tbody>
   </table>
-  <p>Leaving any <code>*_BASE_URL</code> empty falls through to a <strong>public OpenRouter default</strong> (<code>openrouter/minimax/minimax-m3</code>), which an air-gapped host cannot reach — set every base URL to your internal gateway. The <code>*_MODEL</code> ids must exactly match models your gateway serves; the shipped <code>gpt-5</code> default is only a placeholder. The embedding model placeholder is <code>jina-embeddings-v4</code> and must return at least 512 dimensions.</p>
+  <p>Both agent model ids default to the <strong>inert alias</strong> <code>openai/on-prem-default</code> (<code>DEFAULT_AGENT_MODEL_ID</code>) — no gateway serves it, so unconfigured agents fail fast instead of silently reaching a public provider. Set every base URL to your internal gateway; the <code>*_MODEL</code> ids must exactly match models your gateway serves (the <code>gpt-5</code> value in the generated values file is only a placeholder). <code>TAGGER_ASSIST_MODEL</code> / <code>TAGGER_ASSIST_BASE_URL</code> are optional — left empty, the tagging assist reuses the generalist pair, so it stays internal automatically. The embedding model placeholder is <code>jina-embeddings-v4</code> and must return at least 512 dimensions.</p>
 
   <h4>Gateway flavor: id prefix + base-URL suffix</h4>
   <p>The runtime is gateway-agnostic, but the two strings you hand-type differ per flavor: the model-id <strong>prefix</strong> and the base-URL <strong>suffix</strong>. Pick yours with the <strong>LLM gateway</strong> selector above. In every case repoint <code>OPENAI_API_BASE</code> at the same internal gateway and leave <code>OPENROUTER_API_KEY</code> / <code>ANTHROPIC_API_KEY</code> / <code>FIREWORKS_AI_API_KEY</code> unset — a wrong prefix or a public default <code>404</code>s (or phones home) the moment egress is blocked.</p>
@@ -1780,7 +1781,7 @@ EMBEDDINGS_MODEL=<span class="s">&lt;internal embedding model&gt;</span></pre>
     <li>Frontend to internal OIDC issuer.</li>
     <li>Backend to internal LLM gateway (agents) and embedding gateway.</li>
     <li>Backend (and the pre-install migration Job) to Postgres — the cluster/service network for the bundled DB, or the managed DB endpoint on port <code>5432</code>.</li>
-    <li>Backend to AD / LDAP, only when LDAP autocomplete is enabled.</li>
+    <li>Backend to AD / LDAP, only when the optional LDAP user search is configured.</li>
   </ul>
   <p>Notifications are <strong>email-only</strong>; there is no outbound notification webhook.</p>
 
@@ -1818,7 +1819,7 @@ EMBEDDINGS_MODEL=<span class="s">&lt;internal embedding model&gt;</span></pre>
   <h2><a class="anchor" href="#nophone">§</a>No-Phone-Home Checklist</h2>
   <p>The default config looks deployed but quietly reaches the public internet. Confirm each of these before you cut egress — one missed item keeps a model or summarisation call going out.</p>
   <ul>
-    <li><strong>Both agents</strong> default to <code>openrouter/minimax/minimax-m3</code> (<code>DEFAULT_AGENT_MODEL_ID</code>), which needs egress to <code>openrouter.ai</code>. Override <code>CODE_AGENT_MODEL</code> + <code>CODE_AGENT_BASE_URL</code> <em>and</em> <code>GENERALIST_AGENT_MODEL</code> + <code>GENERALIST_AGENT_BASE_URL</code> to your internal gateway (see the <a href="#egress">gateway-flavor blocks</a>).</li>
+    <li><strong>Both agents</strong> default to the inert alias <code>openai/on-prem-default</code> (<code>DEFAULT_AGENT_MODEL_ID</code>), which no provider serves — unconfigured agents fail fast rather than phoning a public API. Override <code>CODE_AGENT_MODEL</code> + <code>CODE_AGENT_BASE_URL</code> <em>and</em> <code>GENERALIST_AGENT_MODEL</code> + <code>GENERALIST_AGENT_BASE_URL</code> to your internal gateway (see the <a href="#egress">gateway-flavor blocks</a>). <code>TAGGER_ASSIST_MODEL</code> / <code>TAGGER_ASSIST_BASE_URL</code> may stay empty — they fall back to the generalist pair.</li>
     <li><strong>Leave <code>EMBEDDINGS_SUMMARY_MODEL</code> empty.</strong> Empty, the job-summary step reuses <code>CODE_AGENT_MODEL</code> (already internal). Setting it to a public model id routes summarisation calls outside the air gap.</li>
     <li><strong><code>DISCOVER_ALLOW_PRIVATE</code> is the counterintuitive one.</strong> If you use <code>POST /models/discover</code> to enumerate models from an internal gateway on a private (RFC1918, e.g. <code>10.x</code>) address, set <code>DISCOVER_ALLOW_PRIVATE=true</code> — the default <code>false</code> blocks it as SSRF protection, so discovery against your own gateway fails closed. Loopback (Ollama on <code>localhost</code>) always works; cloud-metadata IPs (<code>169.254.169.254</code>) stay blocked regardless.</li>
     <li><strong>Leave <code>OPENROUTER_API_KEY</code> / <code>ANTHROPIC_API_KEY</code> / <code>FIREWORKS_AI_API_KEY</code> unset.</strong> They only matter for public providers; an empty <code>*_BASE_URL</code> paired with one of these set is how the agent (and the grounding scorer) silently reach a public API.</li>
@@ -1914,15 +1915,17 @@ kubectl -n skynet exec deploy/skynet-skynet-frontend -- ^
 </section>
 
 <section id="quotas">
-  <h2><a class="anchor" href="#quotas">§</a>Live User Quotas</h2>
-  <p>The default optimization cap is <code>MAX_JOBS_PER_USER=100</code>. Static env values still work for broad defaults:</p>
+  <h2><a class="anchor" href="#quotas">§</a>Live Storage Quotas &amp; Account Management</h2>
+  <p>Every account has one unified <strong>storage budget</strong> covering all of its Skynet data. The default is <code>USER_STORAGE_QUOTA_BYTES</code> (250&nbsp;MB); raise it env-wide when your users keep larger datasets.</p>
+
+  <p>Day-to-day management happens in the settings modal's admin tab, which opens a single accounts table listing every ADFS and local account with its role, storage cap, live usage, and last login. From that table admins can:</p>
   <ul>
-    <li><code>QUOTA_OVERRIDES</code>: JSON map such as <code>{"power@example.com": 500}</code> or <code>{"researcher@example.com": null}</code>.</li>
+    <li>create passwordless local accounts inline — the create row includes the storage cap, pre-filled with the default (leaving it at the default records <em>no</em> override, so the account keeps following the default if it later changes);</li>
+    <li>edit any account's cap in place with the MB stepper, or reset an override back to the default;</li>
+    <li>promote/demote administrators, and permanently delete an account together with all data it owns.</li>
   </ul>
 
-  <p>For day-to-day changes, use the admin tab in the settings modal. Admins can set a numeric quota, set a user to unlimited, or remove a live override so the user falls back to the default/static config.</p>
-
-  <p>Deploy the migration once so <code>user_quota_overrides</code> and <code>user_quota_audit_events</code> exist. After that, backend quota enforcement reads the override table on each submission/clone/retry, so updates take effect immediately without a backend restart. The admin tab also shows the latest quota audit events.</p>
+  <p>Per-account overrides live in the <code>user_storage_quota_overrides</code> table (each row records who set it), created by the standard <code>0001_onprem</code> migration — no extra step. Enforcement reads the table live, so changes take effect immediately without a backend restart. <code>GET /admin/accounts</code> returns the default (<code>default_bytes</code>) plus each account's <code>quota_bytes</code> / <code>effective_bytes</code> / <code>used_bytes</code>.</p>
 </section>
 
 <section id="clean">
@@ -1945,7 +1948,7 @@ kubectl -n skynet exec deploy/skynet-skynet-frontend -- ^
     <li>Creating Kubernetes Secrets and rotating credentials.</li>
     <li>Supplying exact NetworkPolicy CIDRs for IdP, LLM gateway, embedding gateway, LDAP, and DB.</li>
     <li>Backing up and restoring Postgres.</li>
-    <li>Choosing internal model IDs exposed by your LLM gateway. The generated values default <code>CODE_AGENT_MODEL</code> and <code>GENERALIST_AGENT_MODEL</code> to <code>gpt-5</code>; change them if your gateway exposes different names. Leaving <code>CODE_AGENT_BASE_URL</code> / <code>GENERALIST_AGENT_BASE_URL</code> empty falls back to a public OpenRouter model that an air-gapped host cannot reach.</li>
+    <li>Choosing internal model IDs exposed by your LLM gateway. The generated values default <code>CODE_AGENT_MODEL</code> and <code>GENERALIST_AGENT_MODEL</code> to <code>gpt-5</code>; change them if your gateway exposes different names. Leaving <code>CODE_AGENT_BASE_URL</code> / <code>GENERALIST_AGENT_BASE_URL</code> empty leaves the inert <code>openai/on-prem-default</code> alias in place — agent calls fail until both pairs point at your gateway.</li>
     <li data-search="semantic">Semantic search is selected: provision pgvector on the database, choose the internal embedding model exposed by your embedding gateway, and set <code>EMBEDDINGS_BASE_URL</code>. (Lexical / BM25 need none of this.)</li>
   </ul>
 </section>
@@ -1963,11 +1966,9 @@ git grep -n <span class="s">"TODO: On-premise\|TODO: On-prem"</span></span></pre
   <ul>
     <li><code>AIRGAP.html</code> — context for each on-prem decision.</li>
     <li><code>deploy/helm/skynet/values-airgap.generated.yaml</code> — after <code>values</code>.</li>
-    <li><code>scripts/airgap_migrate.sh</code> / <code>scripts\airgap_migrate.bat</code> — defaults emitted into the values file.</li>
-    <li><code>frontend/.env.example</code> — frontend dev/runtime env template.</li>
+    <li><code>scripts/airgap_migrate.sh</code> / <code>scripts\airgap_migrate.ps1</code> — defaults emitted into the values file.</li>
     <li><code>frontend/.npmrc</code> — internal npm registry mirror config (commented out).</li>
-    <li><code>backend/core/config.py</code> — model ids and internal agent/embedding base URLs.</li>
-    <li><code>backend/core/api/directory_client.py</code> — LDAP-backed Active Directory user search; confirm <code>AD_LDAP_*</code> values against the target domain.</li>
+    <li><code>backend/core/config.py</code> — keep <code>EMBEDDINGS_SUMMARY_MODEL</code> empty so summarisation reuses the internal code-agent model.</li>
   </ul>
 
   <p>If new external services are added, add them to this file, the Helm values, and <code>scripts/airgap_migrate.sh</code> (with the matching change to <code>scripts/airgap_migrate.ps1</code> for the Windows path). Then <code>todos</code> will pick them up automatically.</p>
