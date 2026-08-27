@@ -38,6 +38,7 @@ class AccountInfo(BaseModel):
     username: str = Field(description="Canonical account identity.")
     display_name: str = Field(description="Human-readable account name.")
     role: str = Field(description="Authorization role: admin or user.")
+    first_login: bool = Field(default=False, description="Whether this sign-in is the account's first.")
 
 
 def normalize_username(raw: str) -> str:
@@ -91,12 +92,13 @@ def _resolved_role(row: UserModel, *, external_admin: bool = False) -> str:
     return "user"
 
 
-def _account_info(row: UserModel, *, external_admin: bool = False) -> AccountInfo:
+def _account_info(row: UserModel, *, external_admin: bool = False, first_login: bool = False) -> AccountInfo:
     """Build the authentication response for a stored identity.
 
     Args:
         row: Persisted identity row.
         external_admin: Whether the current ADFS session grants admin access.
+        first_login: Whether the account had never signed in before this call.
 
     Returns:
         Resolved account information.
@@ -105,6 +107,7 @@ def _account_info(row: UserModel, *, external_admin: bool = False) -> AccountInf
         username=row.username,
         display_name=row.display_name,
         role=_resolved_role(row, external_admin=external_admin),
+        first_login=first_login,
     )
 
 
@@ -162,8 +165,9 @@ def create_accounts_router(*, job_store) -> APIRouter:
                 row.local_enabled = True
             if row is None or not row.local_enabled:
                 raise DomainError("accounts.invalid_credentials", status=401)
+            first_login = row.last_login_at is None
             row.last_login_at = now
-            response = _account_info(row)
+            response = _account_info(row, first_login=first_login)
             session.commit()
         return response
 
@@ -204,8 +208,9 @@ def create_accounts_router(*, job_store) -> APIRouter:
             else:
                 row.display_name = display_name
             row.adfs_seen_at = now
+            first_login = row.last_login_at is None
             row.last_login_at = now
-            response = _account_info(row, external_admin=body.external_admin)
+            response = _account_info(row, external_admin=body.external_admin, first_login=first_login)
             session.commit()
         return response
 

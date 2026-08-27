@@ -62,12 +62,24 @@ def test_environment_admin_is_created_on_first_login(accounts_client: tuple[Test
         "username": "bootstrap",
         "display_name": "bootstrap",
         "role": "admin",
+        "first_login": True,
     }
     with Session(engine) as session:
         row = session.get(UserModel, "bootstrap")
         assert row is not None
         assert row.local_enabled is True
         assert row.is_admin is True
+
+
+def test_local_login_reports_first_login_once(accounts_client: tuple[TestClient, object]) -> None:
+    """Only the first successful local login carries the first-login flag."""
+    client, _engine = accounts_client
+
+    first = client.post("/auth/local/login", headers=_headers(), json={"username": "bootstrap"})
+    second = client.post("/auth/local/login", headers=_headers(), json={"username": "bootstrap"})
+
+    assert first.json()["first_login"] is True
+    assert second.json()["first_login"] is False
 
 
 def test_adfs_auto_provisions_normalized_identity(accounts_client: tuple[TestClient, object]) -> None:
@@ -85,6 +97,7 @@ def test_adfs_auto_provisions_normalized_identity(accounts_client: tuple[TestCli
         "username": "alice@example.com",
         "display_name": "Alice",
         "role": "admin",
+        "first_login": True,
     }
     with Session(engine) as session:
         row = session.get(UserModel, "alice@example.com")
@@ -92,6 +105,18 @@ def test_adfs_auto_provisions_normalized_identity(accounts_client: tuple[TestCli
         assert row.local_enabled is False
         assert row.is_admin is False
         assert row.adfs_seen_at is not None
+
+
+def test_adfs_reprovision_is_not_a_first_login(accounts_client: tuple[TestClient, object]) -> None:
+    """A returning ADFS identity is refreshed without the first-login flag."""
+    client, _engine = accounts_client
+    body = {"username": "alice@example.com", "display_name": "Alice"}
+
+    first = client.post("/auth/sso/provision", headers=_headers(), json=body)
+    second = client.post("/auth/sso/provision", headers=_headers(), json=body)
+
+    assert first.json()["first_login"] is True
+    assert second.json()["first_login"] is False
 
 
 def test_authentication_routes_require_internal_secret(
