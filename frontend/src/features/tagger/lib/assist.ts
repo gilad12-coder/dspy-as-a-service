@@ -1,4 +1,3 @@
-import { readPref } from "@/features/settings";
 import type { ModelConfig } from "@/shared/types/api";
 import type {
   Annotation,
@@ -180,22 +179,6 @@ export function assistModelPatch(
     (v) => v != null && (typeof v !== "object" || Object.keys(v).length > 0),
   );
   return { model: name.trim(), modelParams: hasParams ? params : undefined };
-}
-
-/**
- * The interview composer's effective model: an explicit per-session pick
- * (including ``null`` — the auto router) wins; a session that never picked
- * follows the app-wide composer default from settings.
- */
-export function interviewComposerModel(assist: Pick<AssistState, "interviewModel">): string | null {
-  return assist.interviewModel === undefined ? readPref("composerModel") : assist.interviewModel;
-}
-
-/** Effective reasoning effort for the interview composer; same fallback split. */
-export function interviewComposerEffort(
-  assist: Pick<AssistState, "interviewEffort">,
-): string | null {
-  return assist.interviewEffort === undefined ? readPref("composerEffort") : assist.interviewEffort;
 }
 
 /** A fresh assist state for a session starting in the interview phase. */

@@ -47,13 +47,6 @@ export interface UseCodeAuthoringAgentArgs {
   moduleName?: string;
   /** Optimizer name, forwarded to validation for optimizer-specific checks. */
   optimizerName?: string;
-  /**
-   * Catalog model id + effort the code author runs on. The panel forwards the
-   * conversation's chosen composer model so code authoring follows it instead
-   * of always taking the server default (which auto-routes and can rate-limit).
-   */
-  model?: string | null;
-  reasoningEffort?: string | null;
 }
 
 const NOOP = () => {};
@@ -90,7 +83,7 @@ function rolesToColumnMapping(
 export function useCodeAuthoringAgent(
   args: UseCodeAuthoringAgentArgs,
 ): CodeAuthoringAgentState {
-  const { dataset, armed, moduleName = "predict", optimizerName, model, reasoningEffort } = args;
+  const { dataset, armed, moduleName = "predict", optimizerName } = args;
 
   const [signatureCode, setSignatureCode] = React.useState("");
   const [metricCode, setMetricCode] = React.useState("");
@@ -222,8 +215,6 @@ export function useCodeAuthoringAgent(
     metricValidation,
     runSignatureValidation,
     runMetricValidation,
-    model,
-    reasoningEffort,
     isWorkflow,
     workflowSpec,
     workflowTouched,

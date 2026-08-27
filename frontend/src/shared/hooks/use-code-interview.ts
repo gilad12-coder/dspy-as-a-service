@@ -2,7 +2,6 @@
 
 import * as React from "react";
 
-import { readPref } from "@/features/settings";
 import { LOCALE_RELOAD_EVENT } from "@/shared/lib/locale";
 import {
   streamCodeInterviewTurn,
@@ -12,11 +11,6 @@ import {
 import type { ParsedDataset } from "@/shared/lib/parse-dataset";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
 import type { AgentMessage, AgentThinking } from "@/shared/ui/agent";
-
-interface InterviewTurn extends CodeAgentChatTurn {
-  model?: string | null;
-  served_model?: string | null;
-}
 
 export interface CodeInterviewState {
   /** Interview transcript mapped for the shared chat primitives. */
@@ -29,12 +23,6 @@ export interface CodeInterviewState {
   /** What's still generating after the reply: answer choices, or — on the
    *  final turn — the authoring brief. */
   pending: "options" | "brief" | null;
-  /** LiteLLM id of the composer menu's chosen model; null runs the default. */
-  model: string | null;
-  setModel: (model: string | null) => void;
-  /** Reasoning-effort level for the chosen model; null runs its default. */
-  reasoningEffort: string | null;
-  setReasoningEffort: (effort: string | null) => void;
   error: boolean;
   /** The model finished asking; the brief card is showing. */
   done: boolean;
@@ -82,18 +70,12 @@ export interface UseCodeInterviewArgs {
 export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState {
   const { enabled, parsedDataset, columnRoles, columnKinds, jobModel } = args;
 
-  const [turns, setTurns] = React.useState<InterviewTurn[]>([]);
+  const [turns, setTurns] = React.useState<CodeAgentChatTurn[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [streamText, setStreamText] = React.useState("");
   const [thinking, setThinking] = React.useState<AgentThinking | null>(null);
   const [options, setOptions] = React.useState<InterviewOption[]>([]);
   const [pending, setPending] = React.useState<"options" | "brief" | null>(null);
-  // Seeded from the settings-modal default; the interview mounts on a user
-  // action well past hydration, so the localStorage read is safe.
-  const [model, setModel] = React.useState<string | null>(() => readPref("composerModel"));
-  const [reasoningEffort, setReasoningEffort] = React.useState<string | null>(() =>
-    readPref("composerEffort"),
-  );
   const [error, setError] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const [brief, setBrief] = React.useState<string[]>([]);
@@ -126,7 +108,7 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
   }, [resetForLocaleChange]);
 
   const runTurn = React.useCallback(
-    (next: InterviewTurn[]) => {
+    (next: CodeAgentChatTurn[]) => {
       if (!parsedDataset || busy || localeReloadingRef.current) return;
       setTurns(next);
       setDone(false);
@@ -155,8 +137,6 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
           turns: next.map((t) => ({ role: t.role, content: t.content })),
           job_model: jobModel,
           locale: getActiveLocale(),
-          model: model ?? undefined,
-          reasoning_effort: reasoningEffort ?? undefined,
         },
         {
           signal: controller.signal,
@@ -187,8 +167,6 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
               {
                 role: "assistant",
                 content: turn.message,
-                model: turn.model ?? null,
-                served_model: turn.served_model ?? null,
               },
             ]);
             setOptions(turn.done ? [] : turn.options);
@@ -215,7 +193,7 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
         if (abortRef.current === controller) abortRef.current = null;
       });
     },
-    [parsedDataset, busy, columnRoles, columnKinds, jobModel, model, reasoningEffort],
+    [parsedDataset, busy, columnRoles, columnKinds, jobModel],
   );
 
   // Fire the opening question exactly once per eligible interview.
@@ -264,8 +242,6 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
     setResolved(true);
   }, []);
 
-  // Model/effort are the user's composer preferences — carried across a
-  // re-arm, unlike the transcript and brief which belong to the old run.
   const reset = React.useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -286,8 +262,6 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
     const mapped: AgentMessage[] = turns.map((t) => ({
       role: t.role,
       content: t.content,
-      model: t.model ?? null,
-      servedModel: t.served_model ?? null,
     }));
     if (busy && (streamText || thinking)) {
       mapped.push({ role: "assistant", content: streamText });
@@ -302,10 +276,6 @@ export function useCodeInterview(args: UseCodeInterviewArgs): CodeInterviewState
     thinking,
     options,
     pending,
-    model,
-    setModel,
-    reasoningEffort,
-    setReasoningEffort,
     error,
     done,
     brief,

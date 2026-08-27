@@ -42,8 +42,6 @@ interface RawMessage {
   role: string;
   content: string;
   tool_calls?: Array<Record<string, unknown>> | null;
-  model?: string | null;
-  served_model?: string | null;
   created_at: string;
 }
 
@@ -72,8 +70,6 @@ function toMessage(raw: RawMessage): AgentMessage {
     role,
     content: raw.content,
     toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
-    model: raw.model ?? undefined,
-    servedModel: raw.served_model ?? undefined,
   };
 }
 

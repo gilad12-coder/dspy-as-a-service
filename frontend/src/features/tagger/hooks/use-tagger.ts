@@ -46,8 +46,6 @@ import {
   calibrationTarget,
   flaggedRowIds,
   initialAssistState,
-  interviewComposerEffort,
-  interviewComposerModel,
   labelsAgree,
   sampleRowIds,
 } from "../lib/assist";
@@ -395,22 +393,6 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     if (assistRef.current) assistRef.current = { ...assistRef.current, ...patch };
   }, []);
 
-  // The interviewer's model (the composer menu) — same flush semantics as
-  // ``setAssistModel`` so the very next turn already runs on the new choice.
-  // ``null`` (an explicit auto-router pick) is stored as-is: only a session
-  // that never picked follows the app-wide composer default.
-  const setInterviewModel = useCallback((model: string | null) => {
-    const patch = { interviewModel: model };
-    setAssist((prev) => (prev ? { ...prev, ...patch } : prev));
-    if (assistRef.current) assistRef.current = { ...assistRef.current, ...patch };
-  }, []);
-
-  const setInterviewEffort = useCallback((effort: string | null) => {
-    const patch = { interviewEffort: effort };
-    setAssist((prev) => (prev ? { ...prev, ...patch } : prev));
-    if (assistRef.current) assistRef.current = { ...assistRef.current, ...patch };
-  }, []);
-
   // ---------------------------------------------------------------- frames
   // In review the annotator surface works on the open round's subset of rows;
   // everywhere else it sees the full dataset. ``currentIndex`` is always an
@@ -665,13 +647,10 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
         await streamInterviewTurn(
           sessionId,
           {
-            // Stored assistant turns carry display bookkeeping (model,
-            // servedModel — possibly null) the request schema rejects; only
-            // role/content go over the wire.
+            // Older sessions' stored turns may carry extra bookkeeping the
+            // request schema rejects; only role/content go over the wire.
             turns: turns.map(({ role, content }) => ({ role, content })),
             locale: getActiveLocale(),
-            model: interviewComposerModel(state) ?? undefined,
-            reasoning_effort: interviewComposerEffort(state) ?? undefined,
           },
           {
             signal: controller.signal,
@@ -699,15 +678,7 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
             onDone: (turn) => {
               patchAssist({
                 interview: {
-                  turns: [
-                    ...turns,
-                    {
-                      role: "assistant" as const,
-                      content: turn.message,
-                      model: turn.model ?? null,
-                      servedModel: turn.served_model ?? null,
-                    },
-                  ],
+                  turns: [...turns, { role: "assistant" as const, content: turn.message }],
                   done: turn.done,
                 },
                 ...(turn.done && turn.rubric.length > 0 ? { rubric: turn.rubric } : {}),
@@ -1136,8 +1107,6 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     restartInterview,
     confirmRubric,
     setAssistModel,
-    setInterviewModel,
-    setInterviewEffort,
     assistToggleBinary,
     assistToggleCategory,
     assistSetFreetext,

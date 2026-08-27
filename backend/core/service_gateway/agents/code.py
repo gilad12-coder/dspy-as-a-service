@@ -43,7 +43,6 @@ from ..language_models import (
     apply_model_reasoning_config,
     apply_reasoning_effort,
     build_language_model,
-    served_model_from,
 )
 from ..react_compat import REACT_CLASS, native_tool_calling_active, react_uses_submit
 from ..safe_exec import validate_metric_code, validate_signature_code
@@ -51,6 +50,29 @@ from .constants import REASONING_FIELD
 from .parse_salvage import strip_adapter_debris
 
 logger = logging.getLogger(__name__)
+
+
+def _scrub_model_identity(text: str) -> str:
+    """Remove the operator-configured model ids from provider error text.
+
+    Upstream errors (litellm, DSPy) embed the model id verbatim — e.g.
+    ``[openai/on-prem-default] litellm.AuthenticationError …`` — but on-prem
+    the model identity is operator configuration the client must never see.
+
+    Args:
+        text: Raw error text as produced by the provider stack.
+
+    Returns:
+        The text with every configured agent model id blanked out.
+    """
+    for configured in (
+        settings.code_agent_model,
+        settings.generalist_agent_model,
+        settings.tagger_assist_model,
+    ):
+        if configured:
+            text = text.replace(f"[{configured}] ", "").replace(configured, "the configured model")
+    return text
 
 
 def _format_agent_error(exc: BaseException) -> str:
@@ -64,12 +86,13 @@ def _format_agent_error(exc: BaseException) -> str:
         exc: The exception (possibly a ``BaseExceptionGroup``) raised by the agent.
 
     Returns:
-        A short string suitable for surfacing to the end user.
+        A short string suitable for surfacing to the end user, with the
+        configured model ids scrubbed out.
     """
     leaf = exc
     while isinstance(leaf, BaseExceptionGroup) and leaf.exceptions:
         leaf = leaf.exceptions[0]
-    text = str(leaf).strip()
+    text = _scrub_model_identity(str(leaf).strip())
     name = type(leaf).__name__
     if not text:
         return name or "code agent failed"
@@ -2878,7 +2901,6 @@ async def _run_code_agent_orchestration(
     *,
     is_seed: bool,
     lm: dspy.LM,
-    model_name: str,
     queue: asyncio.Queue[dict | None],
     dataset_columns: list[str],
     column_roles_json: str,
@@ -2909,7 +2931,6 @@ async def _run_code_agent_orchestration(
     Args:
         is_seed: True to run the seed path; False to run the chat agent.
         lm: Language model bound to the chosen runner.
-        model_name: Catalog model id requested for this turn.
         queue: SSE event queue.
         dataset_columns: All dataset column names.
         column_roles_json: JSON string mapping column → role.
@@ -2982,10 +3003,9 @@ async def _run_code_agent_orchestration(
                 reply_language=reply_language,
                 queue=queue,
             )
-        payload = dict(results)
-        payload.setdefault("model", model_name)
-        payload["served_model"] = served_model_from(lm)
-        await queue.put({"event": "done", "data": payload})
+        # The model identity is operator configuration — never surfaced to
+        # the client, so the terminal payload carries only the authored code.
+        await queue.put({"event": "done", "data": dict(results)})
     except Exception as exc:
         logger.exception("Code agent failed")
         await queue.put({"event": "error", "data": _agent_error_payload(exc)})
@@ -3041,9 +3061,9 @@ async def run_code_agent(
       replacement when a tool runs.
     * ``tool_end`` — ``{id, tool, status}``, after the tool returns.
     * ``message_patch`` — chat-mode reply token stream.
-    * ``done`` — ``{signature_code, metric_code, assistant_message, model,
-      served_model}``; the seed path additionally carries ``signature_valid`` /
-      ``metric_valid`` booleans and an optional ``validation_error``.
+    * ``done`` — ``{signature_code, metric_code, assistant_message}``; the
+      seed path additionally carries ``signature_valid`` / ``metric_valid``
+      booleans and an optional ``validation_error``.
     * ``error`` — ``{error}``.
 
     Args:
@@ -3081,7 +3101,6 @@ async def run_code_agent(
         SSE event dicts of shape ``{"event": str, "data": dict}``.
     """
     lm = _build_agent_lm(model, reasoning_effort, lm_extra_body)
-    model_name = model or settings.code_agent_model
     if usage_sink is not None:
         usage_sink.append(lm)
     column_roles_json = json.dumps(column_roles, ensure_ascii=False)
@@ -3097,7 +3116,6 @@ async def run_code_agent(
         _run_code_agent_orchestration(
             is_seed=is_seed,
             lm=lm,
-            model_name=model_name,
             queue=queue,
             dataset_columns=dataset_columns,
             column_roles_json=column_roles_json,

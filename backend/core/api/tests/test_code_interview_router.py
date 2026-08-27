@@ -8,14 +8,12 @@ on the seed endpoint is covered the same way against ``run_code_agent``.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from .. import model_catalog, model_router
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..routers import code_agent as code_agent_router
@@ -61,19 +59,11 @@ def test_interview_streams_events_and_forwards_args(monkeypatch) -> None:
         yield {"event": "message_patch", "data": {"chunk": "שאלה"}}
         yield {
             "event": "interview_done",
-            "data": {"message": "שאלה", "options": [], "brief": [], "done": False, "model": "m"},
+            "data": {"message": "שאלה", "options": [], "brief": [], "done": False},
         }
 
     monkeypatch.setattr(code_agent_router, "interview_turn_stream", fake_stream)
-    monkeypatch.setattr(
-        model_catalog,
-        "get_catalog_cached",
-        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
-    )
-    resp = _client().post(
-        "/optimizations/code-interview",
-        json={**_INTERVIEW_BODY, "model": "openai/gpt-test", "reasoning_effort": "high"},
-    )
+    resp = _client().post("/optimizations/code-interview", json=_INTERVIEW_BODY)
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/event-stream")
     assert "event: message_patch" in resp.text
@@ -85,60 +75,29 @@ def test_interview_streams_events_and_forwards_args(monkeypatch) -> None:
     assert seen["locale"] == "en"
     assert seen["turns"] == _INTERVIEW_BODY["turns"]
     assert len(seen["sample_rows"]) == 5
-    assert seen["model"] == "openai/gpt-test"
-    assert seen["reasoning_effort"] == "high"
-    assert seen["lm_extra_body"] is None
 
 
-def test_interview_auto_tiers_ride_the_auto_router(monkeypatch) -> None:
-    """An absent model runs the pinned default; 'auto:intelligent' rides the router."""
-    seen: list[dict[str, Any]] = []
+def test_interview_ignores_client_model(monkeypatch) -> None:
+    """A stale client's model/effort fields never reach the engine."""
+    seen: dict[str, Any] = {}
 
     async def fake_stream(**kwargs: Any) -> Any:
         """Record the forwarded kwargs and finish immediately."""
-        seen.append(kwargs)
+        seen.update(kwargs)
         yield {
             "event": "interview_done",
-            "data": {"message": "q", "options": [], "brief": [], "done": False, "model": "m"},
+            "data": {"message": "q", "options": [], "brief": [], "done": False},
         }
 
     monkeypatch.setattr(code_agent_router, "interview_turn_stream", fake_stream)
-    monkeypatch.setattr(
-        model_router,
-        "get_catalog_cached",
-        lambda: SimpleNamespace(models=[SimpleNamespace(value="openrouter/anthropic/claude-sonnet-5")]),
-    )
-    client = _client()
-    assert client.post("/optimizations/code-interview", json=_INTERVIEW_BODY).status_code == 200
-    assert (
-        client.post(
-            "/optimizations/code-interview",
-            json={**_INTERVIEW_BODY, "model": "auto:intelligent"},
-        ).status_code
-        == 200
-    )
-    assert [k["model"] for k in seen] == [
-        model_router.BALANCED_PINNED_MODEL_ID,
-        model_router.OPENROUTER_AUTO_ID,
-    ]
-    assert [k["lm_extra_body"] for k in seen] == [
-        None,
-        {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 0}]},
-    ]
-
-
-def test_interview_rejects_unknown_model(monkeypatch) -> None:
-    """A non-catalog interview model is refused before any LLM spend."""
-    monkeypatch.setattr(
-        model_catalog,
-        "get_catalog_cached",
-        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
-    )
     resp = _client().post(
-        "/optimizations/code-interview", json={**_INTERVIEW_BODY, "model": "openai/not-a-model"}
+        "/optimizations/code-interview",
+        json={**_INTERVIEW_BODY, "model": "openai/gpt-test", "reasoning_effort": "high"},
     )
-    assert resp.status_code == 422
-    assert resp.json()["code"] == "models.unknown_model"
+    assert resp.status_code == 200
+    assert "model" not in seen
+    assert "reasoning_effort" not in seen
+    assert "lm_extra_body" not in seen
 
 
 def test_interview_translates_engine_failure_to_error_event(monkeypatch) -> None:
@@ -150,13 +109,6 @@ def test_interview_translates_engine_failure_to_error_event(monkeypatch) -> None
         yield  # pragma: no cover - marks this as a generator
 
     monkeypatch.setattr(code_agent_router, "interview_turn_stream", failing_stream)
-    # The model-less request auto-routes, which consults the catalog — keep
-    # the test hermetic instead of probing live providers.
-    monkeypatch.setattr(
-        model_router,
-        "get_catalog_cached",
-        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
-    )
     resp = _client().post("/optimizations/code-interview", json=_INTERVIEW_BODY)
     assert resp.status_code == 200
     assert "event: error" in resp.text
@@ -212,72 +164,15 @@ def _fake_run(seen: dict[str, Any]):
     return fake_run
 
 
-def test_seed_endpoint_forwards_model_and_effort(monkeypatch) -> None:
-    """An explicit catalog model + effort ride ai-generate-code into the engine."""
+def test_seed_endpoint_ignores_client_model(monkeypatch) -> None:
+    """A stale client's model/effort fields never reach the code author."""
     seen: dict[str, Any] = {}
     monkeypatch.setattr(code_agent_router, "run_code_agent", _fake_run(seen))
-    monkeypatch.setattr(
-        model_catalog,
-        "get_catalog_cached",
-        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
-    )
     resp = _client().post(
         "/optimizations/ai-generate-code",
         json={**_SEED_BODY, "model": "openai/gpt-test", "reasoning_effort": "high"},
     )
     assert resp.status_code == 200
-    assert seen["model"] == "openai/gpt-test"
-    assert seen["reasoning_effort"] == "high"
-    assert seen["lm_extra_body"] is None
-
-
-def test_seed_endpoint_auto_tiers_ride_the_auto_router(monkeypatch) -> None:
-    """The code author runs the pinned default, or the router when 'auto:intelligent'."""
-    seen: list[dict[str, Any]] = []
-
-    def fake_run(**kwargs: Any) -> Any:
-        """Record kwargs and return an immediately-done stream."""
-        seen.append(kwargs)
-
-        async def gen() -> Any:
-            yield {"event": "done", "data": {"signature_code": "", "metric_code": ""}}
-
-        return gen()
-
-    monkeypatch.setattr(code_agent_router, "run_code_agent", fake_run)
-    monkeypatch.setattr(
-        model_router,
-        "get_catalog_cached",
-        lambda: SimpleNamespace(models=[SimpleNamespace(value="openrouter/anthropic/claude-sonnet-5")]),
-    )
-    client = _client()
-    assert client.post("/optimizations/ai-generate-code", json=_SEED_BODY).status_code == 200
-    assert (
-        client.post(
-            "/optimizations/ai-generate-code",
-            json={**_SEED_BODY, "model": "auto:intelligent"},
-        ).status_code
-        == 200
-    )
-    assert [k["model"] for k in seen] == [
-        model_router.BALANCED_PINNED_MODEL_ID,
-        model_router.OPENROUTER_AUTO_ID,
-    ]
-    assert [k["lm_extra_body"] for k in seen] == [
-        None,
-        {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 0}]},
-    ]
-
-
-def test_seed_endpoint_rejects_unknown_model(monkeypatch) -> None:
-    """A non-catalog code-author model is refused before any LLM spend."""
-    monkeypatch.setattr(
-        model_catalog,
-        "get_catalog_cached",
-        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
-    )
-    resp = _client().post(
-        "/optimizations/ai-generate-code", json={**_SEED_BODY, "model": "openai/not-a-model"}
-    )
-    assert resp.status_code == 422
-    assert resp.json()["code"] == "models.unknown_model"
+    assert "model" not in seen
+    assert "reasoning_effort" not in seen
+    assert "lm_extra_body" not in seen

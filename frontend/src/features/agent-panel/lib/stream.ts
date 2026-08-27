@@ -24,10 +24,6 @@ export interface GeneralistAgentRequest {
   conversation_id?: string | null;
   regenerate?: boolean;
   locale?: string;
-  /** LiteLLM id of the catalog model to run the turn on; absent = default. */
-  model?: string;
-  /** Reasoning-effort level for the chosen model; absent = its default. */
-  reasoning_effort?: string;
 }
 
 export interface ConversationMetaPayload {
@@ -44,11 +40,7 @@ export interface GeneralistAgentHandlers {
   onApprovalResolved?: (ev: ApprovalResolvedPayload) => void;
   onMessagePatch?: (chunk: string) => void;
   onConversationMeta?: (ev: ConversationMetaPayload) => void;
-  onDone: (result: {
-    assistant_message: string;
-    model: string | null;
-    served_model: string | null;
-  }) => void;
+  onDone: (result: { assistant_message: string }) => void;
   onError: (message: string, code?: string) => void;
   signal?: AbortSignal;
 }
@@ -135,16 +127,9 @@ export async function streamGeneralistAgent(
           title: String(data.title ?? ""),
         });
         break;
-      case "done": {
-        const rawModel = data.model;
-        const rawServed = data.served_model;
-        handlers.onDone({
-          assistant_message: String(data.assistant_message ?? ""),
-          model: typeof rawModel === "string" && rawModel.length > 0 ? rawModel : null,
-          served_model: typeof rawServed === "string" && rawServed.length > 0 ? rawServed : null,
-        });
+      case "done":
+        handlers.onDone({ assistant_message: String(data.assistant_message ?? "") });
         break;
-      }
       case "error":
         handlers.onError(
           String(data.error ?? msg("auto.features.agent.panel.lib.stream.literal.2")),

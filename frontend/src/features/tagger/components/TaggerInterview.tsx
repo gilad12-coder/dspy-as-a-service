@@ -27,7 +27,6 @@ import {
   AgentThread,
   ChatTranscript,
   Composer,
-  ComposerModelMenu,
   QuestionChoices,
   QuestionChoicesSkeleton,
 } from "@/shared/ui/agent";
@@ -40,12 +39,7 @@ import { ModelChip } from "@/shared/ui/model-chip";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { AutotagEstimate } from "../hooks/use-tagger";
-import {
-  assistModelConfig,
-  calibrationTarget,
-  interviewComposerEffort,
-  interviewComposerModel,
-} from "../lib/assist";
+import { assistModelConfig, calibrationTarget } from "../lib/assist";
 import type { AnnotationMode, AssistState, Category, TaggerConfig } from "../lib/types";
 
 /**
@@ -88,10 +82,6 @@ interface Props {
   onFetchEstimate: () => void;
   /** Persist the picked tagging model config on the session's assist state. */
   onSetModel: (config: ModelConfig) => void;
-  /** Persist the interviewer's model (the composer's model menu). */
-  onSetInterviewModel: (model: string | null) => void;
-  /** Persist the interviewer's reasoning-effort level. */
-  onSetInterviewEffort: (effort: string | null) => void;
   onSend: (content: string) => void;
   onEditResend: (index: number, content: string) => void;
   onStop: () => void;
@@ -123,8 +113,6 @@ export function TaggerInterview({
   estimate,
   onFetchEstimate,
   onSetModel,
-  onSetInterviewModel,
-  onSetInterviewEffort,
   onSend,
   onEditResend,
   onStop,
@@ -142,8 +130,6 @@ export function TaggerInterview({
   const messages: AgentMessage[] = assist.interview.turns.map((turn) => ({
     role: turn.role,
     content: turn.content,
-    model: turn.model ?? null,
-    servedModel: turn.servedModel ?? null,
   }));
   // The in-flight assistant reply streams into a trailing synthetic message,
   // exactly how the agent panel renders its live turn. The server filters
@@ -243,14 +229,6 @@ export function TaggerInterview({
             disabled={!busy && messages.length === 0}
             streaming={busy}
             placeholder={msg("tagger.assist.interview.placeholder")}
-            modelMenu={
-              <ComposerModelMenu
-                value={interviewComposerModel(assist)}
-                onChange={onSetInterviewModel}
-                effort={interviewComposerEffort(assist)}
-                onEffortChange={onSetInterviewEffort}
-              />
-            }
           />
 
           {canSkip && (

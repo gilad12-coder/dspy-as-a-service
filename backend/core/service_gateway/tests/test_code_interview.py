@@ -44,7 +44,7 @@ def test_parse_turn_in_progress() -> None:
     ]
     assert turn["brief"] == []
     assert turn["message"] == "How strict should matching be?"
-    assert turn["model"]
+    assert "model" not in turn
 
 
 def test_parse_turn_accepts_bare_string_options() -> None:

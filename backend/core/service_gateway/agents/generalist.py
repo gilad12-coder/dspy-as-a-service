@@ -52,11 +52,16 @@ from ...storage.models import AgentApprovalModel
 from ..language_models import (
     apply_model_reasoning_config,
     build_language_model,
-    served_model_from,
 )
 from ..optimization.retrying_react import RetryingReActV2
 from ..optimization.training_ground.registry import hash_tool_schema
-from .code import ReactReplyStream, _agent_error_payload, _format_agent_error, _reply_language
+from .code import (
+    ReactReplyStream,
+    _agent_error_payload,
+    _format_agent_error,
+    _reply_language,
+    _scrub_model_identity,
+)
 from .constants import REASONING_FIELD
 
 
@@ -1822,7 +1827,7 @@ async def run_generalist_agent(
     * ``tool_start`` / ``tool_end`` — wrap each MCP tool call
     * ``status_patch`` — human-readable progress from ``StatusMessageProvider``
     * ``message_patch`` — per-token assistant reply
-    * ``done`` — terminal event with the final assistant message and the model id used
+    * ``done`` — terminal event with the final assistant message
     * ``error`` — terminal event carrying a user-facing error string
 
     On caller-side cancellation (SSE stream dropped) the orchestration task
@@ -1858,7 +1863,6 @@ async def run_generalist_agent(
     """
     url = mcp_url or settings.generalist_agent_mcp_url
     registry = approval_registry or get_approval_registry()
-    model_name = model_config.name if model_config else settings.generalist_agent_model
     try:
         if model_config:
             # A caller-chosen model runs through the same pipeline as the
@@ -1878,7 +1882,7 @@ async def run_generalist_agent(
         else:
             lm = _build_generalist_lm()
     except ServiceError as exc:
-        yield {"event": "error", "data": {"error": str(exc)}}
+        yield {"event": "error", "data": {"error": _scrub_model_identity(str(exc))}}
         return
     if usage_sink is not None:
         usage_sink.append(lm)
@@ -1916,15 +1920,11 @@ async def run_generalist_agent(
             if drive_task in done and out_queue.empty():
                 break
         reply = await drive_task
+        # The model identity is operator configuration — never surfaced to
+        # the client, so the terminal event carries only the reply itself.
         yield {
             "event": "done",
-            "data": {
-                "assistant_message": reply,
-                "model": model_name,
-                # The concrete model behind an auto-routed turn (None when the
-                # request named one explicitly); the reply footer reveals it.
-                "served_model": served_model_from(lm),
-            },
+            "data": {"assistant_message": reply},
         }
     except asyncio.CancelledError:
         drive_task.cancel()

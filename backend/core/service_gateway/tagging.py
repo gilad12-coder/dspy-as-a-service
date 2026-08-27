@@ -34,7 +34,6 @@ from .language_models import (
     apply_model_reasoning_config,
     apply_reasoning_effort,
     build_language_model,
-    served_model_from,
     usage_by_model_from_history,
 )
 
@@ -730,7 +729,6 @@ def _parse_interview_prediction(pred: Any, asked: int, config: dict[str, Any]) -
         "task_override": task_override if done else {},
         "title": title if done else "",
         "done": done,
-        "model": assist_model_name(),
     }
 
 
@@ -821,10 +819,7 @@ def interview_turn(
         usage_sink.append(lm)
     with dspy.context(lm=lm):
         pred = dspy.Predict(InterviewTurnSig)(**_interview_inputs(config, columns, data, turns, locale))
-    turn = _parse_interview_prediction(pred, asked, config)
-    if model:
-        turn["model"] = model
-    return turn
+    return _parse_interview_prediction(pred, asked, config)
 
 
 async def _drive_interview_turn(
@@ -834,7 +829,6 @@ async def _drive_interview_turn(
     inputs: dict[str, Any],
     asked: int,
     config: dict[str, Any],
-    model: str | None,
     queue: asyncio.Queue[dict | None],
 ) -> None:
     """Drive the interview predictor to completion, fanning events onto ``queue``.
@@ -857,8 +851,6 @@ async def _drive_interview_turn(
         inputs: Keyword inputs forwarded to the streamify program.
         asked: Count of assistant turns so far, for the parsed turn's numbering.
         config: The session's ``TaggerConfig`` payload.
-        model: LiteLLM id conducting the interview; stamped on the parsed turn
-            when set. ``None`` runs the default.
         queue: SSE event queue; receives event dicts and a trailing ``None``.
     """
     turn: dict[str, Any] = {}
@@ -923,9 +915,6 @@ async def _drive_interview_turn(
                 logger.warning("tagger interview finished without a rubric; retrying")
                 continue
             break
-        if model and turn:
-            turn["model"] = model
-        turn["served_model"] = served_model_from(lm)
         await queue.put({"event": "interview_done", "data": turn})
     finally:
         await queue.put(None)
@@ -995,7 +984,6 @@ async def interview_turn_stream(
             inputs=inputs,
             asked=asked,
             config=config,
-            model=model,
             queue=queue,
         )
     )
@@ -1379,12 +1367,13 @@ def estimate_tokens_for_rows(
     Args:
         instructions: Compiled tagging instructions.
         rows: The rows that would be tagged.
-        model: LiteLLM id of the session's chosen tagging model; falls back
-            to the configured default when empty.
+        model: LiteLLM id of the session's chosen tagging model. Only an
+            explicit choice is echoed back — the operator-configured default
+            is never surfaced to the client.
     Returns:
         Row count, model and estimated input and output tokens.
     """
-    model = (model or "").strip() or assist_model_name()
+    model = (model or "").strip()
     if not rows:
         return {
             "rows": 0,
