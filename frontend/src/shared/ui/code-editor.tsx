@@ -278,6 +278,17 @@ export interface ValidationResult {
   signature_fields?: { inputs: string[]; outputs: string[] };
 }
 
+// Validators can emit the same message twice, or as both an error and a
+// warning; the console keeps one copy at the highest severity so the output
+// stays readable.
+function dedupeIssues(res: ValidationResult | null): ValidationResult | null {
+  if (!res) return res;
+  const errors = [...new Set(res.errors.map((e) => e.trim()))];
+  const errorSet = new Set(errors);
+  const warnings = [...new Set(res.warnings.map((w) => w.trim()))].filter((w) => !errorSet.has(w));
+  return { ...res, errors, warnings };
+}
+
 interface CodeEditorProps {
   value: string;
   onChange: (value: string) => void;
@@ -326,7 +337,7 @@ export function CodeEditor({
   const lite = useLiteMode();
 
   useEffect(() => {
-    if (validationResult !== undefined) setResult(validationResult);
+    if (validationResult !== undefined) setResult(dedupeIssues(validationResult));
   }, [validationResult]);
 
   const lineCount = value.split("\n").length;
@@ -350,9 +361,9 @@ export function CodeEditor({
     setResult(null);
     try {
       const res = await onRun();
-      setResult(res);
+      setResult(dedupeIssues(res));
     } catch {
-      setResult({ valid: false, errors: [msg("shared.code_editor.validation_failed")], warnings: [] });
+      setResult({ valid: false, errors: ["Validation failed"], warnings: [] });
     } finally {
       setRunning(false);
     }
@@ -510,6 +521,8 @@ export function CodeEditor({
         </div>
       )}
 
+      {/* The console is deliberately English-only, like the code whose issues
+          it reports — its strings are not localized. */}
       {hasOutput && (
         <div dir="ltr" className="bg-[#EFE5D5] border-t border-[#E5DDD4] text-left">
           {!running && result && (
@@ -522,48 +535,43 @@ export function CodeEditor({
                 {result.errors.length > 0 && (
                   <span className="inline-flex items-center gap-1.5 text-[0.6875rem] font-medium px-2 py-0.5 rounded-full bg-[#E8D7C5] text-[#3D2E22] tabular-nums">
                     <span className="size-1.5 rounded-full bg-[#6B4226]" aria-hidden="true" />
-                    {formatMsg("shared.code_editor.errors_count", { count: result.errors.length })}
+                    {result.errors.length === 1 ? "1 error" : `${result.errors.length} errors`}
                   </span>
                 )}
                 {result.warnings.length > 0 && (
                   <span className="inline-flex items-center gap-1.5 text-[0.6875rem] font-medium px-2 py-0.5 rounded-full bg-[#EBE0B8] text-[#5C4509] tabular-nums">
                     <span className="size-1.5 rounded-full bg-[#8B6914]" aria-hidden="true" />
-                    {formatMsg("shared.code_editor.warnings_count", { count: result.warnings.length })}
+                    {result.warnings.length === 1
+                      ? "1 warning"
+                      : `${result.warnings.length} warnings`}
                   </span>
                 )}
                 {result.valid && result.errors.length === 0 && result.warnings.length === 0 && (
                   <span className="inline-flex items-center gap-1.5 text-[0.6875rem] font-medium px-2 py-0.5 rounded-full bg-[#EDE4D8] text-[#3D2E22]">
                     <span className="size-1.5 rounded-full bg-[#7C6350]" aria-hidden="true" />
-                    {msg("shared.code_editor.valid")}
+                    {"No issues"}
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-0.5 shrink-0">
                 {(result.errors.length > 0 || result.warnings.length > 0) && (
-                  <TooltipButton
-                    tooltip={
-                      consoleCopied
-                        ? msg("shared.code_editor.console_copied")
-                        : msg("shared.code_editor.copy_console")
-                    }
-                    side="top"
-                  >
+                  <TooltipButton tooltip={consoleCopied ? "Copied" : "Copy output"} side="top">
                     <button
                       type="button"
                       onClick={handleCopyConsole}
                       className="close-button"
-                      aria-label={msg("shared.code_editor.copy_console")}
+                      aria-label="Copy output"
                     >
                       <CopyGlyph copied={consoleCopied} checkClassName="text-[#3D2E22]" />
                     </button>
                   </TooltipButton>
                 )}
-                <TooltipButton tooltip={msg("shared.code_editor.console_clear")} side="top">
+                <TooltipButton tooltip="Clear" side="top">
                   <button
                     type="button"
                     onClick={() => setResult(null)}
                     className="close-button"
-                    aria-label={msg("shared.code_editor.console_clear")}
+                    aria-label="Clear"
                   >
                     <X />
                   </button>
@@ -576,7 +584,7 @@ export function CodeEditor({
               {running && (
                 <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-[#8C7A6B]">
                   <CircleNotch className="size-3.5 animate-spin" />
-                  {msg("shared.code_editor.validating")}
+                  {"Running validation…"}
                 </div>
               )}
               {result?.errors.map((err, i) => (
