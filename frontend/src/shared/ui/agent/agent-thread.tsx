@@ -59,9 +59,10 @@ export function AgentThread({
   }, []);
 
   return (
-    // No overscroll containment: once the thread hits its boundary (or is too
-    // short to scroll at all), the wheel falls through and scrolls the page —
-    // the thread must not be a dead zone for page scrolling.
+    // Containment is per-surface: overlay panels pass `overscroll-contain` via
+    // className so scrolling never chains to the page behind them; embedded
+    // surfaces keep the default fall-through so a short thread is not a dead
+    // zone for page scrolling.
     <div
       ref={scrollRef}
       onScroll={handleScroll}

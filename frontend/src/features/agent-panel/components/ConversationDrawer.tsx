@@ -135,7 +135,7 @@ export function ConversationDrawer(props: ConversationDrawerProps) {
           </div>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto px-2 pb-4">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-2 pb-4">
           {loading && conversations.length === 0 ? (
             <ConversationDrawerSkeleton />
           ) : conversations.length === 0 ? (
