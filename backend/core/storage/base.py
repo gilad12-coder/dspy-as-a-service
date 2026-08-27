@@ -300,7 +300,10 @@ class JobStore(Protocol):
             offset: Number of rows to skip from the start.
 
         Returns:
-            Matching ``JobRecord`` rows in newest-first order.
+            Matching ``JobRecord`` rows in newest-first order. Implementations
+            may prune ``result`` down to the summary scalars list surfaces
+            read (test metrics, runtime, pair counters, ``best_pair`` labels);
+            use :meth:`get_job` for the full blob.
         """
         ...
 
