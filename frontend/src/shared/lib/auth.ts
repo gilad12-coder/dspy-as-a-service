@@ -37,6 +37,7 @@ type BackendAccount = {
   username: string;
   display_name: string;
   role: "admin" | "user";
+  first_login?: boolean;
 };
 
 type AuthUser = {
@@ -48,6 +49,7 @@ type AuthUser = {
   groups?: string[];
   role?: "admin" | "user";
   externalAdmin?: boolean;
+  firstLogin?: boolean;
 };
 
 function readClaim(profile: Record<string, unknown>, path: string): unknown {
@@ -208,6 +210,7 @@ providers.push(
         displayName: account.display_name,
         groups: [],
         role: account.role,
+        firstLogin: account.first_login === true,
       };
     },
   }),
@@ -238,6 +241,7 @@ export const { handlers, auth } = NextAuth({
       resolved.displayName = provisioned.display_name;
       resolved.role =
         resolved.externalAdmin || provisioned.role === "admin" ? "admin" : "user";
+      resolved.firstLogin = provisioned.first_login === true;
       return true;
     },
     jwt({ token, user }) {
@@ -248,6 +252,7 @@ export const { handlers, auth } = NextAuth({
         token.email = resolved.email ?? token.email;
         token.groups = resolved.groups ?? [];
         token.role = resolved.role === "admin" ? "admin" : "user";
+        token.firstLogin = resolved.firstLogin === true;
       }
       return token;
     },
@@ -257,6 +262,7 @@ export const { handlers, auth } = NextAuth({
       if (typeof token.email === "string") session.user.email = token.email;
       session.user.role = token.role === "admin" ? "admin" : "user";
       session.user.groups = normalizeStringList(token.groups);
+      session.user.firstLogin = token.firstLogin === true;
       session.backendAccessToken = signBackendToken(token);
       return session;
     },

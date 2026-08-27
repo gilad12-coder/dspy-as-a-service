@@ -2,6 +2,9 @@
 
 import * as React from "react";
 import { useReducer, useEffect, useCallback, useRef, createContext, useContext } from "react";
+import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { sessionIdentity } from "@/shared/lib/session-identity";
 import { track as trackEvent, TelemetryEvent } from "@/shared/lib/telemetry";
 import type { TutorialTrack, TutorialStep } from "../lib/steps";
 import {
@@ -120,6 +123,31 @@ const initialState: TutorialState = {
 };
 
 const STORAGE_KEY = "skynet-tutorial-state";
+// Per-account marker for the first-login launch. Kept apart from STORAGE_KEY
+// so "reset tutorial" (which clears that key) never re-arms the auto-start.
+const FIRST_LOGIN_TOUR_KEY = "skynet-tutorial-autostart";
+// Lets the splash screen and the landing route settle before the tour points
+// at anything.
+const FIRST_LOGIN_TOUR_DELAY_MS = 1000;
+
+/** Routes rendered without the app chrome the quick tour walks through. */
+function isBareRoute(pathname: string): boolean {
+  return pathname === "/login" || pathname.startsWith("/share/");
+}
+
+/** Claim the one-shot first-login launch for an account; false once claimed. */
+function claimFirstLoginTour(identity: string): boolean {
+  const key = `${FIRST_LOGIN_TOUR_KEY}:${identity}`;
+  try {
+    if (localStorage.getItem(key)) return false;
+    localStorage.setItem(key, "1");
+    return true;
+  } catch {
+    // Without storage the launch could never be marked as done, and the
+    // session keeps reporting a first login — so never auto-start at all.
+    return false;
+  }
+}
 
 interface TutorialContextValue {
   state: TutorialState;
@@ -201,6 +229,24 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: "START_TRACK", track });
     });
   }, []);
+
+  // Launch the quick tour once, on an account's first successful login. The
+  // session JWT carries firstLogin for its whole lifetime, so the per-account
+  // marker is what makes this a one-shot. It is claimed only when the timer
+  // fires: a route change during the delay (e.g. leaving /login) reschedules
+  // the launch instead of losing it.
+  const { data: session, status } = useSession();
+  const pathname = usePathname();
+  const firstLoginIdentity =
+    status === "authenticated" && session?.user?.firstLogin ? sessionIdentity(session) : "";
+  useEffect(() => {
+    if (!firstLoginIdentity || isBareRoute(pathname)) return;
+    const timer = setTimeout(() => {
+      if (claimFirstLoginTour(firstLoginIdentity)) startTrack("quick");
+    }, FIRST_LOGIN_TOUR_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [firstLoginIdentity, pathname, startTrack]);
+
   const nextStep = useCallback(() => dispatch({ type: "NEXT_STEP" }), []);
   const prevStep = useCallback(() => dispatch({ type: "PREV_STEP" }), []);
   const goToStep = useCallback((index: number) => dispatch({ type: "GO_TO_STEP", index }), []);
