@@ -828,6 +828,7 @@ export function GeneralistPanel({ wizardState }: GeneralistPanelProps = {}) {
               </div>
 
               <AgentThread
+                className="overscroll-contain"
                 isEmpty={agent.messages.length === 0}
                 emptyState={emptyState}
                 scrollDeps={[

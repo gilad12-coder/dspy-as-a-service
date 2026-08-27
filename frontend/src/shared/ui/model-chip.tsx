@@ -18,7 +18,6 @@ import type { CatalogModel, ModelConfig } from "@/shared/types/api";
 import { msg } from "@/shared/lib/messages";
 import { getActiveDir } from "@/shared/lib/runtime-locale";
 import { TooltipButton } from "@/shared/ui/tooltip-button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 
 interface ModelChipProps {
   config: ModelConfig;
@@ -35,7 +34,7 @@ interface ModelChipProps {
   catalogModels?: CatalogModel[];
   /** Placeholder when no model is set; overrides the required/not-configured copy. */
   emptyLabel?: string;
-  /** Explanation shown when hovering or focusing the model card. */
+  /** Explanation shown when hovering or focusing the card's Info button. */
   tooltip?: string | null;
   className?: string;
 }
@@ -174,20 +173,9 @@ export function ModelChip({
       )}
       onClick={onClick}
     >
-      {tooltip ? (
-        <Tooltip>
-          <TooltipTrigger asChild>{content}</TooltipTrigger>
-          <TooltipContent
-            side="top"
-            className="max-w-80 text-center leading-relaxed"
-            dir={getActiveDir()}
-          >
-            {tooltip}
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        content
-      )}
+      {/* The explanation tooltip lives only on the Info button below — hovering
+          the card body itself must stay quiet. */}
+      {content}
 
       {isEmpty && copyFromLabel && onCopyFrom && (
         <button
