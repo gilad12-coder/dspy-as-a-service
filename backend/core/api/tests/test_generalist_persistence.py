@@ -18,7 +18,6 @@ import hmac
 import json
 import time
 from collections.abc import AsyncIterator
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -36,7 +35,6 @@ from ...storage.models import (
     Base,
 )
 from .. import auth as auth_mod
-from .. import model_catalog
 from ..routers import generalist_agent as agent_mod
 from ..routers.generalist_agent import create_generalist_agent_router
 
@@ -86,7 +84,7 @@ def _session_token(name: str = "alice@example.com") -> str:
 async def _fake_stream(**_kwargs: Any) -> AsyncIterator[dict[str, Any]]:
     """Stand in for ``run_generalist_agent`` with a minimal one-reply turn."""
     yield {"event": "message_patch", "data": {"chunk": "שלום"}}
-    yield {"event": "done", "data": {"assistant_message": "שלום", "model": "test-model"}}
+    yield {"event": "done", "data": {"assistant_message": "שלום"}}
 
 
 class _StubStore:
@@ -189,25 +187,20 @@ def test_authenticated_turn_persists_conversation_and_messages(
         ]
 
 
-def test_turn_forwards_chosen_model(
+def test_turn_ignores_client_model(
     persistence_client: tuple[TestClient, Engine],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The composer menu's model rides the request into the agent engine."""
+    """A stale client's model/effort fields never reach the agent engine."""
     client, _engine = persistence_client
     seen: dict[str, Any] = {}
 
     async def capture_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
         """Record the forwarded kwargs and finish in one turn."""
         seen.update(kwargs)
-        yield {"event": "done", "data": {"assistant_message": "ok", "model": "m"}}
+        yield {"event": "done", "data": {"assistant_message": "ok"}}
 
     monkeypatch.setattr(agent_mod, "run_generalist_agent", capture_stream)
-    monkeypatch.setattr(
-        model_catalog,
-        "get_catalog_cached",
-        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
-    )
     resp = client.post(
         "/optimizations/generalist-agent",
         json={
@@ -221,34 +214,7 @@ def test_turn_forwards_chosen_model(
         headers={"Authorization": f"Bearer {_session_token()}"},
     )
     assert resp.status_code == 200
-    assert seen["model_config"] is not None
-    assert seen["model_config"].name == "openai/gpt-test"
-    assert seen["model_config"].extra == {"reasoning_effort": "high"}
-
-
-def test_turn_rejects_unknown_model(
-    persistence_client: tuple[TestClient, Engine],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A non-catalog model is refused before the engine ever runs."""
-    client, _engine = persistence_client
-    monkeypatch.setattr(
-        model_catalog,
-        "get_catalog_cached",
-        lambda: SimpleNamespace(models=[SimpleNamespace(value="openai/gpt-test")]),
-    )
-    resp = client.post(
-        "/optimizations/generalist-agent",
-        json={
-            "user_message": "hi",
-            "chat_history": [],
-            "wizard_state": {},
-            "trust_mode": "ask",
-            "model": "openai/not-a-model",
-        },
-        headers={"Authorization": f"Bearer {_session_token()}"},
-    )
-    assert resp.status_code == 422
+    assert seen["model_config"] is None
 
 
 def test_unauthenticated_turn_is_rejected(
@@ -429,14 +395,14 @@ async def test_persist_on_done_writes_exactly_once(wrapper_engine: Engine) -> No
     async def _normal_turn() -> AsyncIterator[dict[str, Any]]:
         """Emit a normal turn that reaches ``done``."""
         yield {"event": "message_patch", "data": {"chunk": "שלום"}}
-        yield {"event": "done", "data": {"assistant_message": "שלום", "model": "test-model"}}
+        yield {"event": "done", "data": {"assistant_message": "שלום"}}
 
     await _drain(_normal_turn(), wrapper_engine)
 
     rows = _assistant_rows(wrapper_engine)
     assert len(rows) == 1
     assert rows[0].content == "שלום"
-    assert rows[0].model == "test-model"
+    assert rows[0].model is None
 
 
 async def test_empty_greeting_turn_does_not_persist_on_teardown(wrapper_engine: Engine) -> None:

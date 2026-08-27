@@ -18,8 +18,6 @@ from typing import Any
 
 import dspy
 
-from ...config import settings
-from ..language_models import served_model_from
 from .code import ReasoningStreamListener, _build_agent_lm, _reply_language
 from .constants import REASONING_FIELD
 from .parse_salvage import salvage_prediction
@@ -190,9 +188,9 @@ def _parse_interview_prediction(pred: Any, asked: int) -> dict[str, Any]:
         asked: Assistant questions asked before this turn (limit enforcement).
 
     Returns:
-        ``{"message", "options", "brief", "done", "model"}`` — ``options`` is
-        a list of ``{label, description}`` picks (empty once done); ``brief``
-        is empty until ``done`` is true.
+        ``{"message", "options", "brief", "done"}`` — ``options`` is a list
+        of ``{label, description}`` picks (empty once done); ``brief`` is
+        empty until ``done`` is true.
     """
     done = str(getattr(pred, "done", "")).strip().lower() in {"true", "yes", "1"}
     brief = _parse_json(getattr(pred, "brief_json", "[]"), [])
@@ -205,7 +203,6 @@ def _parse_interview_prediction(pred: Any, asked: int) -> dict[str, Any]:
         "options": [] if done else options,
         "brief": brief if done else [],
         "done": done,
-        "model": settings.code_agent_model,
     }
 
 
@@ -215,7 +212,6 @@ async def _drive_interview_turn(
     lm: dspy.LM,
     inputs: dict[str, Any],
     asked: int,
-    model: str | None,
     queue: asyncio.Queue[dict | None],
 ) -> None:
     """Drive the interview predictor to completion, fanning events onto ``queue``.
@@ -239,8 +235,6 @@ async def _drive_interview_turn(
         lm: Language model conducting the interview.
         inputs: Keyword inputs forwarded to the streamify program.
         asked: Count of assistant turns so far, for the parsed turn's numbering.
-        model: LiteLLM id conducting the interview; stamped on the parsed turn
-            when set. ``None`` runs the default.
         queue: SSE event queue; receives event dicts and a trailing ``None``.
     """
     prediction: Any = None
@@ -296,9 +290,6 @@ async def _drive_interview_turn(
                     raise
                 logger.warning("code interview turn failed; retrying", exc_info=True)
         turn = _parse_interview_prediction(prediction, asked)
-        if model:
-            turn["model"] = model
-        turn["served_model"] = served_model_from(lm)
         await queue.put({"event": "interview_done", "data": turn})
     finally:
         await queue.put(None)
@@ -365,7 +356,7 @@ async def interview_turn_stream(
     queue: asyncio.Queue[dict | None] = asyncio.Queue()
     task = asyncio.create_task(
         _drive_interview_turn(
-            predict=predict, lm=lm, inputs=inputs, asked=asked, model=model, queue=queue
+            predict=predict, lm=lm, inputs=inputs, asked=asked, queue=queue
         )
     )
     try:

@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
@@ -48,7 +48,6 @@ from ...worker.tagging_job import TaggingAutotagPayload, untagged_rows
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..model_catalog import get_catalog_cached
-from ..model_router import route_menu_model
 from ..sharing_access import ShareRole
 from ..tagging_session_access import require_role
 from ._helpers import sse_from_events, stream_with_llm_observation
@@ -81,22 +80,6 @@ class InterviewRequest(BaseModel):
         default=None,
         description="UI locale code; the assistant replies in that language.",
     )
-    model: str | None = Field(
-        default=None,
-        description=(
-            "LiteLLM id of the catalog model conducting the interview (the "
-            "composer's model menu). Absent routes automatically (balanced "
-            "tier); the sentinel 'auto:intelligent' routes to a frontier-"
-            "quality model."
-        ),
-    )
-    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = Field(
-        default=None,
-        description=(
-            "Explicit reasoning-effort level for the chosen model; absent "
-            "keeps the model's default."
-        ),
-    )
 
 
 # A single pickable answer offered for a closed interview question. The UI
@@ -114,7 +97,6 @@ class InterviewResponse(BaseModel):
     rubric: list[str] = Field(default_factory=list)
     task_override: dict[str, Any] = Field(default_factory=dict)
     done: bool
-    model: str | None = None
 
 
 class PredictRequest(BaseModel):
@@ -327,7 +309,8 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             config = _interview_config(row)
             columns = cast("list[str]", row.columns)
             data = cast("list[dict[str, Any]]", row.data)
-        model, lm_extra_body = route_menu_model(req.model, session_id=session_id)
+        # On-prem the interviewer's model is operator config
+        # (TAGGER_ASSIST_MODEL); the client neither chooses nor learns it.
         usage_sink: list = []
         try:
             turn = tagging.interview_turn(
@@ -336,9 +319,6 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                 data,
                 [t.model_dump() for t in req.turns],
                 req.locale,
-                model=model,
-                reasoning_effort=req.reasoning_effort,
-                lm_extra_body=lm_extra_body,
                 usage_sink=usage_sink,
             )
         except Exception as exc:
@@ -379,7 +359,8 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             config = _interview_config(row)
             columns = cast("list[str]", row.columns)
             data = cast("list[dict[str, Any]]", row.data)
-        model, lm_extra_body = route_menu_model(req.model, session_id=session_id)
+        # On-prem the interviewer's model is operator config
+        # (TAGGER_ASSIST_MODEL); the client neither chooses nor learns it.
         usage_sink: list = []
 
         async def source() -> Any:
@@ -391,9 +372,6 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
                     data,
                     [t.model_dump() for t in req.turns],
                     req.locale,
-                    model=model,
-                    reasoning_effort=req.reasoning_effort,
-                    lm_extra_body=lm_extra_body,
                     usage_sink=usage_sink,
                 ):
                     yield event
@@ -566,16 +544,18 @@ def create_tagger_assist_router(*, job_store, get_worker_ref: Callable[[], Any])
             data = cast("list[dict[str, Any]]", row.data)
             annotations = cast("dict[str, Any]", row.annotations)
             assist = cast("dict[str, Any]", row.assist) or {}
-        model_config = _resolve_assist_model(job_store, user.username, assist)
+        _resolve_assist_model(job_store, user.username, assist)
         rubric = [str(r) for r in assist.get("rubric") or []]
         examples = tagging.select_examples(config, data, annotations, assist)
         instructions = tagging.compile_instructions(config, rubric, examples)
         pending = untagged_rows(data, annotations)
+        # Echo only the session's explicit tagging-model choice — the
+        # operator-configured default is never surfaced to the client.
         return EstimateResponse(
             **tagging.estimate_tokens_for_rows(
                 instructions,
                 pending,
-                model=model_config.name,
+                model=str(assist.get("model") or "").strip(),
             )
         )
 

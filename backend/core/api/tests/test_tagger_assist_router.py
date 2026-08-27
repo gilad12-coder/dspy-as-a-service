@@ -32,7 +32,6 @@ from ...service_gateway import tagging
 from ...storage.models import Base, TaggingSessionModel
 from ...storage.remote import RemoteDBJobStore
 from ...worker.tagging_job import TaggingAutotagPayload, run_autotag_job
-from .. import model_catalog, model_router
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
 from ..routers import tagger_assist
@@ -230,7 +229,6 @@ def test_interview_returns_turn(monkeypatch) -> None:
         }
 
     monkeypatch.setattr(tagging, "interview_turn", fake_turn)
-    monkeypatch.setattr(model_catalog, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test"))
     client, _ = _client(_ALICE)
     session_id = _create(client)
     resp = client.post(
@@ -238,8 +236,6 @@ def test_interview_returns_turn(monkeypatch) -> None:
         json={
             "turns": [{"role": "user", "content": "hi"}],
             "locale": "he",
-            "model": "openai/gpt-test",
-            "reasoning_effort": "high",
         },
     )
     assert resp.status_code == 200, resp.text
@@ -253,26 +249,37 @@ def test_interview_returns_turn(monkeypatch) -> None:
     assert seen["rows"] == 4
     assert seen["turns"] == [{"role": "user", "content": "hi"}]
     assert seen["config"]["_assist_mode"] == "copilot"
-    assert seen["model"] == "openai/gpt-test"
-    assert seen["reasoning_effort"] == "high"
+    assert seen["model"] is None
+    assert seen["reasoning_effort"] is None
     assert seen["lm_extra_body"] is None
 
 
-def test_interview_rejects_unknown_model(monkeypatch) -> None:
-    """A non-catalog interview model is refused before any LLM spend."""
-    monkeypatch.setattr(model_catalog, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test"))
+def test_interview_ignores_client_model(monkeypatch) -> None:
+    """A stale client's model/effort fields never reach the engine."""
+    seen: dict = {}
+
+    def fake_turn(
+        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None, usage_sink=None
+    ):
+        """Capture the forwarded model kwargs and return a canned turn."""
+        seen.update({"model": model, "reasoning_effort": reasoning_effort})
+        return {"message": "hi", "options": [], "rubric": [], "done": False}
+
+    monkeypatch.setattr(tagging, "interview_turn", fake_turn)
     client, _ = _client(_ALICE)
     session_id = _create(client)
     resp = client.post(
         f"/tagging-sessions/{session_id}/assist/interview",
-        json={"turns": [], "model": "openai/not-a-model"},
+        json={"turns": [], "model": "openai/not-a-model", "reasoning_effort": "high"},
     )
-    assert resp.status_code == 422
-    assert resp.json()["code"] == "models.unknown_model"
+    assert resp.status_code == 200, resp.text
+    assert seen["model"] is None
+    assert seen["reasoning_effort"] is None
+    assert "model" not in resp.json()
 
 
-def test_interview_stream_forwards_model(monkeypatch) -> None:
-    """The SSE interview route hands the chosen model to the engine."""
+def test_interview_stream_ignores_client_model(monkeypatch) -> None:
+    """The SSE interview route runs the operator default, whatever the client sends."""
     seen: dict = {}
 
     async def fake_stream(
@@ -290,7 +297,6 @@ def test_interview_stream_forwards_model(monkeypatch) -> None:
         yield {"event": "interview_done", "data": {"message": "hi", "done": False}}
 
     monkeypatch.setattr(tagging, "interview_turn_stream", fake_stream)
-    monkeypatch.setattr(model_catalog, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test"))
     client, _ = _client(_ALICE)
     session_id = _create(client)
     resp = client.post(
@@ -299,8 +305,8 @@ def test_interview_stream_forwards_model(monkeypatch) -> None:
     )
     assert resp.status_code == 200
     assert "event: interview_done" in resp.text
-    assert seen["model"] == "openai/gpt-test"
-    assert seen["reasoning_effort"] == "low"
+    assert seen["model"] is None
+    assert seen["reasoning_effort"] is None
     assert seen["lm_extra_body"] is None
 
 
@@ -316,7 +322,6 @@ def test_interview_stream_tolerates_turn_bookkeeping_fields(monkeypatch) -> None
         yield {"event": "interview_done", "data": {"message": "hi", "done": False}}
 
     monkeypatch.setattr(tagging, "interview_turn_stream", fake_stream)
-    monkeypatch.setattr(model_catalog, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test"))
     client, _ = _client(_ALICE)
     session_id = _create(client)
     resp = client.post(
@@ -331,7 +336,6 @@ def test_interview_stream_tolerates_turn_bookkeeping_fields(monkeypatch) -> None
                 },
                 {"role": "user", "content": "Praise of the product."},
             ],
-            "model": "openai/gpt-test",
         },
     )
     assert resp.status_code == 200, resp.text
@@ -339,34 +343,6 @@ def test_interview_stream_tolerates_turn_bookkeeping_fields(monkeypatch) -> None
         {"role": "assistant", "content": "What counts as positive?"},
         {"role": "user", "content": "Praise of the product."},
     ]
-
-
-def test_interview_stream_auto_runs_pinned_default(monkeypatch) -> None:
-    """No chosen model runs the pinned default with no router extras."""
-    seen: dict = {}
-
-    async def fake_stream(
-        config, columns, data, turns, locale, model=None, reasoning_effort=None, lm_extra_body=None, usage_sink=None
-    ):
-        """Capture the forwarded kwargs and finish immediately."""
-        seen.update({"model": model, "lm_extra_body": lm_extra_body})
-        yield {"event": "interview_done", "data": {"message": "hi", "done": False}}
-
-    monkeypatch.setattr(tagging, "interview_turn_stream", fake_stream)
-    monkeypatch.setattr(
-        model_router,
-        "get_catalog_cached",
-        lambda: _catalog_with("openrouter/anthropic/claude-sonnet-5"),
-    )
-    client, _ = _client(_ALICE)
-    session_id = _create(client)
-    resp = client.post(
-        f"/tagging-sessions/{session_id}/assist/interview/stream",
-        json={"turns": []},
-    )
-    assert resp.status_code == 200
-    assert seen["model"] == model_router.BALANCED_PINNED_MODEL_ID
-    assert seen["lm_extra_body"] is None
 
 
 def test_predict_excludes_requested_rows_from_examples(monkeypatch) -> None:

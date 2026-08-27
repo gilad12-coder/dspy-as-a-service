@@ -86,10 +86,6 @@ export interface AssistPrediction {
 export interface InterviewTurn {
   role: "assistant" | "user";
   content: string;
-  /** LiteLLM model id that produced an assistant turn (the reply's chip). */
-  model?: string | null;
-  /** Concrete model the Auto Router picked for the turn, when resolved. */
-  servedModel?: string | null;
 }
 
 /** One AI-tags-human-audits batch (review rounds and the flagged pass alike). */
@@ -131,13 +127,6 @@ export interface AssistState {
    * merges the settings into the tagging LM the same way optimizations do.
    */
   modelParams?: Omit<ModelConfig, "name">;
-  /** LiteLLM id of the model conducting the interview (the composer's model
-   * menu). ``null`` is an explicit auto-router pick; absent (never picked)
-   * follows the app-wide composer default. Distinct from ``model``, which is
-   * the model that tags rows. */
-  interviewModel?: string | null;
-  /** Reasoning-effort level for ``interviewModel``; same null/absent split. */
-  interviewEffort?: string | null;
   interview: { turns: InterviewTurn[]; done: boolean };
   /** The labeling rubric distilled from the interview; grows with corrections. */
   rubric: string[];

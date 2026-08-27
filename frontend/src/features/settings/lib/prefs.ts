@@ -32,12 +32,6 @@ export interface UserPrefs {
   // AI co-tagging in the tagger: the master toggle (off = today's fully
   // manual tagger).
   taggerAssist: boolean;
-  // Seed for new conversations (agent panel, code interview, tagger
-  // interview): the composer-menu model id, null = the auto router, or the
-  // "auto:intelligent" sentinel. Per-conversation picks override it.
-  composerModel: string | null;
-  // Companion thinking level for composerModel; null runs the model default.
-  composerEffort: string | null;
   // Shows/hides the dictation mic in the shared composer.
   dictationEnabled: boolean;
   // Seed for the assist model in new tagging sessions; empty name = the
@@ -113,16 +107,9 @@ export const PREF_KEYS: Record<keyof UserPrefs, string> = {
   agentTrustMode: "skynet.prefs.agent.trust-mode",
   agentShortcut: "skynet.prefs.agent.shortcut",
   taggerAssist: "skynet.prefs.tagger.assist",
-  composerModel: "skynet.prefs.composer.model",
-  composerEffort: "skynet.prefs.composer.effort",
   dictationEnabled: "skynet.prefs.composer.dictation",
   taggerAssistModel: "skynet.prefs.tagger.assist-model",
 };
-
-// Mirrors the backend's balanced-tier pin (BALANCED_PINNED_MODEL_ID in
-// core/api/model_router.py): new composers open on the model that would
-// serve them anyway, instead of an opaque "Auto" chip. Re-pin both together.
-export const DEFAULT_COMPOSER_MODEL = "openrouter/openai/gpt-5.6-terra";
 
 export const DEFAULT_AGENT_SHORTCUT: AgentShortcut = {
   key: "j",
@@ -141,8 +128,6 @@ export const DEFAULT_PREFS: UserPrefs = {
   agentTrustMode: "ask",
   agentShortcut: DEFAULT_AGENT_SHORTCUT,
   taggerAssist: true,
-  composerModel: DEFAULT_COMPOSER_MODEL,
-  composerEffort: null,
   dictationEnabled: true,
   taggerAssistModel: { name: "" },
 };

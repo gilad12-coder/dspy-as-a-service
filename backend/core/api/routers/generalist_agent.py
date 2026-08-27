@@ -21,7 +21,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header
@@ -29,7 +29,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
-from ...models import ModelConfig
 from ...service_gateway.agents.generalist import (
     TrustMode,
     WizardState,
@@ -41,8 +40,6 @@ from ...storage.models import AgentConversationModel, AgentMessageModel
 from ..agent_memory import wake_document
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
-from ..model_catalog import require_known_model
-from ..model_router import resolve_auto_tier, route_auto_model
 from ._helpers import sse_from_events, stream_with_llm_observation
 
 logger = logging.getLogger(__name__)
@@ -98,24 +95,6 @@ class GeneralistAgentRequest(BaseModel):
             "back to Hebrew."
         ),
     )
-    model: str | None = Field(
-        default=None,
-        description=(
-            "LiteLLM id of the catalog model to run this turn on (the "
-            "composer's model menu). Absent routes automatically per turn "
-            "(balanced tier); the sentinel 'auto:intelligent' routes to a "
-            "frontier model on every turn."
-        ),
-    )
-    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = Field(
-        default=None,
-        description=(
-            "Explicit reasoning-effort level for the chosen model; absent "
-            "keeps the model's default."
-        ),
-    )
-
-
 class ConfirmApprovalRequest(BaseModel):
     """Client → server reply to a ``pending_approval`` SSE event."""
 
@@ -353,8 +332,6 @@ async def _wrap_with_persistence(
     assistant_buf: list[str] = []
     tool_calls: dict[str, dict[str, Any]] = {}
     tool_order: list[str] = []
-    model_used: str | None = None
-    served_model_used: str | None = None
     allowed_tools: list[str] | None = None
     tool_schema_hashes: dict[str, str] | None = None
     wizard_state_after: dict[str, Any] = dict(wizard_state_before) if wizard_state_before else {}
@@ -380,12 +357,11 @@ async def _wrap_with_persistence(
                 conversation_id,
                 content,
                 ordered_tools,
-                model_used,
+                None,
                 wizard_state_before=wizard_state_before,
                 wizard_state_after=wizard_state_after or None,
                 allowed_tools=allowed_tools,
                 tool_schema_hashes=tool_schema_hashes,
-                router_metadata={"served_model": served_model_used} if served_model_used else None,
             )
         except Exception:
             logger.exception("Failed to persist assistant turn")
@@ -435,10 +411,6 @@ async def _wrap_with_persistence(
             elif name == "done":
                 final_text = data.get("assistant_message")
                 content = final_text if isinstance(final_text, str) and final_text else "".join(assistant_buf)
-                raw_model = data.get("model")
-                model_used = raw_model if isinstance(raw_model, str) and raw_model else None
-                raw_served = data.get("served_model")
-                served_model_used = raw_served if isinstance(raw_served, str) and raw_served else None
                 await _do_persist(content)
             yield event
     finally:
@@ -573,16 +545,8 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
         memory_context = await asyncio.to_thread(_wake_memory)
 
         wizard_state: WizardState = {**req.wizard_state}  # type: ignore[typeddict-item]
-        requested_model, auto_tier = resolve_auto_tier(req.model)
-        require_known_model(requested_model)
-        model_config = (
-            ModelConfig(
-                name=requested_model,
-                extra=({"reasoning_effort": req.reasoning_effort} if req.reasoning_effort else {}),
-            )
-            if requested_model
-            else route_auto_model(auto_tier or "balanced", conversation_id)
-        )
+        # On-prem the agent's model is operator config (GENERALIST_AGENT_MODEL);
+        # the client neither chooses nor learns it.
         usage_sink: list = []
         source = run_generalist_agent(
             wizard_state=wizard_state,
@@ -592,7 +556,7 @@ def create_generalist_agent_router(*, job_store=None) -> APIRouter:
             trust_mode=req.trust_mode,
             auth_header=authorization,
             locale=req.locale,
-            model_config=model_config,
+            model_config=None,
             usage_sink=usage_sink,
         )
         metered = stream_with_llm_observation(

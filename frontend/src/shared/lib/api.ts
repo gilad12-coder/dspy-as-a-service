@@ -2066,11 +2066,6 @@ export interface CodeAgentRequest {
   // Directives confirmed at the end of the Signature & Metric interview;
   // the seed authors honor every directive. Empty when no interview ran.
   interview_brief?: string[];
-  // Catalog model id that authors the code (the composer's model menu).
-  // Absent routes automatically; "auto:intelligent" picks a frontier model.
-  model?: string;
-  // Explicit reasoning-effort level for the chosen model; absent keeps its default.
-  reasoning_effort?: string;
 }
 
 export type CodeAgentToolName =
@@ -2122,9 +2117,6 @@ export interface CodeAgentHandlers {
     signature_code: string;
     metric_code: string;
     assistant_message: string;
-    model: string | null;
-    /** Concrete model selected by Auto Router, when the route was automatic. */
-    served_model: string | null;
     workflow?: WorkflowSpec | null;
     workflowValid?: boolean;
     /**
@@ -2208,15 +2200,10 @@ export async function streamCodeAgent(
         });
       }
     } else if (event === "done") {
-      const rawModel = data.model;
-      const rawServedModel = data.served_model;
       handlers.onDone({
         signature_code: String(data.signature_code ?? ""),
         metric_code: String(data.metric_code ?? ""),
         assistant_message: String(data.assistant_message ?? ""),
-        model: typeof rawModel === "string" && rawModel.length > 0 ? rawModel : null,
-        served_model:
-          typeof rawServedModel === "string" && rawServedModel.length > 0 ? rawServedModel : null,
         workflow:
           data.workflow && typeof data.workflow === "object"
             ? (data.workflow as WorkflowSpec)
@@ -2251,11 +2238,6 @@ export interface CodeInterviewRequest {
   // the user hasn't reached the model step yet.
   job_model?: string;
   locale?: string;
-  /** LiteLLM id of the catalog model conducting the interview; absent runs
-   *  the server default. */
-  model?: string;
-  /** Reasoning-effort level for the chosen model; absent runs its default. */
-  reasoning_effort?: string;
 }
 
 /**
@@ -2290,9 +2272,6 @@ export interface CodeInterviewTurnResult {
   options: InterviewOption[];
   brief: string[];
   done: boolean;
-  model?: string | null;
-  /** Concrete model the Auto Router picked for this turn, when resolved. */
-  served_model?: string | null;
 }
 
 export interface CodeInterviewHandlers {
@@ -2362,9 +2341,6 @@ export async function streamCodeInterviewTurn(
             options: parseInterviewOptions(data.options),
             brief: Array.isArray(data.brief) ? data.brief.map(String) : [],
             done: data.done === true,
-            model: typeof data.model === "string" && data.model ? data.model : null,
-            served_model:
-              typeof data.served_model === "string" && data.served_model ? data.served_model : null,
           });
           break;
         case "error":

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -19,7 +19,6 @@ from ...service_gateway.agents.code import run_code_agent
 from ...service_gateway.agents.code_interview import interview_turn_stream
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
-from ..model_router import route_menu_model
 from ._helpers import sse_from_events, stream_with_llm_observation
 
 logger = logging.getLogger(__name__)
@@ -114,24 +113,6 @@ class CodeAgentRequest(BaseModel):
             "no interview happened."
         ),
     )
-    model: str | None = Field(
-        default=None,
-        description=(
-            "LiteLLM id of the catalog model that authors the code (the "
-            "composer's model menu). Absent routes automatically (balanced "
-            "tier); the sentinel 'auto:intelligent' routes to a frontier-"
-            "quality model."
-        ),
-    )
-    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = Field(
-        default=None,
-        description=(
-            "Explicit reasoning-effort level for the chosen model; absent "
-            "keeps the model's default."
-        ),
-    )
-
-
 class CodeInterviewRequest(BaseModel):
     """Input for one streamed Signature & Metric interview turn.
 
@@ -164,24 +145,6 @@ class CodeInterviewRequest(BaseModel):
             "the interview's language; unknown or missing falls back to Hebrew."
         ),
     )
-    model: str | None = Field(
-        default=None,
-        description=(
-            "LiteLLM id of the catalog model conducting the interview (the "
-            "composer's model menu). Absent routes automatically (balanced "
-            "tier); the sentinel 'auto:intelligent' routes to a frontier-"
-            "quality model."
-        ),
-    )
-    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = Field(
-        default=None,
-        description=(
-            "Explicit reasoning-effort level for the chosen model; absent "
-            "keeps the model's default."
-        ),
-    )
-
-
 class EditCodeRequest(BaseModel):
     """Compact input for the MCP-exposed ``edit_code`` tool.
 
@@ -268,10 +231,13 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
           (workflow mode: seed snapshot + one per graph tool op)
         * ``tool_end`` — ``{"id", "tool", "status"}``
         * ``message_patch`` — ``{"chunk": "<token>"}`` (chat mode reply stream)
-        * ``done`` — ``{"signature_code", "metric_code", "assistant_message",
-          "model", "served_model"}`` (workflow mode carries ``workflow`` +
-          ``workflow_valid`` instead of ``signature_code``)
+        * ``done`` — ``{"signature_code", "metric_code", "assistant_message"}``
+          (workflow mode carries ``workflow`` + ``workflow_valid`` instead of
+          ``signature_code``)
         * ``error`` — ``{"error": "<message>"}``
+
+        The model the agent runs on is operator configuration
+        (``CODE_AGENT_MODEL``) — the client neither chooses nor learns it.
 
         Args:
             req: Request body controlling code-agent inputs and chat history.
@@ -280,7 +246,6 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
         Returns:
             A :class:`StreamingResponse` of Server-Sent Events.
         """
-        model, lm_extra_body = route_menu_model(req.model)
         usage_sink: list = []
         source = run_code_agent(
             dataset_columns=req.dataset_columns,
@@ -299,9 +264,6 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
             initial_workflow=req.initial_workflow,
             interview_brief=req.interview_brief,
             locale=req.locale,
-            model=model,
-            reasoning_effort=req.reasoning_effort,
-            lm_extra_body=lm_extra_body,
             usage_sink=usage_sink,
         )
         metered = stream_with_llm_observation(
@@ -338,10 +300,13 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
           settled; the client picks the matching placeholder)
         * ``message_reset`` — ``{}`` (a failed attempt is being retried; the
           client drops any partial reply streamed so far)
-        * ``interview_done`` — ``{"message", "options", "brief", "done",
-          "model"}`` (terminal; ``options`` is a list of ``{label,
-          description}`` picks, ``brief`` is empty until ``done``)
+        * ``interview_done`` — ``{"message", "options", "brief", "done"}``
+          (terminal; ``options`` is a list of ``{label, description}`` picks,
+          ``brief`` is empty until ``done``)
         * ``error`` — ``{"error": "<message>"}``
+
+        The interviewing model is operator configuration
+        (``CODE_AGENT_MODEL``) — the client neither chooses nor learns it.
 
         Args:
             req: Dataset context, the client-owned transcript, and locale.
@@ -350,7 +315,6 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
         Returns:
             A :class:`StreamingResponse` of Server-Sent Events.
         """
-        model, lm_extra_body = route_menu_model(req.model)
         usage_sink: list = []
 
         async def source() -> AsyncIterator[dict]:
@@ -364,9 +328,6 @@ def create_code_agent_router(*, job_store=None) -> APIRouter:
                     job_model=req.job_model,
                     turns=[t.model_dump() for t in req.turns],
                     locale=req.locale,
-                    model=model,
-                    reasoning_effort=req.reasoning_effort,
-                    lm_extra_body=lm_extra_body,
                     usage_sink=usage_sink,
                 ):
                     yield event

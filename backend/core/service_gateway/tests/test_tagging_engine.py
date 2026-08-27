@@ -311,12 +311,12 @@ def test_estimate_scales_with_rows_and_handles_empty() -> None:
 
 
 def test_estimate_prices_on_chosen_model() -> None:
-    """A chosen tagging model rides the estimate; blank falls back to default."""
+    """A chosen tagging model rides the estimate; blank never echoes the default."""
     rows = [{"id": 1, "text": "x" * 400}]
     chosen = estimate_tokens_for_rows("instructions", rows, model="openai/gpt-test")
     assert chosen["model"] == "openai/gpt-test"
     fallback = estimate_tokens_for_rows("instructions", rows, model="  ")
-    assert fallback["model"] == assist_model_name()
+    assert fallback["model"] == ""
 
 
 def test_effective_task_config_lifts_chosen_model() -> None:

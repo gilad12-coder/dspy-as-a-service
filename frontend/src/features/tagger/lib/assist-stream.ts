@@ -16,9 +16,6 @@ export interface InterviewTurnResult {
   taskOverride: Partial<Pick<TaggerConfig, "mode" | "question" | "categories" | "prompt">>;
   /** Short session name the interview proposes on its final turn. */
   title: string;
-  model?: string | null;
-  /** Concrete model the Auto Router picked for this turn, when resolved. */
-  served_model?: string | null;
 }
 
 export interface InterviewStreamHandlers {
@@ -46,8 +43,6 @@ export async function streamInterviewTurn(
   req: {
     turns: Array<{ role: string; content: string }>;
     locale?: string;
-    model?: string;
-    reasoning_effort?: string;
   },
   handlers: InterviewStreamHandlers,
 ): Promise<void> {
@@ -105,11 +100,6 @@ export async function streamInterviewTurn(
                   >)
                 : {},
             title: typeof payload.title === "string" ? payload.title.trim() : "",
-            model: typeof payload.model === "string" && payload.model ? payload.model : null,
-            served_model:
-              typeof payload.served_model === "string" && payload.served_model
-                ? payload.served_model
-                : null,
           });
           break;
         case "error":
