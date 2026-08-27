@@ -23,7 +23,6 @@ import {
 } from "@/shared/lib/recent-session";
 import { LOCALE_RELOAD_EVENT } from "@/shared/lib/locale";
 import { getActiveLocale } from "@/shared/lib/runtime-locale";
-import type { ModelConfig } from "@/shared/types/api";
 import type { AgentThinking } from "@/shared/ui/agent";
 import { streamInterviewTurn, streamPredictions } from "../lib/assist-stream";
 import type {
@@ -42,7 +41,6 @@ import type {
 import {
   REVIEW_BATCH_SIZE,
   agreementOver,
-  assistModelPatch,
   calibrationTarget,
   flaggedRowIds,
   initialAssistState,
@@ -80,7 +78,6 @@ function deriveSessionName(config: TaggerConfig): string {
 /** The estimate returned before a bulk auto-tag run. */
 export interface AutotagEstimate {
   rows: number;
-  model: string;
   estimated_input_tokens: number;
   estimated_output_tokens: number;
 }
@@ -212,11 +209,9 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       rows: DataRow[],
       cols: string[],
       assistMode: TaggerAssistMode = "manual",
-      assistModel?: ModelConfig,
     ) => {
       const startPhase: TaggerPhase = assistMode === "manual" ? "annotating" : "interview";
-      const startAssist =
-        assistMode === "manual" ? null : initialAssistState(assistMode, assistModel);
+      const startAssist = assistMode === "manual" ? null : initialAssistState(assistMode);
       setConfig(cfg);
       setData(rows);
       setColumns(cols);
@@ -382,15 +377,6 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
   /** Merge a partial update into the assist state (no-op without assist). */
   const patchAssist = useCallback((patch: Partial<AssistState>) => {
     setAssist((prev) => (prev ? { ...prev, ...patch } : prev));
-  }, []);
-
-  // The ref is mirrored synchronously (not just via the effect) so a
-  // flush-then-call sequence fired in the same tick — fetching a fresh
-  // estimate right after a pick — already sends the new model.
-  const setAssistModel = useCallback((config: ModelConfig) => {
-    const patch = assistModelPatch(config);
-    setAssist((prev) => (prev ? { ...prev, ...patch } : prev));
-    if (assistRef.current) assistRef.current = { ...assistRef.current, ...patch };
   }, []);
 
   // ---------------------------------------------------------------- frames
@@ -812,8 +798,8 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
       }
       const round: ReviewRound = { rowIds: ids, decided: {} };
       setAssist((prev) => (prev ? { ...prev, rounds: [...prev.rounds, round] } : prev));
-      // Mirrored synchronously (like setAssistModel) so the streaming loop's
-      // round-closed check below reads this round, not the previous one.
+      // Mirrored synchronously (not just via the effect) so the streaming
+      // loop's round-closed check below reads this round, not the previous one.
       if (assistRef.current) {
         assistRef.current = { ...assistRef.current, rounds: [...assistRef.current.rounds, round] };
       }
@@ -1106,7 +1092,6 @@ export function useTagger(initialSession?: TaggerSessionDetail | null) {
     skipInterview,
     restartInterview,
     confirmRubric,
-    setAssistModel,
     assistToggleBinary,
     assistToggleCategory,
     assistSetFreetext,

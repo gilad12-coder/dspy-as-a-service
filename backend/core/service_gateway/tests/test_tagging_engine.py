@@ -20,7 +20,6 @@ from ..tagging import (
     _parse_interview_prediction,
     _parse_json,
     _StreamedArrayItems,
-    assist_model_config,
     assist_model_name,
     compile_instructions,
     effective_task_config,
@@ -301,91 +300,22 @@ def test_estimate_scales_with_rows_and_handles_empty() -> None:
     assert small["rows"] == 10
     assert large["estimated_input_tokens"] >= small["estimated_input_tokens"] >= 0
     assert large["estimated_output_tokens"] >= small["estimated_output_tokens"] >= 0
+    assert "model" not in large
     empty = estimate_tokens_for_rows("instructions", [])
-    assert empty == {
-        "rows": 0,
-        "model": empty["model"],
-        "estimated_input_tokens": 0,
-        "estimated_output_tokens": 0,
-    }
+    assert empty == {"rows": 0, "estimated_input_tokens": 0, "estimated_output_tokens": 0}
 
 
-def test_estimate_prices_on_chosen_model() -> None:
-    """A chosen tagging model rides the estimate; blank never echoes the default."""
-    rows = [{"id": 1, "text": "x" * 400}]
-    chosen = estimate_tokens_for_rows("instructions", rows, model="openai/gpt-test")
-    assert chosen["model"] == "openai/gpt-test"
-    fallback = estimate_tokens_for_rows("instructions", rows, model="  ")
-    assert fallback["model"] == ""
-
-
-def test_effective_task_config_lifts_chosen_model() -> None:
-    """``assist.model`` merges into the effective config; blank stays absent."""
-    merged = effective_task_config(_BINARY, {"model": " openai/gpt-test "})
-    assert merged["model"] == "openai/gpt-test"
-    assert "model" not in effective_task_config(_BINARY, {"model": "  "})
-    assert "model" not in effective_task_config(_BINARY, {})
-
-
-def test_effective_task_config_lifts_model_params_with_model() -> None:
-    """``assist.modelParams`` rides along the chosen model, never alone."""
-    params = {"temperature": 0.2, "max_tokens": 2048}
-    merged = effective_task_config(_BINARY, {"model": "openai/gpt-test", "modelParams": params})
-    assert merged["modelParams"] == params
-    assert "modelParams" not in effective_task_config(_BINARY, {"modelParams": params})
-    assert "modelParams" not in effective_task_config(
-        _BINARY, {"model": "openai/gpt-test", "modelParams": "junk"}
+def test_effective_task_config_ignores_client_model() -> None:
+    """A ``model``/``modelParams`` pair written onto ``assist`` never reaches the config."""
+    merged = effective_task_config(
+        _BINARY, {"model": "openai/gpt-test", "modelParams": {"temperature": 0.2}}
     )
+    assert "model" not in merged
+    assert "modelParams" not in merged
 
 
-def test_sanitize_model_params_bounds_and_filters() -> None:
-    """Sampling knobs are clamped; connection fields and junk never pass."""
-    out = tagging._sanitize_model_params(
-        {
-            "temperature": 5,
-            "max_tokens": 512.0,
-            "base_url": "http://evil",
-            "token_source": "byok",
-            "byok_provider": " openrouter ",
-            "extra": {"reasoning_effort": "High", "api_key": "sk-leak"},
-        }
-    )
-    assert out == {
-        "temperature": 2.0,
-        "max_tokens": 512,
-        "token_source": "byok",
-        "byok_provider": "openrouter",
-        "extra": {"reasoning_effort": "high"},
-    }
-    assert tagging._sanitize_model_params(None) == {}
-    assert tagging._sanitize_model_params("junk") == {}
-    assert tagging._sanitize_model_params(
-        {"temperature": "hot", "max_tokens": 0, "extra": {"reasoning_effort": "extreme"}}
-    ) == {}
-
-
-def test_assist_model_config_preserves_source_without_inline_connection() -> None:
-    """Tagging keeps BYOK selectors while rejecting persisted connection fields."""
-    config = assist_model_config(
-        {
-            "model": " openrouter/openai/gpt-test ",
-            "modelParams": {
-                "token_source": "byok",
-                "byok_provider": "openrouter",
-                "base_url": "https://untrusted.example",
-                "extra": {"api_key": "sk-inline", "reasoning_effort": "high"},
-            },
-        }
-    )
-    assert config.name == "openrouter/openai/gpt-test"
-    assert config.token_source == "byok"
-    assert config.byok_provider == "openrouter"
-    assert config.base_url is None
-    assert config.extra == {"reasoning_effort": "high"}
-
-
-def test_build_assist_lm_honors_model_override(monkeypatch) -> None:
-    """The chosen model and params reach the LM builder; empty falls back."""
+def test_build_assist_lm_runs_on_configured_model(monkeypatch) -> None:
+    """The LM always builds on the operator-configured tagging model."""
     captured: list[tuple[str, float | None, int | None]] = []
 
     def fake_build(config, disable_cache):
@@ -395,16 +325,13 @@ def test_build_assist_lm_honors_model_override(monkeypatch) -> None:
 
     monkeypatch.setattr(tagging, "build_language_model", fake_build)
     monkeypatch.setattr(tagging, "apply_model_reasoning_config", lambda config: config)
-    tagging._build_assist_lm("openai/gpt-test", {"temperature": 0.1, "max_tokens": 2048})
+    tagging._build_assist_lm()
     tagging._build_assist_lm(None)
-    assert captured == [
-        ("openai/gpt-test", 0.1, 2048),
-        (assist_model_name(), None, None),
-    ]
+    assert captured == [(assist_model_name(), None, None)] * 2
 
 
 def test_build_assist_lm_merges_lm_extra_body(monkeypatch) -> None:
-    """Auto-router extras land in the LM config without clobbering params."""
+    """Extra request-body fields land in the LM config."""
     captured: list[dict] = []
 
     def fake_build(config, disable_cache):
@@ -415,13 +342,8 @@ def test_build_assist_lm_merges_lm_extra_body(monkeypatch) -> None:
     monkeypatch.setattr(tagging, "build_language_model", fake_build)
     monkeypatch.setattr(tagging, "apply_model_reasoning_config", lambda config: config)
     tagging._build_assist_lm(
-        "openrouter/openrouter/auto-beta",
-        {"extra": {"reasoning_effort": "high"}},
-        lm_extra_body={"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]},
+        lm_extra_body={"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]}
     )
     assert captured == [
-        {
-            "reasoning_effort": "high",
-            "extra_body": {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]},
-        }
+        {"extra_body": {"plugins": [{"id": "auto-router", "cost_quality_tradeoff": 5}]}}
     ]

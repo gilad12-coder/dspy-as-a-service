@@ -27,7 +27,6 @@ from typing import Any, cast
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..byok import ProviderKeyVault, resolve_byok_model_config
 from ..service_gateway import tagging
 from ..storage.models import TaggingSessionModel
 from ..usage_observability import record_llm_usage
@@ -187,13 +186,6 @@ def run_autotag_job(
             data = cast("list[dict[str, Any]]", row.data)
             annotations = dict(cast("dict[str, Any]", row.annotations))
             assist = dict(cast("dict[str, Any]", row.assist) or {})
-        model_config = tagging.assist_model_config(assist)
-        if model_config.token_source == "byok":
-            model_config = resolve_byok_model_config(
-                model_config,
-                username=username,
-                vault=ProviderKeyVault(engine=engine),
-            )
         # The interview's task refinements — including the inferred answer
         # style and categories — live beside the immutable config.
         config = tagging.effective_task_config(config, assist)
@@ -242,7 +234,6 @@ def run_autotag_job(
             on_batch=persist_batch,
             cancel=stop,
             usage_sink=usage_sink,
-            model_config=model_config,
         )
     except Exception:
         done.set()

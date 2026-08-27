@@ -1,5 +1,3 @@
-import type { ModelConfig } from "@/shared/types/api";
-
 export type CodeAssistDefault = "auto" | "manual";
 export type SplitModeDefault = "auto" | "manual";
 export type TrustModeDefault = "ask" | "auto_safe" | "yolo";
@@ -34,9 +32,6 @@ export interface UserPrefs {
   taggerAssist: boolean;
   // Shows/hides the dictation mic in the shared composer.
   dictationEnabled: boolean;
-  // Seed for the assist model in new tagging sessions; empty name = the
-  // server's default tagging model.
-  taggerAssistModel: ModelConfig;
 }
 
 export type AgentPreferencePatch = Partial<
@@ -108,7 +103,6 @@ export const PREF_KEYS: Record<keyof UserPrefs, string> = {
   agentShortcut: "skynet.prefs.agent.shortcut",
   taggerAssist: "skynet.prefs.tagger.assist",
   dictationEnabled: "skynet.prefs.composer.dictation",
-  taggerAssistModel: "skynet.prefs.tagger.assist-model",
 };
 
 export const DEFAULT_AGENT_SHORTCUT: AgentShortcut = {
@@ -129,7 +123,6 @@ export const DEFAULT_PREFS: UserPrefs = {
   agentShortcut: DEFAULT_AGENT_SHORTCUT,
   taggerAssist: true,
   dictationEnabled: true,
-  taggerAssistModel: { name: "" },
 };
 
 // `skynet.prefs.advanced-mode` once belonged to a retired toggle that a

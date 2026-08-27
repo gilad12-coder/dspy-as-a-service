@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowCounterClockwise,
@@ -32,14 +32,10 @@ import {
 } from "@/shared/ui/agent";
 import type { AgentMessage, AgentThinking } from "@/shared/ui/agent";
 import type { InterviewOption } from "@/shared/lib/api";
-import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
-import type { CatalogModel, ModelConfig } from "@/shared/types/api";
-import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
-import { ModelChip } from "@/shared/ui/model-chip";
 import { formatMsg, msg } from "@/shared/lib/messages";
 import { cn } from "@/shared/lib/utils";
 import type { AutotagEstimate } from "../hooks/use-tagger";
-import { assistModelConfig, calibrationTarget } from "../lib/assist";
+import { calibrationTarget } from "../lib/assist";
 import type { AnnotationMode, AssistState, Category, TaggerConfig } from "../lib/types";
 
 /**
@@ -80,8 +76,6 @@ interface Props {
   rowCount: number;
   estimate: AutotagEstimate | null;
   onFetchEstimate: () => void;
-  /** Persist the picked tagging model config on the session's assist state. */
-  onSetModel: (config: ModelConfig) => void;
   onSend: (content: string) => void;
   onEditResend: (index: number, content: string) => void;
   onStop: () => void;
@@ -112,7 +106,6 @@ export function TaggerInterview({
   rowCount,
   estimate,
   onFetchEstimate,
-  onSetModel,
   onSend,
   onEditResend,
   onStop,
@@ -158,7 +151,6 @@ export function TaggerInterview({
           rowCount={rowCount}
           estimate={estimate}
           onFetchEstimate={onFetchEstimate}
-          onSetModel={onSetModel}
           onConfirm={onConfirmRubric}
         />
       ) : (
@@ -359,7 +351,6 @@ function RubricCard({
   rowCount,
   estimate,
   onFetchEstimate,
-  onSetModel,
   onConfirm,
 }: {
   config: TaggerConfig;
@@ -367,20 +358,14 @@ function RubricCard({
   rowCount: number;
   estimate: AutotagEstimate | null;
   onFetchEstimate: () => void;
-  onSetModel: (config: ModelConfig) => void;
   onConfirm: (rubric: string[], task: TaskContract) => void;
 }) {
   const autopilot = assist.mode === "autopilot";
   // Cost before commitment: the bulk button carries the live estimate, so it
-  // is fetched the moment the contract card appears — and again whenever the
-  // tagging model changes, since pricing is per model.
+  // is fetched the moment the contract card appears.
   useEffect(() => {
     if (autopilot) onFetchEstimate();
-  }, [autopilot, onFetchEstimate, assist.model]);
-  // Stable identity per assist snapshot: the model dialog resyncs its draft
-  // whenever this prop changes, so an inline object would reset an open
-  // dialog on any unrelated re-render (e.g. the estimate arriving).
-  const modelConfig = useMemo(() => assistModelConfig(assist), [assist]);
+  }, [autopilot, onFetchEstimate]);
   const [mode, setMode] = useState<AnnotationMode>(config.mode);
   // The inferred question isn't edited here — it rides through the confirm
   // untouched; the rubric rules are the editable surface of the task.
@@ -466,33 +451,11 @@ function RubricCard({
   // Launch mirrors the wizard submit: the splash plays for the shared hold,
   // then the confirm flips the phase and the next screen is revealed under it.
   const [launching, setLaunching] = useState(false);
-  const [modelDialogOpen, setModelDialogOpen] = useState(false);
-  // Managed catalog for the model dialog's thinking detection and the chip's
-  // vision badge — same source the submit wizard feeds it.
-  const [catalogModels, setCatalogModels] = useState<CatalogModel[] | null>(
-    cachedCatalog()?.models ?? null,
-  );
-  useEffect(() => {
-    if (catalogModels) return;
-    let cancelled = false;
-    getModelCatalog()
-      .then((c) => {
-        if (!cancelled) setCatalogModels(c.models);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [catalogModels]);
   const launch = () => {
     if (launching) return;
     setLaunching(true);
     window.setTimeout(confirm, SUBMIT_SPLASH_HOLD_MS);
   };
-
-  // The same recents the submit wizard's model dialog keeps — one shared
-  // localStorage list across every model-config surface.
-  const { recentConfigs, saveToRecent, removeRecentConfig } = useRecentModelConfigs();
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -621,34 +584,6 @@ function RubricCard({
                   </motion.div>
                 )}
               </AnimatePresence>
-            </CardContent>
-          </Card>
-
-          <Card className="shrink-0">
-            <CardHeader>
-              <CardTitle className="text-base">{msg("tagger.assist.model.title")}</CardTitle>
-              <CardDescription>{msg("tagger.assist.model.hint")}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ModelChip
-                config={modelConfig}
-                emptyLabel={msg("tagger.assist.model.placeholder")}
-                catalogModels={catalogModels ?? undefined}
-                onClick={() => setModelDialogOpen(true)}
-                onRemove={assist.model ? () => onSetModel({ name: "" }) : undefined}
-              />
-              <ModelConfigModal
-                open={modelDialogOpen}
-                onOpenChange={setModelDialogOpen}
-                config={modelConfig}
-                onSave={(cfg) => {
-                  saveToRecent(cfg);
-                  onSetModel(cfg);
-                }}
-                roleLabel={msg("tagger.assist.model.title")}
-                recentConfigs={recentConfigs}
-                onRemoveRecent={removeRecentConfig}
-              />
             </CardContent>
           </Card>
 

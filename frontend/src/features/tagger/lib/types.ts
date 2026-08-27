@@ -1,5 +1,3 @@
-import type { ModelConfig } from "@/shared/types/api";
-
 export type AnnotationMode = "binary" | "multiclass" | "freetext";
 
 export interface Category {
@@ -114,19 +112,6 @@ export interface AutotagProgress {
  */
 export interface AssistState {
   mode: Exclude<TaggerAssistMode, "manual">;
-  /**
-   * LiteLLM id of the model that tags rows — predictions, estimates and the
-   * bulk job alike. Absent means the server's default tagging model.
-   */
-  model?: string;
-  /**
-   * Safe settings saved with the chosen model from the shared model config
-   * dialog: sampling parameters plus its BYOK vault
-   * provider slug. Secrets and custom endpoints never live here. Only ever
-   * present alongside ``model``; the server resolves the connection and
-   * merges the settings into the tagging LM the same way optimizations do.
-   */
-  modelParams?: Omit<ModelConfig, "name">;
   interview: { turns: InterviewTurn[]; done: boolean };
   /** The labeling rubric distilled from the interview; grows with corrections. */
   rubric: string[];
