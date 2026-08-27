@@ -475,18 +475,18 @@ function EditableBudgetCell({
   onSave: (nextBytes: number) => Promise<void>;
   disabled?: boolean;
 }) {
-  const toMb = React.useCallback((value: number) => String(Math.round(value / BYTES_PER_MB)), []);
+  const toMb = React.useCallback((value: number) => Math.round(value / BYTES_PER_MB), []);
   const [editing, setEditing] = React.useState(false);
-  const [draft, setDraft] = React.useState<string>(toMb(bytes));
+  const [draft, setDraft] = React.useState<number>(toMb(bytes));
   const [saving, setSaving] = React.useState(false);
-  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const wrapperRef = React.useRef<HTMLSpanElement | null>(null);
 
   React.useEffect(() => {
     if (!editing) setDraft(toMb(bytes));
   }, [bytes, editing, toMb]);
 
   React.useEffect(() => {
-    if (editing) inputRef.current?.select();
+    if (editing) wrapperRef.current?.querySelector("input")?.select();
   }, [editing]);
 
   const cancel = React.useCallback(() => {
@@ -495,12 +495,11 @@ function EditableBudgetCell({
   }, [bytes, toMb]);
 
   const commit = React.useCallback(async () => {
-    const parsedMb = Number.parseInt(draft, 10);
-    if (!Number.isFinite(parsedMb) || parsedMb < 1) {
+    if (!Number.isFinite(draft) || draft < 1) {
       toast.error(msg("settings.admin.storage.budget_invalid"));
       return;
     }
-    const nextBytes = parsedMb * BYTES_PER_MB;
+    const nextBytes = draft * BYTES_PER_MB;
     if (nextBytes === bytes) {
       setEditing(false);
       return;
@@ -519,26 +518,32 @@ function EditableBudgetCell({
 
   if (editing) {
     return (
-      <span className="inline-flex items-center justify-center gap-1" dir="ltr">
-        <input
-          ref={inputRef}
-          type="number"
-          min={1}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void commit();
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              cancel();
-            }
-          }}
-          onBlur={cancel}
-          disabled={saving}
-          className="h-7 w-24 rounded-md border border-border/60 bg-background px-2 text-center text-xs tabular-nums outline-none focus:border-primary"
-        />
+      <span
+        ref={wrapperRef}
+        className="inline-flex items-center justify-center gap-1"
+        dir="ltr"
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void commit();
+          } else if (event.key === "Escape") {
+            // stopPropagation keeps Radix from closing the whole sheet.
+            event.preventDefault();
+            event.stopPropagation();
+            cancel();
+          }
+        }}
+        onMouseDown={(event) => {
+          // Keep focus in the field while the +/- steppers are clicked, so the
+          // blur-cancel below never fires mid-adjustment (Safari leaves
+          // relatedTarget null for button clicks).
+          if ((event.target as HTMLElement).closest("button")) event.preventDefault();
+        }}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) cancel();
+        }}
+      >
+        <NumberInput value={draft} onChange={setDraft} min={1} disabled={saving} className="h-8 w-36" />
         <span className="text-[0.6875rem] text-muted-foreground">MB</span>
       </span>
     );
@@ -958,6 +963,55 @@ function AdminTab() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  <TableRow className="border-border/40 bg-muted/10">
+                    <TableCell className="text-center">
+                      <Input
+                        value={newUsername}
+                        onChange={(event) => setNewUsername(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && newUsername.trim() && busyUsername === null) {
+                            event.preventDefault();
+                            void createAccount();
+                          }
+                        }}
+                        placeholder={msg("settings.admin.accounts.username_placeholder")}
+                        autoComplete="off"
+                        dir="ltr"
+                        className="mx-auto h-8 max-w-[180px] text-xs"
+                      />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Switch
+                        checked={newIsAdmin}
+                        onCheckedChange={setNewIsAdmin}
+                        aria-label={msg("settings.admin.accounts.admin")}
+                      />
+                    </TableCell>
+                    <TableCell className="text-center text-xs text-muted-foreground/60">—</TableCell>
+                    <TableCell className="text-center text-xs text-muted-foreground/60">—</TableCell>
+                    <TableCell className="text-center text-xs text-muted-foreground/60">—</TableCell>
+                    <TableCell className="w-12 text-center">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => void createAccount()}
+                            disabled={!newUsername.trim() || busyUsername !== null}
+                            className="mx-auto size-8 text-muted-foreground hover:text-foreground"
+                            aria-label={msg("settings.admin.accounts.create")}
+                          >
+                            {busyUsername !== null && busyUsername === trimmedNewUsername ? (
+                              <CircleNotch className="size-3.5 animate-spin" />
+                            ) : (
+                              <Plus className="size-3.5" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{msg("settings.admin.accounts.create")}</TooltipContent>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
                   {filteredAccounts.length === 0 ? (
                     <TableRow>
                       <TableCell
