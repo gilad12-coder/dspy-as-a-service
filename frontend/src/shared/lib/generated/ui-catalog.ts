@@ -1917,7 +1917,6 @@ export type MessageKey =
   | "settings.account.signed_out"
   | "settings.account.username.label"
   | "settings.admin.accounts.admin"
-  | "settings.admin.accounts.admin_access"
   | "settings.admin.accounts.create"
   | "settings.admin.accounts.created"
   | "settings.admin.accounts.delete"
@@ -1926,34 +1925,23 @@ export type MessageKey =
   | "settings.admin.accounts.description"
   | "settings.admin.accounts.empty"
   | "settings.admin.accounts.role_saved"
-  | "settings.admin.accounts.source_adfs"
-  | "settings.admin.accounts.source_adfs_local"
-  | "settings.admin.accounts.source_local"
   | "settings.admin.accounts.title"
   | "settings.admin.accounts.username_placeholder"
-  | "settings.admin.storage.add_row"
   | "settings.admin.storage.auth_missing"
   | "settings.admin.storage.budget"
   | "settings.admin.storage.budget_invalid"
   | "settings.admin.storage.clear_filters"
   | "settings.admin.storage.default"
   | "settings.admin.storage.default_budget"
-  | "settings.admin.storage.delete"
   | "settings.admin.storage.deleted"
   | "settings.admin.storage.edit_hint"
-  | "settings.admin.storage.empty"
   | "settings.admin.storage.no_results"
-  | "settings.admin.storage.no_suggestions"
+  | "settings.admin.storage.reset_override"
   | "settings.admin.storage.save_failed"
   | "settings.admin.storage.saved"
-  | "settings.admin.storage.searching"
-  | "settings.admin.storage.source_directory"
-  | "settings.admin.storage.title"
   | "settings.admin.storage.updated_by"
   | "settings.admin.storage.used"
   | "settings.admin.storage.username"
-  | "settings.admin.storage.username_placeholder"
-  | "settings.admin.storage.username_required"
   | "settings.admin.storage.view_list"
   | "settings.agent.default_model.description"
   | "settings.agent.default_model.label"
@@ -4764,43 +4752,31 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.account.signed_out": "לא מחובר",
   "settings.account.username.label": "שם משתמש",
   "settings.admin.accounts.admin": "מנהל/ת",
-  "settings.admin.accounts.admin_access": "הרשאת מנהל/ת",
   "settings.admin.accounts.create": "יצירת חשבון",
   "settings.admin.accounts.created": "החשבון המקומי נוצר",
   "settings.admin.accounts.delete": "מחיקת חשבון",
   "settings.admin.accounts.delete_confirm": "למחוק לצמיתות את {username} ואת כל הנתונים שבבעלותו?",
   "settings.admin.accounts.deleted": "החשבון וכל הנתונים שבבעלותו נמחקו",
-  "settings.admin.accounts.description": "ניהול שמות משתמש מקומיים ללא סיסמה והרשאות מנהל. משתמשי ADFS נוצרים אוטומטית בכניסה הראשונה.",
+  "settings.admin.accounts.description": "ניהול שמות משתמש מקומיים ללא סיסמה, הרשאות מנהל ומכסות אחסון. משתמשי ADFS נוצרים אוטומטית בכניסה הראשונה.",
   "settings.admin.accounts.empty": "עדיין אין חשבונות.",
   "settings.admin.accounts.role_saved": "הרשאת המנהל נשמרה",
-  "settings.admin.accounts.source_adfs": "ADFS",
-  "settings.admin.accounts.source_adfs_local": "ADFS + כניסה מקומית",
-  "settings.admin.accounts.source_local": "כניסה מקומית",
   "settings.admin.accounts.title": "חשבונות משתמשים",
   "settings.admin.accounts.username_placeholder": "שם משתמש",
-  "settings.admin.storage.add_row": "הוסף/הוסיפי משתמש",
   "settings.admin.storage.auth_missing": "ניהול מכסות דורש BACKEND_AUTH_SECRET משותף ב-frontend ובשרת.",
   "settings.admin.storage.budget": "מכסה",
   "settings.admin.storage.budget_invalid": "המכסה חייבת להיות מספר חיובי (MB)",
   "settings.admin.storage.clear_filters": "נקה/נקי מסננים",
   "settings.admin.storage.default": "ברירת מחדל",
   "settings.admin.storage.default_budget": "ברירת מחדל: {value}",
-  "settings.admin.storage.delete": "מחק/י",
   "settings.admin.storage.deleted": "מכסת האחסון נמחקה",
   "settings.admin.storage.edit_hint": "הקש/הקישי Enter לשמירה, Esc לביטול",
-  "settings.admin.storage.empty": "אין עדיין מכסות אישיות.",
   "settings.admin.storage.no_results": "לא נמצאו תוצאות",
-  "settings.admin.storage.no_suggestions": "אין הצעות",
+  "settings.admin.storage.reset_override": "איפוס למכסת ברירת המחדל",
   "settings.admin.storage.save_failed": "שמירת המכסה נכשלה",
   "settings.admin.storage.saved": "מכסת האחסון נשמרה",
-  "settings.admin.storage.searching": "בחיפוש…",
-  "settings.admin.storage.source_directory": "רשת",
-  "settings.admin.storage.title": "מכסות אחסון",
   "settings.admin.storage.updated_by": "עודכן על ידי",
   "settings.admin.storage.used": "בשימוש",
   "settings.admin.storage.username": "שם משתמש",
-  "settings.admin.storage.username_placeholder": "alice@example.com",
-  "settings.admin.storage.username_required": "הזן/הזיני שם משתמש",
   "settings.admin.storage.view_list": "פתח/י את הרשימה",
   "settings.agent.default_model.description": "שיחות וראיונות חדשים נפתחים עם המודל ורמת החשיבה האלה",
   "settings.agent.default_model.label": "מודל ברירת מחדל",

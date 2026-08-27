@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ...config import settings
 from ...storage.models import UserModel
 from ..account_data_service import delete_account
 from ..errors import DomainError
@@ -27,7 +29,8 @@ class UpdateAccountRoleRequest(BaseModel):
     is_admin: bool = Field(description="Whether the account is an administrator.")
 
 
-# Account-management row shown in the administrator UI.
+# Account-management row shown in the administrator UI, including the
+# account's storage budget and live use so one table can manage both.
 class ManagedAccountResponse(BaseModel):
     username: str
     local_enabled: bool
@@ -35,11 +38,16 @@ class ManagedAccountResponse(BaseModel):
     is_admin: bool
     created_at: str | None = None
     last_login_at: str | None = None
+    quota_bytes: int | None = None
+    effective_bytes: int = 0
+    used_bytes: int = 0
+    quota_updated_by: str | None = None
 
 
 # Envelope returned by the account-management list endpoint.
 class ManagedAccountListResponse(BaseModel):
     accounts: list[ManagedAccountResponse]
+    default_bytes: int
 
 
 # Outcome returned after irreversible account deletion.
@@ -61,15 +69,35 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
-def _response(row: UserModel) -> ManagedAccountResponse:
-    """Build one administrator account row.
+def _quota_overrides_by_username(job_store: Any) -> dict[str, dict[str, Any]]:
+    """Map usernames to their explicit storage-quota override rows.
+
+    Args:
+        job_store: Store holding the saved storage overrides.
+
+    Returns:
+        Override rows keyed by username.
+    """
+    return {str(row["username"]): row for row in job_store.list_user_storage_quota_overrides()}
+
+
+def _response(
+    row: UserModel,
+    *,
+    job_store: Any,
+    quota_overrides: dict[str, dict[str, Any]],
+) -> ManagedAccountResponse:
+    """Build one administrator account row with storage state.
 
     Args:
         row: Stored identity.
+        job_store: Store used to resolve effective quota and storage use.
+        quota_overrides: Explicit storage-quota override rows keyed by username.
 
     Returns:
         Account-management response.
     """
+    override = quota_overrides.get(row.username, {})
     return ManagedAccountResponse(
         username=row.username,
         local_enabled=row.local_enabled,
@@ -77,6 +105,10 @@ def _response(row: UserModel) -> ManagedAccountResponse:
         is_admin=row.is_admin,
         created_at=_iso(row.created_at),
         last_login_at=_iso(row.last_login_at),
+        quota_bytes=override.get("quota_bytes"),
+        effective_bytes=job_store.get_effective_user_storage_quota(row.username),
+        used_bytes=job_store.compute_user_storage(row.username).total,
+        quota_updated_by=override.get("updated_by"),
     )
 
 
@@ -93,18 +125,25 @@ def create_admin_accounts_router(*, job_store) -> APIRouter:
 
     @router.get("", response_model=ManagedAccountListResponse)
     def list_accounts(admin_user: AdminUserDep) -> ManagedAccountListResponse:
-        """List every known ADFS or local account.
+        """List every known ADFS or local account with storage budget and use.
 
         Args:
             admin_user: Authenticated administrator.
 
         Returns:
-            Accounts sorted by canonical username.
+            Accounts sorted by canonical username, plus the default quota.
         """
         del admin_user
+        quota_overrides = _quota_overrides_by_username(job_store)
         with Session(job_store.engine) as session:
             rows = session.scalars(select(UserModel).order_by(UserModel.username)).all()
-            return ManagedAccountListResponse(accounts=[_response(row) for row in rows])
+            return ManagedAccountListResponse(
+                accounts=[
+                    _response(row, job_store=job_store, quota_overrides=quota_overrides)
+                    for row in rows
+                ],
+                default_bytes=settings.user_storage_quota_bytes,
+            )
 
     @router.post("", response_model=ManagedAccountResponse, status_code=201)
     def create_local_account(
@@ -145,7 +184,11 @@ def create_admin_accounts_router(*, job_store) -> APIRouter:
                 row.is_admin = body.is_admin
             session.commit()
             session.refresh(row)
-            return _response(row)
+            return _response(
+                row,
+                job_store=job_store,
+                quota_overrides=_quota_overrides_by_username(job_store),
+            )
 
     @router.put("/{username}/role", response_model=ManagedAccountResponse)
     def update_account_role(
@@ -175,7 +218,11 @@ def create_admin_accounts_router(*, job_store) -> APIRouter:
             row.is_admin = body.is_admin
             session.commit()
             session.refresh(row)
-            return _response(row)
+            return _response(
+                row,
+                job_store=job_store,
+                quota_overrides=_quota_overrides_by_username(job_store),
+            )
 
     @router.delete("/{username}", response_model=ManagedAccountDeletionResponse)
     def delete_managed_account(
