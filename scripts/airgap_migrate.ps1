@@ -172,6 +172,17 @@ function Test-Need {
     }
 }
 
+function Invoke-NativeProbe {
+    # Windows PowerShell 5.1 turns redirected native stderr into a terminating
+    # NativeCommandError under ErrorActionPreference=Stop, so run availability
+    # probes with it relaxed; callers read $LASTEXITCODE for the outcome.
+    param([scriptblock]$Block)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    try { & $Block | Out-Null }
+    finally { $ErrorActionPreference = $previous }
+}
+
 function Read-Prompt {
     param(
         [string]$VarName,
@@ -222,6 +233,8 @@ name only; this script does not ask for secret values or write credentials.
         Read-Prompt 'INTERNAL_CA_MOUNT_DIR'  'Internal CA mount directory'
     }
     Read-Prompt 'LLM_BASE_URL'           'Internal OpenAI-compatible LLM base URL'
+    Read-Prompt 'CODE_AGENT_MODEL'       'Code-agent model id served by the gateway'
+    Read-Prompt 'GENERALIST_AGENT_MODEL' 'Generalist-agent model id served by the gateway'
     Read-Prompt 'EMBEDDING_BASE_URL'     'Internal OpenAI-compatible embedding base URL'
     Read-Prompt 'EMBEDDING_MODEL'        'Embedding model id'
     Read-Prompt 'OIDC_ISSUER'            'Internal ADFS/OIDC issuer URL'
@@ -296,7 +309,7 @@ function Invoke-Todos {
     if ($hasGit) {
         Push-Location $RootDir
         try {
-            git rev-parse 2>$null | Out-Null
+            Invoke-NativeProbe { git rev-parse 2>$null }
             $isRepo = ($LASTEXITCODE -eq 0)
         }
         finally {
@@ -308,8 +321,8 @@ function Invoke-Todos {
         Push-Location $RootDir
         try {
             # `git grep` mirrors the .sh exactly: same pattern, same path
-            # exclusions. Running through cmd /c lets us preserve the original
-            # exit-code shape (no matches => exit 1, which we suppress).
+            # exclusions. A no-match exit code 1 is not a terminating error
+            # in Windows PowerShell, so it needs no special handling.
             git grep -n 'TODO: On-premise\|TODO: On-prem' -- ':!*.lock' ':!*.lockb' ':!node_modules' ':!.venv'
         }
         finally {
@@ -384,7 +397,8 @@ function Invoke-ValidateMigrations {
                 # the pinned requirements.txt the same way backend/Dockerfile's
                 # pip path does. alembic/env.py never imports ldap3, so we do not
                 # require it — demanding it wrongly rejects otherwise-capable hosts.
-                & python -c 'import alembic, sqlalchemy, pgvector' 2>$null
+                Test-Need 'python'
+                Invoke-NativeProbe { python -c 'import alembic, sqlalchemy, pgvector' 2>$null }
                 if ($LASTEXITCODE -ne 0) {
                     $pipArgs = @('-m', 'pip', 'install', '--quiet')
                     $pipIndexUrl    = Get-OrDefault 'PIP_INDEX_URL'    ''
@@ -397,7 +411,7 @@ function Invoke-ValidateMigrations {
                         Write-StdErr 'pip install -r requirements.txt failed; resolve dep conflicts before validate-migrations'
                         exit 1
                     }
-                    & python -c 'import alembic, sqlalchemy, pgvector' 2>$null
+                    Invoke-NativeProbe { python -c 'import alembic, sqlalchemy, pgvector' 2>$null }
                     if ($LASTEXITCODE -ne 0) {
                         Write-StdErr 'backend deps still missing after pip install; aborting'
                         exit 1
@@ -540,6 +554,8 @@ backend:
     # TODO: On-premise - set to a model id your internal gateway actually serves (gpt-5 is a placeholder). LiteLLM forwards this id verbatim to CODE_AGENT_BASE_URL.
     CODE_AGENT_MODEL: "$($script:CODE_AGENT_MODEL)"
     GENERALIST_AGENT_MODEL: "$($script:GENERALIST_AGENT_MODEL)"
+    # TAGGER_ASSIST_BASE_URL / TAGGER_ASSIST_MODEL are optional overrides for
+    # the tagging assist; left unset it reuses the generalist pair above.
     # Explore search backend: lexical (vanilla Postgres, default) | bm25 (needs
     # the pg_search extension) | semantic (needs pgvector + the embedding gateway
     # below). Only "semantic" makes the migrate Job run CREATE EXTENSION vector.
@@ -556,10 +572,10 @@ $caBackendEnv
     ALLOWED_ORIGINS: "https://$($script:FRONTEND_HOST)"
     ADMIN_GROUPS: "$($script:AUTH_ADMIN_GROUPS)"
     ADMIN_USERNAMES: "$($script:AUTH_ADMINS)"
-    # TODO: On-premise - set to enable Active Directory username autocomplete
-    # in the admin tab. Leave empty to keep the NullDirectoryClient fallback
-    # (DB-known users only). See AIRGAP.html "Internal LDAP / Active Directory
-    # User Search" for the full env contract.
+    # Optional: enables the LDAP-backed admin user-search API
+    # (GET /admin/users/search; no UI consumes it). Leave empty to keep the
+    # NullDirectoryClient fallback (DB-known usernames only). See AIRGAP.html
+    # "Internal LDAP / Active Directory User Search" for the full env contract.
     AD_LDAP_URL: ""
     AD_LDAP_BIND_DN: ""
     AD_LDAP_SEARCH_BASE: ""
