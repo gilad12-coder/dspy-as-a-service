@@ -1,20 +1,20 @@
-aiofile==3.9.0
+aiofile==3.12.3
     # via py-key-value-aio
-aiohappyeyeballs==2.6.1
+aiohappyeyeballs==2.7.1
     # via aiohttp
 aiohttp==3.14.3
     # via litellm
 aiosignal==1.4.0
     # via aiohttp
-alembic==1.18.4
+alembic==1.19.1
     # via skynet
-annotated-doc==0.0.4
+annotated-doc==0.0.5
     # via
     #   fastapi
     #   typer
-annotated-types==0.7.0
+annotated-types==0.8.0
     # via pydantic
-anyio==4.13.0
+anyio==4.14.2
     # via
     #   dspy
     #   httpx
@@ -30,26 +30,26 @@ attrs==26.1.0
     #   cyclopts
     #   jsonschema
     #   referencing
-authlib==1.7.1
+authlib==1.7.2
     # via fastmcp
 backports-tarfile==1.2.0 ; python_full_version < '3.12'
     # via jaraco-context
 beartype==0.22.9
     # via py-key-value-aio
-cachetools==7.0.5
+cachetools==7.1.7
     # via
     #   dspy
     #   py-key-value-aio
-caio==0.9.25
+caio==0.12.2
     # via aiofile
-certifi==2026.2.25
+certifi==2026.7.22
     # via
     #   httpcore
     #   httpx
     #   requests
-cffi==2.0.0 ; platform_python_implementation != 'PyPy'
+cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
-charset-normalizer==3.4.7
+charset-normalizer==3.5.1
     # via requests
 click==8.4.2
     # via
@@ -69,7 +69,7 @@ cryptography==50.0.0
     #   joserfc
     #   pyjwt
     #   secretstorage
-cyclopts==4.10.2
+cyclopts==4.23.2
     # via fastmcp
 diskcache==5.6.3
     # via dspy
@@ -79,41 +79,41 @@ dnspython==2.8.0
     # via email-validator
 docstring-parser==0.18.0
     # via cyclopts
-docutils==0.22.4
+docutils==0.23
     # via rich-rst
-dspy==3.3.0
+dspy==3.3.1
     # via skynet
 email-validator==2.3.0
     # via pydantic
 exceptiongroup==1.3.1
     # via fastmcp
-fastapi==0.135.3
+fastapi==0.141.1
     # via skynet
-fastmcp==3.2.4
+fastmcp==3.4.7
     # via skynet
 fastuuid==0.14.0
     # via litellm
-filelock==3.28.0
+filelock==3.32.4
     # via huggingface-hub
 frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
-fsspec==2026.3.0
+fsspec==2026.7.0
     # via huggingface-hub
 gepa==0.1.4
     # via
     #   dspy
     #   skynet
-greenlet==3.4.0 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'
+greenlet==3.5.5 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'
     # via sqlalchemy
-griffelib==2.0.2
+griffelib==2.2.0
     # via fastmcp
 h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
-hf-xet==1.4.3 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
+hf-xet==1.6.0 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
     # via huggingface-hub
 httpcore==1.0.9
     # via httpx
@@ -126,9 +126,9 @@ httpx==0.28.1
     #   openai
 httpx-sse==0.4.3
     # via mcp
-huggingface-hub==1.10.2
+huggingface-hub==1.28.0
     # via tokenizers
-idna==3.15
+idna==3.19
     # via
     #   anyio
     #   email-validator
@@ -144,7 +144,7 @@ jaraco-classes==3.4.0
     # via keyring
 jaraco-context==6.1.2
     # via keyring
-jaraco-functools==4.4.0
+jaraco-functools==4.6.0
     # via keyring
 jeepney==0.9.0 ; sys_platform == 'linux'
     # via
@@ -152,19 +152,19 @@ jeepney==0.9.0 ; sys_platform == 'linux'
     #   secretstorage
 jinja2==3.1.6
     # via litellm
-jiter==0.14.0
+jiter==0.16.0
     # via openai
-joserfc==1.6.8
+joserfc==1.7.4
     # via authlib
-json-repair==0.61.4
+json-repair==0.63.3
     # via dspy
 jsonref==1.1.0
     # via fastmcp
-jsonschema==4.23.0
+jsonschema==4.26.0
     # via
     #   litellm
     #   mcp
-jsonschema-path==0.4.5
+jsonschema-path==0.5.0
     # via fastmcp
 jsonschema-specifications==2025.9.1
     # via jsonschema
@@ -172,13 +172,13 @@ keyring==25.7.0
     # via py-key-value-aio
 ldap3==2.9.1
     # via skynet
-litellm==1.84.0
+litellm==1.98.0
     # via
     #   dspy
     #   skynet
-mako==1.3.12
+mako==1.4.1
     # via alembic
-markdown-it-py==4.0.0
+markdown-it-py==4.2.0
     # via rich
 markupsafe==3.0.3
     # via
@@ -188,7 +188,7 @@ mcp==1.28.1
     # via fastmcp
 mdurl==0.1.2
     # via markdown-it-py
-more-itertools==11.0.2
+more-itertools==11.1.0
     # via
     #   jaraco-classes
     #   jaraco-functools
@@ -196,7 +196,7 @@ multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
-numpy==2.4.4
+numpy==2.4.6
     # via
     #   pgvector
     #   scipy
@@ -207,39 +207,39 @@ openai==2.24.0
     #   litellm
 openapi-pydantic==0.5.1
     # via fastmcp
-opentelemetry-api==1.41.0
+opentelemetry-api==1.44.0
     # via fastmcp
-orjson==3.11.8
+orjson==3.12.0
     # via dspy
-packaging==26.1
+packaging==26.3
     # via
     #   fastmcp
     #   huggingface-hub
-pathable==0.5.0
+pathable==0.6.0
     # via jsonschema-path
-pgvector==0.4.2
+pgvector==0.5.0
     # via skynet
-platformdirs==4.9.6
+platformdirs==4.11.3
     # via fastmcp
-prometheus-client==0.25.0
+prometheus-client==0.26.0
     # via
     #   prometheus-fastapi-instrumentator
     #   skynet
-prometheus-fastapi-instrumentator==8.0.2
+prometheus-fastapi-instrumentator==8.1.0
     # via skynet
-propcache==0.4.1
+propcache==0.5.2
     # via
     #   aiohttp
     #   yarl
-psycopg2-binary==2.9.11
+psycopg2-binary==2.9.12
     # via skynet
-py-key-value-aio==0.4.4
+py-key-value-aio==0.4.5
     # via fastmcp
 pyasn1==0.6.4
     # via ldap3
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
-pydantic==2.12.5
+pydantic==2.13.4
     # via
     #   dspy
     #   fastapi
@@ -250,27 +250,27 @@ pydantic==2.12.5
     #   openapi-pydantic
     #   pydantic-settings
     #   skynet
-pydantic-core==2.41.5
+pydantic-core==2.48.0
     # via pydantic
-pydantic-settings==2.14.2
+pydantic-settings==2.15.0
     # via
     #   mcp
     #   skynet
-pygments==2.20.0
+pygments==2.21.0
     # via rich
 pyjwt==2.13.0
     # via mcp
 pyperclip==1.11.0
     # via fastmcp
-python-dotenv==1.2.2
+python-dotenv==1.2.3
     # via
     #   fastmcp
     #   litellm
     #   pydantic-settings
     #   skynet
-python-json-logger==4.1.0
+python-json-logger==4.2.0
     # via skynet
-python-multipart==0.0.31
+python-multipart==0.0.32
     # via mcp
 pywin32==311 ; sys_platform == 'win32'
     # via mcp
@@ -286,11 +286,11 @@ referencing==0.37.0
     #   jsonschema
     #   jsonschema-path
     #   jsonschema-specifications
-regex==2026.4.4
+regex==2026.7.19
     # via
     #   dspy
     #   tiktoken
-requests==2.33.1
+requests==2.34.2
     # via
     #   dspy
     #   skynet
@@ -317,13 +317,13 @@ shellingham==1.5.4
     # via typer
 sniffio==1.3.1
     # via openai
-sqlalchemy==2.0.49
+sqlalchemy==2.0.52
     # via
     #   alembic
     #   skynet
-sse-starlette==3.3.4
+sse-starlette==3.4.8
     # via mcp
-starlette==1.3.1
+starlette==1.6.0
     # via
     #   fastapi
     #   mcp
@@ -331,18 +331,18 @@ starlette==1.3.1
     #   sse-starlette
 tenacity==9.1.4
     # via dspy
-tiktoken==0.12.0
+tiktoken==0.14.0
     # via litellm
-tokenizers==0.22.2
+tokenizers==0.23.1
     # via litellm
-tqdm==4.67.3
+tqdm==4.70.0
     # via
     #   dspy
     #   huggingface-hub
     #   openai
-typer==0.23.1
+typer==0.27.1
     # via huggingface-hub
-typing-extensions==4.15.0
+typing-extensions==4.16.0
     # via
     #   aiohttp
     #   aiosignal
@@ -361,31 +361,31 @@ typing-extensions==4.15.0
     #   sqlalchemy
     #   starlette
     #   typing-inspection
-typing-inspection==0.4.2
+typing-inspection==0.4.4
     # via
     #   fastapi
     #   mcp
     #   pydantic
     #   pydantic-settings
-uncalled-for==0.3.1
+uncalled-for==0.4.0
     # via fastmcp
 urllib3==2.7.0
     # via requests
-uvicorn==0.44.0
+uvicorn==0.52.4
     # via
     #   fastmcp
     #   mcp
     #   skynet
-watchfiles==1.1.1
+watchfiles==1.2.0
     # via fastmcp
 websockets==16.0
     # via fastmcp
-yarl==1.23.0
+yarl==1.24.5
     # via aiohttp
 zipp==3.23.1
     # via importlib-metadata
 # Pinned dependency set for the pip install path (PKG_MANAGER=pip) — the
-# lockfile-equivalent of uv.lock for the DEFAULT DSPy line (dspy==3.3.0).
+# lockfile-equivalent of uv.lock for the DEFAULT DSPy line (dspy==3.3.1).
 # uv.lock remains the source of truth. The project itself
 # installs separately (pip install -e . --no-deps), so it is not emitted here.
 #
