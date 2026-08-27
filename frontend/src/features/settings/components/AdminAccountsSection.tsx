@@ -151,14 +151,6 @@ export function AdminAccountsSection() {
                     <bdi dir="ltr">{account.username}</bdi>
                   </p>
                   <p className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground/80">
-                    {account.display_name && account.display_name !== account.username ? (
-                      <>
-                        {account.display_name}
-                        <span className="px-1" aria-hidden="true">
-                          ·
-                        </span>
-                      </>
-                    ) : null}
                     {account.adfs_seen
                       ? account.local_enabled
                         ? msg("settings.admin.accounts.source_adfs_local")
