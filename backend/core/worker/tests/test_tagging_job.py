@@ -106,7 +106,6 @@ def _fake_predict_all(
     on_batch=None,
     cancel=None,
     usage_sink=None,
-    model_config=None,
 ):
     """Label every row 'no' through on_batch, like the real engine."""
     batch = {str(r["id"]): {"value": "no", "confidence": 0.9, "reason": "t"} for r in rows}
@@ -160,7 +159,6 @@ def test_run_autotag_job_user_cancel(monkeypatch) -> None:
         on_batch=None,
         cancel=None,
         usage_sink=None,
-        model_config=None,
     ):
         """Block until the stop signal arrives, like a long real run."""
         assert cancel is not None
@@ -193,7 +191,6 @@ def test_run_autotag_job_lease_loss_abandons_silently(monkeypatch) -> None:
         on_batch=None,
         cancel=None,
         usage_sink=None,
-        model_config=None,
     ):
         """Block until the stop signal arrives, like a long real run."""
         assert cancel is not None
@@ -226,7 +223,6 @@ def test_run_autotag_job_failure_marks_session(monkeypatch) -> None:
         on_batch=None,
         cancel=None,
         usage_sink=None,
-        model_config=None,
     ):
         """Blow up like an exhausted provider."""
         raise RuntimeError("provider down")

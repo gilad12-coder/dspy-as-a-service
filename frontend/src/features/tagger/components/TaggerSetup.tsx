@@ -28,13 +28,9 @@ import { HelpTip } from "@/shared/ui/help-tip";
 import { tip } from "@/shared/lib/tooltips";
 import { parseDatasetFile } from "@/shared/lib/parse-dataset";
 import { getDatasetRows } from "@/shared/lib/api";
-import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
-import type { CatalogModel, ModelConfig } from "@/shared/types/api";
 import { registerTutorialHook, registerTutorialQuery } from "@/features/tutorial";
-import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
 import { DatasetPickerDialog } from "@/features/datasets";
-import { ModelChip } from "@/shared/ui/model-chip";
-import { readPref, useUserPrefs } from "@/features/settings";
+import { useUserPrefs } from "@/features/settings";
 import type {
   AnnotationMode,
   TaggerAssistMode,
@@ -53,7 +49,6 @@ interface TaggerSetupProps {
     rows: DataRow[],
     columns: string[],
     assistMode?: TaggerAssistMode,
-    assistModel?: ModelConfig,
   ) => void;
 }
 
@@ -158,30 +153,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<AnnotationMode | null>(null);
   const [assistMode, setAssistMode] = useState<TaggerAssistMode>("copilot");
-  // Empty name = the server's default tagging model. Seeded from the
-  // settings-modal default; the chip in the assist step overrides per session.
-  const [assistModel, setAssistModel] = useState<ModelConfig>(() => readPref("taggerAssistModel"));
-  const [modelDialogOpen, setModelDialogOpen] = useState(false);
-  // The same recents the submit wizard's model dialog keeps — one shared
-  // localStorage list across every model-config surface.
-  const { recentConfigs, saveToRecent, removeRecentConfig } = useRecentModelConfigs();
-  // Managed catalog for the model dialog's thinking detection and the chip's
-  // vision badge — same source the submit wizard feeds it.
-  const [catalogModels, setCatalogModels] = useState<CatalogModel[] | null>(
-    cachedCatalog()?.models ?? null,
-  );
-  useEffect(() => {
-    if (catalogModels) return;
-    let cancelled = false;
-    getModelCatalog()
-      .then((c) => {
-        if (!cancelled) setCatalogModels(c.models);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [catalogModels]);
   const [libraryName, setLibraryName] = useState<string | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -396,13 +367,7 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
     config.assistMode = effectiveAssistMode;
     const source = libraryName ?? (file ? cleanSourceName(file.name) : null);
     if (source) config.sourceName = source;
-    onStart(
-      config,
-      mapped,
-      parsedCols,
-      effectiveAssistMode,
-      effectiveAssistMode === "manual" || !assistModel.name.trim() ? undefined : assistModel,
-    );
+    onStart(config, mapped, parsedCols, effectiveAssistMode);
   };
 
   const steps = [
@@ -692,31 +657,6 @@ export function TaggerSetup({ onStart }: TaggerSetupProps) {
               </button>
             );
           })}
-          {assistMode !== "manual" && (
-            <div className="mt-2 space-y-1.5">
-              <p className="text-sm font-medium">{msg("tagger.assist.model.title")}</p>
-              <p className="text-xs text-muted-foreground">{msg("tagger.assist.model.hint")}</p>
-              <ModelChip
-                config={assistModel}
-                emptyLabel={msg("tagger.assist.model.placeholder")}
-                catalogModels={catalogModels ?? undefined}
-                onClick={() => setModelDialogOpen(true)}
-                onRemove={assistModel.name ? () => setAssistModel({ name: "" }) : undefined}
-              />
-              <ModelConfigModal
-                open={modelDialogOpen}
-                onOpenChange={setModelDialogOpen}
-                config={assistModel}
-                onSave={(cfg) => {
-                  saveToRecent(cfg);
-                  setAssistModel(cfg);
-                }}
-                roleLabel={msg("tagger.assist.model.title")}
-                recentConfigs={recentConfigs}
-                onRemoveRecent={removeRecentConfig}
-              />
-            </div>
-          )}
         </CardContent>
       </Card>,
     );

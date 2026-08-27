@@ -11,7 +11,6 @@ import {
   Robot,
   Brain,
   Columns,
-  Cpu,
   Key,
   ArrowSquareOut,
   Feather,
@@ -86,10 +85,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/
 import { ExportTableMenu } from "@/shared/ui/export-table-menu";
 import { msg } from "@/shared/lib/messages";
 import { formatStorageSize } from "@/shared/lib/formatters";
-import { cachedCatalog, getModelCatalog } from "@/shared/lib/model-catalog";
-import type { CatalogModel } from "@/shared/types/api";
-import { ModelChip } from "@/shared/ui/model-chip";
-import { ModelConfigModal, useRecentModelConfigs } from "@/features/submit";
 import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { useTutorialContext } from "@/features/tutorial";
@@ -159,27 +154,6 @@ function WizardTab() {
 
 function TaggingTab() {
   const { prefs, setPref } = useUserPrefs();
-  const [modelDialogOpen, setModelDialogOpen] = React.useState(false);
-  // The same recents the submit wizard's model dialog keeps — one shared
-  // localStorage list across every model-config surface.
-  const { recentConfigs, saveToRecent, removeRecentConfig } = useRecentModelConfigs();
-  // Same managed-catalog source the tagger setup feeds the dialog: thinking
-  // detection and the chip's vision badge need the model metadata.
-  const [catalogModels, setCatalogModels] = React.useState<CatalogModel[] | null>(
-    cachedCatalog()?.models ?? null,
-  );
-  React.useEffect(() => {
-    if (catalogModels) return;
-    let cancelled = false;
-    getModelCatalog()
-      .then((c) => {
-        if (!cancelled) setCatalogModels(c.models);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [catalogModels]);
 
   return (
     <div className="space-y-1">
@@ -190,36 +164,6 @@ function TaggingTab() {
       >
         <Switch checked={prefs.taggerAssist} onCheckedChange={(v) => setPref("taggerAssist", v)} />
       </SettingsRow>
-
-      <SettingsRow
-        icon={Cpu}
-        label={msg("settings.tagger.default_model.label")}
-        description={msg("settings.tagger.default_model.description")}
-      >
-        <ModelChip
-          config={prefs.taggerAssistModel}
-          emptyLabel={msg("tagger.assist.model.placeholder")}
-          catalogModels={catalogModels ?? undefined}
-          onClick={() => setModelDialogOpen(true)}
-          onRemove={
-            prefs.taggerAssistModel.name
-              ? () => setPref("taggerAssistModel", { name: "" })
-              : undefined
-          }
-        />
-      </SettingsRow>
-      <ModelConfigModal
-        open={modelDialogOpen}
-        onOpenChange={setModelDialogOpen}
-        config={prefs.taggerAssistModel}
-        onSave={(cfg) => {
-          saveToRecent(cfg);
-          setPref("taggerAssistModel", cfg);
-        }}
-        roleLabel={msg("settings.tagger.default_model.label")}
-        recentConfigs={recentConfigs}
-        onRemoveRecent={removeRecentConfig}
-      />
     </div>
   );
 }

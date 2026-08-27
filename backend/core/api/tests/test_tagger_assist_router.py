@@ -13,20 +13,14 @@ the autosave 409 while a job runs, and the ownership guard.
 from __future__ import annotations
 
 import threading
-from types import SimpleNamespace
-from unittest.mock import patch
 
-from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from ...byok import ProviderKeyVault
-from ...config import settings
 from ...constants import OPTIMIZATION_TYPE_TAGGING
 from ...service_gateway import tagging
 from ...storage.models import Base, TaggingSessionModel
@@ -34,12 +28,7 @@ from ...storage.remote import RemoteDBJobStore
 from ...worker.tagging_job import TaggingAutotagPayload, run_autotag_job
 from ..auth import AuthenticatedUser, get_authenticated_user
 from ..errors import DomainError
-from ..routers import tagger_assist
-from ..routers.tagger_assist import (
-    _effective_config,
-    _resolve_assist_model,
-    create_tagger_assist_router,
-)
+from ..routers.tagger_assist import _effective_config, create_tagger_assist_router
 from ..routers.tagging_sessions import create_tagging_session_router
 
 _ALICE = AuthenticatedUser(username="alice", role="user", groups=())
@@ -356,7 +345,6 @@ def test_predict_excludes_requested_rows_from_examples(monkeypatch) -> None:
         on_batch=None,
         cancel=None,
         usage_sink=None,
-        model_config=None,
     ):
         """Return a canned prediction for every requested row."""
         captured["instructions"] = instructions
@@ -389,7 +377,7 @@ def test_predict_stream_emits_rows_then_done(monkeypatch) -> None:
     """The SSE predict route relays per-row events, then the terminal summary."""
     captured: dict = {}
 
-    async def fake_stream(config, instructions, rows, usage_sink=None, model_config=None):
+    async def fake_stream(config, instructions, rows, usage_sink=None):
         """Yield one event per requested row, then the merged summary."""
         captured["instructions"] = instructions
         captured["ids"] = [str(r["id"]) for r in rows]
@@ -432,102 +420,58 @@ def test_estimate_counts_untagged_rows() -> None:
     assert body["estimated_output_tokens"] >= 0
 
 
-def _catalog_with(*values: str) -> SimpleNamespace:
-    """Build a stand-in model catalog carrying just the given model ids."""
-    return SimpleNamespace(models=[SimpleNamespace(value=v) for v in values])
-
-
-def test_estimate_runs_on_chosen_model(monkeypatch) -> None:
-    """A session's chosen tagging model drives (and is echoed by) the estimate."""
-    monkeypatch.setattr(
-        tagger_assist, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test")
-    )
-    client, _ = _client(_ALICE)
-    body = dict(_SESSION_BODY)
-    body["assist"] = {**_SESSION_BODY["assist"], "model": "openai/gpt-test"}
-    resp = client.post("/tagging-sessions", json=body)
-    assert resp.status_code == 201, resp.text
-    session_id = resp.json()["id"]
-    resp = client.post(f"/tagging-sessions/{session_id}/assist/estimate")
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["model"] == "openai/gpt-test"
-
-
-def test_resolve_assist_model_injects_verified_byok_connection(monkeypatch) -> None:
-    """A tagging BYOK selection resolves its verified key only at execution time."""
-    store = _MemStore()
-    monkeypatch.setattr(
-        settings,
-        "byok_vault_key",
-        SecretStr(Fernet.generate_key().decode("utf-8")),
-    )
-    with patch(
-        "core.byok.vault.httpx.get",
-        return_value=SimpleNamespace(status_code=200, is_success=True),
-    ):
-        ProviderKeyVault(engine=store.engine).save_key(
-            _ALICE.username,
-            "openrouter",
-            "sk-or-test",
-        )
-    resolved = _resolve_assist_model(
-        store,
-        _ALICE.username,
-        {
-            "model": "openrouter/openai/gpt-test",
-            "modelParams": {
-                "token_source": "byok",
-                "byok_provider": "openrouter",
-                "extra": {"api_key": "inline-secret"},
-            },
-        },
-    )
-    assert resolved.token_source == "byok"
-    assert resolved.byok_provider == "openrouter"
-    assert resolved.extra == {"api_key": "sk-or-test"}
-
-
-def test_byok_tagger_without_verified_connection_is_blocked() -> None:
-    """A tagging BYOK model never starts spending without its vault connection."""
-    client, _ = _client(_ALICE)
+def _create_with_client_model(client: TestClient) -> str:
+    """Create a session whose assist state smuggles a model choice and BYOK params."""
     body = dict(_SESSION_BODY)
     body["assist"] = {
         **_SESSION_BODY["assist"],
-        "model": "openrouter/openai/gpt-test",
+        "model": "smuggled/frontier-xl",
         "modelParams": {
+            "temperature": 0.1,
             "token_source": "byok",
             "byok_provider": "openrouter",
         },
     }
     resp = client.post("/tagging-sessions", json=body)
     assert resp.status_code == 201, resp.text
-    session_id = resp.json()["id"]
+    return resp.json()["id"]
+
+
+def test_estimate_never_echoes_a_model() -> None:
+    """The estimate carries no model id: the tagging model is operator config."""
+    client, _ = _client(_ALICE)
+    session_id = _create_with_client_model(client)
     resp = client.post(f"/tagging-sessions/{session_id}/assist/estimate")
-    assert resp.status_code == 400
-    assert resp.json()["code"] == "byok.missing_connection"
+    assert resp.status_code == 200, resp.text
+    assert "model" not in resp.json()
 
 
-def test_unknown_model_rejected_before_spending(monkeypatch) -> None:
-    """A model outside the curated catalog is refused on every spend route."""
-    monkeypatch.setattr(
-        tagger_assist, "get_catalog_cached", lambda: _catalog_with("openai/gpt-test")
-    )
+def test_client_model_on_assist_never_reaches_the_engine(monkeypatch) -> None:
+    """A model written onto ``assist`` is ignored on every spend route."""
+    captured: dict = {}
+
+    def fake_predict(config, instructions, rows, on_batch=None, cancel=None, usage_sink=None):
+        """Record the effective config instead of calling an LM."""
+        captured["config"] = config
+        return (
+            {str(r["id"]): {"value": "no", "confidence": 0.8, "reason": "test"} for r in rows},
+            1,
+        )
+
+    monkeypatch.setattr(tagging, "predict_rows", fake_predict)
     worker = _FakeWorker()
-    client, _ = _client(_ALICE, worker=worker)
-    body = dict(_SESSION_BODY)
-    body["assist"] = {**_SESSION_BODY["assist"], "model": "smuggled/frontier-xl"}
-    resp = client.post("/tagging-sessions", json=body)
-    assert resp.status_code == 201, resp.text
-    session_id = resp.json()["id"]
-    for route, kwargs in (
-        ("predict", {"json": {"row_ids": ["2"]}}),
-        ("estimate", {}),
-        ("autotag", {}),
-    ):
-        resp = client.post(f"/tagging-sessions/{session_id}/assist/{route}", **kwargs)
-        assert resp.status_code == 422, resp.text
-        assert resp.json()["code"] == "tagger.assist.unknown_model"
-    assert worker.submitted == []
+    client, store = _client(_ALICE, worker=worker)
+    session_id = _create_with_client_model(client)
+    resp = client.post(f"/tagging-sessions/{session_id}/assist/predict", json={"row_ids": ["2"]})
+    assert resp.status_code == 200, resp.text
+    assert "model" not in captured["config"]
+    assert "modelParams" not in captured["config"]
+    resp = client.post(f"/tagging-sessions/{session_id}/assist/autotag")
+    assert resp.status_code == 202, resp.text
+    assert len(worker.submitted) == 1
+    with Session(store.engine) as db:
+        row = db.get(TaggingSessionModel, session_id)
+        assert "model" not in _effective_config(row)
 
 
 def test_autotag_start_submits_worker_job(monkeypatch) -> None:
@@ -568,7 +512,6 @@ def test_autotag_start_submits_worker_job(monkeypatch) -> None:
         on_batch=None,
         cancel=None,
         usage_sink=None,
-        model_config=None,
     ):
         """Emit one canned batch through on_batch, like the real engine."""
         batch = {

@@ -2075,8 +2075,6 @@ export type MessageKey =
   | "settings.tab.wizard"
   | "settings.tagger.assist.description"
   | "settings.tagger.assist.label"
-  | "settings.tagger.default_model.description"
-  | "settings.tagger.default_model.label"
   | "settings.title"
   | "settings.wizard.code_assist.auto"
   | "settings.wizard.code_assist.label"
@@ -2436,9 +2434,6 @@ export type MessageKey =
   | "tagger.assist.interview.title"
   | "tagger.assist.label.no"
   | "tagger.assist.label.yes"
-  | "tagger.assist.model.hint"
-  | "tagger.assist.model.placeholder"
-  | "tagger.assist.model.title"
   | "tagger.assist.rail.agreement"
   | "tagger.assist.rail.confirm"
   | "tagger.assist.rail.decided_confirmed"
@@ -4910,8 +4905,6 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "settings.tab.wizard": "{term.optimization}",
   "settings.tagger.assist.description": "ראיון, תיוג משותף ותיוג אוטומטי במתייג. כבוי = המתייג הידני המלא.",
   "settings.tagger.assist.label": "תיוג בסיוע AI",
-  "settings.tagger.default_model.description": "נבחר מראש בהקמת תיוג בסיוע AI",
-  "settings.tagger.default_model.label": "מודל תיוג ברירת מחדל",
   "settings.title": "הגדרות",
   "settings.wizard.code_assist.auto": "הסוכן כותב",
   "settings.wizard.code_assist.label": "אופן כתיבת הקוד ב{term.optimization} חדשה",
@@ -5271,9 +5264,6 @@ export const UI_MESSAGES: Record<MessageKey, string> = {
   "tagger.assist.interview.title": "ראיון על הדאטה",
   "tagger.assist.label.no": "לא",
   "tagger.assist.label.yes": "כן",
-  "tagger.assist.model.hint": "המודל שמתייג את השורות שלכם — ברירת המחדל מתאימה לרוב הדאטאסטים.",
-  "tagger.assist.model.placeholder": "מודל ברירת המחדל",
-  "tagger.assist.model.title": "מודל התיוג",
   "tagger.assist.rail.agreement": "הסכמה",
   "tagger.assist.rail.confirm": "אישור (Enter)",
   "tagger.assist.rail.decided_confirmed": "אושר",

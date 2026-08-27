@@ -1257,7 +1257,6 @@ export async function moveTaggerSessionToLibrary(
 export function taggerAssistEstimate(sessionId: string) {
   return request<{
     rows: number;
-    model: string;
     estimated_input_tokens: number;
     estimated_output_tokens: number;
   }>(

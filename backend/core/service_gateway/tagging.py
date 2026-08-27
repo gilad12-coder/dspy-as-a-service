@@ -24,7 +24,6 @@ from typing import Any
 import dspy
 
 from ..config import settings
-from ..constants import TOKEN_SOURCE_BYOK
 from ..models import ModelConfig
 from .agents.code import ReasoningStreamListener, _reply_language
 from .agents.code_interview import INTERVIEW_TURN_ATTEMPTS, normalize_options
@@ -55,115 +54,40 @@ def assist_model_name() -> str:
     return settings.tagger_assist_model or settings.generalist_agent_model
 
 
-# Union of the per-provider effort vocabularies the composer offers ("none"
-# and "xhigh" are OpenAI's floor/ceiling-adjacent tiers, "max" tops out
-# Anthropic and GPT-5.6 Sol; "ultra" is a separate mode, not an effort).
-_REASONING_EFFORT_LEVELS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max"})
-
-
-def _sanitize_model_params(params: Any) -> dict[str, Any]:
-    """Reduce stored model params to the safe model settings tagging honors.
-
-    ``assist`` is a free-form JSON column any API caller can write, so only
-    temperature, max_tokens, the reasoning-effort extra, and the
-    non-secret connection selectors pass through. Connection fields
-    (endpoints, keys, arbitrary LiteLLM kwargs) never reach the tagging LM;
-    the API or worker resolves a verified vault connection separately.
-
-    Args:
-        params: The ``modelParams`` mapping stored on the assist state.
-
-    Returns:
-        Keyword arguments safe to construct a :class:`ModelConfig` with.
-    """
-    if not isinstance(params, dict):
-        return {}
-    out: dict[str, Any] = {}
-    temperature = params.get("temperature")
-    if isinstance(temperature, (int, float)) and not isinstance(temperature, bool):
-        out["temperature"] = min(2.0, max(0.0, float(temperature)))
-    tokens = params.get("max_tokens")
-    if isinstance(tokens, (int, float)) and not isinstance(tokens, bool) and int(tokens) >= 1:
-        out["max_tokens"] = int(tokens)
-    extra = params.get("extra")
-    effort = extra.get("reasoning_effort") if isinstance(extra, dict) else None
-    if isinstance(effort, str) and effort.lower() in _REASONING_EFFORT_LEVELS:
-        out["extra"] = {"reasoning_effort": effort.lower()}
-    token_source = params.get("token_source")
-    if token_source in {"managed", "byok"}:
-        out["token_source"] = token_source
-    byok_provider = params.get("byok_provider")
-    if token_source == "byok" and isinstance(byok_provider, str) and byok_provider.strip():
-        out["byok_provider"] = byok_provider.strip()
-    return out
-
-
-def assist_model_config(assist: dict[str, Any]) -> ModelConfig:
-    """Build the safe model config selected for a tagging session.
-
-    Args:
-        assist: Persisted tagging-assist state carrying ``model`` and
-            ``modelParams``.
-
-    Returns:
-        A validated config with no inline connection secret or endpoint.
-    """
-    model_name = str((assist or {}).get("model") or "").strip() or assist_model_name()
-    return ModelConfig(name=model_name, **_sanitize_model_params((assist or {}).get("modelParams")))
-
-
 def _build_assist_lm(
     model_name: str | None = None,
-    params: dict[str, Any] | None = None,
     reasoning_effort: str | None = None,
     lm_extra_body: dict[str, Any] | None = None,
-    model_config: ModelConfig | None = None,
 ) -> dspy.LM:
     """Build the assist LM from settings, mirroring the generalist agent.
+
+    On-prem the tagging model is operator config (``TAGGER_ASSIST_MODEL``,
+    falling back to the generalist agent's): nothing persisted on a session
+    — ``assist`` is a free-form JSON column any API caller can write — ever
+    picks the model, its endpoint or its sampling parameters.
 
     Args:
         model_name: LiteLLM model id to run on; falls back to the configured
             tagging-assist model (then the generalist agent's) when empty.
-        params: Sampling parameters saved alongside the chosen model
-            (``assist.modelParams``); sanitized before use.
-        reasoning_effort: Explicit ``reasoning_effort`` level chosen in the
-            composer's model menu; ``None`` keeps the model's default.
+        reasoning_effort: Explicit ``reasoning_effort`` level; ``None`` keeps
+            the model's default.
         lm_extra_body: Extra request-body fields merged into the provider
-            call (the auto router's plugin dial rides here).
-        model_config: Optional fully resolved config. Interactive and worker
-            BYOK callers pass a vault-backed copy here so the secret remains
-            outside persisted session state.
+            call.
 
     Returns:
-        A cache-disabled ``dspy.LM`` on the requested model.
+        A cache-disabled ``dspy.LM`` on the configured model.
     """
-    kwargs = _sanitize_model_params(params)
-    if lm_extra_body:
-        extra = dict(kwargs.get("extra") or {})
-        extra["extra_body"] = {**dict(extra.get("extra_body") or {}), **lm_extra_body}
-        kwargs["extra"] = extra
-    if model_config is not None:
-        config = model_config
-        if config.token_source != TOKEN_SOURCE_BYOK and not config.base_url:
-            config = config.model_copy(
-                update={
-                    "base_url": settings.tagger_assist_base_url
-                    or settings.generalist_agent_base_url
-                    or settings.openai_api_base
-                    or None
-                }
-            )
-    else:
-        config = ModelConfig(
-            name=model_name or assist_model_name(),
-            base_url=(
-                settings.tagger_assist_base_url
-                or settings.generalist_agent_base_url
-                or settings.openai_api_base
-                or None
-            ),
-            **kwargs,
-        )
+    kwargs: dict[str, Any] = {"extra": {"extra_body": lm_extra_body}} if lm_extra_body else {}
+    config = ModelConfig(
+        name=model_name or assist_model_name(),
+        base_url=(
+            settings.tagger_assist_base_url
+            or settings.generalist_agent_base_url
+            or settings.openai_api_base
+            or None
+        ),
+        **kwargs,
+    )
     config = apply_reasoning_effort(config, reasoning_effort)
     return build_language_model(apply_model_reasoning_config(config), disable_cache=True)
 
@@ -322,16 +246,14 @@ def effective_task_config(config: dict[str, Any], assist: dict[str, Any]) -> dic
     The ``config`` column never changes after creation; the interview's
     refinements — question, categories, prompt and, on provisional-mode
     sessions, the inferred answer style — live in ``assist.taskOverride``.
-    The user's chosen tagging model (``assist.model``) and its saved
-    sampling parameters (``assist.modelParams``) ride along the same way, so
-    predictions, estimates and the bulk worker all see one merged view.
     Every LLM surface (router routes and the bulk worker alike) reads
-    through this merge.
+    through this merge. A ``model``/``modelParams`` pair a client may have
+    written onto ``assist`` is deliberately not lifted: the tagging model
+    is operator config.
 
     Args:
         config: The stored ``TaggerConfig`` payload.
-        assist: The session's assist state (carries ``taskOverride`` and the
-            chosen tagging model).
+        assist: The session's assist state (carries ``taskOverride``).
 
     Returns:
         A copy of ``config`` with the override applied; ``modeProvisional``
@@ -350,12 +272,6 @@ def effective_task_config(config: dict[str, Any], assist: dict[str, Any]) -> dic
     categories = override.get("categories")
     if isinstance(categories, list) and categories:
         merged["categories"] = categories
-    model = str((assist or {}).get("model") or "").strip()
-    if model:
-        merged["model"] = model
-        params = (assist or {}).get("modelParams")
-        if isinstance(params, dict) and params:
-            merged["modelParams"] = params
     return merged
 
 
@@ -1099,30 +1015,22 @@ def predict_rows(
     on_batch: Callable[[dict[str, dict[str, Any]]], None] | None = None,
     cancel: threading.Event | None = None,
     usage_sink: list | None = None,
-    model_config: ModelConfig | None = None,
 ) -> tuple[dict[str, dict[str, Any]], int]:
     """Label rows in concurrent batches and report total token use.
 
     Args:
-        config: The session's effective config; when it carries the user's
-            chosen tagging model (``model``) and its saved sampling
-            parameters (``modelParams``), predictions run on them.
+        config: The session's effective config.
         instructions: Compiled tagging instructions.
         rows: Row payloads (each needs ``id`` and ``text``).
         on_batch: Called with each completed batch's predictions (bulk-job
             progress persistence); called from worker threads.
         cancel: Cooperative cancellation; pending batches are skipped once set.
         usage_sink: Optional list the built LM is appended to for observability.
-        model_config: Optional resolved model config, including an in-memory
-            BYOK vault connection when that source was selected.
 
     Returns:
         ``(predictions, total_tokens)`` for the LM calls actually made.
     """
-    selected = model_config or assist_model_config(
-        {"model": config.get("model"), "modelParams": config.get("modelParams")}
-    )
-    lm = _build_assist_lm(model_config=selected)
+    lm = _build_assist_lm()
     if usage_sink is not None:
         usage_sink.append(lm)
     prepared = [{"id": str(r.get("id")), "text": _row_text(r)} for r in rows]
@@ -1283,7 +1191,6 @@ async def predict_rows_stream(
     instructions: str,
     rows: list[dict[str, Any]],
     usage_sink: list | None = None,
-    model_config: ModelConfig | None = None,
 ) -> Any:
     """Label rows concurrently, yielding each row's prediction as it lands.
 
@@ -1297,19 +1204,12 @@ async def predict_rows_stream(
     "total_tokens"}}`` with the merged map and observed token count.
 
     Args:
-        config: The session's effective config; when it carries the user's
-            chosen tagging model (``model``) and its saved sampling
-            parameters (``modelParams``), predictions run on them.
+        config: The session's effective config.
         instructions: Compiled tagging instructions.
         rows: Row payloads (each needs ``id`` and ``text``).
         usage_sink: Optional list the built LM is appended to for observability.
-        model_config: Optional resolved model config, including an in-memory
-            BYOK vault connection when that source was selected.
     """
-    selected = model_config or assist_model_config(
-        {"model": config.get("model"), "modelParams": config.get("modelParams")}
-    )
-    lm = _build_assist_lm(model_config=selected)
+    lm = _build_assist_lm()
     if usage_sink is not None:
         usage_sink.append(lm)
     prepared = [{"id": str(r.get("id")), "text": _row_text(r)} for r in rows]
@@ -1354,11 +1254,7 @@ async def predict_rows_stream(
     yield {"event": "predict_done", "data": {"predictions": merged, "total_tokens": total_tokens}}
 
 
-def estimate_tokens_for_rows(
-    instructions: str,
-    rows: list[dict[str, Any]],
-    model: str | None = None,
-) -> dict[str, Any]:
+def estimate_tokens_for_rows(instructions: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Estimate token volume for auto-tagging the given rows.
 
     A chars/4 token heuristic over the compiled instructions (repeated once
@@ -1367,27 +1263,18 @@ def estimate_tokens_for_rows(
     Args:
         instructions: Compiled tagging instructions.
         rows: The rows that would be tagged.
-        model: LiteLLM id of the session's chosen tagging model. Only an
-            explicit choice is echoed back — the operator-configured default
-            is never surfaced to the client.
+
     Returns:
-        Row count, model and estimated input and output tokens.
+        Row count and estimated input and output tokens.
     """
-    model = (model or "").strip()
     if not rows:
-        return {
-            "rows": 0,
-            "model": model,
-            "estimated_input_tokens": 0,
-            "estimated_output_tokens": 0,
-        }
+        return {"rows": 0, "estimated_input_tokens": 0, "estimated_output_tokens": 0}
     batch_count = max(1, (len(rows) + BATCH_SIZE - 1) // BATCH_SIZE)
     row_chars = sum(len(_row_text(r)) for r in rows)
     input_tokens = (len(instructions) * batch_count + row_chars) // CHARS_PER_TOKEN
     output_tokens = OUTPUT_TOKENS_PER_ROW * len(rows)
     return {
         "rows": len(rows),
-        "model": model,
         "estimated_input_tokens": input_tokens,
         "estimated_output_tokens": output_tokens,
     }
