@@ -319,7 +319,7 @@ rich==15.0.0
     #   fastmcp-slim
     #   rich-rst
     #   typer
-rich-rst==2.0.1
+rich-rst==2.1.0
     # via cyclopts
 rpds-py==2026.5.1
     # via
