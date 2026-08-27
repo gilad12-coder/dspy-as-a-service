@@ -188,10 +188,15 @@ export function TaggerInterview({
             scrollDeps={[messages.length, streamText, thinking?.reasoning]}
             isEmpty={messages.length === 0}
             emptyState={
-              <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-                <CircleNotch className="size-5 animate-spin" />
-                <p className="text-sm">{msg("tagger.assist.interview.reading")}</p>
-              </div>
+              // The spinner promises an answer is coming; when the assistant
+              // is unreachable the error strip below is the truth, so the
+              // empty thread stays quiet instead of spinning forever.
+              error ? null : (
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+                  <CircleNotch className="size-5 animate-spin" />
+                  <p className="text-sm">{msg("tagger.assist.interview.reading")}</p>
+                </div>
+              )
             }
           >
             <ChatTranscript
