@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from ...config import settings
 from ...models import (
@@ -228,6 +228,14 @@ def create_agent_history_router(*, job_store) -> APIRouter:
                 raise DomainError("agent.conversation.forbidden", status=403)
             msgs = (
                 session.query(AgentMessageModel)
+                .options(
+                    load_only(
+                        AgentMessageModel.role,
+                        AgentMessageModel.content,
+                        AgentMessageModel.tool_calls,
+                        AgentMessageModel.created_at,
+                    )
+                )
                 .filter(AgentMessageModel.conversation_id == conversation_id)
                 .order_by(AgentMessageModel.created_at.asc(), AgentMessageModel.id.asc())
                 .all()
@@ -533,6 +541,7 @@ def _fetch_previews(session: Session, conversation_ids: list[str]) -> dict[str, 
         return {}
     rows = (
         session.query(AgentMessageModel)
+        .options(load_only(AgentMessageModel.conversation_id, AgentMessageModel.content))
         .filter(
             AgentMessageModel.conversation_id.in_(conversation_ids),
             AgentMessageModel.role == "user",

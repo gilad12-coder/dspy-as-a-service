@@ -809,7 +809,10 @@ class RemoteDBJobStore:
         """
         session = self._get_session()
         try:
-            return session.query(JobModel).filter(JobModel.optimization_id == optimization_id).first() is not None
+            return (
+                session.query(JobModel.optimization_id).filter(JobModel.optimization_id == optimization_id).first()
+                is not None
+            )
         finally:
             session.close()
 
@@ -1209,6 +1212,7 @@ class RemoteDBJobStore:
         try:
             rows = (
                 session.query(JobModel)
+                .options(defer(JobModel.payload))
                 .filter(JobModel.parent_optimization_id == parent_optimization_id)
                 .order_by(JobModel.pair_index.asc())
                 .all()
@@ -1587,6 +1591,7 @@ class RemoteDBJobStore:
             )
             orphaned = (
                 session.query(JobModel)
+                .options(defer(JobModel.payload), defer(JobModel.result))
                 .filter(JobModel.status.in_(["running", "validating"]))
                 .filter((JobModel.lease_expires_at.is_(None)) | (JobModel.lease_expires_at < now))
                 .filter(~has_children)
@@ -1711,9 +1716,10 @@ class RemoteDBJobStore:
                 return None
             optimization_id = row[0]
 
-        # Re-load the full row through the ORM so the returned dict matches
-        # the shape of the rest of the API.
-        return self.get_job(optimization_id)
+        # Re-load the row through the ORM so the returned dict matches the
+        # shape of the rest of the API. The worker only reads the id off a
+        # claim and fetches the payload separately once it starts the job.
+        return self.get_job(optimization_id, include_payload=False)
 
     def _claim_next_job_fallback(self, worker_id: str, lease_seconds: float) -> JobRecord | None:
         """Best-effort claim for non-Postgres backends (tests).
@@ -1751,7 +1757,7 @@ class RemoteDBJobStore:
             job.lease_expires_at = lease_until  # type: ignore[assignment]
             session.commit()
             session.refresh(job)
-            return self._job_to_dict(job)
+            return self._job_to_dict(job, include_payload=False)
         finally:
             session.close()
 
@@ -1823,14 +1829,14 @@ class RemoteDBJobStore:
         """
         session = self._get_session()
         try:
-            jobs = (
-                session.query(JobModel)
+            rows = (
+                session.query(JobModel.optimization_id)
                 .filter(JobModel.status == "pending")
                 .filter(or_(JobModel.code_version.is_(None), JobModel.code_version == self._current_code_version))
                 .order_by(JobModel.created_at.asc())
                 .all()
             )
-            return [str(j.optimization_id) for j in jobs]
+            return [str(row[0]) for row in rows]
         finally:
             session.close()
 
@@ -2496,6 +2502,7 @@ class RemoteDBJobStore:
         optimization_type: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        with_counts: bool = True,
     ) -> list[JobRecord]:
         """List jobs the caller owns or was granted access to, newest first.
 
@@ -2512,10 +2519,14 @@ class RemoteDBJobStore:
             optimization_type: Restrict to a particular run type when set.
             limit: Maximum number of rows to return.
             offset: Number of rows to skip from the start.
+            with_counts: When ``False``, skip the progress/log/summary
+                aggregate folding, as in :meth:`list_jobs` — the dashboard
+                analytics scan never reads those fields.
 
         Returns:
             Matching ``JobRecord`` rows in newest-first order with
-            ``progress_count`` / ``log_count`` / ``summary_text`` folded in.
+            ``progress_count`` / ``log_count`` / ``summary_text`` folded in
+            when ``with_counts``.
         """
         normalized = username.strip().lower()
         session = self._get_session()
@@ -2535,6 +2546,8 @@ class RemoteDBJobStore:
             else:
                 q = q.filter(_user_facing_jobs())
             jobs = q.order_by(JobModel.created_at.desc()).offset(offset).limit(limit).all()
+            if not with_counts:
+                return [self._job_to_dict(j, include_payload=False) for j in jobs]
             return self._rows_with_counts(session, jobs)
         finally:
             session.close()
