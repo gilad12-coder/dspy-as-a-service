@@ -190,6 +190,8 @@ EOF
     prompt INTERNAL_CA_MOUNT_DIR "Internal CA mount directory"
   fi
   prompt LLM_BASE_URL "Internal OpenAI-compatible LLM base URL"
+  prompt CODE_AGENT_MODEL "Code-agent model id served by the gateway"
+  prompt GENERALIST_AGENT_MODEL "Generalist-agent model id served by the gateway"
   prompt EMBEDDING_BASE_URL "Internal OpenAI-compatible embedding base URL"
   prompt EMBEDDING_MODEL "Embedding model id"
   prompt OIDC_ISSUER "Internal ADFS/OIDC issuer URL"
@@ -427,6 +429,8 @@ backend:
     # TODO: On-premise - set to a model id your internal gateway actually serves (gpt-5 is a placeholder). LiteLLM forwards this id verbatim to CODE_AGENT_BASE_URL.
     CODE_AGENT_MODEL: "$CODE_AGENT_MODEL"
     GENERALIST_AGENT_MODEL: "$GENERALIST_AGENT_MODEL"
+    # TAGGER_ASSIST_BASE_URL / TAGGER_ASSIST_MODEL are optional overrides for
+    # the tagging assist; left unset it reuses the generalist pair above.
     # Explore search backend: lexical (vanilla Postgres, default) | bm25 (needs
     # the pg_search extension) | semantic (needs pgvector + the embedding gateway
     # below). Only "semantic" makes the migrate Job run CREATE EXTENSION vector.
@@ -443,10 +447,10 @@ $ca_backend_env
     ALLOWED_ORIGINS: "https://$FRONTEND_HOST"
     ADMIN_GROUPS: "$AUTH_ADMIN_GROUPS"
     ADMIN_USERNAMES: "$AUTH_ADMINS"
-    # TODO: On-premise - set to enable Active Directory username autocomplete
-    # in the admin tab. Leave empty to keep the NullDirectoryClient fallback
-    # (DB-known users only). See AIRGAP.html "Internal LDAP / Active Directory
-    # User Search" for the full env contract.
+    # Optional: enables the LDAP-backed admin user-search API
+    # (GET /admin/users/search; no UI consumes it). Leave empty to keep the
+    # NullDirectoryClient fallback (DB-known usernames only). See AIRGAP.html
+    # "Internal LDAP / Active Directory User Search" for the full env contract.
     AD_LDAP_URL: ""
     AD_LDAP_BIND_DN: ""
     AD_LDAP_SEARCH_BASE: ""
