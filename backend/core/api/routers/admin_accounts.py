@@ -19,7 +19,6 @@ from .admin import AdminUserDep
 # Administrator request for adding a passwordless local username.
 class CreateLocalAccountRequest(BaseModel):
     username: str = Field(description="Username to approve for local fallback login.")
-    display_name: str = Field(default="", description="Optional human-readable name.")
     is_admin: bool = Field(default=False, description="Whether the account is an administrator.")
 
 
@@ -31,7 +30,6 @@ class UpdateAccountRoleRequest(BaseModel):
 # Account-management row shown in the administrator UI.
 class ManagedAccountResponse(BaseModel):
     username: str
-    display_name: str
     local_enabled: bool
     adfs_seen: bool
     is_admin: bool
@@ -74,7 +72,6 @@ def _response(row: UserModel) -> ManagedAccountResponse:
     """
     return ManagedAccountResponse(
         username=row.username,
-        display_name=row.display_name,
         local_enabled=row.local_enabled,
         adfs_seen=row.adfs_seen_at is not None,
         is_admin=row.is_admin,
@@ -120,7 +117,7 @@ def create_admin_accounts_router(*, job_store) -> APIRouter:
         continue to resolve to the same account.
 
         Args:
-            body: Username, display name and initial role.
+            body: Username and initial role.
             admin_user: Authenticated administrator creating the account.
 
         Returns:
@@ -130,7 +127,6 @@ def create_admin_accounts_router(*, job_store) -> APIRouter:
             DomainError: When the username is already locally enabled.
         """
         username = normalize_username(body.username)
-        display_name = body.display_name.strip() or username
         with Session(job_store.engine) as session:
             row = session.get(UserModel, username)
             if row is not None and row.local_enabled:
@@ -138,14 +134,13 @@ def create_admin_accounts_router(*, job_store) -> APIRouter:
             if row is None:
                 row = UserModel(
                     username=username,
-                    display_name=display_name,
+                    display_name=username,
                     local_enabled=True,
                     is_admin=body.is_admin,
                     created_by=admin_user.username,
                 )
                 session.add(row)
             else:
-                row.display_name = display_name
                 row.local_enabled = True
                 row.is_admin = body.is_admin
             session.commit()

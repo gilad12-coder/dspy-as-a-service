@@ -660,7 +660,6 @@ export function searchAdminUsers(query: string, limit = 10) {
 
 export interface ManagedAccount {
   username: string;
-  display_name: string;
   local_enabled: boolean;
   adfs_seen: boolean;
   is_admin: boolean;
@@ -680,7 +679,6 @@ export function getManagedAccounts() {
 /** Approve a passwordless local username, optionally with administrator rights. */
 export function createManagedAccount(body: {
   username: string;
-  display_name?: string;
   is_admin?: boolean;
 }) {
   return request<ManagedAccount>("/admin/accounts", {
