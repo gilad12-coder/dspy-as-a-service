@@ -598,6 +598,7 @@ function AdminTab() {
   const [tableOpen, setTableOpen] = React.useState(false);
   const [newUsername, setNewUsername] = React.useState("");
   const [newIsAdmin, setNewIsAdmin] = React.useState(false);
+  const [newBudgetMb, setNewBudgetMb] = React.useState<number | "">("");
   const colFilters = useColumnFilters();
   const colResize = useColumnResize();
   const [sortKey, setSortKey] = React.useState<string>("username");
@@ -671,12 +672,32 @@ function AdminTab() {
     return () => clearInterval(id);
   }, [tableOpen, loadAccounts]);
 
+  const defaultMb = defaultBytes != null ? Math.round(defaultBytes / BYTES_PER_MB) : null;
+
   const createAccount = React.useCallback(async () => {
     const normalized = newUsername.trim().toLocaleLowerCase();
     if (!normalized) return;
     setBusyUsername(normalized);
     try {
-      const created = await createManagedAccount({ username: normalized, is_admin: newIsAdmin });
+      let created = await createManagedAccount({ username: normalized, is_admin: newIsAdmin });
+      // A cap equal to the default is "no override" so the account keeps
+      // following the default if it changes later.
+      if (newBudgetMb !== "" && newBudgetMb !== defaultMb) {
+        try {
+          const saved = await setStorageQuotaOverride(created.username, newBudgetMb * BYTES_PER_MB);
+          created = {
+            ...created,
+            quota_bytes: saved.quota_bytes,
+            effective_bytes: saved.effective_bytes,
+            used_bytes: saved.used_bytes,
+            quota_updated_by: saved.updated_by,
+          };
+        } catch (error) {
+          toast.error(
+            error instanceof Error ? error.message : msg("settings.admin.storage.save_failed"),
+          );
+        }
+      }
       setAccounts((current) =>
         [...current.filter((account) => account.username !== created.username), created].sort(
           (left, right) => left.username.localeCompare(right.username),
@@ -684,13 +705,14 @@ function AdminTab() {
       );
       setNewUsername("");
       setNewIsAdmin(false);
+      setNewBudgetMb("");
       toast.success(msg("settings.admin.accounts.created"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       setBusyUsername(null);
     }
-  }, [newIsAdmin, newUsername]);
+  }, [defaultMb, newBudgetMb, newIsAdmin, newUsername]);
 
   const setRole = React.useCallback(async (account: ManagedAccount, next: boolean) => {
     setBusyUsername(account.username);
@@ -987,7 +1009,17 @@ function AdminTab() {
                         aria-label={msg("settings.admin.accounts.admin")}
                       />
                     </TableCell>
-                    <TableCell className="text-center text-xs text-muted-foreground/60">—</TableCell>
+                    <TableCell className="text-center">
+                      <span className="inline-flex items-center justify-center gap-1" dir="ltr">
+                        <NumberInput
+                          value={newBudgetMb === "" ? (defaultMb ?? "") : newBudgetMb}
+                          onChange={setNewBudgetMb}
+                          min={1}
+                          className="h-8 w-36"
+                        />
+                        <span className="text-[0.6875rem] text-muted-foreground">MB</span>
+                      </span>
+                    </TableCell>
                     <TableCell className="text-center text-xs text-muted-foreground/60">—</TableCell>
                     <TableCell className="text-center text-xs text-muted-foreground/60">—</TableCell>
                     <TableCell className="w-12 text-center">
