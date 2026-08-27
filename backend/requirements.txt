@@ -382,7 +382,7 @@ websockets==16.0
     # via fastmcp
 yarl==1.23.0
     # via aiohttp
-zipp==3.23.1
+zipp==4.1.0
     # via importlib-metadata
 # Pinned dependency set for the pip install path (PKG_MANAGER=pip) — the
 # lockfile-equivalent of uv.lock for the DEFAULT DSPy line (dspy==3.3.0).
