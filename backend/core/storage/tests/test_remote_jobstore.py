@@ -30,7 +30,7 @@ from sqlalchemy.pool import StaticPool
 import core.storage.remote as remote_mod
 from core.constants import OPTIMIZATION_TYPE_TAGGING
 from core.storage.base import JobStore
-from core.storage.models import Base, JobModel
+from core.storage.models import Base, JobModel, OptimizationShareGrantModel
 from core.storage.remote import RemoteDBJobStore
 
 
@@ -636,6 +636,100 @@ def test_list_jobs_includes_progress_and_log_counts(store: SQLiteJobStore) -> No
     job = next(j for j in jobs if j["optimization_id"] == "lj-counts")
     assert job["log_count"] == 1
     assert job["progress_count"] == 1
+
+
+def test_list_jobs_prunes_result_to_summary_scalars(store: SQLiteJobStore) -> None:
+    """List rows carry only the result scalars the cards read; get_job keeps the blob."""
+    store.create_job("lr-run", username="alice")
+    store.create_job("lr-pending", username="alice")
+    full_result = {
+        "baseline_test_metric": 0.5,
+        "optimized_test_metric": 0.75,
+        "runtime_seconds": 12.5,
+        "program_artifact": {"optimized_prompt": "x" * 5000},
+        "baseline_test_results": [{"index": i, "outputs": {"answer": "y" * 200}} for i in range(50)],
+    }
+    store.update_job("lr-run", status="success", result=full_result)
+
+    by_id = {row["optimization_id"]: row for row in store.list_jobs()}
+    assert by_id["lr-run"]["result"] == {
+        "baseline_test_metric": 0.5,
+        "optimized_test_metric": 0.75,
+        "runtime_seconds": 12.5,
+    }
+    assert by_id["lr-run"]["payload"] is None
+    assert by_id["lr-pending"]["result"] is None
+    assert store.get_job("lr-run")["result"] == full_result
+
+
+def test_list_jobs_grid_result_keeps_best_pair_label_fields(store: SQLiteJobStore) -> None:
+    """A grid row keeps the pair counters and best_pair metrics plus its model names."""
+    store.create_job("lr-grid", username="alice")
+    store.set_payload_overview("lr-grid", {"optimization_type": "grid_search", "total_pairs": 4})
+    store.update_job(
+        "lr-grid",
+        status="success",
+        result={
+            "completed_pairs": 3,
+            "failed_pairs": 1,
+            "best_pair": {
+                "baseline_test_metric": 0.4,
+                "optimized_test_metric": 0.9,
+                "runtime_seconds": 30.0,
+                "generation_model": "openai/gpt-4o",
+                "reflection_model": "openai/o3",
+                "pair_index": 2,
+                "per_example_outputs": ["z" * 500] * 20,
+            },
+            "pairs": [{"pair_index": i, "outputs": ["z" * 500] * 20} for i in range(4)],
+        },
+    )
+
+    [row] = store.list_jobs()
+    assert row["result"] == {
+        "completed_pairs": 3,
+        "failed_pairs": 1,
+        "best_pair": {
+            "baseline_test_metric": 0.4,
+            "optimized_test_metric": 0.9,
+            "runtime_seconds": 30.0,
+            "generation_model": "openai/gpt-4o",
+            "reflection_model": "openai/o3",
+        },
+    }
+
+
+def test_shared_list_surfaces_prune_result_the_same_way(store: SQLiteJobStore) -> None:
+    """The visible-to and shared-with pages carry the same pruned result as list_jobs."""
+    store.create_job("lr-shared", username="alice")
+    store.set_payload_overview("lr-shared", {"username": "alice", "optimization_type": "run"})
+    store.update_job(
+        "lr-shared",
+        status="success",
+        result={"baseline_test_metric": 0.1, "optimized_test_metric": 0.3, "demos": ["d" * 1000] * 50},
+    )
+    session = store._get_session()
+    try:
+        session.add(
+            OptimizationShareGrantModel(
+                optimization_id="lr-shared",
+                grantee_username="bob",
+                role="viewer",
+                created_by="alice",
+                created_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    expected = {"baseline_test_metric": 0.1, "optimized_test_metric": 0.3}
+    [visible] = store.list_jobs_visible_to("bob")
+    [shared] = store.list_jobs_shared_with("bob")
+    assert visible["result"] == expected
+    assert shared["result"] == expected
+    assert visible["log_count"] == 0
+    assert shared["progress_count"] == 0
 
 
 def test_count_jobs_total(store: SQLiteJobStore) -> None:
