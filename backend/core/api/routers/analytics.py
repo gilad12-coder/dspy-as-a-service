@@ -606,16 +606,18 @@ def create_analytics_router(*, job_store) -> APIRouter:
                     status=status,
                     limit=_ANALYTICS_JOB_HARD_CAP,
                     offset=0,
+                    with_counts=False,
                 ),
             )
         else:
             all_jobs_raw = cached_scan(
-                ("list_with_counts", username, status),
+                ("dashboard_list", username, status),
                 lambda: job_store.list_jobs(
                     status=status,
                     username=username,
                     limit=_ANALYTICS_JOB_HARD_CAP,
                     offset=0,
+                    with_counts=False,
                 ),
             )
         truncated = len(all_jobs_raw) >= _ANALYTICS_JOB_HARD_CAP

@@ -285,6 +285,26 @@ class BackgroundWorker:
             self._claimed_jobs.add(optimization_id)
         return optimization_id
 
+    def _persisted_status(self, optimization_id: str) -> str | None:
+        """Read a job's stored status without materializing its payload or result.
+
+        Prefers the store's skinny status projection; store doubles without it
+        fall back to the full row read.
+
+        Args:
+            optimization_id: ID of the job to read.
+
+        Returns:
+            The persisted status string, or ``None`` when the row has none.
+
+        Raises:
+            KeyError: When the job no longer exists.
+        """
+        read_status = getattr(self._job_store, "get_job_status_fields", None)
+        if callable(read_status):
+            return read_status(optimization_id).get("status")
+        return self._job_store.get_job(optimization_id).get("status")
+
     def _get_next_job(self) -> str | None:
         """Return the next claimable job, picking up through the atomic claim.
 
@@ -735,8 +755,7 @@ class BackgroundWorker:
                     self._record_pair_outcome(pair_parent_id, result_dict)
 
                 try:
-                    current = self._job_store.get_job(optimization_id)
-                    if current.get("status") in ("cancelled", "paused"):
+                    if self._persisted_status(optimization_id) in ("cancelled", "paused"):
                         # Cancel/pause endpoint raced us past the last
                         # _raise_if_cancelled() and already wrote its terminal status
                         # to the DB. Stop cooperatively so we persist the checkpoint
@@ -849,7 +868,7 @@ class BackgroundWorker:
                 # finished-job notification that a real cancel sends.
                 persisted_status = None
                 with contextlib.suppress(Exception):
-                    persisted_status = self._job_store.get_job(optimization_id).get("status")
+                    persisted_status = self._persisted_status(optimization_id)
                 if (
                     pair_parent_id is None
                     and persisted_status != "paused"

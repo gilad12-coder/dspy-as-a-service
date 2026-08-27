@@ -97,6 +97,7 @@ from ..sharing_access import (
 )
 from ._helpers import (
     _artifact_has_payload,
+    get_job_no_payload,
     job_owner,
     load_program,
     stable_seed,
@@ -558,7 +559,7 @@ def create_share_router(*, job_store) -> APIRouter:
                 not the owner/admin (owner existence is not leaked).
         """
         try:
-            job_data = job_store.get_job(optimization_id)
+            job_data = get_job_no_payload(job_store, optimization_id)
         except KeyError:
             raise DomainError("optimization.not_found", status=404, optimization_id=optimization_id) from None
         owner = job_owner(job_data)
@@ -589,7 +590,7 @@ def create_share_router(*, job_store) -> APIRouter:
         ]
         # Existence already validated by _require_manage; read the overview for
         # the current explore-corpus visibility flag.
-        overview = parse_overview(job_store.get_job(optimization_id))
+        overview = parse_overview(get_job_no_payload(job_store, optimization_id))
         return SharingState(
             general_access=general_access,
             general_role=general_role,
@@ -760,7 +761,7 @@ def create_share_router(*, job_store) -> APIRouter:
         """
         with Session(job_store.engine) as session:
             owner = _require_manage(session, optimization_id, current_user)
-            overview = parse_overview(job_store.get_job(optimization_id))
+            overview = parse_overview(get_job_no_payload(job_store, optimization_id))
             overview[PAYLOAD_OVERVIEW_IS_PRIVATE] = req.is_private
             job_store.set_payload_overview(optimization_id, overview)
             set_embedding_privacy(job_store, optimization_id, req.is_private)
@@ -1166,10 +1167,8 @@ def create_share_router(*, job_store) -> APIRouter:
                 raise DomainError("share.not_found", status=404)
             link = get_link_by_token(session, token)
             optimization_id = link.optimization_id
-            try:
-                job_store.get_job(optimization_id)
-            except KeyError:
-                raise DomainError("share.not_found", status=404) from None
+            if not job_store.job_exists(optimization_id):
+                raise DomainError("share.not_found", status=404)
         return ClaimShareResponse(optimization_id=optimization_id, role=str(role))
 
     @router.post(
