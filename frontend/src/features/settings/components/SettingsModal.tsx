@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   ChatText,
   BookOpen,
+  CircleNotch,
   Robot,
   Brain,
   Columns,
@@ -94,21 +94,22 @@ import { getActiveDir, getActiveIntlLocale } from "@/shared/lib/runtime-locale";
 import { getRuntimeEnv } from "@/shared/lib/runtime-env";
 import { useTutorialContext } from "@/features/tutorial";
 import {
+  createManagedAccount,
+  deleteManagedAccount,
   deleteStorageQuotaOverride,
   generateApiToken,
   getApiToken,
+  getManagedAccounts,
   getMemorySettings,
-  getStorageQuotaOverrides,
   revokeApiToken,
-  searchAdminUsers,
   setStorageQuotaOverride,
+  updateManagedAccountRole,
   updateMemorySettings,
   type ApiTokenInfo,
-  type DirectoryUserMatch,
+  type ManagedAccount,
   type MemoryKnob,
   type MemoryKnobName,
   type MemorySettings,
-  type StorageQuotaOverride,
 } from "@/shared/lib/api";
 
 import { useUserPrefs } from "../hooks/use-user-prefs";
@@ -116,7 +117,6 @@ import { useSettingsModal } from "../hooks/use-settings-modal";
 import { useIsPhone } from "@/shared/hooks/use-device-class";
 import { isPhoneSettingsTab } from "@/shared/lib/device-class";
 import { ShortcutRecorder } from "./ShortcutRecorder";
-import { AdminAccountsSection } from "./AdminAccountsSection";
 import { SettingsRow } from "@/shared/ui/settings-row";
 
 function WizardTab() {
@@ -464,161 +464,6 @@ function AccountTab() {
   );
 }
 
-function UsernameCombobox({
-  value,
-  onChange,
-  onSelect,
-  disabled,
-  placeholder,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  onSelect: (entry: DirectoryUserMatch) => void;
-  disabled?: boolean;
-  placeholder?: string;
-}) {
-  const [results, setResults] = React.useState<DirectoryUserMatch[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [open, setOpen] = React.useState(false);
-  const [pos, setPos] = React.useState<{
-    top: number;
-    left: number;
-    width: number;
-    maxH: number;
-  } | null>(null);
-  const anchorRef = React.useRef<HTMLDivElement | null>(null);
-  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  React.useEffect(() => {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      setResults([]);
-      setLoading(false);
-      return;
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    setLoading(true);
-    debounceRef.current = setTimeout(() => {
-      searchAdminUsers(trimmed, 10)
-        .then((data) => setResults(data.matches))
-        .catch(() => setResults([]))
-        .finally(() => setLoading(false));
-    }, 250);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [value]);
-
-  const dropdownOpen = open && value.trim().length > 0;
-
-  // Render the suggestion list in a body portal with fixed positioning: the
-  // cell sits inside the table's overflow-auto scroller, which clips an in-flow
-  // absolute popup. Mirrors the column-filter dropdowns in this same table.
-  React.useLayoutEffect(() => {
-    if (!dropdownOpen) return;
-    const updatePos = () => {
-      const el = anchorRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const top = rect.bottom + 4;
-      setPos({
-        top,
-        left: rect.left,
-        width: rect.width,
-        maxH: Math.max(120, window.innerHeight - top - 8),
-      });
-    };
-    updatePos();
-    window.addEventListener("scroll", updatePos, true);
-    window.addEventListener("resize", updatePos);
-    return () => {
-      window.removeEventListener("scroll", updatePos, true);
-      window.removeEventListener("resize", updatePos);
-    };
-  }, [dropdownOpen]);
-
-  return (
-    <div className="relative" ref={anchorRef}>
-      <Input
-        value={value}
-        onChange={(event) => {
-          onChange(event.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => {
-          // Defer so click on a suggestion can register before the popup unmounts.
-          window.setTimeout(() => setOpen(false), 150);
-        }}
-        placeholder={placeholder}
-        disabled={disabled}
-        dir="ltr"
-        // Suppress Chrome's native email-autofill popup: the field has its own
-        // suggestion list, and the email-shaped placeholder otherwise triggers it.
-        autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="none"
-        spellCheck={false}
-        data-1p-ignore
-        data-lpignore="true"
-        name="storage-quota-username-search"
-        className="h-8 text-xs"
-      />
-      {dropdownOpen &&
-        pos &&
-        createPortal(
-          <div
-            // pointer-events-auto: the parent Sheet sets pointer-events:none on
-            // <body>, which this body-portaled popup would otherwise inherit,
-            // leaving the suggestions unclickable.
-            className="pointer-events-auto fixed z-[9999] overflow-auto rounded-md border border-border/60 bg-background shadow-md"
-            style={{
-              top: pos.top,
-              left: pos.left,
-              width: pos.width,
-              maxHeight: Math.min(192, pos.maxH),
-            }}
-          >
-            {loading && results.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-muted-foreground">
-                {msg("settings.admin.storage.searching")}
-              </div>
-            ) : results.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-muted-foreground">
-                {msg("settings.admin.storage.no_suggestions")}
-              </div>
-            ) : (
-              <ul role="listbox">
-                {results.map((entry) => (
-                  <li key={`${entry.source}:${entry.username}`}>
-                    <button
-                      type="button"
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        onSelect(entry);
-                        setOpen(false);
-                      }}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-start text-xs hover:bg-accent/50"
-                      dir="ltr"
-                    >
-                      <span className="font-semibold text-foreground">{entry.username}</span>
-                      {entry.source === "directory" && (
-                        <span className="text-[0.6875rem] text-muted-foreground">
-                          {msg("settings.admin.storage.source_directory")}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>,
-          document.body,
-        )}
-    </div>
-  );
-}
-
 const BYTES_PER_MB = 1024 * 1024;
 
 function EditableBudgetCell({
@@ -741,13 +586,13 @@ function UsageMeter({ used, budget }: { used: number; budget: number }) {
 function AdminTab() {
   const { data: session } = useSession();
   const isRtl = getActiveDir() === "rtl";
-  const [overrides, setOverrides] = React.useState<StorageQuotaOverride[]>([]);
+  const [accounts, setAccounts] = React.useState<ManagedAccount[]>([]);
   const [defaultBytes, setDefaultBytes] = React.useState<number | null>(null);
   const [loading, setLoading] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
+  const [busyUsername, setBusyUsername] = React.useState<string | null>(null);
   const [tableOpen, setTableOpen] = React.useState(false);
-  const [pendingUsername, setPendingUsername] = React.useState("");
-  const [pendingBudgetMb, setPendingBudgetMb] = React.useState<number | "">("");
+  const [newUsername, setNewUsername] = React.useState("");
+  const [newIsAdmin, setNewIsAdmin] = React.useState(false);
   const colFilters = useColumnFilters();
   const colResize = useColumnResize();
   const [sortKey, setSortKey] = React.useState<string>("username");
@@ -761,20 +606,20 @@ function AdminTab() {
   }, []);
 
   const filterOptions = React.useMemo(() => {
-    const unique = (key: keyof StorageQuotaOverride) => {
-      const vals = [...new Set(overrides.map((o) => String(o[key] ?? "")).filter(Boolean))].sort();
+    const unique = (key: keyof ManagedAccount) => {
+      const vals = [...new Set(accounts.map((a) => String(a[key] ?? "")).filter(Boolean))].sort();
       return vals.map((v) => ({ value: v, label: v }));
     };
     return {
       username: unique("username"),
-      updated_by: unique("updated_by"),
+      quota_updated_by: unique("quota_updated_by"),
     };
-  }, [overrides]);
+  }, [accounts]);
 
-  const filteredOverrides = React.useMemo(() => {
-    const items = overrides.filter((o) => {
+  const filteredAccounts = React.useMemo(() => {
+    const items = accounts.filter((a) => {
       for (const [col, allowed] of Object.entries(colFilters.filters)) {
-        const val = String((o as unknown as Record<string, unknown>)[col] ?? "");
+        const val = String((a as unknown as Record<string, unknown>)[col] ?? "");
         if (!allowed.has(val)) return false;
       }
       return true;
@@ -793,14 +638,14 @@ function AdminTab() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return items;
-  }, [overrides, colFilters.filters, sortKey, sortDir]);
+  }, [accounts, colFilters.filters, sortKey, sortDir]);
 
-  const loadOverrides = React.useCallback(async () => {
+  const loadAccounts = React.useCallback(async () => {
     if (!session?.backendAccessToken) return;
     setLoading(true);
     try {
-      const data = await getStorageQuotaOverrides();
-      setOverrides(data.overrides);
+      const data = await getManagedAccounts();
+      setAccounts(data.accounts);
       setDefaultBytes(data.default_bytes);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
@@ -810,51 +655,75 @@ function AdminTab() {
   }, [session?.backendAccessToken]);
 
   React.useEffect(() => {
-    void loadOverrides();
-  }, [loadOverrides]);
+    void loadAccounts();
+  }, [loadAccounts]);
 
   React.useEffect(() => {
     if (!tableOpen) return;
     const id = setInterval(() => {
-      void loadOverrides();
+      void loadAccounts();
     }, 5000);
     return () => clearInterval(id);
-  }, [tableOpen, loadOverrides]);
+  }, [tableOpen, loadAccounts]);
 
-  const addPendingUser = React.useCallback(async () => {
-    const normalizedUsername = pendingUsername.trim().toLowerCase();
-    if (!normalizedUsername) {
-      toast.error(msg("settings.admin.storage.username_required"));
-      return;
-    }
-    if (pendingBudgetMb === "" || !Number.isFinite(pendingBudgetMb) || pendingBudgetMb < 1) {
-      toast.error(msg("settings.admin.storage.budget_invalid"));
-      return;
-    }
-    setBusy(true);
+  const createAccount = React.useCallback(async () => {
+    const normalized = newUsername.trim().toLocaleLowerCase();
+    if (!normalized) return;
+    setBusyUsername(normalized);
     try {
-      const saved = await setStorageQuotaOverride(
-        normalizedUsername,
-        pendingBudgetMb * BYTES_PER_MB,
+      const created = await createManagedAccount({ username: normalized, is_admin: newIsAdmin });
+      setAccounts((current) =>
+        [...current.filter((account) => account.username !== created.username), created].sort(
+          (left, right) => left.username.localeCompare(right.username),
+        ),
       );
-      setOverrides((prev) => {
-        const without = prev.filter((row) => row.username !== saved.username);
-        return [saved, ...without];
-      });
-      setPendingUsername("");
-      setPendingBudgetMb("");
-      toast.success(msg("settings.admin.storage.saved"));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : msg("settings.admin.storage.save_failed"));
+      setNewUsername("");
+      setNewIsAdmin(false);
+      toast.success(msg("settings.admin.accounts.created"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
     } finally {
-      setBusy(false);
+      setBusyUsername(null);
     }
-  }, [pendingBudgetMb, pendingUsername]);
+  }, [newIsAdmin, newUsername]);
+
+  const setRole = React.useCallback(async (account: ManagedAccount, next: boolean) => {
+    setBusyUsername(account.username);
+    try {
+      const updated = await updateManagedAccountRole(account.username, next);
+      setAccounts((current) =>
+        current.map((entry) => (entry.username === updated.username ? updated : entry)),
+      );
+      toast.success(msg("settings.admin.accounts.role_saved"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyUsername(null);
+    }
+  }, []);
+
+  const removeAccount = React.useCallback(async (account: ManagedAccount) => {
+    if (
+      !window.confirm(msg("settings.admin.accounts.delete_confirm", { username: account.username }))
+    ) {
+      return;
+    }
+    setBusyUsername(account.username);
+    try {
+      await deleteManagedAccount(account.username);
+      setAccounts((current) => current.filter((entry) => entry.username !== account.username));
+      toast.success(msg("settings.admin.accounts.deleted"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyUsername(null);
+    }
+  }, []);
 
   const updateRowBudget = React.useCallback(
     async (targetUsername: string, nextBytes: number) => {
-      const before = overrides;
-      setOverrides((prev) =>
+      const before = accounts;
+      setAccounts((prev) =>
         prev.map((row) =>
           row.username === targetUsername
             ? { ...row, quota_bytes: nextBytes, effective_bytes: nextBytes }
@@ -863,62 +732,108 @@ function AdminTab() {
       );
       try {
         const saved = await setStorageQuotaOverride(targetUsername, nextBytes);
-        setOverrides((prev) => prev.map((row) => (row.username === targetUsername ? saved : row)));
+        setAccounts((prev) =>
+          prev.map((row) =>
+            row.username === targetUsername
+              ? {
+                  ...row,
+                  quota_bytes: saved.quota_bytes,
+                  effective_bytes: saved.effective_bytes,
+                  used_bytes: saved.used_bytes,
+                  quota_updated_by: saved.updated_by,
+                }
+              : row,
+          ),
+        );
         toast.success(msg("settings.admin.storage.saved"));
       } catch (err) {
-        setOverrides(before);
+        setAccounts(before);
         throw err;
       }
     },
-    [overrides],
+    [accounts],
   );
 
-  const handleDelete = React.useCallback(
-    async (targetUsername: string) => {
-      const before = overrides;
-      setOverrides((prev) => prev.filter((row) => row.username !== targetUsername));
-      setBusy(true);
-      try {
-        await deleteStorageQuotaOverride(targetUsername);
-        toast.success(msg("settings.admin.storage.deleted"));
-      } catch (err) {
-        setOverrides(before);
-        toast.error(err instanceof Error ? err.message : String(err));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [overrides],
-  );
+  const resetRowBudget = React.useCallback(async (targetUsername: string) => {
+    setBusyUsername(targetUsername);
+    try {
+      const restored = await deleteStorageQuotaOverride(targetUsername);
+      setAccounts((prev) =>
+        prev.map((row) =>
+          row.username === targetUsername
+            ? {
+                ...row,
+                quota_bytes: null,
+                effective_bytes: restored.effective_bytes,
+                used_bytes: restored.used_bytes,
+                quota_updated_by: null,
+              }
+            : row,
+        ),
+      );
+      toast.success(msg("settings.admin.storage.deleted"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyUsername(null);
+    }
+  }, []);
 
+  const trimmedNewUsername = newUsername.trim().toLocaleLowerCase();
   const triggerLabel =
-    overrides.length === 0
+    accounts.length === 0
       ? msg("settings.admin.storage.view_list")
-      : `${msg("settings.admin.storage.view_list")} (${overrides.length})`;
+      : `${msg("settings.admin.storage.view_list")} (${accounts.length})`;
 
   return (
-    <div className="space-y-4">
-      <AdminAccountsSection />
+    <section className="space-y-3 rounded-lg border border-border/50 p-3">
+      <div className="flex items-center gap-2">
+        <User className="size-4 text-muted-foreground" aria-hidden="true" />
+        <div>
+          <h3 className="text-sm font-semibold">{msg("settings.admin.accounts.title")}</h3>
+          <p className="text-xs text-muted-foreground">
+            {msg("settings.admin.accounts.description")}
+          </p>
+          {defaultBytes != null && (
+            <p className="text-xs text-muted-foreground">
+              {msg("settings.admin.storage.default_budget", {
+                value: formatStorageSize(defaultBytes),
+              })}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
+        <Input
+          value={newUsername}
+          onChange={(event) => setNewUsername(event.target.value)}
+          placeholder={msg("settings.admin.accounts.username_placeholder")}
+          autoComplete="off"
+          dir="ltr"
+        />
+        <label className="flex min-h-10 items-center justify-between gap-2 text-xs sm:justify-start">
+          {msg("settings.admin.accounts.admin")}
+          <Switch checked={newIsAdmin} onCheckedChange={setNewIsAdmin} />
+        </label>
+        <Button
+          onClick={() => void createAccount()}
+          disabled={!newUsername.trim() || busyUsername !== null}
+        >
+          {busyUsername === trimmedNewUsername ? (
+            <CircleNotch className="size-4 animate-spin" />
+          ) : (
+            <Plus className="size-4" />
+          )}
+          {msg("settings.admin.accounts.create")}
+        </Button>
+      </div>
 
       {!session?.backendAccessToken && (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           {msg("settings.admin.storage.auth_missing")}
         </div>
       )}
-
-      <SettingsRow
-        icon={HardDrive}
-        label={msg("settings.admin.storage.title")}
-        description={
-          defaultBytes != null
-            ? msg("settings.admin.storage.default_budget", {
-                value: formatStorageSize(defaultBytes),
-              })
-            : undefined
-        }
-      >
-        <span />
-      </SettingsRow>
 
       <Sheet open={tableOpen} onOpenChange={setTableOpen}>
         <SheetTrigger asChild>
@@ -938,16 +853,16 @@ function AdminTab() {
         >
           <SheetHeader className="border-b border-border/40 px-6 py-4">
             <div className="flex items-center gap-2">
-              <HardDrive className="size-4 text-muted-foreground" aria-hidden="true" />
-              <SheetTitle>{msg("settings.admin.storage.title")}</SheetTitle>
+              <User className="size-4 text-muted-foreground" aria-hidden="true" />
+              <SheetTitle>{msg("settings.admin.accounts.title")}</SheetTitle>
             </div>
           </SheetHeader>
 
           <div className="flex items-center gap-3 border-b border-border/40 bg-muted/20 px-6 py-2">
             <span className="text-[0.6875rem] tabular-nums text-muted-foreground">
-              {filteredOverrides.length === overrides.length
-                ? overrides.length
-                : `${filteredOverrides.length} / ${overrides.length}`}
+              {filteredAccounts.length === accounts.length
+                ? accounts.length
+                : `${filteredAccounts.length} / ${accounts.length}`}
             </span>
             {defaultBytes != null && (
               <span className="text-[0.6875rem] text-muted-foreground" dir="ltr">
@@ -962,23 +877,24 @@ function AdminTab() {
               iconOnly
               align="end"
               className="ms-auto"
-              disabled={loading || filteredOverrides.length === 0}
+              disabled={loading || filteredAccounts.length === 0}
               getData={() => ({
-                columns: ["username", "budget_bytes", "used_bytes", "updated_by"],
-                rows: filteredOverrides.map((o) => ({
-                  username: o.username,
-                  budget_bytes: o.effective_bytes,
-                  used_bytes: o.used_bytes,
-                  updated_by: o.updated_by || msg("settings.admin.storage.default"),
+                columns: ["username", "is_admin", "budget_bytes", "used_bytes", "updated_by"],
+                rows: filteredAccounts.map((a) => ({
+                  username: a.username,
+                  is_admin: a.is_admin,
+                  budget_bytes: a.effective_bytes,
+                  used_bytes: a.used_bytes,
+                  updated_by: a.quota_updated_by || msg("settings.admin.storage.default"),
                 })),
-                filename: "storage-quota-overrides",
+                filename: "accounts",
               })}
             />
           </div>
 
           <div className="flex-1 overflow-auto">
             <div className="table-scroll">
-              <Table style={{ minWidth: "560px" }}>
+              <Table style={{ minWidth: "640px" }}>
                 <TableHeader className="sticky top-0 z-10 bg-muted/40 backdrop-blur-sm">
                   <TableRow>
                     <ColumnHeader
@@ -994,6 +910,15 @@ function AdminTab() {
                       openFilter={colFilters.openFilter}
                       setOpenFilter={colFilters.setOpenFilter}
                       width={colResize.widths["username"]}
+                      onResize={colResize.setColumnWidth}
+                    />
+                    <ColumnHeader
+                      label={msg("settings.admin.accounts.admin")}
+                      sortKey="is_admin"
+                      currentSort={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                      width={colResize.widths["is_admin"]}
                       onResize={colResize.setColumnWidth}
                     />
                     <ColumnHeader
@@ -1016,125 +941,114 @@ function AdminTab() {
                     />
                     <ColumnHeader
                       label={msg("settings.admin.storage.updated_by")}
-                      sortKey="updated_by"
+                      sortKey="quota_updated_by"
                       currentSort={sortKey}
                       sortDir={sortDir}
                       onSort={toggleSort}
-                      filterCol="updated_by"
-                      filterOptions={filterOptions.updated_by}
+                      filterCol="quota_updated_by"
+                      filterOptions={filterOptions.quota_updated_by}
                       filters={colFilters.filters}
                       onFilter={colFilters.setColumnFilter}
                       openFilter={colFilters.openFilter}
                       setOpenFilter={colFilters.setOpenFilter}
-                      width={colResize.widths["updated_by"]}
+                      width={colResize.widths["quota_updated_by"]}
                       onResize={colResize.setColumnWidth}
                     />
                     <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow className="border-border/40 bg-muted/10">
-                    <TableCell className="text-center" dir="ltr">
-                      <UsernameCombobox
-                        value={pendingUsername}
-                        onChange={setPendingUsername}
-                        onSelect={(entry) => setPendingUsername(entry.username)}
-                        disabled={busy}
-                        placeholder={msg("settings.admin.storage.username_placeholder")}
-                      />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <span className="inline-flex items-center justify-center gap-1" dir="ltr">
-                        <NumberInput
-                          value={pendingBudgetMb}
-                          onChange={setPendingBudgetMb}
-                          min={1}
-                          disabled={busy}
-                          className="mx-auto h-8 w-36"
-                        />
-                        <span className="text-[0.6875rem] text-muted-foreground">MB</span>
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center text-xs text-muted-foreground/70">
-                      —
-                    </TableCell>
-                    <TableCell className="text-center text-xs text-muted-foreground/70">
-                      —
-                    </TableCell>
-                    <TableCell className="w-12 text-center">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => void addPendingUser()}
-                            disabled={busy || !pendingUsername.trim() || pendingBudgetMb === ""}
-                            className="size-[44px] sm:size-8 [@media(hover:none)_and_(pointer:coarse)]:size-[44px]"
-                            aria-label={msg("settings.admin.storage.add_row")}
-                          >
-                            <Plus className="size-3.5 text-primary" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{msg("settings.admin.storage.add_row")}</TooltipContent>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-
-                  {filteredOverrides.length === 0 ? (
+                  {filteredAccounts.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={6}
                         className="px-6 py-10 text-center text-sm text-muted-foreground"
                       >
-                        {overrides.length === 0
-                          ? msg("settings.admin.storage.empty")
+                        {accounts.length === 0
+                          ? msg("settings.admin.accounts.empty")
                           : msg("settings.admin.storage.no_results")}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredOverrides.map((item) => (
-                      <TableRow key={item.username} className="border-border/40 hover:bg-accent/30">
+                    filteredAccounts.map((account) => (
+                      <TableRow
+                        key={account.username}
+                        className="border-border/40 hover:bg-accent/30"
+                      >
                         <TableCell
                           className="max-w-[200px] truncate text-center font-semibold text-xs text-foreground"
                           dir="ltr"
-                          title={item.username}
+                          title={account.username}
                         >
-                          {item.username}
+                          {account.username}
                         </TableCell>
                         <TableCell className="text-center">
-                          <EditableBudgetCell
-                            bytes={item.effective_bytes}
-                            onSave={(nextBytes) => updateRowBudget(item.username, nextBytes)}
-                            disabled={busy}
+                          <Switch
+                            checked={account.is_admin}
+                            onCheckedChange={(next) => void setRole(account, next)}
+                            disabled={busyUsername !== null}
+                            aria-label={`${msg("settings.admin.accounts.admin")}: ${account.username}`}
                           />
                         </TableCell>
                         <TableCell className="text-center">
-                          <UsageMeter used={item.used_bytes} budget={item.effective_bytes} />
+                          <span className="inline-flex items-center justify-center gap-0.5">
+                            <EditableBudgetCell
+                              bytes={account.effective_bytes}
+                              onSave={(nextBytes) => updateRowBudget(account.username, nextBytes)}
+                              disabled={busyUsername !== null}
+                            />
+                            {account.quota_bytes != null && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    onClick={() => void resetRowBudget(account.username)}
+                                    disabled={busyUsername !== null}
+                                    className="size-6 text-muted-foreground"
+                                    aria-label={`${msg("settings.admin.storage.reset_override")}: ${account.username}`}
+                                  >
+                                    <ArrowCounterClockwise className="size-3" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {msg("settings.admin.storage.reset_override")}
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <UsageMeter used={account.used_bytes} budget={account.effective_bytes} />
                         </TableCell>
                         <TableCell
                           className="max-w-[180px] truncate text-center text-xs text-muted-foreground"
                           dir="ltr"
-                          title={item.updated_by || msg("settings.admin.storage.default")}
+                          title={account.quota_updated_by || msg("settings.admin.storage.default")}
                         >
-                          {item.updated_by || msg("settings.admin.storage.default")}
+                          {account.quota_updated_by || msg("settings.admin.storage.default")}
                         </TableCell>
                         <TableCell className="w-12 text-center">
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={() => void handleDelete(item.username)}
-                                disabled={busy}
-                                className="close-button mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
-                                aria-label={msg("settings.admin.storage.delete")}
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => void removeAccount(account)}
+                                disabled={busyUsername !== null}
+                                className="mx-auto size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                aria-label={`${msg("settings.admin.accounts.delete")}: ${account.username}`}
                               >
-                                <X aria-hidden="true" />
-                                <span className="sr-only">
-                                  {msg("settings.admin.storage.delete")}
-                                </span>
-                              </button>
+                                {busyUsername === account.username ? (
+                                  <CircleNotch className="size-3.5 animate-spin" />
+                                ) : (
+                                  <Trash className="size-3.5" />
+                                )}
+                              </Button>
                             </TooltipTrigger>
-                            <TooltipContent>{msg("settings.admin.storage.delete")}</TooltipContent>
+                            <TooltipContent>
+                              {msg("settings.admin.accounts.delete")}
+                            </TooltipContent>
                           </Tooltip>
                         </TableCell>
                       </TableRow>
@@ -1146,7 +1060,7 @@ function AdminTab() {
           </div>
         </SheetContent>
       </Sheet>
-    </div>
+    </section>
   );
 }
 

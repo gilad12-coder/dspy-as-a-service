@@ -491,15 +491,6 @@ export interface StorageQuotaOverride {
   used_bytes: number;
 }
 
-export interface StorageQuotaOverridesResponse {
-  default_bytes: number;
-  overrides: StorageQuotaOverride[];
-}
-
-export function getStorageQuotaOverrides() {
-  return request<StorageQuotaOverridesResponse>("/admin/storage-quotas");
-}
-
 export function setStorageQuotaOverride(username: string, quotaBytes: number) {
   return request<StorageQuotaOverride>("/admin/storage-quotas", {
     method: "PUT",
@@ -642,22 +633,6 @@ export function removeProviderKey(provider: string) {
   });
 }
 
-export interface DirectoryUserMatch {
-  username: string;
-  display_name?: string | null;
-  email?: string | null;
-  source: "db" | "directory";
-}
-
-export interface DirectoryUserSearchResponse {
-  matches: DirectoryUserMatch[];
-}
-
-export function searchAdminUsers(query: string, limit = 10) {
-  const params = new URLSearchParams({ q: query, limit: String(limit) });
-  return request<DirectoryUserSearchResponse>(`/admin/users/search?${params.toString()}`);
-}
-
 export interface ManagedAccount {
   username: string;
   local_enabled: boolean;
@@ -665,10 +640,19 @@ export interface ManagedAccount {
   is_admin: boolean;
   created_at?: string | null;
   last_login_at?: string | null;
+  /** Per-user byte ceiling that replaces the default; null when no override. */
+  quota_bytes: number | null;
+  /** Effective budget after override resolution (override or default). */
+  effective_bytes: number;
+  /** The user's current storage footprint in bytes. */
+  used_bytes: number;
+  /** Administrator who set the explicit override, when one exists. */
+  quota_updated_by?: string | null;
 }
 
 export interface ManagedAccountListResponse {
   accounts: ManagedAccount[];
+  default_bytes: number;
 }
 
 /** List every ADFS-provisioned or locally approved account. */
