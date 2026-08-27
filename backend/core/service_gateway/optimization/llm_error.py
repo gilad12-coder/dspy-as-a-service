@@ -30,34 +30,46 @@ _GENERIC_MARKERS = (
 _LLM_ERROR_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"insufficient_quota|exceeded your current quota|check your plan and billing|billing", re.IGNORECASE),
-        "Billing/quota: the language-model provider rejected the request for billing "
-        "reasons (insufficient quota or no remaining credit). Top up or check the "
-        "provider account's billing, then retry.",
+        (
+            "Billing/quota: the language-model provider rejected the request for billing "
+            "reasons (insufficient quota or no remaining credit). Top up or check the "
+            "provider account's billing, then retry."
+        ),
     ),
     (
         re.compile(r"invalid[_ ]?api[_ ]?key|incorrect api key|authenticationerror|\b401\b|unauthorized", re.IGNORECASE),
-        "Authentication: the language-model provider rejected the API key. Verify the "
-        "key configured for this provider.",
+        (
+            "Authentication: the language-model provider rejected the API key. Verify the "
+            "key configured for this provider."
+        ),
     ),
     (
         re.compile(r"rate[_ ]?limit|\b429\b|too many requests", re.IGNORECASE),
-        "Rate limit: the language-model provider throttled the run (HTTP 429). Lower "
-        "the parallelism or retry after a short wait.",
+        (
+            "Rate limit: the language-model provider throttled the run (HTTP 429). Lower "
+            "the parallelism or retry after a short wait."
+        ),
     ),
     (
         re.compile(r"context[_ ]?length|maximum context|context window|reduce the length", re.IGNORECASE),
-        "Context window: a request exceeded the model's context limit. Shorten the "
-        "inputs or choose a model with a larger context window.",
+        (
+            "Context window: a request exceeded the model's context limit. Shorten the "
+            "inputs or choose a model with a larger context window."
+        ),
     ),
     (
         re.compile(r"model.{0,30}(not found|does not exist)|invalid model|unknown model|no such model", re.IGNORECASE),
-        "Model unavailable: the requested model is not available for this provider or "
-        "account.",
+        (
+            "Model unavailable: the requested model is not available for this provider or "
+            "account."
+        ),
     ),
     (
         re.compile(r"timed? ?out|timeout", re.IGNORECASE),
-        "Timeout: the language-model provider did not respond in time. Retry, or lower "
-        "the parallelism.",
+        (
+            "Timeout: the language-model provider did not respond in time. Retry, or lower "
+            "the parallelism."
+        ),
     ),
     (
         re.compile(r"connection error|connection refused|failed to establish|name resolution|network is unreachable", re.IGNORECASE),
