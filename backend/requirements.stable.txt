@@ -212,7 +212,7 @@ numpy==2.4.6
     #   dspy
     #   pgvector
     #   scipy
-openai==2.43.0
+openai==3.6.0
     # via
     #   dspy
     #   litellm

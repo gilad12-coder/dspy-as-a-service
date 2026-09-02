@@ -214,7 +214,7 @@ numpy==2.4.6
     # via
     #   scipy
     #   skynet
-openai==2.24.0
+openai==3.6.0
     # via
     #   dspy
     #   litellm
