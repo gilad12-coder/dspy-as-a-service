@@ -403,7 +403,7 @@ watchfiles==1.2.0
     # via fastmcp-slim
 websockets==16.0
     # via fastmcp-slim
-xxhash==3.7.0
+xxhash==4.0.1
     # via dspy
 yarl==1.24.2
     # via aiohttp
